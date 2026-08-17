@@ -122,6 +122,7 @@ function setup() {
   db.linkMachine('admin', project.id, agent.id)
   db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
   db.setProjectDefaultMachine('admin', project.id, agent.id)
+  db.setUserProjectDefaultMachine('admin', project.id, agent.id)
   const board = db.getBoard('admin', project.id)!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
   const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
@@ -144,15 +145,15 @@ it('каталог машин задачи объединяет личные и 
   expect(body.machines.some((machine: { agentId: string }) => machine.agentId === foreign.id)).toBe(false)
 })
 
-it('повторно отклоняет удалённую выбранную машину перед стартом CI', async () => {
+it('пропускает недоступное закрепление и использует валидный персональный default', async () => {
   const { project, task } = setup()
   const personal = db.createAgent('admin', 'Временная')
   db.updateTask('admin', project.id, task.id, { agentId: personal.id })
   db.deleteAgent('admin', personal.id)
 
   const response = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/ci/run` })
-  expect(response.statusCode).toBe(409)
-  expect(response.json().error).toContain('больше недоступна')
+  expect(response.statusCode).toBe(202)
+  expect(response.json()).toMatchObject({ agentSelectionSource: 'user_project_default' })
 })
 
 async function run(projectId: string, taskId: string, payload?: object): Promise<string> {

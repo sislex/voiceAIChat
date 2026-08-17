@@ -984,6 +984,9 @@ export class VoiceChatDb {
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'run_column_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN run_column_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'terminal_column_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN terminal_column_id TEXT`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'agent_owner_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN agent_owner_id TEXT`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'agent_owner_name')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN agent_owner_name TEXT`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'agent_selection_source')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN agent_selection_source TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_engine_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_engine_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_provider')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_provider TEXT NOT NULL DEFAULT 'claude'`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_model')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_model TEXT NOT NULL DEFAULT '${DEFAULT_CI_CLAUDE_MODEL}'`)
@@ -1906,10 +1909,10 @@ export class VoiceChatDb {
        FROM agents a
        WHERE a.user_id = ?
           OR (? IS NOT NULL AND EXISTS (
-            SELECT 1 FROM project_machines pm
-            JOIN project_members member ON member.project_id = pm.project_id
+            SELECT 1 FROM machine_project_shares share
+            JOIN project_members member ON member.project_id = share.project_id
             JOIN users u ON u.name = member.username
-            WHERE pm.project_id = ? AND pm.agent_id = a.id
+            WHERE share.project_id = ? AND share.agent_id = a.id AND share.shared = 1
               AND member.username = ? AND u.blocked = 0
           ))
        ORDER BY a.created_at ASC`
@@ -1925,11 +1928,71 @@ export class VoiceChatDb {
     if (this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) return true
     if (!projectId) return false
     return Boolean(this.db.prepare(
-      `SELECT 1 FROM project_machines pm
-       JOIN project_members member ON member.project_id = pm.project_id
+      `SELECT 1 FROM machine_project_shares share
+       JOIN project_members member ON member.project_id = share.project_id
        JOIN users u ON u.name = member.username
-       WHERE pm.project_id = ? AND pm.agent_id = ? AND member.username = ? AND u.blocked = 0`
+       WHERE share.project_id = ? AND share.agent_id = ? AND share.shared = 1
+         AND member.username = ? AND u.blocked = 0`
     ).get(projectId, agentId, userId))
+  }
+
+  getUserProjectDefaultMachine(userId: string, projectId: string): string | null {
+    const row = this.db.prepare(
+      `SELECT d.agent_id FROM user_project_machine_defaults d
+       WHERE d.username = ? AND d.project_id = ?`
+    ).get(userId, projectId) as { agent_id: string } | undefined
+    return row && this.canUseAgent(userId, row.agent_id, projectId) ? row.agent_id : null
+  }
+
+  setUserProjectDefaultMachine(userId: string, projectId: string, agentId: string | null): void {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
+    if (agentId === null) {
+      this.db.prepare(`DELETE FROM user_project_machine_defaults WHERE username=? AND project_id=?`).run(userId, projectId)
+      return
+    }
+    if (!this.canUseAgent(userId, agentId, projectId)) throw new Error('Машина недоступна в этом проекте')
+    this.db.prepare(
+      `INSERT INTO user_project_machine_defaults (username,project_id,agent_id,updated_at)
+       VALUES (?,?,?,?)
+       ON CONFLICT(username,project_id) DO UPDATE SET agent_id=excluded.agent_id,updated_at=excluded.updated_at`
+    ).run(userId, projectId, agentId, this.now())
+  }
+
+  setMachineSharedWithProject(userId: string, projectId: string, agentId: string, shared: boolean): void {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) {
+      throw new Error('Только владелец машины может менять предоставление')
+    }
+    const previous = Boolean((this.db.prepare(
+      `SELECT shared FROM machine_project_shares WHERE project_id=? AND agent_id=?`
+    ).get(projectId, agentId) as { shared: number } | undefined)?.shared)
+    if (previous === shared) return
+    const ts = this.now()
+    this.db.transaction(() => {
+      this.db.prepare(
+        `INSERT INTO machine_project_shares (project_id,agent_id,shared,created_at,updated_at,updated_by)
+         VALUES (?,?,?,?,?,?)
+         ON CONFLICT(project_id,agent_id) DO UPDATE SET shared=excluded.shared,updated_at=excluded.updated_at,updated_by=excluded.updated_by`
+      ).run(projectId, agentId, shared ? 1 : 0, ts, ts, userId)
+      this.db.prepare(
+        `INSERT INTO machine_project_share_audit (id,project_id,agent_id,actor,old_value,new_value,created_at)
+         VALUES (?,?,?,?,?,?,?)`
+      ).run(this.newId(), projectId, agentId, userId, previous ? 1 : 0, shared ? 1 : 0, ts)
+    })()
+  }
+
+  isMachineSharedWithProject(projectId: string, agentId: string): boolean {
+    return Boolean((this.db.prepare(
+      `SELECT shared FROM machine_project_shares WHERE project_id=? AND agent_id=?`
+    ).get(projectId, agentId) as { shared: number } | undefined)?.shared)
+  }
+
+  listMachineShareAudit(projectId: string): Array<{ actor: string; agentId: string; oldValue: boolean; newValue: boolean; createdAt: number }> {
+    return (this.db.prepare(
+      `SELECT actor,agent_id,old_value,new_value,created_at FROM machine_project_share_audit
+       WHERE project_id=? ORDER BY created_at,rowid`
+    ).all(projectId) as Array<{ actor: string; agent_id: string; old_value: number; new_value: number; created_at: number }>)
+      .map((row) => ({ actor: row.actor, agentId: row.agent_id, oldValue: !!row.old_value, newValue: !!row.new_value, createdAt: row.created_at }))
   }
 
   /** Ищет агента по хэшу токена (авторизация WS-подключения). Глобально по токену. */
@@ -2512,10 +2575,20 @@ export class VoiceChatDb {
     )
     const machines = (
       this.db.prepare(
-        `SELECT pm.agent_id, pm.path, pm.repos_root, pm.ssh_host, pm.ssh_user, pm.added_at, a.name, a.user_id
-         FROM project_machines pm JOIN agents a ON a.id = pm.agent_id
-         WHERE pm.project_id = ? ORDER BY a.name ASC`
-      ).all(id) as Array<{
+        `SELECT a.id AS agent_id,
+                CASE WHEN a.user_id = ? THEN COALESCE(pm.path,'') ELSE '' END AS path,
+                CASE WHEN a.user_id = ? THEN COALESCE(pm.repos_root,'') ELSE '' END AS repos_root,
+                CASE WHEN a.user_id = ? THEN COALESCE(pm.ssh_host,'') ELSE '' END AS ssh_host,
+                CASE WHEN a.user_id = ? THEN COALESCE(pm.ssh_user,'') ELSE '' END AS ssh_user,
+                COALESCE(pm.added_at, share.created_at, a.created_at) AS added_at,
+                a.name, a.user_id,
+                CASE WHEN share.shared = 1 THEN 1 ELSE 0 END AS shared
+         FROM agents a
+         LEFT JOIN project_machines pm ON pm.agent_id=a.id AND pm.project_id=?
+         LEFT JOIN machine_project_shares share ON share.agent_id=a.id AND share.project_id=?
+         WHERE a.user_id=? OR (share.shared=1 AND a.user_id<>?)
+         ORDER BY CASE WHEN a.user_id=? THEN 0 ELSE 1 END, a.name ASC`
+      ).all(userId, userId, userId, userId, id, id, userId, userId, userId) as Array<{
         agent_id: string
         path: string | null
         repos_root: string | null
@@ -2524,11 +2597,18 @@ export class VoiceChatDb {
         added_at: number
         name: string
         user_id: string
+        shared: number
       }>
     ).map((x) => ({
       agentId: x.agent_id,
       name: x.name,
       owner: x.user_id,
+      ownership: x.user_id === userId ? 'mine' as const : 'other' as const,
+      sharedWithProject: !!x.shared,
+      isMyDefault: this.getUserProjectDefaultMachine(userId, id) === x.agent_id,
+      canUse: x.user_id === userId || !!x.shared,
+      unavailableReason: null,
+      load: this.countActiveCiRunsByAgent()[x.agent_id] ?? 0,
       online: false,
       addedAt: x.added_at,
       path: x.path ?? '',
@@ -2776,23 +2856,21 @@ export class VoiceChatDb {
   }
 
   linkMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
+    if (!this.isProjectMember(userId, id)) return null
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) {
       throw new Error(`Машина ${agentId} не найдена`)
     }
-    this.db
-      .prepare(`INSERT INTO project_machines (project_id, agent_id, path, added_at, added_by) VALUES (?, ?, '', ?, ?)`)
-      .run(id, agentId, this.now(), userId)
+    this.db.prepare(
+      `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
+    ).run(id, agentId, this.now(), userId)
+    this.setMachineSharedWithProject(userId, id, agentId, true)
     return this.getProject(userId, id)
   }
 
   unlinkMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
-    this.db.transaction(() => {
-      this.db.prepare(`DELETE FROM project_machines WHERE project_id = ? AND agent_id = ?`).run(id, agentId)
-      // Снятая машина не может оставаться дефолтной.
-      this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE id = ? AND default_agent_id = ?`).run(id, agentId)
-    })()
+    if (!this.isProjectMember(userId, id)) return null
+    this.setMachineSharedWithProject(userId, id, agentId, false)
+    this.db.prepare(`UPDATE projects SET default_agent_id=NULL WHERE id=? AND default_agent_id=?`).run(id, agentId)
     return this.getProject(userId, id)
   }
 
@@ -3762,10 +3840,10 @@ export class VoiceChatDb {
 
   // --- Раны и шаги ---
 
-  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; runColumnId?: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
+  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; agentOwnerId?: string | null; agentOwnerName?: string; agentSelectionSource?: 'explicit' | 'task_pinned' | 'user_project_default' | 'fallback' | 'unknown'; triggeredBy: string; prevColumnId: string | null; runColumnId?: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
     const id = this.newId()
     const ts = this.now()
-    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, run_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.runColumnId ?? null, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
+    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, agent_owner_id, agent_owner_name, agent_selection_source, status, triggered_by, prev_column_id, run_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.agentOwnerId ?? null, args.agentOwnerName ?? 'неизвестно', args.agentSelectionSource ?? 'unknown', args.triggeredBy, args.prevColumnId, args.runColumnId ?? null, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
     return mapCiRun(this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(id) as CiRunRow)
   }
 
@@ -6302,7 +6380,7 @@ function parseSlotProgress(j: string): CiSlotProgress {
 }
 
 interface CiRunRow {
-  id: string; project_id: string; task_id: string; agent_id: string | null; status: string
+  id: string; project_id: string; task_id: string; agent_id: string | null; agent_owner_id: string | null; agent_owner_name: string | null; agent_selection_source: string | null; status: string
   workspace_id: string | null; triggered_by: string; prev_column_id: string | null; run_column_id: string | null; terminal_column_id: string | null
   llm_engine_id: string | null; llm_provider: string; llm_model: string
   mode: string | null; clarify_level: string | null; clarify_max: number | null
@@ -6313,6 +6391,8 @@ interface CiRunRow {
 function mapCiRun(r: CiRunRow): CiRun {
   return {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
+    agentOwnerId: r.agent_owner_id ?? null, agentOwnerName: r.agent_owner_name ?? 'неизвестно',
+    agentSelectionSource: r.agent_selection_source === 'explicit' || r.agent_selection_source === 'task_pinned' || r.agent_selection_source === 'user_project_default' || r.agent_selection_source === 'fallback' ? r.agent_selection_source : 'unknown',
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
     prevColumnId: r.prev_column_id, runColumnId: r.run_column_id ?? null, terminalColumnId: r.terminal_column_id ?? null, llmEngineId: r.llm_engine_id ?? null, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
     mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),
