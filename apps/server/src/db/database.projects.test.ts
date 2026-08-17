@@ -76,6 +76,26 @@ describe('projects: миграция владельцев', () => {
 })
 
 describe('projects: миграция канонического workflow', () => {
+  it('досоздаёт недостающие системные колонки на существующей БД (инцидент 2026-08-18)', () => {
+    // Регрессия: миграция вызывала this.newId() до его присвоения в конструкторе
+    // и роняла сервер при старте на любой БД, где проекту не хватало колонки.
+    const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-missing-col-'))
+    const file = join(dir, 'db.sqlite')
+    const first = new VoiceChatDb(file)
+    first.createUser('alice', '', 'developer')
+    const project = first.createProject('alice', { name: 'Старый проект' })
+    first.close()
+
+    const raw = new Database(file)
+    raw.prepare(`DELETE FROM kanban_columns WHERE project_id=? AND semantic_type='decision_required'`).run(project.id)
+    raw.close()
+
+    const migrated = new VoiceChatDb(file)
+    const board = migrated.getBoard('alice', project.id)!
+    expect(board.columns.some((item) => item.semanticType === 'decision_required')).toBe(true)
+    migrated.close()
+  })
+
   it('переупорядочивает старую доску, переносит legacy-карточки и повторно ничего не меняет', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-workflow-'))
     const file = join(dir, 'db.sqlite')

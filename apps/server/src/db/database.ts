@@ -668,11 +668,11 @@ export class VoiceChatDb {
     // Unicode-lower для регистронезависимого поиска (SQLite LIKE/lower() — только ASCII).
     this.db.function('ulower', (s: unknown) => (typeof s === 'string' ? s.toLowerCase() : ''))
     this.db.exec(SCHEMA_SQL)
-    this.migrate()
+    // До `migrate()`: миграции тоже пишут строки (например, недостающие
+    // workflow-колонки канбана) и требуют уже готовых `newId`/`now`.
     this.newId = deps.newId ?? (() => randomUUID())
     this.now = deps.now ?? (() => Date.now())
-    // Не в `migrate()`: сидирование пишет строки и потому требует уже готовых
-    // `newId`/`now`, а миграция идёт до их присвоения.
+    this.migrate()
     this.ensureKbUpdateCommand()
     this.pruneDevelopmentAfterModelCommands()
     this.setupMessagesFts()
