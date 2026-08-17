@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { DEFAULT_SETTINGS } from '@voicechat/shared'
 import { VoiceChatDb } from './database.js'
 
 let db: VoiceChatDb
@@ -151,6 +152,40 @@ describe('manual QA persistence and workflow', () => {
     expect(db.startMergeRun('owner', project.id, task.id).agentId).toBe('workspace-agent')
     const moved = db.getBoard('owner', project.id)!.tasks.find((item) => item.id === task.id)!
     expect(db.getBoard('owner', project.id)!.columns.find((item) => item.id === moved.columnId)?.semanticType).toBe('merge')
+  })
+
+  it('records the actual Codex model from global settings for a merge run', () => {
+    const project = db.createProject('owner', { name: 'Merge Codex' })
+    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const agent = db.createAgent('owner', 'Mac')
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-codex', project.id, task.id, agent.id, '/repos/task', 'CHAT-266', '1'.repeat(40), 1, 'released', 1)
+    db.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.6-sol' })
+
+    expect(db.startMergeRun('owner', project.id, task.id)).toMatchObject({
+      llmProvider: 'codex', llmModel: 'gpt-5.6-sol',
+      requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: null
+    })
+  })
+
+  it('gives a per-run override priority and records an allowed provider fallback', () => {
+    const project = db.createProject('owner', { name: 'Merge override' })
+    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const agent = db.createAgent('owner', 'Mac')
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-override', project.id, task.id, agent.id, '/repos/task', 'CHAT-266', '1'.repeat(40), 1, 'released', 1)
+    db.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'claude', model: 'sonnet' })
+
+    const overridden = db.startMergeRun('owner', project.id, task.id, null, { provider: 'codex', model: 'gpt-5.6-luna' })
+    expect(overridden).toMatchObject({ llmProvider: 'codex', llmModel: 'gpt-5.6-luna', requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-luna', llmFallbackReason: null })
+    db.updateMergeRun(overridden.id, { status: 'failed', stage: 'failed' })
+    db.moveMergeTask(project.id, task.id, 'awaiting_merge')
+    db.setUserLlmAccess('owner', [{ provider: 'codex', modelId: '*' }])
+
+    const fallback = db.startMergeRun('owner', project.id, task.id, null, { provider: 'codex', model: 'gpt-5.6-sol' })
+    expect(fallback).toMatchObject({ llmProvider: 'claude', llmModel: 'sonnet', requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: 'provider_unavailable' })
   })
 
   it('allows the owner personal workspace machine and exposes a newer source after a successful merge', () => {

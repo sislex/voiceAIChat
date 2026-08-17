@@ -1110,7 +1110,7 @@ describe('merge kb_update: движок наследуется от development-
       projectId: project.id, taskId: task.id, agentId: 'agent-1', triggeredBy: U, prevColumnId: null,
       slotProgress: { done: 0, total: 1, phase: 'В очереди' }, ...llm
     })
-    const run = { id: 'merge-1', projectId: project.id, taskId: task.id, agentId: 'agent-1', triggeredBy: MERGE_USER } as unknown as MergeRun
+    const run = { id: 'merge-1', projectId: project.id, taskId: task.id, agentId: 'agent-1', triggeredBy: MERGE_USER, llmEngineId: llm.llmEngineId ?? null, llmProvider: llm.llmProvider ?? 'claude', llmModel: llm.llmModel ?? 'sonnet' } as unknown as MergeRun
     return { project, task, run }
   }
 
@@ -1132,7 +1132,7 @@ describe('merge kb_update: движок наследуется от development-
     expect(claude.all()).toHaveLength(0)
   })
 
-  it('оверрайд этапа проекта сильнее наследования от development-рана', async () => {
+  it('не перечитывает оверрайд этапа проекта после создания merge-рана', async () => {
     const { project, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
     db.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
     const claude = recorder(KB_REPLY)
@@ -1141,12 +1141,12 @@ describe('merge kb_update: движок наследуется от development-
 
     const result = await kbUpdateForMerge(hooks, run)
 
-    expect(result).toMatchObject({ ok: true, llmProvider: 'claude', llmModel: 'sonnet' })
-    expect(claude.last()?.model).toBe('sonnet')
-    expect(codex.all()).toHaveLength(0)
+    expect(result).toMatchObject({ ok: true, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    expect(codex.last()?.model).toBe('gpt-5.6-sol')
+    expect(claude.all()).toHaveLength(0)
   })
 
-  it('оверрайд этапа задачи остаётся наивысшим приоритетом', async () => {
+  it('не перечитывает оверрайд этапа задачи после создания merge-рана', async () => {
     const { project, task, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
     db.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'claude', model: 'sonnet' })
     db.setCiStageLlmConfig('task', task.id, 'kb_update', { provider: 'codex', model: 'gpt-5.6-luna' })
@@ -1156,8 +1156,8 @@ describe('merge kb_update: движок наследуется от development-
 
     const result = await kbUpdateForMerge(hooks, run)
 
-    expect(result).toMatchObject({ ok: true, llmProvider: 'codex', llmModel: 'gpt-5.6-luna' })
-    expect(codex.last()?.model).toBe('gpt-5.6-luna')
+    expect(result).toMatchObject({ ok: true, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    expect(codex.last()?.model).toBe('gpt-5.6-sol')
   })
 
   it('пустые поля уровня не расщепляют тройку: модель этапа, исполнитель и провайдер — из development-рана', async () => {
@@ -1171,11 +1171,11 @@ describe('merge kb_update: движок наследуется от development-
 
     const result = await kbUpdateForMerge(hooks, run)
 
-    expect(result).toMatchObject({ ok: true, llmEngineId: 'engine-1', llmProvider: 'codex', llmModel: 'gpt-5.6-luna' })
+    expect(result).toMatchObject({ ok: true, llmEngineId: 'engine-1', llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
     expect(claude.all()).toHaveLength(0)
   })
 
-  it('модель проекта сильнее наследования, но слабее этапа проекта', async () => {
+  it('не перечитывает модель проекта после создания merge-рана', async () => {
     const { project, run } = mergeSetup({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
     db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     const claude = recorder(KB_REPLY)
@@ -1184,8 +1184,8 @@ describe('merge kb_update: движок наследуется от development-
 
     const result = await kbUpdateForMerge(hooks, run)
 
-    expect(result).toMatchObject({ ok: true, llmProvider: 'claude', llmModel: 'opus' })
-    expect(codex.all()).toHaveLength(0)
+    expect(result).toMatchObject({ ok: true, llmProvider: 'codex', llmModel: 'gpt-5.6-sol' })
+    expect(codex.last()?.model).toBe('gpt-5.6-sol')
   })
 })
 
