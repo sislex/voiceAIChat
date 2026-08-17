@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-08-17
-checked: abe980a
+updated: 2026-08-18
+checked: 68de33d
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
