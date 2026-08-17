@@ -291,8 +291,45 @@ export function canCompleteComponentQa(input: ComponentQaGateInput): ReadinessCh
   return { allowed: reasons.length === 0, reasons }
 }
 
-export type IntegrationTestRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'blocked' | 'cancelled' | 'stale' | 'skipped'
-export type IntegrationTestFailureClassification = 'implementation_defect' | 'infrastructure'
+export type IntegrationTestRunStatus = 'queued' | 'analyzing' | 'generating' | 'running' | 'fixing' | 'awaiting_input' | 'passed' | 'implementation_defect' | 'failed' | 'blocked' | 'cancelled' | 'timed_out' | 'stale' | 'skipped'
+export type IntegrationTestFailureClassification = 'implementation_defect' | 'infrastructure' | 'machine_unavailable' | 'commands_missing' | 'dependencies_missing' | 'model_forbidden' | 'flaky_tests' | 'diff_policy_violation'
+export interface IntegrationTestLlmSnapshot {
+  llmEngineId: string | null
+  provider: LlmProvider
+  model: string
+  source: 'task_stage' | 'project_stage' | 'project' | 'user' | 'system' | 'development_run'
+  permissionMode: string
+  maxFixAttempts: number
+  runTimeoutMs: number
+  commandTimeoutMs: number
+}
+export interface IntegrationTestCoverageItem {
+  criterionId: string
+  scenarios: string[]
+  existingTests: string[]
+  gaps: string[]
+  executable: boolean
+  reason: string
+}
+export interface IntegrationTestContextSnapshot {
+  taskTitle: string
+  taskDescription: string
+  acceptanceCriteria: string
+  taskState: string
+  baseBranch: string
+  headSha: string
+  developmentDiff: string
+  changedFiles: string[]
+  existingTests: string[]
+  fixtures: string[]
+  mocks: string[]
+  testConfigs: string[]
+  commands: string[]
+  knowledge: string[]
+  allowedPaths: string[]
+  forbiddenPaths: string[]
+  machinePolicy: Record<string, unknown>
+}
 export interface IntegrationTestCommandResult {
   commandId: string
   name: string
@@ -309,6 +346,12 @@ export interface IntegrationTestRun {
   linkedFixRunId: string | null; branch: string; commitSha: string; attempt: number
   status: IntegrationTestRunStatus; readinessRunId: string; snapshotVersion: string
   testCases: TestCaseDefinition[]; automationLinks: QaAutomationLink[]
+  workspaceId?: string; machineId?: string
+  llmSnapshot?: IntegrationTestLlmSnapshot
+  contextSnapshot?: IntegrationTestContextSnapshot
+  coverageAnalysis?: IntegrationTestCoverageItem[]
+  changedFiles?: string[]; finalDiff?: string; commitId?: string | null
+  fixAttempts?: number; events?: Array<{ at: number; type: string; data?: Record<string, unknown> }>
   commands: IntegrationTestCommandResult[]; log: string
   failureClassification: IntegrationTestFailureClassification | null
   failureReason: string | null; blockerReasons: string[]; summary: string
