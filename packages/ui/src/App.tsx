@@ -1492,7 +1492,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               onDeleteColumn={(id) => void projectsActions.deleteColumn(id)}
               onCreateTask={(columnId, input) => void projectsActions.createTask(columnId, input)}
               onUpdateTask={(taskId, fields) => void projectsActions.updateTask(taskId, fields)}
-              onMoveTask={(taskId, columnId, afterId, beforeId) => void projectsActions.moveTask(taskId, columnId, afterId, beforeId)}
+              onMoveTask={(taskId, columnId, afterId, beforeId) => projectsActions.moveTask(taskId, columnId, afterId, beforeId)}
               onDeleteTask={(taskId) => void projectsActions.deleteTask(taskId)}
               onOpenChat={(taskId) => void projectsActions.openTaskChat(taskId).then((id) => navigate(id ? `/projects/${routeProjectId}/task/${taskId}/chat/${id}` : '/'))}
               onEnsureChat={(taskId) => void projectsActions.ensureTaskChat(taskId)}
