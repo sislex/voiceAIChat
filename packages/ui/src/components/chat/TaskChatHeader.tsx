@@ -73,6 +73,9 @@ export function TaskChatHeader(props: TaskChatHeaderProps): JSX.Element {
       className={['taskchat', collapsed && 'taskchat--collapsed', pulse && `taskchat--ci-${pulse}`].filter(Boolean).join(' ')}
       data-testid="task-chat-header"
     >
+      {ctx.columnSemantic === 'cancelled' && (
+        <div className="taskchat-cancelled" role="status">Задача отменена</div>
+      )}
       <div className="taskchat-top">
         <IconButton
           className="taskchat-collapse"

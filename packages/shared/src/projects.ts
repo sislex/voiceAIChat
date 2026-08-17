@@ -45,12 +45,13 @@ export type KanbanColumnSemanticType =
   | 'merge'
   | 'decision_required'
   | 'done'
+  | 'cancelled'
   | 'custom'
 
 export const KANBAN_COLUMN_SEMANTIC_TYPES: KanbanColumnSemanticType[] = [
   'backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests',
   'automated_qa', 'testing', 'qa_preparation', 'manual_qa', 'awaiting_merge', 'merge',
-  'decision_required', 'done', 'custom'
+  'decision_required', 'done', 'cancelled', 'custom'
 ]
 
 /** Canonical machine workflow. Display names are deliberately absent. */

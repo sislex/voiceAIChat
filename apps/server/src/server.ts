@@ -792,7 +792,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   registerReleaseRoutes(app, db, releaseManager)
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
-  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId) => { launchTaskPreparation(userId, projectId, taskId) })
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId))
   mergeRunManager.reconcile()
   const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor})
   const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor})

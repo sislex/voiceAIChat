@@ -22,6 +22,7 @@ interface Scene {
   chatId: string
   workColumnId: string
   doneColumnId: string
+  cancelledColumnId: string
 }
 
 /** Проект с задачей в работе и её чатом; сайдбар сужен этим проектом. */
@@ -32,6 +33,7 @@ async function scene(): Promise<Scene> {
   const board = await api['board:get']({ id: project.id })
   const work = board.columns[0]!
   const done = board.columns.find((c) => c.semanticType === 'done')!
+  const cancelled = board.columns.find((c) => c.semanticType === 'cancelled')!
   const task = await api['tasks:create']({ projectId: project.id, columnId: work.id, title: 'Скролл' })
   const chat = await api['tasks:openChat']({ projectId: project.id, taskId: task.id })
   await store.actions.init()
@@ -43,7 +45,8 @@ async function scene(): Promise<Scene> {
     taskId: task.id,
     chatId: chat.id,
     workColumnId: work.id,
-    doneColumnId: done.id
+    doneColumnId: done.id,
+    cancelledColumnId: cancelled.id
   }
 }
 
@@ -157,6 +160,22 @@ describe('voiceStore — сайдбар обновляется по событи
     // Строка закреплена: вместе с ней из шапки пропали бы машина и папка чата.
     expect(ids(s.store)).toContain(s.chatId)
     expect(s.store.getState().pinnedConversation?.id).toBe(s.chatId)
+  })
+
+  it('board.update скрывает строку открытого cancelled-чата, не закрывая экран', async () => {
+    const s = await scene()
+    await s.store.actions.openBoard(s.projectId)
+    expect(await s.store.actions.selectConversation(s.chatId)).toBe(true)
+    s.store.actions.setDraft('черновик')
+    await s.api['tasks:move']({ projectId: s.projectId, taskId: s.taskId, columnId: s.cancelledColumnId })
+    const board = await s.api['board:get']({ id: s.projectId })
+
+    s.store.actions.applyBoardUpdate(s.projectId, board)
+    await flushRefresh()
+
+    expect(ids(s.store)).not.toContain(s.chatId)
+    expect(s.store.getState().activeId).toBe(s.chatId)
+    expect(s.store.getState().draft).toBe('черновик')
   })
 
   it('chat.message в неактивный чат задачи поднимает его строку в сайдбаре', async () => {

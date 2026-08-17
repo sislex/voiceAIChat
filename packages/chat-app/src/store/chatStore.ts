@@ -215,7 +215,7 @@ export interface ChatActions {
   cancelRequest(): void
   deleteMessage(id: string): Promise<void>
   editMessage(id: string, newText: string): Promise<void>
-  updateTaskLaunchStatus(messageId: string, proposalId: string, status: 'opened' | 'created' | 'declined'): Promise<void>
+  updateTaskLaunchStatus(messageId: string, proposalId: string, status: 'opened' | 'created' | 'declined', result?: import('@voicechat/shared').TaskLaunchResult): Promise<void>
   addAttachment(file: File): Promise<void>
   removeAttachment(id: string): void
   applyClaudeToken(delta: string, conversationId?: string): void
@@ -413,7 +413,16 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         ? await client['conversations:search']({ query: q, includeCompleted })
         : await client['conversations:list']({ includeCompleted })
       if (core.disposed()) return
-      if (keepActiveListed) pinActiveIfHidden(all, q)
+      if (keepActiveListed) {
+        const activeId = getState().activeId
+        const activeHidden = activeId != null && !q && !all.some((c) => c.id === activeId)
+        if (activeHidden) {
+          const badge = (await client['conversations:taskChats']()).find((item) => item.conversationId === activeId)
+          if (core.disposed()) return
+          if (badge?.columnSemantic === 'cancelled') setState({ pinnedConversation: null })
+          else pinActiveIfHidden(all, q)
+        }
+      }
       const pid = getState().sidebarProjectId
       const conversations = keepPinned(all.filter((c) => (c.projectId ?? null) === pid), pid, q)
       setState({
@@ -806,7 +815,14 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     setState({ taskChatContext: null })
     try {
       const ctx = await client['conversations:taskContext']({ id })
-      if (getState().activeId === id) setState({ taskChatContext: ctx })
+      if (getState().activeId === id) {
+        setState({
+          taskChatContext: ctx,
+          ...(ctx?.columnSemantic === 'cancelled'
+            ? { pinnedConversation: null, conversations: getState().conversations.filter((item) => item.id !== id) }
+            : {})
+        })
+      }
     } catch {
       /* шапка необязательна — молча без неё */
     }
@@ -1410,7 +1426,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           messageExecTarget
         )
       },
-      async updateTaskLaunchStatus(messageId, proposalId, status) {
+      async updateTaskLaunchStatus(messageId, proposalId, status, result) {
         const activeId = getState().activeId
         if (!activeId) return
         const message = getState().messages.find((item) => item.id === messageId)
@@ -1423,7 +1439,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         const meta = {
           ...message.meta,
           taskLaunches: proposals.map((proposal) =>
-            proposal.id === proposalId ? { ...proposal, status } : proposal
+            proposal.id === proposalId ? { ...proposal, status, ...(result ? { taskId: result.taskId, result } : {}) } : proposal
           )
         }
         const updated = await client['messages:updateMeta']({ conversationId: activeId, messageId, meta })

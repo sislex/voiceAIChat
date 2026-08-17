@@ -1072,6 +1072,23 @@ CREATE TABLE IF NOT EXISTS task_preparation_runs (
 CREATE INDEX IF NOT EXISTS idx_task_preparation_task ON task_preparation_runs(task_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_preparation_active ON task_preparation_runs(task_id) WHERE status = 'running';
 
+-- Идемпотентный результат обработки task-launch. Ошибка запуска хранится отдельно:
+-- повтор использует уже созданную задачу и повторяет только preparation-run.
+CREATE TABLE IF NOT EXISTS task_launch_results (
+  project_id TEXT NOT NULL,
+  proposal_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  run_id TEXT,
+  error TEXT,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, proposal_id, action),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
 -- Три пост-development QA-этапа имеют самостоятельные попытки и выборки.
 -- Discriminator stage не позволяет смешать их с CI, preparation, manual QA или merge.
 CREATE TABLE IF NOT EXISTS qa_stage_runs (
