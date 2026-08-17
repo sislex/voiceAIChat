@@ -162,7 +162,13 @@ export interface ProjectMachine {
   /** Безопасные данные машины для участников проекта. */
   name?: string
   owner?: string
+  ownership?: 'mine' | 'other'
   online?: boolean
+  sharedWithProject?: boolean
+  isMyDefault?: boolean
+  canUse?: boolean
+  unavailableReason?: string | null
+  load?: number
   addedAt?: number
   /** Папка проекта на этой машине (рабочий каталог). '' — не задана. */
   path: string

@@ -216,6 +216,40 @@ export function registerProjectRoutes(
 
   // --- Машины проекта ----------------------------------------------------
 
+  app.put<{ Params: { id: string; agentId: string }; Body: { shared?: boolean } }>(
+    '/api/projects/:id/machines/:agentId/share',
+    async (req, reply) => {
+      if (!member(req, req.params.id)) return nf(reply)
+      if (typeof req.body?.shared !== 'boolean') return badReq(reply, 'shared must be boolean')
+      try {
+        db.setMachineSharedWithProject(uid(req), req.params.id, req.params.agentId, req.body.shared)
+        return withMachineStatus(db.getProject(uid(req), req.params.id)) ?? nf(reply)
+      } catch (err) {
+        return reply.code(403).send({ error: errMessage(err) })
+      }
+    }
+  )
+
+  app.put<{ Params: { id: string }; Body: { agentId?: string | null } }>(
+    '/api/projects/:id/machines/default',
+    async (req, reply) => {
+      if (!member(req, req.params.id)) return nf(reply)
+      const agentId = req.body?.agentId
+      if (agentId !== null && typeof agentId !== 'string') return badReq(reply, 'agentId must be string or null')
+      try {
+        db.setUserProjectDefaultMachine(uid(req), req.params.id, agentId)
+        return withMachineStatus(db.getProject(uid(req), req.params.id)) ?? nf(reply)
+      } catch (err) {
+        return badReq(reply, errMessage(err))
+      }
+    }
+  )
+
+  app.get<{ Params: { id: string } }>('/api/projects/:id/machines/audit', async (req, reply) => {
+    if (!db.isProjectOwner(uid(req), req.params.id)) return forbidden(reply)
+    return db.listMachineShareAudit(req.params.id)
+  })
+
   app.get<{ Params: { id: string } }>('/api/projects/:id/machines', async (req, reply) => {
     const p = member(req, req.params.id)
     return p ? p.machines : nf(reply)
@@ -224,7 +258,7 @@ export function registerProjectRoutes(
   app.get<{ Params: { id: string } }>('/api/projects/:id/machines/available', async (req, reply) => {
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
-    const linked = new Set(p.machines.map((machine) => machine.agentId))
+    const linked = new Set(p.machines.filter((machine) => machine.sharedWithProject).map((machine) => machine.agentId))
     return db.listAgents(uid(req))
       .filter((agent) => !linked.has(agent.id))
       .map((agent) => ({ id: agent.id, name: agent.name }))
@@ -237,8 +271,8 @@ export function registerProjectRoutes(
       if (!p) return nf(reply)
         const agentId = (req.body?.agentId ?? '').trim()
       if (!agentId) return badReq(reply, 'agentId required')
-      if (p.machines.some((machine) => machine.agentId === agentId)) {
-        return reply.code(409).send({ error: 'machine already linked' })
+      if (db.isMachineSharedWithProject(req.params.id, agentId)) {
+        return reply.code(409).send({ error: 'machine already shared' })
       }
       try {
         return withMachineStatus(db.linkMachine(uid(req), req.params.id, agentId)) ?? nf(reply)

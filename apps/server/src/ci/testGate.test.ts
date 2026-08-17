@@ -110,6 +110,7 @@ function setup(): { projectId: string; taskId: string } {
   db.linkMachine('admin', project.id, agent.id)
   db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
   db.setProjectDefaultMachine('admin', project.id, agent.id)
+  db.setUserProjectDefaultMachine('admin', project.id, agent.id)
   const board = db.getBoard('admin', project.id)!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
   const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!

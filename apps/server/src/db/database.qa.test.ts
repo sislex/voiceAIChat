@@ -118,8 +118,8 @@ describe('manual QA persistence and workflow', () => {
     const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
-    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`).run('default-agent', 'Default', 'x', 1)
-    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1)
+    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('default-agent', 'Default', 'x', 1, 'owner')
+    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1, 'owner')
     raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'default-agent', '/default', '/repos', 1, 'owner')
     raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'workspace-agent', '/workspace', '/repos', 1, 'owner')
     raw.prepare(`UPDATE projects SET git_url=?,default_agent_id=? WHERE id=?`).run('git@example/repo.git', 'default-agent', project.id)
@@ -158,7 +158,7 @@ describe('manual QA persistence and workflow', () => {
     const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
-    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1)
+    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1, 'owner')
     raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'workspace-agent', '/workspace', '/repos', 1, 'owner')
     raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace', project.id, task.id, 'workspace-agent', '/repos/task', 'CHAT-179', '1'.repeat(40), 1, 'released', 2)
@@ -173,7 +173,7 @@ describe('manual QA persistence and workflow', () => {
     const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
-    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1)
+    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1, 'owner')
     raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'workspace-agent', '/workspace', '/repos', 1, 'owner')
     raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
     raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace', project.id, task.id, 'workspace-agent', '/repos/task', 'CHAT-179', '1'.repeat(40), 1, 'released', 2)
@@ -202,8 +202,8 @@ describe('manual QA persistence and workflow', () => {
     const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
     const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
     const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
-    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1)
-    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at) VALUES (?,?,?,?)`).run('other-agent', 'Other', 'x', 1)
+    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('workspace-agent', 'Workspace', 'x', 1, 'owner')
+    raw.prepare(`INSERT INTO agents (id,name,token_hash,created_at,user_id) VALUES (?,?,?,?,?)`).run('other-agent', 'Other', 'x', 1, 'owner')
     raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'workspace-agent', '/workspace', '/repos', 1, 'owner')
     raw.prepare(`INSERT INTO project_machines (project_id,agent_id,path,repos_root,added_at,added_by) VALUES (?,?,?,?,?,?)`).run(project.id, 'other-agent', '/other', '/other-repos', 1, 'owner')
     raw.prepare(`UPDATE projects SET git_url=? WHERE id=?`).run('git@example/repo.git', project.id)
