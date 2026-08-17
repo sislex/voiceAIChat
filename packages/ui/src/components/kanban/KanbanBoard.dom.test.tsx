@@ -433,6 +433,11 @@ describe('KanbanBoard — перенос указателем', () => {
   it('мышь: карточка переносится в другую колонку — move с соседями этой колонки', () => {
     const props = renderBoard({ board: dndBoard })
     layout()
+    const surface = screen.getByTestId('kanban-board')
+    const bodies = document.querySelectorAll<HTMLElement>('[data-drop-body]')
+    surface.scrollLeft = 120
+    bodies[0]!.scrollTop = 75
+    bodies[1]!.scrollTop = 35
     const card = screen.getAllByTestId('task-card')[0]!
     down(card, 40, 130)
     // Порог: до него это клик, после — перенос с плейсхолдером и копией под курсором.
@@ -448,6 +453,9 @@ describe('KanbanBoard — перенос указателем', () => {
     expect(props.onMoveTask).toHaveBeenCalledWith('t1', 'c2', 't3', null)
     expect(document.querySelector('.vc-draglayer')).toBeNull()
     expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
+    expect(surface.scrollLeft).toBe(120)
+    expect(bodies[0]!.scrollTop).toBe(75)
+    expect(bodies[1]!.scrollTop).toBe(35)
   })
 
   it('мышь: у нижнего края прокручивается только список активной колонки', () => {
@@ -584,6 +592,32 @@ describe('KanbanBoard — перенос указателем', () => {
     move(40, 20)
     up(40, 20)
     expect(props.onReorderColumns).toHaveBeenCalledWith(['c2', 'c1'])
+  })
+
+  it('перенос колонки автоскроллит только горизонтальную ось доски', () => {
+    vi.useFakeTimers()
+    try {
+      renderBoard({ board: dndBoard })
+      layout()
+      const surface = screen.getByTestId('kanban-board')
+      const bodies = document.querySelectorAll<HTMLElement>('[data-drop-body]')
+      surface.scrollLeft = 100
+      surface.scrollTop = 25
+      bodies[0]!.scrollTop = 70
+      bodies[1]!.scrollTop = 40
+
+      down(document.querySelectorAll<HTMLElement>('.jcol-head')[0]!, 40, 20)
+      move(890, 590)
+      act(() => vi.advanceTimersByTime(20))
+
+      expect(surface.scrollLeft).toBeGreaterThan(100)
+      expect(surface.scrollTop).toBe(25)
+      expect(bodies[0]!.scrollTop).toBe(70)
+      expect(bodies[1]!.scrollTop).toBe(40)
+      up(890, 590)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
