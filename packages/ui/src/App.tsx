@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
 import { parseProjectsRoute } from '@voicechat/projects-app'
@@ -22,7 +22,6 @@ import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen } from './components/LoginScreen'
 import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
-import { UsersAdmin } from './components/UsersAdmin'
 import { ProjectSettings } from './components/ProjectSettings'
 import { PersonalizationPage } from './components/SettingsPage'
 import { ProjectBoard } from './components/ProjectBoard'
@@ -74,8 +73,14 @@ import { useHashRoute } from './lib/useHashRoute'
 import { useHotkeys, type HotkeyBinding } from './lib/useHotkeys'
 import { useCommandSource } from './lib/useCommands'
 import { buildAppCommands, buildHotkeyBindings } from './lib/appCommands'
+const UsersAdmin = lazy(async () => {
+  const module = await import('@voicechat/admin-app')
+  return { default: module.UsersAdmin }
+})
+
 import './styles/app.css'
 import '@voicechat/operations-app/styles.css'
+import '@voicechat/admin-app/styles.css'
 
 // Шаг 5: состояние живёт в сторе (store/voiceStore.ts) на базе машины состояний.
 // Разговоры/сообщения/настройки — реальные из SQLite через window.api (IPC).
@@ -909,10 +914,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [utilitySeg])
   useEffect(() => {
     if (!session.authRequired) return
-    if (utilitySeg === 'users') { if (!admin.usersOpen) void runtime.openAdmin() }
-    else if (admin.usersOpen) adminActions.closeUsers()
+    if (utilitySeg === 'users' && session.currentUser?.role === 'admin') {
+      if (!admin.usersOpen) void runtime.openAdmin()
+    } else if (admin.usersOpen) {
+      adminActions.closeUsers()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [utilitySeg])
+  }, [utilitySeg, session.currentUser?.role])
   useEffect(() => {
     if (utilitySeg !== 'users' || !routeUserName || !admin.usersOpen || admin.adminSelected === routeUserName) return
     void adminActions.selectAdminUser(routeUserName)
@@ -920,7 +928,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [utilitySeg, routeUserName, admin.usersOpen, admin.adminSelected])
   // Гейты: «Пользователи» — только админ; машины/пользователи — только web.
   useEffect(() => {
-    if (utilitySeg === 'users' && session.currentUser && session.currentUser.role !== 'admin' && routeUserName && routeUserName !== session.currentUser.name) navigate('/users')
+    if (utilitySeg === 'users' && session.currentUser && session.currentUser.role !== 'admin') navigate('/')
     if ((utilitySeg === 'users' || utilitySeg === 'machines' || utilitySeg === 'ci') && !session.authRequired) navigate('/')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg, routeUserName, session.currentUser, session.authRequired])
@@ -1630,7 +1638,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
 
       {utilitySeg === 'users' && admin.usersOpen && (
-        <UsersAdmin
+        <Suspense fallback={<div role="status">Загрузка Administration…</div>}><UsersAdmin
           variant="page"
           users={admin.adminUsers}
           usageSummary={admin.adminUsageSummary}
@@ -1646,6 +1654,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           currentUserName={session.currentUser?.name ?? ''}
           onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void adminActions.selectAdminUser(name) }}
           onCreate={(name, password, role) => void adminActions.createUserAccount(name, password, role)}
+          onUpdateRole={(name, role) => void adminActions.updateUserRole(name, role)}
           onSetBlocked={(name, blocked) => void adminActions.setUserBlocked(name, blocked)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
@@ -1665,7 +1674,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onSaveModelPrice={(input) => void adminActions.saveAdminModelPrice(input)}
           onDeleteModelPrice={(provider, model) => void adminActions.deleteAdminModelPrice(provider, model)}
           onClose={() => navigate('/')}
-        />
+        /></Suspense>
       )}
 
       {utilitySeg === 'ci' && projects.ciOpen && (

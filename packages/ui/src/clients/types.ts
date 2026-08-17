@@ -144,31 +144,9 @@ export type OperationsClient = Pick<
   cxTailStop?: () => void
 }
 
-/** Администрирование: пользователи, расход, прайсы и реестр исполнителей. */
-export type AdminClient = Pick<
-  RendererApi,
-  | 'admin:users'
-  | 'admin:usageSummary'
-  | 'admin:llmAccess'
-  | 'admin:saveLlmAccess'
-  | 'admin:createUser'
-  | 'admin:setBlocked'
-  | 'admin:deleteUser'
-  | 'admin:usage'
-  | 'admin:conversations'
-  | 'admin:messages'
-  | 'admin:modelPrices'
-  | 'admin:saveModelPrice'
-  | 'admin:deleteModelPrice'
-  | 'admin:llmEngines'
-  | 'admin:createLlmEngine'
-  | 'admin:updateLlmEngine'
-  | 'admin:deleteLlmEngine'
-  | 'admin:checkLlmEngineHealth'
-  | 'usage:report'
-  | 'conversations:list'
-  | 'llm:access'
->
+/** Публичный transport-agnostic контракт Administration. */
+export type { AdminClient } from '@voicechat/admin-app'
+import type { AdminClient } from '@voicechat/admin-app'
 
 /**
  * Проекты, доска и CI-раннер. Домен временно остаётся в `packages/ui`: перенос
