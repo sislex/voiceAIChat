@@ -21,8 +21,11 @@ function IntegrationTestPanel(props:{projectId:string;taskId:string}):JSX.Elemen
   return <section aria-label="Интеграционные автотесты"><header><h3>Интеграционные автотесты</h3>{run&&<span>{run.status}</span>}</header>
     {error&&<p role="alert">{error}</p>}
     {state.launchReasons.length>0&&<div><strong>Запуск недоступен</strong><ul>{state.launchReasons.map((reason)=><li key={reason}>{reason}</li>)}</ul></div>}
-    {run&&<><dl><dt>Ветка</dt><dd>{run.branch}</dd><dt>SHA</dt><dd><code>{run.commitSha}</code></dd><dt>Попытка</dt><dd>{run.attempt}</dd></dl>
+    {run&&<><dl><dt>Ветка</dt><dd>{run.branch}</dd><dt>SHA</dt><dd><code>{run.commitSha}</code></dd><dt>Workspace</dt><dd><code>{run.workspaceId||'—'}</code></dd><dt>Машина</dt><dd>{run.machineId||'—'}</dd><dt>Модель</dt><dd>{run.llmSnapshot?`${run.llmSnapshot.provider}/${run.llmSnapshot.model} (${run.llmSnapshot.source})`:'—'}</dd><dt>Права</dt><dd>{run.llmSnapshot?.permissionMode||'—'}</dd><dt>Fix-loop</dt><dd>{run.fixAttempts??0}/{run.llmSnapshot?.maxFixAttempts??0}</dd><dt>Попытка</dt><dd>{run.attempt}</dd></dl>
       {run.blockerReasons.length>0&&<ul>{run.blockerReasons.map((reason)=><li key={reason}>{reason}</li>)}</ul>}
+      {(run.coverageAnalysis?.length??0)>0&&<section><h4>Анализ сценариев и покрытия</h4><pre>{JSON.stringify(run.coverageAnalysis,null,2)}</pre></section>}
+      {(run.changedFiles?.length??0)>0&&<section><h4>Созданные и изменённые файлы</h4><ul>{run.changedFiles!.map((path)=><li key={path}><code>{path}</code></li>)}</ul></section>}
+      {run.finalDiff&&<details><summary>Итоговый diff</summary><pre>{run.finalDiff}</pre></details>}{run.commitId&&<p><strong>Тестовый коммит:</strong> <code>{run.commitId}</code></p>}
       <h4>Тест-кейсы</h4><ul>{run.testCases.map((item)=><li key={item.id}>{item.title} — {item.automatable?'автоматизируемый':'исключён'} {item.automationLinks.filter((link)=>link.commitSha===run.commitSha).map((link)=><a key={link.testId+link.path} href={link.path}>{link.path}</a>)}</li>)}</ul>
       <h4>Команды</h4>{run.commands.map((command)=><details key={command.commandId}><summary>{command.name} — {command.status}, exit {command.exitCode??'—'}, {command.durationMs} ms</summary><code>{command.command}</code><pre>{command.stdout}{command.stderr}</pre></details>)}
       {run.log&&<details open={run.status==='running'}><summary>Потоковый лог</summary><pre>{run.log}</pre></details>}{run.summary&&<p><strong>Итог:</strong> {run.summary}</p>}</>}

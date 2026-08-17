@@ -650,6 +650,18 @@ export class VoiceChatDb {
 
   /** Лёгкие миграции существующих БД (idempotent). */
   private migrate(): void {
+    const integrationCols = this.db.prepare(`PRAGMA table_info(integration_test_runs)`).all() as Array<{ name: string }>
+    const integrationAdditions: Array<[string, string]> = [
+      ['workspace_id', `TEXT NOT NULL DEFAULT ''`], ['machine_id', `TEXT NOT NULL DEFAULT ''`],
+      ['llm_snapshot_json', `TEXT NOT NULL DEFAULT '{}'`], ['context_snapshot_json', `TEXT NOT NULL DEFAULT '{}'`],
+      ['coverage_analysis_json', `TEXT NOT NULL DEFAULT '[]'`], ['changed_files_json', `TEXT NOT NULL DEFAULT '[]'`],
+      ['final_diff', `TEXT NOT NULL DEFAULT ''`], ['test_commit_id', `TEXT`],
+      ['fix_attempts', `INTEGER NOT NULL DEFAULT 0`], ['events_json', `TEXT NOT NULL DEFAULT '[]'`]
+    ]
+    for (const [name, definition] of integrationAdditions) {
+      if (!integrationCols.some((column) => column.name === name)) this.db.exec(`ALTER TABLE integration_test_runs ADD COLUMN ${name} ${definition}`)
+    }
+    this.db.exec(`DROP INDEX IF EXISTS idx_integration_test_runs_active; CREATE UNIQUE INDEX idx_integration_test_runs_active ON integration_test_runs(task_id) WHERE status IN ('queued','analyzing','generating','running','fixing','awaiting_input')`)
     // CHAT-193: legacy `user` becomes developer; only the two known ChatAI
     // accounts are elevated. Future accounts are never promoted implicitly.
     this.db.prepare(`UPDATE users SET role = 'developer' WHERE role = 'user'`).run()
@@ -5086,12 +5098,17 @@ export class VoiceChatDb {
       branch:String(row.branch),commitSha:String(row.commit_sha),attempt:Number(row.attempt),status,
       readinessRunId:String(row.readiness_run_id),snapshotVersion:String(row.snapshot_version),
       testCases:parseJsonValue(String(row.test_cases_json??'[]'),[]),automationLinks:parseJsonValue(String(row.automation_links_json??'[]'),[]),
+      workspaceId:String(row.workspace_id??''),machineId:String(row.machine_id??''),
+      llmSnapshot:parseJsonValue(String(row.llm_snapshot_json??'{}'),{llmEngineId:null,provider:'claude',model:'opus',source:'system',permissionMode:'workspace-write',maxFixAttempts:2,runTimeoutMs:1800000,commandTimeoutMs:900000}),
+      contextSnapshot:parseJsonValue(String(row.context_snapshot_json??'{}'),{taskTitle:'',taskDescription:'',acceptanceCriteria:'',taskState:'',baseBranch:'main',headSha:String(row.commit_sha??''),developmentDiff:'',changedFiles:[],existingTests:[],fixtures:[],mocks:[],testConfigs:[],commands:[],knowledge:[],allowedPaths:[],forbiddenPaths:[],machinePolicy:{}}),
+      coverageAnalysis:parseJsonValue(String(row.coverage_analysis_json??'[]'),[]),changedFiles:parseJsonValue(String(row.changed_files_json??'[]'),[]),
+      finalDiff:String(row.final_diff??''),commitId:row.test_commit_id as string|null,fixAttempts:Number(row.fix_attempts??0),events:parseJsonValue(String(row.events_json??'[]'),[]),
       commands:parseJsonValue<IntegrationTestCommandResult[]>(String(row.commands_json??'[]'),[]),
       log:String(row.log??''),failureClassification:row.failure_classification as IntegrationTestRun['failureClassification'],
       failureReason:row.failure_reason as string|null,blockerReasons:parseStringArray(String(row.blocker_reasons_json??'[]')),
       summary:String(row.summary??''),createdAt:Number(row.created_at),startedAt:row.started_at==null?null:Number(row.started_at),
       finishedAt:row.finished_at==null?null:Number(row.finished_at),staleReason:row.stale_reason as IntegrationTestRun['staleReason'],
-      canCancel:status==='queued'||status==='running',canRetry:['failed','blocked','cancelled','stale'].includes(status)
+      canCancel:['queued','analyzing','generating','running','fixing','awaiting_input'].includes(status),canRetry:['failed','implementation_defect','blocked','cancelled','timed_out','stale'].includes(status)
     }
   }
 
@@ -5101,11 +5118,11 @@ export class VoiceChatDb {
   }
 
   private currentIntegrationInputs(projectId:string,taskId:string) {
-    const task=this.db.prepare(`SELECT c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {semantic_type:string}|undefined
+    const task=this.db.prepare(`SELECT c.semantic_type,t.title,t.description,p.ci_base_branch FROM tasks t JOIN kanban_columns c ON c.id=t.column_id JOIN projects p ON p.id=t.project_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {semantic_type:string;title:string;description:string;ci_base_branch:string}|undefined
     const workspace=this.findLatestPushedCiWorkspace(projectId,taskId)
     const prep=this.db.prepare(`SELECT id,readiness_json FROM task_preparation_runs WHERE task_id=? AND status='success' AND readiness_json IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId) as {id:string;readiness_json:string}|undefined
     const readiness=prep?parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null):null
-    const dev=workspace?this.db.prepare(`SELECT id FROM ci_runs WHERE project_id=? AND task_id=? AND workspace_id=? AND status='success' ORDER BY created_at DESC LIMIT 1`).get(projectId,taskId,workspace.id) as {id:string}|undefined:undefined
+    const dev=workspace?this.db.prepare(`SELECT id,llm_engine_id,llm_provider,llm_model FROM ci_runs WHERE project_id=? AND task_id=? AND workspace_id=? AND status='success' ORDER BY created_at DESC LIMIT 1`).get(projectId,taskId,workspace.id) as {id:string;llm_engine_id:string|null;llm_provider:'claude'|'codex';llm_model:string}|undefined:undefined
     return {task,workspace,prep,readiness,dev}
   }
 
@@ -5114,7 +5131,7 @@ export class VoiceChatDb {
     const input=this.currentIntegrationInputs(projectId,taskId)
     if(!input.task) return null
     const runs=(this.db.prepare(`SELECT * FROM integration_test_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`).all(taskId) as Record<string,unknown>[]).map((row)=>this.mapIntegrationTestRun(row))
-    const activeRun=runs.find((run)=>run.status==='queued'||run.status==='running')??null
+    const activeRun=runs.find((run)=>['queued','analyzing','generating','running','fixing','awaiting_input'].includes(run.status))??null
     const latestRun=runs[0]??null
     const reasons:string[]=[]
     if(input.task.semantic_type!=='integration_tests') reasons.push('task_not_in_integration_tests')
@@ -5140,18 +5157,22 @@ export class VoiceChatDb {
       const cases=input.readiness?.testCases??[]
       const version=integrationTestSemanticVersion(cases)
       const ts=this.now()
-      this.db.prepare(`UPDATE integration_test_runs SET status='stale',stale_reason='sha_changed',finished_at=? WHERE task_id=? AND commit_sha<>? AND status IN ('queued','running','passed','failed','blocked','cancelled','skipped')`).run(ts,taskId,currentSha)
-      this.db.prepare(`UPDATE integration_test_runs SET status='stale',stale_reason='snapshot_changed',finished_at=? WHERE task_id=? AND snapshot_version<>? AND status IN ('queued','running','passed','failed','blocked','cancelled','skipped')`).run(ts,taskId,version)
-      const active=this.db.prepare(`SELECT * FROM integration_test_runs WHERE task_id=? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string,unknown>|undefined
+      this.db.prepare(`UPDATE integration_test_runs SET status='stale',stale_reason='sha_changed',finished_at=? WHERE task_id=? AND commit_sha<>? AND status IN ('queued','analyzing','generating','running','fixing','awaiting_input','passed','implementation_defect','failed','blocked','cancelled','timed_out','skipped')`).run(ts,taskId,currentSha)
+      this.db.prepare(`UPDATE integration_test_runs SET status='stale',stale_reason='snapshot_changed',finished_at=? WHERE task_id=? AND snapshot_version<>? AND status IN ('queued','analyzing','generating','running','fixing','awaiting_input','passed','implementation_defect','failed','blocked','cancelled','timed_out','skipped')`).run(ts,taskId,version)
+      const active=this.db.prepare(`SELECT * FROM integration_test_runs WHERE task_id=? AND status IN ('queued','analyzing','generating','running','fixing','awaiting_input') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string,unknown>|undefined
       if(active) return this.mapIntegrationTestRun(active)
-      const requiredAutomatable=cases.filter((item)=>item.required&&item.automatable)
-      const invalidExcluded=cases.filter((item)=>item.required&&!item.automatable&&(!item.notAutomatedReason.trim()||!item.alternativeManualVerification.trim()))
-      const skipped=reasons.length===0&&requiredAutomatable.length===0&&invalidExcluded.length===0
-      const status:IntegrationTestRun['status']=skipped?'skipped':reasons.length?'blocked':'queued'
+      // Даже если новые тесты не нужны, ран обязан выполнить команды и сохранить
+      // структурированное доказательство покрытия; автоматический skipped это обходил.
+      const skipped=false
+      const status:IntegrationTestRun['status']=reasons.length?'blocked':'queued'
       const attempt=Number((this.db.prepare(`SELECT COALESCE(MAX(attempt),0)+1 n FROM integration_test_runs WHERE task_id=?`).get(taskId) as {n:number}).n)
       const id=this.newId()
-      this.db.prepare(`INSERT INTO integration_test_runs (id,project_id,task_id,development_run_id,branch,commit_sha,attempt,status,readiness_run_id,snapshot_version,test_cases_json,blocker_reasons_json,summary,created_at,finished_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,projectId,taskId,input.dev?.id??null,input.workspace?.branch??'',currentSha,attempt,status,input.prep?.id??'',version,JSON.stringify(cases),JSON.stringify(reasons),skipped?'Нет обязательных automatable-кейсов':reasons.length?'Запуск заблокирован предусловиями':'',ts,status==='queued'?null:ts)
+      const commands=testStages((this.db.prepare(`SELECT test_command FROM projects WHERE id=?`).get(projectId) as {test_command:string|null}|undefined)?.test_command??'',['npm run affected-check'])
+      const llmSnapshot={llmEngineId:input.dev?.llm_engine_id??null,provider:input.dev?.llm_provider??'claude',model:input.dev?.llm_model??'opus',source:input.dev?'development_run':'system',permissionMode:'workspace-write',maxFixAttempts:2,runTimeoutMs:30*60_000,commandTimeoutMs:15*60_000}
+      const contextSnapshot={taskTitle:input.task.title,taskDescription:input.task.description??'',acceptanceCriteria:input.readiness?.acceptanceCriteria??'',taskState:input.task.semantic_type,baseBranch:input.task.ci_base_branch||'main',headSha:currentSha,developmentDiff:'',changedFiles:[],existingTests:[],fixtures:[],mocks:[],testConfigs:[],commands,knowledge:[],allowedPaths:['**/tests/**','**/test/**','**/__tests__/**','**/*.test.*','**/*.spec.*'],forbiddenPaths:['.env','**/.env*','**/secrets/**'],machinePolicy:{workspaceWriteOnly:true,noAutomaticPush:true}}
+      const events=[{at:ts,type:'run_created',data:{workspaceId:input.workspace?.id??'',machineId:input.workspace?.agentId??'',headSha:currentSha}}]
+      this.db.prepare(`INSERT INTO integration_test_runs (id,project_id,task_id,development_run_id,branch,commit_sha,attempt,status,readiness_run_id,snapshot_version,test_cases_json,workspace_id,machine_id,llm_snapshot_json,context_snapshot_json,events_json,blocker_reasons_json,summary,created_at,finished_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,projectId,taskId,input.dev?.id??null,input.workspace?.branch??'',currentSha,attempt,status,input.prep?.id??'',version,JSON.stringify(cases),input.workspace?.id??'',input.workspace?.agentId??'',JSON.stringify(llmSnapshot),JSON.stringify(contextSnapshot),JSON.stringify(events),JSON.stringify(reasons),skipped?'Нет обязательных automatable-кейсов':reasons.length?'Запуск заблокирован предусловиями':'',ts,status==='queued'?null:ts)
       if(skipped){
         const target=this.getColumnIdBySemantic(projectId,'automated_qa')
         if(!target||!canTransitionWorkflow('integration_tests','automated_qa','automation')) throw new Error('automated_qa transition unavailable')
@@ -5167,6 +5188,15 @@ export class VoiceChatDb {
   }
   markIntegrationTestRunning(id:string):void { this.db.prepare(`UPDATE integration_test_runs SET status='running',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(),id) }
   appendIntegrationTestLog(id:string,chunk:string):void { this.db.prepare(`UPDATE integration_test_runs SET log=substr(log||?,-500000) WHERE id=? AND status='running'`).run(chunk,id) }
+  recordIntegrationTestAnalysis(id:string,changedFiles:string[],analysis:IntegrationTestRun['coverageAnalysis']):void {
+    const row=this.db.prepare(`SELECT context_snapshot_json,events_json FROM integration_test_runs WHERE id=? AND status='running'`).get(id) as {context_snapshot_json:string;events_json:string}|undefined
+    if(!row)return
+    const context=parseJsonValue<Record<string,unknown>>(row.context_snapshot_json,{})
+    const events=parseJsonValue<Array<{at:number;type:string;data?:Record<string,unknown>}>>(row.events_json,[])
+    context.changedFiles=changedFiles
+    events.push({at:this.now(),type:'coverage_analyzed',data:{changedFiles:changedFiles.length,criteria:analysis?.length??0}})
+    this.db.prepare(`UPDATE integration_test_runs SET changed_files_json=?,coverage_analysis_json=?,context_snapshot_json=?,events_json=? WHERE id=?`).run(JSON.stringify(changedFiles),JSON.stringify(analysis??[]),JSON.stringify(context),JSON.stringify(events),id)
+  }
   finishIntegrationTestRun(userId:string,runId:string,input:{status:'passed'|'failed'|'blocked';commands:IntegrationTestCommandResult[];summary:string;failureClassification?:IntegrationTestRun['failureClassification'];failureReason?:string|null;blockerReasons?:string[]}):IntegrationTestRun {
     const run=this.getIntegrationTestRun(userId,runId)
     if(!run||run.status!=='running') throw new Error('integration test run is not running')

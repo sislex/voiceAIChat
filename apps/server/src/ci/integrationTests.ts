@@ -16,6 +16,7 @@ export interface IntegrationTestRunnerDeps {
     getIntegrationTestRun(userId: string, runId: string): IntegrationTestRun | null
     markIntegrationTestRunning(runId: string): void
     appendIntegrationTestLog(runId: string, chunk: string): void
+    recordIntegrationTestAnalysis(runId:string,changedFiles:string[],analysis:IntegrationTestRun['coverageAnalysis']):void
     recordIntegrationAutomationLinks(userId:string,runId:string,links:Array<{testId:string;path:string}>,commitSha:string):IntegrationTestRun
     finishIntegrationTestRun(userId: string, runId: string, input: IntegrationTestFinishInput): IntegrationTestRun
   }
@@ -63,6 +64,7 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
       if(controller.signal.aborted)return
       if(diff.exitCode!==0||diff.timedOut){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось проверить git diff',failureClassification:'infrastructure',failureReason:diff.timedOut?'command_timeout':'executor_disconnected',blockerReasons:[diff.timedOut?'command_timeout':'executor_disconnected']});return}
       const changed=diff.output.split(/\\r?\\n/).map((item)=>item.trim()).filter(Boolean),invalid=validateIntegrationTestDiff(changed)
+      deps.db.recordIntegrationTestAnalysis(runId,changed,run.testCases.map((item)=>({criterionId:item.id,scenarios:[item.title,item.description,item.steps,item.expectedResult].filter(Boolean),existingTests:item.automationLinks.filter((link)=>link.commitSha===run.commitSha).map((link)=>link.path),gaps:item.automatable&&item.automationLinks.every((link)=>link.commitSha!==run.commitSha)?['integration_coverage_missing']:[],executable:context.commands.length>0,reason:context.commands.length>0?'configured_commands':'commands_missing'})))
       if(invalid.length){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Изменены нетестовые файлы: '+invalid.join(', '),failureClassification:'implementation_defect',failureReason:'non_test_files_changed',blockerReasons:invalid.map((path)=>'non_test_file:'+path)});return}
       const shaResult=await inspect('git rev-parse HEAD'),sha=shaResult.output.trim().split(/\\s/)[0]??''
       if(!sha){deps.db.finishIntegrationTestRun(userId,runId,{status:'blocked',commands:[],summary:'Не удалось определить SHA тестового коммита',failureClassification:'infrastructure',failureReason:'executor_disconnected',blockerReasons:['executor_disconnected']});return}

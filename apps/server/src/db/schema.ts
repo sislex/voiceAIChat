@@ -1052,11 +1052,21 @@ CREATE TABLE IF NOT EXISTS integration_test_runs (
   commit_sha TEXT NOT NULL,
   attempt INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'queued'
-    CHECK(status IN ('queued','running','passed','failed','blocked','cancelled','stale','skipped')),
+    CHECK(status IN ('queued','analyzing','generating','running','fixing','awaiting_input','passed','implementation_defect','failed','blocked','cancelled','timed_out','stale','skipped')),
   readiness_run_id TEXT NOT NULL,
   snapshot_version TEXT NOT NULL,
   test_cases_json TEXT NOT NULL DEFAULT '[]',
   automation_links_json TEXT NOT NULL DEFAULT '[]',
+  workspace_id TEXT NOT NULL DEFAULT '',
+  machine_id TEXT NOT NULL DEFAULT '',
+  llm_snapshot_json TEXT NOT NULL DEFAULT '{}',
+  context_snapshot_json TEXT NOT NULL DEFAULT '{}',
+  coverage_analysis_json TEXT NOT NULL DEFAULT '[]',
+  changed_files_json TEXT NOT NULL DEFAULT '[]',
+  final_diff TEXT NOT NULL DEFAULT '',
+  test_commit_id TEXT,
+  fix_attempts INTEGER NOT NULL DEFAULT 0,
+  events_json TEXT NOT NULL DEFAULT '[]',
   commands_json TEXT NOT NULL DEFAULT '[]',
   log TEXT NOT NULL DEFAULT '',
   failure_classification TEXT,
@@ -1073,7 +1083,7 @@ CREATE TABLE IF NOT EXISTS integration_test_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_integration_test_runs_task ON integration_test_runs(task_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_test_runs_active
-  ON integration_test_runs(task_id) WHERE status IN ('queued','running');
+  ON integration_test_runs(task_id) WHERE status IN ('queued','analyzing','generating','running','fixing','awaiting_input');
 
 -- ============================ Component QA ============================
 -- Самостоятельный audit trail, зафиксированный на development workspace/SHA и

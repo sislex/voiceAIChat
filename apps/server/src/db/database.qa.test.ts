@@ -339,11 +339,13 @@ describe('manual QA persistence and workflow', () => {
     expect(second.id).toBe(first.id)
     expect(first).toMatchObject({status:'queued',commitSha:'a'.repeat(40),developmentRunId:'dev-component'})
   })
-  it('audits a valid no-automation branch as skipped and moves to Automated QA',()=>{
+  it('requires command evidence before accepting that no new automation is needed',()=>{
     const {project,task}=integrationFixture(false)
-    expect(db.startIntegrationTestRun('owner',project.id,task.id).status).toBe('skipped')
-    const board=db.getBoard('owner',project.id)!,moved=board.tasks.find((item)=>item.id===task.id)!
-    expect(board.columns.find((item)=>item.id===moved.columnId)?.semanticType).toBe('automated_qa')
+    const run=db.startIntegrationTestRun('owner',project.id,task.id)
+    expect(run).toMatchObject({status:'queued',workspaceId:'ws-component',machineId:'agent-component'})
+    expect(run.llmSnapshot).toMatchObject({provider:'claude',source:'development_run',maxFixAttempts:2})
+    const board=db.getBoard('owner',project.id)!,current=board.tasks.find((item)=>item.id===task.id)!
+    expect(board.columns.find((item)=>item.id===current.columnId)?.semanticType).toBe('integration_tests')
   })
   it('stales the previous integration run after a workspace SHA change',()=>{
     const {project,task,raw}=integrationFixture()
