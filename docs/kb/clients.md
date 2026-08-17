@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-07-27
-checked: 49465ae
+updated: 2026-08-17
+checked: 2246ea3
 areas:
   - apps/web
   - apps/desktop/src
@@ -83,4 +83,4 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 | Setup/log/permissions упаковки агента | `apps/agent-tray` |
 | Пользовательские machines/terminal/files/LLM history/KB/CI monitor/diagnostics | `packages/operations-app` |
 
-Operations-код не знает `window`, fetch, WebSocket, SSE или Electron. Публичные `MachinesClient`, `TerminalClient`, `FilesClient`, `LlmObserverClient`, `KnowledgeClient`, `CiMonitorClient` и `DiagnosticsClient` реализуются host adapters поверх существующих logical bridges; транспортные протоколы при этом не меняются.
+Operations-код не знает `window`, fetch, WebSocket, SSE или Electron. Публичные интерфейсы `MachinesClient`, `TerminalClient`, `FilesClient`, `LlmObserverClient`, `KnowledgeClient`, `CiMonitorClient`, `DiagnosticsClient` и `ConsoleClient` описаны в `packages/operations-app/src/contracts.ts`; transport adapters поверх существующих host bridges в этом срезе ещё не добавлены. Транспортные протоколы не менялись.
