@@ -80,7 +80,9 @@ export interface KanbanBoardProps {
   /** Повторить загрузку доски (кнопка «Повторить» на экране ошибки). */
   onRetry?: () => void
   members: ProjectMember[]
-  /** Логин текущего пользователя — для быстрого фильтра «Только мои». */
+  /** Устойчивый идентификатор текущего пользователя (в текущем API это login/name). */
+  currentUserId?: string | null
+  /** Legacy alias: логин текущего пользователя. */
   currentUser?: string | null
   /** Управляемая открытая задача (обёртке-странице нужен перехват Esc);
       не задано — состояние внутреннее (Storybook, встраивание). */
@@ -165,6 +167,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [labels, setLabels] = useState<ReadonlySet<string>>(new Set())
   const [epics, setEpics] = useState<ReadonlySet<string>>(new Set())
   const [onlyMine, setOnlyMine] = useState(false)
+  /** Локальные фильтры исполнителя: all | '' (без исполнителя) | username. */
+  const [columnAssignees, setColumnAssignees] = useState<Record<string, string>>({})
+  const [filtersHydrated, setFiltersHydrated] = useState(false)
   const [flaggedOnly, setFlaggedOnly] = useState(false)
   const [recentOnly, setRecentOnly] = useState(false)
   const [swimlane, setSwimlane] = useState<Swimlane>(props.defaultSwimlane ?? 'none')
@@ -239,6 +244,53 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const board = useMemo(() => normalizeBoard(props.board), [props.board])
   const allTasks = useMemo(() => board?.tasks ?? [], [board])
+  const currentUserId = props.currentUserId ?? props.currentUser ?? null
+  const filterStorageKey = useMemo(() => {
+    const projectId = board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? props.projectName
+    return currentUserId ? `voicechat.kanban.filters.v2.${encodeURIComponent(currentUserId)}.${encodeURIComponent(projectId)}` : null
+  }, [allTasks, board, currentUserId, props.projectName])
+  useEffect(() => {
+    setFiltersHydrated(false)
+    // Сначала очищаем предыдущий контекст: состояние другого пользователя,
+    // проекта или доски не должно пережить смену ключа.
+    setSearch('')
+    setAssignees(new Set())
+    setTypes(new Set())
+    setPriorities(new Set())
+    setLabels(new Set())
+    setEpics(new Set())
+    setOnlyMine(false)
+    setColumnAssignees({})
+    setFlaggedOnly(false)
+    setRecentOnly(false)
+    if (!filterStorageKey) {
+      setFiltersHydrated(true)
+      return
+    }
+    try {
+      const raw = localStorage.getItem(filterStorageKey)
+      if (raw) {
+        const saved = JSON.parse(raw) as { search?: string; assignees?: string[]; types?: WorkItemType[]; priorities?: TaskPriority[]; labels?: string[]; epics?: string[]; onlyMine?: boolean; flaggedOnly?: boolean; recentOnly?: boolean; columnAssignees?: Record<string, string> }
+        if (typeof saved.search === 'string') setSearch(saved.search)
+        if (Array.isArray(saved.assignees)) setAssignees(new Set(saved.assignees))
+        if (Array.isArray(saved.types)) setTypes(new Set(saved.types))
+        if (Array.isArray(saved.priorities)) setPriorities(new Set(saved.priorities))
+        if (Array.isArray(saved.labels)) setLabels(new Set(saved.labels))
+        if (Array.isArray(saved.epics)) setEpics(new Set(saved.epics))
+        if (typeof saved.onlyMine === 'boolean') setOnlyMine(saved.onlyMine)
+        if (typeof saved.flaggedOnly === 'boolean') setFlaggedOnly(saved.flaggedOnly)
+        if (typeof saved.recentOnly === 'boolean') setRecentOnly(saved.recentOnly)
+        if (saved.columnAssignees && typeof saved.columnAssignees === 'object') setColumnAssignees(saved.columnAssignees)
+      }
+    } catch { /* localStorage/старое состояние недоступны */ }
+    setFiltersHydrated(true)
+  }, [filterStorageKey])
+  useEffect(() => {
+    if (!filtersHydrated || !filterStorageKey) return
+    try {
+      localStorage.setItem(filterStorageKey, JSON.stringify({ search, assignees: [...assignees], types: [...types], priorities: [...priorities], labels: [...labels], epics: [...epics], onlyMine, flaggedOnly, recentOnly, columnAssignees }))
+    } catch { /* localStorage недоступен */ }
+  }, [assignees, columnAssignees, epics, filterStorageKey, filtersHydrated, flaggedOnly, labels, onlyMine, priorities, recentOnly, search, types])
   const columns = (board?.columns ?? []).filter((c) => showHidden || !c.hidden)
   const doneColumnIds = useMemo(
     () => new Set((board?.columns ?? []).filter((c) => c.semanticType === 'done').map((c) => c.id)),
@@ -254,9 +306,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     return next
   }
 
+  const hasColumnAssigneeFilter = Object.values(columnAssignees).some((value) => value !== undefined && value !== 'all')
   const filtersActive =
     search.trim() !== '' || assignees.size > 0 || types.size > 0 || priorities.size > 0 ||
-    labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly
+    labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || hasColumnAssigneeFilter
 
   const resetFilters = (): void => {
     setSearch('')
@@ -266,6 +319,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setLabels(new Set())
     setEpics(new Set())
     setOnlyMine(false)
+    setColumnAssignees({})
     setFlaggedOnly(false)
     setRecentOnly(false)
   }
@@ -281,7 +335,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       const epic = epicOf(t, allTasks)
       if (!(epic && epics.has(epic.id)) && !(t.type === 'epic' && epics.has(t.id))) return false
     }
-    if (onlyMine && t.assignee !== (props.currentUser ?? null)) return false
+    if (onlyMine && t.assignee !== currentUserId) return false
     if (flaggedOnly && !t.flagged) return false
     if (recentOnly && Date.now() - t.updatedAt > RECENT_MS) return false
     return true
@@ -290,6 +344,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const tasksOf = (columnId: string, lane?: { kind: Swimlane; id: string }): Task[] =>
     allTasks
       .filter((t) => t.columnId === columnId && matches(t))
+      .filter((t) => {
+        if (onlyMine) return true // глобальный режим временно имеет приоритет
+        const selected = columnAssignees[columnId] ?? 'all'
+        return selected === 'all' || (selected === '' ? t.assignee == null : t.assignee === selected)
+      })
       .filter((t) => {
         if (!lane || lane.kind === 'none') return true
         if (lane.kind === 'epic') {
@@ -316,9 +375,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const laneOf = (laneId: string | null): { kind: Swimlane; id: string } | undefined =>
     swimlane === 'none' || laneId == null ? undefined : { kind: swimlane, id: laneId }
 
-  /** Задачи ячейки без переносимой: по ним считаются позиции и соседи. */
+  /** Полный порядок ячейки: скрытые фильтрами карточки сохраняют место в DnD. */
+  const fullTasksOf = (columnId: string, lane?: { kind: Swimlane; id: string }): Task[] =>
+    allTasks
+      .filter((t) => t.columnId === columnId)
+      .filter((t) => !lane || lane.kind === 'none' || (lane.kind === 'epic' ? (t.type !== 'epic' && (epicOf(t, allTasks)?.id ?? '') === lane.id) : (t.assignee ?? '') === lane.id))
+      .sort((a, b) => compareTasksInColumn(a, b, board?.columns.find((c) => c.id === columnId)?.semanticType ?? 'custom'))
+
   const neighbours = (taskId: string, columnId: string, laneId: string | null): Task[] =>
-    tasksOf(columnId, laneOf(laneId)).filter((t) => t.id !== taskId)
+    fullTasksOf(columnId, laneOf(laneId)).filter((t) => t.id !== taskId)
 
   // Ячейка (колонка × дорожка) под указателем. Указатель может уйти за пределы
   // доски (палец у кромки экрана), поэтому при промахе берём ближайшую ячейку.
@@ -425,7 +490,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     const list = neighbours(g.taskId, g.columnId, g.laneId)
     // Взятая карточка из списка не исчезает (иначе с неё слетел бы фокус),
     // поэтому щель для плейсхолдера считается со сдвигом на неё саму.
-    const own = tasksOf(g.columnId, laneOf(g.laneId)).findIndex((t) => t.id === g.taskId)
+    const own = fullTasksOf(g.columnId, laneOf(g.laneId)).findIndex((t) => t.id === g.taskId)
     return {
       bodyKey: bodyKey(g.laneId, g.columnId),
       columnId: g.columnId,
@@ -459,7 +524,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       e.preventDefault()
       const laneId =
         swimlane === 'none' ? null : (card.closest<HTMLElement>('[data-drop-body]')?.dataset.dropBody?.split('|')[0] ?? '')
-      const index = Math.max(0, tasksOf(task.columnId, laneOf(laneId)).findIndex((t) => t.id === task.id))
+      const index = Math.max(0, fullTasksOf(task.columnId, laneOf(laneId)).findIndex((t) => t.id === task.id))
       const g: KeyboardGrab = {
         taskId: task.id,
         title: task.title,
@@ -661,7 +726,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             }}
           >
             {col.name}
-            <span className="jcol-count">{filtersActive ? `${visible} из ${total}` : total}</span>
+            <span className="jcol-count">{filtersActive || columnAssignees[col.id] !== undefined ? `${visible} из ${total}` : total}</span>
             {col.wipLimit != null && (
               <span className={`jcol-wip${overWip ? ' jcol-wip--over' : ''}`} title={`WIP-лимит: ${col.wipLimit}`}>
                 {total}/{col.wipLimit}
@@ -670,6 +735,22 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             {col.hidden && <span className="jcol-hidden-mark" title="Колонка скрыта">🙈</span>}
           </span>
         )}
+        <label className="jcol-assignee-filter">
+          <span className="vc-sr-only">Исполнитель колонки «{col.name}»</span>
+          <select
+            className="sel"
+            aria-label={`Исполнитель колонки «${col.name}»`}
+            value={columnAssignees[col.id] ?? 'all'}
+            disabled={onlyMine}
+            aria-describedby={onlyMine ? `column-filter-note-${col.id}` : undefined}
+            onChange={(e) => setColumnAssignees((prev) => ({ ...prev, [col.id]: e.target.value }))}
+          >
+            <option value="all">Все исполнители</option>
+            <option value="">Без исполнителя</option>
+            {members.filter((m) => m.active !== false).map((m) => <option key={m.username} value={m.username}>{m.username}</option>)}
+          </select>
+          {onlyMine && <span id={`column-filter-note-${col.id}`} className="vc-sr-only">Временно не применяется: включён режим «Показывать только мои задачи».</span>}
+        </label>
         <span className="jcard-menuwrap" ref={colMenu === col.id ? colMenuRef : undefined}>
           <IconButton
             className="jcard-reveal"
@@ -807,6 +888,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const columnBody = (col: KanbanColumn, lane?: { kind: Swimlane; id: string }): JSX.Element => {
     const tasks = tasksOf(col.id, lane)
+    const ordered = fullTasksOf(col.id, lane)
     const overWip = col.wipLimit != null && allTasks.filter((t) => t.columnId === col.id).length > col.wipLimit
     const key = bodyKey(lane ? lane.id : null, col.id)
     // Зона вставки между соседями after (сверху) и before (снизу): по ней
@@ -836,13 +918,16 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     }
     return (
       <div className={`jcol-body${overWip ? ' jcol-body--over' : ''}`} data-drop-body={key} data-drop-column={col.id}>
-        {zone(0, null, tasks[0]?.id ?? null)}
-        {tasks.map((t, i) => (
-          <div key={t.id}>
-            {cardOf(t)}
-            {zone(i + 1, t.id, tasks[i + 1]?.id ?? null)}
-          </div>
-        ))}
+        {zone(0, ordered[ordered.findIndex((t) => t.id === tasks[0]?.id) - 1]?.id ?? null, tasks[0]?.id ?? null)}
+        {tasks.map((t, i) => {
+          const at = ordered.findIndex((item) => item.id === t.id)
+          return (
+            <div key={t.id}>
+              {cardOf(t)}
+              {zone(i + 1, t.id, ordered[at + 1]?.id ?? null)}
+            </div>
+          )
+        })}
         {/* Пустая колонка объясняет, чем её наполнить. В свимлейнах подсказку не
             повторяем в каждой ячейке — там пустых пересечений много по природе. */}
         {tasks.length === 0 && !lane && (
@@ -851,7 +936,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             className="jcol-empty"
             icon="＋"
             title={filtersActive ? 'Нет задач под фильтром' : 'Здесь пока пусто'}
-            description={filtersActive ? 'Сбросьте фильтры, чтобы увидеть остальные задачи.' : 'Перетащите карточку сюда или создайте задачу кнопкой ниже.'}
+            description={filtersActive ? 'Измените или сбросьте фильтр этой колонки, чтобы увидеть остальные задачи.' : 'Перетащите карточку сюда или создайте задачу кнопкой ниже.'}
+            {...(filtersActive ? { action: { label: 'Сбросить фильтр колонки', onClick: () => setColumnAssignees((prev) => ({ ...prev, [col.id]: 'all' })) } } : {})}
           />
         )}
       </div>
@@ -1018,10 +1104,11 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                 <span className="javatar javatar--none">?</span>
               </button>
             </span>
-            {props.currentUser && (
-              <button className={`jquick${onlyMine ? ' on' : ''}`} aria-pressed={onlyMine} onClick={() => setOnlyMine((v) => !v)}>
-                Только мои
-              </button>
+            {currentUserId && (
+              <label className={`jquick jquick-checkbox${onlyMine ? ' on' : ''}`}>
+                <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
+                Показывать только мои задачи
+              </label>
             )}
             <button className={`jquick${flaggedOnly ? ' on' : ''}`} aria-pressed={flaggedOnly} onClick={() => setFlaggedOnly((v) => !v)}>
               С флагом
@@ -1105,7 +1192,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             )}
             {filtersActive && (
               <button className="jquick jquick--clear" onClick={resetFilters}>
-                Сбросить
+                Сбросить фильтры
               </button>
             )}
             {view.refreshing && <RefreshIndicator label="Обновляем доску…" />}
