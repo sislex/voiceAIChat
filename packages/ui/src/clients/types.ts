@@ -188,6 +188,7 @@ export type ProjectsClient = Pick<
   | 'projects:unlinkMachine'
   | 'projects:setMachinePath'
   | 'projects:setReposRoot'
+  | 'projects:setMachineSsh'
   | 'projects:setDefaultMachine'
   | 'board:get'
   | 'columns:create'

@@ -5,11 +5,14 @@ export interface RendererFeaturePreviewBridge {
   get(projectId: string, taskId: string): Promise<PreviewEnvironment | null>
   operate(projectId: string, taskId: string, operation: PreviewOperation, args?: { idempotencyKey?: string; scenario?: string; agentId?: string }): Promise<PreviewEnvironment>
   cancel(projectId: string, taskId: string): Promise<boolean>
+  /** ID companion-агента именно этого устройства; не имя и не адрес браузера. */
+  localAgentId?: string | null
+  setLocalAgentId?(agentId: string | null): void
   open(projectId: string, taskId: string, service: PreviewServiceKind): Promise<PreviewAccessResult>
   closeTunnel(projectId: string, taskId: string, tunnelId: string): Promise<boolean>
 }
 
-export function createFeaturePreviewRest(httpBase: string): RendererFeaturePreviewBridge {
+export function createFeaturePreviewRest(httpBase: string, localAgentId: string | null = null): RendererFeaturePreviewBridge {
   const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     const token = getToken()
     const response = await fetch(httpBase + path, {
@@ -27,7 +30,9 @@ export function createFeaturePreviewRest(httpBase: string): RendererFeaturePrevi
   }
   const base = (projectId: string, taskId: string): string =>
     `/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/preview`
-  return {
+  const bridge: RendererFeaturePreviewBridge = {
+    localAgentId,
+    setLocalAgentId(agentId) { bridge.localAgentId = agentId },
     get: (projectId, taskId) => request(base(projectId, taskId)),
     operate: (projectId, taskId, operation, args = {}) =>
       request(`${base(projectId, taskId)}/operations`, { method: 'POST', body: JSON.stringify({ operation, ...args }) }),
@@ -35,10 +40,11 @@ export function createFeaturePreviewRest(httpBase: string): RendererFeaturePrevi
       await request(`${base(projectId, taskId)}/cancel`, { method: 'POST' })
       return true
     },
-    open: (projectId, taskId, service) => request(`${base(projectId, taskId)}/open`, { method: 'POST', body: JSON.stringify({ service }) }),
+    open: (projectId, taskId, service) => request(`${base(projectId, taskId)}/open`, { method: 'POST', body: JSON.stringify({ service, localAgentId: bridge.localAgentId ?? null }) }),
     closeTunnel: async (projectId, taskId, tunnelId) => {
       const result = await request<{ closed: boolean }>(`${base(projectId, taskId)}/tunnels/${encodeURIComponent(tunnelId)}`, { method: 'DELETE' })
       return result.closed
     }
   }
+  return bridge
 }

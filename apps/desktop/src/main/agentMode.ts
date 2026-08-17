@@ -18,8 +18,9 @@ interface StoredConfig {
 }
 type UiStatus = AgentStatus | 'unconfigured'
 
-const state: { status: UiStatus; name: string | null; log: string[] } = {
+const state: { status: UiStatus; id: string | null; name: string | null; log: string[] } = {
   status: 'unconfigured',
+  id: null,
   name: null,
   log: []
 }
@@ -68,7 +69,8 @@ function setStatus(s: UiStatus): void {
 function handlers() {
   return {
     onStatus: (s: AgentStatus) => setStatus(s),
-    onRegistered: (name: string) => {
+    onRegistered: (name: string, id?: string) => {
+      state.id = id ?? null
       state.name = name
       pushLog(`подключён как «${name}»`)
       setStatus('online')
