@@ -43,6 +43,8 @@ export interface PreviewAccessResult {
   manualCommand: string | null
   internalUrl: string
   localAgentId: string | null
+  /** Названия обязательных SSH-настроек, которых не хватает для manual fallback. */
+  missingSshSettings?: Array<'hostname' | 'user'>
   error: string | null
 }
 

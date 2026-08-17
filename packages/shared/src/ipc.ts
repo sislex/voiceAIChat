@@ -331,6 +331,7 @@ export interface IpcInvokeMap {
   'projects:unlinkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Задать папку проекта на конкретной машине (только владелец). */
   'projects:setReposRoot': { arg: { id: string; agentId: string; reposRoot: string }; result: ProjectDetail }
+  'projects:setMachineSsh': { arg: { id: string; agentId: string; sshHost: string; sshUser: string }; result: ProjectDetail }
   'projects:setMachinePath': { arg: { id: string; agentId: string; path: string }; result: ProjectDetail }
   /** Назначить машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
@@ -835,6 +836,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:unlinkMachine',
   'projects:setMachinePath',
   'projects:setReposRoot',
+  'projects:setMachineSsh',
   'projects:setDefaultMachine',
   'board:get',
   'columns:create',

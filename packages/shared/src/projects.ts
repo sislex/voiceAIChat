@@ -168,6 +168,10 @@ export interface ProjectMachine {
   path: string
   /** Корень пула рабочих копий CI на этой машине. */
   reposRoot: string
+  /** Явно настроенный SSH hostname/IP для ручного preview-туннеля. */
+  sshHost?: string
+  /** Явно настроенный SSH-пользователь для ручного preview-туннеля. */
+  sshUser?: string
 }
 
 /** Проект со всем составом (ответ get/create/update). */

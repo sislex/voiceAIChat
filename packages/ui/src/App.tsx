@@ -1454,6 +1454,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 onUnlinkMachine={(id, agentId) => void projectsActions.unlinkProjectMachine(id, agentId)}
                 onSetMachinePath={(id, agentId, path) => void projectsActions.setProjectMachinePath(id, agentId, path)}
                 onSetReposRoot={(id, agentId, root) => void projectsActions.setProjectReposRoot(id, agentId, root)}
+                onSetMachineSsh={(id, agentId, host, user) => void projectsActions.setProjectMachineSsh(id, agentId, host, user)}
                 onSetDefaultMachine={(id, agentId) => void projectsActions.setProjectDefaultMachine(id, agentId)}
               />
             ) : (

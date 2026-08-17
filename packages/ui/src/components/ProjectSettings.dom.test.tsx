@@ -21,7 +21,7 @@ function props(over: Partial<ProjectSettingsProps> = {}): ProjectSettingsProps {
     detail: detail(), agents: [],
     onUpdate: vi.fn(), onDelete: vi.fn(), onAddMember: vi.fn(), onUpdateMemberRole: vi.fn(), onRemoveMember: vi.fn(),
     onLinkMachine: vi.fn(), onUnlinkMachine: vi.fn(), onSetMachinePath: vi.fn(),
-    onSetReposRoot: vi.fn(), onSetDefaultMachine: vi.fn(),
+    onSetReposRoot: vi.fn(), onSetMachineSsh: vi.fn(), onSetDefaultMachine: vi.fn(),
     ...over
   }
 }

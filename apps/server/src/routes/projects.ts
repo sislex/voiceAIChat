@@ -258,12 +258,15 @@ export function registerProjectRoutes(
   )
 
   // Папка проекта на конкретной машине.
-  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; reposRoot?: string } }>(
+  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; reposRoot?: string; sshHost?: string; sshUser?: string } }>(
     '/api/projects/:id/machines/:agentId',
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
-        return req.body?.reposRoot !== undefined
+      if (req.body?.sshHost !== undefined || req.body?.sshUser !== undefined) {
+        return withMachineStatus(db.setProjectMachineSsh(uid(req), req.params.id, req.params.agentId, req.body?.sshHost ?? '', req.body?.sshUser ?? '')) ?? nf(reply)
+      }
+      return req.body?.reposRoot !== undefined
         ? withMachineStatus(db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot)) ?? nf(reply)
         : withMachineStatus(db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? '')) ?? nf(reply)
     }
