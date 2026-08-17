@@ -39,7 +39,7 @@ import { TaskTimeline } from './TaskTimeline'
 import type { TaskPreparationRun } from '@shared/qa'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import { canStartCiRun, isActiveCiStatus, type CiRunSummary, type CiTaskReport } from '@shared/ci'
+import { canStartCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport } from '@shared/ci'
 import { AutomationProgressView } from './AutomationProgressView'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
@@ -119,6 +119,93 @@ function fromDateInput(v: string): number | null {
   return new Date(y, m - 1, d, 12).getTime()
 }
 
+type ModelWorkStatus = AutomationProgress['status'] | 'timeout' | undefined
+
+function modelWorkStatusLabel(status: ModelWorkStatus): string {
+  if (status === 'running') return 'выполняется'
+  if (status === 'waiting') return 'ожидает ответа'
+  if (status === 'success') return 'завершена'
+  if (status === 'failed' || status === 'timeout') return 'завершилась ошибкой'
+  if (status === 'cancelled') return 'отменена'
+  return 'ожидает запуска'
+}
+
+interface ModelWorkDisclosureProps {
+  runId: string
+  progress?: AutomationProgress
+  fallbackStatus: ModelWorkStatus
+  fallbackPercent: number | null
+  fallbackDurationMs: number | null
+  children: ReactNode
+}
+
+function ModelWorkDisclosure({
+  runId,
+  progress,
+  fallbackStatus,
+  fallbackPercent,
+  fallbackDurationMs,
+  children
+}: ModelWorkDisclosureProps): JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [tick, setTick] = useState(0)
+  const status = progress?.status ?? fallbackStatus
+  const percent = progress?.percent ?? fallbackPercent
+  const active = status === 'running' || status === 'queued' || status === 'waiting'
+
+  useEffect(() => {
+    if (!active || progress?.startedAt == null) return
+    const timer = setInterval(() => setTick((value) => value + 1), 1000)
+    return () => clearInterval(timer)
+  }, [active, progress?.startedAt])
+
+  void tick
+  const durationMs = progress
+    ? progress.startedAt == null
+      ? progress.elapsedMs
+      : active
+        ? Math.max(progress.elapsedMs, Date.now() - progress.startedAt)
+        : progress.elapsedMs
+    : fallbackDurationMs
+  const statusLabel = modelWorkStatusLabel(status)
+  const detailId = `task-model-work-detail-${runId.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+
+  return (
+    <section className="task-model-work" data-testid="task-model-work" data-run-id={runId}>
+      <button
+        type="button"
+        className="task-model-work__toggle"
+        aria-expanded={open}
+        aria-controls={detailId}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <strong className="task-model-work__title">Работа модели</strong>
+        <span className={`task-model-work__status task-model-work__status--${status ?? 'queued'}`}>{statusLabel}</span>
+        <span
+          className={`task-model-work__bar${percent == null ? ' task-model-work__bar--indeterminate' : ''}`}
+          role="progressbar"
+          aria-label="Прогресс работы модели"
+          aria-valuemin={percent == null ? undefined : 0}
+          aria-valuemax={percent == null ? undefined : 100}
+          aria-valuenow={percent ?? undefined}
+          aria-valuetext={percent == null ? statusLabel : `${percent}% — ${statusLabel}`}
+        >
+          {percent != null && <span style={{ width: `${percent}%` }} />}
+        </span>
+        {percent != null && <span className="task-model-work__percent">{percent}%</span>}
+        {(progress?.currentStep ?? progress?.stage) && <span className="task-model-work__stage" title={progress?.currentStep ?? progress?.stage}>{progress?.currentStep ?? progress?.stage}</span>}
+        <span className="task-model-work__duration">
+          {durationMs != null && durationMs > 0 ? fmtDuration(durationMs) : '—'}
+        </span>
+        <span className="task-model-work__chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div className="task-model-work__detail task-progress-detail" id={detailId} hidden={!open}>
+        {children}
+      </div>
+    </section>
+  )
+}
+
 export function TaskModal(props: TaskModalProps): JSX.Element {
   const { task, board } = props
   const confirm = useConfirm()
@@ -129,7 +216,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
   type TaskTab = 'general' | 'timeline' | 'settings' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'progress' | 'merge' | 'feed' | 'preparation'
-  type ProgressTab = 'overview' | 'checks' | 'changes' | 'kb' | 'delivery' | 'resources'
   const preparationVisible = task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(board.columns.find((item) => item.id === task.columnId)?.semanticType ?? '') && Boolean(task.taskPreparationRunId || task.taskPreparationStatus === 'running')
   const defaultTab = (): TaskTab => {
     if (task.taskPreparationStatus === 'running' || (props.initialTab === 'preparation' && preparationVisible)) return 'preparation'
@@ -138,10 +224,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     return (props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || task.activeMergeRunId ? 'feed' : 'general'
   }
   const [activeTab, setActiveTab] = useState<TaskTab>(defaultTab)
-  const [progressTab, setProgressTab] = useState<ProgressTab>('overview')
-  // Управляется только пользователем и живёт до закрытия карточки; обновления
-  // ciSummary/отчёта не меняют раскрытие блока работы модели.
-  const [modelWorkOpen, setModelWorkOpen] = useState(false)
   const [qaStageRuns, setQaStageRuns] = useState<Partial<Record<QaRunStage, AnyQaStageRun[]>>>({})
   useEffect(() => {
     if (props.draft || task.type !== 'task' || !window.qa?.listStageRuns) return
@@ -790,13 +872,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                   <span className={`lozenge ci-lozenge--${ciTone(props.ciSummary.status)}`}>{ciStatusLabel(props.ciSummary.status)}</span>
                 )}
               </div>
-              {props.ciSummary && (
-                props.ciSummary.progress
-                  ? <AutomationProgressView progress={props.ciSummary.progress} />
-                  : <p className="jcard-ci-phase">
-                      {props.ciSummary.slotProgress.phase} {props.ciSummary.slotProgress.done}/{props.ciSummary.slotProgress.total}
-                      {props.ciSummary.durationMs != null ? ` · ${fmtDuration(props.ciSummary.durationMs)}` : ''}
-                    </p>
+              {props.ciSummary && !props.ciSummary.progress && (
+                <p className="jcard-ci-phase">
+                  {props.ciSummary.slotProgress.phase} {props.ciSummary.slotProgress.done}/{props.ciSummary.slotProgress.total}
+                  {props.ciSummary.durationMs != null ? ` · ${fmtDuration(props.ciSummary.durationMs)}` : ''}
+                </p>
               )}
               <div className="jmodal-ci-actions">
                 {props.ciSummary && props.onOpenCiRun && (
@@ -851,44 +931,44 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           <ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
         </section>
         <section className="task-tab-panel" hidden={activeTab !== 'progress'}>
-          {props.ciSummary?.progress && <AutomationProgressView progress={props.ciSummary.progress} />}
-          {(() => {
-            const progress = props.ciSummary?.progress
-            const status = progress?.status ?? (props.ciSummary?.status === 'awaiting_input' ? 'waiting' : props.ciSummary?.status)
-            const statusLabel = status === 'queued' ? 'ожидает запуска'
-              : status === 'running' ? 'выполняется'
-              : status === 'waiting' ? 'ожидает ответа'
-              : status === 'success' ? 'завершена'
-              : status === 'cancelled' ? 'отменена'
-              : status === 'failed' || status === 'timeout' ? 'завершилась ошибкой'
-              : 'ожидает запуска'
-            const stage = progress?.currentStep ?? progress?.stage ?? props.ciSummary?.slotProgress.phase
-            const percent = progress?.percent ?? (status === 'success' ? 100 : status === 'queued' ? 0 : null)
-            const detailId = 'task-model-work-detail'
-            return <section className="task-model-work" data-testid="task-model-work">
-              <button className="task-model-work__toggle" aria-expanded={modelWorkOpen} aria-controls={detailId} onClick={() => setModelWorkOpen((open) => !open)}>
-                <strong>Работа модели</strong>
-                <span className={`task-model-work__status task-model-work__status--${status ?? 'queued'}`}>{statusLabel}</span>
-                <span className={`task-model-work__bar${percent == null ? ' task-model-work__bar--indeterminate' : ''}`} role="progressbar" aria-label="Прогресс работы модели" aria-valuemin={percent == null ? undefined : 0} aria-valuemax={percent == null ? undefined : 100} aria-valuenow={percent ?? undefined} aria-valuetext={percent == null ? statusLabel : `${percent}% — ${statusLabel}`}>
-                  {percent != null && <span style={{ width: `${percent}%` }} />}
-                </span>
-                {stage && <span className="task-model-work__stage" title={stage}>{stage}</span>}
-                <span className="task-model-work__chevron" aria-hidden="true">⌄</span>
-              </button>
-              {modelWorkOpen && <div className="task-model-work__detail task-progress-detail" id={detailId}>
-                {ciReport.report?.runs[0] ? <><h4>{ciReport.report.runs[0].provider} · {ciReport.report.runs[0].model}</h4><p>Попыток исправления: {ciReport.report.runs[0].fixAttempts}</p><ul>{ciReport.report.runs[0].stages.map((modelStage) => <li key={`${modelStage.kind}:${modelStage.model}`}>{modelStage.kind} · {modelStage.model} · {modelStage.totals.requests} запросов</li>)}</ul></> : <p className="task-tab-empty">Данных о работе модели пока нет.</p>}
-              </div>}
-            </section>
+          {props.ciSummary && (() => {
+            const progress = props.ciSummary.progress
+            const fallbackStatus: ModelWorkStatus = props.ciSummary.status === 'awaiting_input'
+              ? 'waiting'
+              : props.ciSummary.status === 'timeout'
+                ? 'timeout'
+                : props.ciSummary.status === 'skipped'
+                  ? undefined
+                  : props.ciSummary.status
+            const fallbackPercent = fallbackStatus === 'success' ? 100 : fallbackStatus === 'queued' ? 0 : null
+            const reportRun = ciReport.report?.runs.find((run) => run.runId === props.ciSummary!.id) ?? ciReport.report?.runs[0]
+            const hasDetails = Boolean(progress || reportRun || kbUsage.report || ciReport.loading || ciReport.error)
+            return (
+              <ModelWorkDisclosure
+                key={`${props.ciSummary.id}:model-work`}
+                runId={props.ciSummary.id}
+                progress={progress}
+                fallbackStatus={fallbackStatus}
+                fallbackPercent={fallbackPercent}
+                fallbackDurationMs={props.ciSummary.durationMs}
+              >
+                {hasDetails ? <>
+                  {progress && <AutomationProgressView progress={progress} />}
+                  <CiReport report={ciReport.report} loading={ciReport.loading} error={ciReport.error} onOpenRun={props.onOpenCiRun} testId="task-modal-report" />
+                  {kbUsage.report && <KbUsageBrief title="База знаний" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}
+                  {reportRun && <dl className="task-progress-facts">
+                    <dt>Provider</dt><dd>{reportRun.provider || '—'}</dd>
+                    <dt>Модель</dt><dd>{reportRun.model || '—'}</dd>
+                    <dt>Результат</dt><dd>{ciStatusLabel(reportRun.status)}</dd>
+                    <dt>Начало</dt><dd>{reportRun.startedAt ? new Date(reportRun.startedAt).toLocaleString('ru') : '—'}</dd>
+                    <dt>Завершение</dt><dd>{reportRun.finishedAt ? new Date(reportRun.finishedAt).toLocaleString('ru') : '—'}</dd>
+                    <dt>Итоговая продолжительность</dt><dd>{reportRun.durationMs != null ? fmtDuration(reportRun.durationMs) : '—'}</dd>
+                  </dl>}
+                </> : <p className="task-tab-empty">Подробности работы модели пока не поступили.</p>}
+              </ModelWorkDisclosure>
+            )
           })()}
-          <nav className="task-subtabs" role="tablist" aria-label="Ход выполнения">
-            {([['overview','Обзор'],['checks','Проверки'],['changes','Изменения'],['kb','База знаний'],['delivery','Результат и доставка'],['resources','Ресурсы']] as const).map(([id,label]) => <button key={id} role="tab" aria-selected={progressTab === id} className={progressTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setProgressTab(id)}>{label}</button>)}
-          </nav>
-          {progressTab === 'overview' && <CiReport report={ciReport.report} loading={ciReport.loading} error={ciReport.error} onOpenRun={props.onOpenCiRun} testId="task-modal-report" />}
-          <div hidden={progressTab !== 'kb'}>{kbUsage.report && <KbUsageBrief title="База знаний" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}</div>
-          {progressTab === 'checks' && (ciReport.report?.runs[0]?.steps.length ? <ol className="task-progress-list">{ciReport.report.runs[0].steps.map((step) => <li key={step.id} data-status={step.status}><span>{step.title}</span><span>{ciStatusLabel(step.status)}{step.durationMs != null ? ` · ${fmtDuration(step.durationMs)}` : ''}</span></li>)}</ol> : <p className="task-tab-empty">Сервер не сообщил проверки для этого запуска.</p>)}
-          {progressTab === 'changes' && <p className="task-tab-empty">Сведения о ветке, файлах и коммитах появятся, когда сервер включит их в отчёт запуска.</p>}
-          {progressTab === 'delivery' && (ciReport.report?.runs[0] ? <dl className="task-progress-facts"><dt>Результат</dt><dd>{ciStatusLabel(ciReport.report.runs[0].status)}</dd><dt>Начало</dt><dd>{ciReport.report.runs[0].startedAt ? new Date(ciReport.report.runs[0].startedAt).toLocaleString('ru') : '—'}</dd><dt>Завершение</dt><dd>{ciReport.report.runs[0].finishedAt ? new Date(ciReport.report.runs[0].finishedAt).toLocaleString('ru') : '—'}</dd></dl> : <p className="task-tab-empty">Результата доставки пока нет.</p>)}
-          {progressTab === 'resources' && (ciReport.report?.runs[0] ? <dl className="task-progress-facts"><dt>Общее время</dt><dd>{ciReport.report.runs[0].durationMs != null ? fmtDuration(ciReport.report.runs[0].durationMs) : '—'}</dd><dt>Запросы модели</dt><dd>{ciReport.report.runs[0].totals.requests}</dd><dt>Токены</dt><dd>{ciReport.report.runs[0].totals.inputTokens + ciReport.report.runs[0].totals.outputTokens}</dd><dt>Инструменты</dt><dd>{ciReport.report.runs[0].toolCalls ? Object.values(ciReport.report.runs[0].toolCalls).reduce((sum, value) => sum + value, 0) : '—'}</dd></dl> : <p className="task-tab-empty">Данных о ресурсах пока нет.</p>)}
+          {!props.ciSummary && kbUsage.report && <KbUsageBrief title="База знаний" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}
         </section>
         <section className="task-tab-panel" data-testid="task-merge-tab" hidden={activeTab !== 'merge'}>
           <MergePanel

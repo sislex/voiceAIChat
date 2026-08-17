@@ -601,9 +601,14 @@ describe('TaskModal — сворачиваемая работа модели', (
     expect(within(toggle).getByRole('progressbar', { name: 'Прогресс работы модели' })).toBeInTheDocument()
     expect(within(block).queryByText('Данных о работе модели пока нет.')).not.toBeInTheDocument()
 
+    const detailId = toggle.getAttribute('aria-controls')!
+    expect(detailId).toBe('task-model-work-detail-run-1')
+    expect(document.getElementById(detailId)).toHaveAttribute('hidden')
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(within(block).getByText('Данных о работе модели пока нет.')).toBeInTheDocument()
+    expect(document.getElementById(detailId)).not.toHaveAttribute('hidden')
+    expect(within(block).getByText(/Начало:/)).toBeInTheDocument()
+    expect(within(block).getByRole('link', { name: 'Журнал' })).toBeInTheDocument()
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
 
@@ -618,8 +623,10 @@ describe('TaskModal — сворачиваемая работа модели', (
     const initial = props({ ciSummary: mkSummary({ progress: progress() }) })
     const view = render(<TaskModal {...initial} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Ход выполнения', hidden: true }))
-    const toggle = within(screen.getByTestId('task-model-work')).getByRole('button', { name: /Работа модели/ })
+    const block = screen.getByTestId('task-model-work')
+    const toggle = within(block).getByRole('button', { name: /Работа модели/ })
     fireEvent.click(toggle)
+    toggle.focus()
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
 
     view.rerender(<TaskModal {...initial} ciSummary={mkSummary({
@@ -628,12 +635,45 @@ describe('TaskModal — сворачиваемая работа модели', (
       progress: progress({ version: 2, status: 'success', percent: 100, currentStep: 'Готово', finishedAt: 5_000 })
     })} />)
 
-    const updated = within(screen.getByTestId('task-model-work')).getByRole('button', { name: /Работа модели/ })
+    expect(screen.getByTestId('task-model-work')).toBe(block)
+    const updated = within(block).getByRole('button', { name: /Работа модели/ })
+    expect(updated).toHaveFocus()
     expect(updated).toHaveAttribute('aria-expanded', 'true')
     expect(within(updated).getByText('завершена')).toBeInTheDocument()
     expect(within(updated).getByText('Готово')).toBeInTheDocument()
     expect(within(updated).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100')
-    expect(await within(screen.getByTestId('task-model-work')).findByText(/claude · opus/i)).toBeInTheDocument()
+    expect(await within(block).findByText('claude')).toBeInTheDocument()
+    expect(within(block).getAllByText('opus').length).toBeGreaterThan(0)
+  })
+
+  it('показывает один контейнер и журнал не переключает disclosure', async () => {
+    render(<TaskModal {...props({ ciSummary: mkSummary({ progress: progress() }) })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Ход выполнения', hidden: true }))
+
+    expect(screen.getAllByTestId('task-model-work')).toHaveLength(1)
+    expect(screen.queryByText('running')).not.toBeInTheDocument()
+    const block = screen.getByTestId('task-model-work')
+    const toggle = within(block).getByRole('button', { name: /Работа модели/ })
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(within(block).getByRole('link', { name: 'Журнал' }))
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('ошибка обновляет компактный статус, но не раскрывает блок', () => {
+    const initial = props({ ciSummary: mkSummary({ progress: progress() }) })
+    const view = render(<TaskModal {...initial} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Ход выполнения', hidden: true }))
+    const toggle = within(screen.getByTestId('task-model-work')).getByRole('button', { name: /Работа модели/ })
+
+    view.rerender(<TaskModal {...initial} ciSummary={mkSummary({
+      status: 'failed',
+      modelActive: false,
+      progress: progress({ version: 2, status: 'failed' })
+    })} />)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(within(toggle).getByText('завершилась ошибкой')).toBeInTheDocument()
   })
 
   it.each([
