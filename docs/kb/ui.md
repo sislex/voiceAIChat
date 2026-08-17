@@ -1,11 +1,13 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-17
-checked: 22dee7b
+checked: e6bf057
 areas:
   - packages/ui/src
   - packages/ui-kit/src
   - packages/ui-kit/package.json
+  - packages/chat-app/src
+  - packages/chat-app/package.json
   - packages/projects-app/src
   - packages/projects-app/package.json
   - apps/web/src
@@ -19,7 +21,7 @@ areas:
 
 # Интерфейс: React, store, remote-мосты и голосовой UX
 
-`packages/ui` — один React-интерфейс для браузера и Electron. `apps/web` только вычисляет URL сервера, вызывает `installRemoteBridges()` до первого импорта состояния приложения, монтирует `<App/>` и подключает CSS. Поэтому продуктовые экраны, состояние и поведение всегда меняются в `packages/ui`.
+`packages/ui` остаётся React-host для браузера и Electron, а Chat начал выделяться в workspace-пакет `@voicechat/chat-app`. `apps/web` вычисляет URL сервера, вызывает `installRemoteBridges()` до первого импорта состояния приложения, монтирует `<App/>` и подключает стили обоих пакетов. Большая часть продуктовых Chat-компонентов пока всё ещё меняется в `packages/ui`; независимая граница нового пакета описана ниже.
 
 ## Слои
 
@@ -39,6 +41,12 @@ web/desktop host → installRemoteBridges → HTTP + WebSocket → server
 
 **Глобального `voiceStore`/`useVoiceStore` больше нет** (CHAT-236): состояние
 разобрано на независимые домены, а `voiceStore` теперь отвечает только за голос.
+
+### Фактическая граница `@voicechat/chat-app`
+
+Пакет владеет React-независимым `chatStore` и его ядром с `dispose`, чистыми read-model helpers телеметрии БЗ и загрузки, публичным `ChatClient` и интеграционными портами, parser/builder маршрутов Chat, собственными стилями и каркасными React-поверхностями `ChatProvider`, `ChatApp`, `ChatPage`, `EmbeddedChat`, `SplitChatWorkspace` и `ChatNavigation`. Полный публичный контракт собран в `packages/chat-app/src/index.ts`; `AppRuntime` создаёт store только через этот вход и внедряет существующие host-клиенты и порты. Старый `packages/ui/src/store/domains/chatStore.ts` оставлен как совместимый реэкспорт, реализации состояния в нём больше нет.
+
+Граница пока частичная: основной layout и маршрутизация остаются в `packages/ui/src/App.tsx`, а полноценные `ChatColumn`, timeline/renderers, `VoiceBar`, настройки разговора и остальные продуктовые Chat-компоненты физически ещё находятся в `packages/ui/src/components`. Публичные поверхности нового пакета сейчас являются контейнерами для переданных `children`, а не самостоятельной сборкой полного чата. Канбан использует публичный `EmbeddedChat`, но внутрь него по-прежнему передаёт host-компоненты `ChatColumn` и `VoiceBar`. Поэтому наличие экспорта в `@voicechat/chat-app` нельзя трактовать как завершённый перенос всего Chat UI.
 
 | Домен | Что внутри |
 |---|---|
