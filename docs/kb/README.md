@@ -21,7 +21,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-15 | ⚠ код изменён 2026-08-17, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 11 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-16 | ⚠ 13 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 386 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 387 коммит(ов) в areas после сверки: 91794e0 docs(kb): update after merge 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-16 | ⚠ 14 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ⚠ код изменён 2026-08-17, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 1 коммит(ов) в areas после сверки: 5318356 CHAT-253: стадия kb_update merge-рана наследует движок development-рана |
