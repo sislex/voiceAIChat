@@ -232,3 +232,37 @@ describe('подготовка к разработке: выбор модели 
     expect(message).not.toContain('не авторизован')
   })
 })
+
+describe('task-launch создаёт сразу в подготовке', () => {
+  const payload = { proposalId: 'message-1:proposal-1:preparation', title: 'Новая задача', description: 'Описание', acceptanceCriteria: 'Критерий', priority: 'high', skills: ['typescript'] }
+
+  it('находит переименованную колонку только по semantic type и идемпотентен', async () => {
+    const { project } = await taskInBacklog()
+    const board = db.getBoard('admin', project.id)!
+    const preparation = board.columns.find((column) => column.semanticType === 'preparation')!
+    db.updateColumn('admin', project.id, preparation.id, { name: 'Любое новое имя' })
+
+    const first = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/task-launch/preparation`, payload })
+    const second = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/task-launch/preparation`, payload })
+
+    expect(first.statusCode).toBe(200)
+    expect(second.json()).toEqual(first.json())
+    const result = first.json() as { taskId: string; runId: string; status: string }
+    expect(result.status).toBe('success')
+    expect(db.getBoard('admin', project.id)!.tasks.find((task) => task.id === result.taskId)?.columnId).toBe(preparation.id)
+    expect(db.listTaskPreparationRuns('admin', project.id, result.taskId)).toHaveLength(1)
+    expect(claudeCalls).toHaveLength(1)
+  })
+
+  it('без semantic preparation возвращает ошибку конфигурации и ничего не создаёт', async () => {
+    const { project } = await taskInBacklog()
+    const before = db.getBoard('admin', project.id)!.tasks.length
+    ;(db as unknown as { db: { prepare(sql: string): { run(...args: unknown[]): unknown } } }).db.prepare(`DELETE FROM kanban_columns WHERE project_id=? AND semantic_type='preparation'`).run(project.id)
+
+    const response = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/task-launch/preparation`, payload })
+
+    expect(response.statusCode).toBe(409)
+    expect(response.json().error).toContain('semantic type preparation')
+    expect(db.getBoard('admin', project.id)!.tasks).toHaveLength(before)
+  })
+})

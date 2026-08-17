@@ -739,6 +739,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (i >= 0) columns.splice(i, 1)
       for (let j = tasks.length - 1; j >= 0; j--) if (tasks[j].columnId === columnId) tasks.splice(j, 1)
     },
+    'tasks:createFromProposalInPreparation': async ({ proposalId }) => ({ type: 'preparation', status: 'success', taskId: `task-${proposalId}`, runId: `prep-${proposalId}` }),
     'tasks:create': async ({ projectId, columnId, title, description, acceptanceCriteria, type, parentId, priority, assignee, skills }) => {
       const ts = tick()
       const max = Math.max(0, ...tasks.filter((t) => t.columnId === columnId).map((t) => t.position))
