@@ -3,6 +3,12 @@ import type { KanbanColumnSemanticType } from './projects'
 export type MergeStage = 'queued' | 'checking' | 'fetching' | 'merging' | 'resolving_conflicts' | 'kb_update' | 'testing' | 'pushing' | 'success' | 'failed' | 'cancelled' | 'decision_required'
 export type MergeRunStatus = MergeStage | 'deploying' | 'production_checks' | 'rolling_back' | 'timeout'
 export type MergeStageStatus = 'queued' | 'running' | 'passed' | 'failed' | 'skipped'
+export type MergeLlmFallbackReason = 'provider_unavailable' | 'model_unavailable'
+
+export interface MergeLlmOverride {
+  provider?: 'claude' | 'codex'
+  model?: string
+}
 
 export const ACTIVE_MERGE_STATUSES: readonly MergeRunStatus[] = [
   'queued', 'checking', 'fetching', 'merging', 'resolving_conflicts', 'kb_update', 'testing', 'pushing', 'deploying', 'production_checks', 'rolling_back'
@@ -37,6 +43,10 @@ export interface MergeRun {
   llmEngineId: string | null
   llmProvider: 'claude' | 'codex'
   llmModel: string
+  /** Запрошенная пара присутствует у новых ранов; legacy-записи её не имеют. */
+  requestedLlmProvider?: 'claude' | 'codex' | null
+  requestedLlmModel?: string | null
+  llmFallbackReason?: MergeLlmFallbackReason | null
   stage: MergeStage
   stages: MergeStageRecord[]
   conflicts: string[]

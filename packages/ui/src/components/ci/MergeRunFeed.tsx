@@ -14,6 +14,15 @@ const STAGE_LABEL: Record<string, string> = {
   resolving_conflicts: 'Конфликты', kb_update: 'База знаний', testing: 'Проверки проекта', pushing: 'Публикация в main'
 }
 
+export function mergeLlmFallbackMessage(run: MergeRun): string | null {
+  if (!run.llmFallbackReason || !run.requestedLlmProvider) return null
+  const requested = `${run.requestedLlmProvider}${run.requestedLlmModel ? ` · ${run.requestedLlmModel}` : ''}`
+  const reason = run.llmFallbackReason === 'provider_unavailable'
+    ? 'запрошенный provider недоступен'
+    : 'запрошенная модель недоступна'
+  return `LLM заменён: был запрошен ${requested}, но ${reason}; запущен ${run.llmProvider} · ${run.llmModel}.`
+}
+
 export function mergeStatusTone(status: string): 'ok' | 'err' | 'warn' | 'run' {
   if (status === 'success') return 'ok'
   if (status === 'failed' || status === 'cancelled') return 'err'
@@ -83,6 +92,7 @@ export function MergeRunFeed({ runId, machines = [], onRunChanged }: { runId: st
   const terminal = ['success', 'failed', 'cancelled', 'decision_required'].includes(run.status)
   const duration = (run.finishedAt ?? Date.now()) - (run.startedAt ?? run.createdAt)
   const stale = /stale source/i.test(run.error ?? '')
+  const llmFallbackMessage = mergeLlmFallbackMessage(run)
   const act = (value: MergeRun): void => { setRun(value); setRetryAgentId(value.agentId); onRunChanged?.() }
   const retry = (unpin = false): void => { void window.ci?.retryMerge(run.id, retryAgentId || run.agentId, unpin).then(act) }
   const retryMachines = machines.some((machine) => machine.agentId === run.agentId)
@@ -113,6 +123,7 @@ export function MergeRunFeed({ runId, machines = [], onRunChanged }: { runId: st
         </div>
       </header>
       <MergeKbDisclosure run={run} />
+      {llmFallbackMessage && <div className="merge-alert" role="status" data-testid="merge-llm-fallback">{llmFallbackMessage}</div>}
       {run.error && (
         <div className="merge-alert" role="alert">
           <strong>{run.error}</strong>
@@ -149,7 +160,7 @@ export function MergeRunFeed({ runId, machines = [], onRunChanged }: { runId: st
       </details>
       <dl className="merge-feed-details">
         <dt>Инициатор</dt><dd>{run.triggeredBy}</dd>
-        <dt>LLM БЗ</dt><dd>{run.llmEngineId ?? run.llmProvider} · {run.llmModel || 'по умолчанию'}</dd>
+        <dt>LLM БЗ</dt><dd>{run.llmProvider} · {run.llmModel || 'по умолчанию'}</dd>
         <dt>Создан</dt><dd>{new Date(run.createdAt).toLocaleString()}</dd>
       </dl>
     </section>
