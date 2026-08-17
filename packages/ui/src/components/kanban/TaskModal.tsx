@@ -215,6 +215,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [criteria, setCriteria] = useState(() => normalizeAcceptanceCriteria(task.acceptanceCriteria))
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
+  useEffect(() => {
+    if (!props.draft || task.assignee) return
+    const current = props.members.find((member) => member.role === 'owner' && member.active !== false)?.username
+    if (current) props.onUpdate(task.id, { assignee: current })
+  }, [props.draft, props.members, task.id, task.assignee])
   type TaskTab = 'general' | 'timeline' | 'settings' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'progress' | 'merge' | 'feed' | 'preparation'
   const preparationVisible = task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(board.columns.find((item) => item.id === task.columnId)?.semanticType ?? '') && Boolean(task.taskPreparationRunId || task.taskPreparationStatus === 'running')
   const defaultTab = (): TaskTab => {
@@ -438,11 +443,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           onChange={(e) => props.onUpdate(task.id, { assignee: e.target.value || null })}
         >
           <option value="">Не назначен</option>
+          {task.assignee && !props.members.some((member) => member.username === task.assignee) && (
+            <option value={task.assignee}>{task.assignee}</option>
+          )}
           {props.members.filter((m) => m.active !== false).map((m) => (
             <option key={m.username} value={m.username}>{m.username}</option>
           ))}
         </select>
       </span>
+      {props.draft && <small>Если не выбрать другого исполнителя, задача будет назначена на вас.</small>}
     </label>
   )
 
@@ -742,6 +751,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             <div className="jmodal-side-fields" data-testid="task-modal-details">
               {!mobile && statusField}
               {!mobile && assigneeField}
+              {!props.draft && (
+                <div className="jmodal-field">
+                  Автор
+                  <strong>{task.createdByName ?? task.createdBy ?? 'Нет данных'}</strong>
+                </div>
+              )}
               <div className="jmodal-field">
                 Метки
                 <span className="jmodal-labels">

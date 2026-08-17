@@ -969,7 +969,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const project = projects.projects.find((item) => item.id === projectId)
     const detail = projects.projectDetail?.id === projectId
       ? projects.projectDetail
-      : await projectsActions.fetchProjectDetail(projectId)
+      : await api['projects:get']({ id: projectId })
+    const currentUserName = session.currentUser?.name ?? detail?.members.find((member) => member.role === 'owner')?.username ?? project?.createdBy ?? null
     const now = Date.now()
     const provider = allowedProviders.includes(ciProvider) ? ciProvider : (allowedProviders[0] ?? ciProvider)
     const models = provider === 'codex' ? allowedCodexModels : allowedClaudeModels
@@ -990,7 +991,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         description: request.description,
         acceptanceCriteria: request.acceptanceCriteria,
         priority: 'medium',
-        assignee: null,
+        assignee: currentUserName,
+        createdBy: currentUserName,
+        createdByName: currentUserName,
         labels: [],
         skills: project?.defaultSkills.task ?? [],
         storyPoints: null,
@@ -1007,6 +1010,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     })
     return true
   }
+
+  useEffect(() => {
+    if (taskProposal && !taskProposal.task.assignee && session.currentUser?.name) {
+      setTaskProposal({ ...taskProposal, task: { ...taskProposal.task, assignee: session.currentUser.name } })
+    }
+  }, [taskProposal, session.currentUser?.name])
 
   useEffect(() => {
     if (taskProposal || !activeConversation || !inChat || routeChatId !== chat.activeId) return
