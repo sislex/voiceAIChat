@@ -3953,7 +3953,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /* ===== Канбан в стиле Jira ============================================== */
-.toolpage > .jboard-wrap { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* Без привязки к родителю: доска живёт и прямо в .toolpage (Storybook), и через
+   .widget-assistant-widget (рамка ассистента на странице проекта). Селектор
+   `.toolpage > .jboard-wrap` после появления рамки перестал срабатывать — обёртка
+   теряла ограничение высоты, и вертикальный скролл колонок не включался. */
+.jboard-wrap { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 
 /* Панель фильтров */
 .jboard-filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px 4px; flex: none; }
@@ -4430,6 +4434,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    где шапка стоит одна, потолок просто не применяется. */
 .taskchat { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface); max-height: 45%; min-height: 0; }
 .taskchat-top { display: flex; align-items: center; gap: 8px; flex: none; }
+.taskchat-cancelled { flex: none; border: 1px solid var(--ci-removed); border-radius: 6px; padding: 5px 8px; background: color-mix(in srgb, var(--ci-removed) 12%, transparent); color: var(--ci-removed); font-size: 12px; font-weight: 700; }
 .taskchat-crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
 .taskchat-crumb { color: var(--text-dim); }
 .taskchat-sep { color: var(--text-dim); opacity: 0.6; }

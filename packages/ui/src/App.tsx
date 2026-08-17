@@ -1035,7 +1035,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.messages, chat.activeId, routeChatId, inChat, taskProposal, activeConversation?.id, activeConversation?.projectId])
 
-  const chooseTaskLaunch = async (mode: 'todo' | 'in-progress' | 'chat'): Promise<void> => {
+  const chooseTaskLaunch = async (mode: 'todo' | 'preparation' | 'chat'): Promise<void> => {
     if (!taskProposal || taskLaunchPending) return
     const task = taskProposal.task
     if (!task.title.trim()) return
@@ -1061,18 +1061,25 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           dueDate: task.dueDate
         })
         toast.success('Задача создана в TODO')
-      } else if (mode === 'in-progress') {
-        const run = await projectsActions.createTaskAndStartCi(taskProposal.projectId, { ...task, provider: taskProposal.provider, model: taskProposal.model })
-        if (!run) return
-        toast.success('Задача создана и поставлена в CI-очередь')
+      } else if (mode === 'preparation') {
+        const result = await projectsActions.createTaskFromProposalInPreparation(taskProposal.projectId, `${taskProposal.messageId}:${taskProposal.proposalId}:preparation`, task)
+        await chatActions.updateTaskLaunchStatus(taskProposal.messageId, taskProposal.proposalId, 'created', result)
+        chatActions.setDraft('Пользователь выбрал: создать предложенную задачу в подготовке к разработке')
+        await chatActions.submitText()
+        if (result.type === 'preparation' && result.status === 'partial') {
+          toast.error(`Задача создана, но подготовка не запущена: ${result.error}. Повторите действие безопасно.`)
+          return
+        }
+        toast.success('Задача создана, подготовка запущена')
+        setTaskProposal(null)
+        navigate(`/projects/${taskProposal.projectId}/task/${result.taskId}`)
+        return
       }
       await chatActions.updateTaskLaunchStatus(taskProposal.messageId, taskProposal.proposalId, mode === 'chat' ? 'declined' : 'created')
       setTaskProposal(null)
       const selection = mode === 'todo'
         ? 'Пользователь выбрал: создать предложенную задачу в TODO.'
-        : mode === 'in-progress'
-          ? 'Пользователь выбрал: создать предложенную задачу в InProgress и начать разработку.'
-          : 'Пользователь выбрал: работать над предложенной задачей в текущем чате без создания карточки.'
+        : 'Пользователь выбрал: работать над предложенной задачей в текущем чате без создания карточки.'
       chatActions.setDraft(selection)
       await chatActions.submitText()
       if (mode === 'chat') toast.success('Продолжаем работу в текущем чате')
@@ -1499,6 +1506,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               showDoneTaskChats={chat.showDoneTaskChats}
               onShowDoneTaskChatsChange={(show) => void chatActions.setShowDoneTaskChats(show)}
               members={projects.projectDetail?.members ?? []}
+              currentUserId={session.currentUser?.name ?? null}
               currentUser={session.currentUser?.name ?? null}
               onCreateColumn={(name) => void projectsActions.createColumn(name)}
               onUpdateColumn={(id, fields) => void projectsActions.updateColumn(id, fields)}
@@ -1713,9 +1721,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             </label>
           </>}
           footer={<>
-            <Button variant="secondary" onClick={() => void chooseTaskLaunch('todo')} loading={taskLaunchPending} disabled={!taskProposal.task.title.trim()}>Создать в TODO</Button>
-            <Button variant="primary" onClick={() => void chooseTaskLaunch('in-progress')} loading={taskLaunchPending} disabled={!taskProposal.task.title.trim()}>Создать в InProgress</Button>
-            <Button variant="secondary" onClick={() => void chooseTaskLaunch('chat')} loading={taskLaunchPending}>Работать в текущем чате</Button>
+            {taskLaunchPending && <span role="status">Создаём и запускаем подготовку…</span>}
+            <Button variant="secondary" onClick={() => void chooseTaskLaunch('todo')} loading={taskLaunchPending} disabled={taskLaunchPending || !taskProposal.task.title.trim()}>Создать в TODO</Button>
+            <Button variant="primary" onClick={() => void chooseTaskLaunch('preparation')} loading={taskLaunchPending} disabled={taskLaunchPending || !taskProposal.task.title.trim()}>Создать в подготовке к разработке</Button>
+            <Button variant="secondary" onClick={() => void chooseTaskLaunch('chat')} loading={taskLaunchPending} disabled={taskLaunchPending}>Работать в текущем чате</Button>
           </>}
         />
       )}

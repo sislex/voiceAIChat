@@ -58,13 +58,29 @@ describe('app.css — скролл длинной колонки доски', ()
     expect(decl('.toolpage > .proj-detail', 'min-height')).toBe('0')
   })
 
+  it('рамка ассистента между страницей и доской не теряет ограничения высоты', () => {
+    // На странице проекта доска вложена не в .toolpage напрямую, а через
+    // WidgetAssistantFrame: .toolpage → .widget-assistant →
+    // .widget-assistant-widget → .jboard-wrap. Привязка правила обёртки к
+    // родителю (`.toolpage > .jboard-wrap`) уже однажды вернула баг «колонка
+    // не скроллится»: рамка появилась, селектор перестал срабатывать.
+    expect(decl('.widget-assistant', 'display')).toBe('flex')
+    expect(decl('.widget-assistant', 'flex')).toBe('1 1 auto')
+    expect(decl('.widget-assistant', 'min-height')).toBe('0')
+    expect(decl('.widget-assistant', 'overflow')).toBe('hidden')
+    expect(decl('.widget-assistant-widget', 'display')).toBe('flex')
+    expect(decl('.widget-assistant-widget', 'flex')).toBe('1 1 auto')
+    expect(decl('.widget-assistant-widget', 'min-height')).toBe('0')
+  })
+
   it('flex-цепочка от рамки до списков карточек не теряет ограничения размеров', () => {
-    for (const selector of ['.toolpage > .jboard-wrap', '.jboard']) {
+    // Правило обёртки — без привязки к родителю, см. тест про рамку ассистента.
+    for (const selector of ['.jboard-wrap', '.jboard']) {
       expect(decl(selector, 'flex'), selector).toBe('1')
       expect(decl(selector, 'min-height'), selector).toBe('0')
       expect(decl(selector, 'min-width'), selector).toBe('0')
     }
-    expect(decl('.toolpage > .jboard-wrap', 'overflow')).toBe('hidden')
+    expect(decl('.jboard-wrap', 'overflow')).toBe('hidden')
     expect(decl('.jboard', 'overflow-x')).toBe('auto')
     expect(decl('.jboard', 'overflow-y')).toBe('hidden')
     expect(decl('.jboard', 'display')).toBe('flex')

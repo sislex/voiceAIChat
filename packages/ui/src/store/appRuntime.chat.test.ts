@@ -1859,6 +1859,31 @@ describe('voiceStore — чаты завершённых задач', () => {
     expect(store.getState().conversations.map((c) => c.id)).toContain(chatId)
   })
 
+  it('cancelled скрыт даже при включённых done-чатах и возвращается без потери черновика', async () => {
+    const { store, api } = makeStore(['Обычный'])
+    const p = await api['projects:create']({ name: 'P' })
+    const board = await api['board:get']({ id: p.id })
+    const dev = board.columns.find((c) => c.semanticType === 'development')!
+    const cancelled = board.columns.find((c) => c.semanticType === 'cancelled')!
+    const task = await api['tasks:create']({ projectId: p.id, columnId: dev.id, title: 'Отмена' })
+    const chat = await api['tasks:openChat']({ projectId: p.id, taskId: task.id })
+    await store.actions.init()
+    await store.actions.setSidebarProject(p.id)
+    expect(await store.actions.selectConversation(chat.id)).toBe(true)
+    store.actions.setDraft('не потерять')
+    await store.actions.setShowDoneTaskChats(true)
+
+    await api['tasks:move']({ projectId: p.id, taskId: task.id, columnId: cancelled.id })
+    await store.actions.retryConversations()
+    expect(store.getState().activeId).toBe(chat.id)
+    expect(store.getState().draft).toBe('не потерять')
+    expect(store.getState().conversations.map((c) => c.id)).not.toContain(chat.id)
+
+    await api['tasks:move']({ projectId: p.id, taskId: task.id, columnId: dev.id })
+    await store.actions.retryConversations()
+    expect(store.getState().conversations.map((c) => c.id)).toContain(chat.id)
+  })
+
   it('возврат задачи из «Готово» возвращает чат в список', async () => {
     const { store, api, chatId, taskId, projectId } = await withDoneTaskChat()
     const board = await api['board:get']({ id: projectId, includeCompleted: true })
