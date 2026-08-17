@@ -1490,6 +1490,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               showDoneTaskChats={chat.showDoneTaskChats}
               onShowDoneTaskChatsChange={(show) => void chatActions.setShowDoneTaskChats(show)}
               members={projects.projectDetail?.members ?? []}
+              currentUserId={session.currentUser?.name ?? null}
               currentUser={session.currentUser?.name ?? null}
               onCreateColumn={(name) => void projectsActions.createColumn(name)}
               onUpdateColumn={(id, fields) => void projectsActions.updateColumn(id, fields)}
