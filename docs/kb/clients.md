@@ -81,3 +81,6 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 | Окно/tray/server config/legacy import | `apps/desktop` |
 | Exec/fs/pty/telemetry машины | `apps/agent` |
 | Setup/log/permissions упаковки агента | `apps/agent-tray` |
+| Пользовательские machines/terminal/files/LLM history/KB/CI monitor/diagnostics | `packages/operations-app` |
+
+Operations-код не знает `window`, fetch, WebSocket, SSE или Electron. Публичные `MachinesClient`, `TerminalClient`, `FilesClient`, `LlmObserverClient`, `KnowledgeClient`, `CiMonitorClient` и `DiagnosticsClient` реализуются host adapters поверх существующих logical bridges; транспортные протоколы при этом не меняются.

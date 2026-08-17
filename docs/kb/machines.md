@@ -593,3 +593,7 @@ PTY-процесс принадлежит `AgentRegistry`, а не WebSocket б�
 «Новый сеанс» всегда заводит новый `ptyId`, а открытие утилиты по (машина + каталог)
 переиспользует существующую вкладку. Убийство PTY делает только тот, кто закрывает
 вкладку — стор сам ничего не убивает.
+
+## Operations read model и lifecycle
+
+`@voicechat/operations-app` публикует `MachineCatalogEntry` только с `id`, `name`, `platform`, `online`, `version`, capabilities и безопасной policy summary (`readOnly`, `network`, `allowedDirs`). Токены и transport handles в модель не входят. `MachineUtilityPort` принимает kind, `agentId`, path и `revealFile`; выбор online-машины и cwd остаётся внутри Operations. Console, PTY и Explorer имеют независимые controller generations; поздние ответы Explorer и заменённые PTY-сессии игнорируются.

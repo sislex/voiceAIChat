@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@voicechat/chat-app": "*",
+    "@voicechat/operations-app": "*",
     "@voicechat/projects-app": "*",
     "@voicechat/shared": "*",
     "@voicechat/ui-kit": "*",
