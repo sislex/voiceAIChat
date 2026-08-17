@@ -10,6 +10,18 @@ import { makeBoard, makeColumn, makeDefaultColumns, makeMembers, makeTask, noopH
 const meta: Meta<typeof KanbanBoard> = {
   title: 'Kanban/KanbanBoard',
   component: KanbanBoard,
+  // В приложении доска живёт внутри .toolpage с ограниченной высотой
+  // (ProjectPage → ToolFrame) — только тогда у колонки появляется свой
+  // вертикальный скролл (.jcol-body { overflow-y: auto }). Без обёртки витрина
+  // росла бы вниз, и в ColumnDensity скролл колонки было не увидеть.
+  // 32px — паддинг рамки превью (.storybook/preview.tsx).
+  decorators: [
+    (Story) => (
+      <div className="toolpage" style={{ height: 'calc(100vh - 32px)' }}>
+        <Story />
+      </div>
+    )
+  ],
   args: {
     projectName: 'Голос Чат',
     loading: false,
