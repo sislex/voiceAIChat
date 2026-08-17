@@ -821,6 +821,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'tasks:listPreparationRuns': async () => [],
     'tasks:cancelPreparationRun': async ({ runId }) => ({ id: runId, projectId: '', taskId: '', status: 'cancelled', attempt: 1, maxAttempts: 1, log: '', error: 'Подготовка отменена пользователем', readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: nowMs, canRetry: true, canCancel: false }),
     'tasks:retryPreparationRun': async ({ runId }) => ({ id: `${runId}-retry`, projectId: '', taskId: '', status: 'running', attempt: 1, maxAttempts: 1, log: '', error: null, readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: null, canRetry: false, canCancel: true }),
+    'tasks:answerPreparationQuestion': async ({ questionId, answer }) => ({ accepted: true, alreadyAnswered: false, question: { questionId, attemptId: '', text: '', material: true, status: 'answered', answer, askedAt: nowMs, answeredAt: nowMs, answeredBy: 'test' } }),
+    'tasks:exportPreparationRun': async () => {},
     'tasks:delete': async ({ taskId }) => {
       const i = tasks.findIndex((x) => x.id === taskId)
       if (i >= 0) tasks.splice(i, 1)

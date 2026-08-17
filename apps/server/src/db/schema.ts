@@ -1061,19 +1061,51 @@ CREATE TABLE IF NOT EXISTS task_preparation_runs (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
   task_id TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'running',
+  status TEXT NOT NULL DEFAULT 'queued',
+  phase TEXT NOT NULL DEFAULT 'initialization',
   attempt INTEGER NOT NULL DEFAULT 1,
+  task_key TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  profile_id TEXT NOT NULL DEFAULT '',
   log TEXT NOT NULL DEFAULT '',
   error TEXT,
   readiness_json TEXT,
   gate_reasons_json TEXT NOT NULL DEFAULT '[]',
+  gate_results_json TEXT NOT NULL DEFAULT '[]',
   created_at INTEGER NOT NULL,
+  started_at INTEGER,
   finished_at INTEGER,
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_task_preparation_task ON task_preparation_runs(task_id, created_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_task_preparation_active ON task_preparation_runs(task_id) WHERE status = 'running';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_preparation_active ON task_preparation_runs(task_id) WHERE status IN ('queued','running','waiting_for_answer','validating');
+
+CREATE TABLE IF NOT EXISTS task_preparation_events (
+  event_id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  timestamp INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  text TEXT NOT NULL,
+  data_json TEXT,
+  UNIQUE(attempt_id, sequence),
+  FOREIGN KEY (attempt_id) REFERENCES task_preparation_runs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_preparation_events_attempt ON task_preparation_events(attempt_id, sequence);
+CREATE TABLE IF NOT EXISTS task_preparation_questions (
+  question_id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  material INTEGER NOT NULL DEFAULT 1,
+  answer TEXT,
+  asked_at INTEGER NOT NULL,
+  answered_at INTEGER,
+  answered_by TEXT,
+  FOREIGN KEY (attempt_id) REFERENCES task_preparation_runs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_preparation_questions_attempt ON task_preparation_questions(attempt_id, asked_at);
 
 -- Идемпотентный результат обработки task-launch. Ошибка запуска хранится отдельно:
 -- повтор использует уже созданную задачу и повторяет только preparation-run.

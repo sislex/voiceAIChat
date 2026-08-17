@@ -83,6 +83,8 @@ export interface TaskModalProps {
   loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
   onRetryPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
   onCancelPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
+  onAnswerPreparation?: (questionId: string, answer: string) => Promise<unknown>
+  onExportPreparation?: (runId: string, format: 'md' | 'json') => Promise<void>
   /** Параллельный запуск: сразу в работу, мимо очереди сервера. */
   onStartCiParallel?: (taskId: string) => void | Promise<void>
   onOpenCiRun?: (runId: string) => void
@@ -937,7 +939,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </section>}
         {!props.draft && <>
         <section className="task-tab-panel" data-testid="task-timeline-panel" hidden={activeTab !== 'timeline'}>{activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}</section>
-        <section className="task-tab-panel" data-testid="task-preparation-panel" hidden={activeTab !== 'preparation'}>{preparationVisible && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} onRetry={props.onRetryPreparation} onCancel={props.onCancelPreparation} />}</section>
+        <section className="task-tab-panel" data-testid="task-preparation-panel" hidden={activeTab !== 'preparation'}>{preparationVisible && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} onRetry={props.onRetryPreparation} onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation} />}</section>
         {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" hidden={activeTab !== stage}>{stage === 'component_qa'
           ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
           : <QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} />}</section>)}

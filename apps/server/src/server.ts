@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, canConfirmDevelopmentReadiness, DEFAULT_CODEX_MODEL, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -645,7 +645,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   const launchTaskPreparation = (userId: string, projectId: string, taskId: string): import('@voicechat/shared').TaskPreparationRun => {
     const run = db.startTaskPreparationRun(userId, projectId, taskId)
-    if (run.status !== 'running' || run.log) return run
+    if (run.status === 'waiting_for_answer' || taskPreparationHandles.has(run.id)) return run
+    if (run.status !== 'running' && run.status !== 'queued') return run
+    if (run.status === 'running' && run.log) return run
     const task = db.getCiTask(userId, projectId, taskId)
     // Движок и модель — как у остальных автоматических этапов: этап задачи →
     // этап проекта → модель проекта → настройки запустившего пользователя. CLI
@@ -662,8 +664,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const client = provider === 'codex' ? codex : claude
     // Чем шла подготовка — первой строкой ленты: без этого причину падения CLI
     // приходится искать в коде подготовки.
+    db.setTaskPreparationExecution(run.id, model)
     db.appendTaskPreparationLog(run.id, `[система] Движок: ${provider === 'codex' ? 'Codex' : 'Claude'}, модель: ${model}, CLI-профиль: ${userId}\n`)
-    const basePrompt = `Подготовь задачу к разработке. Не меняй код, не запускай инструменты и не делегируй работу. Уточни функциональные требования и верни за один ход ТОЛЬКО JSON без Markdown: {"functionalRequirements":"подробное описание","acceptanceCriteria":"нумерованный список","testCases":[{"id":"stable-id","title":"","description":"","preconditions":"","testData":"","steps":"","expectedResult":"","required":true,"testType":"manual","automatable":false,"automationLinks":[],"notAutomatedReason":"","alternativeManualVerification":"","comments":""}],"uiImpact":"none|existing_components|new_components|multi_component_flow","affectedComponents":[{"id":"","name":"","storybookStoryId":null,"reusable":false,"coverage":null,"exclusionReason":"","alternativeVerification":""}],"acceptanceCriteriaConflict":false}. Для UI-компонентов либо укажи storybookStoryId, либо непустые exclusionReason и alternativeVerification. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}`
+    const answeredContext = (run.questions ?? []).filter((question) => question.answer).map((question) => `Вопрос ${question.questionId}: ${question.text}\\nОтвет: ${question.answer}`).join('\\n')
+    const basePrompt = `Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Обязательный testCase содержит стабильный id, title, description, preconditions, testData, steps, expectedResult, required, automatable и для ручного — notAutomatedReason и alternativeManualVerification. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
     const sendAttempt = (attempt: number, correction?: string): void => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
       const handle = client.send({ userId, prompt, sessionId: null, model, executionDisabled: true }, {
@@ -673,15 +677,37 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           taskPreparationHandles.delete(run.id)
           if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
           try {
+            const candidate = JSON.parse(text.trim().replace(/^\`\`\`(?:json)?\\s*/i, '').replace(/\\s*\`\`\`$/, '')) as { question?: unknown; material?: unknown }
+            if (typeof candidate.question === 'string' && candidate.question.trim()) {
+              const question = db.createTaskPreparationQuestion(run.id, candidate.question, candidate.material !== false)
+              if (!question) throw new Error('Не удалось сохранить уточняющий вопрос')
+              boardHub.emit(projectId)
+              return
+            }
+          } catch {
+            // Обычный readiness JSON разбирается и диагностируется ниже.
+          }
+          try {
+            db.transitionTaskPreparationRun(run.id, 'validating', 'readiness_validation', 'Проверка Development Brief')
             const readiness = parseTaskPreparation(text)
             const gate = canConfirmDevelopmentReadiness(readiness)
             if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
             db.completeTaskPreparationRun(userId, run.id, readiness)
             boardHub.emit(projectId)
           } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
-            if (attempt < 2) sendAttempt(attempt + 1, message)
-            else { db.failTaskPreparationRun(run.id, message); boardHub.emit(projectId) }
+            const message = redactPreparationText(error instanceof Error ? error.message : String(error))
+            if (attempt < 2) {
+              db.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Исправление Development Brief после проверки')
+              sendAttempt(attempt + 1, message)
+            } else {
+              const current = db.getTaskPreparationRun(userId, run.id)
+              if (current?.status === 'validating' || message.startsWith('Гейт готовности')) {
+                const readiness = (() => { try { return parseTaskPreparation(text) } catch { return null } })()
+                const results = readiness ? developmentReadinessGateResults(readiness) : []
+                db.blockTaskPreparationRun(run.id, message, results.flatMap((item) => item.status === 'fail' ? item.refs : []), results)
+              } else db.failTaskPreparationRun(run.id, message)
+              boardHub.emit(projectId)
+            }
           }
         },
         onError: (message) => {
@@ -708,6 +734,48 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   app.get<{ Params: { runId: string } }>('/api/task-preparation/runs/:runId', async (req, reply) =>
     db.getTaskPreparationRun(uid(req), req.params.runId) ?? reply.code(404).send({ error: 'not found' })
   )
+  app.post<{ Params: { questionId: string }; Body: { answer?: string } }>('/api/task-preparation/questions/:questionId/answer', async (req, reply) => {
+    try {
+      const result = db.answerTaskPreparationQuestion(uid(req), req.params.questionId, req.body?.answer ?? '')
+      if (!result) return reply.code(404).send({ error: 'not found' })
+      if (result.accepted) {
+        const run = db.getTaskPreparationRun(uid(req), result.question.attemptId)
+        if (run) launchTaskPreparation(uid(req), run.projectId, run.taskId)
+      }
+      return result
+    } catch (error) {
+      return reply.code(400).send({ error: redactPreparationText(error instanceof Error ? error.message : String(error)) })
+    }
+  })
+  app.get<{ Params: { runId: string; format: 'json' | 'md' | 'txt' } }>('/api/task-preparation/runs/:runId/export/:format', async (req, reply) => {
+    const run = db.getTaskPreparationRun(uid(req), req.params.runId)
+    if (!run) return reply.code(404).send({ error: 'not found' })
+    const format = req.params.format
+    if (format !== 'json' && format !== 'md' && format !== 'txt') return reply.code(400).send({ error: 'unsupported format' })
+    const filename = preparationExportFilename(run.taskKey ?? run.taskId, run.attemptNumber ?? run.attempt, run.createdAt, format)
+    reply.header('content-disposition', `attachment; filename="${filename}"`)
+    if (format === 'json') {
+      reply.type('application/json; charset=utf-8')
+      return {
+        schemaVersion: 1, taskId: run.taskId, taskKey: run.taskKey, attemptId: run.attemptId,
+        attemptNumber: run.attemptNumber, model: run.model, profileId: run.profileId, status: run.status,
+        phase: run.phase, createdAt: run.createdAt, startedAt: run.startedAt, finishedAt: run.finishedAt,
+        durationMs: run.durationMs, events: run.events, questions: run.questions, readiness: run.readiness,
+        gateResults: run.gateResults, gateReasons: run.gateReasons, error: run.error
+      }
+    }
+    const lines = [
+      `# Подготовка ${run.taskKey}: попытка ${run.attemptNumber}`, '',
+      `- Attempt ID: ${run.attemptId}`, `- Статус: ${run.status}`, `- Фаза: ${run.phase}`,
+      `- Модель: ${run.model || 'не указана'}`, `- Profile ID: ${run.profileId}`, `- Длительность: ${run.durationMs} мс`, '',
+      '## Хронология', '', ...(run.events ?? []).map((event) => `${event.sequence}. [${new Date(event.timestamp).toISOString()}] ${event.type}: ${event.text}`), '',
+      '## Вопросы и ответы', '', ...(run.questions ?? []).map((question) => `- ${question.text} — ${question.answer ?? 'без ответа'}`), '',
+      '## Readiness-гейты', '', ...(run.gateResults ?? []).map((gate) => `- ${gate.code}: ${gate.status} — ${gate.explanation}`), '',
+      '## Development Brief', '', run.readiness ? `\`\`\`json\\n${JSON.stringify(run.readiness, null, 2)}\\n\`\`\`` : 'Итоговый brief отсутствует.'
+    ]
+    reply.type('text/markdown; charset=utf-8')
+    return redactPreparationText(lines.join('\\n'))
+  })
   app.delete<{ Params: { runId: string } }>('/api/task-preparation/runs/:runId', async (req, reply) => {
     const run = db.cancelTaskPreparationRun(uid(req), req.params.runId)
     if (!run) return reply.code(404).send({ error: 'not found' })
