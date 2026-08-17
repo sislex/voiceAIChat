@@ -415,6 +415,8 @@ interface TaskRow {
   parent_id: string | null
   priority: string
   assignee: string | null
+  created_by: string | null
+  created_by_name: string | null
   agent_id: string | null
   labels: string | null
   skills: string | null
@@ -525,6 +527,8 @@ function mapTask(r: TaskRow): Task {
     acceptanceCriteria: r.acceptance_criteria,
     priority: normPriority(r.priority),
     assignee: r.assignee,
+    createdBy: r.created_by,
+    createdByName: r.created_by_name,
     agentId: r.agent_id ?? null,
     labels: parseStringArray(r.labels),
     skills: parseStringArray(r.skills),
@@ -763,6 +767,9 @@ export class VoiceChatDb {
     if (taskCols.length && !taskCols.some((c) => c.name === 'type')) this.db.exec(`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'parent_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN parent_id TEXT`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'acceptance_criteria')) this.db.exec(`ALTER TABLE tasks ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`)
+    // Старым карточкам автора не угадываем: NULL отображается как «Нет данных».
+    if (taskCols.length && !taskCols.some((c) => c.name === 'created_by')) this.db.exec(`ALTER TABLE tasks ADD COLUMN created_by TEXT`)
+    if (taskCols.length && !taskCols.some((c) => c.name === 'created_by_name')) this.db.exec(`ALTER TABLE tasks ADD COLUMN created_by_name TEXT`)
     // NULL у старых карточек сохраняет прежнее поведение: машина проекта по умолчанию.
     if (taskCols.length && !taskCols.some((c) => c.name === 'agent_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN agent_id TEXT`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'labels')) this.db.exec(`ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'`)
@@ -3220,7 +3227,6 @@ export class VoiceChatDb {
     projectId: string,
     args: {
       columnId: string
-
       title: string
       description?: string
       acceptanceCriteria?: string
@@ -3233,67 +3239,75 @@ export class VoiceChatDb {
       skills?: string[]
       storyPoints?: number | null
       dueDate?: number | null
+      source?: string
+      idempotencyKey?: string
     }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
-
+    const key = args.idempotencyKey?.trim()
+    if (key) {
+      const prior = this.db.prepare(
+        `SELECT task_id FROM task_creation_requests WHERE actor = ? AND idempotency_key = ?`
+      ).get(userId, key) as { task_id: string } | undefined
+      if (prior) return this.getTask(projectId, prior.task_id)
+    }
     if (!this.columnInProject(projectId, args.columnId)) return null
-    if (args.assignee != null && !this.isActiveProjectMember(args.assignee, projectId)) {
-      throw new Error('Исполнитель должен быть активным участником проекта')
+
+    const explicit = args.assignee !== undefined && args.assignee !== null
+    const userCreation = args.source !== undefined
+    const createdBy = userCreation ? userId : null
+    const assignee = explicit ? args.assignee! : userCreation ? userId : null
+    if (assignee !== null && !this.isActiveProjectMember(assignee, projectId)) {
+      throw new Error(explicit
+        ? 'Исполнитель должен быть активным и незаблокированным участником проекта'
+        : 'Создатель не может быть назначен исполнителем в этом проекте')
     }
     const itemType = args.type ?? 'task'
-    // Навыки карточки: явно переданные, иначе — навыки по умолчанию из настроек
-    // проекта для этого типа элемента (эпик/стори/таск).
     const skills = args.skills ?? this.projectDefaultSkills(projectId, itemType)
     const parent = args.parentId ? this.getTask(projectId, args.parentId) : null
-
     if (itemType === 'epic' && args.parentId) throw new Error('Эпик не может иметь родителя')
     if (args.parentId && !parent) throw new Error('Родитель не найден в проекте')
     if (itemType === 'story' && parent?.type !== 'epic') throw new Error('Родителем истории может быть только эпик')
     if (itemType === 'task' && parent && parent.type !== 'story' && parent.type !== 'epic') throw new Error('Недопустимый родитель задачи')
+
     const id = this.newId()
     const ts = this.now()
-    const max = (
-      this.db
-        .prepare(`SELECT MAX(position) AS m FROM tasks WHERE project_id = ? AND column_id = ?`)
-        .get(projectId, args.columnId) as { m: number | null }
-    ).m
-    const position = (max ?? 0) + RANK_STEP
-    // Карточку могут создать сразу в «Готово» — тогда отсчёт начинается сейчас.
-    const doneAt = this.isDoneColumn(args.columnId) ? ts : null
-    const seq = (
-      this.db.prepare(`UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`).get(projectId) as { task_seq: number }
-    ).task_seq
-    this.db
-      .prepare(
-        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        id,
-        projectId,
-        args.columnId,
-        args.title,
-        args.description ?? '',
-        args.acceptanceCriteria ?? '',
-        itemType,
-        args.parentId ?? null,
-        normPriority(args.priority ?? 'medium'),
-        args.assignee ?? null,
+    const created = this.db.transaction(() => {
+      if (key) {
+        const prior = this.db.prepare(
+          `SELECT task_id FROM task_creation_requests WHERE actor = ? AND idempotency_key = ?`
+        ).get(userId, key) as { task_id: string } | undefined
+        if (prior) return prior.task_id
+      }
+      const max = this.db.prepare(
+        `SELECT MAX(position) AS m FROM tasks WHERE project_id = ? AND column_id = ?`
+      ).get(projectId, args.columnId) as { m: number | null }
+      const seq = (this.db.prepare(
+        `UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`
+      ).get(projectId) as { task_seq: number }).task_seq
+      this.db.prepare(
+        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, created_by, created_by_name, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
+      ).run(
+        id, projectId, args.columnId, args.title, args.description ?? '',
+        args.acceptanceCriteria ?? '', itemType, args.parentId ?? null,
+        normPriority(args.priority ?? 'medium'), assignee, createdBy, createdBy,
         this.validateTaskAgent(userId, projectId, args.agentId),
-        JSON.stringify(args.labels ?? []),
-        JSON.stringify(skills),
-        args.storyPoints ?? null,
-
-        args.dueDate ?? null,
-        doneAt,
-        seq,
-        position,
-        ts,
-        ts
+        JSON.stringify(args.labels ?? []), JSON.stringify(skills),
+        args.storyPoints ?? null, args.dueDate ?? null,
+        this.isDoneColumn(args.columnId) ? ts : null, seq, (max.m ?? 0) + RANK_STEP, ts, ts
       )
-    this.touchProject(projectId, ts)
-    return this.getTask(projectId, id)
+      this.db.prepare(
+        `INSERT INTO task_creation_audit (id, project_id, task_id, created_by, created_by_name, assignee, source, assignment_method, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(this.newId(), projectId, id, createdBy, createdBy, assignee, args.source ?? 'system', userCreation ? (explicit ? 'explicit' : 'automatic') : 'system', ts)
+      if (key) this.db.prepare(
+        `INSERT INTO task_creation_requests (actor, idempotency_key, task_id) VALUES (?, ?, ?)`
+      ).run(userId, key, id)
+      this.touchProject(projectId, ts)
+      return id
+    })()
+    return this.getTask(projectId, created)
   }
 
   updateTask(

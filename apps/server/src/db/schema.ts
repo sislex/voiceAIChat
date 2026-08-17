@@ -320,6 +320,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   parent_id   TEXT,
   priority    TEXT NOT NULL DEFAULT 'medium',
   assignee    TEXT,
+  created_by  TEXT,
+  created_by_name TEXT,
   agent_id    TEXT,
   labels      TEXT NOT NULL DEFAULT '[]',
   skills      TEXT NOT NULL DEFAULT '[]',
@@ -341,6 +343,28 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE INDEX IF NOT EXISTS idx_tasks_column
   ON tasks(project_id, column_id, position);
+
+CREATE TABLE IF NOT EXISTS task_creation_requests (
+  actor TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  PRIMARY KEY (actor, idempotency_key),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS task_creation_audit (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL UNIQUE,
+  created_by TEXT,
+  created_by_name TEXT,
+  assignee TEXT,
+  source TEXT NOT NULL,
+  assignment_method TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
 
 -- ============================ CI-раннер =====================
 CREATE TABLE IF NOT EXISTS ci_commands (

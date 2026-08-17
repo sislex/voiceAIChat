@@ -411,10 +411,11 @@ export function registerProjectRoutes(
 
   app.post<{
     Params: { id: string }
-    Body: { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null }
+    Body: { columnId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; createdBy?: unknown; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null }
   }>('/api/projects/:id/tasks', taskCreateGuard, async (req, reply): Promise<Task | FastifyReply> => {
     const b = req.body ?? {}
     const title = (b.title ?? '').trim()
+    if (Object.prototype.hasOwnProperty.call(b, 'createdBy')) return badReq(reply, 'createdBy is server-controlled')
     if (!b.columnId || !title) return badReq(reply, 'columnId and title required')
     try {
       const task = db.createTask(uid(req), req.params.id, {
@@ -430,7 +431,9 @@ export function registerProjectRoutes(
         labels: b.labels,
         skills: b.skills,
         storyPoints: b.storyPoints,
-        dueDate: b.dueDate
+        dueDate: b.dueDate,
+        source: 'rest',
+        idempotencyKey: typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'] : undefined
       })
 
       if (!task) return nf(reply)
