@@ -5,8 +5,8 @@
 
 import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { claudeLoginStatus, codexLoginStatus, type LlmRunnerHealth } from '@voicechat/shared'
+import type { LlmRunnerHealth } from '@voicechat/shared'
+import { getLoginStatus, type ClaudeAuthProbe } from './auth/loginStatus.js'
 
 /** Версия бинаря (`<bin> --version`); null — бинаря нет или он не ответил. */
 export type VersionProbe = (bin: string) => Promise<string | null>
@@ -43,19 +43,18 @@ export interface HealthOptions {
   read?: ReadTextFn
   env?: NodeJS.ProcessEnv
   now?: number
+  claudeProbe?: ClaudeAuthProbe
 }
 
 export async function runnerHealth(opts: HealthOptions): Promise<LlmRunnerHealth> {
   const version = opts.version ?? defaultVersion
   const read = opts.read ?? defaultRead
   const env = opts.env ?? process.env
-  const now = opts.now ?? Date.now()
 
-  const [claudeVersion, codexVersion, claudeRaw, codexRaw] = await Promise.all([
+  const [claudeVersion, codexVersion, login] = await Promise.all([
     version(opts.claudeBin),
     version(opts.codexBin),
-    read(join(opts.home, '.claude', '.credentials.json')),
-    read(join(opts.home, '.codex', 'auth.json'))
+    getLoginStatus({ home: opts.home, env, read, claudeBin: opts.claudeBin, ...(opts.claudeProbe ? { claudeProbe: opts.claudeProbe } : {}) })
   ])
 
   const bins = {
@@ -67,10 +66,7 @@ export async function runnerHealth(opts: HealthOptions): Promise<LlmRunnerHealth
     // поэтому «жив» — это хотя бы один рабочий бинарь.
     ok: bins.claude.present || bins.codex.present,
     bins,
-    login: {
-      claude: claudeLoginStatus(claudeRaw, now, Boolean(env.ANTHROPIC_API_KEY)),
-      codex: codexLoginStatus(codexRaw, Boolean(env.OPENAI_API_KEY))
-    },
+    login,
     runs: opts.runs?.() ?? 0
   }
 }

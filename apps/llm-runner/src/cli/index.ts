@@ -9,6 +9,7 @@ export { ClaudeCli, claudeArgs, type ClaudeCliOptions, type SpawnFn } from './cl
 export { CodexCli, codexInvocation, type CodexCliOptions } from './codexCli.js'
 export { killCliChild, CLI_SIGKILL_DELAY_MS } from './childKill.js'
 export { listMcpServers, type ExecFileFn } from './mcp.js'
+export { getLoginStatus, type LoginStatusOptions, type ClaudeAuthProbe } from '../auth/loginStatus.js'
 export {
   cliProfileDirs,
   cliProfileEnv,

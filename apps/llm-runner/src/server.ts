@@ -36,6 +36,7 @@ export interface BuildRunnerOptions {
   config: RunnerConfig
   runs?: RunManager
   health?: () => Promise<LlmRunnerHealth>
+  authStatus?: (userId: string) => Promise<import('@voicechat/shared').LoginStatusMap>
 }
 
 function responseSink(res: ServerResponse): RunSink {
@@ -158,7 +159,9 @@ export async function buildRunner(opts: BuildRunnerOptions): Promise<FastifyInst
   app.get<{ Querystring: { userId?: string } }>(RUNNER_AUTH_STATUS_PATH, async (req, reply) => {
     const userId = requireUserId(req, reply)
     if (!userId) return
-    return getLoginStatus({ home: profile(userId).home })
+    return opts.authStatus
+      ? opts.authStatus(userId)
+      : getLoginStatus({ home: profile(userId).home, claudeBin: config.claudeBin })
   })
 
   app.get<{ Querystring: { userId?: string; path?: string } }>(RUNNER_FILE_READ_PATH, async (req, reply) => {
