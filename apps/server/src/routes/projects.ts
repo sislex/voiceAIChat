@@ -589,14 +589,17 @@ export function registerProjectRoutes(
 
   // Отдельный merge-ран: сервер сам берёт подготовленную ветку и main; машина —
   // по умолчанию машина workspace, agentId в теле выбирает другую машину проекта.
-  app.post<{ Params: { id: string; taskId: string }; Body: { agentId?: string } }>(
+  app.post<{ Params: { id: string; taskId: string }; Body: { agentId?: string; provider?: 'claude' | 'codex'; model?: string } }>(
     '/api/projects/:id/tasks/:taskId/merge',
     mergeGuard,
     async (req, reply) => {
       const project = member(req, req.params.id)
       if (!project) return nf(reply)
       try {
-        const run = db.startMergeRun(uid(req), req.params.id, req.params.taskId, req.body?.agentId ?? null)
+        const run = db.startMergeRun(uid(req), req.params.id, req.params.taskId, req.body?.agentId ?? null, {
+          ...(req.body?.provider ? { provider: req.body.provider } : {}),
+          ...(typeof req.body?.model === 'string' ? { model: req.body.model } : {})
+        })
         merge?.start(run)
         boardHub.emit(req.params.id)
         return run

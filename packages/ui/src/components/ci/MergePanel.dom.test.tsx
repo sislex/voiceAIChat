@@ -79,6 +79,24 @@ describe('MergePanel', () => {
     expect(screen.queryByLabelText('Машина повторного merge-рана')).not.toBeInTheDocument()
   })
 
+  it('показывает фактические provider/model Codex без предупреждения, когда fallback не было', async () => {
+    const actual = mergeRun({ llmProvider: 'codex', llmModel: 'gpt-5.6-sol', requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: null })
+    vi.spyOn(window.ci!, 'getMerge').mockResolvedValue(actual)
+    vi.spyOn(window.ci!, 'listMergeRuns').mockResolvedValue([actual])
+    render(<MergePanel projectId="p1" taskId="t1" runId="run-1" canStart={false} />)
+    expect(await screen.findByText(/codex · gpt-5\.6-sol/)).toBeInTheDocument()
+    expect(screen.queryByTestId('merge-llm-fallback')).not.toBeInTheDocument()
+  })
+
+  it('явно предупреждает о fallback и показывает исходно запрошенный Codex', async () => {
+    const fallback = mergeRun({ llmProvider: 'claude', llmModel: 'sonnet', requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: 'provider_unavailable' })
+    vi.spyOn(window.ci!, 'getMerge').mockResolvedValue(fallback)
+    vi.spyOn(window.ci!, 'listMergeRuns').mockResolvedValue([fallback])
+    render(<MergePanel projectId="p1" taskId="t1" runId="run-1" canStart={false} />)
+    expect((await screen.findAllByText(/claude · sonnet/)).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByTestId('merge-llm-fallback')).toHaveTextContent('был запрошен codex · gpt-5.6-sol')
+  })
+
   it('показывает репозитории задачи по машинам с типом и состоянием', async () => {
     vi.spyOn(window.ci!, 'getTaskRepositories').mockResolvedValue([
       { id: 'r1', projectId: 'p1', taskId: 't1', agentId: 'm1', machineName: 'MacBook', path: '/repos/chatai/CHAT-1', kind: 'dev-workspace', state: 'active', createdAt: 1, deletedAt: null },
