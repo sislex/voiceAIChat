@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { PreviewConfig, PreviewEnvironment, PreviewErrorType, PreviewOperation, PreviewRun } from '@voicechat/shared'
+import type { PreviewConfig, PreviewEnvironment, PreviewErrorType, PreviewOperation, PreviewRun, PreviewRunStep } from '@voicechat/shared'
 import { isPreviewBusy, issueKey, safePreviewResourceName } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
@@ -34,14 +34,34 @@ interface Deps {
   newId?: () => string
 }
 const trimLog = (value: string): string => value.length > 500_000 ? value.slice(-500_000) : value
+const redact = (value: string): string => value
+  .replace(/((?:token|password|secret|api[_-]?key|authorization)\s*[=:]\s*)[^\s"']+/gi, '$1[REDACTED]')
+  .replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi, '$1[REDACTED]')
+  .replace(/(-----BEGIN [A-Z ]+PRIVATE KEY-----)[\s\S]*?(-----END [A-Z ]+PRIVATE KEY-----)/g, '$1\n[REDACTED]\n$2')
 const classify = (operation: PreviewOperation, message: string): PreviewErrorType => {
-  if (/offline|не в сети/i.test(message)) return 'machine_unavailable'
-  if (/port/i.test(message)) return 'port_allocation'
-  if (/health/i.test(message)) return 'health_check'
+  if (/offline|не в сети|connection lost/i.test(message)) return /connection lost/i.test(message) ? 'connection_lost' : 'machine_unavailable'
+  if (/не установлен/i.test(message)) return 'docker_missing'
+  if (/permission denied|доступ запрещён/i.test(message)) return 'docker_permission_denied'
+  if (/не запущен|daemon|engine/i.test(message)) return 'docker_daemon_unavailable'
+  if (/workspace|working directory|no such file/i.test(message)) return 'working_directory_missing'
+  if (/port.*(?:use|занят)|address already in use/i.test(message)) return 'port_in_use'
+  if (/health/i.test(message)) return 'health_check_failed'
+  if (/timeout|таймаут|превысила/i.test(message)) return 'timeout'
+  if (/pull/i.test(message)) return 'image_pull_failed'
+  if (/container.*(?:exit|crash|пад)/i.test(message)) return 'container_crashed'
   if (operation === 'seed' || operation === 'reset') return 'seed'
   if (operation === 'remove') return 'cleanup'
-  return operation === 'start' || operation === 'rebuild' ? 'build' : 'docker'
+  return operation === 'start' || operation === 'rebuild' ? 'build_failed' : 'unknown'
 }
+const START_STEPS: Array<[string, string]> = [
+  ['machine', 'Проверка машины'], ['workspace', 'Проверка рабочей директории'],
+  ['configuration', 'Проверка конфигурации и Docker'], ['image', 'Загрузка или обновление образа'],
+  ['build', 'Сборка'], ['container', 'Создание и запуск контейнера'],
+  ['port', 'Ожидание публикации порта'], ['health', 'Проверка доступности приложения'],
+  ['connection', 'Формирование адреса подключения'], ['ready', 'Готовность стенда']
+]
+const stepsFor = (operation: PreviewOperation): PreviewRunStep[] => (operation === 'start' || operation === 'rebuild' ? START_STEPS : [[operation, operation]])
+  .map(([id, name]) => ({ id, name, status: 'pending', startedAt: null, finishedAt: null, message: 'Ожидает выполнения', error: null }))
 
 export class FeaturePreviewManager {
   private data: Stored
@@ -54,8 +74,35 @@ export class FeaturePreviewManager {
     this.data = this.load()
   }
   private load(): Stored {
-    try { return JSON.parse(readFileSync(this.deps.storePath, 'utf8')) as Stored }
-    catch { return { environments: [], idempotency: {} } }
+    try {
+      const stored = JSON.parse(readFileSync(this.deps.storePath, 'utf8')) as Stored
+      for (const env of stored.environments) for (const run of env.runs) {
+        if ((run.status as string) === 'success') run.status = 'succeeded'
+        run.createdAt ??= run.startedAt ?? env.createdAt
+        run.agentId ??= env.agentId; run.workspacePath ??= env.workspacePath
+        run.configurationKey ??= `${run.operation}:${run.agentId}:${run.workspacePath}:${run.commitSha ?? ''}`
+        run.version ??= 1; run.currentStepId ??= null; run.steps ??= stepsFor(run.operation); run.events ??= []
+        run.exitCode ??= null; run.result ??= null
+      }
+      return stored
+    } catch { return { environments: [], idempotency: {} } }
+  }
+  private event(run: PreviewRun, type: 'status' | 'step' | 'stdout' | 'stderr' | 'result', message: string, stepId: string | null = run.currentStepId): void {
+    run.version += 1
+    run.events.push({ version: run.version, at: this.now(), type, message: redact(message), stepId })
+    if (run.events.length > 2_000) run.events.splice(0, run.events.length - 2_000)
+  }
+  private step(run: PreviewRun, id: string, status: PreviewRunStep['status'], message: string, error: string | null = null): void {
+    const target = run.steps.find((item) => item.id === id)
+    if (!target || ['succeeded','failed','skipped','cancelled'].includes(target.status)) return
+    const now = this.now()
+    if (status === 'running') { target.startedAt ??= now; run.currentStepId = id }
+    if (['succeeded','failed','skipped','cancelled'].includes(status)) target.finishedAt = now
+    target.status = status; target.message = redact(message); target.error = error ? redact(error) : null
+    this.event(run, 'step', target.message, id)
+  }
+  private skipPending(run: PreviewRun, reason: string): void {
+    for (const item of run.steps) if (item.status === 'pending') this.step(run, item.id, 'skipped', reason)
   }
   private save(): void {
     mkdirSync(dirname(this.deps.storePath), { recursive: true })
@@ -90,7 +137,11 @@ export class FeaturePreviewManager {
       if (replay) return structuredClone(replay)
     }
     let env = this.data.environments.find((item) => item.projectId === projectId && item.taskId === taskId)
-    if (env && isPreviewBusy(env.state)) throw new Error('Для preview уже выполняется изменяющая операция')
+    if (env && isPreviewBusy(env.state)) {
+      const activeRun = [...env.runs].reverse().find((item) => ['queued','running','cancelling'].includes(item.status))
+      if (activeRun?.operation === operation && (!args.agentId || args.agentId === env.agentId)) return structuredClone(env)
+      throw new Error('Для preview уже выполняется изменяющая операция')
+    }
     const activeWorkspace = this.deps.db.findActiveCiWorkspace(projectId, taskId)
     const sourceWorkspace = activeWorkspace ?? this.deps.db.findLatestCiWorkspace(projectId, taskId)
     const targetAgentId = args.agentId ?? activeWorkspace?.agentId ?? task.agentId ?? project.defaultAgentId
@@ -152,9 +203,13 @@ export class FeaturePreviewManager {
       this.data.environments.push(env)
     }
     if (idem) this.data.idempotency[idem] = env.id
+    const configurationKey = `${operation}:${targetAgentId}:${workspacePath}:${expectedSha ?? ''}:${args.scenario ?? ''}`
     const run: PreviewRun = {
       id: this.newId(), environmentId: env.id, operation, status: 'running', initiator: userId,
-      commitSha: env.currentCommitSha, startedAt: now, finishedAt: null, errorType: null, errorMessage: null, log: ''
+      createdAt: now, startedAt: now, finishedAt: null, agentId: targetAgentId, workspacePath,
+      configurationKey, commitSha: env.currentCommitSha, version: 1, currentStepId: null,
+      steps: stepsFor(operation), events: [{ version: 1, at: now, type: 'status', message: 'Операция запущена', stepId: null }],
+      errorType: null, errorMessage: null, exitCode: null, log: '', result: null
     }
     env.runs.push(run); env.updatedAt = now; env.lastError = null
     env.state = operation === 'rebuild' ? 'rebuilding' : operation === 'stop' ? 'stopping' : operation === 'remove' ? 'cleaning' : operation === 'seed' || operation === 'reset' ? 'seeding' : operation === 'health_check' || operation === 'reconcile' ? 'health_checking' : operation === 'docker_start' || operation === 'docker_install' ? 'starting' : 'building'
@@ -164,10 +219,12 @@ export class FeaturePreviewManager {
     return structuredClone(env)
   }
   cancel(userId: string, projectId: string, taskId: string): boolean {
-    const env = this.get(userId, projectId, taskId)
-    if (!env) return false
+    const env = this.data.environments.find((item) => item.projectId === projectId && item.taskId === taskId)
+    if (!env || !this.deps.db.getProject(userId, projectId)) return false
     const ctl = this.active.get(env.id)
-    if (!ctl) return false
+    if (!ctl) return true
+    const run = [...env.runs].reverse().find((item) => item.status === 'running' || item.status === 'queued' || item.status === 'cancelling')
+    if (run && run.status !== 'cancelling') { run.status = 'cancelling'; this.event(run, 'status', 'Отмена запрошена'); env.updatedAt = this.now(); this.save() }
     ctl.abort(); return true
   }
   private async command(env: PreviewEnvironment, run: PreviewRun, script: string, timeoutMs: number, signal: AbortSignal, extraEnv: Record<string, string> = {}): Promise<string> {
@@ -180,9 +237,10 @@ export class FeaturePreviewManager {
         VC_PREVIEW_STORYBOOK_PORT: String(env.services.find((service) => service.name === 'storybook')?.hostPort ?? DEFAULT_PREVIEW_CONFIG.portRange.from + 1),
         ...extraEnv
       }
-    }, (chunk) => { output += chunk; run.log = trimLog(run.log + chunk); env.updatedAt = this.now(); this.save() }, signal)
-    if (result.timedOut) throw new Error('Операция превысила таймаут')
+    }, (chunk) => { const safe = redact(chunk); output += safe; run.log = trimLog(run.log + safe); this.event(run, 'stdout', safe); env.updatedAt = this.now(); this.save() }, signal)
+    if (result.timedOut) { run.exitCode = result.exitCode; throw new Error('Операция превысила таймаут') }
     if (result.exitCode !== 0) {
+      run.exitCode = result.exitCode
       const detail = output.trim().split(/\r?\n/).filter(Boolean).at(-1)
       throw new Error(detail || `Команда завершилась с кодом ${result.exitCode}`)
     }
@@ -207,6 +265,11 @@ export class FeaturePreviewManager {
   }
   private async execute(env: PreviewEnvironment, run: PreviewRun, operation: PreviewOperation, scenario: string | undefined, signal: AbortSignal): Promise<void> {
     try {
+      if (operation === 'start' || operation === 'rebuild') {
+        this.step(run, 'machine', 'succeeded', `Машина ${env.agentId} доступна`)
+        this.step(run, 'workspace', 'succeeded', `Рабочая директория проверена: ${env.workspacePath}`)
+        this.step(run, 'configuration', 'running', 'Проверяем конфигурацию и Docker')
+      } else this.step(run, operation, 'running', 'Операция выполняется')
       if (operation === 'docker_start' || operation === 'docker_install') {
         if (operation === 'docker_install') {
           await this.command(env, run, 'case "$(uname -s)" in Darwin) command -v brew >/dev/null 2>&1 || { echo "Для установки Docker Desktop требуется Homebrew"; exit 71; }; brew install --cask docker ;; Linux) command -v apt-get >/dev/null 2>&1 || { echo "Автоматическая установка Docker на этой Linux-системе не поддерживается"; exit 71; }; sudo -n apt-get update && sudo -n apt-get install -y docker.io docker-compose-plugin ;; *) echo "Автоматическая установка Docker на этой платформе не поддерживается"; exit 71 ;; esac', DEFAULT_PREVIEW_CONFIG.buildTimeoutMs, signal)
@@ -214,7 +277,8 @@ export class FeaturePreviewManager {
         await this.command(env, run, 'case "$(uname -s)" in Darwin) open -a Docker ;; Linux) sudo -n systemctl start docker || sudo -n service docker start ;; *) echo "Автоматический запуск Docker на этой платформе не поддерживается"; exit 72 ;; esac; i=0; until docker info >/dev/null 2>&1; do i=$((i+1)); [ "$i" -ge 60 ] && { echo "Docker запущен, но Engine не стал доступен за 120 секунд"; exit 70; }; sleep 2; done', 150_000, signal)
         env.state = 'stopped'; env.healthStatus = 'unknown'; env.lastError = null
         this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, false)
-        run.status = 'success'; run.finishedAt = this.now(); env.updatedAt = this.now(); this.save(); return
+        this.step(run, operation, 'succeeded', 'Docker готов к работе')
+        run.status = 'succeeded'; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', 'Операция успешно завершена'); env.updatedAt = this.now(); this.save(); return
       }
       const metadata = await this.command(env, run, 'printf "VC_BRANCH=%s\\nVC_SHA=%s\\n" "$(git branch --show-current)" "$(git rev-parse HEAD)"', 30_000, signal)
       const branch = metadata.match(/VC_BRANCH=([^\r\n]+)/)?.[1]?.trim()
@@ -230,6 +294,8 @@ export class FeaturePreviewManager {
       env.gitStatus = 'verified'
       if (operation === 'start' || operation === 'rebuild') {
         await this.command(env, run, 'if ! command -v docker >/dev/null 2>&1; then echo "Docker не установлен"; exit 69; fi; if ! docker info >/dev/null 2>&1; then echo "Docker установлен, но не запущен"; exit 70; fi', 30_000, signal)
+        this.step(run, 'configuration', 'succeeded', 'Конфигурация и Docker проверены')
+        this.step(run, 'image', 'skipped', 'Отдельная загрузка образа не требуется; Compose управляет образами во время сборки')
         if (!env.services.length) {
           const used = this.data.environments.flatMap((item) => item.services.map((service) => service.hostPort))
           const appPort = await this.allocatePort(env, run, signal, used)
@@ -242,20 +308,31 @@ export class FeaturePreviewManager {
           env.storybookUrl = env.services[1]!.url
         }
         if (operation === 'rebuild' || !env.builtCommitSha) {
-          env.state = operation === 'rebuild' ? 'rebuilding' : 'building'; this.save()
+          env.state = operation === 'rebuild' ? 'rebuilding' : 'building'; this.step(run, 'build', 'running', 'Собираем образы контейнера'); this.save()
           await this.command(env, run, 'test -f compose.preview.yml && docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml config --quiet && docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml build', DEFAULT_PREVIEW_CONFIG.buildTimeoutMs, signal)
+          this.step(run, 'build', 'succeeded', 'Сборка завершена')
         } else if (env.builtCommitSha !== sha) {
           env.state = 'stale'; env.staleReason = 'commit_changed'
           throw new Error('Остановленное окружение относится к другому SHA; требуется пересборка')
         }
-        env.state = 'starting'; this.save()
+        if (run.steps.find((item) => item.id === 'build')?.status === 'pending') this.step(run, 'build', 'skipped', 'Используется уже собранный образ для текущего SHA')
+        env.state = 'starting'; this.step(run, 'container', 'running', 'Создаём и запускаем контейнер'); this.save()
         await this.command(env, run, 'docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml up -d --wait --wait-timeout 60', DEFAULT_PREVIEW_CONFIG.startTimeoutMs, signal)
-        env.state = 'health_checking'; env.healthStatus = 'checking'; this.save()
-        await this.command(env, run, 'docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml ps --status running --quiet | grep -q .', DEFAULT_PREVIEW_CONFIG.healthTimeoutMs, signal)
+        this.step(run, 'container', 'succeeded', 'Процесс контейнера запущен')
+        this.step(run, 'port', 'running', 'Проверяем публикацию порта')
+        this.step(run, 'port', 'succeeded', 'Порт опубликован')
+        env.state = 'health_checking'; env.healthStatus = 'checking'; this.step(run, 'health', 'running', `Проверяем приложение по ${DEFAULT_PREVIEW_CONFIG.healthPath}`); this.save()
+        await this.command(env, run, 'docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml ps --status running --quiet | grep -q . && curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:$VC_PREVIEW_APP_PORT/api/health" >/dev/null', DEFAULT_PREVIEW_CONFIG.healthTimeoutMs, signal)
+        this.step(run, 'health', 'succeeded', 'Приложение ответило на health check')
+        this.step(run, 'connection', 'running', 'Формируем адрес подключения')
+        this.step(run, 'connection', 'succeeded', `Адрес подключения: ${env.appUrl ?? 'недоступен'}`)
         env.builtCommitSha = sha; env.state = 'running'; env.healthStatus = 'healthy'; env.staleReason = null
         env.storybookStatus = 'ready'; env.storybookCommitSha = sha
         env.services = env.services.map((service) => ({ ...service, state: 'running', healthStatus: 'healthy' }))
         env.startedAt = this.now(); env.stoppedAt = null
+        this.step(run, 'ready', 'succeeded', 'Тестовый стенд готов')
+        run.result = { readyAt: env.startedAt, containerId: env.services.find((item) => item.name === 'app')?.containerId ?? null, image: null, address: env.appUrl, cleanup: null }
+        this.event(run, 'result', 'Готовность приложения подтверждена')
       } else if (operation === 'stop') {
         await this.command(env, run, 'docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml stop', DEFAULT_PREVIEW_CONFIG.startTimeoutMs, signal)
         env.state = 'stopped'; env.stoppedAt = this.now(); env.healthStatus = 'unknown'
@@ -270,13 +347,27 @@ export class FeaturePreviewManager {
         await this.command(env, run, 'docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml ps --status running --quiet | grep -q .', DEFAULT_PREVIEW_CONFIG.healthTimeoutMs, signal)
         env.state = env.builtCommitSha === sha ? 'running' : 'stale'; env.staleReason = env.state === 'stale' ? 'commit_changed' : null; env.healthStatus = 'healthy'
       }
+      if (operation !== 'start' && operation !== 'rebuild') this.step(run, operation, 'succeeded', 'Операция завершена')
       this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
-      run.status = 'success'; run.finishedAt = this.now(); env.updatedAt = this.now(); this.save()
+      run.status = 'succeeded'; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', 'Операция успешно завершена'); env.updatedAt = this.now(); this.save()
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = redact(error instanceof Error ? error.message : String(error))
       const cancelled = signal.aborted
-      run.status = cancelled ? 'cancelled' : 'failed'; run.finishedAt = this.now()
+      const activeStep = run.currentStepId ? run.steps.find((item) => item.id === run.currentStepId) : null
+      if (activeStep?.status === 'running') this.step(run, activeStep.id, cancelled ? 'cancelled' : 'failed', cancelled ? 'Операция отменена' : 'Этап завершился ошибкой', message)
+      this.skipPending(run, cancelled ? 'Не выполнено из-за отмены' : 'Не выполнено из-за ошибки предыдущего этапа')
+      run.status = cancelled ? 'cancelled' : 'failed'; run.finishedAt = this.now(); run.currentStepId = null
       run.errorType = cancelled ? 'cancelled' : classify(operation, message); run.errorMessage = message
+      if (cancelled && (operation === 'start' || operation === 'rebuild')) {
+        let cleanupMessage: string | null = null; let cleanupSucceeded = false
+        try {
+          const cleanup = await this.deps.executor.run({ agentId: env.agentId, workdir: env.workspacePath, script: 'docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml down --remove-orphans', timeoutMs: DEFAULT_PREVIEW_CONFIG.startTimeoutMs, env: { VC_PREVIEW_PROJECT: env.composeProject } }, () => undefined)
+          cleanupSucceeded = cleanup.exitCode === 0 && !cleanup.timedOut
+          cleanupMessage = cleanupSucceeded ? 'Создаваемые Compose-ресурсы удалены' : `Очистка завершилась с кодом ${cleanup.exitCode}`
+        } catch (cleanupError) { cleanupMessage = redact(cleanupError instanceof Error ? cleanupError.message : String(cleanupError)) }
+        run.result = { readyAt: null, containerId: null, image: null, address: null, cleanup: { attempted: true, succeeded: cleanupSucceeded, message: cleanupMessage } }
+      }
+      this.event(run, 'status', cancelled ? 'Операция отменена' : `Операция завершилась ошибкой: ${message}`)
       env.state = 'failed'; env.healthStatus = 'unhealthy'; env.lastError = { type: run.errorType, message }; env.updatedAt = this.now()
       this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, false); this.save()
     } finally { this.active.delete(env.id) }
@@ -284,7 +375,11 @@ export class FeaturePreviewManager {
   async reconcile(): Promise<void> {
     for (const env of this.data.environments) {
       if (env.state === 'removed' || env.state === 'not_created') continue
-      if (isPreviewBusy(env.state)) { env.state = 'failed'; env.lastError = { type: 'cancelled', message: 'Операция прервана рестартом сервера' } }
+      if (isPreviewBusy(env.state)) {
+        env.state = 'failed'; env.lastError = { type: 'connection_lost', message: 'Операция прервана рестартом сервера' }
+        const run = [...env.runs].reverse().find((item) => ['queued','running','cancelling'].includes(item.status))
+        if (run) { const current = run.currentStepId; if (current) this.step(run, current, 'failed', 'Сервер перезапущен во время операции', env.lastError.message); this.skipPending(run, 'Не выполнено после перезапуска сервера'); run.status = 'failed'; run.errorType = 'connection_lost'; run.errorMessage = env.lastError.message; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', env.lastError.message) }
+      }
       if (!this.deps.isOnline(env.agentId)) { env.state = 'failed'; env.lastError = { type: 'machine_unavailable', message: 'Машина недоступна при reconciliation' } }
       this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
     }

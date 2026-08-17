@@ -5,11 +5,40 @@ export const PREVIEW_STATES = [
 
 export type PreviewState = (typeof PREVIEW_STATES)[number]
 export type PreviewOperation = 'start' | 'rebuild' | 'stop' | 'seed' | 'reset' | 'health_check' | 'remove' | 'reconcile' | 'docker_start' | 'docker_install'
-export type PreviewRunStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
+export type PreviewRunStatus = 'queued' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled'
+export type PreviewStepStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled'
 export type PreviewErrorType =
-  | 'configuration' | 'build' | 'docker' | 'port_allocation' | 'startup'
-  | 'health_check' | 'seed' | 'storybook' | 'machine_unavailable'
-  | 'resource_limit' | 'cleanup' | 'cancelled' | 'unknown'
+  | 'configuration' | 'machine_unavailable' | 'docker_missing' | 'docker_daemon_unavailable'
+  | 'docker_permission_denied' | 'working_directory_missing' | 'image_pull_failed' | 'build_failed'
+  | 'port_in_use' | 'container_crashed' | 'health_check_failed' | 'timeout'
+  | 'connection_lost' | 'seed' | 'storybook' | 'resource_limit' | 'cleanup' | 'cancelled' | 'unknown'
+
+export interface PreviewRunStep {
+  id: string
+  name: string
+  status: PreviewStepStatus
+  startedAt: number | null
+  finishedAt: number | null
+  message: string
+  error: string | null
+  metadata?: Record<string, string | number | boolean | null>
+}
+
+export interface PreviewRunEvent {
+  version: number
+  at: number
+  type: 'status' | 'step' | 'stdout' | 'stderr' | 'result'
+  message: string
+  stepId: string | null
+}
+
+export interface PreviewRunResult {
+  readyAt: number | null
+  containerId: string | null
+  image: string | null
+  address: string | null
+  cleanup: { attempted: boolean; succeeded: boolean; message: string | null } | null
+}
 
 export interface PreviewConfig {
   composeFile: string
@@ -64,12 +93,22 @@ export interface PreviewRun {
   operation: PreviewOperation
   status: PreviewRunStatus
   initiator: string
-  commitSha: string | null
+  createdAt: number
   startedAt: number | null
   finishedAt: number | null
+  agentId: string
+  workspacePath: string
+  configurationKey: string
+  commitSha: string | null
+  version: number
+  currentStepId: string | null
+  steps: PreviewRunStep[]
+  events: PreviewRunEvent[]
   errorType: PreviewErrorType | null
   errorMessage: string | null
+  exitCode: number | null
   log: string
+  result: PreviewRunResult | null
 }
 
 export interface PreviewEnvironment {

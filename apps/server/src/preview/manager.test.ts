@@ -44,6 +44,28 @@ describe('FeaturePreviewManager', () => {
     expect(manager.list()).toHaveLength(1)
   })
 
+  it('returns the active equivalent launch even with a different idempotency key', async () => {
+    const { manager } = setup()
+    const first = await manager.operate('u1', 'p1', 't1', 'start', { idempotencyKey: 'request-1' })
+    const replay = await manager.operate('u1', 'p1', 't1', 'start', { idempotencyKey: 'request-2' })
+    expect(replay.id).toBe(first.id)
+    expect(replay.runs).toHaveLength(1)
+    await wait()
+  })
+
+  it('persists ordered stages and requires the application health check before readiness', async () => {
+    const { manager, executor } = setup()
+    await manager.operate('u1', 'p1', 't1', 'start')
+    await wait()
+    const run = manager.get('u1', 'p1', 't1')!.runs.at(-1)!
+    expect(run.status).toBe('succeeded')
+    expect(run.steps.map((step) => step.id)).toEqual(['machine','workspace','configuration','image','build','container','port','health','connection','ready'])
+    expect(run.steps.find((step) => step.id === 'image')).toMatchObject({ status: 'skipped' })
+    expect(run.steps.find((step) => step.id === 'health')).toMatchObject({ status: 'succeeded' })
+    expect(executor.run).toHaveBeenCalledWith(expect.objectContaining({ script: expect.stringContaining('curl --fail') }), expect.any(Function), expect.any(AbortSignal))
+    expect(run.result?.readyAt).not.toBeNull()
+  })
+
   it('isolates Docker resources for two tasks', async () => {
     const { manager } = setup()
     const one = await manager.operate('u1', 'p1', 't1', 'start')
@@ -79,7 +101,7 @@ describe('FeaturePreviewManager', () => {
     const env = manager.get('u1', 'p1', 't1')!
     expect(env.state).toBe('failed')
     expect(env.runs.at(-1)?.status).toBe('failed')
-    expect(env.lastError?.type).toBe('build')
+    expect(env.lastError?.type).toBe('docker_daemon_unavailable')
     expect(env.lastError?.message).toBe('Docker установлен, но не запущен')
   })
 
