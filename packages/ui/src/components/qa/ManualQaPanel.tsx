@@ -10,6 +10,7 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
   const [error, setError] = useState('')
   const [preparationOpen, setPreparationOpen] = useState(true)
   const [additionalIssues, setAdditionalIssues] = useState('')
+  const [pendingResults, setPendingResults] = useState<Record<string, boolean>>({})
   const [draft, setDraft] = useState<AcceptanceCriterionSnapshot>({
     title: '', description: '', preconditions: '', steps: '', testData: '', expectedResult: '', required: true, testType: 'manual'
   })
@@ -30,15 +31,20 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
   const progress = useMemo(() => session ? qaProgress(session) : null, [session])
 
   const update = async (result: QaCriterionResult, status: QaResultStatus, fields: Record<string, unknown> = {}): Promise<void> => {
-    if (!window.qa) return
-    setBusy(true)
+    if (!window.qa) throw new Error('QA API недоступен')
     try {
-      await window.qa.saveResult(props.projectId, props.taskId, result.id, result.revision, { status, draft: false, ...fields })
-      await load()
+      const saved = await window.qa.saveResult(props.projectId, props.taskId, result.id, result.revision, { status, draft: false, ...fields })
+      setState((current) => current ? {
+        ...current,
+        sessions: current.sessions.map((item) => ({ ...item, results: item.results.map((value) => value.id === saved.id ? saved : value) })),
+        activeSession: current.activeSession ? { ...current.activeSession, results: current.activeSession.results.map((value) => value.id === saved.id ? saved : value) } : null
+      } : current)
+      setError('')
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-      if (/revision conflict/i.test(cause instanceof Error ? cause.message : String(cause))) await load()
-    } finally { setBusy(false) }
+      const message = cause instanceof Error ? cause.message : String(cause)
+      setError(message)
+      throw new Error(message)
+    }
   }
 
   return <section className="manual-qa" aria-label="Ручное QA">
@@ -64,13 +70,13 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
         }}>Повторить создание сценариев</Button>
       </div>}
       {session && progress && <div className="manual-qa-summary">
-        <strong>{session.status === 'stale' ? 'QA-сессия устарела' : session.status === 'passed' ? 'QA завершено успешно' : session.status === 'failed' ? 'Задача отправлена на доработку' : `Проверено ${progress.passed + progress.failed + progress.notApplicable}/${progress.total}`}</strong>
+        <strong>{session.status === 'stale' ? 'QA-сессия устарела' : session.status === 'passed' ? 'QA завершено успешно' : session.status === 'failed' ? 'Задача отправлена на доработку' : `Проверено ${progress.passed + progress.failed + progress.blocked + progress.notApplicable}/${progress.total}`}</strong>
         <span>SHA {session.commitSha.slice(0, 8)}</span>
         {session.previewSha && <span>Preview {session.previewSha.slice(0, 8)}</span>}
         {session.staleReason && <span role="alert">{session.staleReason}</span>}
         {session.appUrl && <a href={session.appUrl} target="_blank" rel="noreferrer">Открыть preview</a>}
         {session.storybookUrl && <a href={session.storybookUrl} target="_blank" rel="noreferrer">Открыть Storybook</a>}
-        <span>Всего: {progress.total} · Обязательных: {session.criteriaSnapshot.filter((item) => item.required).length} · Успешно: {progress.passed} · Ошибок: {progress.failed} · Пропущено: {progress.notApplicable} · Без результата: {progress.notTested + progress.inProgress + progress.blocked}</span>
+        <span>Всего: {progress.total} · Проверено: {progress.passed + progress.failed + progress.blocked + progress.notApplicable} · Успешно: {progress.passed} · Неуспешно: {progress.failed} · Заблокировано: {progress.blocked} · Осталось: {progress.notTested + progress.inProgress + progress.stale}</span>
       </div>}
       {state.preparation?.status !== 'running' && <details className="manual-qa-create">
         <summary>Добавить сценарий ручного QA</summary>
@@ -99,7 +105,7 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
           {state.criteria.filter((criterion) => criterion.active).map((criterion) =>
             <CriterionCard key={criterion.id} criterion={criterion} result={session?.results.find((result) => result.criterionId === criterion.id) ?? null}
               open={open === criterion.id} onToggle={() => setOpen(open === criterion.id ? null : criterion.id)}
-              onUpdate={update} onAttach={async (result, file) => {
+              onUpdate={update} onPendingChange={(pending) => setPendingResults((current) => ({ ...current, [criterion.id]: pending }))} onAttach={async (result, file) => {
                 if (!window.qa || !['image/png','image/jpeg','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError('Допустимы PNG, JPEG и WebP до 10 МБ'); return }
                 setBusy(true)
                 try {
@@ -127,7 +133,7 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
         catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
         finally { setBusy(false) }
       }}>Отправить на доработку</Button>}
-      {state.activeSession && <Button variant="primary" disabled={busy || state.canEdit === false || !canCompleteQa({ ...state.activeSession, additionalIssues }).allowed} onClick={async () => {
+      {state.activeSession && <Button variant="primary" disabled={busy || state.canEdit === false || Object.values(pendingResults).some(Boolean) || !canCompleteQa({ ...state.activeSession, additionalIssues }).allowed} onClick={async () => {
         if (!window.qa) return
         setBusy(true)
         try { await window.qa.complete(props.projectId, props.taskId, state.activeSession!.id, 'Ручное QA подтверждено тестировщиком'); await load() }
@@ -142,34 +148,81 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
 function CriterionCard(props: {
   criterion: AcceptanceCriterion; result: QaCriterionResult | null; open: boolean; disabled: boolean
   onToggle(): void
+  onPendingChange(pending: boolean): void
   onAttach(result: QaCriterionResult, file: File): Promise<void>
   onUpdate(result: QaCriterionResult, status: QaResultStatus, fields?: Record<string, unknown>): Promise<void>
 }): JSX.Element {
   const [comment, setComment] = useState(props.result?.comment ?? '')
-  useEffect(() => { setComment(props.result?.comment ?? '') }, [props.result?.revision])
+  const [selected, setSelected] = useState<QaResultStatus>(props.result?.status ?? 'not_tested')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [dirty, setDirty] = useState(false)
+  useEffect(() => {
+    if (dirty || saving) return
+    setComment(props.result?.comment ?? '')
+    setSelected(props.result?.status ?? 'not_tested')
+  }, [props.result?.revision, dirty, saving])
   const result = props.result
-  return <article className="manual-qa-card" role="listitem">
+  const commentRequired = selected === 'failed' || selected === 'blocked'
+  const commentId = `qa-comment-${props.criterion.id}`
+  const errorId = `qa-error-${props.criterion.id}`
+  const save = async (): Promise<void> => {
+    if (!result || saving) return
+    if (commentRequired && !comment.trim()) {
+      setSaveError(selected === 'blocked' ? 'Укажите причину блокировки' : 'Опишите фактический результат или отличие от ожидания')
+      return
+    }
+    setSaving(true)
+    setSaveError('')
+    try {
+      const fields = selected === 'failed'
+        ? { comment, actualResult: comment, classification: 'implementation_defect', severity: 'major', frequency: 'unknown', reproduction: comment }
+        : selected === 'blocked'
+          ? { comment, blockerReason: comment, blockerType: 'other', blockerOwner: 'Не назначен' }
+          : { comment }
+      await props.onUpdate(result, selected, fields)
+      setDirty(false)
+      props.onPendingChange(false)
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+  const choose = (status: QaResultStatus): void => {
+    setSelected(status)
+    setDirty(status !== result?.status || comment !== (result?.comment ?? ''))
+    props.onPendingChange(status !== result?.status || comment !== (result?.comment ?? ''))
+    setSaveError('')
+  }
+  return <article className="manual-qa-card" role="listitem" data-status={selected}>
     <button className="manual-qa-card__head" aria-expanded={props.open} onClick={props.onToggle}>
       <span>Тест {props.criterion.order}. {props.criterion.title} {!props.criterion.required && <small>необязательный</small>}</span>
-      <span>{resultStatusLabel(result?.status)} · v{props.criterion.currentVersion}</span>
+      <span>{resultStatusLabel(selected)} · v{props.criterion.currentVersion}</span>
     </button>
-    {props.open && <div className="manual-qa-card__body">
+    {props.open && <div className="manual-qa-card__details">
       <dl>
         <dt>Предусловия</dt><dd>{props.criterion.preconditions || '—'}</dd>
         <dt>Шаги</dt><dd>{props.criterion.steps || '—'}</dd>
         <dt>Тестовые данные</dt><dd>{props.criterion.testData || '—'}</dd>
         <dt>Ожидаемый результат</dt><dd>{props.criterion.expectedResult}</dd>
       </dl>
-      {result && <>
-        <div className="manual-qa-actions" role="group" aria-label={`Результат теста ${props.criterion.title}`}>
-          <Button size="sm" variant={result.status === 'passed' ? 'primary' : undefined} disabled={props.disabled} onClick={() => props.onUpdate(result, 'passed')}>Успешно</Button>
-          <Button size="sm" variant={result.status === 'failed' ? 'primary' : undefined} disabled={props.disabled} onClick={() => props.onUpdate(result, 'failed', { draft: true, comment })}>Ошибка</Button>
-          <Button size="sm" variant={result.status === 'not_applicable' ? 'primary' : undefined} disabled={props.disabled || props.criterion.required} title={props.criterion.required ? 'Обязательный тест нельзя пропустить' : undefined} onClick={() => props.onUpdate(result, 'not_applicable')}>Пропустить</Button>
-        </div>
-        {result.status === 'failed' && <label>Описание ошибки (обязательно)<textarea value={comment} onChange={(event) => setComment(event.target.value)} onBlur={() => { if (comment.trim()) void props.onUpdate(result, 'failed', { comment, classification: 'implementation_defect', severity: 'major', frequency: 'unknown', reproduction: comment }) }} /></label>}
-        <label>Скриншоты<input type="file" accept="image/png,image/jpeg,image/webp" multiple disabled={props.disabled} onChange={(event) => { for (const file of Array.from(event.currentTarget.files ?? [])) void props.onAttach(result, file) }} /></label>
-        {result.attachments.length > 0 && <div>{result.attachments.map((attachment) => <a key={attachment.id} href={`/api/qa/attachments/${attachment.id}`} target="_blank" rel="noreferrer">{attachment.caption || attachment.name}</a>)}</div>}
-      </>}
+    </div>}
+    {result && <div className="manual-qa-card__body">
+      <div className="manual-qa-actions" role="group" aria-label={`Результат теста ${props.criterion.title}`}>
+        <Button size="sm" variant={selected === 'passed' ? 'primary' : undefined} aria-pressed={selected === 'passed'} disabled={props.disabled || saving} onClick={() => choose('passed')}>Успешно</Button>
+        <Button size="sm" variant={selected === 'failed' ? 'primary' : undefined} aria-pressed={selected === 'failed'} disabled={props.disabled || saving} onClick={() => choose('failed')}>Неуспешно</Button>
+        <Button size="sm" variant={selected === 'blocked' ? 'primary' : undefined} aria-pressed={selected === 'blocked'} disabled={props.disabled || saving} onClick={() => choose('blocked')}>Заблокировано</Button>
+        {!props.criterion.required && <Button size="sm" variant={selected === 'not_applicable' ? 'primary' : undefined} aria-pressed={selected === 'not_applicable'} disabled={props.disabled || saving} onClick={() => choose('not_applicable')}>Пропустить</Button>}
+      </div>
+      <label htmlFor={commentId}>Комментарий{commentRequired ? ' (обязательно)' : ''}</label>
+      <textarea id={commentId} value={comment} disabled={props.disabled || saving} aria-invalid={Boolean(saveError)} aria-describedby={saveError ? errorId : undefined} onChange={(event) => { setComment(event.target.value); setDirty(true); props.onPendingChange(true); setSaveError('') }} placeholder="Фактический результат, наблюдения, шаг ошибки или причина блокировки" />
+      <div className="manual-qa-save-state" role="status">{saving ? 'Сохраняем…' : saveError ? 'Не сохранено' : dirty ? 'Есть несохранённые изменения' : result.draft ? 'Черновик' : `Сохранено: ${resultStatusLabel(result.status)}`}</div>
+      {saveError && <div id={errorId} className="err" role="alert">{saveError}</div>}
+      {!props.disabled && <Button size="sm" variant="primary" disabled={saving || !dirty} onClick={() => void save()}>{saveError ? 'Повторить сохранение' : 'Сохранить результат'}</Button>}
+      <label>Скриншоты<input type="file" accept="image/png,image/jpeg,image/webp" multiple disabled={props.disabled || saving} onChange={(event) => { for (const file of Array.from(event.currentTarget.files ?? [])) void props.onAttach(result, file) }} /></label>
+      {result.attachments.length > 0 && <div>{result.attachments.map((attachment) => <a key={attachment.id} href={`/api/qa/attachments/${attachment.id}`} target="_blank" rel="noreferrer">{attachment.caption || attachment.name}</a>)}</div>}
+      {result.issue && <div>Связанный дефект: {result.issue.classification} · {result.issue.reproduction}</div>}
     </div>}
   </article>
 }

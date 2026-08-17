@@ -479,6 +479,7 @@ export function validateQaResult(status: QaResultStatus, fields: QaRequiredField
     if (!fields.comment.trim()) missing.push('comment')
   }
   if (status === 'blocked') {
+    if (!fields.comment.trim()) missing.push('comment')
     if (!fields.blockerReason.trim()) missing.push('blockerReason')
     if (!fields.blockerType) missing.push('blockerType')
     if (!fields.blockerOwner?.trim()) missing.push('blockerOwner')

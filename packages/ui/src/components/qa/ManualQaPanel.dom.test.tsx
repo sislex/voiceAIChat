@@ -22,14 +22,47 @@ describe('ManualQaPanel', () => {
     expect(screen.getByRole('link', { name:'Открыть preview' })).toHaveAttribute('href','https://preview')
     expect(screen.getByLabelText('Скриншоты')).toHaveAttribute('multiple')
   })
-  it('saves a mutually exclusive result with optimistic revision', async () => {
-    const saveResult=vi.fn().mockResolvedValue({})
+  it('renders per-scenario controls and saves success with optimistic revision', async () => {
+    const saved = { ...qaState('passed').activeSession!.results[0], revision: 2 }
+    const saveResult=vi.fn().mockResolvedValue(saved)
     window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
-    fireEvent.click(await screen.findByRole('button',{name:/Тест 1/}))
+    expect(await screen.findByRole('button',{name:'Успешно'})).toHaveAttribute('aria-pressed','false')
+    expect(screen.getByRole('button',{name:'Неуспешно'})).toBeTruthy()
+    expect(screen.getByLabelText('Комментарий')).toBeTruthy()
     fireEvent.click(screen.getByRole('button',{name:'Успешно'}))
+    fireEvent.click(screen.getByRole('button',{name:'Сохранить результат'}))
     await waitFor(()=>expect(saveResult).toHaveBeenCalledWith('p1','t1','r1',1,expect.objectContaining({draft:false,status:'passed'})))
-    expect(screen.getByRole('button',{name:'Пропустить'})).toBeDisabled()
+    expect(await screen.findByText('Сохранено: Успешно')).toBeTruthy()
+  })
+
+  it('requires a comment for failure and preserves it after a save error', async () => {
+    const saveResult=vi.fn().mockRejectedValue(new Error('QA result revision conflict'))
+    window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
+    render(<ManualQaPanel projectId="p1" taskId="t1" />)
+    await screen.findByRole('button',{name:'Неуспешно'})
+    fireEvent.click(screen.getByRole('button',{name:'Неуспешно'}))
+    fireEvent.click(screen.getByRole('button',{name:'Сохранить результат'}))
+    expect(screen.getByRole('alert')).toHaveTextContent('Опишите фактический результат')
+    expect(saveResult).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('Комментарий (обязательно)'), { target: { value: 'На шаге 2 ран продолжает работать' } })
+    fireEvent.click(screen.getByRole('button',{name:'Сохранить результат'}))
+    await waitFor(()=>expect(screen.getByRole('alert')).toHaveTextContent('revision conflict'))
+    expect(screen.getByLabelText('Комментарий (обязательно)')).toHaveValue('На шаге 2 ран продолжает работать')
+    expect(screen.getByRole('button',{name:'Повторить сохранение'})).toBeEnabled()
+  })
+
+  it('submits blocked with the existing blocker contract', async () => {
+    const saved = { ...qaState('blocked').activeSession!.results[0], comment:'Preview недоступен', revision:2 }
+    const saveResult=vi.fn().mockResolvedValue(saved)
+    window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
+    render(<ManualQaPanel projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button',{name:'Заблокировано'}))
+    fireEvent.change(screen.getByLabelText('Комментарий (обязательно)'), { target:{ value:'Preview недоступен' } })
+    fireEvent.click(screen.getByRole('button',{name:'Сохранить результат'}))
+    await waitFor(()=>expect(saveResult).toHaveBeenCalledWith('p1','t1','r1',1,expect.objectContaining({
+      status:'blocked', comment:'Preview недоступен', blockerReason:'Preview недоступен', blockerType:'other'
+    })))
   })
   it('creates a detailed manual QA scenario', async () => {
     const createCriterion = vi.fn().mockResolvedValue({})
