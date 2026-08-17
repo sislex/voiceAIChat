@@ -230,6 +230,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:saveLlmAccess': ({ name, access }) => req(REST.adminUserLlmAccess(name), { method: 'PUT', body: JSON.stringify(access) }),
     'admin:createUser': (b) =>
       req(REST.adminUsers, { method: 'POST', body: JSON.stringify(b) }),
+    'admin:updateUserRole': ({ name, role }) =>
+      req(REST.adminUser(name), { method: 'PATCH', body: JSON.stringify({ role }) }),
     'admin:setBlocked': async ({ name, blocked }) => {
       await req(REST.adminUserBlock(name), { method: 'POST', body: JSON.stringify({ blocked }) })
     },

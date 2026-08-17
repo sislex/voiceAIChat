@@ -76,6 +76,30 @@ function saveBlob(filename: string, blob: Blob): void {
   URL.revokeObjectURL(url)
 }
 
+export function createAdminClient(api: RendererApi): AdminClient {
+  return {
+      listUsers: () => api['admin:users'](),
+      usageSummary: (range) => api['admin:usageSummary'](range),
+      createUser: (input) => api['admin:createUser'](input),
+      updateUserRole: (input) => api['admin:updateUserRole'](input),
+      setUserBlocked: (input) => api['admin:setBlocked'](input),
+      deleteUser: (input) => api['admin:deleteUser'](input),
+      getUserLlmAccess: (input) => api['admin:llmAccess'](input),
+      replaceUserLlmAccess: (input) => api['admin:saveLlmAccess'](input),
+      userUsage: (input) => api['admin:usage'](input),
+      userConversations: (input) => api['admin:conversations'](input),
+      userMessages: (input) => api['admin:messages'](input),
+      listLlmEngines: () => api['admin:llmEngines'](),
+      createLlmEngine: (input) => api['admin:createLlmEngine'](input),
+      updateLlmEngine: (input) => api['admin:updateLlmEngine'](input),
+      deleteLlmEngine: (input) => api['admin:deleteLlmEngine'](input),
+      checkLlmEngineHealth: (input) => api['admin:checkLlmEngineHealth'](input),
+      listModelPrices: () => api['admin:modelPrices'](),
+      saveModelPrice: (input) => api['admin:saveModelPrice'](input),
+      deleteModelPrice: (input) => api['admin:deleteModelPrice'](input)
+    }
+}
+
 /** Переопределения для тестов и сториз: всё, чего нет, берётся из окна. */
 export interface BrowserClientOverrides extends Partial<AppClients> {
   api?: RendererApi
@@ -130,7 +154,7 @@ export function createBrowserClients(overrides: BrowserClientOverrides = {}): Ap
       ...(cc ? { ccTailStart: (slug: string, id: string) => cc.tailStart({ slug, id }), ccTailStop: () => cc.tailStop() } : {}),
       ...(codex ? { cxTailStart: (id: string) => codex.tailStart({ id }), cxTailStop: () => codex.tailStop() } : {})
     }),
-    admin: overrides.admin ?? withApi<AdminClient>(api, {}),
+    admin: overrides.admin ?? createAdminClient(api),
     projects: overrides.projects ?? withApi<ProjectsClient>(api, {
       ...(bridge('board') ? { board: bridge('board') } : {}),
       ...(bridge('ci') ? { ci: bridge('ci') } : {})

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
@@ -13,12 +13,14 @@ import type {
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { Conversation, Message, LlmProvider } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
-import { Button } from '@voicechat/ui-kit'
-import { ToolFrame } from './ToolFrame'
-import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
-import { EmptyState } from '@voicechat/ui-kit'
-import { ErrorState } from '@voicechat/ui-kit'
-import { loadView, type LoadStatus } from '../lib/loadState'
+import { Button, Dialog, Skeleton, RefreshIndicator, EmptyState, ErrorState, ConfirmDialog } from '@voicechat/ui-kit'
+import { loadView, type LoadStatus } from './loadState'
+
+function AdminFrame({ variant, onClose, children }: { variant: 'modal' | 'page'; onClose: () => void; children: ReactNode }): JSX.Element {
+  return variant === 'modal'
+    ? <Dialog title="Пользователи" size="full" onClose={onClose} testId="users-overlay"><div className="admin-frame">{children}</div></Dialog>
+    : <section className="admin-page" aria-label="Пользователи" data-testid="users-overlay"><header className="admin-head"><h2>Пользователи</h2><Button onClick={onClose}>Закрыть</Button></header>{children}</section>
+}
 
 export interface UsersAdminProps {
   variant?: 'modal' | 'page'
@@ -37,6 +39,7 @@ export interface UsersAdminProps {
   currentUserName: string
   onSelect: (name: string) => void
   onCreate: (name: string, password: string, role: import('@shared/types').UserRole) => void
+  onUpdateRole?: (name: string, role: import('@shared/types').UserRole) => void
   onSetBlocked: (name: string, blocked: boolean) => void
   onDelete: (name: string) => void
   onLoadUsage: (unit: UsageUnit, from?: number, to?: number, conversationId?: string) => void
@@ -111,6 +114,7 @@ export function UsersAdmin({
   currentUserName,
   onSelect,
   onCreate,
+  onUpdateRole = () => undefined,
   onSetBlocked,
   onDelete,
   onLoadUsage,
@@ -136,6 +140,7 @@ export function UsersAdmin({
   const [newPass, setNewPass] = useState('')
   const [newRole, setNewRole] = useState<import('@shared/types').UserRole>('developer')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  const [confirmBlock, setConfirmBlock] = useState<{ name: string; blocked: boolean } | null>(null)
   const [usageDays, setUsageDays] = useState<7 | 30 | null>(30)
   const [usageConversationId, setUsageConversationId] = useState('')
   const [engineDraft, setEngineDraft] = useState<AdminLlmEngineInput>(EMPTY_ENGINE)
@@ -196,7 +201,7 @@ export function UsersAdmin({
   }
 
   return (
-    <ToolFrame title="Пользователи" variant={variant} onClose={onClose} testId="users-overlay">
+    <AdminFrame variant={variant} onClose={onClose}>
       <div className="ccobs-body">
         <nav className="cc-col cc-projects" aria-label="Список пользователей">
           {view.state === 'skeleton' && (
@@ -258,7 +263,8 @@ export function UsersAdmin({
                 <span className="uadmin-actions">
                   {canManage(cur.name) && (
                     <>
-                      <Button size="sm" onClick={() => onSetBlocked(cur.name, !cur.blocked)}>{cur.blocked ? 'Разблокировать' : 'Заблокировать'}</Button>
+                      <select aria-label="Роль пользователя" value={cur.role} onChange={(event) => onUpdateRole(cur.name, event.target.value as import('@shared/types').UserRole)}><option value="admin">admin</option><option value="developer">developer</option><option value="tester">tester</option><option value="observer">observer</option></select>
+                      <Button size="sm" onClick={() => setConfirmBlock({ name: cur.name, blocked: !cur.blocked })}>{cur.blocked ? 'Разблокировать' : 'Заблокировать'}</Button>
                       {confirmDel === cur.name ? (
                         <>
                           <Button variant="danger" size="sm" onClick={() => onDelete(cur.name)}>Удалить всё</Button>
@@ -438,6 +444,7 @@ export function UsersAdmin({
           </section>}
         </div>
       </div>
-    </ToolFrame>
+      {confirmBlock && <ConfirmDialog title={confirmBlock.blocked ? `Заблокировать ${confirmBlock.name}?` : `Разблокировать ${confirmBlock.name}?`} variant="danger" confirmLabel={confirmBlock.blocked ? 'Заблокировать' : 'Разблокировать'} onConfirm={() => { onSetBlocked(confirmBlock.name, confirmBlock.blocked); setConfirmBlock(null) }} onCancel={() => setConfirmBlock(null)} />}
+    </AdminFrame>
   )
 }
