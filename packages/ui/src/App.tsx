@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { parseChatRoute } from '@voicechat/chat-app'
 import { parseProjectsRoute } from '@voicechat/projects-app'
 import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
@@ -418,7 +419,8 @@ export default function App(props: AppProps = {}): JSX.Element {
 
 /** Чат из адреса на момент монтирования: его bootstrap откроет первым. */
 function initialChatIdFromPath(path: string, segments: string[]): string | null {
-  if (segments[0] === 'chat') return segments[1] ?? null
+  const chatRoute = parseChatRoute(path)
+  if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item') return chatRoute.conversationId
   if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader') {
     return segments[1] ?? null
   }
@@ -470,7 +472,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const onUtilityPage = utilitySeg !== null
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
-  const routeChatId = segments[0] === 'chat' ? (segments[1] ?? null) : routeTaskChatId
+  const chatRoute = parseChatRoute(path)
+  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' ? chatRoute.conversationId : routeTaskChatId
   const legacyReaderRoute = segments[0] === 'web-recorder'
   const inReader = segments[0] === 'web-reader' || legacyReaderRoute
   const routeReaderChatId = inReader ? (segments[1] ?? null) : null

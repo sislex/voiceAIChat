@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { EmbeddedChat } from '@voicechat/chat-app'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetAssistantProposal, WidgetToolScope } from '@shared/widgetAssistant'
 import { isWidgetAssistantProposal, parseWidgetAssistantReply, taskWidgetItem } from '@shared/widgetAssistant'
 import type { Conversation, Message } from '@shared/types'
@@ -200,8 +201,8 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
     {proposal && <WidgetProposalCard proposal={proposal.command} context={context} onConfirm={() => { const next = proposal; setProposal(null); void confirmProposal(next.command, next.turnId) }} onCancel={() => setProposal(null)} />}
     {conversation && effective && <details className="kanban-assistant-settings"><summary>LLM: {effective.provider} · {effective.model}{effective.inherited ? ' (из проекта)' : ''}</summary><div><label>Исполнитель<select value={conversation.llmEngineId ?? ''} onChange={(event) => void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmEngineId: event.target.value || null }).then(reload)}><option value="">Из проекта</option>{llmEngines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name}</option>)}</select></label><label>Provider<select value={conversation.llmProvider ?? ''} onChange={(event) => { const provider = event.target.value as 'claude' | 'codex' | ''; void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmProvider: provider || null, llmModel: provider ? effective.model : null }).then(reload) }}><option value="">Из проекта</option><option value="claude">Claude</option><option value="codex">Codex</option></select></label><label>Модель<input value={conversation.llmModel ?? ''} disabled={!conversation.llmProvider} onChange={(event) => setConversation({ ...conversation, llmModel: event.target.value })} onBlur={() => void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmModel: conversation.llmModel }).then(reload)} /></label><button type="button" onClick={() => void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmEngineId: null, llmProvider: null, llmModel: null }).then(reload)}>Сбросить к проекту</button></div></details>}
   </div>
-  return <div className="kanban-assistant">
-    <ChatColumn
+  return <EmbeddedChat>
+    <div className="kanban-assistant"><ChatColumn
       title={conversation?.title ?? 'Канбан-ассистент'}
       state={busy ? 'thinking' : 'idle'}
       messages={visibleMessages}
@@ -231,6 +232,6 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
         voiceInputEnabled={false}
         defaultCollapsed={false}
       />}
-    />
-  </div>
+    /></div>
+  </EmbeddedChat>
 }

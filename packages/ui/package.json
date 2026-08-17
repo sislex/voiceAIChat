@@ -17,6 +17,7 @@
     "build-storybook": "storybook build -o storybook-static"
   },
   "dependencies": {
+    "@voicechat/chat-app": "*",
     "@voicechat/projects-app": "*",
     "@voicechat/shared": "*",
     "@voicechat/ui-kit": "*",
