@@ -35,6 +35,7 @@ import { CiReport } from '../ci/CiReport'
 import { MergePanel } from '../ci/MergePanel'
 import { TaskRunFeed } from '../ci/TaskRunFeed'
 import { TaskPreparationTab } from './TaskPreparationTab'
+import { TaskTimeline } from './TaskTimeline'
 import type { TaskPreparationRun } from '@shared/qa'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
@@ -127,7 +128,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [criteria, setCriteria] = useState(() => normalizeAcceptanceCriteria(task.acceptanceCriteria))
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
-  type TaskTab = 'general' | 'settings' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'progress' | 'merge' | 'feed' | 'preparation'
+  type TaskTab = 'general' | 'timeline' | 'settings' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'progress' | 'merge' | 'feed' | 'preparation'
   type ProgressTab = 'overview' | 'checks' | 'changes' | 'kb' | 'delivery' | 'resources'
   const preparationVisible = task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(board.columns.find((item) => item.id === task.columnId)?.semanticType ?? '') && Boolean(task.taskPreparationRunId || task.taskPreparationStatus === 'running')
   const defaultTab = (): TaskTab => {
@@ -462,7 +463,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     >
       {!props.draft && <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
         {([
-          ['general','Общее'],
+          ['general','Общее'],['timeline','Временная шкала'],
           ...(preparationVisible ? [['preparation','Подготовка к разработке'] as const] : []),
           ['settings','Настройки'],['progress','Ход выполнения'],
           ...qaStageOrder.filter(qaStageVisible).map((stage) => [stage, stage === 'component_qa' ? 'Component QA' : stage === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA'] as const),
@@ -840,6 +841,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           </div>
         </section>}
         {!props.draft && <>
+        <section className="task-tab-panel" data-testid="task-timeline-panel" hidden={activeTab !== 'timeline'}>{activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}</section>
         <section className="task-tab-panel" data-testid="task-preparation-panel" hidden={activeTab !== 'preparation'}>{preparationVisible && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} onRetry={props.onRetryPreparation} onCancel={props.onCancelPreparation} />}</section>
         {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" hidden={activeTab !== stage}>{stage === 'component_qa'
           ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
