@@ -13,7 +13,7 @@ function environment(state: PreviewState): PreviewEnvironment {
     storybookStatus: 'not_applicable', storybookCommitSha: null, selectedSeedScenario: null,
     seedVersion: null, dataReady: false, healthStatus: state === 'running' || state === 'stale' ? 'healthy' : 'unknown',
     services: [], runs: [], createdBy: 'u1', createdAt: 1, updatedAt: 1, startedAt: null, stoppedAt: null,
-    lastError: state === 'failed' ? { type: 'build', message: 'boom' } : null
+    lastError: state === 'failed' ? { type: 'build_failed', message: 'boom' } : null
   }
 }
 afterEach(() => { delete window.featurePreview })
@@ -36,6 +36,29 @@ describe('FeaturePreviewSection', () => {
     expect(operate).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Запустить тестовый контейнер' }))
     await waitFor(() => expect(operate).toHaveBeenCalledWith('p1', 't1', 'start', expect.objectContaining({ idempotencyKey: expect.any(String) })))
+  })
+
+  it('shows launch feedback immediately and blocks a duplicate request', async () => {
+    let resolve!: (value: PreviewEnvironment) => void
+    const operate = vi.fn(() => new Promise<PreviewEnvironment>((done) => { resolve = done }))
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate, cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    const button = await screen.findByRole('button', { name: 'Запустить тестовый контейнер' })
+    fireEvent.click(button)
+    expect(screen.getByRole('button', { name: 'Запускаем тестовый контейнер…' })).toBeDisabled()
+    expect(screen.getByRole('progressbar', { name: 'Прогресс запуска тестового контейнера' })).not.toHaveAttribute('aria-valuenow')
+    fireEvent.click(screen.getByRole('button', { name: 'Запускаем тестовый контейнер…' }))
+    expect(operate).toHaveBeenCalledTimes(1)
+    resolve(environment('building'))
+    await waitFor(() => expect(screen.getByText('Сборка')).toBeInTheDocument())
+  })
+
+  it('turns a rejected launch request into a terminal visible error', async () => {
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate: vi.fn().mockRejectedValue(new Error('Машина недоступна')), cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Запустить тестовый контейнер' }))
+    expect(await screen.findByText('Машина недоступна')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Запустить тестовый контейнер' })).toBeEnabled()
   })
 
   it('starts when Web Crypto has no randomUUID', async () => {

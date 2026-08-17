@@ -38,6 +38,9 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [opening, setOpening] = useState<PreviewServiceKind | null>(null)
   const [connection, setConnection] = useState<PreviewAccessResult | null>(null)
+  const [launching, setLaunching] = useState(false)
+  const [now, setNow] = useState(Date.now())
+  const [launchStartedAt, setLaunchStartedAt] = useState<number | null>(null)
   const load = useCallback(async () => {
     if (!api) return
     try {
@@ -63,16 +66,24 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
     const timer = window.setInterval(() => void load(), 1500)
     return () => window.clearInterval(timer)
   }, [environment?.state, load])
+  useEffect(() => {
+    if (!launching && (!environment || !isPreviewBusy(environment.state))) return
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [launching, environment?.state])
   if (!api) return null
   const state = environment?.state ?? 'not_created'
   const actions = previewActions(state)
   const operate = async (operation: PreviewOperation): Promise<void> => {
+    if (launching || isPreviewBusy(state)) return
     if ((operation === 'remove' || operation === 'reset' || operation === 'docker_install') && !(await confirm({
       title: operation === 'remove' ? 'Удалить тестовое окружение?' : operation === 'docker_install' ? 'Установить Docker на выбранной машине?' : 'Сбросить тестовые данные?',
       confirmLabel: operation === 'remove' ? 'Удалить' : operation === 'docker_install' ? 'Установить Docker' : 'Сбросить',
       variant: 'danger'
     }))) return
     setError(null)
+    if (operation === 'start' || operation === 'rebuild') { const started = Date.now(); setLaunching(true); setLaunchStartedAt(started); setNow(started) }
     try {
       setEnvironment(await api.operate(props.projectId, props.taskId, operation, {
         idempotencyKey: previewIdempotencyKey(),
@@ -80,6 +91,7 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
         ...(selectedAgentId ? { agentId: selectedAgentId } : {})
       }))
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    finally { setLaunching(false) }
   }
   const openService = async (service: PreviewServiceKind): Promise<void> => {
     setOpening(service); setConnection(null); setError(null)
@@ -96,6 +108,13 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
     setConnection({ ...connection, state: 'closed', url: null })
   }
   const run = environment?.runs.at(-1)
+  const activeRun = !!run && ['queued','running','cancelling'].includes(run.status)
+  const currentStep = run?.steps?.find((step) => step.id === run.currentStepId) ?? run?.steps?.find((step) => step.status === 'running')
+  const completedSteps = run?.steps?.filter((step) => step.status === 'succeeded' || step.status === 'skipped').length ?? 0
+  const progress = run?.steps?.length ? Math.round(completedSteps / run.steps.length * 100) : null
+  const elapsedFrom = run?.startedAt ?? run?.createdAt ?? launchStartedAt
+  const elapsedSeconds = elapsedFrom ? Math.max(0, Math.floor((now - elapsedFrom) / 1000)) : 0
+  const elapsed = `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, '0')}`
   const current = environment?.expectedCommitSha && environment.expectedCommitSha === environment.currentCommitSha && environment.currentCommitSha === environment.builtCommitSha
   const canOpen = state === 'running' && environment?.healthStatus === 'healthy'
   return <section className={`feature-preview feature-preview--${state}`} data-testid="feature-preview">
@@ -106,6 +125,17 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
       </div>
       {isPreviewBusy(state) && <Button size="sm" variant="ghost" onClick={() => void api.cancel(props.projectId, props.taskId).then(load)}>Отменить</Button>}
     </div>
+    {(launching || activeRun) && <div className="feature-preview__progress" role="status" aria-live="polite">
+      <span className="feature-preview__loader" aria-hidden="true" />
+      <div className="feature-preview__progress-copy">
+        <strong>{launching && !activeRun ? 'Запускаем тестовый контейнер…' : currentStep?.name ?? 'Запускаем тестовый контейнер…'}</strong>
+        <span>{currentStep?.message ?? 'Создаём серверную операцию запуска'} · {elapsed}</span>
+      </div>
+      <div className={`feature-preview__bar${progress === null ? ' feature-preview__bar--indeterminate' : ''}`} role="progressbar" aria-label="Прогресс запуска тестового контейнера" aria-valuemin={progress === null ? undefined : 0} aria-valuemax={progress === null ? undefined : 100} aria-valuenow={progress ?? undefined}>
+        {progress !== null && <span style={{ width: `${progress}%` }} />}
+      </div>
+      <Button size="sm" variant="ghost" aria-expanded={logsOpen} onClick={() => setLogsOpen((value) => !value)}>Подробнее</Button>
+    </div>}
     <label className="feature-preview__scenario">Машина для окружения
       <select aria-label="Машина для тестового окружения" value={selectedAgentId} disabled={isPreviewBusy(state) || state === 'running'} onChange={(event) => setSelectedAgentId(event.target.value)}>
         <option value="">Выберите машину</option>
@@ -147,7 +177,7 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
     </>}
     {error && <p className="feature-preview__error">{error}</p>}
     <div className="feature-preview__actions">
-      {actions.includes('start') && <Button variant="primary" size="sm" onClick={() => void operate('start')}>{state === 'stopped' ? 'Запустить снова' : 'Запустить тестовый контейнер'}</Button>}
+      {actions.includes('start') && <Button variant="primary" size="sm" disabled={launching} aria-busy={launching} onClick={() => void operate('start')}>{launching ? 'Запускаем тестовый контейнер…' : state === 'stopped' ? 'Запустить снова' : 'Запустить тестовый контейнер'}</Button>}
       {actions.includes('rebuild') && <Button size="sm" onClick={() => void operate('rebuild')}>Пересобрать</Button>}
       {actions.includes('stop') && <Button size="sm" onClick={() => void operate('stop')}>Остановить</Button>}
       {canOpen && environment?.appUrl && <Button variant="primary" size="sm" disabled={opening !== null} onClick={() => void openService('app')}>{opening === 'app' ? 'Создаём подключение…' : 'Открыть проект'}</Button>}
@@ -155,11 +185,16 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
       {actions.includes('seed') && <Button size="sm" onClick={() => void operate('seed')}>Подготовить тестовые данные</Button>}
       {actions.includes('reset') && <Button size="sm" onClick={() => void operate('reset')}>Сбросить тестовые данные</Button>}
       {actions.includes('health_check') && <Button size="sm" onClick={() => void operate('health_check')}>Проверить состояние</Button>}
-      {run && <Button size="sm" variant="ghost" onClick={() => setLogsOpen((value) => !value)}>Показать логи</Button>}
+      {run && !activeRun && <Button size="sm" variant="ghost" aria-expanded={logsOpen} onClick={() => setLogsOpen((value) => !value)}>Просмотреть журнал</Button>}
       {(error?.includes('не запущен') || environment?.lastError?.message.includes('не запущен')) && <Button size="sm" onClick={() => void operate('docker_start')}>Запустить Docker</Button>}
       {(error?.includes('не установлен') || environment?.lastError?.message.includes('не установлен')) && <Button size="sm" onClick={() => void operate('docker_install')}>Установить и запустить Docker</Button>}
       {actions.includes('remove') && <Button size="sm" variant="danger" onClick={() => void operate('remove')}>Удалить окружение</Button>}
     </div>
-    {logsOpen && run && <pre className="feature-preview__log" aria-label="Лог preview">{run.log || 'Лог пока пуст'}</pre>}
+    {logsOpen && run && <div className="feature-preview__details">
+      <ol className="feature-preview__steps" aria-label="Этапы запуска">{run.steps?.map((step) => <li key={step.id} className={`feature-preview__step feature-preview__step--${step.status}`} aria-current={step.status === 'running' ? 'step' : undefined}>
+        <span>{step.name}</span><small>{step.message}{step.startedAt && step.finishedAt ? ` · ${Math.max(0, Math.round((step.finishedAt - step.startedAt) / 1000))} с` : ''}</small>
+      </li>)}</ol>
+      <pre className="feature-preview__log" aria-label="Безопасный журнал preview">{run.log || 'Лог пока пуст'}</pre>
+    </div>}
   </section>
 }
