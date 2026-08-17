@@ -233,6 +233,42 @@ describe('подготовка к разработке: выбор модели 
   })
 })
 
+describe('интерактивная попытка, события и экспорт', () => {
+  it('сохраняет монотонную ленту, атомарно принимает первый ответ и продолжает ту же попытку', async () => {
+    const { project, task } = await taskInBacklog()
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify({ question: 'Какой публичный контракт обязателен?', material: true }) : READINESS })
+    const started = await launch(adminTok, project.id, task.id)
+    let waiting: TaskPreparationRun | null = null
+    for (let i = 0; i < 100; i++) {
+      const current = (await inj(adminTok, { method: 'GET', url: `/api/task-preparation/runs/${started.id}` })).json() as TaskPreparationRun
+      if (current.status === 'waiting_for_answer') { waiting = current; break }
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(waiting?.questions).toHaveLength(1)
+    const questionId = waiting!.questions![0].questionId
+    const first = await inj(adminTok, { method: 'POST', url: `/api/task-preparation/questions/${questionId}/answer`, payload: { answer: 'REST v2' } })
+    const duplicate = await inj(adminTok, { method: 'POST', url: `/api/task-preparation/questions/${questionId}/answer`, payload: { answer: 'Другое решение' } })
+    expect(first.json()).toMatchObject({ accepted: true, alreadyAnswered: false })
+    expect(duplicate.json()).toMatchObject({ accepted: false, alreadyAnswered: true, question: { answer: 'REST v2' } })
+    const done = await settled(adminTok, started.id)
+    expect(done.id).toBe(started.id)
+    expect(done.events!.map((event) => event.sequence)).toEqual(done.events!.map((_event, index) => index + 1))
+    expect(done.events!.some((event) => event.type === 'answer_accepted')).toBe(true)
+  })
+
+  it('редактирует секреты до хранения и экспортирует один сохранённый снимок', async () => {
+    const { project, task } = await taskInBacklog()
+    claudeAnswer = () => ({ error: 'Authorization: Bearer super-secret-token-value' })
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+    expect(run.error).not.toContain('super-secret-token-value')
+    const exported = await inj(adminTok, { method: 'GET', url: `/api/task-preparation/runs/${run.id}/export/json` })
+    expect(exported.statusCode).toBe(200)
+    expect(exported.headers['content-disposition']).toContain('preparation-attempt-1-')
+    expect(exported.body).not.toContain('super-secret-token-value')
+    expect(exported.json()).toMatchObject({ schemaVersion: 1, attemptId: run.id, taskId: task.id })
+  })
+})
+
 describe('task-launch создаёт сразу в подготовке', () => {
   const payload = { proposalId: 'message-1:proposal-1:preparation', title: 'Новая задача', description: 'Описание', acceptanceCriteria: 'Критерий', priority: 'high', skills: ['typescript'] }
 

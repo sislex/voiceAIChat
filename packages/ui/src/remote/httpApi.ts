@@ -340,6 +340,23 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/task-preparation/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),
     'tasks:retryPreparationRun': ({ runId }) =>
       req(`/api/task-preparation/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST' }),
+    'tasks:answerPreparationQuestion': ({ questionId, answer }) =>
+      req(`/api/task-preparation/questions/${encodeURIComponent(questionId)}/answer`, { method: 'POST', body: JSON.stringify({ answer }) }),
+    'tasks:exportPreparationRun': async ({ runId, format }) => {
+      const token = getToken()
+      const response = await fetch(httpBase + `/api/task-preparation/runs/${encodeURIComponent(runId)}/export/${format}`, {
+        headers: token ? { authorization: `Bearer ${token}` } : {}
+      })
+      if (!response.ok) throw new Error(`Экспорт подготовки → ${response.status}`)
+      const disposition = response.headers.get('content-disposition') ?? ''
+      const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? `preparation.${format}`
+      const url = URL.createObjectURL(await response.blob())
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = filename
+      anchor.click()
+      URL.revokeObjectURL(url)
+    },
     'tasks:openChat': ({ projectId, taskId }) =>
       req(REST.projectTaskChat(projectId, taskId), { method: 'POST' }),
     'tasks:delete': async ({ projectId, taskId }) => {

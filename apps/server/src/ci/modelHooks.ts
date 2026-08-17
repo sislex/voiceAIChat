@@ -289,7 +289,7 @@ function remoteOf(deps: CiModelHooksDeps, ctx: CiModelContext): Partial<LlmReque
 const MODEL_COMMAND_TRIM_HINT =
   'полный вывод остался в ленте шага; повтори команду с фильтром, если нужна середина'
 
-function taskPrompt(ctx: CiModelContext, mode: CiRunMode): string {
+function taskPrompt(ctx: CiModelContext, mode: CiRunMode, readiness: import('@voicechat/shared').DevelopmentReadiness | null): string {
   const tail = mode === 'plan'
     ? [
         'Режим «План»: только исследуй код и составь план работы, файлы не меняй.',
@@ -304,6 +304,7 @@ function taskPrompt(ctx: CiModelContext, mode: CiRunMode): string {
     `Задача: ${ctx.task.title}`,
     ctx.task.description ? `Описание: ${ctx.task.description}` : '',
     ctx.task.acceptanceCriteria ? `Критерии приёмки: ${ctx.task.acceptanceCriteria}` : '',
+    readiness ? `Подтверждённый DevelopmentReadiness (авторитетный scope; не расширять): ${JSON.stringify(readiness)}` : '',
     `Рабочая директория: ${ctx.workspacePath}`,
     `Ветка: ${ctx.env.BRANCH ?? ''}`,
     '',
@@ -653,7 +654,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
         // «Сначала база знаний, потом код»: требование идёт в задании, а блок
         // контекста по теме задачи сервер подмешивает сам (режим `auto`).
         const kbMode = kbModeOf(ctx)
-        let prompt = taskPrompt(ctx, phase)
+        let prompt = taskPrompt(ctx, phase, deps.db.confirmedDevelopmentReadiness(ctx.task.id))
         const qa = deps.db.getQaTaskState(ctx.run.triggeredBy, ctx.task.projectId, ctx.task.id)
         const fixSession = qa?.sessions.find((session) => session.status === 'failed' && (session.linkedFixRunId === ctx.run.id || session.results.some((result) => result.issue?.linkedFixRunId === ctx.run.id)))
         if (fixSession) {
