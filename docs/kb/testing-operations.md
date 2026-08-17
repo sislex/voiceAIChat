@@ -149,3 +149,7 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 ## База знаний
 
 Перед задачей: `npm run kb:context -- "запрос"`. После кода: `npm run kb:impact`, правка тематической статьи, `node scripts/kb.mjs touch <topic>`, `npm run kb:log -- slug`, `npm run kb:index`, `npm run kb:check`. README генерируется и руками не редактируется.
+
+## Проверки Operations frontend
+
+Пакет имеет собственные `typecheck` и `test`. Unit-набор покрывает routes, POSIX/Windows path helpers и redaction; store-набор — stale-response и idempotent dispose; DOM setup находится в `src/test/setup.ts`; Storybook states — в `Operations.stories.tsx`. `architecture.test.ts` сканирует исходники и запрещает host stores, прямые transports, platform apps и имена секретных полей. Финальный локальный гейт для задачи — `npm run affected-check`; при изменении stories дополнительно собирается общий Storybook.
