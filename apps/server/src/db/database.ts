@@ -344,6 +344,11 @@ const NOT_DONE_TASK_CHAT = `(c.task_id IS NULL OR NOT EXISTS (
     SELECT 1 FROM tasks t JOIN kanban_columns k ON k.id = t.column_id
     WHERE t.id = c.task_id AND k.semantic_type = 'done'))`
 
+/** Отменённые задачи не входят ни в одну стандартную выборку разговоров. */
+const NOT_CANCELLED_TASK_CHAT = `(c.task_id IS NULL OR NOT EXISTS (
+    SELECT 1 FROM tasks t JOIN kanban_columns k ON k.id = t.column_id
+    WHERE t.id = c.task_id AND k.semantic_type = 'cancelled'))`
+
 /** Шаг дробного ранга для порядка колонок/задач. */
 const RANK_STEP = 1024
 /** Порог схлопывания дробного ранга — ниже него колонка ренормализуется. */
@@ -494,7 +499,7 @@ function normPriority(raw: string): TaskPriority {
 }
 
 function normColumnSemantic(raw: string): KanbanColumnSemanticType {
-  return raw === 'backlog' || raw === 'preparation' || raw === 'ready' || raw === 'development' || raw === 'component_qa' || raw === 'integration_tests' || raw === 'automated_qa' || raw === 'testing' || raw === 'qa_preparation' || raw === 'manual_qa' || raw === 'awaiting_merge' || raw === 'merge' || raw === 'decision_required' || raw === 'done' ? raw : 'custom'
+  return raw === 'backlog' || raw === 'preparation' || raw === 'ready' || raw === 'development' || raw === 'component_qa' || raw === 'integration_tests' || raw === 'automated_qa' || raw === 'testing' || raw === 'qa_preparation' || raw === 'manual_qa' || raw === 'awaiting_merge' || raw === 'merge' || raw === 'decision_required' || raw === 'done' || raw === 'cancelled' ? raw : 'custom'
 }
 
 function normWorkItemType(raw: string): WorkItemType {
@@ -844,6 +849,7 @@ export class VoiceChatDb {
       ['awaiting_merge', 'Ожидает мержа'],
       ['merge', 'Мерж'],
       ['done', 'Готово'],
+      ['cancelled', 'Отменено'],
       ['decision_required', 'Требуется решение']
     ]
     type WorkflowColumnRow = { id: string; semantic_type: string; position: number; created_at: number }
@@ -1262,6 +1268,7 @@ export class VoiceChatDb {
          FROM conversations c
          WHERE c.user_id = ?
            AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader'))
+           AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
          ORDER BY c.updated_at DESC`
       )
@@ -1312,6 +1319,7 @@ export class VoiceChatDb {
          FROM conversations c
          WHERE c.user_id = ?
            AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader'))
+           AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
@@ -1635,6 +1643,8 @@ export class VoiceChatDb {
    * страницы не «дышали»: курсор кодирует именно эту пару.
    *
    * `projectId`: undefined — по всем беседам, null — только беседы без проекта.
+   * Сообщения чатов отменённых задач исключаются до LIMIT/курсора; прямой поиск
+   * внутри такого разговора намеренно не превращает его в стандартную выборку.
    */
   searchMessages(userId: string, opts: MessageSearchOptions): MessageSearchResult {
     const match = toFtsMatchQuery(opts.q ?? '')
@@ -1642,7 +1652,7 @@ export class VoiceChatDb {
     // Индекса нет (сборка SQLite без FTS5) или искать нечего — пустая страница.
     if (!match || !this.ftsReady) return { hits: [], nextCursor: null, match }
 
-    const where = ['messages_fts MATCH ?', 'c.user_id = ?', "m.state = 'published'"]
+    const where = ['messages_fts MATCH ?', 'c.user_id = ?', "m.state = 'published'", NOT_CANCELLED_TASK_CHAT]
     const params: unknown[] = [match, userId]
     if (opts.projectId !== undefined) {
       if (opts.projectId === null) where.push('c.project_id IS NULL')
@@ -2527,6 +2537,7 @@ export class VoiceChatDb {
         ['Ожидает мержа', 'awaiting_merge'],
         ['Мерж', 'merge'],
         ['Готово', 'done'],
+        ['Отменено', 'cancelled'],
         ['Требуется решение', 'decision_required']
       ].forEach(([name, semantic], i) =>
         this.db.prepare(`INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`).run(this.newId(), id, name, semantic, (i + 1) * RANK_STEP, ts)

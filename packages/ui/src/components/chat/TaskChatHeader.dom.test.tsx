@@ -67,6 +67,11 @@ describe('TaskChatHeader', () => {
     expect(screen.queryByTestId('task-chat-elapsed')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Лента рана' })).not.toBeInTheDocument()
   })
+
+  it('показывает заметную отметку отменённой задачи независимо от статуса рана', () => {
+    render(<TaskChatHeader {...props} context={ctx({ columnSemantic: 'cancelled', columnName: 'Не делать' })} onOpenTask={vi.fn()} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Задача отменена')
+  })
 })
 
 describe('TaskChatHeader — подсветка состояния рана', () => {

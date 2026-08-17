@@ -50,17 +50,17 @@ export function mergeCiLogLines(current: CiLogLine[], incoming: CiLogLine[]): Ci
 }
 
 /**
- * Id задач в колонках с семантикой `done`: по изменению этого набора видно
- * переезд карточки в «Готово» и обратно (и, значит, видимость чата задачи).
+ * Id задач в колонках, меняющих видимость чатов (`done` и `cancelled`).
+ * Для `done` список зависит от пользовательского фильтра, `cancelled` скрыт всегда.
  */
-function doneTaskIds(board: Board): Set<string> {
-  const doneColumns = new Set(board.columns.filter((c) => c.semanticType === 'done').map((c) => c.id))
-  return new Set(board.tasks.filter((t) => doneColumns.has(t.columnId)).map((t) => t.id))
+function taskChatVisibilityIds(board: Board): Set<string> {
+  const hiddenColumns = new Set(board.columns.filter((c) => c.semanticType === 'done' || c.semanticType === 'cancelled').map((c) => c.id))
+  return new Set(board.tasks.filter((t) => hiddenColumns.has(t.columnId)).map((t) => t.id))
 }
 
-function sameDoneTasks(a: Board, b: Board): boolean {
-  const before = doneTaskIds(a)
-  const after = doneTaskIds(b)
+function sameTaskChatVisibility(a: Board, b: Board): boolean {
+  const before = taskChatVisibilityIds(a)
+  const after = taskChatVisibilityIds(b)
   return before.size === after.size && [...before].every((id) => after.has(id))
 }
 
@@ -579,14 +579,18 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         setState({ projectSettingsOpen: false })
       },
       applyBoardUpdate(projectId, board) {
-        if (projectId !== getState().activeProjectId) return
+        if (projectId !== getState().activeProjectId) {
+          // Чужую открытую доску не подменяем, но её задачи могут быть в текущем
+          // sidebar-фильтре: сервер безопасно пересчитает видимость разговоров.
+          deps.chat.scheduleConversationsRefresh()
+          return
+        }
         const ciSummaries = { ...getState().ciSummaries }
         for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
         const prev = getState().board
         setState({ board, ciSummaries })
-        // Карточку перенесли в «Готово» (или вернули) — сервер спрятал или вернул
-        // чат задачи. Сверяем только набор done-задач.
-        if (prev && !sameDoneTasks(prev, board)) deps.chat.scheduleConversationsRefresh()
+        // Изменение набора задач в done/cancelled меняет серверную видимость чатов.
+        if (prev && !sameTaskChatVisibility(prev, board)) deps.chat.scheduleConversationsRefresh()
       },
       async setBoardIncludeCompleted(include) {
         if (getState().boardIncludeCompleted === include) return

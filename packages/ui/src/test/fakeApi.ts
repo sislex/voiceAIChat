@@ -146,9 +146,14 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
    * Как на сервере: чат задачи, лежащей в колонке с семантикой `done`, из
    * списка/поиска бесед убран, пока не попросили `includeCompleted`.
    */
-  const doneTaskChat = (c: Conversation): boolean => {
+  const taskChatSemantic = (c: Conversation): KanbanColumn['semanticType'] | null => {
     const task = c.taskId ? tasks.find((t) => t.id === c.taskId) : undefined
-    return !!task && columns.find((k) => k.id === task.columnId)?.semanticType === 'done'
+    return task ? columns.find((k) => k.id === task.columnId)?.semanticType ?? null : null
+  }
+
+  const visibleInConversationList = (c: Conversation, includeCompleted: boolean): boolean => {
+    const semantic = taskChatSemantic(c)
+    return semantic !== 'cancelled' && (includeCompleted || semantic !== 'done')
   }
 
   function withCounts(c: Conversation): Conversation {
@@ -196,7 +201,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'widget:action': async () => ({ applied: true, replayed: false, revision: String(Date.now()) }),
     'conversations:list': async ({ includeCompleted } = {}) =>
       [...conversations]
-        .filter((c) => includeCompleted || !doneTaskChat(c))
+        .filter((c) => visibleInConversationList(c, Boolean(includeCompleted)))
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(withCounts),
     'conversations:create': async ({ title, assistantKind } = {}) => {
@@ -251,7 +256,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'conversations:search': async ({ query, includeCompleted }) => {
       const q = query.trim().toLowerCase()
-      const visible = [...conversations].filter((c) => includeCompleted || !doneTaskChat(c))
+      const visible = [...conversations].filter((c) => visibleInConversationList(c, Boolean(includeCompleted)))
       if (!q) return visible.sort((a, b) => b.updatedAt - a.updatedAt).map(withCounts)
       return visible
         .filter(
@@ -629,7 +634,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         ['Component QA', 'component_qa'], ['Создание интеграционных автотестов', 'integration_tests'],
         ['Automated QA', 'automated_qa'], ['Ручное QA', 'manual_qa'],
         ['Ожидает мержа', 'awaiting_merge'], ['Мерж', 'merge'], ['Готово', 'done'],
-        ['Требуется решение', 'decision_required']
+        ['Отменено', 'cancelled'], ['Требуется решение', 'decision_required']
       ].forEach(([name, semanticType], i) =>
         columns.push({ id: nextId(), projectId: id, name, semanticType: semanticType as KanbanColumn['semanticType'], position: (i + 1) * 1024, hidden: false, wipLimit: null, createdAt: ts })
       )
