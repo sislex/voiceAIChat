@@ -1528,6 +1528,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               loadPreparationRuns={(taskId) => api['tasks:listPreparationRuns']({ projectId: routeProjectId!, taskId })}
               onRetryPreparation={(runId) => api['tasks:retryPreparationRun']({ runId })}
               onCancelPreparation={(runId) => api['tasks:cancelPreparationRun']({ runId })}
+              onAnswerPreparation={(questionId, answer) => api['tasks:answerPreparationQuestion']({ questionId, answer })}
+              onExportPreparation={(runId, format) => api['tasks:exportPreparationRun']({ runId, format })}
               aiAssistPrompts={settingsState.settings.aiAssistPrompts}
               onAiAssistPromptsChange={(next) => void settingsActions.updateSettings({ aiAssistPrompts: next })}
               generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}

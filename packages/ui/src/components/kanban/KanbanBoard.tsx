@@ -133,6 +133,8 @@ export interface KanbanBoardProps {
   loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
   onRetryPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
   onCancelPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
+  onAnswerPreparation?: (questionId: string, answer: string) => Promise<unknown>
+  onExportPreparation?: (runId: string, format: 'md' | 'json') => Promise<void>
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
@@ -1297,6 +1299,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           loadPreparationRuns={props.loadPreparationRuns}
           onRetryPreparation={props.onRetryPreparation}
           onCancelPreparation={props.onCancelPreparation}
+          onAnswerPreparation={props.onAnswerPreparation}
+          onExportPreparation={props.onExportPreparation}
           onStartCiParallel={props.onStartCiParallel}
           onOpenCiRun={props.onOpenCiRun}
           onStartMerge={props.onStartMerge}
