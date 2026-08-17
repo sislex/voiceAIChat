@@ -83,11 +83,33 @@ describe('FeaturePreviewSection', () => {
 
   it('shows Storybook separately and renders the manual fallback without horizontal-only data', async () => {
     const ready = { ...environment('running'), storybookUrl: 'http://127.0.0.1:18001', storybookStatus: 'ready' as const, services: [{ name: 'storybook', internalPort: 6006, hostPort: 18001, url: 'http://127.0.0.1:18001', containerId: 'c2', state: 'running', healthStatus: 'healthy' as const }] }
-    const open = vi.fn().mockResolvedValue({ connectionType: 'manual', state: 'agent_required', url: null, tunnelId: null, manualCommand: 'ssh -N -L 18000:127.0.0.1:18001 preview', internalUrl: ready.storybookUrl, localAgentId: null, error: 'Для автоматического подключения нужен локальный агент ChatAI' })
+    const open = vi.fn().mockResolvedValue({ connectionType: 'manual', state: 'agent_required', url: null, tunnelId: null, manualCommand: 'ssh -N -L 18000:127.0.0.1:18001 preview@example.test', internalUrl: ready.storybookUrl, localAgentId: null, error: 'Для автоматического подключения нужен локальный агент ChatAI' })
     window.featurePreview = { get: vi.fn().mockResolvedValue(ready), operate: vi.fn(), cancel: vi.fn(), open, closeTunnel: vi.fn() }
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Открыть Storybook' }))
-    expect(await screen.findByText(/ssh -N -L/)).toBeInTheDocument()
+    expect(await screen.findByText(/ssh -N -L/)).toHaveTextContent('ssh -N -L 18000:127.0.0.1:18001 preview@example.test')
     expect(screen.getByText(/Пароли и SSH-ключи остаются/)).toBeInTheDocument()
+  })
+
+  it('opens a local preview host port without tunnel or manual SSH UI', async () => {
+    const ready = { ...environment('running'), services: [{ name: 'app', internalPort: 3000, hostPort: 18123, url: 'http://127.0.0.1:18123', containerId: 'c1', state: 'running', healthStatus: 'healthy' as const }] }
+    const open = vi.fn().mockResolvedValue({ connectionType: 'direct', state: 'connected', url: 'http://127.0.0.1:18123', tunnelId: null, manualCommand: null, internalUrl: ready.appUrl!, localAgentId: 'a1', error: null })
+    const browserOpen = vi.spyOn(window, 'open').mockImplementation(() => null)
+    window.featurePreview = { localAgentId: 'a1', get: vi.fn().mockResolvedValue(ready), operate: vi.fn(), cancel: vi.fn(), open, closeTunnel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть проект' }))
+    await waitFor(() => expect(browserOpen).toHaveBeenCalledWith('http://127.0.0.1:18123', '_blank', 'noopener,noreferrer'))
+    expect(screen.queryByRole('button', { name: 'Копировать команду' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/SSH/)).not.toBeInTheDocument()
+  })
+
+  it('explains missing explicit SSH settings without constructing a command', async () => {
+    const ready = { ...environment('running'), services: [{ name: 'app', internalPort: 3000, hostPort: 18000, url: 'http://127.0.0.1:18000', containerId: 'c1', state: 'running', healthStatus: 'healthy' as const }] }
+    const open = vi.fn().mockResolvedValue({ connectionType: 'manual', state: 'agent_required', url: null, tunnelId: null, manualCommand: null, internalUrl: ready.appUrl!, localAgentId: null, missingSshSettings: ['hostname', 'user'], error: 'missing settings' })
+    window.featurePreview = { get: vi.fn().mockResolvedValue(ready), operate: vi.fn(), cancel: vi.fn(), open, closeTunnel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Открыть проект' }))
+    expect(await screen.findByText(/SSH hostname\/IP и SSH-пользователя/)).toBeInTheDocument()
+    expect(screen.queryByText(/ssh -N -L/)).not.toBeInTheDocument()
   })
 })

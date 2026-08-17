@@ -106,6 +106,7 @@ export interface ProjectsActions {
   unlinkProjectMachine(id: string, agentId: string): Promise<void>
   setProjectMachinePath(id: string, agentId: string, path: string): Promise<void>
   setProjectReposRoot(id: string, agentId: string, reposRoot: string): Promise<void>
+  setProjectMachineSsh(id: string, agentId: string, sshHost: string, sshUser: string): Promise<void>
   setProjectDefaultMachine(id: string, agentId: string): Promise<void>
   fetchProjectDetail(id: string): Promise<ProjectDetail | null>
   openBoard(id: string): Promise<void>
@@ -544,6 +545,13 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           setState({ projectDetail: await client['projects:setReposRoot']({ id, agentId, reposRoot }) })
         } catch (err) {
           fail(err, () => void actions.setProjectReposRoot(id, agentId, reposRoot))
+        }
+      },
+      async setProjectMachineSsh(id, agentId, sshHost, sshUser) {
+        try {
+          setState({ projectDetail: await client['projects:setMachineSsh']({ id, agentId, sshHost, sshUser }) })
+        } catch (err) {
+          fail(err, () => void actions.setProjectMachineSsh(id, agentId, sshHost, sshUser))
         }
       },
       async setProjectDefaultMachine(id, agentId) {

@@ -31,6 +31,7 @@ export interface ProjectSettingsProps {
   onUnlinkMachine: (id: string, agentId: string) => void
   onSetMachinePath: (id: string, agentId: string, path: string) => void
   onSetReposRoot: (id: string, agentId: string, reposRoot: string) => void
+  onSetMachineSsh: (id: string, agentId: string, sshHost: string, sshUser: string) => void
   onSetDefaultMachine: (id: string, agentId: string) => void
 }
 
@@ -80,29 +81,36 @@ function TagEditor({ label, tags, editable, onChange }: {
 }
 
 /** Строка машины проекта: привязка, папка проекта на ней и отметка «по умолчанию». */
-function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetReposRoot, onSetDefault }: {
+function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetReposRoot, onSetSsh, onSetDefault }: {
   agent: AgentInfo
   machine: ProjectMachine | undefined
   isDefault: boolean
   onToggle: () => void
   onSetPath: (path: string) => void
   onSetReposRoot: (path: string) => void
+  onSetSsh: (host: string, user: string) => void
   onSetDefault: () => void
 }): JSX.Element {
   const [path, setPath] = useState(machine?.path ?? '')
   const [reposRoot, setReposRoot] = useState(machine?.reposRoot ?? '')
+  const [sshHost, setSshHost] = useState(machine?.sshHost ?? '')
+  const [sshUser, setSshUser] = useState(machine?.sshUser ?? '')
   useEffect(() => {
     setPath(machine?.path ?? '')
   }, [machine?.path])
   useEffect(() => {
     setReposRoot(machine?.reposRoot ?? '')
   }, [machine?.reposRoot])
+  useEffect(() => { setSshHost(machine?.sshHost ?? ''); setSshUser(machine?.sshUser ?? '') }, [machine?.sshHost, machine?.sshUser])
   const linked = machine !== undefined
   const commit = (): void => {
     if (path !== (machine?.path ?? '')) onSetPath(path)
   }
   const commitReposRoot = (): void => {
     if (reposRoot !== (machine?.reposRoot ?? '')) onSetReposRoot(reposRoot)
+  }
+  const commitSsh = (): void => {
+    if (sshHost !== (machine?.sshHost ?? '') || sshUser !== (machine?.sshUser ?? '')) onSetSsh(sshHost, sshUser)
   }
   return (
     <li className="proj-machine-row">
@@ -134,6 +142,8 @@ function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetRepos
               if (e.key === 'Enter') commitReposRoot()
             }}
           />
+          <input className="login-input" placeholder="SSH hostname/IP" aria-label={`SSH hostname/IP для ${agent.name}`} value={sshHost} onChange={(e) => setSshHost(e.target.value)} onBlur={commitSsh} onKeyDown={(e) => { if (e.key === 'Enter') commitSsh() }} />
+          <input className="login-input" placeholder="SSH-пользователь" aria-label={`SSH-пользователь для ${agent.name}`} value={sshUser} onChange={(e) => setSshUser(e.target.value)} onBlur={commitSsh} onKeyDown={(e) => { if (e.key === 'Enter') commitSsh() }} />
           <label className="proj-default-toggle" title="Машина по умолчанию для проекта">
             <input type="radio" checked={isDefault} onChange={onSetDefault} /> по умолчанию
           </label>
@@ -401,6 +411,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
                 }
                 onSetPath={(path) => props.onSetMachinePath(detail.id, a.id, path)}
                 onSetReposRoot={(root) => props.onSetReposRoot(detail.id, a.id, root)}
+                onSetSsh={(host, user) => props.onSetMachineSsh(detail.id, a.id, host, user)}
                 onSetDefault={() => props.onSetDefaultMachine(detail.id, a.id)}
               />
             ))}

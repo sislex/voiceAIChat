@@ -1,5 +1,31 @@
 import type { FastifyInstance } from 'fastify'
 import { createHash } from 'node:crypto'
+import { createServer } from 'node:net'
+
+async function availableLocalPort(preferred = 18_000): Promise<number> {
+  const tryPort = (port: number): Promise<number | null> => new Promise((resolve) => {
+    const server = createServer()
+    server.unref()
+    server.once('error', () => resolve(null))
+    server.listen(port, '127.0.0.1', () => server.close(() => resolve(port)))
+  })
+  for (let port = preferred; port < preferred + 100; port += 1) {
+    const available = await tryPort(port)
+    if (available !== null) return available
+  }
+  throw new Error('Не удалось подобрать свободный локальный порт для SSH-туннеля')
+}
+
+export function isLocalPreview(previewAgentId: string, localAgentId: string | null): boolean {
+  return localAgentId !== null && previewAgentId === localAgentId
+}
+
+export function manualPreviewCommand(localPort: number, remotePort: number, sshUser: string, sshHost: string): string | null {
+  const user = sshUser.trim()
+  const host = sshHost.trim()
+  if (!/^[a-zA-Z0-9._-]+$/.test(user) || !/^(?:[a-zA-Z0-9.-]+|\[[0-9a-fA-F:]+\])$/.test(host)) return null
+  return `ssh -N -L ${localPort}:127.0.0.1:${remotePort} ${user}@${host}`
+}
 import type { PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@voicechat/shared'
 import type { FeaturePreviewManager } from '../preview/manager.js'
 import type { VoiceChatDb } from '../db/database.js'
@@ -32,7 +58,7 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
       return reply.code(status).send({ error: message })
     }
   })
-  app.post<{ Params: { projectId: string; taskId: string }; Body: { service?: PreviewServiceKind } }>(`${base}/open`, async (req, reply) => {
+  app.post<{ Params: { projectId: string; taskId: string }; Body: { service?: PreviewServiceKind; localAgentId?: string | null } }>(`${base}/open`, async (req, reply) => {
     const userId = uid(req)
     const env = previews.get(userId, req.params.projectId, req.params.taskId)
     if (!env) return reply.code(404).send({ error: 'preview not created or access denied' })
@@ -45,26 +71,41 @@ export function registerFeaturePreviewRoutes(app: FastifyInstance, previews: Fea
     const health = await agents.exec(env.agentId, `curl --fail --silent --show-error --max-time 5 http://127.0.0.1:${service.hostPort}/ >/dev/null`, 8_000).catch(() => null)
     if (!health || health.exitCode !== 0 || health.timedOut) return reply.code(502).send({ error: 'Сервис preview не отвечает' })
     const loopback = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::|\/|$)/i.test(internalUrl)
-    if (!loopback) {
-      const result: PreviewAccessResult = { connectionType: 'direct', state: 'connected', url: internalUrl, tunnelId: null, manualCommand: null, internalUrl, localAgentId: null, error: null }
+    const localAgentId = req.body?.localAgentId?.trim() || null
+    if (!loopback || isLocalPreview(env.agentId, localAgentId)) {
+      const url = loopback ? `http://127.0.0.1:${service.hostPort}` : internalUrl
+      const result: PreviewAccessResult = { connectionType: 'direct', state: 'connected', url, tunnelId: null, manualCommand: null, internalUrl, localAgentId, error: null }
       db.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.open.direct', { environmentId: env.id, service: kind })
       return result
     }
-    const localAgent = db.listAgents(userId).find((agent) => agent.id !== env.agentId && agents.isOnline(agent.id))
-    const manualCommand = `ssh -N -L 18000:127.0.0.1:${service.hostPort} ${env.agentId}`
+
+    const project = db.getProject(userId, req.params.projectId)
+    const machine = project?.machines.find((item) => item.agentId === env.agentId)
+    const missingSshSettings: Array<'hostname' | 'user'> = []
+    if (!machine?.sshHost?.trim()) missingSshSettings.push('hostname')
+    if (!machine?.sshUser?.trim()) missingSshSettings.push('user')
+    const localPort = missingSshSettings.length ? null : await availableLocalPort()
+    const manualCommand = localPort === null ? null : manualPreviewCommand(localPort, service.hostPort, machine!.sshUser!, machine!.sshHost!)
+    const settingsError = missingSshSettings.length
+      ? `Заполните в настройках машины: ${missingSshSettings.includes('hostname') ? 'SSH hostname/IP' : ''}${missingSshSettings.length === 2 ? ' и ' : ''}${missingSshSettings.includes('user') ? 'SSH-пользователя' : ''}`
+      : manualCommand ? null : 'SSH hostname/IP или SSH-пользователь имеют недопустимый формат'
+
+    const localAgent = localAgentId && localAgentId !== env.agentId && db.listAgents(userId).some((agent) => agent.id === localAgentId) && agents.isOnline(localAgentId)
+      ? { id: localAgentId }
+      : null
     if (!localAgent) {
-      const result: PreviewAccessResult = { connectionType: 'manual', state: 'agent_required', url: null, tunnelId: null, manualCommand, internalUrl, localAgentId: null, error: 'Для автоматического подключения нужен локальный агент ChatAI' }
+      const result: PreviewAccessResult = { connectionType: 'manual', state: 'agent_required', url: null, tunnelId: null, manualCommand, internalUrl, localAgentId, missingSshSettings, error: settingsError ?? 'Для автоматического подключения нужен локальный агент ChatAI' }
       return reply.code(409).send(result)
     }
     const tunnelId = createHash('sha256').update(`${userId}:${env.id}:${env.builtCommitSha}:${kind}`).digest('hex').slice(0, 32)
     try {
       const port = await agents.createTunnel(tunnelId, localAgent.id, env.agentId, service.hostPort, () => Boolean(previews.get(userId, req.params.projectId, req.params.taskId)), () => db.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.tunnel.close', { environmentId: env.id, tunnelId }))
-      const result: PreviewAccessResult = { connectionType: 'tunnel', state: 'connected', url: `http://127.0.0.1:${port}`, tunnelId, manualCommand, internalUrl, localAgentId: localAgent.id, error: null }
+      const result: PreviewAccessResult = { connectionType: 'tunnel', state: 'connected', url: `http://127.0.0.1:${port}`, tunnelId, manualCommand: null, internalUrl, localAgentId: localAgent.id, error: null }
       db.addPreviewAudit(userId, req.params.projectId, req.params.taskId, 'preview.tunnel.open', { environmentId: env.id, service: kind, tunnelId, localAgentId: localAgent.id })
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      const result: PreviewAccessResult = { connectionType: 'manual', state: 'failed', url: null, tunnelId, manualCommand, internalUrl, localAgentId: localAgent.id, error: message }
+      const result: PreviewAccessResult = { connectionType: 'manual', state: 'failed', url: null, tunnelId, manualCommand, internalUrl, localAgentId: localAgent.id, missingSshSettings, error: settingsError ?? message }
       return reply.code(502).send(result)
     }
   })

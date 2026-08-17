@@ -735,6 +735,12 @@ export class VoiceChatDb {
     } else if (pmCols.length && !pmCols.some((c) => c.name === 'repos_root')) {
       this.db.exec(`ALTER TABLE project_machines ADD COLUMN repos_root TEXT NOT NULL DEFAULT ''`)
     }
+    if (pmCols.length && !pmCols.some((c) => c.name === 'ssh_host')) {
+      this.db.exec(`ALTER TABLE project_machines ADD COLUMN ssh_host TEXT NOT NULL DEFAULT ''`)
+    }
+    if (pmCols.length && !pmCols.some((c) => c.name === 'ssh_user')) {
+      this.db.exec(`ALTER TABLE project_machines ADD COLUMN ssh_user TEXT NOT NULL DEFAULT ''`)
+    }
     if (pmCols.length && !pmCols.some((c) => c.name === 'added_at')) {
       this.db.exec(`ALTER TABLE project_machines ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0`)
     }
@@ -2498,13 +2504,15 @@ export class VoiceChatDb {
     )
     const machines = (
       this.db.prepare(
-        `SELECT pm.agent_id, pm.path, pm.repos_root, pm.added_at, a.name, a.user_id
+        `SELECT pm.agent_id, pm.path, pm.repos_root, pm.ssh_host, pm.ssh_user, pm.added_at, a.name, a.user_id
          FROM project_machines pm JOIN agents a ON a.id = pm.agent_id
          WHERE pm.project_id = ? ORDER BY a.name ASC`
       ).all(id) as Array<{
         agent_id: string
         path: string | null
         repos_root: string | null
+        ssh_host: string | null
+        ssh_user: string | null
         added_at: number
         name: string
         user_id: string
@@ -2516,7 +2524,9 @@ export class VoiceChatDb {
       online: false,
       addedAt: x.added_at,
       path: x.path ?? '',
-      reposRoot: x.repos_root ?? ''
+      reposRoot: x.repos_root ?? '',
+      sshHost: x.ssh_host ?? '',
+      sshUser: x.ssh_user ?? ''
     }))
     return {
       ...this.mapProjectSummary(row, row.my_role),
@@ -2792,6 +2802,14 @@ export class VoiceChatDb {
   setProjectMachineReposRoot(userId: string, id: string, agentId: string, root: string): ProjectDetail | null {
     if (!this.isProjectOwner(userId, id)) return null
     this.db.prepare(`UPDATE project_machines SET repos_root = ? WHERE project_id = ? AND agent_id = ?`).run(root, id, agentId)
+    return this.getProject(userId, id)
+  }
+
+  /** Явные SSH-настройки машины для ручного preview-туннеля. */
+  setProjectMachineSsh(userId: string, id: string, agentId: string, sshHost: string, sshUser: string): ProjectDetail | null {
+    if (!this.isProjectOwner(userId, id)) return null
+    this.db.prepare(`UPDATE project_machines SET ssh_host = ?, ssh_user = ? WHERE project_id = ? AND agent_id = ?`)
+      .run(sshHost.trim(), sshUser.trim(), id, agentId)
     return this.getProject(userId, id)
   }
 

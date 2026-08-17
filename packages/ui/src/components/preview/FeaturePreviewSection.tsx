@@ -4,6 +4,7 @@ import type { ProjectMachine } from '@shared/projects'
 import { isPreviewBusy, previewActions } from '@shared/preview'
 import { Button } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
+import { CopyCommand } from './CopyCommand'
 
 export function previewIdempotencyKey(): string {
   const cryptoApi = globalThis.crypto
@@ -127,9 +128,11 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
       {connection && <div className="feature-preview__connection" role="status">
         <span>{connection.state === 'connected' ? `Подключено · ${connection.connectionType === 'direct' ? 'прямой доступ' : 'защищённый туннель'}` : connection.error ?? 'Туннель закрыт'}</span>
         {connection.tunnelId && connection.state === 'connected' && <Button size="sm" variant="ghost" onClick={() => void closeConnection()}>Закрыть подключение</Button>}
+        {!connection.url && connection.missingSshSettings?.length ? <div className="feature-preview__manual">
+          <small>Заполните в настройках машины: {connection.missingSshSettings.includes('hostname') ? 'SSH hostname/IP' : ''}{connection.missingSshSettings.length === 2 ? ' и ' : ''}{connection.missingSshSettings.includes('user') ? 'SSH-пользователя' : ''}.</small>
+        </div> : null}
         {connection.manualCommand && !connection.url && <div className="feature-preview__manual">
-          <code>{connection.manualCommand}</code>
-          <Button size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText(connection.manualCommand!)}>Копировать команду</Button>
+          <CopyCommand command={connection.manualCommand} />
           <small>Запустите команду в терминале рабочей машины. Пароли и SSH-ключи остаются на ней.</small>
         </div>}
       </div>}

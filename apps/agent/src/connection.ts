@@ -45,7 +45,7 @@ export type AgentStatus = 'connecting' | 'online' | 'offline' | 'stopped'
 /** Колбэки жизненного цикла соединения (все необязательны). */
 export interface AgentHandlers {
   onStatus?(status: AgentStatus): void
-  onRegistered?(name: string): void
+  onRegistered?(name: string, id?: string): void
   onDenied?(reason: string): void
   onExec?(command: string): void
   onExecDone?(command: string, exitCode: number | null, timedOut: boolean, ms: number): void
@@ -181,7 +181,8 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
           backoff = BACKOFF_START_MS
           applyPolicy(msg.policy ?? DEFAULT_AGENT_POLICY, false)
           handlers.onStatus?.('online')
-          handlers.onRegistered?.(msg.name)
+          if (msg.id) handlers.onRegistered?.(msg.name, msg.id)
+          else handlers.onRegistered?.(msg.name)
           // Телеметрия: сразу снимок и далее по таймеру (пере-регистрация обнуляет).
           stopTelemetry()
           void pushTelemetry(send)

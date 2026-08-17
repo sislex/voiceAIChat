@@ -197,7 +197,7 @@ export type FsOp =
 
 /** Сообщения сервер → агент. */
 export type ServerToAgent =
-  | { t: 'agent.registered'; name: string; policy: AgentPolicy }
+  | { t: 'agent.registered'; id?: string; name: string; policy: AgentPolicy }
   | { t: 'agent.denied'; reason: string }
   | { t: 'agent.policy'; policy: AgentPolicy }
   | { t: 'agent.updateAvailable'; version: string }
