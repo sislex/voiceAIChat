@@ -13,7 +13,18 @@ function statusText(progress: AutomationProgress): string {
   if (progress.status === 'cancelled') return 'Отменено'
   if (progress.status === 'failed') return 'Ошибка'
   if (progress.status === 'success') return 'Завершено'
+  if (progress.status === 'queued') return 'Ожидает запуска'
   return progress.currentStep ?? progress.stage
+}
+
+function stepStatusText(status: AutomationProgress['steps'][number]['status']): string {
+  if (status === 'queued' || status === 'pending') return 'ожидает'
+  if (status === 'running') return 'выполняется'
+  if (status === 'waiting') return 'ожидает ответа'
+  if (status === 'success') return 'завершено'
+  if (status === 'failed') return 'ошибка'
+  if (status === 'cancelled') return 'отменено'
+  return 'пропущено'
 }
 
 export function AutomationProgressView({ progress, compact = false, now = Date.now }: AutomationProgressViewProps): JSX.Element {
@@ -58,11 +69,13 @@ export function AutomationProgressView({ progress, compact = false, now = Date.n
         <>
           <div className="automation-progress__times">
             <span>Начало: {progress.startedAt ? new Date(progress.startedAt).toLocaleString('ru') : '—'}</span>
+            {progress.finishedAt != null && <span>Завершение: {new Date(progress.finishedAt).toLocaleString('ru')}</span>}
+            <span>Продолжительность: {elapsed > 0 ? fmtDuration(elapsed) : '—'}</span>
             {progress.etaRangeMs && <span>Расчётное завершение: {new Date(now() + progress.etaRangeMs[0]).toLocaleTimeString('ru')}–{new Date(now() + progress.etaRangeMs[1]).toLocaleTimeString('ru')}</span>}
             <a href={progress.logUrl}>Журнал</a>
           </div>
           <ol className="automation-progress__steps">
-            {progress.steps.map((step) => <li key={step.id} data-status={step.status}><span>{step.title}</span><span>{step.durationMs != null ? fmtDuration(step.durationMs) : step.status}</span></li>)}
+            {progress.steps.map((step) => <li key={step.id} data-status={step.status}><span>{step.title}</span><span>{step.durationMs != null ? fmtDuration(step.durationMs) : stepStatusText(step.status)}</span></li>)}
           </ol>
         </>
       )}
