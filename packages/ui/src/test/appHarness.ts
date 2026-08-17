@@ -12,8 +12,8 @@ import type { RendererKbBridge } from '../remote/kbBridge'
 import type { AudioController } from '../audio/browserAudio'
 import type { MicDevice } from '../audio/microphones'
 import { withApi } from '../clients/types'
+import { createAdminClient } from '../clients/browser'
 import type {
-  AdminClient,
   AppClients,
   ChatClient,
   OperationsClient,
@@ -122,7 +122,7 @@ export function buildTestClients(deps: HarnessDeps): AppClients {
       ...(deps.cxTailStart ? { cxTailStart: deps.cxTailStart } : {}),
       ...(deps.cxTailStop ? { cxTailStop: deps.cxTailStop } : {})
     }),
-    admin: withApi<AdminClient>(api, {}),
+    admin: createAdminClient(api),
     projects: withApi<ProjectsClient>(api, {
       ...(deps.board ? { board: deps.board } : {}),
       ...(deps.ci ? { ci: deps.ci } : {})

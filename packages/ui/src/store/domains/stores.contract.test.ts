@@ -6,12 +6,11 @@ import { createStoreCore } from '../createStore'
 import { createShellStore } from './shellStore'
 import { createSessionStore } from './sessionStore'
 import { createSettingsStore } from './settingsStore'
-import { createAdminStore } from './adminStore'
 import { createOperationsStore } from './operationsStore'
 import { createVoiceStore } from './voiceStore'
 import { createFakeApi } from '../../test/fakeApi'
 import { withApi } from '../../clients/types'
-import type { AdminClient, OperationsClient, SettingsClient } from '../../clients/types'
+import type { OperationsClient, SettingsClient } from '../../clients/types'
 import type { SessionUser } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/types'
 
@@ -230,25 +229,6 @@ describe('operationsStore', () => {
     store.dispose()
     expect(ccTailStop).toHaveBeenCalled()
     expect(cxTailStop).toHaveBeenCalled()
-  })
-})
-
-describe('adminStore', () => {
-  it('не грузится сам и полностью очищается при выходе', async () => {
-    const api = createFakeApi()
-    const store = createAdminStore({
-      admin: withApi<AdminClient>(api, {}),
-      currentUser: () => ({ name: 'root', role: 'admin' }),
-      ownConversationCount: () => 0
-    })
-    expect(store.getState().adminUsers).toEqual([])
-
-    await store.actions.openUsers()
-    expect(store.getState().usersOpen).toBe(true)
-
-    store.actions.reset()
-    expect(store.getState()).toMatchObject({ usersOpen: false, adminUsers: [], adminSelected: null })
-    store.dispose()
   })
 })
 

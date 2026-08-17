@@ -45,7 +45,6 @@ const DOMAIN_NAMES = [
   'chatStore',
   'voiceStore',
   'operationsStore',
-  'adminStore',
   'projectsStore'
 ]
 

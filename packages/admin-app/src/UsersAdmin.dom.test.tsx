@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
-import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
+import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UsersAdmin, type UsersAdminProps } from './UsersAdmin'
 import type { AdminLlmEngine, AdminUserInfo } from '@shared/admin'
-import { makeConversation } from '../test/fixtures/conversations'
+import { makeConversation } from './test/fixtures/conversations'
 
 const users: AdminUserInfo[] = [
   { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 2, agents: [] },
