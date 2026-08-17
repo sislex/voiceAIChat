@@ -717,6 +717,41 @@ describe('KanbanBoard — своя команда в реестре', () => {
   })
 })
 
+describe('KanbanBoard — фильтры исполнителей', () => {
+  const filteredBoard: Board = {
+    columns: [
+      { ...board.columns[0]!, id: 'c1', name: 'To Do' },
+      { ...board.columns[0]!, id: 'c2', name: 'Doing', position: 2048 }
+    ],
+    tasks: [
+      task({ id: 'mine', columnId: 'c1', title: 'Моя', assignee: 'alice', position: 1 }),
+      task({ id: 'other', columnId: 'c1', title: 'Чужая', assignee: 'bob', position: 2 }),
+      task({ id: 'unassigned', columnId: 'c2', title: 'Без исполнителя', assignee: null, position: 1 })
+    ]
+  }
+
+  it('глобальный чекбокс фильтрует по устойчивому id и скрывает без исполнителя', async () => {
+    renderBoard({ board: filteredBoard, currentUserId: 'alice', currentUser: 'Отображаемое имя', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Показывать только мои задачи' }))
+    expect(screen.getByText('Моя')).toBeInTheDocument()
+    expect(screen.queryByText('Чужая')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('task-card').map((card) => card.textContent).join(' ')).not.toContain('Без исполнителя')
+  })
+
+  it('локальные селекторы независимы, сохраняются и восстанавливаются после глобального режима', async () => {
+    const props = { board: filteredBoard, currentUserId: 'filter-user', members: [{ username: 'alice', role: 'member' as const, addedAt: 1 }, { username: 'bob', role: 'member' as const, addedAt: 1 }] }
+    renderBoard(props)
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Исполнитель колонки «To Do»' }), 'alice')
+    expect(screen.queryByText('Чужая')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Исполнитель колонки «Doing»' })).toHaveValue('all')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Показывать только мои задачи' }))
+    expect(screen.getByRole('combobox', { name: 'Исполнитель колонки «To Do»' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Показывать только мои задачи' }))
+    expect(screen.getByRole('combobox', { name: 'Исполнитель колонки «To Do»' })).toHaveValue('alice')
+    expect(localStorage.getItem('voicechat.kanban.filters.v2.filter-user.p1')).toContain('alice')
+  })
+})
+
 /** Доска с обязательными пропсами — для проверок реестра команд. */
 function KanbanBoardHarness(props: Partial<KanbanBoardProps> = {}): JSX.Element {
   return (
