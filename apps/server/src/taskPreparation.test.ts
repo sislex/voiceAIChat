@@ -241,6 +241,7 @@ describe('task-launch создаёт сразу в подготовке', () => 
     const board = db.getBoard('admin', project.id)!
     const preparation = board.columns.find((column) => column.semanticType === 'preparation')!
     db.updateColumn('admin', project.id, preparation.id, { name: 'Любое новое имя' })
+    claudeAnswer = () => ({ silent: true })
 
     const first = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/task-launch/preparation`, payload })
     const second = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/task-launch/preparation`, payload })
