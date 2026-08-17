@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-08-12
-checked: 0465712
+updated: 2026-08-17
+checked: 2246ea3
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -221,4 +221,4 @@ Health-check — обычный REST-запрос, а не отдельный WS
 
 ## Operations frontend contract
 
-Выделение `@voicechat/operations-app` не меняет REST/WS/SSE, agent или runner protocol. Пакет определяет transport-agnostic client-интерфейсы; host adapters переводят существующие bridges в эти интерфейсы. Публичные hash routes остаются `#/machines`, `#/claude-code`, `#/codex`, `#/kb`, `#/kb/:documentId`, `#/ci`; parser/builder находятся в Operations package.
+Выделение `@voicechat/operations-app` не меняет REST/WS/SSE, agent или runner protocol. Пакет определяет transport-agnostic client-интерфейсы, но host adapters в этом срезе ещё не реализованы. Публичные hash routes остаются `#/machines`, `#/claude-code`, `#/codex`, `#/kb`, `#/kb/:documentId`, `#/ci`; parser/builder находятся в Operations package, а `packages/ui/src/App.tsx` уже использует parser вместо собственного whitelist для этих URL.

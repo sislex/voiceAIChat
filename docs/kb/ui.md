@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-17
-checked: e6bf057
+checked: 2246ea3
 areas:
   - packages/ui/src
   - packages/ui-kit/src
@@ -836,4 +836,6 @@ Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтом
 
 ## Граница `@voicechat/operations-app`
 
-`packages/operations-app` публикует React-независимый `createOperationsStore`, безопасные clients/ports и `MachineCatalog`, route parser/builder, `OperationsNavigationModel`, Operations surfaces и собственные стили. Store получает зависимости через `OperationsDependencies`; Chat/Projects связываются только портами. Administration, shell, auth и theme остаются у host. Host распознаёт публичные Operations URL через `parseOperationsRoute` из корневого экспорта пакета.
+Новый workspace `packages/operations-app` задаёт публичную границу Operations: экспортирует React-независимую фабрику store, transport-agnostic clients и межмодульные порты, безопасный каталог машин, маршруты, navigation model, React context/hooks и стили. Подробная карта экспортов, state ownership и текущей степени подключения находится в [operations-app.md](operations-app.md).
+
+На этом срезе host подключил только `parseOperationsRoute` и stylesheet в `packages/ui/src/App.tsx`; существующие продуктовые реализации Machines, terminal/explorer, EnginesObserver, KB и CI остаются в `packages/ui`. Экспорты из `surfaces.tsx` — простые секционные оболочки с заголовком и `children`, а Storybook stories показывают текстовые состояния. Поэтому пакет уже является архитектурной точкой интеграции, но ещё не заменяет старые host-компоненты полноценными Operations surfaces.

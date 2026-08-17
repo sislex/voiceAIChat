@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-08-16
-checked: de895b5
+updated: 2026-08-17
+checked: 2246ea3
 areas:
   - apps/agent/src
   - apps/agent-tray/src
