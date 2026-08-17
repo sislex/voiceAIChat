@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { parseChatRoute } from '@voicechat/chat-app'
+import { parseOperationsRoute } from '@voicechat/operations-app'
 import { parseProjectsRoute } from '@voicechat/projects-app'
 import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
@@ -74,6 +75,7 @@ import { useHotkeys, type HotkeyBinding } from './lib/useHotkeys'
 import { useCommandSource } from './lib/useCommands'
 import { buildAppCommands, buildHotkeyBindings } from './lib/appCommands'
 import './styles/app.css'
+import '@voicechat/operations-app/styles.css'
 
 // Шаг 5: состояние живёт в сторе (store/voiceStore.ts) на базе машины состояний.
 // Разговоры/сообщения/настройки — реальные из SQLite через window.api (IPC).
@@ -106,7 +108,7 @@ export function appendWidgetAction(items: WidgetUserAction[], action: WidgetActi
 }
 
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
-const UTILITY_PAGES: readonly string[] = ['claude-code', 'codex', 'machines', 'kb', 'users', 'ci', 'personalization']
+const HOST_UTILITY_PAGES: readonly string[] = ['users', 'personalization']
 
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
@@ -463,11 +465,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Утилиты-страницы: один сегмент из белого списка (#/machines, #/kb, …).
   // У базы знаний есть второй сегмент — открытый документ (#/kb/:documentId):
   // так на раздел можно дать ссылку из панели «Использование БЗ» и из «Подробнее».
-  const utilitySeg =
-    segments.length >= 1 && UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || ((segments[0] === 'kb' || segments[0] === 'users') && segments.length === 2))
-      ? segments[0]
-      : null
-  const routeKbDocumentId = segments[0] === 'kb' ? (segments[1] ?? null) : null
+  const operationsRoute = parseOperationsRoute(path)
+  const utilitySeg = operationsRoute
+    ? operationsRoute.page === 'history' ? (operationsRoute.engine === 'claude' ? 'claude-code' : 'codex') : operationsRoute.page === 'knowledge' ? 'kb' : operationsRoute.page
+    : segments.length >= 1 && HOST_UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || (segments[0] === 'users' && segments.length === 2)) ? segments[0] : null
+  const routeKbDocumentId = operationsRoute?.page === 'knowledge' ? (operationsRoute.documentId ?? null) : null
   const routeUserName = segments[0] === 'users' ? (segments[1] ?? null) : null
   const onUtilityPage = utilitySeg !== null
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не

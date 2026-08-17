@@ -218,3 +218,7 @@ Health-check — обычный REST-запрос, а не отдельный WS
 ## AI-помощник формулировки
 
 `POST /api/prompt/suggest` принимает `{ prompt, modifiers }`, где `modifiers` — упорядоченный массив `ModifierPrompt`; UI передаёт только активные элементы. Ответ — `{ variants: Suggestion[] }`. Маршрут требует Bearer-токен, не создаёт разговор и не сохраняет ход. Движок и модель берутся из per-user настроек `aiAssistProvider`/`aiAssistModel`; вызов CLI идёт с `executionDisabled: true` и без session id. Web-мост предоставляет тот же контракт как `window.api['prompt:suggest']`.
+
+## Operations frontend contract
+
+Выделение `@voicechat/operations-app` не меняет REST/WS/SSE, agent или runner protocol. Пакет определяет transport-agnostic client-интерфейсы; host adapters переводят существующие bridges в эти интерфейсы. Публичные hash routes остаются `#/machines`, `#/claude-code`, `#/codex`, `#/kb`, `#/kb/:documentId`, `#/ci`; parser/builder находятся в Operations package.

@@ -1,0 +1,4 @@
+.operations-surface{display:flex;min-width:0;min-height:0;flex-direction:column;gap:.75rem;height:100%;padding:1rem;background:var(--bg);color:var(--text)}
+.operations-surface>header{display:flex;align-items:center;min-height:2.5rem;border-bottom:1px solid var(--line)}
+.operations-surface h2{margin:0;font-size:1.1rem}.operations-surface button,.operations-surface select,.operations-surface input{font:inherit}
+@media(max-width:768px){.operations-surface{padding:.75rem;overflow:auto}.operations-surface>header{position:sticky;top:0;background:var(--bg);z-index:1}}
