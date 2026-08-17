@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-17
-checked: edf5aa2
+checked: ef07f34
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -528,11 +528,19 @@ AI-помощник (`useAiAssist` + `applyNativeInputValue`) привязан �
 
 Размеры страницы передаются доске по сжимаемой flex-цепочке: `.toolpage` и
 `.proj-detail` ограничивают доступную область, а промежуточные элементы вплоть до
-`.jboard-wrap` имеют `min-width: 0` и `min-height: 0`. `.jboard-wrap`
+`.jboard-wrap` имеют `min-width: 0` и `min-height: 0`. На странице проекта в
+цепочке стоит рамка ассистента: `.toolpage` → `.widget-assistant` →
+`.widget-assistant-widget` → `.jboard-wrap`, поэтому правило обёртки нарочно не
+привязано к родителю (просто `.jboard-wrap`, без `.toolpage >`) — привязка уже
+однажды дала регрессию «колонка не скроллится», когда доску обернули в
+`WidgetAssistantFrame` и селектор перестал срабатывать. `.jboard-wrap`
 занимает остаток страницы и скрывает переполнение; он не является вертикальным
 scroll-контейнером обычного режима. Фактические инварианты размеров и overflow
 находятся в `packages/ui/src/styles/app.css` и зафиксированы текстовыми CSS-тестами
-`packages/ui/src/styles/boardScroll.test.ts`.
+`packages/ui/src/styles/boardScroll.test.ts` (включая звенья рамки ассистента).
+В Storybook высоту доске даёт декоратор-обёртка `.toolpage` в
+`KanbanBoard.stories.tsx` — без ограниченного по высоте хоста скролл колонок не
+включается нигде.
 
 В обычном режиме `.jboard` — единственный общий горизонтальный viewport
 (`overflow-x: auto; overflow-y: hidden`). Колонки `.jcol` имеют стабильную ширину
