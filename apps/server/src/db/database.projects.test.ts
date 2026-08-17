@@ -441,6 +441,30 @@ describe('projects: папка машины, дефолт, привязка ча
     const unl = db.setConversationProject('alice', conv.id, null)!
     expect(unl.projectId).toBeNull()
   })
+
+  it('изолирует персональные defaults и аудит предоставления по проектам', () => {
+    const p1 = db.createProject('alice', { name: 'P1' })
+    const p2 = db.createProject('alice', { name: 'P2' })
+    db.addMember('alice', p1.id, 'bob')
+    db.addMember('alice', p2.id, 'bob')
+    const machine = db.createAgent('alice', 'Mac')
+    db.setMachineSharedWithProject('alice', p1.id, machine.id, true)
+    expect(db.canUseAgent('bob', machine.id, p1.id)).toBe(true)
+    expect(db.canUseAgent('bob', machine.id, p2.id)).toBe(false)
+
+    db.setUserProjectDefaultMachine('bob', p1.id, machine.id)
+    expect(db.getUserProjectDefaultMachine('bob', p1.id)).toBe(machine.id)
+    expect(db.getUserProjectDefaultMachine('alice', p1.id)).toBeNull()
+    expect(db.getUserProjectDefaultMachine('bob', p2.id)).toBeNull()
+
+    db.setMachineSharedWithProject('alice', p1.id, machine.id, false)
+    expect(db.getUserProjectDefaultMachine('bob', p1.id)).toBeNull()
+    expect(db.listMachineShareAudit(p1.id)).toMatchObject([
+      { actor: 'alice', agentId: machine.id, oldValue: false, newValue: true },
+      { actor: 'alice', agentId: machine.id, oldValue: true, newValue: false }
+    ])
+    expect(() => db.setMachineSharedWithProject('bob', p1.id, machine.id, true)).toThrow('Только владелец')
+  })
 })
 
 
