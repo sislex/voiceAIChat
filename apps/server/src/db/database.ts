@@ -7,6 +7,10 @@ import { testStages } from '../ci/testStages.js'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_AGENT_POLICY,
+  DEFAULT_CODEX_MODEL,
+  isProviderAllowed,
+  firstAllowedProvider,
+  clampModel,
   type AgentCreated,
   type AgentPolicy,
   type Conversation,
@@ -996,6 +1000,9 @@ export class VoiceChatDb {
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'checks_json')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN checks_json TEXT NOT NULL DEFAULT '[]'`)
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'recommended_action')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN recommended_action TEXT`)
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'push_started_at')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN push_started_at INTEGER`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'requested_llm_provider')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN requested_llm_provider TEXT`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'requested_llm_model')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN requested_llm_model TEXT`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'llm_fallback_reason')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN llm_fallback_reason TEXT`)
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'run_column_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN run_column_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'terminal_column_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN terminal_column_id TEXT`)
@@ -5509,7 +5516,7 @@ export class VoiceChatDb {
    * переводит карточку в системную колонку merge. Все значения ветки/машины
    * берутся из серверных записей, а не из тела HTTP-запроса.
    */
-  startMergeRun(userId: string, projectId: string, taskId: string, agentIdOverride?: string | null): MergeRun {
+  startMergeRun(userId: string, projectId: string, taskId: string, agentIdOverride?: string | null, llmOverride?: { provider?: LlmProvider; model?: string }): MergeRun {
     return this.db.transaction(() => {
       const existing = this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string, unknown> | undefined
       if (existing) return this.mapMergeRun(existing)
@@ -5529,9 +5536,26 @@ export class VoiceChatDb {
       if (agentId !== workspace.agent_id && !this.getProjectMachine(projectId, agentId)) throw new Error('selected merge machine has no project repository settings')
       if (!this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'`).get(projectId)) throw new Error('merge column not found')
 
+      const settings = this.getSettings(userId)
+      const globalLlm = this.ciLlmDefaultsForUser(userId)
+      const requestedProvider = llmOverride?.provider ?? globalLlm.provider ?? DEFAULT_CI_LLM_CONFIG.provider
+      const requestedModel = (llmOverride?.model ?? globalLlm.model ?? '').trim()
+      const access = this.getUserLlmAccess(userId)
+      const provider = isProviderAllowed(access, requestedProvider) ? requestedProvider : firstAllowedProvider(access)
+      if (!provider) throw new Error('Нет доступных движков и моделей для merge-рана')
+      const providerDefaultModel = provider === 'codex'
+        ? (settings.codexModel.trim() || DEFAULT_CODEX_MODEL)
+        : (settings.model.trim() && settings.model !== 'default' ? settings.model.trim() : DEFAULT_CI_CLAUDE_MODEL)
+      const modelCandidate = provider === requestedProvider && requestedModel && requestedModel !== 'default' ? requestedModel : providerDefaultModel
+      const model = clampModel(access, provider, modelCandidate)
+      if (!model) throw new Error('Нет доступных моделей для merge-рана')
+      const fallbackReason = provider !== requestedProvider ? 'provider_unavailable' : model !== modelCandidate ? 'model_unavailable' : null
+      const role = this.getUser(userId)?.role ?? 'developer'
+      const engine = this.resolveLlmEngine(settings.llmEngineId, provider, role)
+
       const id = this.newId(), now = this.now()
-      this.db.prepare(`INSERT INTO merge_runs (id,project_id,task_id,status,triggered_by,source_branch,target_branch,source_sha,agent_id,llm_provider,llm_model,stage,started_at,created_at,log)
-        VALUES (?,?,?,'queued',?,?,'main',?,?,'claude','','queued',?,?,?)`).run(id, projectId, taskId, userId, workspace.branch, workspace.commit_sha, agentId, now, now, `[${new Date(now).toISOString()}] merge requested by ${userId}\\n`)
+      this.db.prepare(`INSERT INTO merge_runs (id,project_id,task_id,status,triggered_by,source_branch,target_branch,source_sha,agent_id,llm_engine_id,llm_provider,llm_model,requested_llm_provider,requested_llm_model,llm_fallback_reason,stage,started_at,created_at,log)
+        VALUES (?,?,?,'queued',?,?,'main',?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, projectId, taskId, userId, workspace.branch, workspace.commit_sha, agentId, engine.engine?.id ?? null, provider, model, requestedProvider, requestedModel || null, fallbackReason, now, now, `[${new Date(now).toISOString()}] merge requested by ${userId}\\n`)
       this.db.prepare(`UPDATE tasks SET column_id=(SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'), updated_at=? WHERE id=?`).run(projectId, now, taskId)
       return this.mapMergeRun(this.db.prepare(`SELECT * FROM merge_runs WHERE id=?`).get(id) as Record<string, unknown>)
     })()
@@ -5581,7 +5605,10 @@ export class VoiceChatDb {
     // Retry is an explicit user decision: failed/cancelled runs already stay in
     // merge, while decision_required returns there before creating the next run.
     this.moveMergeTask(previous.projectId, previous.taskId, 'merge')
-    const next = this.startMergeRun(userId, previous.projectId, previous.taskId, agentIdOverride ?? previous.agentId)
+    const next = this.startMergeRun(userId, previous.projectId, previous.taskId, agentIdOverride ?? previous.agentId, {
+      provider: previous.requestedLlmProvider ?? previous.llmProvider,
+      model: previous.requestedLlmModel ?? previous.llmModel
+    })
     if (unpin || previous.conflicts.length > 0 || /stale source/i.test(previous.error ?? '')) return this.updateMergeRun(next.id, { sourceSha: null }) ?? next
     return next
   }
@@ -5620,7 +5647,11 @@ export class VoiceChatDb {
       triggeredBy: String(r.triggered_by), sourceBranch: String(r.source_branch), targetBranch: 'main',
       sourceSha: r.source_sha as string | null, targetSha: r.target_sha as string | null, mergeSha: r.merge_sha as string | null,
       revertSha: r.revert_sha as string | null, agentId: String(r.agent_id), llmEngineId: r.llm_engine_id as string | null,
-      llmProvider: r.llm_provider as MergeRun['llmProvider'], llmModel: String(r.llm_model ?? ''), stage: String(r.stage) as MergeRun['stage'],
+      llmProvider: r.llm_provider as MergeRun['llmProvider'], llmModel: String(r.llm_model ?? ''),
+      requestedLlmProvider: r.requested_llm_provider == null ? null : r.requested_llm_provider as MergeRun['llmProvider'],
+      requestedLlmModel: r.requested_llm_model == null ? null : String(r.requested_llm_model),
+      llmFallbackReason: r.llm_fallback_reason == null ? null : r.llm_fallback_reason as MergeRun['llmFallbackReason'],
+      stage: String(r.stage) as MergeRun['stage'],
       stages: parseJsonValue(r.stages_json as string, []), conflicts: parseStringArray(r.conflicts_json as string),
       conflictDetails: parseStringArray(r.conflicts_json as string).map((path) => ({ path })), checks: parseJsonValue(r.checks_json as string, []),
       deployId: r.deploy_id as string | null, deployVersion: r.deploy_version as string | null,
