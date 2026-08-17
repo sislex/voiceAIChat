@@ -129,6 +129,14 @@ import {
   type CiRunReport,
   type CiRunReportStep,
   type CiTaskReport,
+  type TaskTimeline,
+  type TaskTimelineAttempt,
+  type TaskTimelineStage,
+  type TaskTimelineStatus,
+  mergedTimelineDuration,
+  subtractTimelineIntervals,
+  timelineDuration,
+  timelineIso,
   type KbGapNote,
   CI_TOOL_KINDS,
   CI_TOOL_RESPONSES_KEEP,
@@ -4287,6 +4295,161 @@ export class VoiceChatDb {
   findLatestPushedCiWorkspace(projectId: string, taskId: string): CiWorkspace | null {
     const r = this.db.prepare(`SELECT * FROM ci_workspaces WHERE project_id = ? AND task_id = ? AND pushed = 1 ORDER BY created_at DESC LIMIT 1`).get(projectId, taskId) as CiWorkspaceRow | undefined
     return r ? mapCiWorkspace(r) : null
+  }
+
+  taskTimeline(userId: string, projectId: string, taskId: string): TaskTimeline | null {
+    if (!this.getProject(userId, projectId)) return null
+    const task = this.db.prepare(`SELECT id, created_at, updated_at, done_at FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId) as { id: string; created_at: number; updated_at: number; done_at: number | null } | undefined
+    if (!task) return null
+
+    type Raw = {
+      id: string; type: string; title: string; status: string; attempt: number
+      queued: number | null; started: number | null; finished: number | null
+      executor: string | null; machine: string | null; model: string | null
+      reason_code: string | null; reason_message: string | null; kind: string
+      position: number | null
+    }
+    const rows: Raw[] = []
+    const append = (sql: string): void => {
+      rows.push(...this.db.prepare(sql).all(taskId) as Raw[])
+    }
+
+    append(`SELECT r.id, 'development' type, 'Development' title, r.status, ROW_NUMBER() OVER (ORDER BY r.created_at, r.id) attempt,
+      r.created_at queued, r.started_at started, r.finished_at finished, r.triggered_by executor, a.name machine,
+      (SELECT NULLIF(u.model, '') FROM ci_run_usage u WHERE u.run_id=r.id ORDER BY u.at LIMIT 1) model,
+      NULL reason_code, NULL reason_message, 'ci' kind, 20 position
+      FROM ci_runs r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=?`)
+    append(`SELECT s.id, 'development_step:' || COALESCE(s.command_id, s.kind || ':' || s.title) type, s.title,
+      s.status, s.attempt, NULL queued, s.started_at started, s.finished_at finished, r.triggered_by executor, a.name machine,
+      (SELECT NULLIF(u.model, '') FROM ci_run_usage u WHERE u.run_id=r.id AND u.step_id=s.id ORDER BY u.at LIMIT 1) model,
+      CASE WHEN s.status IN ('failed','timeout','cancelled','skipped') THEN 'step_' || s.status END reason_code,
+      CASE WHEN s.exit_code IS NOT NULL AND s.exit_code <> 0 THEN 'exit ' || s.exit_code END reason_message,
+      'ci_step' kind, 21 position FROM ci_run_steps s JOIN ci_runs r ON r.id=s.run_id LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=?`)
+    append(`SELECT r.id, 'task_preparation' type, 'Создание и подготовка задачи' title, r.status, r.attempt,
+      r.created_at queued, NULL started, r.finished_at finished, NULL executor, NULL machine, NULL model,
+      CASE WHEN r.error IS NOT NULL THEN 'preparation_error' END reason_code, r.error reason_message, 'task_preparation' kind, 10 position
+      FROM task_preparation_runs r WHERE r.task_id=?`)
+    append(`SELECT r.id, 'component_qa' type, 'Component QA' title, r.status, r.attempt,
+      r.created_at queued, r.started_at started, r.finished_at finished, NULL executor, NULL machine, NULL model,
+      r.failure_classification reason_code, CASE WHEN length(r.blocker_reasons_json)>2 THEN r.blocker_reasons_json END reason_message,
+      'component_qa' kind, 30 position FROM component_qa_runs r WHERE r.task_id=?`)
+    append(`SELECT r.id, 'integration_tests' type, 'Создание и запуск интеграционных тестов' title, r.status, r.attempt,
+      r.created_at queued, r.started_at started, r.finished_at finished, NULL executor, NULL machine, NULL model,
+      r.failure_classification reason_code, COALESCE(r.failure_reason, r.stale_reason) reason_message,
+      'integration_tests' kind, 40 position FROM integration_test_runs r WHERE r.task_id=?`)
+    append(`SELECT r.id, r.stage type,
+      CASE r.stage WHEN 'automated_qa' THEN 'Automated QA' WHEN 'component_qa' THEN 'Component QA' ELSE 'Интеграционные тесты' END title,
+      r.status, r.attempt, r.created_at queued, r.started_at started, r.finished_at finished, r.triggered_by executor,
+      NULL machine, NULLIF(r.llm_model,'') model,
+      CASE WHEN r.error IS NOT NULL THEN 'qa_error' WHEN length(r.gate_reasons_json)>2 THEN 'gate_failed' END reason_code,
+      COALESCE(r.error, CASE WHEN length(r.gate_reasons_json)>2 THEN r.gate_reasons_json END) reason_message,
+      'qa_stage' kind, CASE r.stage WHEN 'component_qa' THEN 30 WHEN 'integration_tests' THEN 40 ELSE 50 END position
+      FROM qa_stage_runs r WHERE r.task_id=?`)
+    append(`SELECT r.id, 'manual_qa_preparation' type, 'Подготовка ручного тестирования' title, r.status, r.attempt,
+      r.created_at queued, NULL started, r.finished_at finished, NULL executor, NULL machine, NULL model,
+      CASE WHEN r.error IS NOT NULL THEN 'qa_preparation_error' END reason_code, r.error reason_message,
+      'qa_preparation' kind, 60 position FROM qa_preparation_runs r WHERE r.task_id=?`)
+    append(`SELECT r.id, 'manual_qa' type, 'Ручное тестирование' title, r.status,
+      ROW_NUMBER() OVER (ORDER BY r.started_at, r.id) attempt, NULL queued, r.started_at started, r.finished_at finished,
+      COALESCE(r.tester_id,r.initiated_by) executor, NULL machine, NULL model,
+      CASE WHEN r.stale_reason IS NOT NULL THEN 'stale' END reason_code, r.stale_reason reason_message,
+      'qa_session' kind, 70 position FROM qa_sessions r WHERE r.task_id=?`)
+    append(`SELECT r.id, 'merge' type, 'Merge и push' title, r.status,
+      ROW_NUMBER() OVER (ORDER BY r.created_at, r.id) attempt, r.created_at queued, r.started_at started, r.finished_at finished,
+      r.triggered_by executor, a.name machine, NULL model,
+      CASE WHEN r.error IS NOT NULL THEN 'merge_error' END reason_code, r.error reason_message,
+      'merge' kind, 80 position FROM merge_runs r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=?`)
+
+    const normalize = (status: string): TaskTimelineStatus => {
+      if (status === 'queued') return 'queued'
+      if (status === 'running' || status === 'active' || ['checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing'].includes(status)) return 'running'
+      if (status === 'awaiting_input') return 'awaiting_input'
+      if (['success','passed','done'].includes(status)) return 'succeeded'
+      if (status === 'cancelled') return 'cancelled'
+      if (status === 'skipped') return 'skipped'
+      return 'failed'
+    }
+    const waitingRows = this.db.prepare(`SELECT i.run_id, i.created_at started, i.answered_at finished
+      FROM ci_interactions i JOIN ci_runs r ON r.id=i.run_id WHERE r.task_id=? ORDER BY i.seq`).all(taskId) as Array<{ run_id: string; started: number; finished: number | null }>
+    const toInterval = (start: number, end: number | null) => ({ startedAt: timelineIso(start)!, finishedAt: timelineIso(end), durationMs: timelineDuration(start, end) })
+    const attempts = rows.map((row): TaskTimelineAttempt & { _position: number | null; _type: string; _title: string; _rawStart: number | null; _rawFinish: number | null; _active: Array<{ start: number; end: number | null }>; _queue: Array<{ start: number; end: number | null }>; _waiting: Array<{ start: number; end: number | null }> } => {
+      const waiting = row.kind === 'ci' ? waitingRows.filter((item) => item.run_id === row.id).map((item) => ({ start: item.started, end: item.finished })) : []
+      const active = row.started == null ? [] : subtractTimelineIntervals([{ start: row.started, end: row.finished }], waiting)
+      const queue = row.queued != null && row.started != null ? [{ start: row.queued, end: row.started }] : []
+      const status = normalize(row.status)
+      return {
+        id: `${row.kind}:${row.id}`, number: row.attempt, status,
+        queuedAt: timelineIso(row.queued), startedAt: timelineIso(row.started), finishedAt: timelineIso(row.finished),
+        queueIntervals: queue.map((item) => toInterval(item.start, item.end)),
+        activeIntervals: active.map((item) => toInterval(item.start, item.end)),
+        awaitingInputIntervals: waiting.map((item) => toInterval(item.start, item.end)),
+        queueDuration: queue.length ? mergedTimelineDuration(queue) : row.queued == null || row.started == null ? null : 0,
+        activeDuration: row.started == null ? null : mergedTimelineDuration(active),
+        awaitingInputDuration: waiting.length ? mergedTimelineDuration(waiting) : 0,
+        calendarDuration: timelineDuration(row.queued ?? row.started, row.finished),
+        executor: row.executor, machine: row.machine, model: row.model,
+        reason: row.reason_code || row.reason_message ? { code: row.reason_code, message: row.reason_message } : null,
+        runs: [{ id: row.id, kind: row.kind }],
+        dataComplete: row.started != null && (row.finished != null || ['running','awaiting_input'].includes(status)),
+        _position: row.position, _type: row.type, _title: row.title, _rawStart: row.started, _rawFinish: row.finished,
+        _active: active, _queue: queue, _waiting: waiting
+      }
+    })
+
+    const grouped = new Map<string, typeof attempts>()
+    for (const attempt of attempts) grouped.set(attempt._type, [...(grouped.get(attempt._type) ?? []), attempt])
+    const stages: TaskTimelineStage[] = [...grouped.entries()].map(([type, items]) => {
+      items.sort((a, b) => a.number - b.number || a.id.localeCompare(b.id))
+      const latest = items[items.length - 1]
+      const starts = items.map((item) => item._rawStart).filter((value): value is number => value != null)
+      const finishes = items.map((item) => item._rawFinish).filter((value): value is number => value != null)
+      const queued = items.map((item) => item.queuedAt ? Date.parse(item.queuedAt) : null).filter((value): value is number => value != null)
+      const allTerminal = items.every((item) => ['succeeded','failed','cancelled','skipped'].includes(item.status))
+      return {
+        id: `stage:${type}`, type, title: latest._title, status: latest.status,
+        queuedAt: timelineIso(queued.length ? Math.min(...queued) : null),
+        startedAt: timelineIso(starts.length ? Math.min(...starts) : null),
+        finishedAt: timelineIso(allTerminal && finishes.length ? Math.max(...finishes) : null),
+        queueDuration: items.some((item) => item.queueDuration != null) ? mergedTimelineDuration(items.flatMap((item) => item._queue)) : null,
+        activeDuration: items.some((item) => item.activeDuration != null) ? mergedTimelineDuration(items.flatMap((item) => item._active)) : null,
+        awaitingInputDuration: mergedTimelineDuration(items.flatMap((item) => item._waiting)),
+        calendarDuration: timelineDuration(queued.length ? Math.min(...queued) : starts.length ? Math.min(...starts) : null, allTerminal && finishes.length ? Math.max(...finishes) : null),
+        attemptCount: items.filter((item) => item.status !== 'skipped' || item.runs.length > 0).length,
+        successfulDuration: items.filter((item) => item.status === 'succeeded').reduce((sum, item) => sum + (item.calendarDuration ?? 0), 0),
+        unsuccessfulDuration: items.filter((item) => ['failed','cancelled'].includes(item.status)).reduce((sum, item) => sum + (item.calendarDuration ?? 0), 0),
+        executor: latest.executor, machine: latest.machine, model: latest.model, reason: latest.reason,
+        runs: items.flatMap((item) => item.runs), attempts: items.map(({ _position, _type, _title, _rawStart, _rawFinish, _active, _queue, _waiting, ...attempt }) => attempt),
+        workflowPosition: latest._position, dataComplete: items.every((item) => item.dataComplete)
+      }
+    }).sort((a, b) => (a.workflowPosition ?? Number.MAX_SAFE_INTEGER) - (b.workflowPosition ?? Number.MAX_SAFE_INTEGER)
+      || (a.queuedAt || a.startedAt ? Date.parse(a.queuedAt ?? a.startedAt!) : task.created_at)
+        - (b.queuedAt || b.startedAt ? Date.parse(b.queuedAt ?? b.startedAt!) : task.created_at)
+      || a.id.localeCompare(b.id))
+
+    if (task.done_at != null) stages.push({
+      id: 'stage:completion', type: 'completion', title: 'Завершение', status: 'succeeded',
+      queuedAt: null, startedAt: timelineIso(task.done_at), finishedAt: timelineIso(task.done_at),
+      queueDuration: null, activeDuration: 0, awaitingInputDuration: 0, calendarDuration: 0,
+      attemptCount: 0, successfulDuration: 0, unsuccessfulDuration: 0, executor: null, machine: null, model: null,
+      reason: null, runs: [], attempts: [], workflowPosition: 100, dataComplete: true
+    })
+    const starts = attempts.map((item) => item._rawStart).filter((value): value is number => value != null)
+    const facts = [task.created_at, task.updated_at, task.done_at, ...rows.flatMap((row) => [row.queued, row.started, row.finished]), ...waitingRows.flatMap((row) => [row.started, row.finished])]
+      .filter((value): value is number => value != null)
+    return {
+      version: 1, taskId, generatedAt: new Date(this.now()).toISOString(),
+      summary: {
+        createdAt: timelineIso(task.created_at)!,
+        firstStartedAt: timelineIso(starts.length ? Math.min(...starts) : null),
+        finishedAt: timelineIso(task.done_at),
+        calendarDuration: timelineDuration(task.created_at, task.done_at),
+        activeDuration: mergedTimelineDuration(attempts.flatMap((item) => item._active)),
+        queueDuration: mergedTimelineDuration(attempts.flatMap((item) => item._queue)),
+        awaitingInputDuration: mergedTimelineDuration(attempts.flatMap((item) => item._waiting)),
+        lastChangedAt: timelineIso(Math.max(...facts))!
+      },
+      stages
+    }
   }
 
   findLatestCiRunForTask(projectId: string, taskId: string): CiRun | null {
