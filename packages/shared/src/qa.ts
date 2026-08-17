@@ -51,12 +51,54 @@ export interface TestCaseDefinition {
   alternativeManualVerification: string
   comments: string
 }
+export interface ReadinessAcceptanceCriterion {
+  id: string
+  title: string
+  precondition: string
+  action: string
+  observableResult: string
+}
+export interface ReadinessSource {
+  id: string
+  kind: 'knowledge' | 'hierarchy' | 'related_tasks' | 'code' | 'tests' | 'storybook'
+  status: 'available' | 'absent' | 'unavailable'
+  summary: string
+  refs: string[]
+  critical: boolean
+}
+export interface ReadinessQuestion {
+  questionId: string
+  text: string
+  material: boolean
+  answer: string | null
+}
+export interface ReadinessAssumption { id: string; text: string; rationale: string; material: boolean }
+export interface ReadinessDecision { id: string; text: string; rationale: string; questionId?: string }
 export interface DevelopmentReadiness {
+  /** Version 2 is the immutable, confirmed Development Brief contract. */
+  schemaVersion?: 2
+  goal?: string
+  scope?: string[]
+  outOfScope?: string[]
   functionalRequirements: string
-  acceptanceCriteria: string
-  testCases: TestCaseDefinition[]
+  businessRules?: string[]
+  errorsAndEdgeCases?: string[]
   uiImpact: UiImpact | null
+  uiStates?: string[]
   affectedComponents: AffectedUiComponent[]
+  contractChanges?: string[]
+  dataChanges?: string[]
+  acceptanceCriteria: string
+  acceptanceCriteriaItems?: ReadinessAcceptanceCriterion[]
+  testCases: TestCaseDefinition[]
+  constraints?: string[]
+  contradictions?: string[]
+  openQuestions?: ReadinessQuestion[]
+  decisions?: ReadinessDecision[]
+  assumptions?: ReadinessAssumption[]
+  sources?: ReadinessSource[]
+  gateResults?: PreparationGateResult[]
+  confirmation?: { confirmed: boolean; confirmedAt: number; confirmedBy: string; attemptId: string }
   acceptanceCriteriaConflict: boolean
 }
 export interface ReadinessCheck { allowed: boolean; reasons: string[] }
@@ -71,24 +113,54 @@ export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): Rea
     if (!testCase.required) continue
     if (!testCase.id.trim()) reasons.push('missing_stable_id')
     if (!testCase.title.trim()) reasons.push(`missing_title:${testCase.id}`)
+    if (input.schemaVersion === 2 && !testCase.description.trim()) reasons.push(`missing_description:${testCase.id}`)
     if (!testCase.preconditions.trim()) reasons.push(`missing_preconditions:${testCase.id}`)
+    if (input.schemaVersion === 2 && !testCase.testData.trim()) reasons.push(`missing_test_data:${testCase.id}`)
     if (!testCase.steps.trim()) reasons.push(`missing_steps:${testCase.id}`)
     if (!testCase.expectedResult.trim()) reasons.push(`missing_expected_result:${testCase.id}`)
+    if (input.schemaVersion === 2 && !testCase.automatable && (!testCase.notAutomatedReason.trim() || !testCase.alternativeManualVerification.trim())) reasons.push(`missing_manual_justification:${testCase.id}`)
   }
   if (!input.uiImpact) reasons.push('missing_ui_impact')
   if (input.uiImpact && input.uiImpact !== 'none') {
     if (input.affectedComponents.length === 0) reasons.push('missing_affected_components')
     for (const component of input.affectedComponents) {
-      if (!component.storybookStoryId && (!component.exclusionReason.trim() || !component.alternativeVerification.trim())) {
-        reasons.push(`missing_storybook_coverage:${component.id}`)
-      }
-      if (component.reusable && input.uiImpact === 'new_components' && !component.storybookStoryId && !component.exclusionReason.trim()) {
-        reasons.push(`new_reusable_component_without_story:${component.id}`)
-      }
+      if (!component.storybookStoryId && (!component.exclusionReason.trim() || !component.alternativeVerification.trim())) reasons.push(`missing_storybook_coverage:${component.id}`)
+      if (component.reusable && input.uiImpact === 'new_components' && !component.storybookStoryId && !component.exclusionReason.trim()) reasons.push(`new_reusable_component_without_story:${component.id}`)
     }
   }
   if (input.acceptanceCriteriaConflict) reasons.push('acceptance_criteria_conflict')
-  return { allowed: reasons.length === 0, reasons }
+  if (input.schemaVersion === 2) {
+    if (!input.goal?.trim()) reasons.push('missing_goal')
+    if (!input.scope?.length) reasons.push('missing_scope')
+    if (!input.outOfScope?.length) reasons.push('missing_out_of_scope')
+    if (!input.acceptanceCriteriaItems?.length) reasons.push('missing_verifiable_acceptance_criteria')
+    for (const criterion of input.acceptanceCriteriaItems ?? []) {
+      if (!criterion.id.trim() || !criterion.precondition.trim() || !criterion.action.trim() || !criterion.observableResult.trim()) reasons.push(`unverifiable_acceptance_criterion:${criterion.id || 'unknown'}`)
+    }
+    for (const question of input.openQuestions ?? []) if (question.material && !question.answer?.trim()) reasons.push(`open_material_question:${question.questionId}`)
+    if ((input.contradictions ?? []).some((item) => item.trim())) reasons.push('unresolved_material_contradiction')
+    for (const assumption of input.assumptions ?? []) if (assumption.material || !assumption.rationale.trim()) reasons.push(`invalid_assumption:${assumption.id}`)
+    for (const source of input.sources ?? []) if (source.critical && source.status !== 'available') reasons.push(`critical_source_unavailable:${source.id}`)
+  }
+  return { allowed: reasons.length === 0, reasons: [...new Set(reasons)] }
+}
+
+export function developmentReadinessGateResults(input: DevelopmentReadiness): PreparationGateResult[] {
+  const reasons = canConfirmDevelopmentReadiness(input).reasons
+  const checks: Array<[string, (reason: string) => boolean]> = [
+    ['structure_complete', (r) => r.startsWith('missing_')],
+    ['material_questions_closed', (r) => r.startsWith('open_material_question:')],
+    ['contradictions_resolved', (r) => r === 'acceptance_criteria_conflict' || r === 'unresolved_material_contradiction'],
+    ['acceptance_criteria_verifiable', (r) => r.startsWith('unverifiable_acceptance_criterion:')],
+    ['required_test_cases_complete', (r) => /^(missing_(stable_id|title|description|preconditions|test_data|steps|expected_result|required_test_cases)|missing_manual_justification)/.test(r)],
+    ['ui_impact_sufficient', (r) => r.includes('storybook') || r.includes('affected_components') || r.includes('ui_impact') || r.includes('reusable_component')],
+    ['assumptions_allowed', (r) => r.startsWith('invalid_assumption:')],
+    ['sensitive_data_redacted', () => false]
+  ]
+  return checks.map(([code, matches]) => {
+    const refs = reasons.filter(matches)
+    return { code, status: refs.length ? 'fail' : 'pass', explanation: refs.length ? refs.join(', ') : 'Проверка пройдена', refs }
+  })
 }
 
 /** Gate for leaving integration-test creation. */
@@ -401,22 +473,65 @@ export interface QaSession {
   additionalIssues?: string; linkedFixRunId?: string | null; results: QaCriterionResult[]
 }
 /** Пред-разработческая подготовка задачи — отдельна от подготовки ручного QA. */
-export type TaskPreparationStatus = 'running' | 'success' | 'failed' | 'cancelled'
+export const TASK_PREPARATION_STATUSES = ['queued', 'running', 'waiting_for_answer', 'validating', 'completed', 'failed', 'cancelled', 'blocked', 'success'] as const
+export type TaskPreparationStatus = typeof TASK_PREPARATION_STATUSES[number]
+export const TASK_PREPARATION_PHASES = ['initialization', 'knowledge_research', 'hierarchy_research', 'related_tasks_research', 'code_research', 'tests_research', 'storybook_research', 'clarification', 'brief_generation', 'readiness_validation', 'persistence', 'completed'] as const
+export type TaskPreparationPhase = typeof TASK_PREPARATION_PHASES[number]
+export interface PreparationGateResult { code: string; status: 'pass' | 'fail'; explanation: string; refs: string[] }
+export interface PreparationEvent {
+  eventId: string; attemptId: string; sequence: number; timestamp: number
+  type: string; phase: TaskPreparationPhase; text: string; data?: Record<string, unknown>
+}
+export interface PreparationQuestion {
+  questionId: string; attemptId: string; text: string; material: boolean
+  status: 'open' | 'answered'; answer: string | null; askedAt: number
+  answeredAt: number | null; answeredBy: string | null
+}
+export interface PreparationAnswerResult { accepted: boolean; alreadyAnswered: boolean; question: PreparationQuestion }
 export interface TaskPreparationRun {
   id: string
+  attemptId?: string
   projectId: string
   taskId: string
+  taskKey?: string
   status: TaskPreparationStatus
+  phase?: TaskPreparationPhase
   attempt: number
+  attemptNumber?: number
   maxAttempts: number
+  model?: string
+  profileId?: string
   log: string
+  events?: PreparationEvent[]
+  questions?: PreparationQuestion[]
   error: string | null
   readiness: DevelopmentReadiness | null
   gateReasons: string[]
+  gateResults?: PreparationGateResult[]
   createdAt: number
+  startedAt?: number | null
   finishedAt: number | null
+  durationMs?: number
   canRetry: boolean
   canCancel: boolean
+  canAnswer?: boolean
+}
+const PREPARATION_SECRET_PATTERNS: RegExp[] = [
+  /\b(?:authorization|proxy-authorization)\s*[:=]\s*(?:bearer\s+)?[^\s,;]+/gi,
+  /\b(?:api[_-]?key|token|secret|password|passwd|cookie|set-cookie)\s*[:=]\s*[^\s,;]+/gi,
+  /-----BEGIN [^-]*(?:PRIVATE KEY|OPENSSH KEY)-----[\s\S]*?-----END [^-]*(?:PRIVATE KEY|OPENSSH KEY)-----/gi,
+  /\b(?:sk|ghp|github_pat|xox[baprs])-[-A-Za-z0-9_]{12,}\b/g
+]
+export function redactPreparationText(value: unknown): string {
+  let text = typeof value === 'string' ? value : String(value ?? '')
+  for (const pattern of PREPARATION_SECRET_PATTERNS) text = text.replace(pattern, '[REDACTED]')
+  return text
+}
+export function safePreparationKey(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'TASK'
+}
+export function preparationExportFilename(taskKey: string, attemptNumber: number, timestamp: number, ext: 'json' | 'md' | 'txt'): string {
+  return `${safePreparationKey(taskKey)}-preparation-attempt-${Math.max(1, Math.trunc(attemptNumber))}-${new Date(timestamp).toISOString().slice(0, 10)}.${ext}`
 }
 
 export type QaPreparationStatus = 'running' | 'success' | 'failed'

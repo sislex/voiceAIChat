@@ -400,6 +400,8 @@ export interface IpcInvokeMap {
   'tasks:listPreparationRuns': { arg: { projectId: string; taskId: string }; result: TaskPreparationRun[] }
   'tasks:cancelPreparationRun': { arg: { runId: string }; result: TaskPreparationRun }
   'tasks:retryPreparationRun': { arg: { runId: string }; result: TaskPreparationRun }
+  'tasks:answerPreparationQuestion': { arg: { questionId: string; answer: string }; result: import('./qa').PreparationAnswerResult }
+  'tasks:exportPreparationRun': { arg: { runId: string; format: 'md' | 'json' }; result: void }
   'tasks:delete': { arg: { projectId: string; taskId: string }; result: void }
   /** Открыть (или создать) связанный с задачей чат текущего пользователя. */
   'tasks:openChat': { arg: { projectId: string; taskId: string }; result: Conversation }
