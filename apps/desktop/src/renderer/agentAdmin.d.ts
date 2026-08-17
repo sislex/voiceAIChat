@@ -2,6 +2,7 @@
 
 interface AgentAdminStateR {
   status: 'connecting' | 'online' | 'offline' | 'stopped' | 'unconfigured'
+  id: string | null
   name: string | null
   log: string[]
 }

@@ -11,6 +11,7 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
 // Мост режима агента (окна настройки/журнала в трее).
 interface AgentAdminState {
   status: 'connecting' | 'online' | 'offline' | 'stopped' | 'unconfigured'
+  id: string | null
   name: string | null
   log: string[]
 }

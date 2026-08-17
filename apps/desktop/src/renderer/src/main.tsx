@@ -8,7 +8,9 @@ import '@voicechat/ui/styles.css'
 async function boot(): Promise<void> {
   const serverUrl = (await window.remoteClient.getUrl()) ?? null
   if (!serverUrl) return
-  installRemoteBridges(serverUrl)
+  const agentState = await window.agentAdmin.getState()
+  installRemoteBridges(serverUrl, agentState.status === 'online' ? agentState.id : null)
+  window.agentAdmin.onStatus((next) => window.featurePreview?.setLocalAgentId?.(next.status === 'online' ? next.id : null))
 
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <React.StrictMode>

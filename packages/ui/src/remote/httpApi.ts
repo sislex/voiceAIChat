@@ -307,6 +307,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ path }) }),
     'projects:setReposRoot': ({ id, agentId, reposRoot }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ reposRoot }) }),
+    'projects:setMachineSsh': ({ id, agentId, sshHost, sshUser }) =>
+      req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ sshHost, sshUser }) }),
     'projects:setDefaultMachine': ({ id, agentId }) =>
       req(REST.projectDefaultMachine(id), { method: 'POST', body: JSON.stringify({ agentId }) }),
     'board:get': ({ id, includeCompleted }) => req(REST.projectBoard(id, includeCompleted)),

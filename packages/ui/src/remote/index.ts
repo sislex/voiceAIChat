@@ -347,7 +347,7 @@ let ws: WsClient | null = null
  * Ставит window.api/audio/stt/claude/tts/cc/agents поверх сервера по адресу
  * serverHttp ('' = same-origin). Идемпотентно на один процесс.
  */
-export function installRemoteBridges(serverHttp: string): void {
+export function installRemoteBridges(serverHttp: string, localAgentId: string | null = null): void {
   if (ws) return
   const httpBase = serverHttp.replace(/\/$/, '')
   const wsBase = toWsBase(httpBase)
@@ -369,6 +369,6 @@ export function installRemoteBridges(serverHttp: string): void {
   window.files = makeFilesBridge(httpBase)
   window.pty = makePtyBridge(ws)
   window.preview = makePreviewBridge(ws)
-  window.featurePreview = createFeaturePreviewRest(httpBase)
+  window.featurePreview = createFeaturePreviewRest(httpBase, localAgentId)
   window.qa = createQaRest(httpBase)
 }
