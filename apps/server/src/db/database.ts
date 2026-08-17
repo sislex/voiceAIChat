@@ -155,6 +155,7 @@ import {
   componentQaSemanticVersion,
   canTransitionWorkflow,
   validateQaResult,
+  QA_RESULT_STATUSES,
   type AcceptanceCriterion,
   type AcceptanceCriterionSnapshot,
   type AcceptanceCriterionVersion,
@@ -5874,8 +5875,10 @@ export class VoiceChatDb {
     if (!current) throw new Error('QA result not found')
     if (current.revision !== expectedRevision) throw new Error('QA result revision conflict')
     if (current.session_status !== 'active' || current.stale_reason) throw new Error('QA session is stale or closed')
-    const next = { ...mapQaResult(current, [], null), ...patch }
+    const previous = mapQaResult(current, [], null)
+    const next = { ...previous, ...patch }
     const status = patch.status ?? next.status
+    if (!QA_RESULT_STATUSES.includes(status)) throw new Error('invalid QA result status')
     if (!patch.draft) {
       const missing = validateQaResult(status, next)
       if (missing.length) throw new Error(`missing QA fields: ${missing.join(', ')}`)
@@ -5893,7 +5896,11 @@ export class VoiceChatDb {
         this.db.prepare(`INSERT INTO qa_issues (id,result_id,classification,severity,frequency,reproduction,proposed_route,requirement_proposal,created_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(result_id) DO UPDATE SET classification=excluded.classification,severity=excluded.severity,frequency=excluded.frequency,reproduction=excluded.reproduction,proposed_route=excluded.proposed_route,requirement_proposal=excluded.requirement_proposal`)
           .run(this.newId(),resultId,patch.classification,patch.severity,patch.frequency,patch.reproduction,route,patch.requirementProposal??'',now)
       }
-      this.addQaAudit(projectId,taskId,userId,patch.draft?'result.draft_saved':'result.updated',{resultId,status,revision:expectedRevision+1})
+      this.addQaAudit(projectId,taskId,userId,patch.draft?'result.draft_saved':'result.updated',{
+        resultId, sessionId: current.session_id, criterionId: current.criterion_id, actor: userId, serverTime: now,
+        previous: { status: previous.status, comment: previous.comment, revision: previous.revision },
+        next: { status, comment: next.comment, revision: expectedRevision + 1 }
+      })
     })()
     return this.qaResultById(resultId) as QaCriterionResult
   }

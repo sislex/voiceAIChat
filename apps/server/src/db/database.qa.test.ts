@@ -82,6 +82,29 @@ describe('manual QA persistence and workflow', () => {
     expect(taskColumn?.semanticType).toBe('manual_qa')
   })
 
+  it('validates blocked comments, ownership, status and audits previous/new values', () => {
+    const { project, task } = fixture()
+    const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
+    const result = session.results[0]
+    expect(() => db.saveQaResult('owner', project.id, task.id, result.id, 1, {
+      status: 'blocked', draft: false, blockerReason: 'Preview down', blockerType: 'environment', blockerOwner: 'ops'
+    })).toThrow(/comment/)
+    expect(() => db.saveQaResult('developer', project.id, task.id, result.id, 1, { status: 'passed', draft: false })).toThrow(/permission/)
+    expect(() => db.saveQaResult('owner', project.id, 'another-task', result.id, 1, { status: 'passed', draft: false })).toThrow(/not found/)
+    expect(() => db.saveQaResult('owner', project.id, task.id, result.id, 1, { status: 'unknown' as never, draft: false })).toThrow(/invalid QA result status/)
+    db.saveQaResult('owner', project.id, task.id, result.id, 1, {
+      status: 'blocked', draft: false, comment: 'Preview down', blockerReason: 'Preview down', blockerType: 'environment', blockerOwner: 'ops'
+    })
+    const raw = (db as unknown as { db: { prepare(sql: string): { get(...values: unknown[]): { payload_json: string } } } }).db
+    const audit = JSON.parse(raw.prepare(`SELECT payload_json FROM qa_audit WHERE action='result.updated' ORDER BY created_at DESC LIMIT 1`).get().payload_json)
+    expect(audit).toMatchObject({
+      resultId: result.id, sessionId: session.id, criterionId: result.criterionId, actor: 'owner',
+      previous: { status: 'not_tested', comment: '', revision: 1 },
+      next: { status: 'blocked', comment: 'Preview down', revision: 2 }
+    })
+    expect(audit.serverTime).toEqual(expect.any(Number))
+  })
+
   it('binds screenshot metadata to project/result and denies outsiders', () => {
     const { project, task } = fixture()
     const session = db.startQaSession('owner', { projectId: project.id, taskId: task.id, branch: 'feature/1', commitSha: 'abc', testRunId: 'test-1' })!
