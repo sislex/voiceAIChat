@@ -9,9 +9,11 @@ const makeEnvironment = (state: PreviewState, patch: Partial<PreviewEnvironment>
   appUrl: 'https://preview.example.test/app', storybookUrl: 'https://preview.example.test/storybook/',
   storybookStatus: 'ready', storybookCommitSha: 'a1b2c3d4e5f6', selectedSeedScenario: 'basic-user',
   seedVersion: 'v1', dataReady: true, healthStatus: state === 'running' || state === 'stale' ? 'healthy' : 'unknown',
-  services: [], runs: [{ id: 'run1', environmentId: 'preview-163', operation: 'start', status: 'success',
-    initiator: 'alexey', commitSha: 'a1b2c3d4e5f6', startedAt: Date.now() - 30_000, finishedAt: Date.now(),
-    errorType: null, errorMessage: null, log: 'build complete\nhealth check passed\n' }],
+  services: [], runs: [{ id: 'run1', environmentId: 'preview-163', operation: 'start', status: 'succeeded',
+    initiator: 'alexey', createdAt: Date.now() - 30_000, startedAt: Date.now() - 30_000, finishedAt: Date.now(),
+    agentId: 'MacBook', workspacePath: '/repos/chat/163', configurationKey: 'start:MacBook:/repos/chat/163:a1b2c3d4e5f6',
+    commitSha: 'a1b2c3d4e5f6', version: 2, currentStepId: null, steps: [], events: [],
+    errorType: null, errorMessage: null, exitCode: 0, log: 'build complete\nhealth check passed\n', result: null }],
   createdBy: 'alexey', createdAt: Date.now() - 60_000, updatedAt: Date.now(), startedAt: Date.now(),
   stoppedAt: null, lastError: null, ...patch
 })
