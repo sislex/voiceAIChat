@@ -131,7 +131,7 @@ export interface ProjectsActions {
     taskId: string,
     fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
   ): Promise<void>
-  moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<void>
+  moveTask(taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null): Promise<boolean>
   deleteTask(taskId: string): Promise<void>
   openTaskChat(taskId: string): Promise<string | null>
   ensureTaskChat(taskId: string): Promise<void>
@@ -706,7 +706,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       async moveTask(taskId, columnId, afterId, beforeId) {
         const id = getState().activeProjectId
         const prev = getState().board
-        if (!id || !prev) return
+        if (!id || !prev) return false
         const tasks = prev.tasks.map((t) => ({ ...t }))
         const moving = tasks.find((t) => t.id === taskId)
         const fromColumnId = moving?.columnId ?? null
@@ -733,9 +733,11 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           // Переезд в «Готово» и обратно прячет/возвращает чат задачи в сайдбаре.
           // Не в общем try: упавший список — не повод откатывать удавшийся перенос.
           void deps.chat.refreshConversations({ keepActiveListed: true }).catch(() => {})
+          return true
         } catch (err) {
           setState({ board: prev })
           fail(err, () => void actions.moveTask(taskId, columnId, afterId, beforeId))
+          return false
         }
       },
       async deleteTask(taskId) {

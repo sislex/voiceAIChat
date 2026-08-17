@@ -49,6 +49,11 @@ export interface TaskCardProps {
   onDequeueCiRun?: (runId: string) => void
   /** Доступна исключительно в awaiting_merge при серверно подтверждённых условиях. */
   onStartMerge?: (taskId: string) => void
+  /** Фактические соседние колонки в полном проектном порядке. */
+  previousColumn?: { id: string; name: string } | null
+  nextColumn?: { id: string; name: string } | null
+  /** Переместить карточку существующим сценарием доски. */
+  onMoveToColumn?: (taskId: string, fromColumnId: string, targetColumnId: string) => void | Promise<void>
 
   /** Захват указателем: доска решает, перенос это или клик/скролл.
       `immediate` — захват с ручки, удержание пальца не нужно. */
@@ -75,6 +80,21 @@ export function epicOf(task: Task, all: Task[]): Task | null {
 
 export function TaskCard(props: TaskCardProps): JSX.Element {
   const [launching, setLaunching] = useState<'queue' | 'parallel' | null>(null)
+  const [movingStage, setMovingStage] = useState(false)
+  const movingStageRef = useRef(false)
+
+  async function moveToColumn(targetColumnId: string): Promise<void> {
+    if (movingStageRef.current || !props.onMoveToColumn) return
+    const fromColumnId = props.task.columnId
+    movingStageRef.current = true
+    setMovingStage(true)
+    try {
+      await props.onMoveToColumn(props.task.id, fromColumnId, targetColumnId)
+    } finally {
+      movingStageRef.current = false
+      setMovingStage(false)
+    }
+  }
 
   async function launchCi(kind: 'queue' | 'parallel'): Promise<void> {
     if (launching) return
@@ -318,6 +338,23 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           </div>
         </div>
       )}
+
+      <div className="jcard-stage-actions" aria-label="Переход между этапами" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          disabled={movingStage || !props.previousColumn || !props.onMoveToColumn}
+          title={props.previousColumn ? `Перейти влево в «${props.previousColumn.name}»` : 'Предыдущего этапа нет'}
+          aria-label={props.previousColumn ? `Перейти влево в колонку «${props.previousColumn.name}»` : 'Перейти влево: предыдущего этапа нет'}
+          onClick={() => { if (props.previousColumn) void moveToColumn(props.previousColumn.id) }}
+        >←</button>
+        <button
+          type="button"
+          disabled={movingStage || !props.nextColumn || !props.onMoveToColumn}
+          title={props.nextColumn ? `Перейти вправо в «${props.nextColumn.name}»` : 'Следующего этапа нет'}
+          aria-label={props.nextColumn ? `Перейти вправо в колонку «${props.nextColumn.name}»` : 'Перейти вправо: следующего этапа нет'}
+          onClick={() => { if (props.nextColumn) void moveToColumn(props.nextColumn.id) }}
+        >→</button>
+      </div>
 
       {/* Клавиатурный перенос иначе не найти: подсказка видна только скринридеру. */}
       <span className="vc-sr-only">Пробел — взять задачу для переноса</span>

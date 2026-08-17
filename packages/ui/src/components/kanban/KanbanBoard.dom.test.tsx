@@ -114,6 +114,48 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByText('Скрытая')).toBeInTheDocument()
   })
 
+  it('стрелка использует полный порядок, включая скрытую колонку, и позицию в конце цели', async () => {
+    const onMoveTask = vi.fn(async () => {})
+    const orderedBoard: Board = {
+      columns: [
+        { ...board.columns[0]!, id: 'c1', name: 'Ready', semanticType: 'ready', hidden: false, position: 1024 },
+        { ...board.columns[0]!, id: 'c2', name: 'Скрытая обязательная', semanticType: 'development', hidden: true, position: 2048 },
+        { ...board.columns[0]!, id: 'c3', name: 'Component QA', semanticType: 'component_qa', hidden: false, position: 3072 }
+      ],
+      tasks: [
+        task({ id: 'moving', columnId: 'c1', title: 'Двигаем', position: 10 }),
+        task({ id: 'target-first', columnId: 'c2', title: 'Первый', position: 100 }),
+        task({ id: 'target-last', columnId: 'c2', title: 'Последний', position: 900 })
+      ]
+    }
+    renderBoard({ board: orderedBoard, onMoveTask })
+
+    const card = screen.getByText('Двигаем').closest('[data-testid="task-card"]')!
+    const right = within(card as HTMLElement).getByRole('button', { name: /вправо.*Скрытая обязательная/ })
+    expect(right).toHaveAttribute('title', expect.stringContaining('Скрытая обязательная'))
+    await userEvent.click(right)
+
+    expect(onMoveTask).toHaveBeenCalledWith('moving', 'c2', 'target-last', null)
+    expect(screen.getByTestId('kanban-live')).toHaveTextContent('Скрытая обязательная')
+  })
+
+  it('не объявляет успех при серверном или сетевом отказе', async () => {
+    const rejectedBoard: Board = {
+      columns: [
+        { ...board.columns[0]!, id: 'c1', name: 'Ready', semanticType: 'ready', hidden: false },
+        { ...board.columns[0]!, id: 'c2', name: 'Development', semanticType: 'development', hidden: false }
+      ],
+      tasks: [task({ id: 'moving', columnId: 'c1', title: 'Остаётся' })]
+    }
+    renderBoard({ board: rejectedBoard, onMoveTask: vi.fn(async () => false) })
+
+    const card = screen.getByText('Остаётся').closest('[data-testid="task-card"]')!
+    await userEvent.click(within(card as HTMLElement).getByRole('button', { name: /вправо.*Development/ }))
+
+    expect(screen.getByTestId('kanban-live')).toBeEmptyDOMElement()
+    expect(screen.getByText('Остаётся').closest('[data-testid="task-card"]')).toHaveAttribute('data-task-id', 'moving')
+  })
+
   it('меню колонки закрывается при клике вне него, не блокируя целевой элемент', async () => {
     renderBoard()
     await userEvent.click(screen.getByRole('button', { name: 'Меню колонки «To Do»' }))
