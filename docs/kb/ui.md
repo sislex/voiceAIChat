@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-17
-checked: 23bff1b
+checked: abe980a
 areas:
   - packages/ui/src
   - packages/ui-kit/src
@@ -841,3 +841,7 @@ Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтом
 Новый workspace `packages/operations-app` задаёт публичную границу Operations: экспортирует React-независимую фабрику store, transport-agnostic clients и межмодульные порты, безопасный каталог машин, маршруты, navigation model, React context/hooks и стили. Подробная карта экспортов, state ownership и текущей степени подключения находится в [operations-app.md](operations-app.md).
 
 На этом срезе host подключил только `parseOperationsRoute` и stylesheet в `packages/ui/src/App.tsx`; существующие продуктовые реализации Machines, terminal/explorer, EnginesObserver, KB и CI остаются в `packages/ui`. Экспорты из `surfaces.tsx` — простые секционные оболочки с заголовком и `children`, а Storybook stories показывают текстовые состояния. Поэтому пакет уже является архитектурной точкой интеграции, но ещё не заменяет старые host-компоненты полноценными Operations surfaces.
+
+## Граница `@voicechat/admin-app`
+
+`packages/admin-app` — workspace `@voicechat/admin-app` с публичным корнем и `./styles.css`. В пакет перенесены `UsersAdmin`, React-независимая фабрика `createAdminStore`, transport-agnostic `AdminClient`, Session/Operations ports и parser/builder маршрутов `#/users`. Host подключает экран лениво через `import('@voicechat/admin-app')`, проверяет роль до открытия и использует только публичные экспорты. Стили импортируют `@voicechat/ui-kit/styles.css`, имеют собственную светлую/тёмную token-based раскладку и mobile breakpoint, не зависят от полного `app.css`.

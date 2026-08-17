@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-08-15
-checked: 281c41d
+updated: 2026-08-17
+checked: abe980a
 areas:
   - apps/server/src
 ---
@@ -31,7 +31,7 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 | uploads/files | Вложения и ограниченное чтение файлов, созданных CLI; при вынесенном исполнителе чтение картинок идёт через его `/v1/files/read`. |
 | LLM tooling | MCP list, login status, Claude Code/Codex sessions и resume; `/api/auth/status`, `/api/cc/*`, `/api/cx/*` проксируются в файловые/auth API исполнителя. |
 | agents | CRUD машин, token/policy/update/install bundles, exec и файловые операции. |
-| admin | Пользователи, блокировка, просмотр данных и единая сводка usage по всем пользователям. Личные usage/access доступны через `/api/me/*`. |
+| admin | Пользователи, роли, блокировка, deny-list моделей, read-only просмотр машин/истории, user/global usage, LLM engines/health и model prices. Личные usage/access остаются вне admin domain. |
 | projects | Проекты, участники, машины, default machine, канбан columns/tasks. |
 | KB | Status, topics, lexical/semantic search, context и чтение документа. |
 | preview | Same-origin прокси внешнего HTTP/HTTPS-сайта для iframe. |
@@ -44,7 +44,7 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 
 Канонические строки находятся в `packages/shared/src/protocol.ts`. Реализация разделена между `routes/rest.ts`, `routes/agents.ts`, `routes/admin.ts`, `routes/projects.ts`, `kb/routes.ts`, `users/auth.ts` и `anthropic/gateway.ts`.
 
-Каждый запрос к пользовательским данным получает имя через `uid(req)`. Проверки членства/владения выполняются до чтения или мутации. Admin guard использует роль из разрешённой сессии, не имя из URL.
+Каждый запрос к пользовательским данным получает имя через `uid(req)`. Проверки членства/владения выполняются до чтения или мутации. Admin guard использует роль из разрешённой сессии, не имя из URL. Выделение `@voicechat/admin-app` не меняло реализации `routes/admin.ts`, SQLite, auth model или runner protocol; host лишь адаптирует существующие маршруты к transport-neutral frontend contract.
 
 ## Прокси веб-превью
 

@@ -533,6 +533,12 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       adminUsers.push(u)
       return { ...u }
     },
+    'admin:updateUserRole': async ({ name, role }) => {
+      const user = adminUsers.find((item) => item.name === name)
+      if (!user) throw new Error('not found')
+      user.role = role
+      return { ...user }
+    },
     'admin:setBlocked': async ({ name, blocked }) => {
       const u = adminUsers.find((x) => x.name === name)
       if (u) u.blocked = blocked

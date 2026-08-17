@@ -33,7 +33,7 @@ import { createSettingsStore, type SettingsStore } from '../store/domains/settin
 import { createChatStore, type ChatStore } from '@voicechat/chat-app'
 import { createVoiceStore, type VoiceStore } from '../store/domains/voiceStore'
 import { createOperationsStore, type OperationsStore } from '../store/domains/operationsStore'
-import { createAdminStore, type AdminStore } from '../store/domains/adminStore'
+import { createAdminStore, type AdminStore } from '@voicechat/admin-app'
 import { createProjectsStore, type ProjectsStore } from '../store/domains/projectsStore'
 
 /** Входящие realtime-кадры: их владельца знает только runtime. */
@@ -189,9 +189,13 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
   })
 
   const admin = createAdminStore({
-    admin: clients.admin,
-    currentUser: () => session.getState().currentUser,
-    ownConversationCount: () => chat.getState().conversations.length,
+    client: clients.admin,
+    session: {
+      currentUser: () => session.getState().currentUser,
+      refreshSession: () => session.actions.check(),
+      refreshOwnLlmAccess: async () => { await settings.actions.load() },
+      onAdminAccessLost: () => admin.actions.reset()
+    },
     fail: (err, retry) => shell.actions.fail(err, retry),
     notify: (notice) => shell.actions.notify(notice)
   })

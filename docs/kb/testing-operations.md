@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-08-17
-checked: 2246ea3
+checked: abe980a
 areas:
   - package.json
   - scripts
@@ -155,3 +155,7 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 Пакет имеет собственные команды `typecheck` и `test`. `routes.test.ts` покрывает round-trip публичных hash routes и базовые POSIX/Windows path helpers; `operationsStore.test.ts` проверяет stale machine response, повторный `dispose` и независимость закрытия Explorer от Console. `architecture.test.ts` сканирует TypeScript-исходники и запрещает host stores, прямые transports, platform apps и явные имена token-полей. JSDOM setup находится в `src/test/setup.ts`.
 
 `packages/ui/.storybook/main.ts` включает stories пакета. Нынешний `Operations.stories.tsx` состоит из текстовых примеров поверх секционных оболочек; отдельных DOM/component, lifecycle для каждого controller, host integration, redaction и полных surface-state тестов в этом срезе нет. Проверки запускаются `npm run -w @voicechat/operations-app typecheck` и `npm run -w @voicechat/operations-app test`; общий проектный гейт остаётся `npm run affected-check`.
+
+## Проверки Administration frontend
+
+`@voicechat/admin-app` имеет собственные `typecheck` и `test`, JSDOM setup, route, store stale-response/dispose, DOM и architecture tests. Architecture suite запрещает host stores, apps/web/apps/desktop, прямые fetch/WebSocket/Electron API, глубокие host imports и browser storage. Storybook host включает `packages/admin-app/src/**/*.stories.tsx`. Штатный итоговый гейт — `npm run affected-check`; после переноса он прошёл fast и full stages.

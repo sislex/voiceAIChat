@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-17
-checked: 2246ea3
+checked: abe980a
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -222,3 +222,7 @@ Health-check — обычный REST-запрос, а не отдельный WS
 ## Operations frontend contract
 
 Выделение `@voicechat/operations-app` не меняет REST/WS/SSE, agent или runner protocol. Пакет определяет transport-agnostic client-интерфейсы, но host adapters в этом срезе ещё не реализованы. Публичные hash routes остаются `#/machines`, `#/claude-code`, `#/codex`, `#/kb`, `#/kb/:documentId`, `#/ci`; parser/builder находятся в Operations package, а `packages/ui/src/App.tsx` уже использует parser вместо собственного whitelist для этих URL.
+
+## Administration frontend contract
+
+`@voicechat/admin-app` не меняет REST, WebSocket или runner protocol. Публичный `AdminClient` покрывает существующие admin users/role/block/access, read-only machines/history/messages, user/global usage, LLM engines/health и model prices. Host adapter использует прежние `RendererApi` bridges; единственное добавленное имя bridge — `admin:updateUserRole`, которое вызывает уже существующий `PATCH /api/admin/users/:name`. Маршруты Administration строятся и разбираются пакетом для `#/users`, пользователя и вкладок access/machines/usage/history, а также engines/prices.
