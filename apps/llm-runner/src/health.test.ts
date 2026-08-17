@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { runnerHealth } from './health.js'
 
 describe('runnerHealth', () => {
-  it('версии бинарей и статус входа из файлов профиля', async () => {
+  it('версии бинарей, Claude CLI probe и Codex из профиля', async () => {
     const files: Record<string, string> = {
       '/home/node/.claude/.credentials.json': JSON.stringify({
         claudeAiOauth: { accessToken: 'a', refreshToken: 'r', subscriptionType: 'team' }
@@ -13,6 +13,7 @@ describe('runnerHealth', () => {
       claudeBin: 'claude',
       codexBin: 'codex',
       version: async (bin) => (bin === 'claude' ? '1.2.3 (Claude Code)' : null),
+      claudeProbe: async () => ({ code: 0, stdout: JSON.stringify({ loggedIn: true }), stderr: '' }),
       read: async (path) => files[path] ?? null,
       env: {},
       now: 0,
@@ -35,6 +36,7 @@ describe('runnerHealth', () => {
       claudeBin: 'claude',
       codexBin: 'codex',
       version: async () => null,
+      claudeProbe: async () => ({ code: null, stdout: '', stderr: '' }),
       read: async () => null,
       env: {},
       now: 0

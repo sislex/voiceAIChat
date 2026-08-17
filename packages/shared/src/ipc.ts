@@ -622,6 +622,10 @@ export interface RendererPreviewBridge {
  * Мост сессии (только web): вход/выход/текущий пользователь. В desktop отсутствует
  * (аутентификация приложения не нужна) — UI трактует это как «без логина».
  */
+export interface RendererAuthBridge {
+  onStatus(cb: (status: import('./auth').LoginStatusMap) => void): () => void
+}
+
 export interface RendererSessionBridge {
   login(creds: { name: string; password: string }): Promise<SessionUser | null>
   me(): Promise<SessionUser | null>

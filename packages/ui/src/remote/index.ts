@@ -7,6 +7,7 @@ import type {
   RendererAgentsBridge,
   RendererBoardBridge,
   RendererAudioBridge,
+  RendererAuthBridge,
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
@@ -29,6 +30,10 @@ import { createFeaturePreviewRest } from './featurePreviewBridge'
 import { createQaRest } from './qaBridge'
 import { getToken, setToken } from './session'
 import { base64ToArrayBuffer } from './decode'
+
+function makeAuthBridge(ws: WsClient): RendererAuthBridge {
+  return { onStatus: (cb) => ws.on('auth.status', (m) => cb(m.status)) }
+}
 
 function makeAudioBridge(ws: WsClient): RendererAudioBridge {
   return {
@@ -355,6 +360,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   ws = new WsClient(`${wsBase}/ws`, getToken)
   window.api = createHttpApi(httpBase, `${wsBase}/agent`)
   window.audio = makeAudioBridge(ws)
+  window.auth = makeAuthBridge(ws)
   window.stt = makeSttBridge(ws)
   window.claude = makeClaudeBridge(ws)
   window.tts = makeTtsBridge(ws)

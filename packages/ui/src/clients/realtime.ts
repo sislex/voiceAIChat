@@ -24,6 +24,8 @@ export const createBrowserRealtime = (): RealtimeConnect => (handlers) => {
   window.addEventListener('storage', onStorage)
   unsubs.push(() => window.removeEventListener('storage', onStorage))
 
+  if (window.auth) unsubs.push(window.auth.onStatus((status) => handlers.authStatus(status)))
+
   const stt = window.stt
   if (stt) {
     unsubs.push(stt.onPartial((u) => handlers.sttPartial(u)))

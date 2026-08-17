@@ -25,8 +25,6 @@ import { createStoreCore, type Store } from '../createStore'
 import type { EffectiveVoiceSettings } from '../contracts'
 
 
-/** Период опроса статуса входа claude/codex (ms). */
-const LOGIN_STATUS_POLL_MS = 30_000
 
 export interface SettingsState {
   settings: Settings
@@ -71,9 +69,7 @@ export interface SettingsActions {
   completeOnboarding(): Promise<void>
   refreshMics(): Promise<void>
   refreshLoginStatus(): Promise<void>
-  /** Запустить периодический опрос статуса входа (идемпотентно). */
-  startLoginStatusPolling(): void
-  stopLoginStatusPolling(): void
+  applyLoginStatus(status: LoginStatusMap): void
   downloadModel(): void
   applyDownloadProgress(percent: number): void
   applyDownloadDone(): void
@@ -129,7 +125,6 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
   const client = deps.settings
   const core = createStoreCore<SettingsState>(initialState(deps.tts.enabled))
   const { getState, setState } = core
-  let loginPoll: ReturnType<typeof setInterval> | null = null
 
   async function updateSettings(patch: Partial<Settings>): Promise<void> {
     const settings = { ...getState().settings, ...patch }
@@ -210,13 +205,6 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
     }
   }
 
-  function stopLoginStatusPolling(): void {
-    core.clearInterval(loginPoll)
-    loginPoll = null
-  }
-
-  core.onDispose(stopLoginStatusPolling)
-
   return {
     getState,
     subscribe: core.subscribe,
@@ -239,7 +227,6 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         await refreshVoiceCatalog()
         await refreshCapabilities()
         await refreshMcpServers()
-        await refreshLoginStatus()
       },
       updateSettings,
       async completeOnboarding() {
@@ -247,11 +234,7 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
       },
       refreshMics,
       refreshLoginStatus,
-      startLoginStatusPolling() {
-        if (loginPoll || !client['auth:status']) return
-        loginPoll = core.interval(() => void refreshLoginStatus(), LOGIN_STATUS_POLL_MS)
-      },
-      stopLoginStatusPolling,
+      applyLoginStatus(status) { setState({ loginStatus: status }) },
       downloadModel() {
         if (!client.startModelDownload || getState().downloading) return
         setState({ downloading: true, downloadPercent: 0 })
@@ -311,7 +294,6 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         })
       },
       reset() {
-        stopLoginStatusPolling()
         core.resetState(initialState(deps.tts.enabled))
       },
       selectAllowedProviders() {
