@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const config: StorybookConfig = {
   // Сториз — рядом с компонентами, docs-страницы витрины (Foundations) — .mdx.
-  stories: ['../src/**/*.mdx', '../src/**/*.stories.tsx', '../../operations-app/src/**/*.stories.tsx', '../../admin-app/src/**/*.stories.tsx'],
+  stories: ['../src/**/*.mdx', '../src/**/*.stories.tsx', '../../app-shell/src/**/*.stories.tsx', '../../chat-app/src/**/*.stories.tsx', '../../projects-app/src/**/*.stories.tsx', '../../operations-app/src/**/*.stories.tsx', '../../admin-app/src/**/*.stories.tsx'],
   addons: ['@storybook/addon-essentials', '@storybook/addon-a11y'],
   framework: { name: '@storybook/react-vite', options: {} },
   viteFinal: (cfg) => {
