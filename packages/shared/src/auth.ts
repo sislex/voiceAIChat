@@ -19,6 +19,34 @@ export interface LoginStatusMap {
   codex: CliLoginStatus
 }
 
+/** Результат подтверждённой проверки, выполненной самим Claude CLI. */
+export interface ClaudeAuthProbeResult {
+  code: number | null
+  stdout: string
+  stderr: string
+}
+
+/**
+ * Единственный авторитетный источник статуса Claude — `claude auth status --json`.
+ * Сырые данные CLI наружу не возвращаются: диагностические строки фиксированы.
+ */
+export function claudeCliLoginStatus(result: ClaudeAuthProbeResult): CliLoginStatus {
+  let value: Record<string, unknown> | null = null
+  try {
+    const parsed = JSON.parse(result.stdout) as unknown
+    value = parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null
+  } catch { /* ниже вернём безопасную диагностику */ }
+  const loggedIn = value?.loggedIn === true
+  if (result.code === 0 && loggedIn) {
+    return { provider: 'claude', loggedIn: true, detail: 'вход подтверждён Claude CLI' }
+  }
+  const combined = `${result.stdout}\n${result.stderr}`
+  if (value?.loggedIn === false || /reauth|re-auth|log ?in|not logged|authenticat|unauthor|credential/i.test(combined)) {
+    return { provider: 'claude', loggedIn: false, detail: 'требуется повторный вход — выполните `claude login`' }
+  }
+  return { provider: 'claude', loggedIn: false, detail: 'Claude CLI не подтвердил авторизацию' }
+}
+
 /** Безопасный JSON.parse: объект или null (битый/пустой файл не роняет проверку). */
 function safeParse(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null

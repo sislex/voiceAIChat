@@ -6,6 +6,7 @@ import type {
   RendererBoardBridge,
   RendererApi,
   RendererAudioBridge,
+  RendererAuthBridge,
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
@@ -23,6 +24,7 @@ declare global {
   interface Window {
     api: RendererApi
     audio: RendererAudioBridge
+    auth?: RendererAuthBridge
     stt: RendererSttBridge
     claude: RendererClaudeBridge
     tts: RendererTtsBridge

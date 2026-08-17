@@ -23,6 +23,7 @@ import { readUserFile } from '../serverFiles.js'
 import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
+import type { AuthStatusState } from '../auth/statusState.js'
 import { listProjects, listSessions, readTranscript, readUsage } from '../cc/ccSessions.js'
 import {
   listCxProjects,
@@ -40,7 +41,7 @@ export async function registerRest(
   app: FastifyInstance,
   db: VoiceChatDb,
   dataDir: string,
-  opts: { runnerFs?: RunnerFsClient } = {}
+  opts: { runnerFs?: RunnerFsClient; authStatus?: AuthStatusState } = {}
 ): Promise<void> {
   const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
   const ccDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CC_DIR ?? profile(req).ccProjects
@@ -316,12 +317,13 @@ export async function registerRest(
   app.get(REST.mcpServers, async () => listMcpServers())
 
   app.get(REST.authStatus, async (req, reply) => {
-    if (!runnerFs) return getLoginStatus({ home: profile(req).home })
-    try {
-      return await runnerFs.authStatus(uid(req))
-    } catch (err) {
-      return proxyError(reply, err)
+    if (opts.authStatus) {
+      try { return await opts.authStatus.get(uid(req)) }
+      catch (err) { return proxyError(reply, err) }
     }
+    if (!runnerFs) return getLoginStatus({ home: profile(req).home })
+    try { return await runnerFs.authStatus(uid(req)) }
+    catch (err) { return proxyError(reply, err) }
   })
 
   app.get(REST.ccProjects, async (req, reply) => {

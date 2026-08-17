@@ -45,7 +45,7 @@ import { PromptSuggester } from './prompt/suggester.js'
 // Локальные spawn-реализации CLI живут в отдельном воркспейсе исполнителя
 // (apps/llm-runner), а buildServer здесь выбирает между ними и HTTP-клиентом
 // RemoteLlmClient по конфигу окружения.
-import { ClaudeCli, CodexCli, ensureCliProfile } from '@voicechat/llm-runner/cli'
+import { ClaudeCli, CodexCli, ensureCliProfile, getLoginStatus as getRunnerLoginStatus } from '@voicechat/llm-runner/cli'
 import type { LlmClient } from './claude/types.js'
 import { WhisperEngine } from './stt/whisperEngine.js'
 import { isModelPresent, listModels, modelPath } from './stt/models.js'
@@ -77,6 +77,7 @@ import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
 import { registerPreviewMcp, previewToolBroker, PreviewActionRelay, PREVIEW_MCP_PATH } from './mcp/previewMcp.js'
 import { readUserFile } from './serverFiles.js'
 import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
+import { AuthStatusState } from './auth/statusState.js'
 
 const VERSION = process.env.VC_RELEASE_VERSION?.trim() || null
 const RELEASED_AT = process.env.VC_RELEASED_AT?.trim() || new Date().toISOString()
@@ -114,6 +115,8 @@ export interface BuildOptions {
   deployTrigger?: DeployTrigger
   /** Relay действий веб-превью (в тестах — свой, чтобы дёргать request напрямую). */
   previewRelay?: PreviewActionRelay
+  /** Единое auth-состояние (инъекция для WS/HTTP тестов). */
+  authStatus?: AuthStatusState
 }
 
 function makeTtsEngine(config: ServerConfig): TtsEngine {
@@ -255,7 +258,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         })
       : null
 
-  await registerRest(app, db, opts.config.dataDir, { runnerFs: runnerFs ?? undefined })
+  const authStatus = opts.authStatus ?? new AuthStatusState(async (userId) => {
+    if (runnerFs) return runnerFs.authStatus(userId)
+    return getRunnerLoginStatus({ home: ensureCliProfile(opts.config.dataDir, userId).home })
+  })
+  await registerRest(app, db, opts.config.dataDir, { runnerFs: runnerFs ?? undefined, authStatus })
   registerPreviewProxy(app)
 
   const profileHome = (userId: string): string =>
@@ -541,7 +548,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     mcpBaseUrl: remoteBashMcpBaseUrl,
     kbMcpBaseUrl,
     previewMcpBaseUrl,
-    previewTool: previewToolBroker
+    previewTool: previewToolBroker,
+    onAuthError: (userId, provider, message) => { authStatus.reportRunError(userId, provider, message) }
   })
 
   // CI-раннер (Авто-подготовка окружения для таска): процесс-глобальный менеджер
@@ -860,6 +868,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       },
       ci: ciRunManager,
       kbUsage,
+      authStatus,
       preview: {
         subscribe: (userId, sink) => previewRelay.subscribe(userId, sink),
         resolve: (userId, requestId, outcome) => previewRelay.resolve(userId, requestId, outcome)
