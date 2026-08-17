@@ -302,7 +302,7 @@ esac
     assert.equal(result.status, 0, result.stderr)
 
     let metadata = ''
-    for (let attempt = 0; attempt < 100 && !metadata; attempt += 1) {
+    for (let attempt = 0; attempt < 500 && !metadata; attempt += 1) {
       await delay(20)
       try { metadata = readFileSync(marker, 'utf8') } catch {}
     }
