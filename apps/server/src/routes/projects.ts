@@ -11,6 +11,8 @@ import {
   type ProjectSummary,
   type Task,
   type TaskPriority,
+  type TaskLaunchResult,
+  type TaskPreparationRun,
   type WorkItemDefaultSkills,
   type CiReuseStrategy,
   type KbContextMode,
@@ -70,7 +72,7 @@ export function registerProjectRoutes(
   ci?: CiRunManager,
   agents?: AgentRegistry,
   merge?: MergeRunManager,
-  startTaskPreparation?: (userId: string, projectId: string, taskId: string) => void
+  startTaskPreparation?: (userId: string, projectId: string, taskId: string) => TaskPreparationRun
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = (project: ProjectDetail | null): ProjectDetail | null => {
@@ -438,6 +440,40 @@ export function registerProjectRoutes(
       return task
     } catch (err) {
       return badReq(reply, errMessage(err))
+    }
+  })
+
+  app.post<{
+    Params: { id: string }
+    Body: { proposalId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null }
+  }>('/api/projects/:id/task-launch/preparation', taskCreateGuard, async (req, reply): Promise<TaskLaunchResult | FastifyReply> => {
+    const b = req.body ?? {}
+    const proposalId = b.proposalId?.trim(), title = b.title?.trim()
+    if (!proposalId || !title) return badReq(reply, 'proposalId and title required')
+    if (!startTaskPreparation) return reply.code(503).send({ error: 'Подготовка недоступна' })
+    try {
+      const result = db.createTaskFromProposalInPreparation(uid(req), req.params.id, proposalId, {
+        title, description: b.description, acceptanceCriteria: b.acceptanceCriteria === undefined ? undefined : normalizeAcceptanceCriteria(b.acceptanceCriteria),
+        type: b.type, parentId: b.parentId, priority: b.priority, assignee: b.assignee ?? null,
+        labels: b.labels, skills: b.skills, storyPoints: b.storyPoints, dueDate: b.dueDate
+      })
+      if (result.type === 'preparation' && result.status === 'success') {
+        const actual = db.getTaskPreparationRun(uid(req), result.runId)
+        if (actual && (actual.status === 'running' || actual.status === 'success')) return result
+      }
+      try {
+        const run = startTaskPreparation(uid(req), req.params.id, result.taskId)
+        db.saveTaskLaunchPreparationRun(req.params.id, proposalId, run.id, null)
+        boardHub.emit(req.params.id)
+        return { type: 'preparation', status: 'success', taskId: result.taskId, runId: run.id }
+      } catch (error) {
+        const message = errMessage(error)
+        db.saveTaskLaunchPreparationRun(req.params.id, proposalId, null, message)
+        boardHub.emit(req.params.id)
+        return reply.code(207).send({ type: 'preparation', status: 'partial', taskId: result.taskId, error: message, canRetry: true })
+      }
+    } catch (error) {
+      return reply.code(409).send({ error: errMessage(error) })
     }
   })
 

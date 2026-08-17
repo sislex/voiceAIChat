@@ -161,6 +161,7 @@ import {
   type AcceptanceCriterionVersion,
   type QaTaskState,
   type TaskPreparationRun,
+  type TaskLaunchResult,
   type DevelopmentReadiness,
   type AnyQaStageRun,
   type QaRunStage,
@@ -5628,6 +5629,36 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM task_preparation_runs WHERE project_id=? AND task_id=? ORDER BY created_at DESC`).all(projectId, taskId) as Record<string, unknown>[]).map((row) => this.mapTaskPreparationRun(row))
   }
 
+  getTaskLaunchPreparationResult(userId: string, projectId: string, proposalId: string): TaskLaunchResult | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const row = this.db.prepare(`SELECT task_id,run_id,error FROM task_launch_results WHERE project_id=? AND proposal_id=? AND action='preparation'`).get(projectId, proposalId) as { task_id: string; run_id: string | null; error: string | null } | undefined
+    if (!row) return null
+    if (row.error) return { type: 'preparation', status: 'partial', taskId: row.task_id, runId: row.run_id ?? undefined, error: row.error, canRetry: true }
+    if (!row.run_id) return { type: 'preparation', status: 'partial', taskId: row.task_id, error: 'Подготовка ещё не запущена', canRetry: true }
+    return { type: 'preparation', status: 'success', taskId: row.task_id, runId: row.run_id }
+  }
+
+  createTaskFromProposalInPreparation(userId: string, projectId: string, proposalId: string, args: Omit<Parameters<VoiceChatDb['createTask']>[2], 'columnId'>): TaskLaunchResult {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
+    const previous = this.getTaskLaunchPreparationResult(userId, projectId, proposalId)
+    if (previous) return previous
+    const columns = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='preparation'`).all(projectId) as Array<{ id: string }>
+    if (columns.length !== 1) throw new Error(columns.length === 0 ? 'Не настроена колонка с semantic type preparation' : 'Найдено несколько колонок с semantic type preparation')
+    return this.db.transaction(() => {
+      const repeated = this.getTaskLaunchPreparationResult(userId, projectId, proposalId)
+      if (repeated) return repeated
+      const task = this.createTask(userId, projectId, { ...args, columnId: columns[0].id })
+      if (!task) throw new Error('Не удалось создать задачу')
+      const now = this.now()
+      this.db.prepare(`INSERT INTO task_launch_results (project_id,proposal_id,action,task_id,created_by,created_at,updated_at) VALUES (?,?,'preparation',?,?,?,?)`).run(projectId, proposalId, task.id, userId, now, now)
+      return { type: 'preparation', status: 'partial', taskId: task.id, error: 'Подготовка ещё не запущена', canRetry: true } as TaskLaunchResult
+    })()
+  }
+
+  saveTaskLaunchPreparationRun(projectId: string, proposalId: string, runId: string | null, error: string | null): void {
+    this.db.prepare(`UPDATE task_launch_results SET run_id=?,error=?,updated_at=? WHERE project_id=? AND proposal_id=? AND action='preparation'`).run(runId, error, this.now(), projectId, proposalId)
+  }
+
   startTaskPreparationRun(userId: string, projectId: string, taskId: string): TaskPreparationRun {
     if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
     const task = this.getTask(projectId, taskId)
@@ -5637,8 +5668,9 @@ export class VoiceChatDb {
     if (current?.semanticType !== 'backlog' && current?.semanticType !== 'preparation') throw new Error('Подготовку можно запускать только из TODO или Подготовки к разработке')
     const active = this.db.prepare(`SELECT * FROM task_preparation_runs WHERE task_id=? AND status='running'`).get(taskId) as Record<string, unknown> | undefined
     if (active) return this.mapTaskPreparationRun(active)
-    const target = this.getColumnIdBySemantic(projectId, 'preparation')
-    if (!target) throw new Error('Колонка Подготовка к разработке не найдена')
+    const preparationColumns = board?.columns.filter((column) => column.semanticType === 'preparation') ?? []
+    if (preparationColumns.length !== 1) throw new Error(preparationColumns.length === 0 ? 'Не настроена колонка с semantic type preparation' : 'Найдено несколько колонок с semantic type preparation')
+    const target = preparationColumns[0].id
     const id = this.newId(), now = this.now()
     const attempt = Number((this.db.prepare(`SELECT COALESCE(MAX(attempt), 0) + 1 AS attempt FROM task_preparation_runs WHERE task_id=?`).get(taskId) as { attempt: number }).attempt)
     this.db.transaction(() => {
