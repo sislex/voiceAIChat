@@ -1,7 +1,7 @@
 ---
 title: Feature-preview окружения задач
 updated: 2026-08-17
-checked: f8139cb
+checked: 4cd802b
 areas:
   - packages/shared/src/preview.ts
   - packages/shared/src/agentProtocol.ts
@@ -13,6 +13,9 @@ areas:
   - apps/server/src/routes/featurePreview.ts
   - packages/ui/src/components/preview
   - packages/ui/src/remote/featurePreviewBridge.ts
+  - packages/ui/src/lib/clipboard.ts
+  - apps/desktop/src/renderer/src/main.tsx
+  - packages/ui/src/components/ProjectSettings.tsx
   - compose.preview.yml
   - Dockerfile
 ---
@@ -43,11 +46,13 @@ Feature-preview — отдельное управляемое окружение
 
 ## Доступ и companion-туннели
 
-`POST …/preview/open` повторно проверяет членство пользователя, состояние `running + healthy`, online-статус preview-машины и HTTP-ответ выбранного app/Storybook host-порта. Непетлевой URL возвращается как `direct`. Для loopback-сервиса сервер выбирает отдельный online companion-агент текущего пользователя и создаёт сессию, привязанную к пользователю, environment id, built SHA и виду сервиса. Одинаковый повторный запрос возвращает тот же локальный порт и не создаёт второй listener.
+`POST …/preview/open` повторно проверяет членство пользователя, состояние `running + healthy`, online-статус preview-машины и HTTP-ответ выбранного app/Storybook host-порта. Локальность определяется только точным совпадением `env.agentId` с ID companion-агента текущего desktop-устройства, который desktop получает при регистрации агента и передаёт через `packages/ui/src/remote/featurePreviewBridge.ts`; IP браузера и отображаемое имя машины в решении не участвуют. Непетлевой URL возвращается как `direct`. Локальный loopback-preview тоже возвращается напрямую, но как `http://127.0.0.1:<hostPort>` выбранного сервиса, поэтому app и Storybook открываются на собственных опубликованных host-портах без SSH UI.
 
-Companion слушает случайный порт только на `127.0.0.1`. TCP-кадры идут через два уже авторизованных agent WebSocket: локальный агент принимает браузерское соединение, preview-агент подключается строго к сохранённому `127.0.0.1:<hostPort>`; клиент не может подменить target host или порт. Формат кадров задан в `packages/shared/src/agentProtocol.ts`, а возможность требует агента версии `0.10.0` по `packages/shared/src/version.ts`. Пароли и SSH-ключи в протокол не входят. Сессия закрывается по `DELETE …/tunnels/:id`, через 30 минут бездействия, при отключении любого агента и перед stop/remove/rebuild preview. Открытие и любое закрытие пишутся в `qa_audit`.
+Для удалённого loopback-preview первой попыткой служит companion-туннель: сервер принимает только переданный ID принадлежащего пользователю online companion-агента, отличный от preview-агента, и создаёт сессию, привязанную к пользователю, environment id, built SHA и виду сервиса. Одинаковый повторный запрос возвращает тот же локальный порт и не создаёт второй listener. Companion слушает случайный порт только на `127.0.0.1`. TCP-кадры идут через два уже авторизованных agent WebSocket: локальный агент принимает браузерское соединение, preview-агент подключается строго к сохранённому `127.0.0.1:<hostPort>`; клиент не может подменить target host или порт. Формат кадров задан в `packages/shared/src/agentProtocol.ts`, а возможность требует агента версии `0.10.0` по `packages/shared/src/version.ts`. Сессия закрывается по `DELETE …/tunnels/:id`, через 30 минут бездействия, при отключении любого агента и перед stop/remove/rebuild preview. Открытие и любое закрытие пишутся в `qa_audit`.
 
-Если подходящего личного агента нет или соединение не поднялось, ответ содержит внутренний URL, порт и готовую команду `ssh -N -L`; UI показывает её с копированием и поясняет, что SSH credentials остаются на рабочей машине.
+Если локального companion нет или автоматический туннель завершается ошибкой, сервер может вернуть ручной SSH fallback. Адрес и пользователь берутся только из явно сохранённых `project_machines.ssh_host` и `project_machines.ssh_user`, редактируемых в настройках машины проекта; `agentId` не используется как SSH-hostname. Для команды сервер заранее подбирает свободный локальный порт, а remote port берёт из host-порта выбранного app или Storybook и формирует только `ssh -N -L <localPort>:127.0.0.1:<remotePort> <sshUser>@<sshHost>`. При отсутствующих или небезопасных настройках команда не создаётся, а UI просит заполнить SSH hostname/IP и SSH-пользователя. Пароли, токены и содержимое приватных ключей в этот сценарий не сохраняются и не передаются.
+
+Ручная команда остаётся выделяемым текстом и копируется компонентом `packages/ui/src/components/preview/CopyCommand.tsx` через общий `copyText` из `packages/ui/src/lib/clipboard.ts`. Helper сначала вызывает Clipboard API, а при его отсутствии, отказе или ошибке использует временный textarea и `document.execCommand('copy')`, всегда удаляя поле. Пока попытка выполняется, кнопка заблокирована; успех на две секунды меняет подпись на «Скопировано» и объявляется через `aria-live`, полный отказ показывается рядом и допускает повторную попытку. Изменение или исчезновение команды и размонтирование сбрасывают состояние и очищают таймер; завершение устаревшего async-вызова не обновляет компонент.
 
 ## Карточка задачи
 
