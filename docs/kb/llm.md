@@ -1,12 +1,14 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
-updated: 2026-08-08
-checked: a62f5ad
+updated: 2026-08-17
+checked: eb4cc6e
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
   - apps/llm-runner/src
   - apps/server/src/turns.ts
+  - apps/server/src/auth/statusState.ts
+  - apps/server/src/session.ts
   - apps/server/src/prompt
   - apps/server/src/anthropic
   - apps/server/src/cc
@@ -20,6 +22,10 @@ areas:
   - packages/shared/src/images.ts
   - packages/shared/src/kb.ts
   - packages/shared/src/kbGaps.ts
+  - packages/shared/src/auth.ts
+  - packages/shared/src/protocol.ts
+  - packages/ui/src/remote/index.ts
+  - packages/ui/src/store/domains/settingsStore.ts
 ---
 
 # LLM: claude/codex CLI, ходы, stream-json, gateway
@@ -101,9 +107,11 @@ codex (прежний пункт «По умолчанию (из codex)») по-
 снимок через `RunnerFsClient.authStatus()` (`GET /v1/auth/status?userId=...`).
 Если Claude и Codex живут на разных исполнителях, клиент сшивает ответ из двух
 половин. Для Claude авторитетен результат `claude auth status --json`, запущенный
-с `HOME` профиля пользователя: наличие `.credentials.json` не означает
-действующую авторизацию. Отрицательный результат и подтверждённые признаки
-повторного входа дают безопасное сообщение без stdout/stderr и `loggedIn: false`.
+с `HOME` профиля пользователя (`apps/llm-runner/src/auth/loginStatus.ts`): наличие
+`.credentials.json` не означает действующую авторизацию. `loggedIn: true` выдаётся
+только при нулевом exit code и JSON-поле `loggedIn: true`; отрицательный результат
+и подтверждённые признаки повторного входа дают фиксированное безопасное сообщение
+без передачи stdout/stderr и `loggedIn: false` (`packages/shared/src/auth.ts`).
 Codex сохраняет проверку `~/.codex/auth.json`/`OPENAI_API_KEY`.
 
 Сервер хранит единое per-user состояние: `/api/auth/status` читает его же, а при
