@@ -14,26 +14,26 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 4 коммит(ов) в areas после сверки: 8e8e1e9 CHAT-233: add Playwright Reader foundation … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-17 | ⚠ 5 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-14 | ⚠ код изменён 2026-08-16, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-17 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-17 | ⚠ 1 коммит(ов) в areas после сверки: 7500560 fix(ui): harden kanban scroll invariants |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-17 | ⚠ 2 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 14 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-02 | ⚠ 57 коммит(ов) в areas после сверки: 6e34b72 feat(preparation): движок и модель подготовки из настроек этапа … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-15 | ⚠ код изменён 2026-08-17, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 11 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-16 | ⚠ 13 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 386 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 387 коммит(ов) в areas после сверки: 91794e0 docs(kb): update after merge 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-16 | ⚠ 14 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ⚠ код изменён 2026-08-17, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 1 коммит(ов) в areas после сверки: 5318356 CHAT-253: стадия kb_update merge-рана наследует движок development-рана |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-08 | ⚠ 13 коммит(ов) в areas после сверки: 056f5c7 fix(chat): publish queued messages in turn order … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-16 | ⚠ 10 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-17 | ⚠ 4 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-17 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-12 | ⚠ 53 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-15 | ⚠ код изменён 2026-08-17, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-15 | ⚠ код изменён 2026-08-17, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-15 | ✓ |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-17 | ⚠ 6 коммит(ов) в areas после сверки: 449e16f Merge task 92cec86f-3e60-4dd3-85c3-c984146eb058 … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-17 | ⚠ 7 коммит(ов) в areas после сверки: 7500560 fix(ui): harden kanban scroll invariants … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-17, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -51,7 +51,7 @@
 
 ## Журнал сессий
 
-Всего записей: 241. Последние:
+Всего записей: 242. Последние:
 
 - [2026-08-17-mac-task-timeline.md](log/2026-08-17-mac-task-timeline.md) — task-timeline
 - [2026-08-17-mac-task-tabs-workflow-preview.md](log/2026-08-17-mac-task-tabs-workflow-preview.md) — task-tabs-workflow-preview
