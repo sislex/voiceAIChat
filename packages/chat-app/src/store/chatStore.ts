@@ -215,7 +215,7 @@ export interface ChatActions {
   cancelRequest(): void
   deleteMessage(id: string): Promise<void>
   editMessage(id: string, newText: string): Promise<void>
-  updateTaskLaunchStatus(messageId: string, proposalId: string, status: 'opened' | 'created' | 'declined'): Promise<void>
+  updateTaskLaunchStatus(messageId: string, proposalId: string, status: 'opened' | 'created' | 'declined', result?: import('@voicechat/shared').TaskLaunchResult): Promise<void>
   addAttachment(file: File): Promise<void>
   removeAttachment(id: string): void
   applyClaudeToken(delta: string, conversationId?: string): void
@@ -1426,7 +1426,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           messageExecTarget
         )
       },
-      async updateTaskLaunchStatus(messageId, proposalId, status) {
+      async updateTaskLaunchStatus(messageId, proposalId, status, result) {
         const activeId = getState().activeId
         if (!activeId) return
         const message = getState().messages.find((item) => item.id === messageId)
@@ -1439,7 +1439,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         const meta = {
           ...message.meta,
           taskLaunches: proposals.map((proposal) =>
-            proposal.id === proposalId ? { ...proposal, status } : proposal
+            proposal.id === proposalId ? { ...proposal, status, ...(result ? { taskId: result.taskId, result } : {}) } : proposal
           )
         }
         const updated = await client['messages:updateMeta']({ conversationId: activeId, messageId, meta })

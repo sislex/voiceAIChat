@@ -128,6 +128,7 @@ export interface ProjectsActions {
     projectId: string,
     input: { title: string; provider: 'claude' | 'codex'; model: string } & Partial<Pick<Task, 'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' | 'assignee' | 'labels' | 'skills' | 'storyPoints' | 'dueDate'>>
   ): Promise<CiRun | null>
+  createTaskFromProposalInPreparation(projectId: string, proposalId: string, input: Pick<Task, 'title' | 'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' | 'assignee' | 'labels' | 'skills' | 'storyPoints' | 'dueDate'>): Promise<import('@voicechat/shared').TaskLaunchResult>
   updateTask(
     taskId: string,
     fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
@@ -672,6 +673,11 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         } catch (err) {
           fail(err)
         }
+      },
+      async createTaskFromProposalInPreparation(projectId, proposalId, input) {
+        const result = await client['tasks:createFromProposalInPreparation']({ projectId, proposalId, ...input })
+        if (getState().activeProjectId === projectId) await refreshBoard()
+        return result
       },
       async createTaskAndStartCi(projectId, input) {
         if (!ciBridge) return null

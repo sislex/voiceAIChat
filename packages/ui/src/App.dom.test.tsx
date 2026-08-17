@@ -614,7 +614,8 @@ describe('App — запуск задачи из чата', () => {
     expect(within(dialog).getByTestId('task-desc-view')).toHaveTextContent('Описание задачи')
     expect(within(dialog).getByTestId('task-criteria-view')).toHaveTextContent('TODO создан')
     expect(within(dialog).getByRole('button', { name: 'Создать в TODO' })).toBeInTheDocument()
-    expect(within(dialog).getByRole('button', { name: 'Создать в InProgress' })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Создать в подготовке к разработке' })).toBeInTheDocument()
+    expect(within(dialog).queryByRole('button', { name: 'Создать в InProgress' })).not.toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Работать в текущем чате' })).toBeInTheDocument()
   })
 
