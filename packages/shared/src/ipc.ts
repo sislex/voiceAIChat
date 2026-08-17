@@ -361,6 +361,14 @@ export interface IpcInvokeMap {
     }
     result: Task
   }
+  'tasks:createFromProposalInPreparation': {
+    arg: {
+      projectId: string; proposalId: string; title: string; description?: string; acceptanceCriteria?: string
+      type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null
+      labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null
+    }
+    result: import('./types').TaskLaunchResult
+  }
   'tasks:update': {
 
     arg: {
@@ -849,6 +857,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'columns:reorder',
   'columns:delete',
   'tasks:create',
+  'tasks:createFromProposalInPreparation',
   'tasks:update',
   'tasks:move',
   'tasks:listPreparationRuns',

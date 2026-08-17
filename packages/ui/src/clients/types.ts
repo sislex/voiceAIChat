@@ -197,6 +197,7 @@ export type ProjectsClient = Pick<
   | 'columns:reorder'
   | 'columns:delete'
   | 'tasks:create'
+  | 'tasks:createFromProposalInPreparation'
   | 'tasks:update'
   | 'tasks:move'
   | 'tasks:delete'

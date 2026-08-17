@@ -328,6 +328,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'tasks:create': ({ projectId, ...b }) =>
       req(REST.projectTasks(projectId), { method: 'POST', body: JSON.stringify(b) }),
+    'tasks:createFromProposalInPreparation': ({ projectId, ...b }) =>
+      req(`/api/projects/${encodeURIComponent(projectId)}/task-launch/preparation`, { method: 'POST', body: JSON.stringify(b) }),
     'tasks:update': ({ projectId, taskId, ...b }) =>
       req(REST.projectTask(projectId, taskId), { method: 'PATCH', body: JSON.stringify(b) }),
     'tasks:move': ({ projectId, taskId, ...b }) =>
