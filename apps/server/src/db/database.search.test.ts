@@ -105,6 +105,24 @@ describe('searchMessages — фильтры и пагинация', () => {
     expect(byConv.hits.map((h) => h.conversationId)).toEqual([noProject])
   })
 
+  it('исключает cancelled-чаты до пагинации, даже при явном conversationId', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const board = db.getBoard('alice', p.id)!
+    const work = board.columns.find((c) => c.semanticType === 'development')!
+    const cancelled = board.columns.find((c) => c.semanticType === 'cancelled')!
+    const hiddenTask = db.createTask('alice', p.id, { columnId: work.id, title: 'Скрытая' })!
+    const hiddenChat = db.openOrCreateTaskChat('alice', p.id, hiddenTask.id)!
+    db.addMessage('alice', hiddenChat.id, 'u0', 'миграция скрытая', '10:00')
+    const visible = conv('alice', 'Видимая', ['миграция видимая'])
+    db.moveTask('alice', p.id, hiddenTask.id, { columnId: cancelled.id })
+
+    const first = db.searchMessages('alice', { q: 'миграция ', limit: 1 })
+    expect(first.hits.map((hit) => hit.conversationId)).toEqual([visible])
+    expect(db.searchMessages('alice', { q: 'миграция ', limit: 1, cursor: first.nextCursor }).hits).toEqual([])
+    expect(db.searchMessages('alice', { q: 'миграция ', conversationId: hiddenChat.id }).hits).toEqual([])
+    expect(db.listMessages('alice', hiddenChat.id).map((message) => message.text)).toEqual(['миграция скрытая'])
+  })
+
   it('курсор отдаёт следующую страницу без повторов и пропусков', () => {
     const id = conv(
       'alice',
