@@ -142,7 +142,7 @@ describe('manual QA gate', () => {
   it('requires structured failure, blocker and N/A fields', () => {
     const blank = { actualResult: '', executedSteps: '', expectedResult: '', comment: '', blockerReason: '', blockerType: null, blockerOwner: null, notApplicableReason: '' }
     expect(validateQaResult('failed', blank)).toEqual(['comment'])
-    expect(validateQaResult('blocked', blank)).toEqual(['blockerReason', 'blockerType', 'blockerOwner'])
+    expect(validateQaResult('blocked', blank)).toEqual(['comment', 'blockerReason', 'blockerType', 'blockerOwner'])
     expect(validateQaResult('not_applicable', blank)).toEqual([])
   })
 })
