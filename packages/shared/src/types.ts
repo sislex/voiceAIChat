@@ -20,7 +20,14 @@ export interface TaskLaunchProposal extends TaskLaunchRequest {
   id: string
   status?: 'opened' | 'created' | 'declined'
   taskId?: string
+  result?: TaskLaunchResult
 }
+
+/** Исход серверной обработки предложения; legacy in_progress остаётся читаемым. */
+export type TaskLaunchResult =
+  | { type: 'in_progress'; taskId: string }
+  | { type: 'preparation'; status: 'success'; taskId: string; runId: string }
+  | { type: 'preparation'; status: 'partial'; taskId: string; runId?: string; error: string; canRetry: true }
 
 /** Сообщение в ленте чата. */
 /** Компактная ссылка на файл чата. Байты никогда не попадают в SQLite. */
