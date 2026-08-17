@@ -595,3 +595,40 @@ describe('ci: расход модели и семантика входных т�
     expect(db.ciRunToolCalls('нет-такого-рана')).toBeNull()
   })
 })
+
+describe('ci: временная шкала задачи', () => {
+  it('разделяет очередь, активную работу и awaiting_input и не считает паузу активной', () => {
+    const { p, task } = project()
+    const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
+    db.updateCiRun(run.id, { status: 'running', startedAt: run.createdAt })
+    const interaction = db.addCiInteraction({ runId: run.id, stepId: 'model', kind: 'clarify' })
+    const answered = db.answerCiInteraction(interaction.id, { userId: 'alice', text: 'ok' })!
+    db.updateCiRun(run.id, { status: 'success', finishedAt: answered.answeredAt! + 100 })
+    const timeline = db.taskTimeline('alice', p.id, task.id)!
+    const attempt = timeline.stages.find((stage) => stage.type === 'development')!.attempts[0]
+    expect(attempt.awaitingInputDuration).toBe(answered.answeredAt! - interaction.createdAt)
+    expect(attempt.queueDuration).toBe(0)
+    expect(attempt.activeDuration).toBe((answered.answeredAt! + 100 - run.createdAt) - attempt.awaitingInputDuration!)
+    expect(timeline.summary.activeDuration).toBe(attempt.activeDuration)
+    expect(timeline.summary.lastChangedAt).toBe(new Date(answered.answeredAt! + 100).toISOString())
+  })
+
+  it('не выдумывает активное время для legacy preparation без started_at', () => {
+    const { p, task } = project()
+    const run = db.startTaskPreparationRun('alice', p.id, task.id)
+    const timeline = db.taskTimeline('alice', p.id, task.id)!
+    const attempt = timeline.stages.find((stage) => stage.type === 'task_preparation')!.attempts.find((item) => item.runs[0].id === run.id)!
+    expect(attempt.startedAt).toBeNull()
+    expect(attempt.activeDuration).toBeNull()
+    expect(timeline.summary.firstStartedAt).toBeNull()
+  })
+
+  it('объединяет пересекающиеся активные интервалы параллельных ранов', () => {
+    const { p, task } = project()
+    const first = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
+    const second = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: null, slotProgress: { done: 0, total: 1, phase: 'development' } })
+    db.updateCiRun(first.id, { status: 'success', startedAt: 100, finishedAt: 300 })
+    db.updateCiRun(second.id, { status: 'success', startedAt: 200, finishedAt: 400 })
+    expect(db.taskTimeline('alice', p.id, task.id)!.summary.activeDuration).toBe(300)
+  })
+})

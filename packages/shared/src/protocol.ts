@@ -318,6 +318,8 @@ export const REST = {
   ciRunReport: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/report`,
   taskCiReport: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/report`,
+  taskTimeline: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/timeline`,
   ciRunCancel: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/cancel`,
   /** Убрать только ещё ожидающий ран; ответ отличает гонку с началом выполнения. */
   ciRunDequeue: (runId: string) => `/api/ci/runs/${encodeURIComponent(runId)}/dequeue`,

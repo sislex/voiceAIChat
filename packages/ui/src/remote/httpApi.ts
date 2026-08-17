@@ -418,6 +418,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     getTaskKbUsage: (projectId, taskId) => req<KbTaskUsageReport>(REST.taskKbUsage(projectId, taskId)),
     getRunReport: (runId) => req<CiRunReport>(REST.ciRunReport(runId)),
     getTaskReport: (projectId, taskId) => req<CiTaskReport>(REST.taskCiReport(projectId, taskId)),
+    getTaskTimeline: (projectId, taskId) => req<import('@shared/timeline').TaskTimeline>(REST.taskTimeline(projectId, taskId)),
     cancelRun: (runId) => req<{ ok: boolean }>(REST.ciRunCancel(runId), { method: 'POST' }),
     dequeueRun: (runId) => req<CiQueueRemovalResult>(REST.ciRunDequeue(runId), { method: 'POST' }),
     retryRun: (runId) => req<CiRun>(REST.ciRunRetry(runId), { method: 'POST' }),

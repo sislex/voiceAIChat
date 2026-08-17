@@ -30,6 +30,7 @@ import type {
 } from '@shared/ci'
 import type { Message } from '@shared/types'
 import type { MergeRun, TaskRepository } from '@shared/merge'
+import type { TaskTimeline } from '@shared/timeline'
 import type { KbRunUsageReport, KbTaskUsageReport } from '@shared/kb'
 
 /** Ответ GET usage: где команда используется (проекты/задачи). */
@@ -113,6 +114,7 @@ export interface RendererCiRest {
   getRunReport(runId: string): Promise<CiRunReport>
   /** Отчёт по всем ранам задачи с итогом (раздел «Отчёт» карточки). */
   getTaskReport(projectId: string, taskId: string): Promise<CiTaskReport>
+  getTaskTimeline(projectId: string, taskId: string): Promise<TaskTimeline>
   cancelRun(runId: string): Promise<{ ok: boolean }>
   /** Убрать только ожидающий ран; результат сообщает о гонке с его стартом. */
   dequeueRun(runId: string): Promise<CiQueueRemovalResult>

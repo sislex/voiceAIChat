@@ -1027,6 +1027,10 @@ export function createFakeCi(): FakeCi {
       const list = [...runs.values()].filter((d) => d.run.taskId === taskId).map((d) => runReport(d.run.id))
       return { projectId, taskId, runs: list, ...ciTaskTotals(list) } as CiTaskReport
     },
+    getTaskTimeline: async (_projectId, taskId) => {
+      const at = new Date(now()).toISOString()
+      return { version: 1 as const, taskId, generatedAt: at, summary: { createdAt: at, firstStartedAt: null, finishedAt: null, calendarDuration: null, activeDuration: 0, queueDuration: 0, awaitingInputDuration: 0, lastChangedAt: at }, stages: [] }
+    },
     cancelRun: async () => ({ ok: true }),
     dequeueRun: async (rid): Promise<CiQueueRemovalResult> => {
       const d = runs.get(rid)
