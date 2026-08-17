@@ -639,7 +639,7 @@ describe('App — запуск задачи из чата', () => {
     render(<App api={api} delays={SLOW} />)
     const dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
     const assignee = within(dialog).getByRole('combobox', { name: 'Исполнитель' })
-    expect(assignee).toHaveValue('')
+    expect(assignee).toHaveValue('admin')
     expect(within(assignee).getByRole('option', { name: 'Не назначен' })).toBeInTheDocument()
     expect(within(assignee).getByRole('option', { name: 'bob' })).toBeInTheDocument()
     await userEvent.selectOptions(assignee, 'bob')
@@ -650,7 +650,7 @@ describe('App — запуск задачи из чата', () => {
     })
   })
 
-  it('создаёт задачу без исполнителя, если выбор оставлен пустым', async () => {
+  it('предварительно назначает задачу на текущего пользователя', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
     const project = await api['projects:create']({ name: 'Проект без назначения' })
@@ -668,11 +668,12 @@ describe('App — запуск задачи из чата', () => {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/chat/${chat.id}`)
     render(<App api={api} delays={SLOW} />)
     const dialog = await screen.findByRole('dialog', { name: 'Создание задачи' })
-    expect(within(dialog).getByRole('combobox', { name: 'Исполнитель' })).toHaveValue('')
+    await waitFor(() => expect(within(dialog).getByRole('combobox', { name: 'Исполнитель' })).toHaveValue('admin'))
+    expect(within(dialog).getByText(/будет назначена на вас/i)).toBeInTheDocument()
     await userEvent.click(within(dialog).getByRole('button', { name: 'Создать в TODO' }))
 
     await waitFor(async () => {
-      expect((await api['board:get']({ id: project.id })).tasks.find((task) => task.title === 'Свободная задача')?.assignee).toBeNull()
+      expect((await api['board:get']({ id: project.id })).tasks.find((task) => task.title === 'Свободная задача')?.assignee).toBe('admin')
     })
   })
 

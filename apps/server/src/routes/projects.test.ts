@@ -14,8 +14,8 @@ let db: VoiceChatDb
 let adminTok: string
 let bobTok: string
 
-function inj(token: string, opts: { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; url: string; payload?: object }) {
-  return app.inject({ ...opts, headers: { authorization: `Bearer ${token}` } })
+function inj(token: string, opts: { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; url: string; payload?: object; headers?: Record<string, string> }) {
+  return app.inject({ ...opts, headers: { ...opts.headers, authorization: `Bearer ${token}` } })
 }
 
 beforeEach(async () => {
@@ -227,6 +227,16 @@ describe('projects REST: доска', () => {
       (await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title } })).json() as Task
     const a = await mk('A')
     const b = await mk('B')
+    expect(a).toMatchObject({ createdBy: 'admin', createdByName: 'admin', assignee: 'admin' })
+
+    const forged = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'Forged', createdBy: 'bob' } })
+    expect(forged.statusCode).toBe(400)
+    expect(((await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board).tasks.some((task) => task.title === 'Forged')).toBe(false)
+
+    const idemOptions = { method: 'POST' as const, url: `/api/projects/${p.id}/tasks`, headers: { 'idempotency-key': 'same-request' }, payload: { columnId: todo.id, title: 'Once' } }
+    const idemFirst = (await inj(adminTok, idemOptions)).json() as Task
+    const idemSecond = (await inj(adminTok, idemOptions)).json() as Task
+    expect(idemSecond.id).toBe(idemFirst.id)
 
     // assignee не участник → 400; активный участник ok; блокированный участник → 400
     expect((await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'C', assignee: 'bob' } })).statusCode).toBe(400)
@@ -234,9 +244,9 @@ describe('projects REST: доска', () => {
     const assigned = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'C', assignee: 'bob' } })
     expect(assigned.statusCode).toBe(200)
     expect((assigned.json() as Task).assignee).toBe('bob')
-    const unassigned = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'D', assignee: null } })
-    expect(unassigned.statusCode).toBe(200)
-    expect((unassigned.json() as Task).assignee).toBeNull()
+    const automatic = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'D', assignee: null } })
+    expect(automatic.statusCode).toBe(200)
+    expect((automatic.json() as Task).assignee).toBe('admin')
     db.setUserBlocked('bob', true)
     expect((await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: todo.id, title: 'E', assignee: 'bob' } })).statusCode).toBe(400)
     db.setUserBlocked('bob', false)
