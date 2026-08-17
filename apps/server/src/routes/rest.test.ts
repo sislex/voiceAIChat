@@ -421,6 +421,12 @@ describe('REST: conversations/messages/settings', () => {
     expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}`)).not.toContain(chat.id)
     expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).toContain(chat.id)
 
+    const cancelled = board.columns.find((c) => c.semanticType === 'cancelled')!
+    db.moveTask(U, project.id, task.id, { columnId: cancelled.id })
+    expect(await ids('/api/conversations')).not.toContain(chat.id)
+    expect(await ids('/api/conversations?includeCompleted=1')).not.toContain(chat.id)
+    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).not.toContain(chat.id)
+
     // Прямая ссылка и кнопка «Открыть чат» на карточке работают как раньше.
     expect((await inj({ method: 'GET', url: `/api/conversations/${chat.id}` })).json().conversation.id).toBe(chat.id)
     const fromCard = await inj({ method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/chat` })

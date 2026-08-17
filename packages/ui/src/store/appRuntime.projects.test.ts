@@ -31,7 +31,7 @@ describe('voiceStore — проекты и доска', () => {
     const id = store.getState().projectDetail!.id
     await store.actions.openBoard(id)
     expect(store.getState().activeProjectId).toBe(id)
-    expect(store.getState().board?.columns.map((c) => c.semanticType)).toEqual(['backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done', 'decision_required'])
+    expect(store.getState().board?.columns.map((c) => c.semanticType)).toEqual(['backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done', 'cancelled', 'decision_required'])
   })
 
   it('createTaskAndStartCi создаёт задачу и запускает CI с моделью из предложения', async () => {
@@ -97,7 +97,7 @@ describe('voiceStore — проекты и доска', () => {
     await store.actions.createProject({ name: 'P1' })
     await store.actions.openBoard(store.getState().projectDetail!.id)
     await store.actions.createColumn('Review')
-    expect(store.getState().board!.columns.map((c) => c.semanticType)).toEqual(['backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done', 'decision_required', 'custom'])
+    expect(store.getState().board!.columns.map((c) => c.semanticType)).toEqual(['backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done', 'cancelled', 'decision_required', 'custom'])
     const todo = store.getState().board!.columns[0]
     await store.actions.createTask(todo.id, { title: 'Задача A' })
     expect(store.getState().board!.tasks.map((t) => t.title)).toContain('Задача A')

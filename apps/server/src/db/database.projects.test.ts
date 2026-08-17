@@ -109,7 +109,7 @@ describe('projects: миграция канонического workflow', () =>
     expect(board.columns.map((item) => item.semanticType)).toEqual([
       'backlog', 'preparation', 'ready', 'development', 'component_qa',
       'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge',
-      'merge', 'done', 'decision_required', 'custom'
+      'merge', 'done', 'cancelled', 'decision_required', 'custom'
     ])
     expect(board.columns.find((item) => item.id === column('ready').id)).toMatchObject({ name: 'Мой Ready', hidden: false })
     expect(board.columns.find((item) => item.id === custom.id)).toMatchObject({ hidden: true })
@@ -149,7 +149,7 @@ describe('projects: создание и членство', () => {
     expect(p.members.map((m) => m.username)).toEqual(['alice'])
     expect(p.members[0].role).toBe('owner')
     const board = db.getBoard('alice', p.id)!
-    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Подготовка к разработке', 'Ready for Development', 'Development', 'Component QA', 'Создание интеграционных автотестов', 'Automated QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Готово', 'Требуется решение'])
+    expect(board.columns.map((c) => c.name)).toEqual(['Бэклог', 'Подготовка к разработке', 'Ready for Development', 'Development', 'Component QA', 'Создание интеграционных автотестов', 'Automated QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Готово', 'Отменено', 'Требуется решение'])
     expect(board.tasks).toEqual([])
   })
 
@@ -248,7 +248,7 @@ describe('board: колонки и порядок', () => {
     const p = db.createProject('alice', { name: 'P1' })
     const c4 = db.createColumn('alice', p.id, 'Review')!
     let cols = db.getBoard('alice', p.id)!.columns
-    expect(cols.map((c) => c.name)).toEqual(['Бэклог', 'Подготовка к разработке', 'Ready for Development', 'Development', 'Component QA', 'Создание интеграционных автотестов', 'Automated QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Готово', 'Требуется решение', 'Review'])
+    expect(cols.map((c) => c.name)).toEqual(['Бэклог', 'Подготовка к разработке', 'Ready for Development', 'Development', 'Component QA', 'Создание интеграционных автотестов', 'Automated QA', 'Ручное QA', 'Ожидает мержа', 'Мерж', 'Готово', 'Отменено', 'Требуется решение', 'Review'])
     const reversed = cols.map((c) => c.id).reverse()
     expect(db.reorderColumns('alice', p.id, reversed)).toBe(true)
     cols = db.getBoard('alice', p.id)!.columns
@@ -775,6 +775,33 @@ describe('projects: чаты завершённых задач в списке �
 
     db.moveTask('alice', pid, taskId, { columnId: dev })
     expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+  })
+
+  it('cancelled скрывает чат всегда, а возврат восстанавливает историю', () => {
+    const { pid, taskId, chatId, dev } = withTaskChat()
+    const cancelled = db.getBoard('alice', pid)!.columns.find((c) => c.semanticType === 'cancelled')!
+    db.addMessage('alice', chatId, 'u0', 'сохранить историю', '10:00')
+
+    db.moveTask('alice', pid, taskId, { columnId: cancelled.id })
+    expect(db.listConversations('alice').map((c) => c.id)).not.toContain(chatId)
+    expect(db.listConversations('alice', { includeCompleted: true }).map((c) => c.id)).not.toContain(chatId)
+    expect(db.searchConversations('alice', 'Скролл', { includeCompleted: true }).map((c) => c.id)).not.toContain(chatId)
+    expect(db.getConversation('alice', chatId)!.taskId).toBe(taskId)
+    expect(db.listMessages('alice', chatId).map((m) => m.text)).toEqual(['сохранить историю'])
+
+    db.moveTask('alice', pid, taskId, { columnId: dev })
+    expect(db.listConversations('alice').map((c) => c.id)).toContain(chatId)
+    expect(db.listMessages('alice', chatId).map((m) => m.text)).toEqual(['сохранить историю'])
+  })
+
+  it('отмена определяется семантикой, а не именем или порядком колонки', () => {
+    const { pid, taskId, chatId } = withTaskChat()
+    const board = db.getBoard('alice', pid)!
+    const cancelled = board.columns.find((c) => c.semanticType === 'cancelled')!
+    expect(db.updateColumn('alice', pid, cancelled.id, { name: 'Никогда не делать' })).toBe(true)
+    expect(db.reorderColumns('alice', pid, [cancelled.id, ...board.columns.filter((c) => c.id !== cancelled.id).map((c) => c.id)])).toBe(true)
+    db.moveTask('alice', pid, taskId, { columnId: cancelled.id })
+    expect(db.listConversations('alice').map((c) => c.id)).not.toContain(chatId)
   })
 
   it('скрытие не зависит от порога дней: done — и чата в списке нет', () => {

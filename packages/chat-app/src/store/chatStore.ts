@@ -413,7 +413,16 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         ? await client['conversations:search']({ query: q, includeCompleted })
         : await client['conversations:list']({ includeCompleted })
       if (core.disposed()) return
-      if (keepActiveListed) pinActiveIfHidden(all, q)
+      if (keepActiveListed) {
+        const activeId = getState().activeId
+        const activeHidden = activeId != null && !q && !all.some((c) => c.id === activeId)
+        if (activeHidden) {
+          const badge = (await client['conversations:taskChats']()).find((item) => item.conversationId === activeId)
+          if (core.disposed()) return
+          if (badge?.columnSemantic === 'cancelled') setState({ pinnedConversation: null })
+          else pinActiveIfHidden(all, q)
+        }
+      }
       const pid = getState().sidebarProjectId
       const conversations = keepPinned(all.filter((c) => (c.projectId ?? null) === pid), pid, q)
       setState({
@@ -806,7 +815,14 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     setState({ taskChatContext: null })
     try {
       const ctx = await client['conversations:taskContext']({ id })
-      if (getState().activeId === id) setState({ taskChatContext: ctx })
+      if (getState().activeId === id) {
+        setState({
+          taskChatContext: ctx,
+          ...(ctx?.columnSemantic === 'cancelled'
+            ? { pinnedConversation: null, conversations: getState().conversations.filter((item) => item.id !== id) }
+            : {})
+        })
+      }
     } catch {
       /* шапка необязательна — молча без неё */
     }
