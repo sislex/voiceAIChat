@@ -217,6 +217,10 @@ export interface Task {
   priority: TaskPriority
   /** Логин исполнителя (участник проекта) или null. */
   assignee: string | null
+  /** Неизменяемый автор из серверной сессии; null только у legacy/system задач. */
+  createdBy?: string | null
+  /** Историческое имя автора, сохранённое при создании. */
+  createdByName?: string | null
   /** Выбранная для CI машина проекта; null — машина проекта по умолчанию. */
   agentId?: string | null
   /** Метки (свободные строки), как labels в Jira. */
