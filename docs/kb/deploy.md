@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-08-14
-checked: 041f1ca
+updated: 2026-08-18
+checked: 48e5f7d
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -11,6 +11,7 @@ areas:
   - scripts/prod/deploy.sh
   - scripts/prod/rebuild-when-idle.sh
   - scripts/prod/install.sh
+  - scripts/affected-check.test.mjs
   - apps/server/src/config.ts
   - apps/server/src/server.ts
   - apps/server/src/kb/kbMcp.ts
@@ -238,6 +239,11 @@ production checkout, сохраняет его как content-addressed неиз
 до Compose. Обычный запуск без явной версии по-прежнему берёт строгий тег
 текущего HEAD либо публикует неизвестную версию. Перед сборкой лог содержит
 version, source, commit и task.
+
+Интеграционный тест этого контракта в `scripts/affected-check.test.mjs` ждёт маркер
+от отделённого через `setsid nohup` процесса с интервалом 20 мс максимум 500
+попыток, то есть до 10 секунд. Ожидание прекращается сразу после успешного чтения
+маркера; увеличен только запас времени теста, рабочая логика деплоя не менялась.
 
 ## Прод-каталог заодно рабочая копия — коммит там пушится сразу
 
