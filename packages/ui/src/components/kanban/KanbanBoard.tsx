@@ -111,7 +111,7 @@ export interface KanbanBoardProps {
   onDeleteColumn: (columnId: string) => void
   onCreateTask: (columnId: string, input: { title: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority }) => void
   onUpdateTask: (taskId: string, fields: TaskUpdateFields) => void
-  onMoveTask: (taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null) => void
+  onMoveTask: (taskId: string, columnId: string, afterId?: string | null, beforeId?: string | null) => void | boolean | Promise<void | boolean>
   onDeleteTask: (taskId: string) => void
   /** Открыть связанный с задачей чат (кнопка на карточке и в модалке). */
   onOpenChat?: (taskId: string) => void
@@ -559,7 +559,12 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     ]
   })
 
-  const cardOf = (t: Task): JSX.Element => (
+  const cardOf = (t: Task): JSX.Element => {
+    const fullColumns = board?.columns ?? []
+    const columnIndex = fullColumns.findIndex((column) => column.id === t.columnId)
+    const previousColumn = columnIndex > 0 ? fullColumns[columnIndex - 1] ?? null : null
+    const nextColumn = columnIndex >= 0 ? fullColumns[columnIndex + 1] ?? null : null
+    return (
     <TaskCard
       task={t}
       projectName={props.projectName}
@@ -582,6 +587,18 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onOpenCiRun={props.onOpenCiRun}
       onDequeueCiRun={props.onDequeueCiRun}
       onStartMerge={props.onStartMerge}
+      previousColumn={previousColumn ? { id: previousColumn.id, name: previousColumn.name } : null}
+      nextColumn={nextColumn ? { id: nextColumn.id, name: nextColumn.name } : null}
+      onMoveToColumn={async (taskId, fromColumnId, targetColumnId) => {
+        const current = allTasks.find((task) => task.id === taskId)
+        if (!current || current.columnId !== fromColumnId) return
+        const targetTasks = allTasks
+          .filter((task) => task.columnId === targetColumnId && task.id !== taskId)
+          .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
+        const moved = await props.onMoveTask(taskId, targetColumnId, targetTasks[targetTasks.length - 1]?.id ?? null, null)
+        if (moved === false) return
+        setAnnounce(`Задача «${current.title}» перенесена в колонку «${columnName(targetColumnId)}».`)
+      }}
       onGrab={(e, card, immediate) => grabTask(e, card, t.id, immediate)}
       onCardKeys={onCardKeys(t)}
       onCardBlur={() => {
@@ -590,7 +607,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       dragging={dragTask === t.id}
       grabbed={grab?.taskId === t.id}
     />
-  )
+    )
+  }
 
   const columnHead = (col: KanbanColumn): JSX.Element => {
     const visible = tasksOf(col.id).length

@@ -297,3 +297,38 @@ describe('TaskCard — подготовка к разработке', () => {
     expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
   })
 })
+
+describe('TaskCard — переход между этапами', () => {
+  it('показывает disabled-состояния первой, средней и последней колонок', () => {
+    const move = vi.fn()
+    const { rerender } = render(<TaskCard {...props({ previousColumn: null, nextColumn: { id: 'c2', name: 'Development' }, onMoveToColumn: move })} />)
+    expect(screen.getByRole('button', { name: /влево/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /вправо.*Development/ })).toBeEnabled()
+
+    rerender(<TaskCard {...props({ previousColumn: { id: 'c1', name: 'Ready' }, nextColumn: { id: 'c3', name: 'Component QA' }, onMoveToColumn: move })} />)
+    expect(screen.getByRole('button', { name: /влево.*Ready/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /вправо.*Component QA/ })).toBeEnabled()
+
+    rerender(<TaskCard {...props({ previousColumn: { id: 'c2', name: 'Merge' }, nextColumn: null, onMoveToColumn: move })} />)
+    expect(screen.getByRole('button', { name: /влево.*Merge/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /вправо/ })).toBeDisabled()
+  })
+
+  it('не открывает карточку и блокирует обе стрелки до завершения одного запроса', async () => {
+    let finish!: () => void
+    const onMoveToColumn = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    const onOpen = vi.fn()
+    render(<TaskCard {...props({ onOpen, previousColumn: { id: 'c0', name: 'Backlog' }, nextColumn: { id: 'c2', name: 'Development' }, onMoveToColumn })} />)
+
+    const right = screen.getByRole('button', { name: /вправо.*Development/ })
+    await act(async () => { fireEvent.click(right); fireEvent.click(right) })
+    expect(onMoveToColumn).toHaveBeenCalledTimes(1)
+    expect(onMoveToColumn).toHaveBeenCalledWith('t1', 'c1', 'c2')
+    expect(screen.getByRole('button', { name: /влево.*Backlog/ })).toBeDisabled()
+    expect(right).toBeDisabled()
+    expect(onOpen).not.toHaveBeenCalled()
+
+    await act(async () => finish())
+    expect(right).toBeEnabled()
+  })
+})

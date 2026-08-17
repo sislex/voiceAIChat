@@ -4074,6 +4074,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 [data-theme='dark'] .jcard-feature { color: #579dff; }
 .jcard-feature-start { border: 1px dashed rgba(76, 154, 255, 0.6); background: none; color: #0052cc; font-size: 11px; border-radius: 3px; padding: 2px 6px; cursor: pointer; align-self: flex-start; }
 [data-theme='dark'] .jcard-feature-start { color: #579dff; }
+.jcard-stage-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-height: 24px; }
+.jcard-stage-actions button { width: 28px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; font-weight: 700; line-height: 1; cursor: pointer; }
+.jcard-stage-actions button:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--accent); }
+.jcard-stage-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.jcard-stage-actions button:disabled { cursor: default; opacity: .4; }
 .jcard-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
 .jcard-foot-left { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .jcard-foot-right { display: inline-flex; align-items: center; gap: 6px; }
