@@ -13,7 +13,7 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-16 | ⚠ 14 коммит(ов) в areas после сверки: e047ac1 Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-18 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 4 коммит(ов) в areas после сверки: 8e8e1e9 CHAT-233: add Playwright Reader foundation … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 2 коммит(ов) в areas после сверки: e047ac1 Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-18 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-17 | ⚠ 21 коммит(ов) в areas после сверки: e047ac1 Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-17 | ⚠ 10 коммит(ов) в areas после сверки: e047ac1 Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 10 коммит(ов) в areas после сверки: e047ac1 Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 4 коммит(ов) в areas после сверки: e047ac1 Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-16 | ⚠ 31 коммит(ов) в areas после сверки: e047ac1 Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 422 коммит(ов) в areas после сверки: 514cb43 docs(kb): update after merge 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 423 коммит(ов) в areas после сверки: 3ed7d99 docs(kb): update after merge 0b073673-6f11-4051-8af3-b1785db1b72a … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-16 | ⚠ 29 коммит(ов) в areas после сверки: e047ac1 Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ⚠ код изменён 2026-08-18, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-18 | ✓ |
@@ -54,9 +54,10 @@
 
 ## Журнал сессий
 
-Всего записей: 257. Последние:
+Всего записей: 258. Последние:
 
 - [2026-08-18-alexeys-macbook-air-2-task-preparation-brief.md](log/2026-08-18-alexeys-macbook-air-2-task-preparation-brief.md) — task-preparation-brief
+- [2026-08-18-alexeys-macbook-air-2-migrate-newid-crash.md](log/2026-08-18-alexeys-macbook-air-2-migrate-newid-crash.md) — migrate-newid-crash
 - [2026-08-18-alexeys-macbook-air-2-deploy-test-timeout.md](log/2026-08-18-alexeys-macbook-air-2-deploy-test-timeout.md) — deploy-test-timeout
 - [2026-08-18-alexeys-macbook-air-2-admin-app-boundary.md](log/2026-08-18-alexeys-macbook-air-2-admin-app-boundary.md) — admin-app-boundary
 - [2026-08-17-mac-task-timeline.md](log/2026-08-17-mac-task-timeline.md) — task-timeline
@@ -65,7 +66,6 @@
 - [2026-08-17-mac-merge-retry-machine.md](log/2026-08-17-mac-merge-retry-machine.md) — merge-retry-machine
 - [2026-08-17-mac-kanban-stage-arrows.md](log/2026-08-17-mac-kanban-stage-arrows.md) — kanban-stage-arrows
 - [2026-08-17-mac-kanban-column-scroll.md](log/2026-08-17-mac-kanban-column-scroll.md) — kanban-column-scroll
-- [2026-08-17-mac-feature-preview-access-copy.md](log/2026-08-17-mac-feature-preview-access-copy.md) — feature-preview-access-copy
 
 ## Исторические планы
 
