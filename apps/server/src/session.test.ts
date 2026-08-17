@@ -9,6 +9,7 @@ import { signToken } from './users/accounts.js'
 import type { LlmClient } from './claude/types.js'
 import { createKbUsageTracker } from './kb/usage.js'
 import { PreviewActionRelay } from './mcp/previewMcp.js'
+import { AuthStatusState } from './auth/statusState.js'
 
 const SECRET = 'test-secret'
 const U = 'admin'
@@ -29,13 +30,19 @@ const mockClaude: LlmClient = {
 let app: FastifyInstance
 let db: VoiceChatDb
 let port: number
+let authStatus: AuthStatusState
 
 beforeEach(async () => {
   db = new VoiceChatDb(':memory:')
+  authStatus = new AuthStatusState(async () => ({
+    claude: { provider: 'claude', loggedIn: true, detail: 'подтверждено' },
+    codex: { provider: 'codex', loggedIn: false, detail: 'вход не выполнен' }
+  }))
   app = await buildServer({
     config: loadConfig({ PORT: '0' }),
     db,
     claude: mockClaude,
+    authStatus,
     sessionSecret: SECRET
   })
   await app.listen({ port: 0, host: '127.0.0.1' })
@@ -69,6 +76,34 @@ describe('WS: аутентификация соединения', () => {
     })
     expect(result).toBe('closed')
     ws.close()
+  })
+})
+
+describe('WS: auth status', () => {
+  it('шлёт полный снимок при каждом подключении и только содержательные обновления', async () => {
+    const connectWithAuth = (): Promise<{ ws: WebSocket; message: any }> => new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${TOKEN}`)
+      ws.on('error', reject)
+      ws.on('message', (data) => {
+        const message = JSON.parse(data.toString())
+        if (message.t === 'auth.status') resolve({ ws, message })
+      })
+    })
+    const { ws: first, message: snapshot } = await connectWithAuth()
+    expect(snapshot).toMatchObject({ t: 'auth.status', v: 1, status: { claude: { loggedIn: true }, codex: { loggedIn: false } } })
+    let updates = 0
+    first.on('message', (data) => { if (JSON.parse(data.toString()).t === 'auth.status') updates += 1 })
+    authStatus.set(U, snapshot.status)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(updates).toBe(0)
+    authStatus.reportRunError(U, 'claude', 'вход в Claude не выполнен')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(updates).toBe(1)
+    first.close()
+
+    const { ws: second, message: reconnectSnapshot } = await connectWithAuth()
+    expect(reconnectSnapshot.status.claude.loggedIn).toBe(true)
+    second.close()
   })
 })
 

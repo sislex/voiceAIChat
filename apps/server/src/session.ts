@@ -18,6 +18,7 @@ import { watchTranscript } from './cc/ccSessions.js'
 import { watchCxTranscript } from './codex/codexSessions.js'
 import type { CiRunManager } from './ci/runManager.js'
 import type { KbUsageTracker } from './kb/usage.js'
+import type { AuthStatusState } from './auth/statusState.js'
 
 export interface SessionDeps {
   db: VoiceChatDb
@@ -59,6 +60,8 @@ export interface SessionDeps {
   ci?: CiRunManager
   /** Телеметрия обращений к базе знаний (кадры kb.usage своему пользователю). */
   kbUsage?: KbUsageTracker
+  /** Единый per-user auth-снимок и изменения CLI. */
+  authStatus?: AuthStatusState
   /**
    * Relay действий веб-превью (mcp__browser__*): подписка доставляет клиенту
    * кадры preview.action его пользователя, resolve возвращает preview.result.
@@ -92,6 +95,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubCi: (() => void) | null = null
   let unsubKbUsage: (() => void) | null = null
   let unsubPreview: (() => void) | null = null
+  let unsubAuthStatus: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
   let cxTailStop: (() => void) | null = null
   const ptyIds = new Set<string>()
@@ -103,6 +107,17 @@ export function createSession(deps: SessionDeps): WsHandlers {
 
   return {
     onOpen(ctx) {
+      if (deps.authStatus) {
+        let delivered = ''
+        unsubAuthStatus = deps.authStatus.subscribe((status, userId) => {
+          if (userId !== deps.user.name) return
+          delivered = JSON.stringify(status)
+          ctx.send({ t: 'auth.status', v: 1, status })
+        })
+        void deps.authStatus.get(deps.user.name, true).then((status) => {
+          if (JSON.stringify(status) !== delivered) ctx.send({ t: 'auth.status', v: 1, status })
+        }).catch(() => undefined)
+      }
       unsubDownload = deps.modelDownload?.subscribe((ev) => ctx.send(ev)) ?? null
       unsubTurns = deps.turns.subscribe((m, ownerUserId) => {
         if (ownerUserId === deps.user.name) ctx.send(m)
@@ -325,6 +340,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubKbUsage?.()
       unsubKbUsage = null
       unsubPreview?.()
+      unsubAuthStatus?.()
       unsubPreview = null
       ccTailStop?.()
       ccTailStop = null

@@ -12,6 +12,7 @@ import type { CcItem } from '@shared/cc'
 import type { CxItem } from '@shared/codexSessions'
 import type { KbUsageQuery } from '@shared/kb'
 import type { ActiveTurn, QueuedTurn } from '@shared/protocol'
+import type { LoginStatusMap } from '@shared/auth'
 import type { SttUpdate } from '@shared/ipc'
 import type {
   CiFixAttempt,
@@ -37,6 +38,7 @@ import { createProjectsStore, type ProjectsStore } from '../store/domains/projec
 
 /** Входящие realtime-кадры: их владельца знает только runtime. */
 export interface RealtimeHandlers {
+  authStatus(status: LoginStatusMap): void
   sttPartial(update: SttUpdate): void
   sttFinal(update: SttUpdate): void
   sttError(message: string): void
@@ -212,6 +214,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
   // --- Маршрутизация realtime-кадров ---------------------------------------
 
   const handlers: RealtimeHandlers = {
+    authStatus: (status) => settings.actions.applyLoginStatus(status),
     sttPartial: (update) => voice.actions.applySttPartial(update),
     sttFinal: (update) => void voice.actions.applySttFinal(update),
     sttError: (message) => voice.actions.applySttError(message),
@@ -283,7 +286,6 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
         })
       ])
       if (disposed) return
-      settings.actions.startLoginStatusPolling()
       // 4) Адрес важнее «самого свежего»: чат по ссылке может быть и из другого
       // проекта — selectConversation сам переключит фильтр сайдбара.
       const visible = chat.getState().conversations

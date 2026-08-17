@@ -31,6 +31,7 @@ import {
   type TurnRequestInfo,
   type TurnUsage,
   type LlmAttachment,
+  type LlmProvider,
   type WidgetAssistantContext
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
@@ -103,6 +104,8 @@ export interface TurnManagerDeps {
   mcpBaseUrl?: string
   /** Источник времени (для детерминированных тестов). */
   now?: () => number
+  /** Только подтверждённая auth-ошибка хода меняет единое auth-состояние. */
+  onAuthError?: (userId: string, provider: LlmProvider, message: string) => void
 }
 
 /** Запрос нового хода (соответствует клиентскому claude.send). */
@@ -790,6 +793,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         },
         onError: (message) => {
           if (turn.done) return
+          deps.onAuthError?.(userId, provider, message)
           finish()
           if (req.messageId) {
             deps.db.enqueueTurn(userId, conversationId, req.messageId, {

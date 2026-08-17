@@ -20,6 +20,7 @@ import type { Board } from './projects'
 import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
 import type { KbUsageQuery } from './kb'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
+import type { LoginStatusMap } from './auth'
 
 // --- Общие ---------------------------------------------------------------
 
@@ -440,6 +441,7 @@ export type ClientMessage =
 
 /** server → client. */
 export type ServerMessage =
+  | { t: 'auth.status'; v: 1; status: LoginStatusMap }
   | { t: 'stt.partial'; update: SttUpdate }
   | { t: 'stt.final'; update: SttUpdate }
   | { t: 'stt.error'; message: string }
@@ -535,6 +537,7 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
 ]
 
 export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
+  'auth.status',
   'stt.partial',
   'stt.final',
   'stt.error',
