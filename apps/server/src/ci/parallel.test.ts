@@ -66,6 +66,7 @@ beforeEach(() => {
   db.linkMachine('admin', project.id, agent.id)
   db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
   db.setProjectDefaultMachine('admin', project.id, agent.id)
+  db.setUserProjectDefaultMachine('admin', project.id, agent.id)
   const ready = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'ready')!
   projectId = project.id
   taskIds = ['T1', 'T2'].map((title) => db.createTask('admin', project.id, { columnId: ready.id, title })!.id)

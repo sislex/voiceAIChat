@@ -8,10 +8,26 @@ import { CLAUDE_MODELS, CODEX_MODELS } from './types'
 import { estimateCostUsd } from './pricing'
 
 /** Доступная машине выполнения задачи с основаниями доступа и живым статусом. */
+export type MachineUnavailableReason =
+  | 'offline'
+  | 'not_shared'
+  | 'not_project_member'
+  | 'policy_denied'
+  | 'deleted'
+  | 'capacity'
+
 export interface CiTaskMachine {
   agentId: string
   name: string
+  owner?: string
+  ownership?: 'mine' | 'other'
   online: boolean
+  sharedWithProject?: boolean
+  isMyDefault?: boolean
+  canUse?: boolean
+  unavailableReason?: MachineUnavailableReason | null
+  load?: number
+  /** Compatibility fields for older clients. */
   personal: boolean
   project: boolean
   projectDefault: boolean
@@ -679,6 +695,10 @@ export interface CiRun {
   taskId: string
   /** Машина выполнения (agentId). */
   agentId: string | null
+  /** Immutable machine ownership/selection snapshot. */
+  agentOwnerId?: string | null
+  agentOwnerName?: string
+  agentSelectionSource?: 'explicit' | 'task_pinned' | 'user_project_default' | 'fallback' | 'unknown'
   status: CiStatus
   workspaceId: string | null
   /** Логин запустившего. */

@@ -385,25 +385,32 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
     // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
     if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
-    // Машина запуска: явный выбор (принудительный запуск) → закреплённая за
-    // карточкой → при параллельном запуске автоподбор по загрузке машин проекта
-    // → машина проекта по умолчанию (старые задачи с NULL идут на неё же).
-    let agentId: string | null
+    // Ordinary runs resolve strictly for the initiating user. Project.defaultAgentId
+    // is reserved for explicit system/production flows and is never a personal default.
+    let agentId: string | null = null
+    let agentSelectionSource: 'explicit' | 'task_pinned' | 'user_project_default' | 'fallback'
     if (launchOptions?.agentId) {
       agentId = launchOptions.agentId
-    } else if (launch === 'parallel' && !task.agentId) {
-      agentId = pickCiRunAgent(
-        project.machines.map((machine) => machine.agentId),
-        project.defaultAgentId ?? null,
-        deps.db.countActiveCiRunsByAgent()
-      )
+      agentSelectionSource = 'explicit'
+    } else if (task.agentId && deps.db.canUseAgent(userId, task.agentId, projectId)) {
+      agentId = task.agentId
+      agentSelectionSource = 'task_pinned'
+    } else if (launch === 'parallel') {
+      // Parallel launch is the one product rule that explicitly permits a
+      // load-aware fallback; only currently usable project-visible machines participate.
+      const fallbackCandidates = deps.db.listUsableAgents(userId, projectId).map((agent) => agent.id)
+      agentId = pickCiRunAgent(fallbackCandidates, deps.db.getUserProjectDefaultMachine(userId, projectId), deps.db.countActiveCiRunsByAgent())
+      agentSelectionSource = 'fallback'
     } else {
-      agentId = task.agentId ?? project.defaultAgentId
+      agentId = deps.db.getUserProjectDefaultMachine(userId, projectId)
+      agentSelectionSource = 'user_project_default'
     }
-    if (!agentId) return { error: 'Для запуска не задана машина проекта' }
+    if (!agentId) return { error: 'Выберите машину: персональная машина по умолчанию не задана или недоступна' }
     if (!deps.db.canUseAgent(userId, agentId, projectId)) {
       return { error: 'Выбранная машина больше недоступна для этой задачи' }
     }
+    const selectedAgent = deps.db.listUsableAgents(userId, projectId).find((agent) => agent.id === agentId)
+    if (!selectedAgent) return { error: 'Выбранная машина удалена или доступ к ней отозван' }
     if (deps.isAgentOnline && !deps.isAgentOnline(agentId)) {
       return { error: 'Выбранная машина offline. CI не ожидает подключения: выберите online-машину' }
     }
@@ -437,6 +444,9 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       projectId,
       taskId,
       agentId,
+      agentOwnerId: selectedAgent.userId ?? null,
+      agentOwnerName: selectedAgent.userId ?? 'неизвестно',
+      agentSelectionSource,
       triggeredBy: userId,
       prevColumnId: task.columnId,
       runColumnId,
@@ -1324,7 +1334,7 @@ fi`
     }
     // Машина рана зафиксирована при запуске (выбор карточки, автоподбор или
     // принудительный запуск); NULL остался только у ранов до появления выбора.
-    const agentId = runRow.agentId ?? project.defaultAgentId
+    const agentId = runRow.agentId
     // Повторный гейт непосредственно перед первой командой защищает ран, который
     // ждал в очереди во время удаления машины, смены владельца или отзыва членства.
     if (!agentId || !deps.db.canUseAgent(userId, agentId, runRow.projectId) || (deps.isAgentOnline && !deps.isAgentOnline(agentId))) {

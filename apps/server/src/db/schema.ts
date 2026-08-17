@@ -260,6 +260,40 @@ CREATE TABLE IF NOT EXISTS project_machines (
   FOREIGN KEY (agent_id)   REFERENCES agents(id)   ON DELETE CASCADE
 );
 
+-- Explicit access grant. Existing project_machines rows are deliberately not
+-- copied here: a machine is private until its owner shares it with this project.
+CREATE TABLE IF NOT EXISTS machine_project_shares (
+  project_id TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  shared     INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  updated_by TEXT NOT NULL,
+  PRIMARY KEY (project_id, agent_id),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS user_project_machine_defaults (
+  username   TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (username, project_id),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS machine_project_share_audit (
+  id         TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  agent_id   TEXT NOT NULL,
+  actor      TEXT NOT NULL,
+  old_value INTEGER NOT NULL,
+  new_value INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS kanban_columns (
   id         TEXT PRIMARY KEY,
   project_id TEXT NOT NULL,
@@ -380,6 +414,9 @@ CREATE TABLE IF NOT EXISTS ci_runs (
   project_id     TEXT NOT NULL,
   task_id        TEXT NOT NULL,
   agent_id       TEXT,
+  agent_owner_id TEXT,
+  agent_owner_name TEXT,
+  agent_selection_source TEXT,
   status         TEXT NOT NULL DEFAULT 'queued',
   workspace_id   TEXT,
   triggered_by   TEXT NOT NULL,

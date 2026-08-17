@@ -102,7 +102,7 @@ function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetRepos
     setReposRoot(machine?.reposRoot ?? '')
   }, [machine?.reposRoot])
   useEffect(() => { setSshHost(machine?.sshHost ?? ''); setSshUser(machine?.sshUser ?? '') }, [machine?.sshHost, machine?.sshUser])
-  const linked = machine !== undefined
+  const linked = machine?.sharedWithProject === true
   const commit = (): void => {
     if (path !== (machine?.path ?? '')) onSetPath(path)
   }
@@ -115,7 +115,7 @@ function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetRepos
   return (
     <li className="proj-machine-row">
       <label>
-        <input type="checkbox" checked={linked} onChange={onToggle} />
+        <input aria-label={`Предоставлять участникам проекта: ${agent.name}`} type="checkbox" checked={linked} onChange={onToggle} />
         {agent.name} {agent.online ? <span className="proj-online">● online</span> : <span className="proj-muted">offline</span>}
       </label>
       {linked && (
@@ -395,42 +395,39 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
       </div>}
 
       {activeTab === 'machines' && <div className="proj-section">
-        <p className="proj-field-label">Машины разработки (папка проекта на каждой)</p>
-        {isOwner ? (
-          <ul className="proj-machines">
-            {agents.map((a) => (
-              <MachineRow
-                key={a.id}
-                agent={a}
-                machine={detail.machines.find((m) => m.agentId === a.id)}
-                isDefault={detail.defaultAgentId === a.id}
-                onToggle={() =>
-                  detail.machines.some((m) => m.agentId === a.id)
-                    ? props.onUnlinkMachine(detail.id, a.id)
-                    : props.onLinkMachine(detail.id, a.id)
-                }
-                onSetPath={(path) => props.onSetMachinePath(detail.id, a.id, path)}
-                onSetReposRoot={(root) => props.onSetReposRoot(detail.id, a.id, root)}
-                onSetSsh={(host, user) => props.onSetMachineSsh(detail.id, a.id, host, user)}
-                onSetDefault={() => props.onSetDefaultMachine(detail.id, a.id)}
-              />
-            ))}
-            {agents.length === 0 && <span className="proj-muted">Нет машин — добавьте в меню «Машины».</span>}
-          </ul>
-        ) : (
-          <ul className="proj-machines">
-            {detail.machines.map((m) => (
-              <li key={m.agentId}>
-                {m.name ?? agents.find((a) => a.id === m.agentId)?.name ?? m.agentId}
-                <span className={m.online ? 'proj-online' : 'proj-offline'}> · {m.online ? 'в сети' : 'офлайн'}</span>
-                {m.owner && <span className="proj-muted"> · владелец: {m.owner}</span>}
-                {m.path && <span className="proj-muted"> · {m.path}</span>}
-                {detail.defaultAgentId === m.agentId && <span className="proj-online"> · по умолчанию</span>}
-              </li>
-            ))}
-            {detail.machines.length === 0 && <span className="proj-muted">—</span>}
-          </ul>
-        )}
+        <p className="proj-field-label">Мои машины</p>
+        <ul className="proj-machines">
+          {agents.map((a) => {
+            const machine = detail.machines.find((m) => m.agentId === a.id)
+            return <MachineRow
+              key={a.id}
+              agent={a}
+              machine={machine}
+              isDefault={machine?.isMyDefault === true}
+              onToggle={() => machine?.sharedWithProject
+                ? props.onUnlinkMachine(detail.id, a.id)
+                : props.onLinkMachine(detail.id, a.id)}
+              onSetPath={(value) => props.onSetMachinePath(detail.id, a.id, value)}
+              onSetReposRoot={(value) => props.onSetReposRoot(detail.id, a.id, value)}
+              onSetSsh={(host, user) => props.onSetMachineSsh(detail.id, a.id, host, user)}
+              onSetDefault={() => props.onSetDefaultMachine(detail.id, a.id)}
+            />
+          })}
+          {agents.length === 0 && <span className="proj-muted">Нет машин — добавьте в меню «Машины».</span>}
+        </ul>
+        <p className="proj-field-label">Машины проекта</p>
+        <ul className="proj-machines">
+          {detail.machines.filter((m) => m.ownership === 'other' && m.sharedWithProject).map((m) => (
+            <li key={m.agentId}>
+              {m.name ?? m.agentId}
+              {m.owner && <span className="proj-muted"> · владелец: {m.owner}</span>}
+              <span className={m.online ? 'proj-online' : 'proj-offline'}> · {m.online ? 'online' : 'offline'}</span>
+              <span className="proj-muted"> · загрузка: {m.load ?? 0}</span>
+              {m.canUse === false && <span className="proj-offline"> · {m.unavailableReason ?? 'недоступна'}</span>}
+            </li>
+          ))}
+          {!detail.machines.some((m) => m.ownership === 'other' && m.sharedWithProject) && <span className="proj-muted">—</span>}
+        </ul>
       </div>}
 
       {activeTab === 'general' && isOwner && (
