@@ -28,7 +28,7 @@ export interface TaskCardProps {
   /** Колонки со смыслом «done» — для прогресса и зачёркивания ключа. */
   doneColumnIds: ReadonlySet<string>
   columnSemanticType?: KanbanColumnSemanticType
-  onOpen: (taskId: string, tab?: 'preparation') => void
+  onOpen: (taskId: string, tab?: 'preparation' | 'feed') => void
   onUpdate: (taskId: string, fields: { flagged?: boolean }) => void
   onDelete: (taskId: string) => void
   onMoveTop: (taskId: string) => void
@@ -125,6 +125,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   // Сервер выбирает состояние; helper сохраняет совместимость со stale payload.
   const visibleCiSummary = ciSummaryForTask(ciSummary, done)
   const pulse = ciCardPulse(visibleCiSummary)
+  const latestFailed = task.latestRunResult?.outcome === 'failure'
   // В «Готово» запуск нового CI-рана запрещён: завершённая карточка остаётся
   // историей результата, а не точкой повторного выполнения.
   const qaStage = props.columnSemanticType === 'component_qa' || props.columnSemanticType === 'integration_tests' || props.columnSemanticType === 'automated_qa'
@@ -139,7 +140,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   return (
     <div
       ref={cardRef}
-      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
+      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${latestFailed ? ' jcard--latest-failed' : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
       data-testid="task-card"
       data-task-id={task.id}
       tabIndex={0}
@@ -203,6 +204,18 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           )}
         </span>
       </div>
+
+      {latestFailed && (
+        <button
+          type="button"
+          className="jcard-latest-failure"
+          title="Последний этап завершился с ошибкой. Открыть ленту рана"
+          aria-label="Последний этап завершился с ошибкой. Открыть ленту рана"
+          onClick={(event) => { event.stopPropagation(); props.onOpen(task.id, 'feed') }}
+        >
+          <span aria-hidden="true">⚠</span> Последний этап завершился с ошибкой
+        </button>
+      )}
 
       {(task.flagged || epic || task.labels.length > 0 || task.skills.length > 0) && (
         <div className="jcard-chips">

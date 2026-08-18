@@ -245,6 +245,28 @@ describe('TaskCard подсветка по состоянию рана', () => {
   })
 })
 
+describe('TaskCard: нормализованная ошибка последнего этапа', () => {
+  it('показывает статичную красную рамку, текстовый признак и переход в общую ленту', () => {
+    const onOpen = vi.fn()
+    render(<TaskCard {...props({
+      onOpen,
+      task: mkTask({ latestRunResult: { id: 'qa-1', kind: 'automated_qa', status: 'blocked', outcome: 'failure', createdAt: 10, finishedAt: 20 } })
+    })} />)
+    const card = screen.getByTestId('task-card')
+    expect(card.className).toContain('jcard--latest-failed')
+    const indicator = screen.getByRole('button', { name: 'Последний этап завершился с ошибкой. Открыть ленту рана' })
+    expect(indicator).toHaveTextContent('Последний этап завершился с ошибкой')
+    fireEvent.click(indicator)
+    expect(onOpen).toHaveBeenCalledWith('t1', 'feed')
+  })
+
+  it.each(['active', 'success', 'cancelled', 'skipped'] as const)('не подсвечивает outcome=%s', (outcome) => {
+    render(<TaskCard {...props({ task: mkTask({ latestRunResult: { id: 'run-1', kind: 'development', status: outcome, outcome, createdAt: 10, finishedAt: null } }) })} />)
+    expect(screen.getByTestId('task-card').className).not.toContain('jcard--latest-failed')
+    expect(screen.queryByText('Последний этап завершился с ошибкой')).not.toBeInTheDocument()
+  })
+})
+
 describe('TaskCard: следов прошлого рана не остаётся', () => {
   it('после успешного повтора нет ни лозенга «ошибка», ни красной пульсации, ни фазы упавшего рана', () => {
     const failed = mkSummary({ id: 'run-1', status: 'failed', slotProgress: { done: 2, total: 4, phase: 'Финальные команды (1/2)' }, modelActive: false })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, projectKey, QA_WORKFLOW } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -19,6 +19,20 @@ describe('QA workflow semantics', () => {
     expect(canTransitionWorkflow('awaiting_merge', 'merge', 'automation')).toBe(true)
     expect(canTransitionWorkflow('merge', 'done', 'automation')).toBe(true)
     expect(canTransitionWorkflow('awaiting_merge', 'done', 'automation')).toBe(false)
+  })
+})
+
+describe('normalizeTaskRunOutcome', () => {
+  it.each(['failed', 'blocked', 'timeout', 'gate_failed', 'interrupted', 'decision_required'])(`%s является ошибкой`, (status) => {
+    expect(normalizeTaskRunOutcome(status)).toBe('failure')
+  })
+
+  it.each(['queued', 'running', 'awaiting_input', 'waiting_for_answer', 'validating'])(`%s заменяет старую ошибку активным процессом`, (status) => {
+    expect(normalizeTaskRunOutcome(status)).toBe('active')
+  })
+
+  it.each([['success', 'success'], ['passed', 'success'], ['completed', 'success'], ['skipped', 'skipped'], ['stale', 'skipped'], ['cancelled', 'cancelled']] as const)(`%s нормализуется в %s`, (status, outcome) => {
+    expect(normalizeTaskRunOutcome(status)).toBe(outcome)
   })
 })
 

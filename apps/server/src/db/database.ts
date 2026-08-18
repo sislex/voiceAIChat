@@ -48,6 +48,8 @@ import {
   type ProjectMember,
   type ProjectSummary,
   type Task,
+  type TaskRunResult,
+  normalizeTaskRunOutcome,
   type TaskPriority,
   type WorkItemType,
   type WorkItemDefaultSkills,
@@ -3067,7 +3069,7 @@ export class VoiceChatDb {
            FROM tasks t WHERE t.project_id = ? ORDER BY t.column_id ASC, t.position ASC`
         )
         .all(userId, userId, userId, projectId) as TaskRow[]
-    ).map(mapTask)
+    ).map((row) => ({ ...mapTask(row), latestRunResult: this.latestTaskRunResult(row.id) }))
     // Фильтруем на сервере: иначе payload доски рос бы бесконечно вместе с
     // колонкой «Готово». includeCompleted → порог null, скрывать нечего.
     const retention = opts?.includeCompleted ? null : this.doneRetentionDays(projectId)
@@ -4710,6 +4712,30 @@ export class VoiceChatDb {
     const rows = this.db.prepare(`SELECT s.duration_ms FROM ci_run_steps s JOIN ci_runs r ON r.id = s.run_id WHERE r.project_id = ? AND s.kind = 'model_work' AND s.status = 'success' AND s.duration_ms IS NOT NULL ORDER BY s.finished_at DESC LIMIT 10`).all(projectId) as Array<{ duration_ms: number }>
     if (!rows.length) return { projectId, avgMs: null, samples: 0 }
     return { projectId, avgMs: Math.round(rows.reduce((a, r) => a + r.duration_ms, 0) / rows.length), samples: rows.length }
+  }
+
+  /**
+   * Последний актуальный процесс среди всех workflow-ранов задачи. Новый старт
+   * сразу вытесняет прежнюю ошибку. cancelled нейтрален, stale считается skipped.
+   */
+  latestTaskRunResult(taskId: string): TaskRunResult | null {
+    const row = this.db.prepare(`
+      SELECT id, kind, status, created_at, finished_at FROM (
+        SELECT id, 'preparation' kind, status, created_at, finished_at, rowid seq, 1 rank FROM task_preparation_runs WHERE task_id = ?
+        UNION ALL SELECT id, 'development', status, created_at, finished_at, rowid, 2 FROM ci_runs WHERE task_id = ?
+        UNION ALL SELECT id, stage, status, created_at, finished_at, rowid, 3 FROM qa_stage_runs WHERE task_id = ?
+        UNION ALL SELECT id, 'component_qa', status, created_at, finished_at, rowid, 4 FROM component_qa_runs WHERE task_id = ?
+        UNION ALL SELECT id, 'integration_tests', status, created_at, finished_at, rowid, 5 FROM integration_test_runs WHERE task_id = ?
+        UNION ALL SELECT id, 'qa_preparation', status, created_at, finished_at, rowid, 6 FROM qa_preparation_runs WHERE task_id = ?
+        UNION ALL SELECT id, 'manual_qa', status, started_at, finished_at, rowid, 7 FROM qa_sessions WHERE task_id = ?
+        UNION ALL SELECT id, 'merge', status, created_at, finished_at, rowid, 8 FROM merge_runs WHERE task_id = ?
+      ) ORDER BY created_at DESC, seq DESC, rank DESC LIMIT 1
+    `).get(taskId, taskId, taskId, taskId, taskId, taskId, taskId, taskId) as
+      | { id: string; kind: TaskRunResult['kind']; status: string; created_at: number; finished_at: number | null }
+      | undefined
+    if (!row) return null
+
+    return { id: row.id, kind: row.kind, status: row.status, outcome: normalizeTaskRunOutcome(row.status), createdAt: row.created_at, finishedAt: row.finished_at }
   }
 
   /**
