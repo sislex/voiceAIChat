@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 11 коммит(ов) в areas после сверки: c437cd4 fix(server): инициализировать newId/now до migrate() … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 5 коммит(ов) в areas после сверки: c437cd4 fix(server): инициализировать newId/now до migrate() … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-16 | ⚠ 32 коммит(ов) в areas после сверки: c437cd4 fix(server): инициализировать newId/now до migrate() … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 424 коммит(ов) в areas после сверки: c437cd4 fix(server): инициализировать newId/now до migrate() … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 425 коммит(ов) в areas после сверки: 8b24147 docs(kb): update after merge 2d5a0740-8ab9-4bc4-b3b5-0dfa8950457a … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-16 | ⚠ 30 коммит(ов) в areas после сверки: c437cd4 fix(server): инициализировать newId/now до migrate() … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-14 | ⚠ код изменён 2026-08-18, сверка 2026-08-14 (по датам: правки того же дня не видны — поставь checked) |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-18 | ⚠ 1 коммит(ов) в areas после сверки: c437cd4 fix(server): инициализировать newId/now до migrate() |
