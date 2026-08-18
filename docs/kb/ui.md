@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-18
-checked: 1b69860
+checked: 4508e98
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -852,3 +852,11 @@ Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтом
 ## Граница `@voicechat/admin-app`
 
 `packages/admin-app` — workspace `@voicechat/admin-app` с публичным корнем и `./styles.css`. В пакет перенесены `UsersAdmin`, React-независимая фабрика `createAdminStore`, transport-agnostic `AdminClient`, Session/Operations ports и parser/builder маршрутов `#/users`. Host подключает экран лениво через `import('@voicechat/admin-app')`, проверяет роль до открытия и использует только публичные экспорты. Стили импортируют `@voicechat/ui-kit/styles.css`, имеют собственную светлую/тёмную token-based раскладку и mobile breakpoint, не зависят от полного `app.css`.
+
+## Интерактивная песочница компонентов в Storybook
+
+В `packages/ui/src/stories/playground/ComponentPlayground.tsx` есть переиспользуемая MDX-обвязка над `@codesandbox/sandpack-react`. Она запускает шаблон `react-ts` целиком в браузере: показывает редактор с inline-ошибками, автоматически обновляемый preview с error overlay и отдельную консоль для синтаксических и runtime-сообщений. Панель обвязки сообщает, изменён ли пример, сбрасывает все виртуальные файлы в исходное состояние и локально переключает светлую/тёмную тему песочницы; это состояние не меняет тему остального Storybook. Обычные Storybook stories и Controls остаются отдельным стандартным механизмом и этой страницей не заменяются.
+
+Окружение каждого примера задаёт вызывающая MDX-страница через `files`, необязательные фиксированные `dependencies` и `activeFile`; React и React DOM закреплены самой обвязкой. `visibleFiles` содержит только активный файл, а служебные файлы примера следует помечать `hidden` и `readOnly`, как в `packages/ui/src/stories/playground/buttonExample.ts`. Экспорт в CodeSandbox и открытие preview в новой вкладке отключены. Sandpack получает только переданные виртуальные файлы и пакеты: файловые мосты приложения ему не передаются, исходники репозитория он не изменяет, а правки существуют лишь в памяти браузерной вкладки до сброса или закрытия страницы.
+
+Эталон находится в `packages/ui/src/stories/playground/ButtonPlayground.mdx` под заголовком `Foundations/Интерактивная песочница`: редактируемый `/App.tsx` использует скрытые read-only реализации Button и стилей. Новый пример добавляется отдельной MDX-страницей с минимальным набором виртуальных файлов и публичных npm-зависимостей. Собственная логика toolbar (dirty/pristine, reset и тема) покрыта `ComponentPlayground.dom.test.tsx`; компиляцию и выполнение кода обеспечивает Sandpack.
