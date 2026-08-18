@@ -36,7 +36,9 @@ import { MergePanel } from '../ci/MergePanel'
 import { TaskRunFeed } from '../ci/TaskRunFeed'
 import { TaskPreparationTab } from './TaskPreparationTab'
 import { TaskTimeline } from './TaskTimeline'
-import type { TaskPreparationRun } from '@shared/qa'
+import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa'
+import type { UserLlmAccess } from '@shared/llmAccess'
+import type { LlmEngineOption } from '@shared/admin'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { canStartCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport } from '@shared/ci'
@@ -78,10 +80,12 @@ export interface TaskModalProps {
   /** Сводка последнего CI-рана задачи и переходы в его ленту. */
   ciSummary?: CiRunSummary
   onStartCi?: (taskId: string) => void | Promise<void>
-  onStartPreparation?: (taskId: string) => void | Promise<void>
+  onStartPreparation?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   initialTab?: 'preparation'
   loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
-  onRetryPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
+  onRetryPreparation?: (runId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
+  llmAccess?: UserLlmAccess[]
+  llmEngines?: LlmEngineOption[]
   onCancelPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
   onAnswerPreparation?: (questionId: string, answer: string) => Promise<unknown>
   onExportPreparation?: (runId: string, format: 'md' | 'json') => Promise<void>
@@ -223,7 +227,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     if (current) props.onUpdate(task.id, { assignee: current })
   }, [props.draft, props.members, task.id, task.assignee])
   type TaskTab = 'general' | 'timeline' | 'settings' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'progress' | 'merge' | 'feed' | 'preparation'
-  const preparationVisible = task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(board.columns.find((item) => item.id === task.columnId)?.semanticType ?? '') && Boolean(task.taskPreparationRunId || task.taskPreparationStatus === 'running')
+  const preparationVisible = task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(board.columns.find((item) => item.id === task.columnId)?.semanticType ?? '')
   const defaultTab = (): TaskTab => {
     if (task.taskPreparationStatus === 'running' || (props.initialTab === 'preparation' && preparationVisible)) return 'preparation'
     const stage = board.columns.find((item) => item.id === task.columnId)?.semanticType
@@ -939,7 +943,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </section>}
         {!props.draft && <>
         <section className="task-tab-panel" data-testid="task-timeline-panel" hidden={activeTab !== 'timeline'}>{activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}</section>
-        <section className="task-tab-panel" data-testid="task-preparation-panel" hidden={activeTab !== 'preparation'}>{preparationVisible && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} onRetry={props.onRetryPreparation} onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation} />}</section>
+        <section className="task-tab-panel" data-testid="task-preparation-panel" hidden={activeTab !== 'preparation'}>{preparationVisible && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} onStart={props.onStartPreparation} onRetry={props.onRetryPreparation} llmAccess={props.llmAccess} llmEngines={props.llmEngines} onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation} />}</section>
         {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" hidden={activeTab !== stage}>{stage === 'component_qa'
           ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
           : <QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} />}</section>)}

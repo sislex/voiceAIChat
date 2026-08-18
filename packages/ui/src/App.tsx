@@ -1070,7 +1070,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         })
         toast.success('Задача создана в TODO')
       } else if (mode === 'preparation') {
-        const result = await projectsActions.createTaskFromProposalInPreparation(taskProposal.projectId, `${taskProposal.messageId}:${taskProposal.proposalId}:preparation`, task)
+        const result = await projectsActions.createTaskFromProposalInPreparation(taskProposal.projectId, `${taskProposal.messageId}:${taskProposal.proposalId}:preparation`, { ...task, selection: { provider: taskProposal.provider, model: taskProposal.model } })
         await chatActions.updateTaskLaunchStatus(taskProposal.messageId, taskProposal.proposalId, 'created', result)
         chatActions.setDraft('Пользователь выбрал: создать предложенную задачу в подготовке к разработке')
         await chatActions.submitText()
@@ -1516,6 +1516,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               members={projects.projectDetail?.members ?? []}
               currentUserId={session.currentUser?.name ?? null}
               currentUser={session.currentUser?.name ?? null}
+              llmAccess={settingsState.llmAccess}
+              llmEngines={settingsState.llmEngines}
               onCreateColumn={(name) => void projectsActions.createColumn(name)}
               onUpdateColumn={(id, fields) => void projectsActions.updateColumn(id, fields)}
               onSetColumnHidden={(id, hidden) => void projectsActions.setColumnHidden(id, hidden)}
@@ -1534,7 +1536,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               onDequeueCiRun={(runId) => void projectsActions.dequeueCiRun(runId)}
               onStartMerge={(taskId, agentId) => { if (routeProjectId) void projectsActions.startMergeRun(routeProjectId, taskId, agentId) }}
               loadPreparationRuns={(taskId) => api['tasks:listPreparationRuns']({ projectId: routeProjectId!, taskId })}
-              onRetryPreparation={(runId) => api['tasks:retryPreparationRun']({ runId })}
+              onStartPreparation={(taskId, selection) => api['tasks:startPreparationRun']({ projectId: routeProjectId!, taskId, selection })}
+              onRetryPreparation={(runId, selection) => api['tasks:retryPreparationRun']({ runId, selection })}
               onCancelPreparation={(runId) => api['tasks:cancelPreparationRun']({ runId })}
               onAnswerPreparation={(questionId, answer) => api['tasks:answerPreparationQuestion']({ questionId, answer })}
               onExportPreparation={(runId, format) => api['tasks:exportPreparationRun']({ runId, format })}

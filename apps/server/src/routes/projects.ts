@@ -12,6 +12,7 @@ import {
   type Task,
   type TaskPriority,
   type TaskLaunchResult,
+  type TaskPreparationLlmSelection,
   type TaskPreparationRun,
   type WorkItemDefaultSkills,
   type CiReuseStrategy,
@@ -72,7 +73,7 @@ export function registerProjectRoutes(
   ci?: CiRunManager,
   agents?: AgentRegistry,
   merge?: MergeRunManager,
-  startTaskPreparation?: (userId: string, projectId: string, taskId: string) => TaskPreparationRun
+  startTaskPreparation?: (userId: string, projectId: string, taskId: string, selection?: TaskPreparationLlmSelection) => TaskPreparationRun
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = (project: ProjectDetail | null): ProjectDetail | null => {
@@ -448,7 +449,7 @@ export function registerProjectRoutes(
 
   app.post<{
     Params: { id: string }
-    Body: { proposalId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null }
+    Body: { proposalId?: string; title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; selection?: TaskPreparationLlmSelection }
   }>('/api/projects/:id/task-launch/preparation', taskCreateGuard, async (req, reply): Promise<TaskLaunchResult | FastifyReply> => {
     const b = req.body ?? {}
     const proposalId = b.proposalId?.trim(), title = b.title?.trim()
@@ -465,7 +466,7 @@ export function registerProjectRoutes(
         if (actual && (actual.status === 'running' || actual.status === 'success')) return result
       }
       try {
-        const run = startTaskPreparation(uid(req), req.params.id, result.taskId)
+        const run = startTaskPreparation(uid(req), req.params.id, result.taskId, b.selection)
         db.saveTaskLaunchPreparationRun(req.params.id, proposalId, run.id, null)
         boardHub.emit(req.params.id)
         return { type: 'preparation', status: 'success', taskId: result.taskId, runId: run.id }

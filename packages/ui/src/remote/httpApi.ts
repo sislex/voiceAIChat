@@ -338,10 +338,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectTaskMove(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
     'tasks:listPreparationRuns': ({ projectId, taskId }) =>
       req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/preparation/runs`),
+    'tasks:startPreparationRun': ({ projectId, taskId, selection }) =>
+      req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/preparation/run`, { method: 'POST', body: JSON.stringify(selection ?? {}) }),
     'tasks:cancelPreparationRun': ({ runId }) =>
       req(`/api/task-preparation/runs/${encodeURIComponent(runId)}`, { method: 'DELETE' }),
-    'tasks:retryPreparationRun': ({ runId }) =>
-      req(`/api/task-preparation/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST' }),
+    'tasks:retryPreparationRun': ({ runId, selection }) =>
+      req(`/api/task-preparation/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST', body: JSON.stringify(selection ?? {}) }),
     'tasks:answerPreparationQuestion': ({ questionId, answer }) =>
       req(`/api/task-preparation/questions/${encodeURIComponent(questionId)}/answer`, { method: 'POST', body: JSON.stringify({ answer }) }),
     'tasks:exportPreparationRun': async ({ runId, format }) => {
@@ -419,6 +421,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     putProjectCiLlm: (projectId, config) => req<CiProjectLlmConfig>(REST.projectCiLlm(projectId), { method: 'PUT', body: JSON.stringify(config) }),
     resetProjectCiLlm: (projectId) => req<CiProjectLlmConfig>(REST.projectCiLlm(projectId), { method: 'DELETE' }),
     getTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId)),
+    getTaskPreparationLlm: async (projectId, taskId) => (await req<{ effective: import('@shared/ci').CiStageLlmSnapshot }>(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/ci/stages/planning/llm`)).effective,
     putTaskCiLlm: (projectId, taskId, config) => req<CiLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
     resetTaskCiLlm: (projectId, taskId) => req<CiTaskLlmConfig>(REST.taskCiLlm(projectId, taskId), { method: 'DELETE' }),
     getTaskCi: (projectId, taskId) => req<CiTaskConfig>(REST.taskCi(projectId, taskId)),

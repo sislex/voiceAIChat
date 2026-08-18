@@ -643,7 +643,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     for (const handle of taskPreparationHandles.values()) handle.cancel()
     taskPreparationHandles.clear()
   })
-  const launchTaskPreparation = (userId: string, projectId: string, taskId: string): import('@voicechat/shared').TaskPreparationRun => {
+  const launchTaskPreparation = (userId: string, projectId: string, taskId: string, selection?: import('@voicechat/shared').TaskPreparationLlmSelection): import('@voicechat/shared').TaskPreparationRun => {
     const run = db.startTaskPreparationRun(userId, projectId, taskId)
     if (run.status === 'waiting_for_answer' || taskPreparationHandles.has(run.id)) return run
     if (run.status !== 'running' && run.status !== 'queued') return run
@@ -659,12 +659,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       provider: userLlm.provider,
       model: userLlm.model
     })
-    const provider = stageLlm.provider
-    const model = taskPreparationModel(provider, stageLlm.model)
+    const requestedProvider = selection?.provider ?? stageLlm.provider
+    const requestedModel = selection?.model ?? stageLlm.model
+    const access = db.getUserLlmAccess(userId)
+    if (selection && !isProviderAllowed(access, requestedProvider)) throw new Error('Выбранный движок недоступен пользователю')
+    const provider = isProviderAllowed(access, requestedProvider) ? requestedProvider : firstAllowedProvider(access)
+    if (!provider) throw new Error('Нет доступных движков и моделей')
+    const allowedModel = clampModel(access, provider, requestedModel)
+    if (!allowedModel || (selection && allowedModel !== requestedModel)) throw new Error('Выбранная модель недоступна пользователю')
+    const model = taskPreparationModel(provider, allowedModel)
+    const llmEngineId = selection?.llmEngineId ?? stageLlm.llmEngineId ?? null
     const client = provider === 'codex' ? codex : claude
     // Чем шла подготовка — первой строкой ленты: без этого причину падения CLI
     // приходится искать в коде подготовки.
-    db.setTaskPreparationExecution(run.id, model)
+    db.setTaskPreparationExecution(run.id, { llmEngineId, provider, model })
     db.appendTaskPreparationLog(run.id, `[система] Движок: ${provider === 'codex' ? 'Codex' : 'Claude'}, модель: ${model}, CLI-профиль: ${userId}\n`)
     const answeredContext = (run.questions ?? []).filter((question) => question.answer).map((question) => `Вопрос ${question.questionId}: ${question.text}\\nОтвет: ${question.answer}`).join('\\n')
     const basePrompt = `Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Обязательный testCase содержит стабильный id, title, description, preconditions, testData, steps, expectedResult, required, automatable и для ручного — notAutomatedReason и alternativeManualVerification. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
@@ -724,8 +732,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return run
   }
 
-  app.post<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/preparation/run', async (req, reply) => {
-    try { return launchTaskPreparation(uid(req), req.params.id, req.params.taskId) }
+  app.post<{ Params: { id: string; taskId: string }; Body: Partial<import('@voicechat/shared').TaskPreparationLlmSelection> }>('/api/projects/:id/tasks/:taskId/preparation/run', async (req, reply) => {
+    const selection = req.body?.provider && typeof req.body.model === 'string' ? { llmEngineId: req.body.llmEngineId ?? null, provider: req.body.provider, model: req.body.model } : undefined
+    try { return launchTaskPreparation(uid(req), req.params.id, req.params.taskId, selection) }
     catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/preparation/runs', async (req) =>
@@ -758,7 +767,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       reply.type('application/json; charset=utf-8')
       return {
         schemaVersion: 1, taskId: run.taskId, taskKey: run.taskKey, attemptId: run.attemptId,
-        attemptNumber: run.attemptNumber, model: run.model, profileId: run.profileId, status: run.status,
+        attemptNumber: run.attemptNumber, llmEngineId: run.llmEngineId, provider: run.provider, model: run.model, profileId: run.profileId, status: run.status,
         phase: run.phase, createdAt: run.createdAt, startedAt: run.startedAt, finishedAt: run.finishedAt,
         durationMs: run.durationMs, events: run.events, questions: run.questions, readiness: run.readiness,
         gateResults: run.gateResults, gateReasons: run.gateReasons, error: run.error
@@ -767,7 +776,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const lines = [
       `# Подготовка ${run.taskKey}: попытка ${run.attemptNumber}`, '',
       `- Attempt ID: ${run.attemptId}`, `- Статус: ${run.status}`, `- Фаза: ${run.phase}`,
-      `- Модель: ${run.model || 'не указана'}`, `- Profile ID: ${run.profileId}`, `- Длительность: ${run.durationMs} мс`, '',
+      `- LLM: ${run.provider ?? 'claude'} · ${run.model || 'не указана'}`, `- Исполнитель: ${run.llmEngineId ?? 'по умолчанию'}`, `- Profile ID: ${run.profileId}`, `- Длительность: ${run.durationMs} мс`, '',
       '## Хронология', '', ...(run.events ?? []).map((event) => `${event.sequence}. [${new Date(event.timestamp).toISOString()}] ${event.type}: ${event.text}`), '',
       '## Вопросы и ответы', '', ...(run.questions ?? []).map((question) => `- ${question.text} — ${question.answer ?? 'без ответа'}`), '',
       '## Readiness-гейты', '', ...(run.gateResults ?? []).map((gate) => `- ${gate.code}: ${gate.status} — ${gate.explanation}`), '',
@@ -783,11 +792,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     boardHub.emit(run.projectId)
     return run
   })
-  app.post<{ Params: { runId: string } }>('/api/task-preparation/runs/:runId/retry', async (req, reply) => {
+  app.post<{ Params: { runId: string }; Body: Partial<import('@voicechat/shared').TaskPreparationLlmSelection> }>('/api/task-preparation/runs/:runId/retry', async (req, reply) => {
     const previous = db.getTaskPreparationRun(uid(req), req.params.runId)
     if (!previous) return reply.code(404).send({ error: 'not found' })
     if (!previous.canRetry) return reply.code(409).send({ error: 'Эту попытку нельзя повторить' })
-    return launchTaskPreparation(uid(req), previous.projectId, previous.taskId)
+    const selection = req.body?.provider && typeof req.body.model === 'string' ? { llmEngineId: req.body.llmEngineId ?? null, provider: req.body.provider, model: req.body.model } : undefined
+    try { return launchTaskPreparation(uid(req), previous.projectId, previous.taskId, selection) }
+    catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
 
   const ciRunManager = createCiRunManager({
@@ -860,7 +871,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   registerReleaseRoutes(app, db, releaseManager)
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
-  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId) => launchTaskPreparation(userId, projectId, taskId))
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection))
   mergeRunManager.reconcile()
   const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor})
   const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor})

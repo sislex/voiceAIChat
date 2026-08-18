@@ -692,6 +692,8 @@ export class VoiceChatDb {
     }
     addPreparationColumn('phase', `ALTER TABLE task_preparation_runs ADD COLUMN phase TEXT NOT NULL DEFAULT 'initialization'`)
     addPreparationColumn('task_key', `ALTER TABLE task_preparation_runs ADD COLUMN task_key TEXT NOT NULL DEFAULT ''`)
+    addPreparationColumn('llm_engine_id', `ALTER TABLE task_preparation_runs ADD COLUMN llm_engine_id TEXT`)
+    addPreparationColumn('provider', `ALTER TABLE task_preparation_runs ADD COLUMN provider TEXT NOT NULL DEFAULT 'claude'`)
     addPreparationColumn('model', `ALTER TABLE task_preparation_runs ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
     addPreparationColumn('profile_id', `ALTER TABLE task_preparation_runs ADD COLUMN profile_id TEXT NOT NULL DEFAULT ''`)
     addPreparationColumn('gate_results_json', `ALTER TABLE task_preparation_runs ADD COLUMN gate_results_json TEXT NOT NULL DEFAULT '[]'`)
@@ -5711,6 +5713,7 @@ export class VoiceChatDb {
       id: String(row.id), attemptId: String(row.id), projectId: String(row.project_id), taskId: String(row.task_id),
       taskKey: String(row.task_key || row.task_id), status, phase: (row.phase || (status === 'success' ? 'completed' : 'initialization')) as TaskPreparationPhase,
       attempt: Number(row.attempt), attemptNumber: Number(row.attempt), maxAttempts: 2,
+      llmEngineId: row.llm_engine_id as string | null, provider: (row.provider ?? 'claude') as LlmProvider,
       model: String(row.model ?? ''), profileId: String(row.profile_id ?? ''),
       log: String(row.log ?? ''), events: this.preparationEvents(String(row.id)), questions: this.preparationQuestions(String(row.id)),
       error: row.error as string | null,
@@ -5856,8 +5859,8 @@ export class VoiceChatDb {
     }
   }
 
-  setTaskPreparationExecution(id: string, model: string, phase: TaskPreparationPhase = 'knowledge_research'): void {
-    this.db.prepare(`UPDATE task_preparation_runs SET model=?,status='running',phase=? WHERE id=? AND status IN ('queued','running')`).run(redactPreparationText(model), phase, id)
+  setTaskPreparationExecution(id: string, execution: { llmEngineId?: string | null; provider: LlmProvider; model: string }, phase: TaskPreparationPhase = 'knowledge_research'): void {
+    this.db.prepare(`UPDATE task_preparation_runs SET llm_engine_id=?,provider=?,model=?,status='running',phase=? WHERE id=? AND status IN ('queued','running')`).run(execution.llmEngineId ?? null, execution.provider, redactPreparationText(execution.model), phase, id)
     this.appendTaskPreparationEvent(id, 'research_started', phase, 'Исследование источников начато')
   }
 
