@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, type ImageRetouchRequest, type ImageRetouchResult, type MessageAttachment, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -78,6 +78,8 @@ import { registerPreviewMcp, previewToolBroker, PreviewActionRelay, PREVIEW_MCP_
 import { readUserFile } from './serverFiles.js'
 import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
 import { AuthStatusState } from './auth/statusState.js'
+import { processImageRetouch, saveRetouchedImage, type RetouchGenerator } from './imageRetouch.js'
+import { llmRetouchGenerator } from './llm/imageRetouchGenerator.js'
 
 const VERSION = process.env.VC_RELEASE_VERSION?.trim() || null
 const RELEASED_AT = process.env.VC_RELEASED_AT?.trim() || new Date().toISOString()
@@ -117,6 +119,8 @@ export interface BuildOptions {
   previewRelay?: PreviewActionRelay
   /** Единое auth-состояние (инъекция для WS/HTTP тестов). */
   authStatus?: AuthStatusState
+  /** Генератор crop для локальной ретуши; тесты инъектируют детерминированный ответ. */
+  imageRetouchGenerator?: RetouchGenerator
 }
 
 function makeTtsEngine(config: ServerConfig): TtsEngine {
@@ -490,6 +494,86 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       }
       const rec = uploads.save(uploadName, bytes, safeMime)
       return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size }
+    }
+  )
+
+  app.post<{ Body: ImageRetouchRequest }>(
+    REST.imageRetouch,
+    { bodyLimit: 2 * 1024 * 1024 },
+    async (req, reply): Promise<ImageRetouchResult> => {
+      const userId = uid(req)
+      const body = req.body
+      if (!body || !db.getConversation(userId, body.conversationId)) return reply.code(404).send({ error: 'Разговор не найден' }) as never
+      if (!body.prompt?.trim() || body.prompt.length > 4000) return reply.code(400).send({ error: 'Введите описание ретуши длиной до 4000 символов' }) as never
+      const historyFiles = db.listMessages(userId, body.conversationId).flatMap((message) => message.attachments ?? [])
+      const allowed = (file: MessageAttachment): boolean => {
+        if (historyFiles.some((known) => known.path === file.path && known.agentId === file.agentId)) return true
+        const upload = file.uploadId ? uploads.get(file.uploadId) : undefined
+        return Boolean(upload && upload.path === file.path && upload.agentId === file.agentId)
+      }
+      if (!allowed(body.source) || (body.references ?? []).some((file) => !allowed(file))) return reply.code(403).send({ error: 'Изображение не принадлежит этому разговору' }) as never
+
+      const readAttachment = async (file: MessageAttachment): Promise<Buffer> => {
+        if (file.agentId) {
+          if (!db.listAgents(userId).some((agent) => agent.id === file.agentId)) throw new Error('Машина-источник недоступна')
+          const result = await agentRegistry.fsRead(file.agentId, file.path)
+          if (!result.dataBase64) throw new Error(`Файл ${file.name} не найден на машине-источнике`)
+          return Buffer.from(result.dataBase64, 'base64')
+        }
+        if (runnerFs) {
+          const result = await runnerFs.readFile(userId, file.path)
+          if (result?.dataBase64) return Buffer.from(result.dataBase64, 'base64')
+        }
+        const settings = db.getSettings(userId)
+        const local = readUserFile(file.path, [profileHome(userId), join(opts.config.dataDir, 'uploads'), ...(settings.workdir ? [settings.workdir] : [])])
+        if (!local.ok) throw new Error(`Файл ${file.name} не найден на сервере`)
+        return Buffer.from(local.file.dataBase64, 'base64')
+      }
+
+      try {
+        const original = await readAttachment(body.source)
+        const references = await Promise.all((body.references ?? []).map(readAttachment))
+        const generator = opts.imageRetouchGenerator ?? llmRetouchGenerator({
+          client: codex,
+          userId,
+          model: db.getSettings(userId).codexModel,
+          readGenerated: async (path) => {
+            if (runnerFs) return runnerFs.readFile(userId, path)
+            const local = readUserFile(path, [profileHome(userId)])
+            return local.ok ? local.file : null
+          }
+        })
+        const processed = await processImageRetouch({ original, selection: body.selection, prompt: body.prompt, references, generate: generator })
+        const name = `retouch-${randomBytes(12).toString('hex')}.png`
+        const path = await saveRetouchedImage({
+          image: processed.image,
+          name,
+          localRoot: profileHome(userId),
+          ...(body.source.agentId ? {
+            agentId: body.source.agentId,
+            remote: {
+              root: async () => (await agentRegistry.fsList(body.source.agentId!, '')).root,
+              mkdir: (dir) => agentRegistry.fsMkdir(body.source.agentId!, dir),
+              write: (target, data) => agentRegistry.fsWrite(body.source.agentId!, target, data)
+            }
+          } : {})
+        })
+        const image: MessageAttachment = {
+          path,
+          name,
+          mimeType: 'image/png',
+          size: processed.image.byteLength,
+          ...(body.source.agentId ? { agentId: body.source.agentId } : {}),
+          retouch: { source: body.source, selection: body.selection, prompt: body.prompt.trim(), ...(body.references?.length ? { references: body.references } : {}) }
+        }
+        const text = imageBlock({ path, ...(image.agentId ? { agentId: image.agentId } : {}), caption: `Локальная ретушь: ${body.prompt.trim()}` })
+        const now = new Date()
+        const message = db.addMessage(userId, body.conversationId, 'ai', text, now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), 'codex', undefined, image.agentId ?? null, [image])
+        return { message, image }
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause)
+        return reply.code(422).send({ error: message }) as never
+      }
     }
   )
 
