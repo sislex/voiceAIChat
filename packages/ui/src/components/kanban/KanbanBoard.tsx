@@ -42,6 +42,13 @@ import {
 
 export type Swimlane = 'none' | 'epic' | 'assignee'
 
+interface ColumnAssigneeFilter {
+  assigneeIds: string[]
+  includeUnassigned: boolean
+}
+
+const EMPTY_COLUMN_ASSIGNEE_FILTER: ColumnAssigneeFilter = { assigneeIds: [], includeUnassigned: false }
+
 /** Место вставки: ячейка колонки (в свимлейнах их несколько) и соседи задачи. */
 interface DropAt {
   bodyKey: string
@@ -169,8 +176,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [labels, setLabels] = useState<ReadonlySet<string>>(new Set())
   const [epics, setEpics] = useState<ReadonlySet<string>>(new Set())
   const [onlyMine, setOnlyMine] = useState(false)
-  /** Локальные фильтры исполнителя: all | '' (без исполнителя) | username. */
-  const [columnAssignees, setColumnAssignees] = useState<Record<string, string>>({})
+  /** Независимые многозначные фильтры исполнителей по колонкам. */
+  const [columnAssigneeFilters, setColumnAssigneeFilters] = useState<Record<string, ColumnAssigneeFilter>>({})
+  const [openAssigneeFilter, setOpenAssigneeFilter] = useState<string | null>(null)
   const [filtersHydrated, setFiltersHydrated] = useState(false)
   const [flaggedOnly, setFlaggedOnly] = useState(false)
   const [recentOnly, setRecentOnly] = useState(false)
@@ -208,6 +216,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const composerRef = useRef<HTMLInputElement | null>(null)
   const boardRef = useRef<HTMLDivElement | null>(null)
   const colMenuRef = useRef<HTMLSpanElement | null>(null)
+  const assigneeFilterRef = useRef<HTMLDivElement | null>(null)
   const drag = usePointerDrag()
 
   useEffect(() => {
@@ -225,6 +234,21 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [colMenu])
+  useEffect(() => {
+    if (!openAssigneeFilter) return
+    const closeOnOutsidePress = (event: PointerEvent): void => {
+      if (!assigneeFilterRef.current?.contains(event.target as Node)) setOpenAssigneeFilter(null)
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpenAssigneeFilter(null)
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePress)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [openAssigneeFilter])
   // Esc клавиатурного переноса нужно поймать раньше Esc страницы-обёртки
   // (useDialogStack слушает тот же window в фазе перехвата): иначе доска
   // закрывалась бы вместо отмены переноса. Поэтому именно useLayoutEffect —
@@ -249,7 +273,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const currentUserId = props.currentUserId ?? props.currentUser ?? null
   const filterStorageKey = useMemo(() => {
     const projectId = board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? props.projectName
-    return currentUserId ? `voicechat.kanban.filters.v2.${encodeURIComponent(currentUserId)}.${encodeURIComponent(projectId)}` : null
+    return currentUserId ? `voicechat.kanban.filters.v3.${encodeURIComponent(currentUserId)}.${encodeURIComponent(projectId)}` : null
   }, [allTasks, board, currentUserId, props.projectName])
   useEffect(() => {
     setFiltersHydrated(false)
@@ -262,7 +286,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setLabels(new Set())
     setEpics(new Set())
     setOnlyMine(false)
-    setColumnAssignees({})
+    setColumnAssigneeFilters({})
     setFlaggedOnly(false)
     setRecentOnly(false)
     if (!filterStorageKey) {
@@ -272,7 +296,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     try {
       const raw = localStorage.getItem(filterStorageKey)
       if (raw) {
-        const saved = JSON.parse(raw) as { search?: string; assignees?: string[]; types?: WorkItemType[]; priorities?: TaskPriority[]; labels?: string[]; epics?: string[]; onlyMine?: boolean; flaggedOnly?: boolean; recentOnly?: boolean; columnAssignees?: Record<string, string> }
+        const saved = JSON.parse(raw) as { search?: string; assignees?: string[]; types?: WorkItemType[]; priorities?: TaskPriority[]; labels?: string[]; epics?: string[]; onlyMine?: boolean; flaggedOnly?: boolean; recentOnly?: boolean; columnAssigneeFilters?: Record<string, ColumnAssigneeFilter> }
         if (typeof saved.search === 'string') setSearch(saved.search)
         if (Array.isArray(saved.assignees)) setAssignees(new Set(saved.assignees))
         if (Array.isArray(saved.types)) setTypes(new Set(saved.types))
@@ -282,7 +306,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         if (typeof saved.onlyMine === 'boolean') setOnlyMine(saved.onlyMine)
         if (typeof saved.flaggedOnly === 'boolean') setFlaggedOnly(saved.flaggedOnly)
         if (typeof saved.recentOnly === 'boolean') setRecentOnly(saved.recentOnly)
-        if (saved.columnAssignees && typeof saved.columnAssignees === 'object') setColumnAssignees(saved.columnAssignees)
+        if (saved.columnAssigneeFilters && typeof saved.columnAssigneeFilters === 'object') setColumnAssigneeFilters(saved.columnAssigneeFilters)
       }
     } catch { /* localStorage/старое состояние недоступны */ }
     setFiltersHydrated(true)
@@ -290,9 +314,21 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   useEffect(() => {
     if (!filtersHydrated || !filterStorageKey) return
     try {
-      localStorage.setItem(filterStorageKey, JSON.stringify({ search, assignees: [...assignees], types: [...types], priorities: [...priorities], labels: [...labels], epics: [...epics], onlyMine, flaggedOnly, recentOnly, columnAssignees }))
+      localStorage.setItem(filterStorageKey, JSON.stringify({ search, assignees: [...assignees], types: [...types], priorities: [...priorities], labels: [...labels], epics: [...epics], onlyMine, flaggedOnly, recentOnly, columnAssigneeFilters }))
     } catch { /* localStorage недоступен */ }
-  }, [assignees, columnAssignees, epics, filterStorageKey, filtersHydrated, flaggedOnly, labels, onlyMine, priorities, recentOnly, search, types])
+  }, [assignees, columnAssigneeFilters, epics, filterStorageKey, filtersHydrated, flaggedOnly, labels, onlyMine, priorities, recentOnly, search, types])
+  useEffect(() => {
+    const allowed = new Set(members.filter((member) => member.active !== false).map((member) => member.username))
+    setColumnAssigneeFilters((prev) => {
+      let changed = false
+      const next = Object.fromEntries(Object.entries(prev).map(([columnId, filter]) => {
+        const assigneeIds = filter.assigneeIds.filter((id) => allowed.has(id))
+        if (assigneeIds.length !== filter.assigneeIds.length) changed = true
+        return [columnId, { ...filter, assigneeIds }]
+      }))
+      return changed ? next : prev
+    })
+  }, [members])
   const columns = (board?.columns ?? []).filter((c) => showHidden || !c.hidden)
   const doneColumnIds = useMemo(
     () => new Set((board?.columns ?? []).filter((c) => c.semanticType === 'done').map((c) => c.id)),
@@ -308,7 +344,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     return next
   }
 
-  const hasColumnAssigneeFilter = Object.values(columnAssignees).some((value) => value !== undefined && value !== 'all')
+  const hasColumnAssigneeFilter = Object.values(columnAssigneeFilters).some((value) => value.assigneeIds.length > 0 || value.includeUnassigned)
   const filtersActive =
     search.trim() !== '' || assignees.size > 0 || types.size > 0 || priorities.size > 0 ||
     labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || hasColumnAssigneeFilter
@@ -321,7 +357,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setLabels(new Set())
     setEpics(new Set())
     setOnlyMine(false)
-    setColumnAssignees({})
+    setColumnAssigneeFilters({})
     setFlaggedOnly(false)
     setRecentOnly(false)
   }
@@ -348,8 +384,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       .filter((t) => t.columnId === columnId && matches(t))
       .filter((t) => {
         if (onlyMine) return true // глобальный режим временно имеет приоритет
-        const selected = columnAssignees[columnId] ?? 'all'
-        return selected === 'all' || (selected === '' ? t.assignee == null : t.assignee === selected)
+        const selected = columnAssigneeFilters[columnId] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
+        if (selected.assigneeIds.length === 0 && !selected.includeUnassigned) return true
+        return t.assignee == null ? selected.includeUnassigned : selected.assigneeIds.includes(t.assignee)
       })
       .filter((t) => {
         if (!lane || lane.kind === 'none') return true
@@ -728,7 +765,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             }}
           >
             {col.name}
-            <span className="jcol-count">{filtersActive || columnAssignees[col.id] !== undefined ? `${visible} из ${total}` : total}</span>
+            <span className="jcol-count">{filtersActive || hasColumnAssigneeFilter ? `${visible} из ${total}` : total}</span>
             {col.wipLimit != null && (
               <span className={`jcol-wip${overWip ? ' jcol-wip--over' : ''}`} title={`WIP-лимит: ${col.wipLimit}`}>
                 {total}/{col.wipLimit}
@@ -737,22 +774,97 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             {col.hidden && <span className="jcol-hidden-mark" title="Колонка скрыта">🙈</span>}
           </span>
         )}
-        <label className="jcol-assignee-filter">
-          <span className="vc-sr-only">Исполнитель колонки «{col.name}»</span>
-          <select
-            className="sel"
-            aria-label={`Исполнитель колонки «${col.name}»`}
-            value={columnAssignees[col.id] ?? 'all'}
-            disabled={onlyMine}
-            aria-describedby={onlyMine ? `column-filter-note-${col.id}` : undefined}
-            onChange={(e) => setColumnAssignees((prev) => ({ ...prev, [col.id]: e.target.value }))}
-          >
-            <option value="all">Все исполнители</option>
-            <option value="">Без исполнителя</option>
-            {members.filter((m) => m.active !== false).map((m) => <option key={m.username} value={m.username}>{m.username}</option>)}
-          </select>
-          {onlyMine && <span id={`column-filter-note-${col.id}`} className="vc-sr-only">Временно не применяется: включён режим «Показывать только мои задачи».</span>}
-        </label>
+        {(() => {
+          const activeMembers = members.filter((member) => member.active !== false)
+          const filter = columnAssigneeFilters[col.id] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
+          const conditionCount = filter.assigneeIds.length + (filter.includeUnassigned ? 1 : 0)
+          const selectedNames = filter.assigneeIds
+          const summary = onlyMine
+            ? 'Применяется общий режим «Только мои задачи»'
+            : conditionCount === 0
+              ? 'Все исполнители'
+              : [...selectedNames, ...(filter.includeUnassigned ? ['Без исполнителя'] : [])].join(', ')
+          const updateFilter = (next: ColumnAssigneeFilter): void =>
+            setColumnAssigneeFilters((prev) => ({ ...prev, [col.id]: next }))
+          const popoverId = `column-assignee-filter-${col.id}`
+          return (
+            <div
+              className="jcol-assignee-filter"
+              ref={openAssigneeFilter === col.id ? assigneeFilterRef : undefined}
+            >
+              <IconButton
+                className={`jcol-filter-button${conditionCount > 0 ? ' is-active' : ''}`}
+                size="sm"
+                aria-label={`Фильтр исполнителей колонки «${col.name}»: ${summary}`}
+                aria-expanded={openAssigneeFilter === col.id}
+                aria-controls={popoverId}
+                title={summary}
+                onClick={() => setOpenAssigneeFilter((value) => value === col.id ? null : col.id)}
+              >
+                <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+                  <path d="M2 3h12L9.5 8v4l-3 1V8L2 3Z" fill="currentColor" />
+                </svg>
+                {conditionCount > 0 && <span className="jcol-filter-badge" aria-hidden="true">{conditionCount}</span>}
+              </IconButton>
+              {openAssigneeFilter === col.id && (
+                <div id={popoverId} className="jcol-filter-popover" role="dialog" aria-label={`Фильтр исполнителей колонки «${col.name}»`}>
+                  <div className="jcol-filter-summary">{summary}</div>
+                  {onlyMine && <div className="jcol-filter-global-note">Локальный выбор сохранён, но сейчас применяется общий режим.</div>}
+                  {conditionCount > 0 && (
+                    <div className="jcol-filter-chips" aria-label="Выбранные условия">
+                      {selectedNames.map((username) => (
+                        <button key={username} type="button" aria-label={`${username}, снять выбор`} onClick={() => updateFilter({ ...filter, assigneeIds: filter.assigneeIds.filter((id) => id !== username) })}>
+                          {username}<span aria-hidden="true"> ×</span><span className="vc-sr-only">, снять выбор</span>
+                        </button>
+                      ))}
+                      {filter.includeUnassigned && (
+                        <button type="button" aria-label="Без исполнителя, снять выбор" onClick={() => updateFilter({ ...filter, includeUnassigned: false })}>
+                          Без исполнителя<span aria-hidden="true"> ×</span><span className="vc-sr-only">, снять выбор</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <label className="jcol-filter-option">
+                    <input type="checkbox" checked={conditionCount === 0} onChange={() => updateFilter(EMPTY_COLUMN_ASSIGNEE_FILTER)} />
+                    Все исполнители
+                  </label>
+                  <label className="jcol-filter-option">
+                    <input
+                      type="checkbox"
+                      checked={filter.includeUnassigned}
+                      onChange={() => updateFilter({ ...filter, includeUnassigned: !filter.includeUnassigned })}
+                    />
+                    Без исполнителя
+                  </label>
+                  <div className="jcol-filter-members">
+                    {activeMembers.map((member) => (
+                      <label className="jcol-filter-option" key={member.username}>
+                        <input
+                          type="checkbox"
+                          aria-label={member.username}
+                          checked={filter.assigneeIds.includes(member.username)}
+                          onChange={() => updateFilter({
+                            ...filter,
+                            assigneeIds: filter.assigneeIds.includes(member.username)
+                              ? filter.assigneeIds.filter((id) => id !== member.username)
+                              : [...filter.assigneeIds, member.username]
+                          })}
+                        />
+                        <Avatar username={member.username} size={20} />
+                        <span className="jcol-filter-member-name">{member.username}</span>
+                        {member.username === currentUserId && <span className="jcol-filter-me">Вы</span>}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="jcol-filter-actions">
+                    <button type="button" onClick={() => updateFilter({ assigneeIds: activeMembers.map((member) => member.username), includeUnassigned: true })}>Выбрать всех</button>
+                    <button type="button" onClick={() => updateFilter(EMPTY_COLUMN_ASSIGNEE_FILTER)}>Сбросить выбор</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
         <span className="jcard-menuwrap" ref={colMenu === col.id ? colMenuRef : undefined}>
           <IconButton
             className="jcard-reveal"
@@ -939,7 +1051,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             icon="＋"
             title={filtersActive ? 'Нет задач под фильтром' : 'Здесь пока пусто'}
             description={filtersActive ? 'Измените или сбросьте фильтр этой колонки, чтобы увидеть остальные задачи.' : 'Перетащите карточку сюда или создайте задачу кнопкой ниже.'}
-            {...(filtersActive ? { action: { label: 'Сбросить фильтр колонки', onClick: () => setColumnAssignees((prev) => ({ ...prev, [col.id]: 'all' })) } } : {})}
+            {...(filtersActive ? { action: { label: 'Сбросить фильтр колонки', onClick: () => setColumnAssigneeFilters((prev) => ({ ...prev, [col.id]: EMPTY_COLUMN_ASSIGNEE_FILTER })) } } : {})}
           />
         )}
       </div>
