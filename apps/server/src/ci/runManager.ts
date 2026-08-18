@@ -368,6 +368,13 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     const run = deps.db.getCiRunRaw(step.runId)
     if (run) deps.boardChanged(run.projectId)
   }
+  /** Стадия меняет фактическую модель без изменения базового ci_run. */
+  function emitStage(runId: string, userId: string): void {
+    const message = snapshot(userId, runId)
+    if (message) broadcast(message, userId)
+    const run = deps.db.getCiRunRaw(runId)
+    if (run) deps.boardChanged(run.projectId)
+  }
 
   function start(userId: string, projectId: string, taskId: string, options?: CiRunMode | CiRunStartOptions): { run: CiRun } | { error: string } {
     const launchOptions = typeof options === 'string' ? { mode: options } : options
@@ -1529,6 +1536,7 @@ fi`
       const kbLlm = stageLlm('kb_update')
       const kbStage = deps.db.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'kb_update', llm: kbLlm })
       deps.db.updateCiStageRun(kbStage.id, { status: 'running', startedAt: started })
+      emitStage(runId, userId)
       let ok = false
       let message = 'Актуализация базы знаний не выполнена: хук не подключён'
       if (deps.kbUpdate) {
@@ -1556,6 +1564,7 @@ fi`
       const finished = now()
       const upd = deps.db.updateCiRunStep(step.id, { status, finishedAt: finished, durationMs: finished - started })
       deps.db.updateCiStageRun(kbStage.id, { status, outcome: message, finishedAt: finished, durationMs: finished - started })
+      emitStage(runId, userId)
       if (upd) emitStep(upd, userId)
       return status === 'success'
     }
@@ -1673,6 +1682,7 @@ fi`
       const mwLlm = stageLlm('model_work')
       const mwStage = deps.db.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'model_work', llm: mwLlm })
       deps.db.updateCiStageRun(mwStage.id, { status: 'running', startedAt: mwStart })
+      emitStage(runId, userId)
       if (deps.modelWork) {
         const ctx: CiModelContext = { ...prim, run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: mwLlm.llmEngineId, llmProvider: mwLlm.provider, llmModel: mwLlm.model }, task, project, parentStepId: mwStep.id }
         try {
@@ -1690,6 +1700,7 @@ fi`
       const mwFinished = now()
       const upd = deps.db.updateCiRunStep(mwStep.id, { status: stepStatus, finishedAt: mwFinished, durationMs: mwFinished - mwStart })!
       deps.db.updateCiStageRun(mwStage.id, { status: stepStatus, outcome: modelOk ? 'Разработка завершена' : modelCancelled ? 'Этап отменён' : 'Ошибка модели', finishedAt: mwFinished, durationMs: mwFinished - mwStart })
+      emitStage(runId, userId)
       emitStep(upd, userId)
       // Отмена пользователем: слот «после» и резюме не запускаем, карточку возвращаем.
       if (signal.aborted) {
@@ -1748,6 +1759,7 @@ fi`
       const summaryLlm = stageLlm('summary')
       const summaryStage = deps.db.createCiStageRun({ runId, taskId: runRow.taskId, stage: 'summary', llm: summaryLlm })
       deps.db.updateCiStageRun(summaryStage.id, { status: 'running', startedAt: summaryStarted })
+      emitStage(runId, userId)
       let summaryText = 'Ран завершён.'
       if (deps.modelSummary) {
         const ctx: CiModelContext = { ...prim, run: { ...deps.db.getCiRunRaw(runId)!, llmEngineId: summaryLlm.llmEngineId, llmProvider: summaryLlm.provider, llmModel: summaryLlm.model }, task, project, parentStepId: sumStep.id }
@@ -1770,6 +1782,7 @@ fi`
       const summaryFinished = now()
       const upd = deps.db.updateCiRunStep(sumStep.id, { status: 'success', finishedAt: summaryFinished, durationMs: summaryFinished - summaryStarted })!
       deps.db.updateCiStageRun(summaryStage.id, { status: 'success', outcome: summaryText, finishedAt: summaryFinished, durationMs: summaryFinished - summaryStarted })
+      emitStage(runId, userId)
       emitStep(upd, userId)
       postSummaryMessage(runId, userId, project.name, task, summaryText, kbUpdateSummary)
       done++
@@ -1906,6 +1919,10 @@ fi`
         return { stepId: r.stepId, exitCode: r.exitCode, timedOut: r.status === 'timeout', output: r.output }
       }
     }
+    const fixStarted = now()
+    const fixStage = deps.db.createCiStageRun({ runId, taskId: task.id, stage: 'fix', llm: fixLlm })
+    deps.db.updateCiStageRun(fixStage.id, { status: 'running', startedAt: fixStarted })
+    emitStage(runId, userId)
     setFixing(runId, userId, true, 'Модель исправляет ошибку')
     let fixed = false
     try {
@@ -1915,6 +1932,10 @@ fi`
     } catch {
       fixed = false
     }
+    const fixFinished = now()
+    const fixStatus: CiStatus = signal.aborted ? 'cancelled' : fixed ? 'success' : 'failed'
+    deps.db.updateCiStageRun(fixStage.id, { status: fixStatus, outcome: fixed ? 'Ошибка исправлена' : 'Не удалось исправить ошибку', finishedAt: fixFinished, durationMs: fixFinished - fixStarted })
+    emitStage(runId, userId)
     setFixing(runId, userId, false, fixed ? 'Ошибка исправлена — продолжаю' : 'Не удалось исправить ошибку')
     return fixed
   }

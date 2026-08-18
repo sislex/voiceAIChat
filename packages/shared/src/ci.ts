@@ -831,9 +831,24 @@ export interface CiInteractionAnswer {
   decision?: CiPlanDecision
 }
 
+/** Фактический LLM-снимок, который UI показывает для текущего этапа рана. */
+export interface CiExecutionLlmSnapshot {
+  /** `stage` — сохранённый ci_stage_run; `run` — базовый снимок до старта стадии. */
+  source: 'stage' | 'run'
+  /** null означает, что стадийный запуск ещё не создан. */
+  stage: CiUsageKind | null
+  llmEngineId: string | null
+  provider: CiLlmProvider | null
+  model: string | null
+  /** Отдельный базовый снимок ci_run — никогда не смешивается со стадийной парой. */
+  base: { llmEngineId: string | null; provider: CiLlmProvider | null; model: string | null }
+}
+
 /** Полный снимок рана с шагами (ответ GET деталь рана). */
 export interface CiRunDetail {
   run: CiRun
+  /** Фактический снимок текущей/последней стадии, вычисленный только из истории рана. */
+  executionLlm?: CiExecutionLlmSnapshot
   /** Отдельные выполнения автоматических этапов; отсутствует у legacy API/ранов. */
   stageRuns?: CiStageRun[]
   steps: CiRunStep[]
@@ -961,6 +976,8 @@ export interface CiRunSummary {
   awaitingInput: boolean
   /** Серверный снимок фактического прогресса; отсутствует у legacy payload. */
   progress?: AutomationProgress
+  /** Фактический LLM активной/последней стадии; базовый снимок до её старта. */
+  executionLlm?: CiExecutionLlmSnapshot
   /** Этап задачи, на котором был зафиксирован терминальный результат. */
   terminalColumnId?: string | null
   /** Более новая отменённая/пропущенная попытка, не заменяющая основной результат. */

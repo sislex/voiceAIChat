@@ -1,5 +1,5 @@
 // Мелкие форматтеры и семантика статусов CI, общие для карточки, ленты и консоли.
-import type { CiClarifyLevel, CiRunMode, CiStatus } from '@shared/ci'
+import { CI_USAGE_KIND_LABELS, type CiClarifyLevel, type CiExecutionLlmSnapshot, type CiRunMode, type CiStatus, type CiUsageKind } from '@shared/ci'
 
 /** Подписи режима запуска и глубины уточнений (карточка, проект, шапка чата). */
 export const RUN_MODE_LABEL: Record<CiRunMode, string> = {
@@ -50,6 +50,16 @@ const STATUS_LABEL: Record<CiStatus, string> = {
 
 export function ciStatusLabel(status: CiStatus): string {
   return STATUS_LABEL[status] ?? status
+}
+
+export function ciStageLabel(stage: CiUsageKind | null): string {
+  return stage ? CI_USAGE_KIND_LABELS[stage] : 'До запуска этапа'
+}
+
+export function ciLlmLabel(snapshot: Pick<CiExecutionLlmSnapshot, 'provider' | 'model'> | null | undefined): string {
+  if (!snapshot?.model) return 'Модель не указана'
+  const provider = snapshot.provider === 'codex' ? 'Codex' : snapshot.provider === 'claude' ? 'Claude' : null
+  return provider ? `${provider} · ${snapshot.model}` : snapshot.model
 }
 
 /** Иконка шага/рана (не эмодзи-зависимая семантика — простые глифы). */
