@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-18
-checked: a3981be
+checked: 6d3f1cce
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -13,6 +13,9 @@ areas:
   - packages/ui/src/components/ProjectPage.tsx
   - packages/ui/src/components/ProjectBoard.tsx
   - packages/ui/src/components/ProjectSettings.tsx
+  - packages/ui/src/components/ProjectMachinesSettings.tsx
+  - packages/ui/src/components/ProjectMachinesSettings.stories.tsx
+  - packages/ui/src/remote/httpApi.ts
   - packages/ui/src/components/KanbanAssistant.tsx
   - packages/ui/src/components/WidgetAssistantFrame.tsx
   - packages/ui/src/components/kanban
@@ -157,10 +160,26 @@ areas:
 default становится неэффективным. Каталог не возвращает непредоставленные чужие
 машины. Для явно предоставленной машины действующему участнику возвращаются
 `path`, `reposRoot`, `sshHost` и `sshUser`; менять их может только владелец
-машины. Во вкладке настроек эти четыре значения находятся в самостоятельном
-`ProjectMachinesSettings`: каждое поле имеет постоянную видимую подпись и
-фокусируемую tooltip-подсказку, сохраняется по blur/Enter и для чужой машины
-остаётся readonly. Storybook-витрина зарегистрирована как `Project Settings/Machines`.
+машины.
+
+Вкладка машин вынесена в `packages/ui/src/components/ProjectMachinesSettings.tsx`.
+«Мои машины» строится из полного пользовательского каталога агентов, поэтому
+показывает собственные online/offline-машины независимо от предоставления проекту.
+«Машины, предоставленные проекту» содержит только явно предоставленные машины
+других владельцев. Обе таблицы показывают владельца, online-состояние, загрузку,
+доступность и её причину; переключатель предоставления активен лишь у собственных
+машин, а персональный default можно назначить только online-доступной машине,
+предоставленной проекту.
+
+Четыре рабочих поля (`path`, `reposRoot`, `sshHost`, `sshUser`) у собственной
+машины редактируются только после предоставления, у чужой всегда readonly. Каждое
+поле имеет постоянную подпись и фокусируемую tooltip-подсказку. Черновик
+синхронизируется с серверным значением; blur или Enter отправляет только реально
+изменённое значение и показывает `saving`/`saved`/`error`. Store пробрасывает
+ошибки записи обратно компоненту, чтобы отказ API не выглядел успешным.
+Storybook-витрина `Project Settings/Machines` работает на fixtures/spies; DOM- и
+play-тесты фиксируют разделение таблиц, редактирование, readonly, предоставление,
+ошибку сохранения и персональный взаимоисключающий default.
 
 ## Контракт (REST + WS + мост)
 
