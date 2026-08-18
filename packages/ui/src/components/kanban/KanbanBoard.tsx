@@ -17,7 +17,9 @@ import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemTy
 import { compareTasksInColumn, TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import type { ModifierPrompt } from '@shared/types'
-import type { TaskPreparationRun } from '@shared/qa'
+import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa'
+import type { UserLlmAccess } from '@shared/llmAccess'
+import type { LlmEngineOption } from '@shared/admin'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
 import { TaskCard, epicOf } from './TaskCard'
 import { TaskModal, type TaskUpdateFields } from './TaskModal'
@@ -131,7 +133,10 @@ export interface KanbanBoardProps {
   onDequeueCiRun?: (runId: string) => void
   onStartMerge?: (taskId: string, agentId?: string | null) => void
   loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
-  onRetryPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
+  onStartPreparation?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
+  onRetryPreparation?: (runId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
+  llmAccess?: UserLlmAccess[]
+  llmEngines?: LlmEngineOption[]
   onCancelPreparation?: (runId: string) => Promise<TaskPreparationRun | void>
   onAnswerPreparation?: (questionId: string, answer: string) => Promise<unknown>
   onExportPreparation?: (runId: string, format: 'md' | 'json') => Promise<void>
@@ -646,10 +651,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       onOpenChat={props.onOpenChat}
       ciSummary={props.ciSummaries?.[t.id]}
       onStartCi={props.onStartCi}
-      onStartPreparation={(taskId) => {
-        const column = board?.columns.find((item) => item.semanticType === 'preparation')
-        if (column) props.onMoveTask(taskId, column.id, null, null)
-      }}
+      onStartPreparation={(taskId) => setOpenTaskId(taskId, 'preparation')}
       onStartCiParallel={props.onStartCiParallel}
       onOpenCiRun={props.onOpenCiRun}
       onDequeueCiRun={props.onDequeueCiRun}
@@ -1291,13 +1293,12 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onEnsureChat={props.onEnsureChat}
           ciSummary={props.ciSummaries?.[openTask.id]}
           onStartCi={props.onStartCi}
-          onStartPreparation={(taskId) => {
-            const column = board.columns.find((item) => item.semanticType === 'preparation')
-            if (column) props.onMoveTask(taskId, column.id, null, null)
-          }}
+          onStartPreparation={props.onStartPreparation}
           initialTab={openTaskTab}
           loadPreparationRuns={props.loadPreparationRuns}
           onRetryPreparation={props.onRetryPreparation}
+          llmAccess={props.llmAccess}
+          llmEngines={props.llmEngines}
           onCancelPreparation={props.onCancelPreparation}
           onAnswerPreparation={props.onAnswerPreparation}
           onExportPreparation={props.onExportPreparation}

@@ -55,7 +55,7 @@ function fakeCli(calls: LlmRequest[], answer: () => (attempt: number) => Answer)
   }
 }
 
-function inj(token: string, opts: { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; url: string; payload?: object }) {
+function inj(token: string, opts: { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; url: string; payload?: object }) {
   return app.inject({ ...opts, headers: { authorization: `Bearer ${token}` } })
 }
 
@@ -97,8 +97,8 @@ async function taskInBacklog(): Promise<{ project: ProjectDetail; task: Task; ba
   return { project, task, backlogId: backlog.id }
 }
 
-async function launch(token: string, projectId: string, taskId: string): Promise<TaskPreparationRun> {
-  const res = await inj(token, { method: 'POST', url: `/api/projects/${projectId}/tasks/${taskId}/preparation/run` })
+async function launch(token: string, projectId: string, taskId: string, selection?: { llmEngineId?: string | null; provider: 'claude' | 'codex'; model: string }): Promise<TaskPreparationRun> {
+  const res = await inj(token, { method: 'POST', url: `/api/projects/${projectId}/tasks/${taskId}/preparation/run`, payload: selection ?? {} })
   expect(res.statusCode).toBe(200)
   return res.json() as TaskPreparationRun
 }
@@ -131,6 +131,16 @@ describe('подготовка к разработке: движок из нас
     expect(run.status).toBe('success')
   })
 
+  it('явный выбор при запуске перебивает наследование и сохраняется снимком попытки', async () => {
+    const { project, task } = await taskInBacklog()
+    const launched = await launch(adminTok, project.id, task.id, { provider: 'codex', model: 'gpt-5.4-mini', llmEngineId: null })
+    const run = await settled(adminTok, launched.id)
+
+    expect(claudeCalls).toHaveLength(0)
+    expect(codexCalls.map((call) => call.model)).toEqual(['gpt-5.4-mini'])
+    expect(run).toMatchObject({ provider: 'codex', model: 'gpt-5.4-mini', llmEngineId: null })
+  })
+
   it('Claude без явной модели: прежний sonnet', async () => {
     const { project, task } = await taskInBacklog()
 
@@ -139,6 +149,17 @@ describe('подготовка к разработке: движок из нас
     expect(codexCalls).toHaveLength(0)
     expect(claudeCalls.map((call) => call.model)).toEqual(['sonnet'])
     expect(run.status).toBe('success')
+  })
+
+  it('сброс LLM проекта и effective planning возвращаются к настройкам пользователя', async () => {
+    const { project, task } = await taskInBacklog()
+    useCodex('admin')
+    await inj(adminTok, { method: 'PUT', url: `/api/projects/${project.id}/ci/llm`, payload: { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 } })
+
+    const reset = await inj(adminTok, { method: 'DELETE', url: `/api/projects/${project.id}/ci/llm` })
+    expect(reset.json()).toMatchObject({ config: { provider: 'codex', model: DEFAULT_CODEX_MODEL }, inherited: { provider: 'codex', model: DEFAULT_CODEX_MODEL }, overridden: false })
+    const planning = await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/tasks/${task.id}/ci/stages/planning/llm` })
+    expect(planning.json()).toMatchObject({ effective: { provider: 'codex', model: DEFAULT_CODEX_MODEL } })
   })
 
   it('наследование: этап задачи → этап проекта → модель проекта → настройки пользователя', async () => {

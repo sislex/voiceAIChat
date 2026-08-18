@@ -128,7 +128,7 @@ export interface ProjectsActions {
     projectId: string,
     input: { title: string; provider: 'claude' | 'codex'; model: string } & Partial<Pick<Task, 'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' | 'assignee' | 'labels' | 'skills' | 'storyPoints' | 'dueDate'>>
   ): Promise<CiRun | null>
-  createTaskFromProposalInPreparation(projectId: string, proposalId: string, input: Pick<Task, 'title' | 'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' | 'assignee' | 'labels' | 'skills' | 'storyPoints' | 'dueDate'>): Promise<import('@voicechat/shared').TaskLaunchResult>
+  createTaskFromProposalInPreparation(projectId: string, proposalId: string, input: Pick<Task, 'title' | 'description' | 'acceptanceCriteria' | 'type' | 'parentId' | 'priority' | 'assignee' | 'labels' | 'skills' | 'storyPoints' | 'dueDate'> & { selection?: import('@voicechat/shared').TaskPreparationLlmSelection }): Promise<import('@voicechat/shared').TaskLaunchResult>
   updateTask(
     taskId: string,
     fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
