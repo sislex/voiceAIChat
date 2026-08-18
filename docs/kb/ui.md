@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-08-18
-checked: 6ec8aa9
+updated: 2026-08-19
+checked: e76af0f2
 areas:
   - packages/app-shell
   - packages/ui/src
