@@ -120,6 +120,7 @@ describe('ClaudeCli', () => {
     // Файловые инструменты обязаны быть автоодобрены: без них модель читает
     // файлы `cat` внутри bash и правит heredoc'ом — ровно то, что убирал CHAT-54.
     expect(allowedRemote).toContain('mcp__remote__read')
+    expect(allowedRemote).toContain('mcp__remote__image')
     expect(allowedRemote).toContain('mcp__remote__grep')
     expect(allowedRemote).toContain('mcp__remote__edit')
     // И модель об этом сказано в системном хинте, а не только в задании рана.
@@ -130,6 +131,8 @@ describe('ClaudeCli', () => {
     // Про гейт чтения модель предупреждена: отказ моста не должен быть сюрпризом.
     expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('мост отклонит')
     expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('Независимые чтения и поиски объединяй')
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('вложение чата → cwd хода → директория проекта → абсолютный путь')
+    expect(args[args.indexOf('--append-system-prompt') + 1]).toContain('формат не поддерживается')
 
     const { child: c2 } = fakeChild()
     const spawn2 = vi.fn(() => c2 as never) as unknown as SpawnFn

@@ -9,7 +9,7 @@ import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { DEFAULT_TOOL_OUTPUT_LIMITS, TOOL_OUTPUT_TRIM_MARK, trimToolOutput } from '@voicechat/shared'
+import { DEFAULT_TOOL_OUTPUT_LIMITS, TOOL_OUTPUT_TRIM_MARK, imageMime, imageName, trimToolOutput } from '@voicechat/shared'
 import type { ToolOutputLimits } from '@voicechat/shared'
 import type { AgentRegistry } from '../agents/registry.js'
 import { evaluatePlanModeCommand } from './planMode.js'
@@ -91,6 +91,16 @@ function fileText(dataBase64: string | undefined): string {
   return Buffer.from(dataBase64, 'base64').toString('utf8')
 }
 
+/** MIME по сигнатуре, а не расширению: существующий TIFF с именем .jpg не картинка для MCP. */
+function detectedImageMime(dataBase64: string): string | null {
+  const data = Buffer.from(dataBase64, 'base64')
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return 'image/jpeg'
+  if (data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
+  if (data.length >= 6 && (data.subarray(0, 6).toString('ascii') === 'GIF87a' || data.subarray(0, 6).toString('ascii') === 'GIF89a')) return 'image/gif'
+  if (data.length >= 12 && data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp'
+  return null
+}
+
 /**
  * Окно строк файла с номерами и итогом «показаны строки A–B из N». Объём окна
  * капнут: по строкам (`limit`) и по символам (`maxChars`) — файл в одну строку на
@@ -150,6 +160,21 @@ export interface RemoteMcpMachine {
   path: string
 }
 
+/** Вложение текущего хода, доступное image по имени без раскрытия байтов в текст. */
+export interface RemoteImageAttachment {
+  path: string
+  name: string
+  dataBase64: string
+}
+
+/** Короткоживущий контекст файлов хода; токен снимается при любом завершении. */
+export class RemoteFileBroker {
+  private readonly entries = new Map<string, RemoteImageAttachment[]>()
+  register(token: string, attachments: RemoteImageAttachment[]): void { this.entries.set(token, attachments) }
+  unregister(token: string): void { this.entries.delete(token) }
+  get(token: string): RemoteImageAttachment[] | undefined { return this.entries.get(token) }
+}
+
 /**
  * `limits` — лимиты ответов инструментов (настройки CI, приведённые
  * `ciToolOutputLimits`). Читаются на КАЖДЫЙ запрос: эндпоинт stateless, а
@@ -169,7 +194,8 @@ export function registerRemoteBashMcp(
   registry: AgentRegistry,
   secret: string,
   limits?: () => ToolOutputLimits,
-  projectMachines?: (projectId: string) => RemoteMcpMachine[]
+  projectMachines?: (projectId: string) => RemoteMcpMachine[],
+  fileContexts?: (token: string) => RemoteImageAttachment[] | undefined
 ): void {
   // Тело читает сам транспорт, поэтому маршрут живёт в своей области видимости
   // с парсером-пустышкой: Fastify отдаёт управление, не трогая поток.
@@ -185,7 +211,7 @@ export function registerRemoteBashMcp(
     scope.addContentTypeParser('*', (_req, _payload, done) => {
       done(null, undefined)
     })
-    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; ro?: string; project?: string } }>(
+    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; ro?: string; project?: string; files?: string } }>(
       REMOTE_BASH_MCP_PATH,
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
@@ -376,6 +402,73 @@ export function registerRemoteBashMcp(
         )
 
         server.registerTool(
+          'image',
+          {
+            description:
+              'Читает JPEG/PNG/WebP/GIF как типизированное изображение для визуального просмотра и прямой передачи image-инструментам. ' +
+              'Пути разрешаются в порядке: вложения текущего чата, cwd хода/чата, папка проекта, явно указанный абсолютный путь.',
+            inputSchema: {
+              path: z.string().min(1).describe('Имя вложения, относительный или абсолютный путь изображения'),
+              ...machineParam
+            }
+          },
+          async (args) => {
+            const requested = args.path.trim()
+            const machine = (args as { machine?: string }).machine
+            try {
+              const target = resolveMachine(machine)
+              const attachments = req.query.files && fileContexts ? fileContexts(req.query.files) ?? [] : []
+              const attachment = attachments.find((item) =>
+                item.path === requested || item.name === requested || imageName(item.path) === requested
+              )
+              let dataBase64: string
+              let resolvedPath: string
+              if (attachment) {
+                dataBase64 = attachment.dataBase64
+                resolvedPath = attachment.path
+              } else {
+                const absolute = /^(?:[A-Za-z]:[\\/]|[\\/])/.test(requested)
+                const candidates: string[] = []
+                if (!absolute && target.cwd) candidates.push(remotePath(target.cwd, requested))
+                if (!absolute) {
+                  const projectDir = machines.find((item) => item.agentId === target.agentId)?.path
+                  if (projectDir && projectDir !== target.cwd) candidates.push(`${projectDir.replace(/[\\/]+$/, '')}/${requested}`)
+                }
+                if (absolute) candidates.push(requested)
+                let found: Awaited<ReturnType<AgentRegistry['fsRead']>> | undefined
+                let lastError: unknown
+                for (const candidate of candidates) {
+                  try {
+                    found = await registry.fsRead(target.agentId, candidate)
+                    resolvedPath = candidate
+                    break
+                  } catch (err) {
+                    lastError = err
+                  }
+                }
+                if (!found?.dataBase64) {
+                  throw new Error(`Файл «${requested}» не найден в доступных вложениях и директориях${lastError instanceof Error ? `: ${lastError.message}` : ''}`)
+                }
+                dataBase64 = found.dataBase64
+                resolvedPath = resolvedPath!
+              }
+              const mimeType = detectedImageMime(dataBase64)
+              if (!mimeType) {
+                throw new Error(`Файл «${resolvedPath!}» найден, но формат ${imageMime(resolvedPath!)} не поддерживается каналом изображений`)
+              }
+              return {
+                content: [
+                  { type: 'image' as const, data: dataBase64, mimeType },
+                  { type: 'text' as const, text: `Изображение найдено: ${resolvedPath!}. Бинарные данные переданы отдельным типизированным блоком.` }
+                ]
+              }
+            } catch (err) {
+              return toolError(err)
+            }
+          }
+        )
+
+        server.registerTool(
           'grep',
           {
             description:
@@ -474,7 +567,7 @@ export function registerRemoteBashMcp(
             {
               description:
                 'Машины проекта: имя, онлайн-статус и папка проекта. Без параметра machine операции ' +
-                'выполняются на выбранной машине; другой машине их адресует параметр machine у bash/read/grep/edit.',
+                'выполняются на выбранной машине; другой машине их адресует параметр machine у bash/read/image/grep/edit.',
               inputSchema: {}
             },
             async () => {
