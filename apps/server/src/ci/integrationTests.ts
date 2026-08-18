@@ -23,6 +23,7 @@ export interface IntegrationTestRunnerDeps {
   /** Общий бюджет рана на все стадии; каждая стадия получает остаток. */
   timeoutMs?: number
   now?: () => number
+  boardChanged?: (projectId: string) => void
 }
 
 export interface IntegrationTestRunner {
@@ -46,11 +47,13 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
         deps.db.markIntegrationTestRunning(runId)
         deps.db.finishIntegrationTestRun(userId, runId, { status: 'blocked', commands: [], summary: 'Development workspace недоступен', failureClassification: 'infrastructure', blockerReasons: ['workspace_unavailable'] })
       }
+      if (run) deps.boardChanged?.(run.projectId)
       return
     }
     const controller = new AbortController()
     controllers.set(runId, controller)
     deps.db.markIntegrationTestRunning(runId)
+    deps.boardChanged?.(run.projectId)
     void (async () => {
       const startedAt = now(), deadline = startedAt + budgetMs, total = context.commands.length
       const commands: IntegrationTestCommandResult[] = []
@@ -100,7 +103,7 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
     })().catch((error) => {
       const current = deps.db.getIntegrationTestRun(userId, runId)
       if (current?.status === 'running') deps.db.finishIntegrationTestRun(userId, runId, { status: 'blocked', commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
-    }).finally(() => controllers.delete(runId))
+    }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId) })
   }
   return { launch, cancel: (runId) => controllers.get(runId)?.abort() }
 }

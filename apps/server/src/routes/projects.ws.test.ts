@@ -127,6 +127,29 @@ describe('WS: живое обновление доски', () => {
     plain.close()
   })
 
+  it('обновляет нормализованный результат после старта и отмены QA-рана', async () => {
+    const p = await createProject()
+    const auth = { authorization: `Bearer ${adminTok}` }
+    const board = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
+    const column = board.columns.find((item) => item.semanticType === 'automated_qa')!
+    const task = (await app.inject({ method: 'POST', url: `/api/projects/${p.id}/tasks`, headers: auth, payload: { columnId: column.id, title: 'QA realtime' } })).json() as { id: string }
+    const ws = await connect(adminTok)
+    const initial = waitBoard(ws, () => true)
+    ws.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id }))
+    await initial
+
+    const active = waitBoard(ws, (snapshot) => snapshot.tasks.find((item) => item.id === task.id)?.latestRunResult?.outcome === 'active')
+    const started = await app.inject({ method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/qa/runs/automated_qa`, headers: auth })
+    expect(started.statusCode).toBe(202)
+    const run = started.json() as { id: string }
+    expect((await active)?.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'active' })
+
+    const cancelled = waitBoard(ws, (snapshot) => snapshot.tasks.find((item) => item.id === task.id)?.latestRunResult?.outcome === 'cancelled')
+    expect((await app.inject({ method: 'DELETE', url: `/api/qa/runs/${run.id}`, headers: auth })).statusCode).toBe(200)
+    expect((await cancelled)?.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'cancelled' })
+    ws.close()
+  })
+
   it('не-участник не получает snapshot по подписке', async () => {
     const p = await createProject()
     const ws = await connect(bobTok)

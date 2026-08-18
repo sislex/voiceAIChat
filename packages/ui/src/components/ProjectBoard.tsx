@@ -13,15 +13,15 @@ import { KanbanBoard, type KanbanBoardProps } from './kanban'
 export interface ProjectBoardProps extends Omit<KanbanBoardProps, 'openTaskId' | 'onOpenTaskChange' | 'defaultSwimlane'> {
   /** Открыть карточку сразу при входе (переход «в задачу» из связанного чата). */
   initialOpenTaskId?: string | null
-  initialOpenTaskTab?: 'preparation'
-  onOpenTaskRouteChange?: (taskId: string | null, tab?: 'preparation') => void
+  initialOpenTaskTab?: 'preparation' | 'feed'
+  onOpenTaskRouteChange?: (taskId: string | null, tab?: 'preparation' | 'feed') => void
   onAssistantSelectionChange?: (taskId: string | null, field: Parameters<NonNullable<KanbanBoardProps['onSelectedFieldChange']>>[0]) => void
 }
 
 export function ProjectBoard(props: ProjectBoardProps): JSX.Element {
   const { initialOpenTaskId, initialOpenTaskTab, onOpenTaskRouteChange, onAssistantSelectionChange, ...boardProps } = props
   const [openTaskId, setOpenTaskId] = useState<string | null>(initialOpenTaskId ?? null)
-  const [openTaskTab, setOpenTaskTab] = useState<'preparation' | undefined>(initialOpenTaskTab)
+  const [openTaskTab, setOpenTaskTab] = useState<'preparation' | 'feed' | undefined>(initialOpenTaskTab)
   const [selectedField, setSelectedField] = useState<Parameters<NonNullable<KanbanBoardProps['onSelectedFieldChange']>>[0]>(null)
   // Приход из чата: URL несёт задачу, её карточку открываем сразу.
   useEffect(() => {

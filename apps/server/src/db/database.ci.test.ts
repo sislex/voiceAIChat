@@ -281,6 +281,37 @@ describe('ci: раны, шаги, лог, метрики', () => {
   })
 })
 
+describe('последний актуальный результат задачи', () => {
+  it('не создаёт ложную ошибку без запусков и отдаёт признак в снапшоте доски', () => {
+    const { p, task } = project()
+    expect(db.latestTaskRunResult(task.id)).toBeNull()
+    expect(db.getBoard('alice', p.id)!.tasks.find((item) => item.id === task.id)?.latestRunResult).toBeNull()
+  })
+
+  it('новый ран сразу вытесняет старую ошибку, а новый терминальный итог возвращает её при повторном падении', () => {
+    const { p, col, task } = project()
+    const failed = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 1, total: 2, phase: 'Ошибка' } })
+    db.updateCiRun(failed.id, { status: 'failed', finishedAt: 2000 })
+    expect(db.latestTaskRunResult(task.id)).toMatchObject({ id: failed.id, outcome: 'failure' })
+
+    const retry = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 2, phase: 'Очередь' } })
+    expect(db.latestTaskRunResult(task.id)).toMatchObject({ id: retry.id, outcome: 'active', status: 'queued' })
+    db.updateCiRun(retry.id, { status: 'success', finishedAt: 3000 })
+    expect(db.latestTaskRunResult(task.id)).toMatchObject({ id: retry.id, outcome: 'success' })
+
+    const failedAgain = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 1, total: 2, phase: 'Ошибка' } })
+    db.updateCiRun(failedAgain.id, { status: 'timeout', finishedAt: 4000 })
+    expect(db.latestTaskRunResult(task.id)).toMatchObject({ id: failedAgain.id, outcome: 'failure', status: 'timeout' })
+  })
+
+  it('cancelled не является ошибкой', () => {
+    const { p, col, task } = project()
+    const run = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 0, total: 1, phase: 'Отменён' } })
+    db.updateCiRun(run.id, { status: 'cancelled', finishedAt: 2000 })
+    expect(db.latestTaskRunResult(task.id)).toMatchObject({ outcome: 'cancelled' })
+  })
+})
+
 describe('ci: рабочие директории и предложения', () => {
   it('workspace: активна → освобождена; отчёт помечает осиротевшие', () => {
     const { p, task } = project()

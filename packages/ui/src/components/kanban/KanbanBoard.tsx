@@ -96,8 +96,8 @@ export interface KanbanBoardProps {
   /** Управляемая открытая задача (обёртке-странице нужен перехват Esc);
       не задано — состояние внутреннее (Storybook, встраивание). */
   openTaskId?: string | null
-  onOpenTaskChange?: (taskId: string | null, tab?: 'preparation') => void
-  initialOpenTaskTab?: 'preparation'
+  onOpenTaskChange?: (taskId: string | null, tab?: 'preparation' | 'feed') => void
+  initialOpenTaskTab?: 'preparation' | 'feed'
   onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
   /** Стартовое значение селекта «Свимлейны». */
   defaultSwimlane?: Swimlane
@@ -211,9 +211,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [newColumn, setNewColumn] = useState('')
   // Модалка задачи: управляемая пропсами или внутренняя.
   const [internalOpenTask, setInternalOpenTask] = useState<string | null>(null)
-  const [openTaskTab, setOpenTaskTab] = useState<'preparation' | undefined>(props.initialOpenTaskTab)
+  const [openTaskTab, setOpenTaskTab] = useState<'preparation' | 'feed' | undefined>(props.initialOpenTaskTab)
   const openTaskId = props.openTaskId !== undefined ? props.openTaskId : internalOpenTask
-  const setOpenTaskId = (taskId: string | null, tab?: 'preparation'): void => {
+  const setOpenTaskId = (taskId: string | null, tab?: 'preparation' | 'feed'): void => {
     setOpenTaskTab(tab)
     if (props.onOpenTaskChange) props.onOpenTaskChange(taskId, tab)
     else setInternalOpenTask(taskId)

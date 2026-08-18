@@ -873,9 +873,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection))
   mergeRunManager.reconcile()
-  const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor})
-  const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor})
-  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId))
+  const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:(id)=>boardHub.emit(id)})
+  const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor,boardChanged:(id)=>boardHub.emit(id)})
+  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(id)=>boardHub.emit(id))
 
   // Раны предыдущего процесса живут только в его памяти: после рестарта они
   // навсегда остались бы «running» и блокировали карточку задачи.
