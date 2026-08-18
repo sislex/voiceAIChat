@@ -11,6 +11,8 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { imageMime, imageName, machineImageUrls, type ImageRef } from '@shared/images'
 import type { ServerFileInfo } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
+import type { MessageAttachment } from '@shared/types'
+import { ImageRetouchEditor } from './ImageRetouchEditor'
 import { copyImage } from '../lib/clipboard'
 import { Dots } from './animations'
 import { IconButton } from '@voicechat/ui-kit'
@@ -33,6 +35,9 @@ export interface MessageImageProps {
   onClose?: () => void
   /** Открыть расположение файла на выбранной машине. */
   onOpenInExplorer?: (agentId: string, path: string) => void
+  /** Вложение-источник и чат нужны для безопасной локальной ретуши. */
+  attachment?: MessageAttachment
+  conversationId?: string
 }
 
 const MIN_ZOOM = 1
@@ -74,11 +79,16 @@ export function MessageImage({
   live = false,
   variant = 'embedded',
   onClose,
-  onOpenInExplorer
+  onOpenInExplorer,
+  attachment,
+  conversationId
 }: MessageImageProps): JSX.Element {
-  const agentId = image.agentId ?? (execAgentId && execAgentId !== 'none' ? execAgentId : null)
-  const name = imageName(image.path)
-  const mime = imageMime(image.path)
+  const [currentImage, setCurrentImage] = useState(image)
+  const [retouchOpen, setRetouchOpen] = useState(false)
+  useEffect(() => setCurrentImage(image), [image])
+  const agentId = currentImage.agentId ?? (execAgentId && execAgentId !== 'none' ? execAgentId : null)
+  const name = imageName(currentImage.path)
+  const mime = imageMime(currentImage.path)
   // Сам объект ops пересоздаётся на каждый рендер хоста — в зависимостях держим
   // только функцию чтения, иначе эффект перечитывал бы файл бесконечно.
   const { read } = ops
@@ -86,7 +96,7 @@ export function MessageImage({
   // Прямые адреса машины: собираются на каждый рендер из живого AgentInfo,
   // поэтому сменившийся IP подхватывается сразу после обновления списка машин.
   const hostUrls = machineImageUrls(
-    image.path,
+    currentImage.path,
     agents.find((a) => a.id === agentId && a.online)?.imageHost
   )
   // Какой адрес пробуем сейчас; onError двигает к следующему, дальше — байты
@@ -126,14 +136,14 @@ export function MessageImage({
     // когда команды хода уходили на машину. Сервер отвечает null, если такого
     // файла у себя не знает, — тогда пробуем машину.
     const load = async (): Promise<string> => {
-      if (!image.agentId && readServerFile) {
-        const onServer = await readServerFile(image.path)
+      if (!currentImage.agentId && readServerFile) {
+        const onServer = await readServerFile(currentImage.path)
         if (onServer?.dataBase64) return onServer.dataBase64
       }
       if (!agentId) {
         throw new Error('Файл не найден на сервере, а машина для этого ответа не выбрана')
       }
-      const res = await read(agentId, image.path)
+      const res = await read(agentId, currentImage.path)
       const b64 = res.dataBase64 ?? ''
       if (!b64) throw new Error('Файл пустой или недоступен')
       return b64
@@ -159,7 +169,7 @@ export function MessageImage({
       alive = false
       if (retry) clearTimeout(retry)
     }
-  }, [directUrl, agentId, image.agentId, image.path, mime, read, readServerFile, live, attempt])
+  }, [directUrl, agentId, currentImage.agentId, currentImage.path, mime, read, readServerFile, live, attempt])
 
   // Показываем прямой адрес машины, если он есть; иначе — байты через сервер.
   const shownSrc = directUrl ?? src
@@ -203,12 +213,15 @@ export function MessageImage({
 
   const actions = (
     <>
+      {attachment && conversationId && ready && (
+        <IconButton size="sm" title="Локальная AI-ретушь" aria-label="Открыть локальную AI-ретушь" onClick={() => setRetouchOpen(true)}>✦</IconButton>
+      )}
       {agentId && onOpenInExplorer && (
         <IconButton
           size="sm"
           title="Показать в проводнике"
           aria-label="Показать картинку в проводнике"
-          onClick={() => onOpenInExplorer(agentId, image.path)}
+          onClick={() => onOpenInExplorer(agentId, currentImage.path)}
         >
           📂
         </IconButton>
@@ -229,6 +242,7 @@ export function MessageImage({
   )
 
   return (
+    <>
     <ToolFrame
       // В шапке — имя файла; подпись модели живёт под картинкой, чтобы не дублировать.
       title={name}
@@ -243,7 +257,7 @@ export function MessageImage({
           {shownSrc ? (
             <ImageSurface
               src={shownSrc}
-              alt={image.caption ?? name}
+              alt={currentImage.caption ?? name}
               ctl={ctl}
               // Машина недоступна из этой сети — пробуем следующий её адрес, а
               // когда они кончатся, откатываемся на чтение байтов через сервер.
@@ -255,7 +269,7 @@ export function MessageImage({
           ) : error && !live ? (
             <p className="imgerr" role="alert">
               {error}
-              <span className="imgpath">{image.path}</span>
+              <span className="imgpath">{currentImage.path}</span>
             </p>
           ) : (
             // Пока файла нет — плитка-заглушка с бегущим бликом, как в ChatGPT.
@@ -266,10 +280,21 @@ export function MessageImage({
               </span>
             </div>
           )}
-          {image.caption && shownSrc && <p className="imgcap">{image.caption}</p>}
+          {currentImage.caption && shownSrc && <p className="imgcap">{currentImage.caption}</p>}
         </div>
       )}
     </ToolFrame>
+    {retouchOpen && shownSrc && attachment && conversationId && (
+      <ImageRetouchEditor
+        src={shownSrc}
+        source={attachment.retouch?.source ?? attachment}
+        conversationId={conversationId}
+        initialSelection={attachment.retouch?.selection}
+        onClose={() => setRetouchOpen(false)}
+        onDone={(result) => setCurrentImage({ path: result.path, ...(result.agentId ? { agentId: result.agentId } : {}), caption: `Локальная ретушь: ${result.retouch?.prompt ?? ''}` })}
+      />
+    )}
+    </>
   )
 }
 
