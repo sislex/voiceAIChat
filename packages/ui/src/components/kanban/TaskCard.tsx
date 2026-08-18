@@ -14,6 +14,7 @@ import type { KanbanColumnSemanticType, Task } from '@shared/projects'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { canStartCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
 import { AutomationProgressView } from './AutomationProgressView'
+import type { TaskModalTab } from './TaskModal'
 import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
 import { Button } from '@voicechat/ui-kit'
@@ -28,7 +29,7 @@ export interface TaskCardProps {
   /** Колонки со смыслом «done» — для прогресса и зачёркивания ключа. */
   doneColumnIds: ReadonlySet<string>
   columnSemanticType?: KanbanColumnSemanticType
-  onOpen: (taskId: string, tab?: 'preparation' | 'feed') => void
+  onOpen: (taskId: string, tab?: TaskModalTab) => void
   onUpdate: (taskId: string, fields: { flagged?: boolean }) => void
   onDelete: (taskId: string) => void
   onMoveTop: (taskId: string) => void
@@ -126,6 +127,12 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const visibleCiSummary = ciSummaryForTask(ciSummary, done)
   const pulse = ciCardPulse(visibleCiSummary)
   const latestFailed = task.latestRunResult?.outcome === 'failure'
+  const failureTab: TaskModalTab = task.latestRunResult?.kind === 'preparation' ? 'preparation'
+    : task.latestRunResult?.kind === 'component_qa' ? 'component_qa'
+      : task.latestRunResult?.kind === 'integration_tests' ? 'integration_tests'
+        : task.latestRunResult?.kind === 'automated_qa' ? 'automated_qa'
+          : task.latestRunResult?.kind === 'manual_qa' ? 'qa'
+            : task.latestRunResult?.kind === 'merge' ? 'merge' : 'feed'
   // В «Готово» запуск нового CI-рана запрещён: завершённая карточка остаётся
   // историей результата, а не точкой повторного выполнения.
   const qaStage = props.columnSemanticType === 'component_qa' || props.columnSemanticType === 'integration_tests' || props.columnSemanticType === 'automated_qa'
@@ -211,7 +218,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           className="jcard-latest-failure"
           title="Последний этап завершился с ошибкой. Открыть ленту рана"
           aria-label="Последний этап завершился с ошибкой. Открыть ленту рана"
-          onClick={(event) => { event.stopPropagation(); props.onOpen(task.id, 'feed') }}
+          onClick={(event) => { event.stopPropagation(); props.onOpen(task.id, failureTab) }}
         >
           <span aria-hidden="true">⚠</span> Последний этап завершился с ошибкой
         </button>

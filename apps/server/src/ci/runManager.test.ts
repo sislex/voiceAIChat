@@ -183,7 +183,7 @@ describe('ci run manager', () => {
     const runId = await run(project.id, task.id)
     await waitRun(runId)
 
-    expect(scripts[0]).toContain("mkdir -p '/existing/.npm-cache/P-1'")
+    expect(scripts[0]).toContain("mkdir -p '/existing/.npm-cache/p-1'")
     expect(workdirs[0]).toBe('/existing/project')
   })
 
