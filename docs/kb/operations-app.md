@@ -1,10 +1,12 @@
 ---
 title: Frontend-модуль Operations: граница, store и подключение
-updated: 2026-08-17
-checked: 2246ea3
+updated: 2026-08-18
+checked: 6fceafd
 areas:
   - packages/operations-app
   - packages/ui/src/App.tsx
+  - packages/ui/src/moduleRegistry.ts
+  - packages/app-shell
   - packages/ui/.storybook/main.ts
   - packages/ui/package.json
 ---
@@ -15,7 +17,7 @@ areas:
 
 Workspace `@voicechat/operations-app` находится в `packages/operations-app` и экспортирует только корень пакета и `./styles.css`; публичный список см. в `src/index.ts`. Пакет содержит контракты, React-независимый store, route parser/builder, navigation model, path helpers, diagnostic redaction, React context/hooks и именованные surface-компоненты. Он зависит от `@voicechat/shared`, `@voicechat/ui-kit` и React, не имеет отдельного Vite entry, контейнера или deploy.
 
-Это пока архитектурный срез, а не полный перенос существующего Operations UI. `src/surfaces.tsx` реализует Machines, MachineUtility, Explorer, LlmHistory, KnowledgeBase, CiMonitor и Diagnostics как общую секционную оболочку с заголовком и `children`; продуктовая логика и terminal emulator остаются в legacy-компонентах `packages/ui`. Host в `packages/ui/src/App.tsx` подключил parser публичных Operations routes и stylesheet, но store/provider, clients и новые surfaces там ещё не смонтированы.
+Это пока архитектурный срез, а не полный перенос существующего Operations UI. `src/surfaces.tsx` реализует Machines, MachineUtility, Explorer, LlmHistory, KnowledgeBase, CiMonitor и Diagnostics как общую секционную оболочку с заголовком и `children`; продуктовая логика и terminal emulator остаются в legacy-компонентах `packages/ui`. Новый `packages/ui/src/moduleRegistry.ts` регистрирует публичные parser/builder Operations и после выбора маршрута лениво импортирует `Machines`, но не создаёт Operations store и не запускает его bootstrap. Публичный host `App` всё ещё ведёт в legacy `packages/ui/src/App.tsx`, поэтому новое подключение App Shell пока существует параллельно и не заменило живые legacy surfaces.
 
 ## Контракты и границы
 

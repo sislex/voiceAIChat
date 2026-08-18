@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-08-18
-checked: 68de33d
+checked: 6fceafd
 areas:
   - package.json
   - scripts
@@ -10,6 +10,7 @@ areas:
   - apps/agent/vitest.config.ts
   - packages/shared/vitest.config.ts
   - packages/ui/vitest.config.ts
+  - packages/app-shell
   - Dockerfile
   - docker-compose.yml
   - docker-compose.parallel.yml
@@ -159,3 +160,9 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 ## Проверки Administration frontend
 
 `@voicechat/admin-app` имеет собственные `typecheck` и `test`, JSDOM setup, route, store stale-response/dispose, DOM и architecture tests. Architecture suite запрещает host stores, apps/web/apps/desktop, прямые fetch/WebSocket/Electron API, глубокие host imports и browser storage. Storybook host включает `packages/admin-app/src/**/*.stories.tsx`. Штатный итоговый гейт — `npm run affected-check`; после переноса он прошёл fast и full stages.
+
+## Проверки App Shell
+
+`@voicechat/app-shell` запускает `npm run -w @voicechat/app-shell typecheck` и `npm run -w @voicechat/app-shell test`; Vitest использует JSDOM и `src/test/setup.ts` с jest-dom. `registry.test.ts` проверяет role gate до lazy load и диагностику конфликтующих route examples. `runtime.test.ts` подтверждает независимость нескольких runtime/store экземпляров, раздельные load/createStore/bootstrap и продолжение cleanup после ошибки одного ресурса, включая повторные logout/dispose.
+
+`architecture.test.ts` рекурсивно сканирует TypeScript исходники App Shell и запрещает импорты Chat/Projects/Operations/Admin, host `@voicechat/ui`, platform apps и прямые обращения к перечисленным `window.*` bridges. Это локальная проверка границы самого пакета, а не полный workspace dependency-graph/cross-module suite. Storybook host включает stories App Shell, Chat, Projects, Operations и Admin.
