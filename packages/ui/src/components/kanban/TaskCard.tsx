@@ -15,7 +15,7 @@ import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { canStartCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
 import { AutomationProgressView } from './AutomationProgressView'
 import type { TaskModalTab } from './TaskModal'
-import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
+import { ciLlmLabel, ciStageLabel, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
@@ -297,6 +297,14 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 {ciSummary.progress
                   ? <AutomationProgressView progress={ciSummary.progress} compact />
                   : <p className="jcard-ci-phase">{ciSummary.slotProgress.phase} {ciSummary.slotProgress.done}/{ciSummary.slotProgress.total}{ciSummary.durationMs != null ? ` · ${fmtDuration(ciSummary.durationMs)}` : ''}</p>}
+                {ciSummary.executionLlm && <div className="jcard-ci-model" data-testid="task-ci-execution-llm">
+                  {ciSummary.executionLlm.source === 'stage' ? <>
+                    <div>Текущий этап: {ciStageLabel(ciSummary.executionLlm.stage)}</div>
+                    <div>Выполняется на: {ciLlmLabel(ciSummary.executionLlm)}</div>
+                    {(ciSummary.executionLlm.provider !== ciSummary.executionLlm.base.provider || ciSummary.executionLlm.model !== ciSummary.executionLlm.base.model)
+                      && <div>Базовая модель рана: {ciLlmLabel(ciSummary.executionLlm.base)}</div>}
+                  </> : <div>Базовая модель рана: {ciLlmLabel(ciSummary.executionLlm)}</div>}
+                </div>}
                 {ciSummary.latestAttempt?.status === 'cancelled' && (
                   <div className="jcard-ci-row">
                     <button className="jcard-ci-phase" onClick={() => props.onOpenCiRun?.(ciSummary.latestAttempt!.id)}>Последняя попытка отменена</button>

@@ -237,6 +237,30 @@ describe('ci: раны, шаги, лог, метрики', () => {
     expect(db.getCiRunLog('bob', run.id)).toEqual([])
   })
 
+  it('выдаёт базовый снимок до стадии и сохранённый LLM активной стадии после override', () => {
+    const { p, col, task } = project()
+    const run = db.createCiRun({
+      projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id,
+      llmProvider: 'codex', llmModel: 'gpt-5.6-luna', slotProgress: { done: 0, total: 1, phase: 'Подготовка' }
+    })
+    expect(db.getCiRun('alice', run.id)!.executionLlm).toMatchObject({
+      source: 'run', stage: null, provider: 'codex', model: 'gpt-5.6-luna'
+    })
+    const stage = db.createCiStageRun({
+      runId: run.id, taskId: task.id, stage: 'model_work',
+      llm: { llmEngineId: null, provider: 'codex', model: 'gpt-5.6-sol' }
+    })
+    db.updateCiStageRun(stage.id, { status: 'running', startedAt: 100 })
+    expect(db.getCiRun('alice', run.id)!.executionLlm).toEqual({
+      source: 'stage', stage: 'model_work', llmEngineId: null, provider: 'codex', model: 'gpt-5.6-sol',
+      base: { llmEngineId: null, provider: 'codex', model: 'gpt-5.6-luna' }
+    })
+    expect(db.latestCiRunSummary(task.id)!.executionLlm).toMatchObject({ stage: 'model_work', model: 'gpt-5.6-sol' })
+    db.updateCiStageRun(stage.id, { status: 'success', finishedAt: 200, durationMs: 100 })
+    db.setCiStageLlmConfig('task', task.id, 'model_work', { model: 'другая-модель' })
+    expect(db.getCiRun('alice', run.id)!.stageRuns?.[0].llm.model).toBe('gpt-5.6-sol')
+  })
+
   it('success → cancelled сохраняет успех основным результатом и отмену отдельной попыткой', () => {
     const { p, col, task } = project()
     const success = db.createCiRun({ projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice', prevColumnId: col.id, runColumnId: col.id, slotProgress: { done: 1, total: 1, phase: 'Готово' } })
