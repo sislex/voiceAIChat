@@ -1,8 +1,9 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-18
-checked: 68de33d
+checked: 6fceafd
 areas:
+  - packages/app-shell
   - packages/ui/src
   - packages/ui-kit/src
   - packages/ui-kit/package.json
@@ -840,7 +841,13 @@ Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтом
 
 Новый workspace `packages/operations-app` задаёт публичную границу Operations: экспортирует React-независимую фабрику store, transport-agnostic clients и межмодульные порты, безопасный каталог машин, маршруты, navigation model, React context/hooks и стили. Подробная карта экспортов, state ownership и текущей степени подключения находится в [operations-app.md](operations-app.md).
 
-На этом срезе host подключил только `parseOperationsRoute` и stylesheet в `packages/ui/src/App.tsx`; существующие продуктовые реализации Machines, terminal/explorer, EnginesObserver, KB и CI остаются в `packages/ui`. Экспорты из `surfaces.tsx` — простые секционные оболочки с заголовком и `children`, а Storybook stories показывают текстовые состояния. Поэтому пакет уже является архитектурной точкой интеграции, но ещё не заменяет старые host-компоненты полноценными Operations surfaces.
+На этом срезе новый `packages/ui/src/moduleRegistry.ts` регистрирует Operations через публичные parser/builder и лениво импортирует `Machines` после выбора маршрута. Одновременно публичный `App` по-прежнему указывает на большой `packages/ui/src/App.tsx`, где остаются существующие Machines, terminal/explorer, EnginesObserver, KB и CI, поэтому новый composition path ещё не стал единственным живым frontend bootstrap. Экспорты из `surfaces.tsx` — простые секционные оболочки с заголовком и `children`, а Storybook stories показывают текстовые состояния.
+
+## App Shell и состояние composition host после CHAT-271
+
+Появился самостоятельный workspace `@voicechat/app-shell` (`packages/app-shell`) с публичными фабриками session/settings/voice/shell stores, контрактом `AppModule`, registry, lifecycle runtime, React-поверхностями оболочки, собственными стилями, DOM setup, тестами и Storybook story. Stores создаются на каждый runtime и не используют singleton; shell агрегирует navigation slots, команды и notices, а command palette не обрабатывает hotkey во время записи голоса.
+
+`@voicechat/ui` теперь экспортирует `createApplication`, `createModuleRegistry`, browser adapters и публичные типы/React entry App Shell. Registry связывает публичные parser/builder Chat, Projects, Operations и Admin с lazy import; admin получает role gate. Однако это пока параллельный composition API: `packages/ui/src/index.ts` всё ещё экспортирует legacy `App.tsx`, а сам файл продолжает импортировать host stores и продуктовые компоненты. Поэтому импорт нового API возможен без запуска runtime, но перевод web/desktop и удаление старого bootstrap, stores и компонентов этим срезом не завершены.
 
 ## Граница `@voicechat/admin-app`
 
