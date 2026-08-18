@@ -312,7 +312,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'projects:setMachineSsh': ({ id, agentId, sshHost, sshUser }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ sshHost, sshUser }) }),
     'projects:setDefaultMachine': ({ id, agentId }) =>
-      req(REST.projectDefaultMachine(id), { method: 'POST', body: JSON.stringify({ agentId }) }),
+      req(`/api/projects/${encodeURIComponent(id)}/machines/default`, { method: 'PUT', body: JSON.stringify({ agentId }) }),
     'board:get': ({ id, includeCompleted }) => req(REST.projectBoard(id, includeCompleted)),
     'columns:create': ({ projectId, name }) =>
       req(REST.projectColumns(projectId), { method: 'POST', body: JSON.stringify({ name }) }),

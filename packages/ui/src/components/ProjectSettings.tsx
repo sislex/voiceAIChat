@@ -5,7 +5,7 @@ import { CiProjectDefaults } from './ci/CiProjectDefaults'
 // Управляющие контролы (правка, участники, машины, удаление) — только владельцу.
 
 import { useEffect, useState } from 'react'
-import type { ProjectDetail, ProjectMachine, ProjectSummary, WorkItemDefaultSkills } from '@shared/projects'
+import type { ProjectDetail, ProjectSummary, WorkItemDefaultSkills } from '@shared/projects'
 import type { KbContextMode } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
@@ -14,6 +14,7 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { SettingsPage } from './SettingsPage'
+import { ProjectMachinesSettings } from './ProjectMachinesSettings'
 
 export interface ProjectSettingsProps {
   detail: ProjectDetail
@@ -27,12 +28,12 @@ export interface ProjectSettingsProps {
   onAddMember: (id: string, username: string) => void
   onUpdateMemberRole: (id: string, username: string, role: 'owner' | 'member') => void
   onRemoveMember: (id: string, username: string) => void
-  onLinkMachine: (id: string, agentId: string) => void
-  onUnlinkMachine: (id: string, agentId: string) => void
-  onSetMachinePath: (id: string, agentId: string, path: string) => void
-  onSetReposRoot: (id: string, agentId: string, reposRoot: string) => void
-  onSetMachineSsh: (id: string, agentId: string, sshHost: string, sshUser: string) => void
-  onSetDefaultMachine: (id: string, agentId: string) => void
+  onLinkMachine: (id: string, agentId: string) => void | Promise<void>
+  onUnlinkMachine: (id: string, agentId: string) => void | Promise<void>
+  onSetMachinePath: (id: string, agentId: string, path: string) => void | Promise<void>
+  onSetReposRoot: (id: string, agentId: string, reposRoot: string) => void | Promise<void>
+  onSetMachineSsh: (id: string, agentId: string, sshHost: string, sshUser: string) => void | Promise<void>
+  onSetDefaultMachine: (id: string, agentId: string) => void | Promise<void>
 }
 
 /** Редактор списка тегов (технологии/навыки). */
@@ -77,79 +78,6 @@ function TagEditor({ label, tags, editable, onChange }: {
         />
       )}
     </div>
-  )
-}
-
-/** Строка машины проекта: привязка, папка проекта на ней и отметка «по умолчанию». */
-function MachineRow({ agent, machine, isDefault, onToggle, onSetPath, onSetReposRoot, onSetSsh, onSetDefault }: {
-  agent: AgentInfo
-  machine: ProjectMachine | undefined
-  isDefault: boolean
-  onToggle: () => void
-  onSetPath: (path: string) => void
-  onSetReposRoot: (path: string) => void
-  onSetSsh: (host: string, user: string) => void
-  onSetDefault: () => void
-}): JSX.Element {
-  const [path, setPath] = useState(machine?.path ?? '')
-  const [reposRoot, setReposRoot] = useState(machine?.reposRoot ?? '')
-  const [sshHost, setSshHost] = useState(machine?.sshHost ?? '')
-  const [sshUser, setSshUser] = useState(machine?.sshUser ?? '')
-  useEffect(() => {
-    setPath(machine?.path ?? '')
-  }, [machine?.path])
-  useEffect(() => {
-    setReposRoot(machine?.reposRoot ?? '')
-  }, [machine?.reposRoot])
-  useEffect(() => { setSshHost(machine?.sshHost ?? ''); setSshUser(machine?.sshUser ?? '') }, [machine?.sshHost, machine?.sshUser])
-  const linked = machine?.sharedWithProject === true
-  const commit = (): void => {
-    if (path !== (machine?.path ?? '')) onSetPath(path)
-  }
-  const commitReposRoot = (): void => {
-    if (reposRoot !== (machine?.reposRoot ?? '')) onSetReposRoot(reposRoot)
-  }
-  const commitSsh = (): void => {
-    if (sshHost !== (machine?.sshHost ?? '') || sshUser !== (machine?.sshUser ?? '')) onSetSsh(sshHost, sshUser)
-  }
-  return (
-    <li className="proj-machine-row">
-      <label>
-        <input aria-label={`Предоставлять участникам проекта: ${agent.name}`} type="checkbox" checked={linked} onChange={onToggle} />
-        {agent.name} {agent.online ? <span className="proj-online">● online</span> : <span className="proj-muted">offline</span>}
-      </label>
-      {linked && (
-        <div className="proj-machine-cfg">
-          <input
-            className="login-input"
-            placeholder="Папка проекта на этой машине"
-            aria-label={`Папка проекта на ${agent.name}`}
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commit()
-            }}
-          />
-          <input
-            className="login-input"
-            placeholder="Корень VoiceAIChatRepos для Feature Run"
-            aria-label={`Корень Feature-репозиториев на ${agent.name}`}
-            value={reposRoot}
-            onChange={(e) => setReposRoot(e.target.value)}
-            onBlur={commitReposRoot}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitReposRoot()
-            }}
-          />
-          <input className="login-input" placeholder="SSH hostname/IP" aria-label={`SSH hostname/IP для ${agent.name}`} value={sshHost} onChange={(e) => setSshHost(e.target.value)} onBlur={commitSsh} onKeyDown={(e) => { if (e.key === 'Enter') commitSsh() }} />
-          <input className="login-input" placeholder="SSH-пользователь" aria-label={`SSH-пользователь для ${agent.name}`} value={sshUser} onChange={(e) => setSshUser(e.target.value)} onBlur={commitSsh} onKeyDown={(e) => { if (e.key === 'Enter') commitSsh() }} />
-          <label className="proj-default-toggle" title="Машина по умолчанию для проекта">
-            <input type="radio" checked={isDefault} onChange={onSetDefault} /> по умолчанию
-          </label>
-        </div>
-      )}
-    </li>
   )
 }
 
@@ -394,41 +322,18 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         )}
       </div>}
 
-      {activeTab === 'machines' && <div className="proj-section">
-        <p className="proj-field-label">Мои машины</p>
-        <ul className="proj-machines">
-          {agents.map((a) => {
-            const machine = detail.machines.find((m) => m.agentId === a.id)
-            return <MachineRow
-              key={a.id}
-              agent={a}
-              machine={machine}
-              isDefault={machine?.isMyDefault === true}
-              onToggle={() => machine?.sharedWithProject
-                ? props.onUnlinkMachine(detail.id, a.id)
-                : props.onLinkMachine(detail.id, a.id)}
-              onSetPath={(value) => props.onSetMachinePath(detail.id, a.id, value)}
-              onSetReposRoot={(value) => props.onSetReposRoot(detail.id, a.id, value)}
-              onSetSsh={(host, user) => props.onSetMachineSsh(detail.id, a.id, host, user)}
-              onSetDefault={() => props.onSetDefaultMachine(detail.id, a.id)}
-            />
-          })}
-          {agents.length === 0 && <span className="proj-muted">Нет машин — добавьте в меню «Машины».</span>}
-        </ul>
-        <p className="proj-field-label">Машины проекта</p>
-        <ul className="proj-machines">
-          {detail.machines.filter((m) => m.ownership === 'other' && m.sharedWithProject).map((m) => (
-            <li key={m.agentId}>
-              {m.name ?? m.agentId}
-              {m.owner && <span className="proj-muted"> · владелец: {m.owner}</span>}
-              <span className={m.online ? 'proj-online' : 'proj-offline'}> · {m.online ? 'online' : 'offline'}</span>
-              <span className="proj-muted"> · загрузка: {m.load ?? 0}</span>
-              {m.canUse === false && <span className="proj-offline"> · {m.unavailableReason ?? 'недоступна'}</span>}
-            </li>
-          ))}
-          {!detail.machines.some((m) => m.ownership === 'other' && m.sharedWithProject) && <span className="proj-muted">—</span>}
-        </ul>
-      </div>}
+      {activeTab === 'machines' && <ProjectMachinesSettings
+        projectId={detail.id}
+        machines={detail.machines}
+        agents={agents}
+        onShare={(id, agentId, shared) => shared ? props.onLinkMachine(id, agentId) : props.onUnlinkMachine(id, agentId)}
+        onSave={(id, agentId, field, value, machine) => {
+          if (field === 'path') return props.onSetMachinePath(id, agentId, value)
+          if (field === 'reposRoot') return props.onSetReposRoot(id, agentId, value)
+          return props.onSetMachineSsh(id, agentId, field === 'sshHost' ? value : machine.sshHost ?? '', field === 'sshUser' ? value : machine.sshUser ?? '')
+        }}
+        onSetDefault={props.onSetDefaultMachine}
+      />}
 
       {activeTab === 'general' && isOwner && (
         <div className="proj-danger">
