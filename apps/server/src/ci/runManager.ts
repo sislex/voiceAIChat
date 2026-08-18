@@ -1343,7 +1343,8 @@ fi`
       return
     }
     const machine = project.machines.find((m) => m.agentId === agentId)
-    const repoRoot = machine?.reposRoot?.replace(/\/$/, '') || ''
+    const machinePath = machine?.path?.trim().replace(/\/$/, '') || ''
+    const repoRoot = machine?.reposRoot?.trim().replace(/\/$/, '') || machinePath.replace(/\/[^/]+$/, '')
     const projectSlug = slugify(project.name)
     const taskNumber = issueKey(project.name, task)
     // The issue key (for example CHAT-172) is the stable, human-readable task
@@ -1486,7 +1487,7 @@ fi`
       emitStep(prepStep, userId)
       const ps = now()
       try {
-        const prepWorkdir = machine?.path?.trim() || repoRoot.replace(/\/[^/]+$/, '') || '/'
+        const prepWorkdir = machinePath || repoRoot.replace(/\/[^/]+$/, '') || '/'
         const r = await deps.executor.run({ agentId, script: prep, workdir: prepWorkdir, env, timeoutMs: 60_000, secrets: [] }, (d) => {
           const line = deps.db.appendCiLog(runId, prepStep.id, 'stdout', d)
           broadcast({ t: 'ci.log', runId, line }, userId)
