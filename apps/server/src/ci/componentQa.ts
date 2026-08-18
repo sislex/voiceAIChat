@@ -22,6 +22,7 @@ export interface ComponentQaRunnerDeps {
   /** Общий бюджет рана на все стадии; каждая стадия получает остаток. */
   timeoutMs?: number
   now?: () => number
+  boardChanged?: (projectId: string) => void
 }
 
 export interface ComponentQaRunner {
@@ -45,11 +46,13 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
         deps.db.markComponentQaRunning(runId)
         deps.db.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: run.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: 'development workspace is unavailable' })), commands: [], summary: 'Development workspace недоступен', failureClassification: 'infrastructure', blockerReasons: ['workspace_unavailable'] })
       }
+      if (run) deps.boardChanged?.(run.projectId)
       return
     }
     const controller = new AbortController()
     controllers.set(runId, controller)
     deps.db.markComponentQaRunning(runId)
+    deps.boardChanged?.(run.projectId)
     void (async () => {
       const startedAt = now(), deadline = startedAt + budgetMs, total = context.commands.length
       const commands: ComponentQaCommandResult[] = []
@@ -85,7 +88,7 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
     })().catch((error) => {
       const current = deps.db.getComponentQaRun(userId, runId)
       if (current?.status === 'running') deps.db.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: current.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: String(error) })), commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
-    }).finally(() => controllers.delete(runId))
+    }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId) })
   }
   return { launch, cancel: (runId) => controllers.get(runId)?.abort() }
 }
