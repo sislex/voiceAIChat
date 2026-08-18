@@ -52,3 +52,4 @@ type Story = StoryObj<typeof UsersAdmin>
 
 export const Overview: Story = {}
 export const EmptyUsage: Story = { args: { usage: null } }
+export const AccessMatrix: Story = { args: { selected: 'alex', llmAccess: [{ provider: 'codex', modelId: '*' }] } }
