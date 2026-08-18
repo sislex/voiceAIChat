@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 25 коммит(ов) в areas после сверки: 17947ffd feat(remote): pass chat images to image tools … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 18 коммит(ов) в areas после сверки: 17947ffd feat(remote): pass chat images to image tools … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-16 | ⚠ 39 коммит(ов) в areas после сверки: 31ad9e3a Merge task 903fb2fc-2424-4f7d-82bb-5715c033d271 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 445 коммит(ов) в areas после сверки: 17947ffd feat(remote): pass chat images to image tools … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 446 коммит(ов) в areas после сверки: 6ec8aa96 docs(kb): update after merge 9764ccc6-934d-46e9-bb59-2c682452a8a3 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-16 | ⚠ 42 коммит(ов) в areas после сверки: 17947ffd feat(remote): pass chat images to image tools … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-18 | ⚠ 6 коммит(ов) в areas после сверки: 17947ffd feat(remote): pass chat images to image tools … |
