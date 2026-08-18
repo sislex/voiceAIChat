@@ -701,6 +701,8 @@ export function ChatColumn({
                           ops={machineOps}
                           readServerFile={readServerFile}
                           agents={agents}
+                          attachment={m.attachments?.find((file) => file.path === img.path)}
+                          conversationId={m.conversationId}
                           onOpenInExplorer={onOpenImageInExplorer}
                         />
                       ))}
@@ -759,6 +761,8 @@ export function ChatColumn({
                         ops={machineOps}
                         readServerFile={readServerFile}
                         agents={agents}
+                        attachment={file}
+                        conversationId={m.conversationId}
                         onOpenInExplorer={onOpenImageInExplorer}
                       />
                     ))}

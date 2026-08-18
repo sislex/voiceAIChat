@@ -197,6 +197,7 @@ export interface IpcInvokeMap {
   'messages:updateMeta': { arg: { conversationId: string; messageId: string; meta: TurnMeta }; result: Message }
   'messages:delete': { arg: { conversationId: string; messageId: string }; result: void }
   'uploads:add': { arg: { name: string; dataBase64: string; mimeType?: string; agentId?: string }; result: UploadInfo }
+  'images:retouch': { arg: import('./imageRetouch').ImageRetouchRequest; result: import('./imageRetouch').ImageRetouchResult }
   'settings:get': { arg: void; result: Settings }
   'llm:access': { arg: void; result: import('./llmAccess').UserLlmAccess[] }
   'llm:engines': { arg: void; result: LlmEngineOption[] }
