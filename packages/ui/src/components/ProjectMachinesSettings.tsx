@@ -60,7 +60,8 @@ function ResizableHeader({ column, width, onResize }: { column: typeof columns[n
   }
   return <th scope="col" style={{ ...headCellStyle, textAlign: column.key === 'default' || column.key === 'share' ? 'center' : 'left' }}>
     {column.label}
-    <span role="separator" aria-label={`Изменить ширину столбца «${column.label}»`} aria-orientation="vertical" tabIndex={0}
+    <span role="separator" aria-label={`Изменить ширину столбца «${column.label}»`} aria-orientation="vertical"
+      aria-valuemin={column.min} aria-valuemax={1000} aria-valuenow={width} tabIndex={0}
       style={{ position: 'absolute', top: 0, right: -3, width: 8, height: '100%', cursor: 'col-resize', touchAction: 'none', borderRight: '1px solid var(--border-soft)', zIndex: 1 }}
       onPointerDown={(event) => { event.preventDefault(); start(event.clientX) }}
       onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); onResize(column.key, Math.max(column.min, width + (event.key === 'ArrowRight' ? 16 : -16))) } }} />
