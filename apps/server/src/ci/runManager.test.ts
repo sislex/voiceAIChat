@@ -130,7 +130,7 @@ function setup() {
   const board = db.getBoard('admin', project.id)!
   const ready = board.columns.find((c) => c.semanticType === 'ready')!
   const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
-  return { project, task, readyColId: ready.id }
+  return { project, task, agent, readyColId: ready.id }
 }
 
 it('каталог машин задачи объединяет личные и проектные машины без дублей', async () => {
@@ -178,11 +178,12 @@ async function waitRun(runId: string): Promise<{ run: { status: string; taskId: 
 
 describe('ci run manager', () => {
   it('подготавливает отсутствующий repos_root из существующей папки проекта', async () => {
-    const { project, task } = setup()
+    const { project, task, agent } = setup()
+    db.setProjectMachineReposRoot('admin', project.id, agent.id, '')
     const runId = await run(project.id, task.id)
     await waitRun(runId)
 
-    expect(scripts[0]).toContain('mkdir -p')
+    expect(scripts[0]).toContain("mkdir -p '/existing/.npm-cache/P-1'")
     expect(workdirs[0]).toBe('/existing/project')
   })
 
