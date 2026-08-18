@@ -468,9 +468,17 @@ describe('projects: папка машины, дефолт, привязка ча
     db.addMember('alice', p1.id, 'bob')
     db.addMember('alice', p2.id, 'bob')
     const machine = db.createAgent('alice', 'Mac')
-    db.setMachineSharedWithProject('alice', p1.id, machine.id, true)
+    db.linkMachine('alice', p1.id, machine.id)
+    db.setProjectMachinePath('alice', p1.id, machine.id, '/work/project')
+    db.setProjectMachineReposRoot('alice', p1.id, machine.id, '/work/VoiceAIChatRepos')
+    db.setProjectMachineSsh('alice', p1.id, machine.id, 'mac.local', 'alice')
     expect(db.canUseAgent('bob', machine.id, p1.id)).toBe(true)
     expect(db.canUseAgent('bob', machine.id, p2.id)).toBe(false)
+    expect(db.getProject('bob', p1.id)!.machines[0]).toMatchObject({
+      path: '/work/project', reposRoot: '/work/VoiceAIChatRepos', sshHost: 'mac.local', sshUser: 'alice'
+    })
+    expect(() => db.setProjectMachinePath('bob', p1.id, machine.id, '/stolen')).not.toThrow()
+    expect(db.setProjectMachinePath('bob', p1.id, machine.id, '/stolen')).toBeNull()
 
     db.setUserProjectDefaultMachine('bob', p1.id, machine.id)
     expect(db.getUserProjectDefaultMachine('bob', p1.id)).toBe(machine.id)
