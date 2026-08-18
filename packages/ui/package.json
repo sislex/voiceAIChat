@@ -17,8 +17,9 @@
     "build-storybook": "storybook build -o storybook-static"
   },
   "dependencies": {
-    "@voicechat/app-shell": "*",
+    "@codesandbox/sandpack-react": "^2.20.0",
     "@voicechat/admin-app": "*",
+    "@voicechat/app-shell": "*",
     "@voicechat/chat-app": "*",
     "@voicechat/operations-app": "*",
     "@voicechat/projects-app": "*",
