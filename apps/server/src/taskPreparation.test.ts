@@ -13,13 +13,25 @@ import { DEFAULT_CODEX_MODEL, DEFAULT_SETTINGS, type Board, type LlmClient, type
 
 const SECRET = 'test-secret'
 
+function compatibleReadiness(): string {
+  return JSON.stringify({
+    ...JSON.parse(READINESS),
+    schemaVersion: 2,
+    goal: 'Цель', scope: ['В scope'], outOfScope: ['Вне scope'],
+    businessRules: ['Правило'], errorsAndEdgeCases: [], uiStates: [],
+    contractChanges: [], dataChanges: [], constraints: [], contradictions: [],
+    acceptanceCriteriaItems: [{ id: 'AC-1', title: 'Критерий', precondition: 'Условие', action: 'Действие', observableResult: 'Результат' }],
+    openQuestions: [], decisions: [], assumptions: [], sources: []
+  })
+}
+
 const READINESS = JSON.stringify({
   functionalRequirements: 'Подробные требования',
   acceptanceCriteria: '1. Первый критерий',
   testCases: [{
     id: 'TC-1', title: 'Сценарий', description: 'Цель', preconditions: 'Вошли в приложение',
     testData: 'Фикстура', steps: 'Открыть карточку', expectedResult: 'Карточка открыта',
-    required: true, testType: 'manual', automatable: false, automationLinks: [],
+    required: true, testType: 'regression', automatable: true, automationLinks: [],
     notAutomatedReason: '', alternativeManualVerification: '', comments: ''
   }],
   uiImpact: 'none',
@@ -254,6 +266,58 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('functionalRequirements должен быть строкой')
     expect(claudeCalls[1].prompt).toContain('testCases[0].preconditions должен быть строкой')
     expect(claudeCalls[0].prompt).toContain('Не заменяй строки массивами или объектами')
+  })
+
+  it('принимает совместимые { id, text } в строковых списках и сохраняет канонические строки', async () => {
+    const { project, task } = await taskInBacklog()
+    const compatible = JSON.stringify({
+      ...JSON.parse(READINESS),
+      schemaVersion: 2,
+      goal: 'Цель',
+      scope: ['В scope'],
+      outOfScope: ['Вне scope'],
+      businessRules: [{ id: 'BR-1', text: 'Правило' }],
+      errorsAndEdgeCases: [{ id: 'ERR-1', text: 'Ошибка' }],
+      uiStates: [],
+      contractChanges: [],
+      dataChanges: [],
+      acceptanceCriteriaItems: [{ id: 'AC-1', title: 'Критерий', precondition: 'Условие', action: 'Действие', observableResult: 'Результат' }],
+      constraints: [],
+      contradictions: [],
+      openQuestions: [],
+      decisions: [],
+      assumptions: [],
+      sources: []
+    })
+    claudeAnswer = () => ({ text: compatible })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(1)
+    expect(claudeCalls[0].prompt).toContain('Строковые списки scope, outOfScope, businessRules')
+    expect(claudeCalls[0].prompt).not.toContain('Не возвращай элементы этих списков простыми строками')
+    expect(run.readiness).toMatchObject({ businessRules: ['Правило'], errorsAndEdgeCases: ['Ошибка'] })
+  })
+
+  it('отклоняет объект строкового списка без непустого text и передаёт путь в repair-ход', async () => {
+    const { project, task } = await taskInBacklog()
+    const malformed = JSON.stringify({
+      ...JSON.parse(READINESS),
+      schemaVersion: 2,
+      goal: 'Цель', scope: ['В scope'], outOfScope: ['Вне scope'],
+      businessRules: [{ id: 'BR-1', text: '' }], errorsAndEdgeCases: [], uiStates: [],
+      contractChanges: [], dataChanges: [], constraints: [], contradictions: [],
+      acceptanceCriteriaItems: [{ id: 'AC-1', title: 'Критерий', precondition: 'Условие', action: 'Действие', observableResult: 'Результат' }],
+      openQuestions: [], decisions: [], assumptions: [], sources: []
+    })
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? malformed : compatibleReadiness() })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(2)
+    expect(claudeCalls[1].prompt).toContain('businessRules[0] должен быть непустой строкой')
   })
 
   it('отмена гасит CLI и закрывает попытку', async () => {
