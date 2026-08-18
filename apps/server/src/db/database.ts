@@ -103,6 +103,7 @@ import {
   type TaskRepository,
   ACTIVE_MERGE_STATUSES,
   type CiRunDetail,
+  type CiExecutionLlmSnapshot,
   type CiStageRun,
   type CiRunStep,
   type CiStatus,
@@ -3948,7 +3949,8 @@ export class VoiceChatDb {
     const run = mapCiRun(r)
     const steps = (this.db.prepare(`SELECT * FROM ci_run_steps WHERE run_id = ? ORDER BY position ASC, id ASC`).all(runId) as CiRunStepRow[]).map(mapCiRunStep)
     const fixAttempts = (this.db.prepare(`SELECT f.* FROM ci_fix_attempts f JOIN ci_run_steps s ON s.id = f.run_step_id WHERE s.run_id = ? ORDER BY f.created_at ASC`).all(runId) as CiFixRow[]).map(mapCiFix)
-    return { run, stageRuns: this.listCiStageRuns(runId), steps, fixAttempts, interactions: this.listCiInteractions(runId) }
+    const stageRuns = this.listCiStageRuns(runId)
+    return { run, executionLlm: this.ciExecutionLlm(run, stageRuns), stageRuns, steps, fixAttempts, interactions: this.listCiInteractions(runId) }
   }
 
   listCiRunsForTask(userId: string, projectId: string, taskId: string): CiRun[] {
@@ -4001,6 +4003,22 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE ci_stage_runs SET ${set.join(', ')} WHERE id = ?`).run(...values, id)
     const row = this.db.prepare(`SELECT run_id FROM ci_stage_runs WHERE id = ?`).get(id) as { run_id: string } | undefined
     return row ? this.listCiStageRuns(row.run_id).find((stage) => stage.id === id) ?? null : null
+  }
+
+  private ciExecutionLlm(run: CiRun, stageRuns: CiStageRun[]): CiExecutionLlmSnapshot {
+    const stage = [...stageRuns].reverse().find((item) => ['queued', 'running', 'awaiting_input'].includes(item.status))
+      ?? stageRuns.at(-1)
+    const base = {
+      llmEngineId: run.llmEngineId ?? null, provider: run.llmProvider ?? null,
+      model: run.llmModel || null
+    }
+    if (stage) return {
+      source: 'stage', stage: stage.stage, llmEngineId: stage.llm.llmEngineId ?? null,
+      provider: stage.llm.provider ?? null, model: stage.llm.model || null, base
+    }
+    return {
+      source: 'run', stage: null, ...base, base
+    }
   }
 
   listCiStageRuns(runId: string): CiStageRun[] {
@@ -4813,6 +4831,7 @@ export class VoiceChatDb {
       modelActive,
       awaitingInput: run.status === 'awaiting_input',
       progress: buildCiAutomationProgress(run, steps, history),
+      executionLlm: this.ciExecutionLlm(run, this.listCiStageRuns(run.id)),
       terminalColumnId: run.terminalColumnId
     }
   }

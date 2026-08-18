@@ -320,6 +320,35 @@ describe('ci run manager', () => {
     ws.close()
   })
 
+  it('WS snapshot меняет фактическую модель при переходе model_work → summary', async () => {
+    const { project, task } = setup()
+    db.setCiStageLlmConfig('task', task.id, 'model_work', { provider: 'codex', model: 'gpt-5.6-sol' })
+    db.setCiStageLlmConfig('task', task.id, 'summary', { provider: 'claude', model: 'sonnet' })
+    let releaseModel!: () => void
+    modelGate = new Promise<void>((resolve) => { releaseModel = resolve })
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const port = (app.server.address() as AddressInfo).port
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${admin}`)
+    await new Promise((res, rej) => { ws.on('open', res); ws.on('error', rej) })
+    const stages: string[] = []
+    const summarySeen = new Promise<void>((resolve) => {
+      ws.on('message', (data: Buffer) => {
+        const message = JSON.parse(data.toString()) as { t: string; detail?: { executionLlm?: { stage: string | null; model: string | null } } }
+        if (message.t !== 'ci.snapshot' || !message.detail?.executionLlm?.stage) return
+        stages.push(`${message.detail.executionLlm.stage}:${message.detail.executionLlm.model}`)
+        if (message.detail.executionLlm.stage === 'summary') resolve()
+      })
+    })
+    const runId = await run(project.id, task.id, { provider: 'codex', model: 'gpt-5.6-luna' })
+    ws.send(JSON.stringify({ t: 'ci.subscribe', runId }))
+    await vi.waitFor(() => expect(stages).toContain('model_work:gpt-5.6-sol'))
+    releaseModel()
+    await summarySeen
+    expect(stages).toContain('summary:sonnet')
+    await waitRun(runId)
+    ws.close()
+  })
+
   it('упавший слот «после»: резюме всё равно попадает в чат', async () => {
     const { project, task } = setup()
     const cmd = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'test', script: 'FAIL test' })

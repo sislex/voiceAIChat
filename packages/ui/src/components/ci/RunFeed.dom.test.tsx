@@ -44,6 +44,28 @@ describe('RunFeed', () => {
     expect(screen.getByText('выполняется')).toBeInTheDocument()
   })
 
+  it('показывает фактическую модель стадии отдельно от базовой модели рана', () => {
+    const run = mkRun({ llmProvider: 'codex', llmModel: 'gpt-5.6-luna' })
+    const executionLlm = {
+      source: 'stage' as const, stage: 'model_work' as const, llmEngineId: null,
+      provider: 'codex' as const, model: 'gpt-5.6-sol',
+      base: { llmEngineId: null, provider: 'codex' as const, model: 'gpt-5.6-luna' }
+    }
+    render(<RunFeed {...baseProps({ detail: { run, executionLlm, steps: [], fixAttempts: [], interactions: [] }, log: [], conclusion: null })} />)
+    expect(screen.getByTestId('ci-execution-llm')).toHaveTextContent('Текущий этап: Разработка')
+    expect(screen.getByTestId('ci-execution-llm')).toHaveTextContent('Выполняется на: Codex · gpt-5.6-sol')
+    expect(screen.getByTestId('ci-execution-llm')).toHaveTextContent('Базовая модель рана: Codex · gpt-5.6-luna')
+  })
+
+  it('до старта стадии подписывает базовую модель и нейтрально показывает отсутствие модели', () => {
+    const run = mkRun({ llmModel: '' })
+    render(<RunFeed {...baseProps({ detail: { run, executionLlm: {
+      source: 'run', stage: null, llmEngineId: null, provider: 'claude', model: null,
+      base: { llmEngineId: null, provider: 'claude', model: null }
+    }, steps: [], fixAttempts: [], interactions: [] }, log: [], conclusion: null })} />)
+    expect(screen.getByTestId('ci-execution-llm')).toHaveTextContent('Базовая модель рана: Модель не указана')
+  })
+
   it('двигает длительности рана и шага каждую секунду без новых логов', () => {
     vi.useFakeTimers()
     let current = NOW
