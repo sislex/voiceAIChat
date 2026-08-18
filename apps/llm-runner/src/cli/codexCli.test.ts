@@ -92,6 +92,9 @@ describe('CodexCli', () => {
     expect(input).toContain('read')
     expect(input).toContain('grep')
     expect(input).toContain('edit')
+    expect(input).toContain('remote:image')
+    expect(input).toContain('вложение чата → cwd хода → директория проекта → абсолютный путь')
+    expect(input).toContain('формат не поддерживается')
     expect(input).toContain('Независимые чтения и поиски объединяй')
   })
 
