@@ -1,0 +1,45 @@
+.component-playground {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.component-playground__toolbar {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-100);
+  padding: var(--space-100);
+  border-bottom: 1px solid var(--border);
+}
+
+.component-playground__status {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.component-playground__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-050);
+}
+
+.component-playground__console {
+  border-top: 1px solid var(--border);
+}
+
+.component-playground .sp-layout {
+  border: 0;
+  border-radius: 0;
+}
+
+@media (max-width: 720px) {
+  .component-playground__toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
