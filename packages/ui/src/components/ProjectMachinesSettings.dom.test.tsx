@@ -15,7 +15,9 @@ it('показывает две таблицы, подписи и readonly-ко�
   expect(screen.getByRole('heading', { name: 'Мои машины' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Машины, предоставленные проекту' })).toBeInTheDocument()
   expect(screen.getByLabelText('Папка проекта: CI')).toHaveAttribute('readonly')
-  expect(screen.getAllByLabelText('Подсказка: SSH hostname/IP')).toHaveLength(2)
+  expect(screen.getAllByText('Папка проекта', { selector: 'label' })).toHaveLength(2)
+  expect(screen.getByLabelText('Подсказка: SSH hostname/IP — Mac')).toHaveAttribute('title', expect.stringContaining('SSH-подключения'))
+  expect(screen.getByLabelText('Подсказка: SSH hostname/IP — CI')).toHaveAttribute('tabindex', '0')
 })
 it('сохраняет по Enter один раз и не отправляет неизменённое значение по blur', async () => {
   const save = vi.fn(async () => undefined); setup(save)
