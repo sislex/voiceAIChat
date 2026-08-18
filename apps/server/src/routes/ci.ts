@@ -125,13 +125,17 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
 
   // --- Выбор LLM по самостоятельным этапам workflow ---
   const validStage = (value: string): value is CiUsageKind => CI_USAGE_KINDS.includes(value as CiUsageKind)
+  const userStageFallback = (userId: string) => {
+    const llm = db.ciLlmDefaultsForUser(userId)
+    return { llmEngineId: llm.llmEngineId ?? null, provider: llm.provider, model: llm.model }
+  }
 
   app.get<{ Params: { id: string; stage: string } }>('/api/projects/:id/ci/stages/:stage/llm', async (req, reply) => {
     if (!db.getProject(uid(req), req.params.id)) return nf(reply)
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
     return {
       override: db.getCiStageLlmConfig('project', req.params.id, req.params.stage),
-      effective: db.resolveTaskStageLlmConfig(req.params.id, '', req.params.stage)
+      effective: db.resolveTaskStageLlmConfig(req.params.id, '', req.params.stage, userStageFallback(uid(req)))
     }
   })
   app.put<{ Params: { id: string; stage: string }; Body: CiStageLlmSelection }>('/api/projects/:id/ci/stages/:stage/llm', async (req, reply) => {
@@ -143,7 +147,7 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     if (!isOwner(req, req.params.id)) return forbid(reply)
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
     db.clearCiStageLlmConfig('project', req.params.id, req.params.stage)
-    return { effective: db.resolveTaskStageLlmConfig(req.params.id, '', req.params.stage) }
+    return { effective: db.resolveTaskStageLlmConfig(req.params.id, '', req.params.stage, userStageFallback(uid(req))) }
   })
 
   app.get<{ Params: { id: string; taskId: string; stage: string } }>('/api/projects/:id/tasks/:taskId/ci/stages/:stage/llm', async (req, reply) => {
@@ -152,7 +156,7 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     return {
       override: db.getCiStageLlmConfig('task', req.params.taskId, req.params.stage),
       projectDefault: db.getCiStageLlmConfig('project', req.params.id, req.params.stage),
-      effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage)
+      effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage, userStageFallback(uid(req)))
     }
   })
   app.put<{ Params: { id: string; taskId: string; stage: string }; Body: CiStageLlmSelection }>('/api/projects/:id/tasks/:taskId/ci/stages/:stage/llm', async (req, reply) => {
@@ -160,13 +164,13 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
     if (!db.getCiTask(uid(req), req.params.id, req.params.taskId)) return nf(reply)
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
     db.setCiStageLlmConfig('task', req.params.taskId, req.params.stage, req.body ?? {})
-    return { effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage) }
+    return { effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage, userStageFallback(uid(req))) }
   })
   app.delete<{ Params: { id: string; taskId: string; stage: string } }>('/api/projects/:id/tasks/:taskId/ci/stages/:stage/llm', async (req, reply) => {
     if (!isOwner(req, req.params.id)) return forbid(reply)
     if (!validStage(req.params.stage)) return bad(reply, 'Неизвестный этап workflow')
     db.clearCiStageLlmConfig('task', req.params.taskId, req.params.stage)
-    return { effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage) }
+    return { effective: db.resolveTaskStageLlmConfig(req.params.id, req.params.taskId, req.params.stage, userStageFallback(uid(req))) }
   })
 
   // --- Машины выполнения задачи: личные + проектные, без дублей ---

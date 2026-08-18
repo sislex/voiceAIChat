@@ -885,9 +885,13 @@ describe('TaskModal — подготовка к разработке', () => {
     finishedAt: status === 'running' ? null : 2, canRetry: status !== 'running', canCancel: status === 'running', ...over
   })
 
-  it('не показывает вкладку без истории, а активный ран открывает её автоматически', async () => {
-    const { unmount } = render(<TaskModal {...props({ board: preparationBoard })} />)
-    expect(screen.queryByRole('tab', { name: 'Подготовка к разработке' })).not.toBeInTheDocument()
+  it('показывает выбор LLM до первого запуска, а активный ран открывает вкладку автоматически', async () => {
+    const onStartPreparation = vi.fn().mockResolvedValue(run('running'))
+    const { unmount } = render(<TaskModal {...props({ board: preparationBoard, initialTab: 'preparation', onStartPreparation })} />)
+    expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Движок подготовки'), 'codex')
+    await userEvent.click(screen.getByRole('button', { name: 'Запустить подготовку' }))
+    await waitFor(() => expect(onStartPreparation).toHaveBeenCalledWith('t1', expect.objectContaining({ provider: 'codex' })))
     unmount()
 
     render(<TaskModal {...props({

@@ -488,6 +488,11 @@ export interface PreparationQuestion {
   answeredAt: number | null; answeredBy: string | null
 }
 export interface PreparationAnswerResult { accepted: boolean; alreadyAnswered: boolean; question: PreparationQuestion }
+export interface TaskPreparationLlmSelection {
+  llmEngineId?: string | null
+  provider: 'claude' | 'codex'
+  model: string
+}
 export interface TaskPreparationRun {
   id: string
   attemptId?: string
@@ -499,6 +504,8 @@ export interface TaskPreparationRun {
   attempt: number
   attemptNumber?: number
   maxAttempts: number
+  llmEngineId?: string | null
+  provider?: 'claude' | 'codex'
   model?: string
   profileId?: string
   log: string

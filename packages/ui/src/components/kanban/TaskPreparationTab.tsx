@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { TaskPreparationRun } from '@shared/qa'
+import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa'
+import type { UserLlmAccess } from '@shared/llmAccess'
+import type { LlmEngineOption } from '@shared/admin'
+import { DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import { Button } from '@voicechat/ui-kit'
+import { LlmSettingsEditor } from '../LlmSettingsEditor'
 
 export interface TaskPreparationTabProps {
   projectId: string
@@ -8,7 +12,10 @@ export interface TaskPreparationTabProps {
   liveRunId?: string | null
   liveStatus?: TaskPreparationRun['status'] | null
   loadRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
-  onRetry?: (runId: string) => Promise<TaskPreparationRun | void>
+  onStart?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
+  onRetry?: (runId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
+  llmAccess?: UserLlmAccess[]
+  llmEngines?: LlmEngineOption[]
   onCancel?: (runId: string) => Promise<TaskPreparationRun | void>
   onAnswer?: (questionId: string, answer: string) => Promise<unknown>
   onExport?: (runId: string, format: 'md' | 'json') => Promise<void>
@@ -31,8 +38,9 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
   const [selectedId, setSelectedId] = useState<string | null>(props.liveRunId ?? null)
   const [loading, setLoading] = useState(Boolean(props.loadRuns))
   const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState<'retry' | 'cancel' | 'answer' | null>(null)
+  const [pending, setPending] = useState<'start' | 'retry' | 'cancel' | 'answer' | null>(null)
   const [answer, setAnswer] = useState('')
+  const [selection, setSelection] = useState<TaskPreparationLlmSelection>({ provider: DEFAULT_CI_LLM_CONFIG.provider, model: DEFAULT_CI_LLM_CONFIG.model, llmEngineId: DEFAULT_CI_LLM_CONFIG.llmEngineId })
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!props.loadRuns) { setLoading(false); return }
@@ -53,6 +61,9 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
 
   useEffect(() => { void refresh() }, [refresh])
   useEffect(() => {
+    void window.ci?.getTaskPreparationLlm(props.projectId, props.taskId).then((value) => setSelection({ provider: value.provider, model: value.model, llmEngineId: value.llmEngineId }))
+  }, [props.projectId, props.taskId])
+  useEffect(() => {
     if (!props.liveStatus || !['queued', 'running', 'waiting_for_answer', 'validating'].includes(props.liveStatus)) return
     const timer = window.setInterval(() => void refresh(), 1500)
     return () => window.clearInterval(timer)
@@ -64,7 +75,7 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
     if (!selected || pending) return
     setPending(kind)
     try {
-      const next = await (kind === 'retry' ? props.onRetry?.(selected.id) : props.onCancel?.(selected.id))
+      const next = await (kind === 'retry' ? props.onRetry?.(selected.id, selection) : props.onCancel?.(selected.id))
       if (next) {
         setRuns((previous) => [next, ...previous.filter((run) => run.id !== next.id)])
         setSelectedId(next.id)
@@ -89,10 +100,22 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
 
   if (loading && runs.length === 0) return <p className="task-tab-empty">Загрузка истории подготовки…</p>
   if (error && runs.length === 0) return <div role="alert"><p>{error}</p><Button size="sm" onClick={() => void refresh()}>Повторить загрузку</Button></div>
-  if (!selected) return <p className="task-tab-empty" data-testid="task-preparation-empty">Подготовка к разработке ещё не запускалась.</p>
+
+  const start = async (): Promise<void> => {
+    if (!props.onStart || pending) return
+    setPending('start')
+    try {
+      const next = await props.onStart(props.taskId, selection)
+      if (next) { setRuns((previous) => [next, ...previous.filter((run) => run.id !== next.id)]); setSelectedId(next.id) }
+      await refresh()
+    } finally { setPending(null) }
+  }
 
   return (
     <div className="task-preparation-tab" data-testid="task-preparation-tab">
+      <LlmSettingsEditor value={{ engineId: selection.llmEngineId, provider: selection.provider, model: selection.model }} engines={props.llmEngines} llmAccess={props.llmAccess} labels={{ engine: 'Исполнитель подготовки', provider: 'Движок подготовки', model: 'Модель подготовки' }} onChange={(next) => setSelection({ llmEngineId: next.engineId ?? null, provider: next.provider, model: next.model })} />
+      {!selected && <div data-testid="task-preparation-empty"><p className="task-tab-empty">Подготовка к разработке ещё не запускалась.</p>{props.onStart && <Button variant="primary" size="sm" loading={pending === 'start'} onClick={() => void start()}>Запустить подготовку</Button>}</div>}
+      {selected && <>
       <div className="jmodal-ci-head">
         <span className="ci-task-title">Подготовка к разработке</span>
         <span className="ci-lozenge">Статус: {STATUS_LABEL[selected.status]}</span>
@@ -134,11 +157,12 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
         {runs.map((run) => (
           <li key={run.id}>
             <button type="button" aria-pressed={selected.id === run.id} onClick={() => setSelectedId(run.id)}>
-              Попытка {run.attempt} · {new Date(run.createdAt).toLocaleString('ru')} · {STATUS_LABEL[run.status]}
+              Попытка {run.attempt} · {new Date(run.createdAt).toLocaleString('ru')} · {run.provider ?? 'claude'} · {run.model || 'по умолчанию'} · {STATUS_LABEL[run.status]}
             </button>
           </li>
         ))}
       </ol>
+      </>}
     </div>
   )
 }

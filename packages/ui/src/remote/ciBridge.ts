@@ -26,7 +26,8 @@ import type {
   CiModelWorkMetric,
   CiRunReport,
   CiTaskReport,
-  CiTaskMachines
+  CiTaskMachines,
+  CiStageLlmSnapshot
 } from '@shared/ci'
 import type { Message } from '@shared/types'
 import type { MergeRun, TaskRepository } from '@shared/merge'
@@ -83,6 +84,7 @@ export interface RendererCiRest {
   putProjectCiLlm(projectId: string, config: CiLlmConfig): Promise<CiProjectLlmConfig>
   resetProjectCiLlm(projectId: string): Promise<CiProjectLlmConfig>
   getTaskCiLlm(projectId: string, taskId: string): Promise<CiTaskLlmConfig>
+  getTaskPreparationLlm(projectId: string, taskId: string): Promise<CiStageLlmSnapshot>
   putTaskCiLlm(projectId: string, taskId: string, config: CiLlmConfig): Promise<CiLlmConfig>
   /** Снять переопределение задачи — вернуться к движку/модели проекта. */
   resetTaskCiLlm(projectId: string, taskId: string): Promise<CiTaskLlmConfig>

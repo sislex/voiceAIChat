@@ -199,11 +199,21 @@ review, обновление БЗ, релизный анализ и резюме
 Тем же порядком выбирает движок «Подготовка к разработке»
 (`launchTaskPreparation` в `apps/server/src/server.ts`): она резолвит стадию
 `planning` через `resolveTaskStageLlmConfig`, а последним уровнем передаёт
-`ciLlmDefaultsForUser` НАЖАВШЕГО кнопку — CLI запускается в его профиле. При
-`provider === 'codex'` запрос уходит в codex-клиент. Модель по умолчанию зависит
-от движка: пустая модель и claude-`default` дают `sonnet`, у codex —
-`DEFAULT_CODEX_MODEL`. Отдельной записи `ci_stage_runs` и строк расхода у
-подготовки нет: её история — `task_preparation_runs`.
+`ciLlmDefaultsForUser` НАЖАВШЕГО кнопку — CLI запускается в его профиле. GET и
+DELETE стадийного REST-конфига используют тот же пользовательский fallback,
+поэтому после сброса проектного override effective-значение показывает Codex,
+если он выбран в настройках пользователя, а не системный Claude.
+
+Перед первым ручным запуском и каждым повтором вкладка подготовки показывает
+`LlmSettingsEditor`: начальное значение — effective-конфигурация `planning`, а
+явно выбранные `llmEngineId/provider/model` передаются только конкретному рану.
+Тот же снимок передаёт создание задачи из `task-launch`. Сервер повторно
+проверяет персональный deny-list и сохраняет выбранные поля в
+`task_preparation_runs`; история и экспорт поэтому не меняются после последующей
+перенастройки. При `provider === 'codex'` запрос уходит в codex-клиент. Модель по
+умолчанию зависит от движка: пустая модель и claude-`default` дают `sonnet`, у
+codex — `DEFAULT_CODEX_MODEL`. Отдельной записи `ci_stage_runs` и строк расхода
+у подготовки нет: её история — `task_preparation_runs`.
 
 Системный fallback у этой цепочки заменяем: четвёртый параметр
 `db.resolveTaskStageLlmConfig(projectId, taskId, stage, fallback)` подставляет

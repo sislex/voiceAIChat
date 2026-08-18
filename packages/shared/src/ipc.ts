@@ -367,6 +367,7 @@ export interface IpcInvokeMap {
       projectId: string; proposalId: string; title: string; description?: string; acceptanceCriteria?: string
       type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null
       labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null
+      selection?: import('./qa').TaskPreparationLlmSelection
     }
     result: import('./types').TaskLaunchResult
   }
@@ -398,8 +399,9 @@ export interface IpcInvokeMap {
     result: Task
   }
   'tasks:listPreparationRuns': { arg: { projectId: string; taskId: string }; result: TaskPreparationRun[] }
+  'tasks:startPreparationRun': { arg: { projectId: string; taskId: string; selection?: import('./qa').TaskPreparationLlmSelection }; result: TaskPreparationRun }
   'tasks:cancelPreparationRun': { arg: { runId: string }; result: TaskPreparationRun }
-  'tasks:retryPreparationRun': { arg: { runId: string }; result: TaskPreparationRun }
+  'tasks:retryPreparationRun': { arg: { runId: string; selection?: import('./qa').TaskPreparationLlmSelection }; result: TaskPreparationRun }
   'tasks:answerPreparationQuestion': { arg: { questionId: string; answer: string }; result: import('./qa').PreparationAnswerResult }
   'tasks:exportPreparationRun': { arg: { runId: string; format: 'md' | 'json' }; result: void }
   'tasks:delete': { arg: { projectId: string; taskId: string }; result: void }
@@ -865,6 +867,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:move',
   'tasks:listPreparationRuns',
   'tasks:cancelPreparationRun',
+  'tasks:startPreparationRun',
   'tasks:retryPreparationRun',
   'tasks:delete',
   'tasks:openChat'
