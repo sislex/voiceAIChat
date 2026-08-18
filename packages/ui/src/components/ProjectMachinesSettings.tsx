@@ -18,11 +18,54 @@ const fields: Array<{ key: Field; label: string; help: string }> = [
 ]
 const sectionStyle: CSSProperties = { marginTop: 20, padding: 20, border: '1px solid var(--border-soft)', borderRadius: 'var(--radius-medium)', background: 'var(--surface)' }
 const tableWrapStyle: CSSProperties = { overflowX: 'auto', border: '1px solid var(--border-soft)', borderRadius: 'var(--radius-medium)' }
-const tableStyle: CSSProperties = { minWidth: 1600, width: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }
-const headCellStyle: CSSProperties = { padding: '11px 12px', textAlign: 'left', verticalAlign: 'bottom', color: 'var(--text-dim)', background: 'var(--panel)', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }
-const cellStyle: CSSProperties = { padding: '12px', verticalAlign: 'top', borderBottom: '1px solid var(--border-soft)', color: 'var(--text)' }
-const inputStyle: CSSProperties = { boxSizing: 'border-box', width: '100%', minWidth: 180, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-medium)', background: 'var(--surface)', color: 'var(--text)', font: 'inherit' }
+type ColumnKey = 'name' | 'online' | 'owner' | 'default' | 'share' | Field
+const columns: Array<{ key: ColumnKey; label: string; min: number }> = [
+  { key: 'name', label: 'Имя', min: 120 },
+  { key: 'online', label: 'Онлайн', min: 120 },
+  { key: 'owner', label: 'Владелец', min: 110 },
+  { key: 'default', label: 'По умолчанию', min: 120 },
+  { key: 'share', label: 'Предоставить этому проекту', min: 190 },
+  ...fields.map(({ key, label }) => ({ key, label, min: 170 }))
+]
+const tableStyle: CSSProperties = { width: 'max-content', minWidth: '100%', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, fontSize: 13 }
+const headCellStyle: CSSProperties = { position: 'relative', boxSizing: 'border-box', padding: '11px 18px 11px 12px', textAlign: 'left', verticalAlign: 'bottom', color: 'var(--text-dim)', background: 'var(--panel)', borderBottom: '1px solid var(--border)', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }
+const cellStyle: CSSProperties = { boxSizing: 'border-box', padding: '12px', verticalAlign: 'top', borderBottom: '1px solid var(--border-soft)', color: 'var(--text)', overflow: 'hidden' }
+const inputStyle: CSSProperties = { boxSizing: 'border-box', width: '100%', minWidth: 0, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-medium)', background: 'var(--surface)', color: 'var(--text)', font: 'inherit' }
 const controlCellStyle: CSSProperties = { ...cellStyle, textAlign: 'center', verticalAlign: 'middle' }
+
+function contentWidth(value: string, min: number): number {
+  return Math.min(520, Math.max(min, Math.ceil(value.length * 7.4 + 32)))
+}
+function initialColumnWidths(machines: ProjectMachine[]): Record<ColumnKey, number> {
+  const values: Record<ColumnKey, string[]> = {
+    name: machines.map((m) => m.name ?? m.agentId),
+    online: machines.map((m) => `${m.online ? 'online' : 'offline'} Загрузка: ${m.load ?? 0} ${m.unavailableReason ?? ''}`),
+    owner: machines.map((m) => m.owner ?? '—'),
+    default: [], share: [],
+    path: machines.map((m) => m.path),
+    reposRoot: machines.map((m) => m.reposRoot),
+    sshHost: machines.map((m) => m.sshHost ?? ''),
+    sshUser: machines.map((m) => m.sshUser ?? '')
+  }
+  return Object.fromEntries(columns.map(({ key, label, min }) => [key, Math.max(contentWidth(label, min), ...values[key].map((value) => contentWidth(value, min)))])) as Record<ColumnKey, number>
+}
+function ResizableHeader({ column, width, onResize }: { column: typeof columns[number]; width: number; onResize: (key: ColumnKey, width: number) => void }): JSX.Element {
+  const start = (clientX: number): void => {
+    const initialX = clientX
+    const initialWidth = width
+    const move = (event: PointerEvent): void => onResize(column.key, Math.max(column.min, initialWidth + event.clientX - initialX))
+    const stop = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+  }
+  return <th scope="col" style={{ ...headCellStyle, textAlign: column.key === 'default' || column.key === 'share' ? 'center' : 'left' }}>
+    {column.label}
+    <span role="separator" aria-label={`Изменить ширину столбца «${column.label}»`} aria-orientation="vertical" tabIndex={0}
+      style={{ position: 'absolute', top: 0, right: -3, width: 8, height: '100%', cursor: 'col-resize', touchAction: 'none', borderRight: '1px solid var(--border-soft)', zIndex: 1 }}
+      onPointerDown={(event) => { event.preventDefault(); start(event.clientX) }}
+      onKeyDown={(event) => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); onResize(column.key, Math.max(column.min, width + (event.key === 'ArrowRight' ? 16 : -16))) } }} />
+  </th>
+}
 function ConfigCells({ projectId, machine, readonly, onSave }: { projectId: string; machine: ProjectMachine; readonly: boolean; onSave: ProjectMachinesSettingsProps['onSave'] }): JSX.Element {
   const values = (): Record<Field, string> => ({ path: machine.path, reposRoot: machine.reposRoot, sshHost: machine.sshHost ?? '', sshUser: machine.sshUser ?? '' })
   const [draft, setDraft] = useState(values)
@@ -49,22 +92,11 @@ function ConfigCells({ projectId, machine, readonly, onSave }: { projectId: stri
     </td>
   })}</>
 }
-function Table(p: { title: string; empty: string; projectId: string; machines: ProjectMachine[]; own: boolean; onShare: ProjectMachinesSettingsProps['onShare']; onSave: ProjectMachinesSettingsProps['onSave']; onSetDefault: ProjectMachinesSettingsProps['onSetDefault'] }): JSX.Element {
+function Table(p: { title: string; empty: string; projectId: string; machines: ProjectMachine[]; own: boolean; widths: Record<ColumnKey, number>; onResize: (key: ColumnKey, width: number) => void; onShare: ProjectMachinesSettingsProps['onShare']; onSave: ProjectMachinesSettingsProps['onSave']; onSetDefault: ProjectMachinesSettingsProps['onSetDefault'] }): JSX.Element {
   return <section className="proj-section" style={sectionStyle}><h3 style={{ margin: '0 0 14px', fontSize: 18 }}>{p.title}</h3>{p.machines.length === 0 ? <p className="proj-muted" style={{ margin: 0 }}>{p.empty}</p> :
     <div style={tableWrapStyle}><table className="proj-machines-table" style={tableStyle}>
-      <colgroup>
-        <col style={{ width: 180 }} /><col style={{ width: 150 }} /><col style={{ width: 130 }} />
-        <col style={{ width: 120 }} /><col style={{ width: 190 }} />
-        <col style={{ width: 230 }} /><col style={{ width: 230 }} /><col style={{ width: 200 }} /><col style={{ width: 170 }} />
-      </colgroup>
-      <thead><tr>
-        <th scope="col" style={headCellStyle}>Имя</th>
-        <th scope="col" style={headCellStyle}>Онлайн</th>
-        <th scope="col" style={headCellStyle}>Владелец</th>
-        <th scope="col" style={{ ...headCellStyle, textAlign: 'center' }}>По умолчанию</th>
-        <th scope="col" style={{ ...headCellStyle, textAlign: 'center' }}>Предоставить этому проекту</th>
-        {fields.map(({ key, label }) => <th key={key} scope="col" style={headCellStyle}>{label}</th>)}
-      </tr></thead>
+      <colgroup>{columns.map(({ key }) => <col key={key} style={{ width: p.widths[key] }} />)}</colgroup>
+      <thead><tr>{columns.map((column) => <ResizableHeader key={column.key} column={column} width={p.widths[column.key]} onResize={p.onResize} />)}</tr></thead>
       <tbody>{p.machines.map((m) => <tr key={m.agentId}>
         <td style={cellStyle}><strong>{m.name ?? m.agentId}</strong></td>
         <td style={cellStyle}><span className={m.online ? 'proj-online' : 'proj-offline'}>{m.online ? '● online' : '○ offline'}</span>
@@ -86,6 +118,8 @@ export function ProjectMachinesSettings(p: ProjectMachinesSettingsProps): JSX.El
   const own = new Map(p.machines.filter((m) => m.ownership === 'mine').map((m) => [m.agentId, m]))
   const mine = p.agents.map((a) => own.get(a.id) ?? ({ agentId: a.id, name: a.name, owner: 'вы', ownership: 'mine', online: a.online, sharedWithProject: false, isMyDefault: false, canUse: true, unavailableReason: null, load: 0, path: '', reposRoot: '', sshHost: '', sshUser: '' } satisfies ProjectMachine))
   const shared = p.machines.filter((m) => m.ownership === 'other' && m.sharedWithProject)
-  return <div data-testid="project-machines-settings"><Table title="Мои машины" empty="Нет машин — добавьте машину в меню «Машины»." projectId={p.projectId} machines={mine} own onShare={p.onShare} onSave={p.onSave} onSetDefault={p.onSetDefault} />
-    <Table title="Машины, предоставленные проекту" empty="Нет машин, предоставленных проекту." projectId={p.projectId} machines={shared} own={false} onShare={p.onShare} onSave={p.onSave} onSetDefault={p.onSetDefault} /></div>
+  const [widths, setWidths] = useState<Record<ColumnKey, number>>(() => initialColumnWidths([...mine, ...shared]))
+  const resize = (key: ColumnKey, width: number): void => setWidths((current) => ({ ...current, [key]: Math.round(width) }))
+  return <div data-testid="project-machines-settings"><Table title="Мои машины" empty="Нет машин — добавьте машину в меню «Машины»." projectId={p.projectId} machines={mine} own widths={widths} onResize={resize} onShare={p.onShare} onSave={p.onSave} onSetDefault={p.onSetDefault} />
+    <Table title="Машины, предоставленные проекту" empty="Нет машин, предоставленных проекту." projectId={p.projectId} machines={shared} own={false} widths={widths} onResize={resize} onShare={p.onShare} onSave={p.onSave} onSetDefault={p.onSetDefault} /></div>
 }
