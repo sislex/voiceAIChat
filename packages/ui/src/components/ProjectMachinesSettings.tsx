@@ -34,14 +34,20 @@ function ConfigCells({ projectId, machine, readonly, onSave }: { projectId: stri
     try { await onSave(projectId, machine.agentId, key, draft[key], { ...machine, ...draft }); setStatus((s) => ({ ...s, [key]: 'saved' })) }
     catch { setStatus((s) => ({ ...s, [key]: 'error' })) }
   }
-  return <>{fields.map(({ key, label }) => <td key={key} className="proj-machine-field" style={cellStyle}>
-    <input className="login-input" style={{ ...inputStyle, opacity: readonly ? 0.72 : 1 }} aria-label={`${label}: ${machine.name ?? machine.agentId}`} readOnly={readonly} value={draft[key]}
-      onChange={(e) => setDraft((v) => ({ ...v, [key]: e.target.value }))} onBlur={() => void commit(key)}
-      onKeyDown={(e) => { if (e.key === 'Enter') void commit(key) }} />
-    {status[key] === 'saving' && <span role="status">Сохранение…</span>}
-    {status[key] === 'saved' && <span role="status">Сохранено</span>}
-    {status[key] === 'error' && <span role="alert">Не удалось сохранить</span>}
-  </td>)}</>
+  return <>{fields.map(({ key, label, help }) => {
+    const inputId = `project-machine-${machine.agentId}-${key}`
+    return <td key={key} className="proj-machine-field" style={cellStyle}>
+      <label htmlFor={inputId} style={{ display: 'block', marginBottom: 6, fontSize: 12, fontWeight: 700 }}>
+        {label} <span title={help} aria-label={`Подсказка: ${label} — ${machine.name ?? machine.agentId}`} tabIndex={0} style={{ cursor: 'help', color: 'var(--text-dim)' }}>ⓘ</span>
+      </label>
+      <input id={inputId} className="login-input" style={{ ...inputStyle, opacity: readonly ? 0.72 : 1 }} aria-label={`${label}: ${machine.name ?? machine.agentId}`} readOnly={readonly} value={draft[key]}
+        onChange={(e) => setDraft((v) => ({ ...v, [key]: e.target.value }))} onBlur={() => void commit(key)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void commit(key) } }} />
+      {status[key] === 'saving' && <span role="status">Сохранение…</span>}
+      {status[key] === 'saved' && <span role="status">Сохранено</span>}
+      {status[key] === 'error' && <span role="alert">Не удалось сохранить</span>}
+    </td>
+  })}</>
 }
 function Table(p: { title: string; empty: string; projectId: string; machines: ProjectMachine[]; own: boolean; onShare: ProjectMachinesSettingsProps['onShare']; onSave: ProjectMachinesSettingsProps['onSave']; onSetDefault: ProjectMachinesSettingsProps['onSetDefault'] }): JSX.Element {
   return <section className="proj-section" style={sectionStyle}><h3 style={{ margin: '0 0 14px', fontSize: 18 }}>{p.title}</h3>{p.machines.length === 0 ? <p className="proj-muted" style={{ margin: 0 }}>{p.empty}</p> :
@@ -57,7 +63,7 @@ function Table(p: { title: string; empty: string; projectId: string; machines: P
         <th scope="col" style={headCellStyle}>Владелец</th>
         <th scope="col" style={{ ...headCellStyle, textAlign: 'center' }}>По умолчанию</th>
         <th scope="col" style={{ ...headCellStyle, textAlign: 'center' }}>Предоставить этому проекту</th>
-        {fields.map(({ key, label, help }) => <th key={key} scope="col" style={headCellStyle}>{label} <span title={help} aria-label={`Подсказка: ${label}`} tabIndex={0} style={{ cursor: 'help', color: 'var(--text-dim)' }}>ⓘ</span></th>)}
+        {fields.map(({ key, label }) => <th key={key} scope="col" style={headCellStyle}>{label}</th>)}
       </tr></thead>
       <tbody>{p.machines.map((m) => <tr key={m.agentId}>
         <td style={cellStyle}><strong>{m.name ?? m.agentId}</strong></td>
