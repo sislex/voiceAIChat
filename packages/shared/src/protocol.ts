@@ -155,6 +155,8 @@ export const REST = {
   desktopMigration: '/api/migrations/desktop',
   message: (id: string, messageId: string) => `/api/conversations/${id}/messages/${messageId}`,
   uploads: '/api/uploads',
+  /** Локальная AI-ретушь: crop+маска обрабатываются отдельно, результат публикуется сообщением. */
+  imageRetouch: '/api/images/retouch',
   /** Чтение файла с диска сервера (только «своя» область) — картинки от CLI. */
   serverFile: '/api/files/read',
   /** Same-origin прокси внешнего сайта для iframe-превью. */

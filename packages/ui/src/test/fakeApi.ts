@@ -440,6 +440,12 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (idx >= 0) messages.splice(idx, 1)
     },
     'uploads:add': async ({ name, mimeType }) => ({ id: nextId(), name, path: `/uploads/${name}`, mimeType: mimeType ?? 'application/octet-stream', size: 0 }),
+    'images:retouch': async ({ conversationId, source, selection, prompt, references }) => {
+      const image = { ...source, path: `/generated/retouch-${nextId()}.png`, name: 'retouch.png', mimeType: 'image/png', retouch: { source, selection, prompt, ...(references?.length ? { references } : {}) } }
+      const message = { id: nextId(), conversationId, role: 'ai' as const, text: '', time: '12:00', createdAt: Date.now(), attachments: [image] }
+      messages.push(message)
+      return { message, image }
+    },
     'llm:engines': async () => llmEngines.filter((e) => e.enabled).map(({ id, name, kind, isDefault }) => ({ id, name, kind, isDefault })),
     'settings:get': async () => ({ ...settings }),
     'settings:save': async (next) => {

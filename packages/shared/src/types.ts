@@ -42,6 +42,8 @@ export interface MessageAttachment {
   /** Машина-источник; отсутствие означает сервер. */
   agentId?: string
   caption?: string
+  /** Параметры локальной ретуши результата; позволяют восстановить выделение из истории. */
+  retouch?: import('./imageRetouch').ImageRetouchRecord
 }
 
 export interface Message {

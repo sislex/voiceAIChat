@@ -168,6 +168,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'uploads:add': ({ name, dataBase64, mimeType, agentId }) =>
       req(REST.uploads, { method: 'POST', body: JSON.stringify({ name, dataBase64, ...(mimeType ? { mimeType } : {}), ...(agentId ? { agentId } : {}) }) }),
+    'images:retouch': (body) => req(REST.imageRetouch, { method: 'POST', body: JSON.stringify(body) }),
     'settings:get': () => req(REST.settings),
     'llm:access': () => req(REST.meLlmAccess),
     'llm:engines': () => req(REST.llmEngines),

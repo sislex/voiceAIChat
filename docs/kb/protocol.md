@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-18
-checked: 68de33d
+checked: 6ec8aa9
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -59,6 +59,8 @@ URL руками. Параметризованные пути — функции
 
 Владелец данных — логин пользователя (`uid(req)` = `req.user.name`); запросы к
 разговорам и машинам фильтруются по нему.
+
+`POST /api/images/retouch` (`REST.imageRetouch`, bridge `images:retouch`) принимает `ImageRetouchRequest`: `conversationId`, сохранённое вложение-источник, rectangle/lasso в координатах оригинала, промпт и необязательные вложения-референсы. Формы REST, web и desktop общие (`packages/shared/src/imageRetouch.ts` и `ipc.ts`); desktop renderer использует тот же `installRemoteBridges`. Сервер принимает только файлы текущего разговора либо только что загруженные через `UploadStore`. Успех возвращает `ImageRetouchResult` и атомарно публикует AI-сообщение с image-блоком; проверочная или модельная ошибка возвращает `422` с конкретным `error`, не создавая сообщения.
 
 Первое сохранение обычного локального черновика идёт через
 `POST /api/conversations/draft` (`REST.conversationDraft`, bridge
