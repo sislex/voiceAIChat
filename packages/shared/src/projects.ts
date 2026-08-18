@@ -205,6 +205,38 @@ export interface KanbanColumn {
   createdAt: number
 }
 
+/** Нормализованный сервером последний актуальный процесс или терминальный результат задачи. */
+export type TaskRunResultOutcome = 'active' | 'success' | 'failure' | 'cancelled' | 'skipped'
+export type TaskRunResultKind =
+  | 'preparation'
+  | 'development'
+  | 'component_qa'
+  | 'integration_tests'
+  | 'automated_qa'
+  | 'qa_preparation'
+  | 'manual_qa'
+  | 'merge'
+
+export function normalizeTaskRunOutcome(status: string): TaskRunResultOutcome {
+  if (['queued', 'running', 'awaiting_input', 'waiting_for_answer', 'validating', 'active', 'checking', 'fetching', 'merging', 'resolving_conflicts', 'kb_update', 'testing', 'pushing', 'deploying', 'production_checks', 'rolling_back'].includes(status)) return 'active'
+  if (['success', 'completed', 'passed'].includes(status)) return 'success'
+  if (status === 'cancelled') return 'cancelled'
+  if (['skipped', 'stale'].includes(status)) return 'skipped'
+  // failed, blocked, timeout, gate_failed, interrupted, decision_required and
+  // future terminal server failures remain fail-closed for attention signalling.
+  return 'failure'
+}
+
+export interface TaskRunResult {
+  id: string
+  kind: TaskRunResultKind
+  /** Исходный серверный статус; UI принимает решение только по outcome. */
+  status: string
+  outcome: TaskRunResultOutcome
+  createdAt: number
+  finishedAt: number | null
+}
+
 /** Задача канбан-доски. Статус задачи = её колонка (columnId). */
 export interface Task {
   id: string
@@ -275,6 +307,8 @@ export interface Task {
   taskPreparationStatus?: import('./qa').TaskPreparationStatus | null
   taskPreparationError?: string | null
   taskPreparationLog?: string | null
+  /** Последний актуальный результат всех серверных этапов; отсутствие данных не является ошибкой. */
+  latestRunResult?: TaskRunResult | null
 }
 
 /**
