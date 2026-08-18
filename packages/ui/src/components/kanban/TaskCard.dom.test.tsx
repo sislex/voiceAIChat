@@ -108,6 +108,17 @@ describe('TaskCard CI-панель', () => {
     expect(onOpenCiRun).toHaveBeenCalledWith('run-1')
   })
 
+  it('показывает на карточке модель фактического этапа и базовую модель отдельно', () => {
+    render(<TaskCard {...props({ ciSummary: mkSummary({ executionLlm: {
+      source: 'stage', stage: 'model_work', llmEngineId: null, provider: 'codex', model: 'gpt-5.6-sol',
+      base: { llmEngineId: null, provider: 'codex', model: 'gpt-5.6-luna' }
+    } }), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    const llm = screen.getByTestId('task-ci-execution-llm')
+    expect(llm).toHaveTextContent('Текущий этап: Разработка')
+    expect(llm).toHaveTextContent('Выполняется на: Codex · gpt-5.6-sol')
+    expect(llm).toHaveTextContent('Базовая модель рана: Codex · gpt-5.6-luna')
+  })
+
   it('даёт убрать из очереди только queued-ран после подтверждения', async () => {
     const onDequeueCiRun = vi.fn()
     const { rerender } = render(<TaskCard {...props({ ciSummary: mkSummary({ status: 'queued' }), onDequeueCiRun })} />)

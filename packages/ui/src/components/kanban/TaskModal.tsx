@@ -40,7 +40,7 @@ import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import { useRemoteReport } from '../../lib/useRemoteReport'
-import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
+import { ciLlmLabel, ciStageLabel, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { canStartCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport } from '@shared/ci'
 import { AutomationProgressView } from './AutomationProgressView'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
@@ -902,6 +902,14 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                   {props.ciSummary.durationMs != null ? ` · ${fmtDuration(props.ciSummary.durationMs)}` : ''}
                 </p>
               )}
+              {props.ciSummary?.executionLlm && <div className="jcard-ci-model" data-testid="task-modal-ci-execution-llm">
+                {props.ciSummary.executionLlm.source === 'stage' ? <>
+                  <div>Текущий этап: {ciStageLabel(props.ciSummary.executionLlm.stage)}</div>
+                  <div>Выполняется на: {ciLlmLabel(props.ciSummary.executionLlm)}</div>
+                  {(props.ciSummary.executionLlm.provider !== props.ciSummary.executionLlm.base.provider || props.ciSummary.executionLlm.model !== props.ciSummary.executionLlm.base.model)
+                    && <div>Базовая модель рана: {ciLlmLabel(props.ciSummary.executionLlm.base)}</div>}
+                </> : <div>Базовая модель рана: {ciLlmLabel(props.ciSummary.executionLlm)}</div>}
+              </div>}
               <div className="jmodal-ci-actions">
                 {props.ciSummary && props.onOpenCiRun && (
                   <Button

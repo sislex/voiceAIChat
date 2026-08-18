@@ -11,7 +11,7 @@ import type { LlmEngineOption } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import type { CiMetrics } from '../../remote/ciBridge'
-import { ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
+import { ciLlmLabel, ciStageLabel, ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
 import { CiConsole } from './CiConsole'
 import { QuestionsForm } from '../QuestionsForm'
 import { Button } from '@voicechat/ui-kit'
@@ -127,6 +127,14 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   }, [detail])
 
   const running = run ? !isTerminalCiStatus(run.status) : false
+  const executionLlm = detail?.executionLlm ?? (run ? {
+    source: 'run' as const, stage: null, llmEngineId: run.llmEngineId ?? null,
+    provider: run.llmProvider, model: run.llmModel || null,
+    base: { llmEngineId: run.llmEngineId ?? null, provider: run.llmProvider, model: run.llmModel || null }
+  } : null)
+  const baseLlm = executionLlm?.base ?? null
+  const executionDiffersFromBase = executionLlm?.source === 'stage'
+    && (executionLlm.provider !== baseLlm?.provider || executionLlm.model !== baseLlm?.model)
 
   useEffect(() => {
     if (!running) return
@@ -360,6 +368,24 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
           <Button onClick={() => setConsoleOpen(true)}>Консоль</Button>
         </div>
       </div>
+
+      {run && executionLlm && (
+        <section className="ci-run-llm" data-testid="ci-execution-llm" aria-label="Фактическая модель выполнения">
+          {executionLlm.source === 'stage' ? (
+            <>
+              <div>Текущий этап: {ciStageLabel(executionLlm.stage)}</div>
+              <div>Выполняется на: {ciLlmLabel(executionLlm)}</div>
+              {executionDiffersFromBase && <div>Базовая модель рана: {ciLlmLabel(baseLlm)}</div>}
+            </>
+          ) : <div>Базовая модель рана: {ciLlmLabel(executionLlm)}</div>}
+          {(detail?.stageRuns?.length ?? 0) > 1 && (
+            <details>
+              <summary>Фактические модели этапов</summary>
+              <ul>{detail!.stageRuns!.map((stage) => <li key={stage.id}>{ciStageLabel(stage.stage)}: {ciLlmLabel(stage.llm)}</li>)}</ul>
+            </details>
+          )}
+        </section>
+      )}
 
       {kbUsage.report && (
         <KbUsageBrief
