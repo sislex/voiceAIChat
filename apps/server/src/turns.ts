@@ -88,6 +88,11 @@ export interface TurnManagerDeps {
   }
   /** Резолв id вложения → локальный путь либо уже прочитанные байты с машины. */
   resolveUpload?: (id: string) => string | LlmAttachment | null | undefined | Promise<string | LlmAttachment | null | undefined>
+  /** Короткоживущий контекст вложений для бинарного remote:image. */
+  remoteFileTool?: {
+    register(token: string, attachments: Array<{ path: string; name: string; dataBase64: string }>): void
+    unregister(token: string): void
+  }
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
   agents?: {
     isOnline(id: string): boolean
@@ -238,6 +243,8 @@ interface TurnState {
   kbToolToken: string | null
   /** Токен MCP-инструментов превью (mcp__browser__*) этого хода. */
   previewToolToken: string | null
+  /** Токен бинарного файлового контекста remote:image. */
+  remoteFileToken: string | null
   source: StartTurnRequest
 }
 
@@ -528,6 +535,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       deps.previewTool.register(previewToolToken, { userId, conversationId })
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
+    let remoteFileToken: string | null = null
     if (target && deps.agents && deps.mcpBaseUrl) {
       if (!deps.agents.isOnline(target)) {
         const unavailableName = deps.agents.nameOf(target) ?? target
@@ -568,9 +576,16 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       // хинт CLI. Без других машин (или вне проекта) ход остаётся прежним.
       const projectMachines = conv?.projectId ? deps.db.listProjectMachines(conv.projectId) : []
       const otherMachines = projectMachines.filter((m) => m.agentId !== target).map((m) => m.name)
+      remoteFileToken = attachments.length && deps.remoteFileTool ? randomUUID() : null
+      if (remoteFileToken) {
+        deps.remoteFileTool!.register(remoteFileToken, attachments.map((item) => ({
+          path: item.serverPath, name: item.runnerName, dataBase64: item.dataBase64
+        })))
+      }
       remote = {
         mcpUrl:
           `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}` +
+          `${remoteFileToken ? `&files=${encodeURIComponent(remoteFileToken)}` : ''}` +
           `${conv?.workdir ? `&cwd=${encodeURIComponent(conv.workdir)}` : ''}` +
           `${conv?.projectId && otherMachines.length ? `&project=${encodeURIComponent(conv.projectId)}` : ''}`,
         agentName: deps.agents.nameOf(target) ?? target,
@@ -623,6 +638,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       turnId,
       kbToolToken,
       previewToolToken,
+      remoteFileToken,
       source: req
     }
     starting.delete(conversationId)
@@ -841,6 +857,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (turn.previewToolToken) {
       deps.previewTool?.unregister(turn.previewToolToken)
       turn.previewToolToken = null
+    }
+    if (turn.remoteFileToken) {
+      deps.remoteFileTool?.unregister(turn.remoteFileToken)
+      turn.remoteFileToken = null
     }
   }
 

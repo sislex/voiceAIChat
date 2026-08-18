@@ -35,7 +35,7 @@ import { loadOrCreateSecret } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
-import { registerRemoteBashMcp, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
+import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
@@ -345,6 +345,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     desktopApp: opts.config.desktopAppPath
   })
   const mcpSecret = randomBytes(16).toString('hex')
+  const remoteFileBroker = new RemoteFileBroker()
   const deployTrigger = opts.deployTrigger ?? (opts.config.deployApiSocket
     ? new UnixDeployClient(opts.config.deployApiSocket)
     : undefined)
@@ -357,7 +358,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     () => ciToolOutputLimits(db.getCiSettings()),
     // Машины проекта для адресации операций (query `project` дописывает
     // отправитель хода — turns.ts у чата, modelHooks.ts у CI-рана).
-    (projectId) => db.listProjectMachines(projectId)
+    (projectId) => db.listProjectMachines(projectId),
+    (token) => remoteFileBroker.get(token)
   )
   registerCiCommandsMcp(app, mcpSecret)
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
@@ -549,6 +551,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbMcpBaseUrl,
     previewMcpBaseUrl,
     previewTool: previewToolBroker,
+    remoteFileTool: remoteFileBroker,
     onAuthError: (userId, provider, message) => { authStatus.reportRunError(userId, provider, message) }
   })
 

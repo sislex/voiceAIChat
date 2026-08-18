@@ -270,7 +270,7 @@ describe('remoteBashMcp', () => {
     const list = await rpc(app, { jsonrpc: '2.0', id: 2, method: 'tools/list' })
     const names = (list.json() as { result: { tools: Array<{ name: string }> } })
       .result.tools.map((tool) => tool.name)
-    expect(names).toEqual(expect.arrayContaining(['bash', 'read', 'grep', 'edit']))
+    expect(names).toEqual(expect.arrayContaining(['bash', 'read', 'image', 'grep', 'edit']))
   })
 
   it('read читает через fsRead и отдаёт только запрошенное окно с номерами строк', async () => {
@@ -781,7 +781,7 @@ describe('remoteBashMcp: машины проекта (query project)', () => {
       result: { tools: Array<{ name: string; inputSchema: { properties: Record<string, unknown> } }> }
     }).result.tools
     expect(tools.map((t) => t.name)).toContain('machines')
-    for (const name of ['bash', 'read', 'grep', 'edit']) {
+    for (const name of ['bash', 'read', 'image', 'grep', 'edit']) {
       expect(tools.find((t) => t.name === name)?.inputSchema.properties).toHaveProperty('machine')
     }
 
@@ -917,6 +917,69 @@ describe('remoteBashMcp: машины проекта (query project)', () => {
     expect(body.result.isError).toBe(true)
     expect(body.result.content[0].text).toContain('режим «План»')
     expect(lastFs().agentId).toBe('')
+  })
+
+  it('image: JPEG/PNG возвращаются отдельным типизированным блоком без base64 в тексте', async () => {
+    for (const [path, mimeType] of [['1.jpg', 'image/jpeg'], ['2.png', 'image/png']] as const) {
+      const bytes = (mimeType === 'image/jpeg'
+        ? Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00])
+        : Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00])).toString('base64')
+      const registry = {
+        fsRead: async (_agentId: string, actual: string) => {
+          if (actual !== `/repos/task/${path}`) throw new Error('ENOENT')
+          return { root: '/', cwd: '/repos/task', dataBase64: bytes }
+        },
+        cancelAll: () => {}
+      } as unknown as AgentRegistry
+      app = await makeProjectApp(registry)
+      await rpc(app, INIT_BODY, Q)
+      const call = await rpc(app, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'image', arguments: { path } } }, Q)
+      const content = (call.json() as { result: { content: Array<{ type: string; data?: string; mimeType?: string; text?: string }> } }).result.content
+      expect(content[0]).toMatchObject({ type: 'image', data: bytes, mimeType })
+      expect(content.filter((item) => item.type === 'text').map((item) => item.text).join('')).not.toContain(bytes)
+      await app.close()
+    }
+    app = Fastify()
+  })
+
+  it('image: вложение с тем же именем приоритетнее cwd и папки проекта', async () => {
+    const attachmentBytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00]).toString('base64')
+    let reads = 0
+    const registry = {
+      fsRead: async () => { reads++; return { root: '/', cwd: '', dataBase64: Buffer.from('project').toString('base64') } },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    const server = Fastify({ logger: false })
+    registerRemoteBashMcp(server, registry, SECRET, undefined, () => [
+      { agentId: 'a1', name: 'Мак', path: '/project' }
+    ], (token) => token === 'turn-files' ? [{ path: '/uploads/1.jpg', name: '1.jpg', dataBase64: attachmentBytes }] : undefined)
+    await server.ready(); app = server
+    const query = `${Q}&files=turn-files`
+    await rpc(app, INIT_BODY, query)
+    const call = await rpc(app, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'image', arguments: { path: '1.jpg' } } }, query)
+    const content = (call.json() as { result: { content: Array<{ type: string; data?: string }> } }).result.content
+    expect(content[0]).toMatchObject({ type: 'image', data: attachmentBytes })
+    expect(reads).toBe(0)
+  })
+
+  it('image различает отсутствующий файл и найденный неподдерживаемый формат', async () => {
+    const registry = {
+      fsRead: async (_agentId: string, path: string) => {
+        if (path.endsWith('/diagram.tiff')) return { root: '/', cwd: '', dataBase64: Buffer.from('tiff').toString('base64') }
+        throw new Error('ENOENT')
+      },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+    const invoke = (path: string, id: number) => rpc(app, { jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'image', arguments: { path } } }, Q)
+    const unsupported = (await invoke('diagram.tiff', 2)).json() as { result: { content: Array<{ text: string }>; isError: boolean } }
+    expect(unsupported.result.isError).toBe(true)
+    expect(unsupported.result.content[0].text).toContain('найден, но формат')
+    const missing = (await invoke('missing.jpg', 3)).json() as { result: { content: Array<{ text: string }>; isError: boolean } }
+    expect(missing.result.isError).toBe(true)
+    expect(missing.result.content[0].text).toContain('не найден')
+    expect(missing.result.content[0].text).not.toContain('формат')
   })
 
   it('сломанный резолвер машин не роняет ход: мост работает по-старому', async () => {
