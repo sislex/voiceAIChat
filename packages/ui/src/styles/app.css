@@ -3990,18 +3990,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jswimlane { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; opacity: 0.9; margin-left: auto; }
 
 /* Доска и колонки */
-/* Общая поверхность владеет только горизонтальной прокруткой. По вертикали она
-   ограничена остатком ToolFrame, а каждая обычная колонка прокручивает свой
-   список карточек независимо. */
-.jboard { display: flex; gap: 8px; align-items: stretch; overflow-x: auto; overflow-y: hidden; padding: 8px 12px 16px; flex: 1; min-width: 0; min-height: 0; }
-.jboard--lanes { flex-direction: column; align-items: stretch; overflow-y: auto; }
-.jcol { flex: 0 0 272px; flex-shrink: 0; width: 272px; height: 100%; max-height: 100%; display: flex; flex-direction: column; background: #f7f8f9; border-radius: 8px;
-  min-width: 0; min-height: 0; overflow: hidden; }
+/* Общая поверхность владеет обеими осями прокрутки: широкая доска движется по
+   горизонтали, а длинные колонки — синхронно по вертикали вместе с шапками. */
+.jboard { display: flex; gap: 8px; align-items: stretch; overflow-x: auto; overflow-y: auto; padding: 8px 12px 16px; flex: 1; min-width: 0; min-height: 0; }
+.jboard--lanes { flex-direction: column; align-items: stretch; }
+.jcol { flex: 0 0 272px; flex-shrink: 0; width: 272px; display: flex; flex-direction: column; background: #f7f8f9; border-radius: 8px;
+  min-width: 0; min-height: 100%; overflow: visible; }
 [data-theme='dark'] .jcol { background: #161b22; }
 .jcol--hidden { opacity: 0.55; outline: 1px dashed rgba(128, 128, 128, 0.4); }
 .jcol--add { background: none; gap: 6px; padding: 4px; }
-.jcol--headonly { height: auto; max-height: none; overflow: visible; }
-.jcol--incell { height: auto; max-height: none; overflow: visible; background: #f7f8f9; border-radius: 8px; }
+.jcol--headonly { height: auto; max-height: none; min-height: 0; overflow: visible; }
+.jcol--incell { height: auto; max-height: none; min-height: 0; overflow: visible; background: #f7f8f9; border-radius: 8px; }
 [data-theme='dark'] .jcol--incell { background: #161b22; }
 .jcol-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 10px 10px 6px; cursor: grab; flex: none; }
 .jcol-head--over { background: #ffedeb; border-radius: 8px 8px 0 0; }
@@ -4035,9 +4034,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcol-filter-me { margin-left: auto; color: var(--text-dim); font-size: 11px; }
 .jcol-filter-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }
 .jcol-filter-actions button { border: 0; padding: 4px 0; background: none; color: var(--accent); cursor: pointer; font: inherit; }
-/* Header и композер — неподвижные siblings; только список карточек получает
-   остаток высоты и собственную вертикальную прокрутку. */
-.jcol-body { display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; flex: 1; padding: 0 6px 4px; min-width: 0; min-height: 0; overscroll-behavior: contain; }
+/* Body растёт по карточкам и заполняет свободное место короткой колонки, но не
+   создаёт собственного scroll-контейнера: вертикаль принадлежит .jboard. */
+.jcol-body { display: flex; flex-direction: column; overflow: visible; flex: 1; padding: 0 6px 4px; min-width: 0; }
 .jcol-body--over { background: linear-gradient(rgba(255, 86, 48, 0.06), rgba(255, 86, 48, 0.06)); }
 
 /* Карточка */

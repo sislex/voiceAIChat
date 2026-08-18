@@ -456,15 +456,13 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     return hit?.dataset.columnId ?? null
   }
 
-  // Горизонтальная ось принадлежит общей поверхности, вертикальная — списку
-  // карточек активной колонки. Так перенос у кромки не двигает соседние колонки
-  // и их заголовки.
+  // Обе оси принадлежат общей поверхности: горизонталь сохраняет доступ к
+  // колонкам, вертикаль синхронно двигает все колонки вместе с их заголовками.
   const autoScrollTo = (p: DragPoint): void => {
     const root = boardRef.current
     if (!root) return
     autoScroll(root, p, 'x')
-    const body = bodyAt(p)
-    if (body) autoScroll(body, p, 'y')
+    autoScroll(root, p, 'y')
   }
 
   /** Положить задачу в выбранное место. Обратно на своё — молча, без запроса. */
