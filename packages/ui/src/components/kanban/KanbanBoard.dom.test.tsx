@@ -61,18 +61,18 @@ describe('KanbanBoard (изолированный)', () => {
     expect(surface).toContainElement(screen.getByTestId('kanban-column'))
   })
 
-  it('открытие и закрытие карточки сохраняет вертикальную позицию колонки', async () => {
+  it('открытие и закрытие карточки сохраняет общую вертикальную позицию доски', async () => {
     renderBoard()
-    const body = document.querySelector<HTMLElement>('[data-drop-body]')!
-    body.scrollTop = 240
+    const surface = screen.getByTestId('kanban-board')
+    surface.scrollTop = 240
 
     await userEvent.click(screen.getByText('A'))
     expect(await screen.findByTestId('task-modal')).toBeInTheDocument()
-    expect(body.scrollTop).toBe(240)
+    expect(surface.scrollTop).toBe(240)
 
     fireEvent.keyDown(window, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByTestId('task-modal')).not.toBeInTheDocument())
-    expect(body.scrollTop).toBe(240)
+    expect(surface.scrollTop).toBe(240)
   })
 
   it('«Лента подготовки» открывает модалку сразу на preparation-вкладке', async () => {
@@ -436,8 +436,7 @@ describe('KanbanBoard — перенос указателем', () => {
     const surface = screen.getByTestId('kanban-board')
     const bodies = document.querySelectorAll<HTMLElement>('[data-drop-body]')
     surface.scrollLeft = 120
-    bodies[0]!.scrollTop = 75
-    bodies[1]!.scrollTop = 35
+    surface.scrollTop = 75
     const card = screen.getAllByTestId('task-card')[0]!
     down(card, 40, 130)
     // Порог: до него это клик, после — перенос с плейсхолдером и копией под курсором.
@@ -454,29 +453,29 @@ describe('KanbanBoard — перенос указателем', () => {
     expect(document.querySelector('.vc-draglayer')).toBeNull()
     expect(screen.queryByTestId('drop-placeholder')).not.toBeInTheDocument()
     expect(surface.scrollLeft).toBe(120)
-    expect(bodies[0]!.scrollTop).toBe(75)
-    expect(bodies[1]!.scrollTop).toBe(35)
+    expect(surface.scrollTop).toBe(75)
+    expect(bodies[0]!.scrollTop).toBe(0)
+    expect(bodies[1]!.scrollTop).toBe(0)
   })
 
-  it('мышь: у нижнего края прокручивается только список активной колонки', () => {
+  it('мышь: у нижнего края прокручивается общая поверхность, а не тела колонок', () => {
     vi.useFakeTimers()
     try {
       renderBoard({ board: dndBoard })
       layout()
       const surface = screen.getByTestId('kanban-board')
       const bodies = document.querySelectorAll<HTMLElement>('[data-drop-body]')
-      bodies[0]!.scrollTop = 100
-      bodies[1]!.scrollTop = 40
+      surface.scrollTop = 100
       const card = screen.getAllByTestId('task-card')[0]!
 
       down(card, 40, 130)
-      move(40, 490)
+      move(40, 590)
       act(() => vi.advanceTimersByTime(20))
 
-      expect(bodies[0]!.scrollTop).toBeGreaterThan(100)
-      expect(bodies[1]!.scrollTop).toBe(40)
-      expect(surface.scrollTop).toBe(0)
-      up(40, 490)
+      expect(surface.scrollTop).toBeGreaterThan(100)
+      expect(bodies[0]!.scrollTop).toBe(0)
+      expect(bodies[1]!.scrollTop).toBe(0)
+      up(40, 590)
     } finally {
       vi.useRealTimers()
     }
@@ -530,7 +529,7 @@ describe('KanbanBoard — перенос указателем', () => {
       layout()
       const card = screen.getAllByTestId('task-card')[1]!
 
-      // Палец поехал раньше удержания — это скролл колонки, а не перенос.
+      // Палец поехал раньше удержания — это общий скролл доски, а не перенос.
       down(card, 40, 200, { pointerType: 'touch' })
       move(40, 160, { pointerType: 'touch' })
       act(() => vi.advanceTimersByTime(DRAG_HOLD_MS * 2))
@@ -603,8 +602,6 @@ describe('KanbanBoard — перенос указателем', () => {
       const bodies = document.querySelectorAll<HTMLElement>('[data-drop-body]')
       surface.scrollLeft = 100
       surface.scrollTop = 25
-      bodies[0]!.scrollTop = 70
-      bodies[1]!.scrollTop = 40
 
       down(document.querySelectorAll<HTMLElement>('.jcol-head')[0]!, 40, 20)
       move(890, 590)
@@ -612,8 +609,8 @@ describe('KanbanBoard — перенос указателем', () => {
 
       expect(surface.scrollLeft).toBeGreaterThan(100)
       expect(surface.scrollTop).toBe(25)
-      expect(bodies[0]!.scrollTop).toBe(70)
-      expect(bodies[1]!.scrollTop).toBe(40)
+      expect(bodies[0]!.scrollTop).toBe(0)
+      expect(bodies[1]!.scrollTop).toBe(0)
       up(890, 590)
     } finally {
       vi.useRealTimers()
