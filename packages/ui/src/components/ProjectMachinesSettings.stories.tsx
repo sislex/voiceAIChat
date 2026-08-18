@@ -11,7 +11,10 @@ const machines: ProjectMachine[] = [
   { agentId: 'unavailable', name: 'Недоступная', owner: 'carol', ownership: 'other', online: false, sharedWithProject: true, isMyDefault: false, canUse: false, unavailableReason: 'владелец больше не участник', load: 0, path: '/opt/project', reposRoot: '/opt/repos', sshHost: '10.0.0.8', sshUser: 'deploy' }
 ]
 const meta: Meta<typeof ProjectMachinesSettings> = {
-  title: 'Project Settings/Machines', component: ProjectMachinesSettings,
+  title: 'Project Settings/Machines',
+  component: ProjectMachinesSettings,
+  parameters: { layout: 'fullscreen' },
+  decorators: [(Story) => <div style={{ padding: 24 }}><Story /></div>],
   args: {
     projectId: 'p1', machines,
     agents: [makeAgent({ id: 'mine-online', name: 'Мой Mac' }), makeOfflineAgent({ id: 'mine-offline', name: 'Домашний ПК' })],
