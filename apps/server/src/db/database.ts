@@ -2027,6 +2027,9 @@ export class VoiceChatDb {
         `INSERT INTO machine_project_share_audit (id,project_id,agent_id,actor,old_value,new_value,created_at)
          VALUES (?,?,?,?,?,?,?)`
       ).run(this.newId(), projectId, agentId, userId, previous ? 1 : 0, shared ? 1 : 0, ts)
+      if (!shared) {
+        this.db.prepare(`DELETE FROM user_project_machine_defaults WHERE project_id=? AND agent_id=?`).run(projectId, agentId)
+      }
     })()
   }
 
@@ -2626,10 +2629,10 @@ export class VoiceChatDb {
     const machines = (
       this.db.prepare(
         `SELECT a.id AS agent_id,
-                CASE WHEN a.user_id = ? THEN COALESCE(pm.path,'') ELSE '' END AS path,
-                CASE WHEN a.user_id = ? THEN COALESCE(pm.repos_root,'') ELSE '' END AS repos_root,
-                CASE WHEN a.user_id = ? THEN COALESCE(pm.ssh_host,'') ELSE '' END AS ssh_host,
-                CASE WHEN a.user_id = ? THEN COALESCE(pm.ssh_user,'') ELSE '' END AS ssh_user,
+                COALESCE(pm.path,'') AS path,
+                COALESCE(pm.repos_root,'') AS repos_root,
+                COALESCE(pm.ssh_host,'') AS ssh_host,
+                COALESCE(pm.ssh_user,'') AS ssh_user,
                 COALESCE(pm.added_at, share.created_at, a.created_at) AS added_at,
                 a.name, a.user_id,
                 CASE WHEN share.shared = 1 THEN 1 ELSE 0 END AS shared
@@ -2638,7 +2641,7 @@ export class VoiceChatDb {
          LEFT JOIN machine_project_shares share ON share.agent_id=a.id AND share.project_id=?
          WHERE a.user_id=? OR (share.shared=1 AND a.user_id<>?)
          ORDER BY CASE WHEN a.user_id=? THEN 0 ELSE 1 END, a.name ASC`
-      ).all(userId, userId, userId, userId, id, id, userId, userId, userId) as Array<{
+      ).all(id, id, userId, userId, userId) as Array<{
         agent_id: string
         path: string | null
         repos_root: string | null
@@ -2926,7 +2929,8 @@ export class VoiceChatDb {
 
   /** Задать папку проекта на конкретной машине (только владелец). */
   setProjectMachinePath(userId: string, id: string, agentId: string, path: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
+    if (!this.isProjectMember(userId, id)) return null
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
     this.db
       .prepare(`UPDATE project_machines SET path = ? WHERE project_id = ? AND agent_id = ?`)
       .run(path, id, agentId)
@@ -2936,14 +2940,16 @@ export class VoiceChatDb {
 
   /** Корень пула рабочих копий CI на этой машине. */
   setProjectMachineReposRoot(userId: string, id: string, agentId: string, root: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
+    if (!this.isProjectMember(userId, id)) return null
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
     this.db.prepare(`UPDATE project_machines SET repos_root = ? WHERE project_id = ? AND agent_id = ?`).run(root, id, agentId)
     return this.getProject(userId, id)
   }
 
   /** Явные SSH-настройки машины для ручного preview-туннеля. */
   setProjectMachineSsh(userId: string, id: string, agentId: string, sshHost: string, sshUser: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
+    if (!this.isProjectMember(userId, id)) return null
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
     this.db.prepare(`UPDATE project_machines SET ssh_host = ?, ssh_user = ? WHERE project_id = ? AND agent_id = ?`)
       .run(sshHost.trim(), sshUser.trim(), id, agentId)
     return this.getProject(userId, id)

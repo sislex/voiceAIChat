@@ -539,6 +539,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           setState({ projectDetail: await client['projects:setMachinePath']({ id, agentId, path }) })
         } catch (err) {
           fail(err, () => void actions.setProjectMachinePath(id, agentId, path))
+          throw err
         }
       },
       async setProjectReposRoot(id, agentId, reposRoot) {
@@ -546,6 +547,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           setState({ projectDetail: await client['projects:setReposRoot']({ id, agentId, reposRoot }) })
         } catch (err) {
           fail(err, () => void actions.setProjectReposRoot(id, agentId, reposRoot))
+          throw err
         }
       },
       async setProjectMachineSsh(id, agentId, sshHost, sshUser) {
@@ -553,6 +555,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           setState({ projectDetail: await client['projects:setMachineSsh']({ id, agentId, sshHost, sshUser }) })
         } catch (err) {
           fail(err, () => void actions.setProjectMachineSsh(id, agentId, sshHost, sshUser))
+          throw err
         }
       },
       async setProjectDefaultMachine(id, agentId) {

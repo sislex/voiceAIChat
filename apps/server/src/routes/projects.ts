@@ -76,14 +76,23 @@ export function registerProjectRoutes(
   startTaskPreparation?: (userId: string, projectId: string, taskId: string, selection?: TaskPreparationLlmSelection) => TaskPreparationRun
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
-  const withMachineStatus = (project: ProjectDetail | null): ProjectDetail | null => {
-    if (project && agents) {
+  const withMachineStatus = (project: ProjectDetail | null, userId: string): ProjectDetail | null => {
+    if (!project) return null
+    if (agents) {
       project.machines = project.machines.map((machine) => ({ ...machine, online: agents.isOnline(machine.agentId) }))
+      const eligible = project.machines
+        .filter((machine) => machine.sharedWithProject && machine.canUse !== false && machine.online === true)
+        .map((machine) => machine.agentId)
+      const current = project.machines.find((machine) => machine.isMyDefault)
+      if (!current || !eligible.includes(current.agentId)) {
+        db.setUserProjectDefaultMachine(userId, project.id, eligible[0] ?? null)
+        project.machines = project.machines.map((machine) => ({ ...machine, isMyDefault: machine.agentId === eligible[0] }))
+      }
     }
     return project
   }
   const member = (req: FastifyRequest, id: string): ProjectDetail | null =>
-    withMachineStatus(db.getProject(uid(req), id))
+    withMachineStatus(db.getProject(uid(req), id), uid(req))
 
   const taskCreateGuard = { preHandler: requireProjectPermission('task:create') }
   const taskUpdateGuard = { preHandler: requireProjectPermission('task:update') }
@@ -226,7 +235,7 @@ export function registerProjectRoutes(
       if (typeof req.body?.shared !== 'boolean') return badReq(reply, 'shared must be boolean')
       try {
         db.setMachineSharedWithProject(uid(req), req.params.id, req.params.agentId, req.body.shared)
-        return withMachineStatus(db.getProject(uid(req), req.params.id)) ?? nf(reply)
+        return withMachineStatus(db.getProject(uid(req), req.params.id), uid(req)) ?? nf(reply)
       } catch (err) {
         return reply.code(403).send({ error: errMessage(err) })
       }
@@ -241,7 +250,7 @@ export function registerProjectRoutes(
       if (agentId !== null && typeof agentId !== 'string') return badReq(reply, 'agentId must be string or null')
       try {
         db.setUserProjectDefaultMachine(uid(req), req.params.id, agentId)
-        return withMachineStatus(db.getProject(uid(req), req.params.id)) ?? nf(reply)
+        return withMachineStatus(db.getProject(uid(req), req.params.id), uid(req)) ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
@@ -278,7 +287,7 @@ export function registerProjectRoutes(
         return reply.code(409).send({ error: 'machine already shared' })
       }
       try {
-        return withMachineStatus(db.linkMachine(uid(req), req.params.id, agentId)) ?? nf(reply)
+        return withMachineStatus(db.linkMachine(uid(req), req.params.id, agentId), uid(req)) ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
@@ -290,7 +299,7 @@ export function registerProjectRoutes(
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
-        return withMachineStatus(db.unlinkMachine(uid(req), req.params.id, req.params.agentId)) ?? nf(reply)
+        return withMachineStatus(db.unlinkMachine(uid(req), req.params.id, req.params.agentId), uid(req)) ?? nf(reply)
     }
   )
 
@@ -301,11 +310,11 @@ export function registerProjectRoutes(
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
       if (req.body?.sshHost !== undefined || req.body?.sshUser !== undefined) {
-        return withMachineStatus(db.setProjectMachineSsh(uid(req), req.params.id, req.params.agentId, req.body?.sshHost ?? '', req.body?.sshUser ?? '')) ?? nf(reply)
+        return withMachineStatus(db.setProjectMachineSsh(uid(req), req.params.id, req.params.agentId, req.body?.sshHost ?? '', req.body?.sshUser ?? ''), uid(req)) ?? nf(reply)
       }
       return req.body?.reposRoot !== undefined
-        ? withMachineStatus(db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot)) ?? nf(reply)
-        : withMachineStatus(db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? '')) ?? nf(reply)
+        ? withMachineStatus(db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot), uid(req)) ?? nf(reply)
+        : withMachineStatus(db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? ''), uid(req)) ?? nf(reply)
     }
   )
 
@@ -318,7 +327,7 @@ export function registerProjectRoutes(
         const agentId = (req.body?.agentId ?? '').trim()
       if (!agentId) return badReq(reply, 'agentId required')
       try {
-        return withMachineStatus(db.setProjectDefaultMachine(uid(req), req.params.id, agentId)) ?? nf(reply)
+        return withMachineStatus(db.setProjectDefaultMachine(uid(req), req.params.id, agentId), uid(req)) ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
