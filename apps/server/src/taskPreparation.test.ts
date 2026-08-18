@@ -223,6 +223,39 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('missing_acceptance_criteria')
   })
 
+  it('repair-ход получает точные пути полей, если модель заменила строки массивами и объекты произвольной формой', async () => {
+    const { project, task } = await taskInBacklog()
+    const structurallyWrong = JSON.stringify({
+      schemaVersion: 2,
+      goal: 'Цель',
+      scope: ['scope'],
+      outOfScope: ['out'],
+      functionalRequirements: ['Требование'],
+      acceptanceCriteria: ['Критерий'],
+      uiImpact: { kind: 'new_components' },
+      affectedComponents: [{ name: 'ComponentPlayground', storybookStoryId: 'docs--playground' }],
+      acceptanceCriteriaItems: [],
+      testCases: [{
+        id: 'TC-1', title: 'Сценарий', description: 'Цель', preconditions: ['Storybook запущен'],
+        testData: { code: '<Button />' }, steps: ['Изменить код'], expectedResult: 'Preview обновлён',
+        required: true, automatable: false, notAutomatedReason: null, alternativeManualVerification: null
+      }],
+      openQuestions: [],
+      assumptions: ['Sandpack работает в браузере'],
+      sources: [{ id: 'task', type: 'userRequirement' }],
+      acceptanceCriteriaConflict: false
+    })
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? structurallyWrong : READINESS })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(2)
+    expect(claudeCalls[1].prompt).toContain('functionalRequirements должен быть строкой')
+    expect(claudeCalls[1].prompt).toContain('testCases[0].preconditions должен быть строкой')
+    expect(claudeCalls[0].prompt).toContain('Не заменяй строки массивами или объектами')
+  })
+
   it('отмена гасит CLI и закрывает попытку', async () => {
     const { project, task } = await taskInBacklog()
     claudeAnswer = () => ({ silent: true })

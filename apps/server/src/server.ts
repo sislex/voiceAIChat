@@ -630,11 +630,106 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   const parseTaskPreparation = (text: string): DevelopmentReadiness => {
     const raw = text.trim().replace(/^\`\`\`(?:json)?\\s*/i, '').replace(/\\s*\`\`\`$/, '')
-    const value = JSON.parse(raw) as DevelopmentReadiness
-    if (!value || typeof value.functionalRequirements !== 'string' || typeof value.acceptanceCriteria !== 'string' || !Array.isArray(value.testCases) || !Array.isArray(value.affectedComponents)) {
-      throw new Error('Модель вернула неполную структуру готовности')
+    const value = JSON.parse(raw) as unknown
+    const issues: string[] = []
+    const record = (input: unknown): Record<string, unknown> | null =>
+      input !== null && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : null
+    const requireString = (input: Record<string, unknown>, key: string, path = key): void => {
+      if (typeof input[key] !== 'string') issues.push(`${path} должен быть строкой`)
     }
-    return value
+    const requireBoolean = (input: Record<string, unknown>, key: string, path = key): void => {
+      if (typeof input[key] !== 'boolean') issues.push(`${path} должен быть boolean`)
+    }
+    const requireArray = (input: Record<string, unknown>, key: string, path = key): unknown[] => {
+      if (!Array.isArray(input[key])) {
+        issues.push(`${path} должен быть массивом`)
+        return []
+      }
+      return input[key]
+    }
+    const root = record(value)
+    if (!root) throw new Error('Модель вернула неполную структуру готовности: корень должен быть JSON-объектом')
+    requireString(root, 'functionalRequirements')
+    requireString(root, 'acceptanceCriteria')
+    requireBoolean(root, 'acceptanceCriteriaConflict')
+    const uiImpact = root.uiImpact
+    if (uiImpact !== null && !['none', 'existing_components', 'new_components', 'multi_component_flow'].includes(String(uiImpact))) {
+      issues.push('uiImpact должен быть null или строкой none|existing_components|new_components|multi_component_flow')
+    }
+    const testCases = requireArray(root, 'testCases')
+    const affectedComponents = requireArray(root, 'affectedComponents')
+    for (const [index, item] of testCases.entries()) {
+      const testCase = record(item)
+      const path = `testCases[${index}]`
+      if (!testCase) { issues.push(`${path} должен быть объектом`); continue }
+      for (const key of ['id', 'title', 'description', 'preconditions', 'testData', 'steps', 'expectedResult', 'testType', 'notAutomatedReason', 'alternativeManualVerification', 'comments']) {
+        requireString(testCase, key, `${path}.${key}`)
+      }
+      requireBoolean(testCase, 'required', `${path}.required`)
+      requireBoolean(testCase, 'automatable', `${path}.automatable`)
+      requireArray(testCase, 'automationLinks', `${path}.automationLinks`)
+    }
+    for (const [index, item] of affectedComponents.entries()) {
+      const component = record(item)
+      const path = `affectedComponents[${index}]`
+      if (!component) { issues.push(`${path} должен быть объектом`); continue }
+      for (const key of ['id', 'name', 'exclusionReason', 'alternativeVerification']) requireString(component, key, `${path}.${key}`)
+      requireBoolean(component, 'reusable', `${path}.reusable`)
+      if (component.storybookStoryId !== null && typeof component.storybookStoryId !== 'string') issues.push(`${path}.storybookStoryId должен быть строкой или null`)
+      if (component.coverage !== null && !record(component.coverage)) issues.push(`${path}.coverage должен быть объектом или null`)
+    }
+    if (root.schemaVersion === 2) {
+      requireString(root, 'goal')
+      for (const key of ['scope', 'outOfScope', 'businessRules', 'errorsAndEdgeCases', 'uiStates', 'contractChanges', 'dataChanges', 'constraints', 'contradictions']) {
+        for (const [index, item] of requireArray(root, key).entries()) if (typeof item !== 'string') issues.push(`${key}[${index}] должен быть строкой`)
+      }
+      for (const key of ['acceptanceCriteriaItems', 'openQuestions', 'decisions', 'assumptions', 'sources']) requireArray(root, key)
+      for (const [index, item] of (Array.isArray(root.acceptanceCriteriaItems) ? root.acceptanceCriteriaItems : []).entries()) {
+        const criterion = record(item)
+        const path = `acceptanceCriteriaItems[${index}]`
+        if (!criterion) { issues.push(`${path} должен быть объектом`); continue }
+        for (const key of ['id', 'title', 'precondition', 'action', 'observableResult']) requireString(criterion, key, `${path}.${key}`)
+      }
+      for (const [index, item] of (Array.isArray(root.openQuestions) ? root.openQuestions : []).entries()) {
+        const question = record(item)
+        const path = `openQuestions[${index}]`
+        if (!question) { issues.push(`${path} должен быть объектом`); continue }
+        requireString(question, 'questionId', `${path}.questionId`)
+        requireString(question, 'text', `${path}.text`)
+        requireBoolean(question, 'material', `${path}.material`)
+        if (question.answer !== null && typeof question.answer !== 'string') issues.push(`${path}.answer должен быть строкой или null`)
+      }
+      for (const [index, item] of (Array.isArray(root.decisions) ? root.decisions : []).entries()) {
+        const decision = record(item)
+        const path = `decisions[${index}]`
+        if (!decision) { issues.push(`${path} должен быть объектом`); continue }
+        requireString(decision, 'id', `${path}.id`)
+        requireString(decision, 'text', `${path}.text`)
+        requireString(decision, 'rationale', `${path}.rationale`)
+        if (decision.questionId !== undefined && typeof decision.questionId !== 'string') issues.push(`${path}.questionId должен быть строкой`)
+      }
+      for (const [index, item] of (Array.isArray(root.assumptions) ? root.assumptions : []).entries()) {
+        const assumption = record(item)
+        const path = `assumptions[${index}]`
+        if (!assumption) { issues.push(`${path} должен быть объектом`); continue }
+        requireString(assumption, 'id', `${path}.id`)
+        requireString(assumption, 'text', `${path}.text`)
+        requireString(assumption, 'rationale', `${path}.rationale`)
+        requireBoolean(assumption, 'material', `${path}.material`)
+      }
+      for (const [index, item] of (Array.isArray(root.sources) ? root.sources : []).entries()) {
+        const source = record(item)
+        const path = `sources[${index}]`
+        if (!source) { issues.push(`${path} должен быть объектом`); continue }
+        for (const key of ['id', 'kind', 'status', 'summary']) requireString(source, key, `${path}.${key}`)
+        if (typeof source.kind === 'string' && !['knowledge', 'hierarchy', 'related_tasks', 'code', 'tests', 'storybook'].includes(source.kind)) issues.push(`${path}.kind имеет недопустимое значение`)
+        if (typeof source.status === 'string' && !['available', 'absent', 'unavailable'].includes(source.status)) issues.push(`${path}.status имеет недопустимое значение`)
+        for (const [refIndex, ref] of requireArray(source, 'refs', `${path}.refs`).entries()) if (typeof ref !== 'string') issues.push(`${path}.refs[${refIndex}] должен быть строкой`)
+        requireBoolean(source, 'critical', `${path}.critical`)
+      }
+    }
+    if (issues.length) throw new Error(`Модель вернула неполную структуру готовности: ${issues.slice(0, 12).join('; ')}`)
+    return root as unknown as DevelopmentReadiness
   }
   const taskPreparationHandles = new Map<string, { cancel(): void }>()
   // CLI-дети подготовки не должны переживать app.close(): cancel() ставит
@@ -675,7 +770,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     db.setTaskPreparationExecution(run.id, { llmEngineId, provider, model })
     db.appendTaskPreparationLog(run.id, `[система] Движок: ${provider === 'codex' ? 'Codex' : 'Claude'}, модель: ${model}, CLI-профиль: ${userId}\n`)
     const answeredContext = (run.questions ?? []).filter((question) => question.answer).map((question) => `Вопрос ${question.questionId}: ${question.text}\\nОтвет: ${question.answer}`).join('\\n')
-    const basePrompt = `Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Обязательный testCase содержит стабильный id, title, description, preconditions, testData, steps, expectedResult, required, automatable и для ручного — notAutomatedReason и alternativeManualVerification. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+    const basePrompt = `Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. Не возвращай элементы этих списков простыми строками. Не заменяй строки массивами или объектами. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
     const sendAttempt = (attempt: number, correction?: string): void => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
       const handle = client.send({ userId, prompt, sessionId: null, model, executionDisabled: true }, {
