@@ -22,7 +22,7 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import type { GenerateParams, Suggestion } from '../prompt-builder/PromptBuilder'
 import { TaskCard, epicOf } from './TaskCard'
-import { TaskModal, type TaskUpdateFields } from './TaskModal'
+import { TaskModal, type TaskModalTab, type TaskUpdateFields } from './TaskModal'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, columnRegionLabel, epicColor, issueKey } from './kanbanMeta'
 import { normalizeBoard } from './normalize'
 import { Button } from '@voicechat/ui-kit'
@@ -96,8 +96,8 @@ export interface KanbanBoardProps {
   /** Управляемая открытая задача (обёртке-странице нужен перехват Esc);
       не задано — состояние внутреннее (Storybook, встраивание). */
   openTaskId?: string | null
-  onOpenTaskChange?: (taskId: string | null, tab?: 'preparation' | 'feed') => void
-  initialOpenTaskTab?: 'preparation' | 'feed'
+  onOpenTaskChange?: (taskId: string | null, tab?: TaskModalTab) => void
+  initialOpenTaskTab?: TaskModalTab
   onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
   /** Стартовое значение селекта «Свимлейны». */
   defaultSwimlane?: Swimlane
@@ -211,9 +211,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [newColumn, setNewColumn] = useState('')
   // Модалка задачи: управляемая пропсами или внутренняя.
   const [internalOpenTask, setInternalOpenTask] = useState<string | null>(null)
-  const [openTaskTab, setOpenTaskTab] = useState<'preparation' | 'feed' | undefined>(props.initialOpenTaskTab)
+  const [openTaskTab, setOpenTaskTab] = useState<TaskModalTab | undefined>(props.initialOpenTaskTab)
   const openTaskId = props.openTaskId !== undefined ? props.openTaskId : internalOpenTask
-  const setOpenTaskId = (taskId: string | null, tab?: 'preparation' | 'feed'): void => {
+  const setOpenTaskId = (taskId: string | null, tab?: TaskModalTab): void => {
     setOpenTaskTab(tab)
     if (props.onOpenTaskChange) props.onOpenTaskChange(taskId, tab)
     else setInternalOpenTask(taskId)

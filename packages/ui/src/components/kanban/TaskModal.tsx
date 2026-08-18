@@ -63,6 +63,8 @@ export interface TaskUpdateFields {
 }
 
 
+export type TaskModalTab = 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'merge' | 'feed'
+
 export interface TaskModalProps {
   task: Task
   board: Board
@@ -81,7 +83,7 @@ export interface TaskModalProps {
   ciSummary?: CiRunSummary
   onStartCi?: (taskId: string) => void | Promise<void>
   onStartPreparation?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
-  initialTab?: 'preparation' | 'feed'
+  initialTab?: TaskModalTab
   loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
   onRetryPreparation?: (runId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   llmAccess?: UserLlmAccess[]
@@ -226,10 +228,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     const current = props.members.find((member) => member.role === 'owner' && member.active !== false)?.username
     if (current) props.onUpdate(task.id, { assignee: current })
   }, [props.draft, props.members, task.id, task.assignee])
-  type TaskTab = 'general' | 'timeline' | 'settings' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'progress' | 'merge' | 'feed' | 'preparation'
+  type TaskTab = 'general' | 'timeline' | 'settings' | 'progress' | TaskModalTab
   const preparationVisible = task.type === 'task' && ['backlog', 'preparation', 'ready'].includes(board.columns.find((item) => item.id === task.columnId)?.semanticType ?? '')
   const defaultTab = (): TaskTab => {
-    if (props.initialTab === 'feed') return 'feed'
+    if (props.initialTab && props.initialTab !== 'preparation') return props.initialTab
     if (task.taskPreparationStatus === 'running' || (props.initialTab === 'preparation' && preparationVisible)) return 'preparation'
     const stage = board.columns.find((item) => item.id === task.columnId)?.semanticType
     if (stage === 'component_qa' || stage === 'integration_tests' || stage === 'automated_qa') return stage

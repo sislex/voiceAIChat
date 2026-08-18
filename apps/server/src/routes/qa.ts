@@ -130,6 +130,7 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     async (req, reply) => {
       try {
         const session = db.startQaSession(uid(req), { projectId: req.params.projectId, taskId: req.params.taskId, ...req.body })
+        if (session) boardChanged?.(req.params.projectId)
         return session ?? reply.code(404).send({ error: 'task not found' })
       } catch (error) { return qaError(reply, error) }
     }

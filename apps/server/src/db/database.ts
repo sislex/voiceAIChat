@@ -4729,7 +4729,9 @@ export class VoiceChatDb {
         UNION ALL SELECT id, 'qa_preparation', status, created_at, finished_at, rowid, 6 FROM qa_preparation_runs WHERE task_id = ?
         UNION ALL SELECT id, 'manual_qa', status, started_at, finished_at, rowid, 7 FROM qa_sessions WHERE task_id = ?
         UNION ALL SELECT id, 'merge', status, created_at, finished_at, rowid, 8 FROM merge_runs WHERE task_id = ?
-      ) ORDER BY created_at DESC, seq DESC, rank DESC LIMIT 1
+      ) ORDER BY created_at DESC,
+        CASE WHEN status IN ('queued','running','awaiting_input','waiting_for_answer','validating','active','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing','deploying','production_checks','rolling_back') THEN 1 ELSE 0 END DESC,
+        seq DESC, rank DESC LIMIT 1
     `).get(taskId, taskId, taskId, taskId, taskId, taskId, taskId, taskId) as
       | { id: string; kind: TaskRunResult['kind']; status: string; created_at: number; finished_at: number | null }
       | undefined

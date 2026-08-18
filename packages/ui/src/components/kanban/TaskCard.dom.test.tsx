@@ -246,7 +246,7 @@ describe('TaskCard подсветка по состоянию рана', () => {
 })
 
 describe('TaskCard: нормализованная ошибка последнего этапа', () => {
-  it('показывает статичную красную рамку, текстовый признак и переход в общую ленту', () => {
+  it('показывает статичную красную рамку, текстовый признак и переход в ленту ошибочного этапа', () => {
     const onOpen = vi.fn()
     render(<TaskCard {...props({
       onOpen,
@@ -257,7 +257,7 @@ describe('TaskCard: нормализованная ошибка последне
     const indicator = screen.getByRole('button', { name: 'Последний этап завершился с ошибкой. Открыть ленту рана' })
     expect(indicator).toHaveTextContent('Последний этап завершился с ошибкой')
     fireEvent.click(indicator)
-    expect(onOpen).toHaveBeenCalledWith('t1', 'feed')
+    expect(onOpen).toHaveBeenCalledWith('t1', 'automated_qa')
   })
 
   it.each(['active', 'success', 'cancelled', 'skipped'] as const)('не подсвечивает outcome=%s', (outcome) => {
