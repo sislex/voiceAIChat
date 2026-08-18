@@ -1486,7 +1486,8 @@ fi`
       emitStep(prepStep, userId)
       const ps = now()
       try {
-        const r = await deps.executor.run({ agentId, script: prep, workdir: repoRoot, env, timeoutMs: 60_000, secrets: [] }, (d) => {
+        const prepWorkdir = machine?.path?.trim() || repoRoot.replace(/\/[^/]+$/, '') || '/'
+        const r = await deps.executor.run({ agentId, script: prep, workdir: prepWorkdir, env, timeoutMs: 60_000, secrets: [] }, (d) => {
           const line = deps.db.appendCiLog(runId, prepStep.id, 'stdout', d)
           broadcast({ t: 'ci.log', runId, line }, userId)
         }, signal)

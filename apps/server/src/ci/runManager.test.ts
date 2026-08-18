@@ -16,6 +16,7 @@ import { ciToolBroker } from './ciCommandsMcp.js'
 const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
 let scripts: string[] = []
+let workdirs: string[] = []
 let failClaude = false
 let failPush = false
 /** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
@@ -68,6 +69,7 @@ const counts = new Map<string, number>()
 const ciExecutor: CommandExecutor = {
   run: async (req, onChunk) => {
     scripts.push(req.script)
+    workdirs.push(req.workdir)
     onExec?.(req.script)
     const n = (counts.get(req.script) ?? 0) + 1
     counts.set(req.script, n)
@@ -95,6 +97,7 @@ const ciExecutor: CommandExecutor = {
 beforeEach(async () => {
   let id = 0
   scripts = []
+  workdirs = []
   failClaude = false
   failPush = false
   failStep = false
@@ -121,6 +124,7 @@ function setup() {
   const agent = db.createAgent('admin', 'M')
   db.linkMachine('admin', project.id, agent.id)
   db.setProjectMachineReposRoot('admin', project.id, agent.id, '/repos')
+  db.setProjectMachinePath('admin', project.id, agent.id, '/existing/project')
   db.setProjectDefaultMachine('admin', project.id, agent.id)
   db.setUserProjectDefaultMachine('admin', project.id, agent.id)
   const board = db.getBoard('admin', project.id)!
@@ -173,6 +177,15 @@ async function waitRun(runId: string): Promise<{ run: { status: string; taskId: 
 }
 
 describe('ci run manager', () => {
+  it('подготавливает отсутствующий repos_root из существующей папки проекта', async () => {
+    const { project, task } = setup()
+    const runId = await run(project.id, task.id)
+    await waitRun(runId)
+
+    expect(scripts[0]).toContain('mkdir -p')
+    expect(workdirs[0]).toBe('/existing/project')
+  })
+
   it('при запуске переносит карточку в development и наследует модель проекта', async () => {
     const { project, task } = setup()
     db.saveSettings('admin', { ...DEFAULT_SETTINGS, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' })
