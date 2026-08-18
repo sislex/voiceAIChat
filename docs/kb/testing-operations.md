@@ -155,7 +155,7 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 
 Пакет имеет собственные команды `typecheck` и `test`. `routes.test.ts` покрывает round-trip публичных hash routes и базовые POSIX/Windows path helpers; `operationsStore.test.ts` проверяет stale machine response, повторный `dispose` и независимость закрытия Explorer от Console. `architecture.test.ts` сканирует TypeScript-исходники и запрещает host stores, прямые transports, platform apps и явные имена token-полей. JSDOM setup находится в `src/test/setup.ts`.
 
-`packages/ui/.storybook/main.ts` включает stories пакета. Нынешний `Operations.stories.tsx` состоит из текстовых примеров поверх секционных оболочек; отдельных DOM/component, lifecycle для каждого controller, host integration, redaction и полных surface-state тестов в этом срезе нет. Проверки запускаются `npm run -w @voicechat/operations-app typecheck` и `npm run -w @voicechat/operations-app test`; общий проектный гейт остаётся `npm run affected-check`.
+`packages/ui/.storybook/main.ts` включает stories пакета. `Operations.stories.tsx` содержит состояния online/offline, utility, restricted policy, Explorer, LLM History, Knowledge Base, CI и diagnostics; это независимые поверхности без production transport. Проверки запускаются `npm run -w @voicechat/operations-app typecheck` и `npm run -w @voicechat/operations-app test`; общий проектный гейт остаётся `npm run affected-check`.
 
 ## Проверки Administration frontend
 
@@ -165,4 +165,12 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 
 `@voicechat/app-shell` запускает `npm run -w @voicechat/app-shell typecheck` и `npm run -w @voicechat/app-shell test`; Vitest использует JSDOM и `src/test/setup.ts` с jest-dom. `registry.test.ts` проверяет role gate до lazy load и диагностику конфликтующих route examples. `runtime.test.ts` подтверждает независимость нескольких runtime/store экземпляров, раздельные load/createStore/bootstrap и продолжение cleanup после ошибки одного ресурса, включая повторные logout/dispose.
 
-`architecture.test.ts` рекурсивно сканирует TypeScript исходники App Shell и запрещает импорты Chat/Projects/Operations/Admin, host `@voicechat/ui`, platform apps и прямые обращения к перечисленным `window.*` bridges. Это локальная проверка границы самого пакета, а не полный workspace dependency-graph/cross-module suite. Storybook host включает stories App Shell, Chat, Projects, Operations и Admin.
+`architecture.test.ts` рекурсивно сканирует TypeScript исходники App Shell и запрещает импорты Chat/Projects/Operations/Admin, host `@voicechat/ui`, platform apps и прямые обращения к перечисленным `window.*` bridges. Storybook host включает stories App Shell, Chat, Projects, Operations и Admin.
+
+## Единый frontend quality gate
+
+Каноническая команда `npm run verify:frontend` последовательно запускает статический gate, typecheck и Vitest всех frontend-пакетов, Web build, bundle check, Storybook build и build Desktop renderer. Она использует только локальные fake clients/JSDOM fixtures и не требует backend, CLI, production credentials, SQLite, микрофона, машин или сети.
+
+`scripts/frontend-quality.mjs` проверяет workspace dependency graph и циклы, запрет deep imports и product/host/platform/transport leaks, существование root/styles package exports, обязательную Storybook-матрицу пяти модулей, CSS imports/keyframes/unscoped selectors и dynamic imports всех product modules с role-gated Admin. Негативные fixtures и redaction отчёта покрыты `scripts/frontend-quality.test.mjs`. Безопасный машинный отчёт сохраняется в `artifacts/frontend-quality/report.json`; token, Bearer credentials и credential-bearing URLs редактируются.
+
+Bundle gate сравнивает minified JS chunks Web build с измеренным baseline `frontend-quality/bundle-baseline.json`; запас равен 12%, превышение сообщает chunk, limit, actual и delta, React обязан находиться в одном chunk. Baseline меняется только явной правкой файла. `affected-check` запускает дорогие frontend build gates только при frontend-влиянии; server/runner/agent-only diff их не включает.
