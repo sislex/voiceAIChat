@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
 import { act, fireEvent, screen, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
@@ -718,6 +718,8 @@ describe('KanbanBoard — своя команда в реестре', () => {
 })
 
 describe('KanbanBoard — фильтры исполнителей', () => {
+  beforeEach(() => localStorage.clear())
+
   const filteredBoard: Board = {
     columns: [
       { ...board.columns[0]!, id: 'c1', name: 'To Do' },
@@ -738,17 +740,82 @@ describe('KanbanBoard — фильтры исполнителей', () => {
     expect(screen.getAllByTestId('task-card').map((card) => card.textContent).join(' ')).not.toContain('Без исполнителя')
   })
 
-  it('локальные селекторы независимы, сохраняются и восстанавливаются после глобального режима', async () => {
-    const props = { board: filteredBoard, currentUserId: 'filter-user', members: [{ username: 'alice', role: 'member' as const, addedAt: 1 }, { username: 'bob', role: 'member' as const, addedAt: 1 }] }
-    renderBoard(props)
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Исполнитель колонки «To Do»' }), 'alice')
+  it('выбирает нескольких исполнителей по ИЛИ и показывает badge', async () => {
+    renderBoard({ board: filteredBoard, currentUserId: 'filter-user', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    const button = screen.getByRole('button', { name: /Фильтр исполнителей колонки «To Do»/ })
+    expect(button).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(button)
+    expect(button).toHaveAttribute('aria-expanded', 'true')
+    const popover = screen.getByRole('dialog', { name: 'Фильтр исполнителей колонки «To Do»' })
+    await userEvent.click(within(popover).getByRole('checkbox', { name: 'alice' }))
+    expect(screen.getByText('Моя')).toBeInTheDocument()
     expect(screen.queryByText('Чужая')).not.toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Исполнитель колонки «Doing»' })).toHaveValue('all')
+    await userEvent.click(within(popover).getByRole('checkbox', { name: 'bob' }))
+    expect(screen.getByText('Моя')).toBeInTheDocument()
+    expect(screen.getByText('Чужая')).toBeInTheDocument()
+    expect(button).toHaveTextContent('2')
+    expect(button).toHaveAttribute('title', 'alice, bob')
+  })
+
+  it('комбинирует пользователя с задачами без исполнителя и снимает отдельное условие', async () => {
+    const sameColumn = { ...filteredBoard, tasks: filteredBoard.tasks.map((item) => ({ ...item, columnId: 'c1' })) }
+    renderBoard({ board: sameColumn, currentUserId: 'filter-user', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    await userEvent.click(screen.getByRole('button', { name: /Фильтр исполнителей колонки «To Do»/ }))
+    const popover = screen.getByRole('dialog')
+    await userEvent.click(within(popover).getByRole('checkbox', { name: 'alice' }))
+    await userEvent.click(within(popover).getByRole('checkbox', { name: 'Без исполнителя' }))
+    expect(screen.getByText('Моя')).toBeInTheDocument()
+    expect(screen.getAllByTestId('task-card').map((card) => card.textContent).join(' ')).toContain('Без исполнителя')
+    expect(screen.queryByText('Чужая')).not.toBeInTheDocument()
+    await userEvent.click(within(popover).getByRole('button', { name: /alice, снять выбор/ }))
+    expect(screen.queryByText('Моя')).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('task-card').map((card) => card.textContent).join(' ')).toContain('Без исполнителя')
+  })
+
+  it('поддерживает выбрать всех, сброс и Escape без изменения выбора', async () => {
+    renderBoard({ board: filteredBoard, currentUserId: 'filter-user', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    const button = screen.getByRole('button', { name: /Фильтр исполнителей колонки «To Do»/ })
+    await userEvent.click(button)
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать всех' }))
+    expect(button).toHaveTextContent('3')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(button).toHaveTextContent('3')
+    await userEvent.click(button)
+    await userEvent.click(screen.getByRole('button', { name: 'Сбросить выбор' }))
+    expect(button).not.toHaveTextContent('3')
+    expect(screen.getByRole('checkbox', { name: 'Все исполнители' })).toBeChecked()
+  })
+
+  it('общий режим временно приоритетен, а локальный выбор сохраняется и восстанавливается', async () => {
+    renderBoard({ board: filteredBoard, currentUserId: 'alice', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    const button = screen.getByRole('button', { name: /Фильтр исполнителей колонки «To Do»/ })
+    await userEvent.click(button)
+    await userEvent.click(screen.getByRole('checkbox', { name: 'bob' }))
     await userEvent.click(screen.getByRole('checkbox', { name: 'Показывать только мои задачи' }))
-    expect(screen.getByRole('combobox', { name: 'Исполнитель колонки «To Do»' })).toBeDisabled()
+    expect(screen.getByText('Моя')).toBeInTheDocument()
+    expect(screen.queryByText('Чужая')).not.toBeInTheDocument()
+    await userEvent.click(button)
+    expect(screen.getByText(/Локальный выбор сохранён/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('checkbox', { name: 'Показывать только мои задачи' }))
-    expect(screen.getByRole('combobox', { name: 'Исполнитель колонки «To Do»' })).toHaveValue('alice')
-    expect(localStorage.getItem('voicechat.kanban.filters.v2.filter-user.p1')).toContain('alice')
+    expect(screen.queryByText('Моя')).not.toBeInTheDocument()
+    expect(screen.getByText('Чужая')).toBeInTheDocument()
+  })
+
+  it('восстанавливает массив после перезагрузки и реагирует на обновление назначения', async () => {
+    const members = [{ username: 'alice', role: 'member' as const, addedAt: 1 }, { username: 'bob', role: 'member' as const, addedAt: 1 }]
+    const props = { board: filteredBoard, currentUserId: 'persist-user', members }
+    const view = render(<KanbanBoardHarness {...props} />)
+    await userEvent.click(screen.getByRole('button', { name: /Фильтр исполнителей колонки «To Do»/ }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'alice' }))
+    await waitFor(() => expect(localStorage.getItem('voicechat.kanban.filters.v3.persist-user.p1')).toContain('assigneeIds'))
+    view.unmount()
+    const restored = render(<KanbanBoardHarness {...props} />)
+    await waitFor(() => expect(screen.getByText('Моя')).toBeInTheDocument())
+    expect(screen.queryByText('Чужая')).not.toBeInTheDocument()
+    const updatedBoard = { ...filteredBoard, tasks: filteredBoard.tasks.map((item) => item.id === 'other' ? { ...item, assignee: 'alice' } : item) }
+    restored.rerender(<KanbanBoardHarness {...props} board={updatedBoard} />)
+    expect(await screen.findByText('Чужая')).toBeInTheDocument()
   })
 })
 
