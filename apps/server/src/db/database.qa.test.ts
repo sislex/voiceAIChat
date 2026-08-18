@@ -169,6 +169,38 @@ describe('manual QA persistence and workflow', () => {
     })
   })
 
+  it('uses the effective kb_update stage LLM for a merge run', () => {
+    const project = db.createProject('owner', { name: 'Merge stage LLM' })
+    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const agent = db.createAgent('owner', 'Mac')
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-stage-llm', project.id, task.id, agent.id, '/repos/task', 'CHAT-274', '1'.repeat(40), 1, 'released', 1)
+    db.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'claude', model: 'sonnet' })
+    db.setCiStageLlmConfig('project', project.id, 'kb_update', { provider: 'codex', model: 'gpt-5.6-sol' })
+
+    expect(db.startMergeRun('owner', project.id, task.id)).toMatchObject({
+      llmProvider: 'codex', llmModel: 'gpt-5.6-sol',
+      requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: null
+    })
+  })
+
+  it('inherits the latest development LLM when kb_update has no override', () => {
+    const project = db.createProject('owner', { name: 'Merge development LLM' })
+    const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!
+    const task = db.createTask('owner', project.id, { columnId: awaiting.id, title: 'Feature' })!
+    const agent = db.createAgent('owner', 'Mac')
+    const raw = (db as unknown as { db: { prepare(sql: string): { run(...values: unknown[]): unknown } } }).db
+    raw.prepare(`INSERT INTO ci_workspaces (id,project_id,task_id,agent_id,path,branch,commit_sha,pushed,state,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run('workspace-development-llm', project.id, task.id, agent.id, '/repos/task', 'CHAT-274-dev', '2'.repeat(40), 1, 'released', 1)
+    raw.prepare(`INSERT INTO ci_runs (id,project_id,task_id,status,triggered_by,llm_provider,llm_model,mode,created_at) VALUES (?,?,?,'success','owner','codex','gpt-5.6-sol','development',?)`).run('development-llm', project.id, task.id, 2)
+    db.saveSettings('owner', { ...DEFAULT_SETTINGS, llmProvider: 'claude', model: 'sonnet' })
+
+    expect(db.startMergeRun('owner', project.id, task.id)).toMatchObject({
+      llmProvider: 'codex', llmModel: 'gpt-5.6-sol',
+      requestedLlmProvider: 'codex', requestedLlmModel: 'gpt-5.6-sol', llmFallbackReason: null
+    })
+  })
+
   it('gives a per-run override priority and records an allowed provider fallback', () => {
     const project = db.createProject('owner', { name: 'Merge override' })
     const awaiting = db.getBoard('owner', project.id)!.columns.find((column) => column.semanticType === 'awaiting_merge')!

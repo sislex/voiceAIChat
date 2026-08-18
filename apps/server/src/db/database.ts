@@ -5561,8 +5561,12 @@ export class VoiceChatDb {
 
       const settings = this.getSettings(userId)
       const globalLlm = this.ciLlmDefaultsForUser(userId)
-      const requestedProvider = llmOverride?.provider ?? globalLlm.provider ?? DEFAULT_CI_LLM_CONFIG.provider
-      const requestedModel = (llmOverride?.model ?? globalLlm.model ?? '').trim()
+      const development = this.findLatestCiRunForTask(projectId, taskId)
+      const stageLlm = this.resolveTaskStageLlmConfig(projectId, taskId, 'kb_update', development
+        ? { llmEngineId: development.llmEngineId ?? null, provider: development.llmProvider, model: development.llmModel }
+        : { llmEngineId: globalLlm.llmEngineId ?? null, provider: globalLlm.provider, model: globalLlm.model })
+      const requestedProvider = llmOverride?.provider ?? stageLlm.provider
+      const requestedModel = (llmOverride?.model ?? stageLlm.model ?? '').trim()
       const access = this.getUserLlmAccess(userId)
       const provider = isProviderAllowed(access, requestedProvider) ? requestedProvider : firstAllowedProvider(access)
       if (!provider) throw new Error('Нет доступных движков и моделей для merge-рана')
@@ -5574,7 +5578,7 @@ export class VoiceChatDb {
       if (!model) throw new Error('Нет доступных моделей для merge-рана')
       const fallbackReason = provider !== requestedProvider ? 'provider_unavailable' : model !== modelCandidate ? 'model_unavailable' : null
       const role = this.getUser(userId)?.role ?? 'developer'
-      const engine = this.resolveLlmEngine(settings.llmEngineId, provider, role)
+      const engine = this.resolveLlmEngine(stageLlm.llmEngineId ?? settings.llmEngineId, provider, role)
 
       const id = this.newId(), now = this.now()
       this.db.prepare(`INSERT INTO merge_runs (id,project_id,task_id,status,triggered_by,source_branch,target_branch,source_sha,agent_id,llm_engine_id,llm_provider,llm_model,requested_llm_provider,requested_llm_model,llm_fallback_reason,stage,started_at,created_at,log)
