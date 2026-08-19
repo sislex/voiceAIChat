@@ -222,6 +222,11 @@ export interface AgentInfo {
   createdAt: number
   lastSeen: number | null
   policy: AgentPolicy
+  /** Персональный default в контексте запрошенного чата. */
+  isDefault?: boolean
+  /** Фактически выбранная машина наследования с учётом online-fallback. */
+  isEffective?: boolean
+  effectiveSource?: 'personal_default' | 'fallback'
   /** Версия подключённого агента (только когда online; иначе не задана). */
   version?: string
   /** Последняя телеметрия машины (только когда online; иначе не задана). */

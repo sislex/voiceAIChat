@@ -41,7 +41,7 @@ export async function registerRest(
   app: FastifyInstance,
   db: VoiceChatDb,
   dataDir: string,
-  opts: { runnerFs?: RunnerFsClient; authStatus?: AuthStatusState } = {}
+  opts: { runnerFs?: RunnerFsClient; authStatus?: AuthStatusState; isAgentOnline?: (agentId: string) => boolean } = {}
 ): Promise<void> {
   const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
   const ccDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CC_DIR ?? profile(req).ccProjects
@@ -229,7 +229,7 @@ export async function registerRest(
   // Контекст задачи для шапки связанного чата (проект/эпик/стори/этап/машина/ран).
   app.get<{ Params: { id: string } }>('/api/conversations/:id/task-context', async (req, reply) => {
     if (!db.getConversation(uid(req), req.params.id)) return reply.code(404).send({ error: 'not found' })
-    return db.getTaskChatContext(uid(req), req.params.id)
+    return db.getTaskChatContext(uid(req), req.params.id, opts.isAgentOnline)
   })
 
   app.post<{ Params: { id: string }; Body: { projectId?: string | null } }>(

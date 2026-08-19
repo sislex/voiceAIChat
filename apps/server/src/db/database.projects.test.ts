@@ -442,7 +442,7 @@ describe('projects: папка машины, дефолт, привязка ча
     expect(db.canUseAgent('bob', machine.id, p.id)).toBe(false)
   })
 
-  it('setConversationProject перезаписывает машину/папку/навыки и projectId; null отвязывает', () => {
+  it('setConversationProject сохраняет наследование машины, обновляет навыки/projectId; null отвязывает', () => {
     const p = db.createProject('alice', { name: 'P1', skills: ['ts', 'sql'] })
     const a1 = db.createAgent('alice', 'M1')
     db.linkMachine('alice', p.id, a1.id)
@@ -451,8 +451,8 @@ describe('projects: папка машины, дефолт, привязка ча
     const conv = db.createConversation('alice', 'Чат')
     const linked = db.setConversationProject('alice', conv.id, p.id)!
     expect(linked.projectId).toBe(p.id)
-    expect(linked.execTarget).toBe(a1.id)
-    expect(linked.workdir).toBe('/srv/proj')
+    expect(linked.execTarget).toBeNull()
+    expect(linked.workdir).toBeNull()
     expect(linked.skillNames).toEqual(['ts', 'sql'])
     // не-участник проекта не может привязать
     const conv2 = db.createConversation('bob', 'Чат bob')

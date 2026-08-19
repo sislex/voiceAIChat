@@ -182,6 +182,43 @@ describe('turns: рабочий каталог разговора принадл
   })
 })
 
+describe('turns: наследование персональной машины чата', () => {
+  it('offline default проектного чата заменяет первой доступной online-машиной', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    const offline = db.createAgent(U, 'Offline')
+    const fallback = db.createAgent(U, 'Fallback')
+    const project = db.createProject(U, { name: 'P' })
+    db.linkMachine(U, project.id, offline.id)
+    db.linkMachine(U, project.id, fallback.id)
+    db.setConversationProject(U, conv.id, project.id)
+    db.setUserProjectDefaultMachine(U, project.id, offline.id)
+    expect(db.getConversation(U, conv.id)?.execTarget).toBeNull()
+
+    const rec = recorder()
+    const turns = createTurnManager({
+      db,
+      claude: rec.client,
+      agents: {
+        isOnline: (id) => id === fallback.id,
+        nameOf: (id) => id === fallback.id ? 'Fallback' : 'Offline',
+        policyOf: () => DEFAULT_AGENT_POLICY
+      },
+      mcpBaseUrl: 'http://127.0.0.1/mcp'
+    })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((message) => {
+        if (message.t === 'claude.done' || message.t === 'claude.error') { off(); resolve() }
+      })
+      void turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'привет' }] })
+    })
+
+    expect(rec.last()?.remote?.mcpUrl).toContain(`agent=${fallback.id}`)
+    expect(db.getConversation(U, conv.id)?.execTarget).toBeNull()
+    db.close()
+  })
+})
+
 describe('turns: машины проекта в remote MCP', () => {
   it('чат проекта несёт project в mcpUrl и имена других машин для хинта', async () => {
     const db = freshDb()

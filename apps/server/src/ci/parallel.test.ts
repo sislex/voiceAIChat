@@ -478,8 +478,9 @@ describe('параллельный запуск мимо очереди', () => 
     expect(await waitStatus(res.run.id)).toBe('success')
   })
 
-  it('занятая машина по умолчанию уступает свободной, и ран выполняется на ней', async () => {
-    const second = linkSecondMachine()
+  it('параллельный запуск сохраняет project default даже при его текущей загрузке', async () => {
+    linkSecondMachine()
+    const defaultAgent = db.getProject('admin', projectId)!.defaultAgentId!
     const { hold, release } = holdModel()
     const agents: string[] = []
     const spy: CommandExecutor = {
@@ -490,10 +491,10 @@ describe('параллельный запуск мимо очереди', () => 
     await waitRunning(first)
     const res = ci.start('admin', projectId, taskIds[1], { launch: 'parallel' })
     if ('error' in res) throw new Error(res.error)
-    expect(res.run.agentId).toBe(second)
+    expect(res.run.agentId).toBe(defaultAgent)
     expect(await waitStatus(res.run.id)).toBe('success')
-    // Команды параллельного рана действительно ушли на выбранную машину.
-    expect(agents).toContain(second)
+    // Все task launch-пути используют общий resolver.
+    expect(agents).toContain(defaultAgent)
     release()
     expect(await waitStatus(first)).toBe('success')
   })
