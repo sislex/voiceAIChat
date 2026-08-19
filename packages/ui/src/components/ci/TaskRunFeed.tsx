@@ -18,6 +18,14 @@ export interface TaskRunFeedProps {
   activeMergeRunId?: string | null
 }
 
+const FULL_WIDTH_FEED_STYLE = {
+  width: '100%',
+  minWidth: 0,
+  maxWidth: '100%',
+  boxSizing: 'border-box',
+  overflowX: 'hidden'
+} as const
+
 function mergeLog(current: RunFeedCache['log'], incoming: RunFeedCache['log']): RunFeedCache['log'] {
   const bySeq = new Map(current.map((line) => [line.seq, line]))
   for (const line of incoming) bySeq.set(line.seq, line)
@@ -121,11 +129,11 @@ export function TaskRunFeed(props: TaskRunFeedProps): JSX.Element {
     }
   }, [selectedRun?.id, selectedRun?.kind])
 
-  if (loadingChoices && choices.length === 0) return <p className="task-tab-empty" aria-live="polite">Загрузка технической ленты…</p>
-  if (choicesError && choices.length === 0) return <ErrorState message="Не удалось загрузить список запусков" detail={choicesError} onRetry={loadChoices} />
-  if (choices.length === 0) return <EmptyState compact icon="⏱" title="Запусков ещё нет" description="Техническая лента появится после development- или merge-запуска." />
+  if (loadingChoices && choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}><p className="task-tab-empty" aria-live="polite">Загрузка технической ленты…</p></div>
+  if (choicesError && choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}><ErrorState message="Не удалось загрузить список запусков" detail={choicesError} onRetry={loadChoices} /></div>
+  if (choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}><EmptyState compact icon="⏱" title="Запусков ещё нет" description="Техническая лента появится после development- или merge-запуска." /></div>
 
-  return <div className="task-run-feed">
+  return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}>
     <div className="task-run-feed__toolbar">
       <label>Запуск
         <select aria-label="Выбранный запуск" className="sel" value={selected ?? ''} onChange={(event) => setSelected(event.target.value)}>
