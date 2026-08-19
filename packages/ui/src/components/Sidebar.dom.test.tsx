@@ -26,8 +26,8 @@ function setup(overrides: Record<string, unknown> = {}) {
     onOpenSettings: vi.fn(),
     ...overrides
   }
-  render(<Sidebar {...props} />)
-  return props
+  const rendered = render(<Sidebar {...props} />)
+  return { ...props, ...rendered }
 }
 
 describe('Sidebar — фильтр «чаты завершённых задач»', () => {
@@ -332,6 +332,64 @@ describe('Sidebar — режим поиска «Сообщения»', () => {
       onLoadMoreMessages: vi.fn()
     })
     expect(screen.getByRole('button', { name: 'Загружаем…' })).toBeDisabled()
+  })
+})
+
+describe('Sidebar — недельные секции', () => {
+  const monday = new Date(2026, 7, 17, 0, 0, 0, 0).getTime()
+
+  function dated(id: string, title: string, updatedAt: number): Conversation {
+    return { ...conv(id, title), updatedAt }
+  }
+
+  it('делит список по локальному понедельнику и сохраняет порядок внутри секций', () => {
+    setup({
+      now: monday + 2 * 86_400_000,
+      conversations: [
+        dated('c1', 'Свежий первый', monday + 100),
+        dated('c2', 'Старый первый', monday - 100),
+        dated('c3', 'На границе', monday),
+        dated('c4', 'Старый второй', monday - 200)
+      ]
+    })
+
+    expect(Array.from(screen.getByRole('list', { name: 'Беседы' }).querySelectorAll('.ctitle'))
+      .map((button) => button.textContent)).toEqual(['Свежий первый', 'На границе'])
+    expect(screen.queryByRole('button', { name: 'Старый первый' })).not.toBeInTheDocument()
+
+    const toggle = screen.getByRole('button', { name: 'Более старые 2' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).toHaveAttribute('aria-controls', 'sidebar-older-conversations')
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(Array.from(screen.getByRole('list', { name: 'Более старые беседы: 2' }).querySelectorAll('.ctitle'))
+      .map((button) => button.textContent)).toEqual(['Старый первый', 'Старый второй'])
+  })
+
+  it('не показывает пустые секции и сбрасывает раскрытие после remount', () => {
+    const conversations = [dated('c1', 'Только старый', monday - 1)]
+    const first = setup({ now: monday, conversations })
+    expect(screen.queryByText('На этой неделе')).not.toBeInTheDocument()
+    const toggle = screen.getByRole('button', { name: 'Более старые 1' })
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: 'Только старый' })).toBeInTheDocument()
+
+    first.unmount()
+    setup({ now: monday, conversations })
+    expect(screen.getByRole('button', { name: 'Более старые 1' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: 'Только старый' })).not.toBeInTheDocument()
+  })
+
+  it('поиск по сообщениям сохраняет несекционное представление', () => {
+    setup({
+      now: monday,
+      onSearchScopeChange: vi.fn(),
+      searchScope: 'messages',
+      messageSearch: { query: 'старое', status: 'ready', hits: [{ messageId: 'm1', conversationId: 'c1', conversationTitle: 'Беседа m1', role: 'u1', snippet: '<mark>старое</mark>', createdAt: monday - 1, time: '10:00', projectId: null }], nextCursor: null, loadingMore: false, error: null }
+    })
+    expect(screen.queryByText('На этой неделе')).not.toBeInTheDocument()
+    expect(screen.queryByText('Более старые')).not.toBeInTheDocument()
+    expect(screen.getByText('Беседа m1')).toBeInTheDocument()
   })
 })
 

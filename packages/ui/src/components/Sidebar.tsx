@@ -53,6 +53,15 @@ function pluralMessages(n: number): string {
   return 'сообщений'
 }
 
+/** Локальный понедельник 00:00; календарная арифметика сохраняет DST. */
+export function localWeekStart(now: number): number {
+  const date = new Date(now)
+  const daysFromMonday = (date.getDay() + 6) % 7
+  date.setHours(0, 0, 0, 0)
+  date.setDate(date.getDate() - daysFromMonday)
+  return date.getTime()
+}
+
 /** Что показывает панель результатов поиска по сообщениям (данные из стора). */
 export interface MessageSearchView {
   query: string
@@ -330,8 +339,13 @@ export function Sidebar({
   // Инлайн-форма создания проекта в списке проектов.
   const [creatingProject, setCreatingProject] = useState(false)
   const [projectDraft, setProjectDraft] = useState('')
+  // Состояние намеренно локальное: remount снова сворачивает старую секцию.
+  const [olderOpen, setOlderOpen] = useState(false)
   const acctRef = useRef<HTMLDivElement | null>(null)
   const workingSet = new Set(workingIds)
+  const weekStart = localWeekStart(now)
+  const currentWeekConversations = conversations.filter((conversation) => conversation.updatedAt >= weekStart)
+  const olderConversations = conversations.filter((conversation) => conversation.updatedAt < weekStart)
   // Поиск по сообщениям заменяет список бесед: у панели свои состояния и карточки.
   const inMessages = searchScope === 'messages'
   // Состояния списка бесед по общему правилу: скелетон — только пока данных нет,
@@ -360,6 +374,113 @@ export function Sidebar({
     setAcctOpen(false)
     fn()
   }
+
+  const renderConversation = (c: Conversation): JSX.Element => {
+            // Чат задачи виден в списке как задача: ключ, тип и состояние
+            // последнего рана. Подсветку считает та же shared-функция, что и
+            // для карточки на доске (`jcard--ci-*`), поэтому цвета совпадают;
+            // мигает только активный ран, у терминального рамка статичная.
+            const badge = taskBadges[c.id]
+            const run = badge ? ciSummaries[badge.taskId] : undefined
+            const visibleRun = ciSummaryForTask(run, badge?.columnSemantic === 'done')
+            const pulse = ciCardPulse(visibleRun)
+            return (
+            <div
+              key={c.id}
+              role="listitem"
+              className={['convo', c.id === activeId && 'on', badge && 'convo--task', pulse && `convo--ci-${pulse}`]
+                .filter(Boolean)
+                .join(' ')}
+              onClick={() => onPick(c.id)}
+            >
+              <div className="crow">
+                <div className="cinfo">
+                  {/* Название — настоящая кнопка: строку целиком открывает и
+                     клик мышью по любому её месту, но с клавиатуры выбрать
+                     беседу иначе было нельзя (div с onClick не фокусируется и
+                     не реагирует на Enter). aria-current помечает открытую;
+                     aria-selected здесь не годится — он допустим только внутри
+                     listbox/grid, а в строке живут свои кнопки и селект статуса,
+                     то есть option'ом она быть не может. */}
+                  <button
+                    type="button"
+                    className="ctitle"
+                    aria-current={c.id === activeId ? 'true' : undefined}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onPick(c.id)
+                    }}
+                  >
+                    {c.title}
+                  </button>
+                  {badge && (
+                    <p className="ctask">
+                      <TypeIcon type={badge.type} />
+                      <span className="ctask-key">{badge.key}</span>
+                      {visibleRun && (
+                        <span className={`ci-lozenge ci-lozenge--${ciTone(visibleRun.status)}`} title="Результат задачи">
+                          {ciStatusLabel(visibleRun.status)}
+                        </span>
+                      )}
+                      {visibleRun?.latestAttempt?.status === 'cancelled' && <span className="ctask-key">Последняя попытка отменена</span>}
+                    </p>
+                  )}
+                  <p className="cmeta">{formatMeta(c, now)}</p>
+                  {c.messageCount > 0 && (
+                    <p className="chat-last-machine" title="Машина последнего сообщения">
+                      Последнее: {c.lastExecTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === c.lastExecTarget)?.name ?? 'Сервер'}
+                    </p>
+                  )}
+                  {/* Режим чата словом: во время хода — синяя мигающая точка и
+                      «идет …», в простое — тот же режим серым и без точки. */}
+                  {workingSet.has(c.id) ? (
+                    <p className="cstatus on">
+                      <span className="cstatus-dot" aria-hidden />
+                      {activeStatusLabel(c.permissionMode, defaultPermissionMode, Boolean(c.taskId))}
+                    </p>
+                  ) : (
+                    <p className="cstatus">{chatModeLabel(c.permissionMode, defaultPermissionMode, Boolean(c.taskId))}</p>
+                  )}
+                </div>
+                {confirmingId !== c.id && (
+                  <span className="crow-actions">
+                    <IconButton
+                      size="sm"
+                      className="vc-btn--danger-quiet"
+                      aria-label={`Удалить разговор «${c.title}»`}
+                      title="Удалить разговор"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setConfirmingId(c.id)
+                      }}
+                    >
+                      ✕
+                    </IconButton>
+                  </span>
+                )}
+              </div>
+              {confirmingId === c.id && (
+                <div className="delconfirm" onClick={(e) => e.stopPropagation()}>
+                  <span>Удалить?</span>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => {
+                      setConfirmingId(null)
+                      onDelete(c.id)
+                    }}
+                  >
+                    Удалить
+                  </Button>
+                  <Button size="sm" onClick={() => setConfirmingId(null)}>
+                    Отмена
+                  </Button>
+                </div>
+              )}
+            </div>
+            )
+
+          }
 
   return (
     <aside id="app-sidebar" className={open ? 'side side--open' : 'side'}>
@@ -522,118 +643,41 @@ export function Sidebar({
             <RefreshIndicator label="Обновляем список…" />
           </p>
         )}
-        {/* Список — именно список: скринридер объявляет «список, N элементов» и
-            ходит по нему по элементам. role=list висит на обёртке только с
-            беседами: скелетон, пустота и баннер ошибки — не элементы списка, и
-            внутри list им быть нельзя. */}
-        <div className="convo-items" role="list" aria-label="Беседы">
-          {conversations.map((c) => {
-            // Чат задачи виден в списке как задача: ключ, тип и состояние
-            // последнего рана. Подсветку считает та же shared-функция, что и
-            // для карточки на доске (`jcard--ci-*`), поэтому цвета совпадают;
-            // мигает только активный ран, у терминального рамка статичная.
-            const badge = taskBadges[c.id]
-            const run = badge ? ciSummaries[badge.taskId] : undefined
-            const visibleRun = ciSummaryForTask(run, badge?.columnSemantic === 'done')
-            const pulse = ciCardPulse(visibleRun)
-            return (
-            <div
-              key={c.id}
-              role="listitem"
-              className={['convo', c.id === activeId && 'on', badge && 'convo--task', pulse && `convo--ci-${pulse}`]
-                .filter(Boolean)
-                .join(' ')}
-              onClick={() => onPick(c.id)}
-            >
-              <div className="crow">
-                <div className="cinfo">
-                  {/* Название — настоящая кнопка: строку целиком открывает и
-                     клик мышью по любому её месту, но с клавиатуры выбрать
-                     беседу иначе было нельзя (div с onClick не фокусируется и
-                     не реагирует на Enter). aria-current помечает открытую;
-                     aria-selected здесь не годится — он допустим только внутри
-                     listbox/grid, а в строке живут свои кнопки и селект статуса,
-                     то есть option'ом она быть не может. */}
-                  <button
-                    type="button"
-                    className="ctitle"
-                    aria-current={c.id === activeId ? 'true' : undefined}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onPick(c.id)
-                    }}
-                  >
-                    {c.title}
-                  </button>
-                  {badge && (
-                    <p className="ctask">
-                      <TypeIcon type={badge.type} />
-                      <span className="ctask-key">{badge.key}</span>
-                      {visibleRun && (
-                        <span className={`ci-lozenge ci-lozenge--${ciTone(visibleRun.status)}`} title="Результат задачи">
-                          {ciStatusLabel(visibleRun.status)}
-                        </span>
-                      )}
-                      {visibleRun?.latestAttempt?.status === 'cancelled' && <span className="ctask-key">Последняя попытка отменена</span>}
-                    </p>
-                  )}
-                  <p className="cmeta">{formatMeta(c, now)}</p>
-                  {c.messageCount > 0 && (
-                    <p className="chat-last-machine" title="Машина последнего сообщения">
-                      Последнее: {c.lastExecTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === c.lastExecTarget)?.name ?? 'Сервер'}
-                    </p>
-                  )}
-                  {/* Режим чата словом: во время хода — синяя мигающая точка и
-                      «идет …», в простое — тот же режим серым и без точки. */}
-                  {workingSet.has(c.id) ? (
-                    <p className="cstatus on">
-                      <span className="cstatus-dot" aria-hidden />
-                      {activeStatusLabel(c.permissionMode, defaultPermissionMode, Boolean(c.taskId))}
-                    </p>
-                  ) : (
-                    <p className="cstatus">{chatModeLabel(c.permissionMode, defaultPermissionMode, Boolean(c.taskId))}</p>
-                  )}
-                </div>
-                {confirmingId !== c.id && (
-                  <span className="crow-actions">
-                    <IconButton
-                      size="sm"
-                      className="vc-btn--danger-quiet"
-                    
-                      aria-label={`Удалить разговор «${c.title}»`}
-                      title="Удалить разговор"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setConfirmingId(c.id)
-                      }}
-                    >
-                      ✕
-                    </IconButton>
-                  </span>
-                )}
+        {/* Глобальные состояния остаются снаружи секций; внутри каждой — только
+            корректный role=list с разговорами-listitem. */}
+        <div className="convo-groups">
+          {currentWeekConversations.length > 0 && (
+            <section className="convo-section" aria-labelledby="sidebar-current-week-title">
+              <h2 id="sidebar-current-week-title" className="convo-section-title">На этой неделе</h2>
+              <div className="convo-items" role="list" aria-label="Беседы">
+                {currentWeekConversations.map(renderConversation)}
               </div>
-              {confirmingId === c.id && (
-                <div className="delconfirm" onClick={(e) => e.stopPropagation()}>
-                  <span>Удалить?</span>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                  
-                    onClick={() => {
-                      setConfirmingId(null)
-                      onDelete(c.id)
-                    }}
-                  >
-                    Удалить
-                  </Button>
-                  <Button size="sm" onClick={() => setConfirmingId(null)}>
-                    Отмена
-                  </Button>
-                </div>
-              )}
-            </div>
-            )
-          })}
+            </section>
+          )}
+          {olderConversations.length > 0 && (
+            <section className="convo-section convo-section--older" aria-labelledby="sidebar-older-title">
+              <button
+                id="sidebar-older-title"
+                type="button"
+                className="convo-section-toggle"
+                aria-expanded={olderOpen}
+                aria-controls="sidebar-older-conversations"
+                onClick={() => setOlderOpen((open) => !open)}
+              >
+                <span>Более старые</span>
+                <span className="convo-section-count">{olderConversations.length}</span>
+              </button>
+              <div
+                id="sidebar-older-conversations"
+                className="convo-items"
+                role="list"
+                aria-label={`Более старые беседы: ${olderConversations.length}`}
+                hidden={!olderOpen}
+              >
+                {olderConversations.map(renderConversation)}
+              </div>
+            </section>
+          )}
         </div>
       </div>
       )}
