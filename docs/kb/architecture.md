@@ -17,6 +17,10 @@ areas:
 
 # Архитектура: кто с кем разговаривает
 
+## Границы Reader-модулей
+
+Reader implementations разделены на workspace-пакеты `packages/web-reader-app` и `packages/playwright-reader-app`. Их core не импортирует host, другой Reader или chat store: Chat передаётся через `ReaderChatPort`, browser/runtime effects — через `WebReaderHostPort`, `WebRecorderPort`, `PreviewRelayPort`, `PlaywrightReaderHostPort` и `BrowserSessionPort`. Host registry содержит динамические imports обоих продуктов; legacy `App` всё ещё является действующим bootstrap и потому временно содержит совместимый старый Reader path.
+
 ```
 браузер / Electron-renderer
       │  window.api / window.claude / window.stt / ...   (формы — @shared/ipc)

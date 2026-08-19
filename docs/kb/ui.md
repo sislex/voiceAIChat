@@ -22,6 +22,10 @@ areas:
 
 # Интерфейс: React, store, remote-мосты и голосовой UX
 
+## Reader workspace-пакеты
+
+`@voicechat/web-reader-app` и `@voicechat/playwright-reader-app` имеют собственные root/styles exports, route builders/parsers, React-free stores, UI surfaces и Storybook harnesses. Оба используют публичный `SplitChatWorkspace` из `@voicechat/chat-app` и получают Chat только через структурно узкий `ReaderChatPort`; сообщений и LLM lifecycle в Reader stores нет. Legacy `App.tsx` пока сохраняет прежний runtime-путь для browser/desktop bootstrap, поэтому миграция composition path остаётся переходной.
+
 `packages/ui` остаётся React-host для браузера и Electron, а Chat начал выделяться в workspace-пакет `@voicechat/chat-app`. `apps/web` вычисляет URL сервера, вызывает `installRemoteBridges()` до первого импорта состояния приложения, монтирует `<App/>` и подключает стили обоих пакетов. Большая часть продуктовых Chat-компонентов пока всё ещё меняется в `packages/ui`; независимая граница нового пакета описана ниже.
 
 ## Слои

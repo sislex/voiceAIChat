@@ -19,6 +19,10 @@ areas:
 
 # Разработка, тестирование, диагностика и эксплуатация
 
+## Проверки Reader frontend
+
+Оба Reader workspace имеют собственные `typecheck` и `test`. Unit-наборы проверяют route round-trip, независимые conversation selectors, preview fallback без материализации, stale-response protection, browser-session lifecycle/capability degradation и dispose. Architecture tests запрещают host/chatStore/cross-Reader imports, transports, browser storage и imports исходников recorder/browser-runner. `frontend-quality.mjs` включает оба пакета в graph, exports/CSS/lazy/story matrix, а `affected-check` знает их как отдельные workspaces.
+
 ## Установка зависимостей
 
 Корневой `npm install` обслуживает `packages/shared`, `packages/ui`, `apps/llm-runner`, `apps/server`, `apps/web`, `apps/agent`. `apps/desktop` и `apps/agent-tray` устанавливаются отдельно из-за Electron/native ABI и собственных lockfiles.

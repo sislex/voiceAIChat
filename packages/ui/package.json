@@ -22,6 +22,8 @@
     "@voicechat/app-shell": "*",
     "@voicechat/chat-app": "*",
     "@voicechat/operations-app": "*",
+    "@voicechat/web-reader-app": "*",
+    "@voicechat/playwright-reader-app": "*",
     "@voicechat/projects-app": "*",
     "@voicechat/shared": "*",
     "@voicechat/ui-kit": "*",
