@@ -7,6 +7,7 @@ import type { Board, Task } from '@shared/projects'
 import type { CiRunSummary, CiTaskReport } from '@shared/ci'
 import { EMPTY_CI_USAGE_TOTALS } from '@shared/ci'
 import { TaskModal, type TaskModalProps } from './TaskModal'
+import '../../styles/app.css'
 import { createFakeCi } from '../../test/fakeApi'
 import { makeReportStep, makeRunReport, makeTaskReport, makeUsageTotals } from '../../test/fixtures'
 import type { KbTaskUsageReport } from '@shared/kb'
@@ -414,6 +415,18 @@ describe('TaskModal — вкладки и merge', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Ручное QA', 'Merge', 'Лента рана'
     ])
+  })
+
+  it('растягивает только вкладку ленты рана на ширину контентной области', () => {
+    render(<TaskModal {...props()} />)
+    const feedTab = screen.getByTestId('task-run-feed-tab')
+    const mergeTab = screen.getByTestId('task-merge-tab')
+
+    expect(feedTab).toHaveClass('task-run-feed-tab')
+    expect(getComputedStyle(feedTab).width).toBe('100%')
+    expect(getComputedStyle(feedTab).maxWidth).toBe('100%')
+    expect(getComputedStyle(feedTab).overflowX).toBe('hidden')
+    expect(mergeTab).not.toHaveClass('task-run-feed-tab')
   })
 
   it('располагает preparation и QA-вкладки на своих местах workflow', () => {
