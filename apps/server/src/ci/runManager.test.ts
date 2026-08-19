@@ -149,15 +149,14 @@ it('каталог машин задачи объединяет личные и 
   expect(body.machines.some((machine: { agentId: string }) => machine.agentId === foreign.id)).toBe(false)
 })
 
-it('пропускает недоступное закрепление и использует валидный персональный default', async () => {
-  const { project, task } = setup()
-  const personal = db.createAgent('admin', 'Временная')
-  db.updateTask('admin', project.id, task.id, { agentId: personal.id })
-  db.deleteAgent('admin', personal.id)
+it('задача без override использует project default, а не персональный default инициатора', async () => {
+  const { project, task, agent } = setup()
+  const personal = db.createAgent('admin', 'Персональная')
+  db.setUserProjectDefaultMachine('admin', project.id, personal.id)
 
   const response = await inj(admin, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/ci/run` })
   expect(response.statusCode).toBe(202)
-  expect(response.json()).toMatchObject({ agentSelectionSource: 'user_project_default' })
+  expect(response.json()).toMatchObject({ agentId: agent.id, agentSelectionSource: 'project_default' })
 })
 
 async function run(projectId: string, taskId: string, payload?: object): Promise<string> {
@@ -177,6 +176,25 @@ async function waitRun(runId: string): Promise<{ run: { status: string; taskId: 
 }
 
 describe('ci run manager', () => {
+  it('заново разрешает project default при каждом запуске задачи без override', async () => {
+    const { project, task, agent } = setup()
+    const second = db.createAgent('admin', 'M2')
+    db.linkMachine('admin', project.id, second.id)
+    db.setProjectMachineReposRoot('admin', project.id, second.id, '/repos-2')
+    db.setProjectMachinePath('admin', project.id, second.id, '/existing/project-2')
+
+    const firstId = await run(project.id, task.id)
+    expect((await inj(admin, { method: 'GET', url: `/api/ci/runs/${firstId}` })).json().run.agentId).toBe(agent.id)
+    await waitRun(firstId)
+
+    db.setProjectDefaultMachine('admin', project.id, second.id)
+    const secondId = await run(project.id, task.id)
+    expect((await inj(admin, { method: 'GET', url: `/api/ci/runs/${secondId}` })).json().run).toMatchObject({
+      agentId: second.id,
+      agentSelectionSource: 'project_default'
+    })
+  })
+
   it('подготавливает отсутствующий repos_root из существующей папки проекта', async () => {
     const { project, task, agent } = setup()
     db.setProjectMachineReposRoot('admin', project.id, agent.id, '')
