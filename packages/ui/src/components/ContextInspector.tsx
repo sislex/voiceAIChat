@@ -21,7 +21,7 @@ function tool(id: string, title: string, source: string, description: string, st
   return { id, title, technicalName: id, description, type: 'MCP-инструмент', source, scope: 'Текущий ход', status, priority: 'Возможности (не уровень инструкций)', details: description, reason: status === 'Доступен' ? 'Подключён текущей конфигурацией разговора.' : 'Не подключён текущей конфигурацией.', limitations, parameters, mutates }
 }
 function detailIdFromHash(conversationId: string): string | null {
-  const prefix = `#/conversations/${conversationId}/context/`
+  const prefix = `#/chat/${encodeURIComponent(conversationId)}/context/`
   return window.location.hash.startsWith(prefix) ? decodeURIComponent(window.location.hash.slice(prefix.length).split(/[/?]/)[0] ?? '') : null
 }
 
@@ -73,8 +73,8 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const detail = detailId ? allItems.find((item) => item.id === detailId) : undefined
   const tools = groups.find((group) => group.id === 'tools')?.items.filter((item) => item.status === 'Доступен').length ?? 0
   const instructions = groups.slice(0, 4).flatMap((group) => group.items).filter((item) => ['Применяется', 'Скрытый текст', 'Ограничен'].includes(item.status)).length
-  const openDetail = (id: string): void => { window.location.hash = `/conversations/${props.conversationId}/context/${encodeURIComponent(id)}`; setDetailId(id) }
-  const closeDetail = (): void => { window.history.pushState(null, '', window.location.pathname + window.location.search); setDetailId(null) }
+  const openDetail = (id: string): void => { window.location.hash = `/chat/${encodeURIComponent(props.conversationId)}/context/${encodeURIComponent(id)}`; setDetailId(id) }
+  const closeDetail = (): void => { window.location.hash = `/chat/${encodeURIComponent(props.conversationId)}`; setDetailId(null) }
 
   if (detail) return <section className="context-detail" aria-labelledby="context-detail-title">
     <Button size="sm" onClick={closeDetail}>← Ко всем источникам</Button>

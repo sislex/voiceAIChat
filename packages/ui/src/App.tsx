@@ -623,7 +623,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [compactChat, sidebarOpen])
-  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
+  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(chatRoute?.kind === 'context-item')
+  useEffect(() => {
+    if (chatRoute?.kind === 'context-item') setConversationSettingsOpen(true)
+  }, [chatRoute?.kind])
   const [taskProposal, setTaskProposal] = useState<{
     projectId: string
     messageId: string
@@ -1766,7 +1769,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             if (!agent) return
             await operationsActions.setAgentPolicy(agentId, { ...agent.policy, skills: [...agent.policy.skills, skill] })
           }}
-          onClose={() => setConversationSettingsOpen(false)}
+          onClose={() => {
+            setConversationSettingsOpen(false)
+            if (chatRoute?.kind === 'context-item') navigate(`/chat/${activeConversation.id}`)
+          }}
         />
       )}
 
