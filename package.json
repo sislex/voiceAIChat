@@ -8,6 +8,7 @@
     "packages/*",
     "apps/llm-runner",
     "apps/stt-runner",
+    "apps/automation-runner",
     "apps/browser-runner",
     "apps/server",
     "apps/web",

@@ -28,6 +28,7 @@ services:
       - runner-work
       - runner-personal
       - stt-runner
+      - automation-runner
     environment:
       HOST: 0.0.0.0
       PORT: "8787"
@@ -91,6 +92,26 @@ services:
       retries: 5
     restart: unless-stopped
 
+  automation-runner:
+    build:
+      context: .
+      target: automation-runner-runtime
+    image: voicechat-automation-runner
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8800"
+      VC_AUTOMATION_DATA_DIR: /data
+      VC_AUTOMATION_RUNNER_TOKEN: ${VC_AUTOMATION_RUNNER_TOKEN:-voicechat-automation-local-token}
+      VC_LLM_RUNNER_HEALTH_URL: http://runner-work:8790/v1/health
+    volumes:
+      - vc-automation-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8800/v1/health',{headers:{authorization:'Bearer '+process.env.VC_AUTOMATION_RUNNER_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   runner-work:
     build:
       context: .
@@ -150,6 +171,7 @@ services:
 
 volumes:
   vc-data:
+  vc-automation-data:
   vc-claude:
   vc-codex:
   vc-stt-models:

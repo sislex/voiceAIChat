@@ -2,6 +2,7 @@
 #  • server-runtime — Fastify-сервер + web-билды ChatAI и Web Recorder
 #  • llm-runner-runtime — внутренний исполнитель claude/codex CLI (apps/llm-runner)
 #  • stt-runner-runtime — единственный владелец whisper-cli и STT-моделей
+#  • automation-runner-runtime — durable execution plane CI/QA/merge
 #
 # Особенности репозитория:
 #  • server и llm-runner НЕ компилируются в JS — запускаются через tsx прямо из
@@ -102,3 +103,12 @@ VOLUME ["/data"]
 EXPOSE 8790
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/llm-runner && exec node --import tsx src/index.ts"]
+
+# ---- Runtime durable Automation Runner -----------------------------------
+FROM runtime-base AS automation-runner-runtime
+ENV PORT=8800 VC_AUTOMATION_DATA_DIR=/data
+RUN mkdir -p /data && chown -R node:node /data
+VOLUME ["/data"]
+EXPOSE 8800
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/automation-runner && exec node --import tsx src/index.ts"]
