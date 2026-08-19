@@ -10,7 +10,7 @@ import type {
   CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task, CiUsageKind, CiStageLlmSnapshot
 } from '@voicechat/shared'
 import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand } from '@voicechat/shared'
-import { isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, pickCiRunAgent, resolveCiStageModel } from '@voicechat/shared'
+import { isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, resolveCiStageModel } from '@voicechat/shared'
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { PROD_REBUILD_TASK_TITLE } from '../db/database.js'
@@ -392,27 +392,22 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     // Параллельность — между задачами: два рана одной задачи неизбежно делили бы
     // рабочую директорию и ветку, а это и есть то, чего мы не допускаем.
     if (hasActiveRunForTask(taskId)) return { error: 'Для этой задачи уже выполняется ран' }
-    // Ordinary runs resolve strictly for the initiating user. Project.defaultAgentId
-    // is reserved for explicit system/production flows and is never a personal default.
+    // null у задачи — динамическое наследование текущего project default.
+    // Результат вычисляется на каждом запуске; персональный default инициатора
+    // в цепочку задач не входит.
     let agentId: string | null = null
-    let agentSelectionSource: 'explicit' | 'task_pinned' | 'user_project_default' | 'fallback'
+    let agentSelectionSource: 'explicit' | 'task_pinned' | 'project_default'
     if (launchOptions?.agentId) {
       agentId = launchOptions.agentId
       agentSelectionSource = 'explicit'
-    } else if (task.agentId && deps.db.canUseAgent(userId, task.agentId, projectId)) {
+    } else if (task.agentId) {
       agentId = task.agentId
       agentSelectionSource = 'task_pinned'
-    } else if (launch === 'parallel') {
-      // Parallel launch is the one product rule that explicitly permits a
-      // load-aware fallback; only currently usable project-visible machines participate.
-      const fallbackCandidates = deps.db.listUsableAgents(userId, projectId).map((agent) => agent.id)
-      agentId = pickCiRunAgent(fallbackCandidates, deps.db.getUserProjectDefaultMachine(userId, projectId), deps.db.countActiveCiRunsByAgent())
-      agentSelectionSource = 'fallback'
     } else {
-      agentId = deps.db.getUserProjectDefaultMachine(userId, projectId)
-      agentSelectionSource = 'user_project_default'
+      agentId = project.defaultAgentId
+      agentSelectionSource = 'project_default'
     }
-    if (!agentId) return { error: 'Выберите машину: персональная машина по умолчанию не задана или недоступна' }
+    if (!agentId) return { error: 'машина проекта по умолчанию не задана. Выберите машину задачи или настройте проект' }
     if (!deps.db.canUseAgent(userId, agentId, projectId)) {
       return { error: 'Выбранная машина больше недоступна для этой задачи' }
     }

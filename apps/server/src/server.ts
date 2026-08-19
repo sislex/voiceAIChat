@@ -266,7 +266,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (runnerFs) return runnerFs.authStatus(userId)
     return getRunnerLoginStatus({ home: ensureCliProfile(opts.config.dataDir, userId).home })
   })
-  await registerRest(app, db, opts.config.dataDir, { runnerFs: runnerFs ?? undefined, authStatus })
+  // Реестр создаётся до REST: task-chat context обязан показывать ту же effective
+  // online-машину, которую затем использует фактический ход.
+  const agentRegistry = new AgentRegistry()
+  await registerRest(app, db, opts.config.dataDir, {
+    runnerFs: runnerFs ?? undefined,
+    authStatus,
+    isAgentOnline: (agentId) => agentRegistry.isOnline(agentId)
+  })
   registerPreviewProxy(app)
 
   const profileHome = (userId: string): string =>
@@ -343,7 +350,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
 
   // Машины-агенты: реестр онлайн-подключений + REST + MCP-мост для проброса Bash.
-  const agentRegistry = new AgentRegistry()
   await registerAgentRoutes(app, db, agentRegistry, {
     agentApp: opts.config.agentAppPath,
     desktopApp: opts.config.desktopAppPath

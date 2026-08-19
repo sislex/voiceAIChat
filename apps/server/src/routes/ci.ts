@@ -205,10 +205,15 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
       }
     })
     const selectedAvailable = task.agentId == null || machines.some((machine) => machine.agentId === task.agentId)
+    const effectiveAgentId = task.agentId ?? project.defaultAgentId ?? null
+    const effectiveMachine = effectiveAgentId ? machines.find((machine) => machine.agentId === effectiveAgentId) : undefined
     return {
       machines,
       selectedAgentId: task.agentId ?? null,
-      unavailableSelection: selectedAvailable || !task.agentId ? null : { agentId: task.agentId, name: db.agentName(task.agentId) ?? null }
+      unavailableSelection: selectedAvailable || !task.agentId ? null : { agentId: task.agentId, name: db.agentName(task.agentId) ?? null },
+      inheritanceSource: task.agentId ? 'explicit' : 'project_default',
+      effectiveAgentId,
+      effectiveMachineName: effectiveMachine?.name ?? (effectiveAgentId ? db.agentName(effectiveAgentId) ?? null : null)
     }
   })
 

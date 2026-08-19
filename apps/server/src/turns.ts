@@ -441,7 +441,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Контекст задачи, к которой привязан чат: иерархия, этап воркфлоу, папка и
     // ветка разработки. Без этого чат «знает» только проект, хотя task_id есть.
     if (conv?.taskId) {
-      const tc = deps.db.getTaskChatContext(userId, conversationId)
+      const tc = deps.db.getTaskChatContext(userId, conversationId, deps.agents ? (agentId) => deps.agents!.isOnline(agentId) : undefined)
       if (tc) {
         const lines = [
           `Задача: ${tc.task.key} · ${tc.task.title}`,
@@ -471,15 +471,35 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     ].filter(Boolean)
     if (personalizationLines.length) basePrompt = `${basePrompt}\n\n## Персонализация пользователя\n${personalizationLines.join('\n')}\nЭти предпочтения уступают явной инструкции текущего сообщения и настройкам разговора/проекта.`
     const prompt = appendChangeAuthorizationHint(appendImageHint(appendToolHint(appendQuestionsHint(basePrompt))))
-    // Цель выполнения команд: выбранная машина-агент. Только своя машина
-    // (чужую игнорируем → выполняем на сервере). Офлайн своей — сразу ошибка.
-    const requestedTarget =
-      req.execTarget === undefined ? (conv ? conv.execTarget : settings.execTarget) : req.execTarget
-    let executionDisabled = requestedTarget === 'none'
-    let target =
-      !executionDisabled && requestedTarget && deps.db.canUseAgent(userId, requestedTarget, conv?.projectId)
-        ? requestedTarget
-        : null
+    // Единый resolver используется также REST-каталогом и task-chat context:
+    // null хранит наследование, явный override не получает молчаливый fallback.
+    const machine = deps.db.resolveConversationMachine(userId, conversationId, {
+      ...(req.execTarget !== undefined ? { execTarget: req.execTarget } : {}),
+      ...(deps.agents ? { isOnline: (agentId: string) => deps.agents!.isOnline(agentId) } : {})
+    })
+    const executionDisabled = machine?.source === 'disabled'
+    if (machine?.error === 'unavailable') {
+      starting.delete(conversationId)
+      broadcast({ t: 'claude.error', conversationId, message: 'Выбранная машина больше недоступна для этого чата' }, userId)
+      return
+    }
+    if (machine?.error === 'offline' && machine.agentId) {
+      starting.delete(conversationId)
+      broadcast({ t: 'claude.error', conversationId, message: `Выбранная машина «${deps.agents?.nameOf(machine.agentId) ?? machine.agentId}» offline` }, userId)
+      return
+    }
+    const target = executionDisabled ? null : machine?.agentId ?? null
+    // Пустой проект у admin сохраняет legacy server-side ход; если машины у
+    // проекта есть, но ни одна не доступна online, это уже явная блокировка.
+    if (!executionDisabled && !target && conv?.projectId && deps.db.listUsableAgents(userId, conv.projectId).length > 0) {
+      starting.delete(conversationId)
+      broadcast({ t: 'claude.error', conversationId, message: 'Нет доступной online-машины: запуск чата заблокирован' }, userId)
+      return
+    }
+    if (!executionDisabled && !target && role !== 'admin') {
+      broadcast({ t: 'claude.error', conversationId, message: 'Нет доступной online-машины: remote-команды заблокированы' }, userId)
+    }
+    const requestedTarget = target
     // Инструменты БЗ — ВНЕ ветки `remote`: база знаний read-only и нужна модели
     // и в ходе без машины (там она вообще единственный источник контекста).
     const kbToolAvailable = (): boolean => {
@@ -538,38 +558,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let remoteFileToken: string | null = null
     if (target && deps.agents && deps.mcpBaseUrl) {
       if (!deps.agents.isOnline(target)) {
-        const unavailableName = deps.agents.nameOf(target) ?? target
-        const alternative = deps.db
-          .listAgents(userId)
-          .find((agent) => agent.id !== target && deps.agents?.isOnline(agent.id))
-        if (alternative) {
-          const alternativeName = deps.agents.nameOf(alternative.id) ?? alternative.id
-          broadcast(
-            {
-              t: 'claude.error',
-              conversationId,
-              message: `WARNING: Предупреждение: машина «${unavailableName}» не в сети. Ход переключён на машину «${alternativeName}».`
-            },
-            userId
-          )
-          target = alternative.id
-        } else {
-          executionDisabled = true
-          target = null
-          permissionMode = 'plan'
-          broadcast(
-            {
-              t: 'claude.error',
-              conversationId,
-              message: `WARNING: Предупреждение: машина «${unavailableName}» не в сети, и доступных машин нет. Все машины не в сети — модель продолжит отвечать без агентского режима.`
-            },
-            userId
-          )
-        }
+        starting.delete(conversationId)
+        broadcast({ t: 'claude.error', conversationId, message: `Выбранная машина «${deps.agents.nameOf(target) ?? target}» offline` }, userId)
+        return
       }
-      if (!target) {
-        // Продолжаем ход без remote MCP; модель может отвечать текстом.
-      } else {
       const policy = deps.agents.policyOf(target)
       // Чат проекта видит и остальные машины проекта: query `project` включает в
       // мосте инструмент machines и параметр machine, а имена уходят в системный
@@ -586,12 +578,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         mcpUrl:
           `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}` +
           `${remoteFileToken ? `&files=${encodeURIComponent(remoteFileToken)}` : ''}` +
-          `${conv?.workdir ? `&cwd=${encodeURIComponent(conv.workdir)}` : ''}` +
+          `${(conv?.workdir ?? (conv?.projectId ? projectMachines.find((m) => m.agentId === target)?.path : null)) ? `&cwd=${encodeURIComponent((conv?.workdir ?? projectMachines.find((m) => m.agentId === target)?.path)!)}` : ''}` +
           `${conv?.projectId && otherMachines.length ? `&project=${encodeURIComponent(conv.projectId)}` : ''}`,
         agentName: deps.agents.nameOf(target) ?? target,
         policySummary: policy ? policySummary(policy, conv?.skillNames ?? []) : undefined,
         ...(otherMachines.length ? { projectMachines: otherMachines } : {})
-      }
       }
     }
     // `cwd` здесь только желаемый: локальный spawn или удалённый runner уже сами
