@@ -405,6 +405,22 @@ describe('projects: папка машины, дефолт, привязка ча
     expect(db.getProject('alice', p.id)!.defaultAgentId).toBeNull()
   })
 
+  it('сохраняет конфигурацию собственной машины без предоставления проекту', () => {
+    const p = db.createProject('alice', { name: 'Private machine config' })
+    const machine = db.createAgent('alice', 'Private Mac')
+    db.addMember('alice', p.id, 'bob')
+
+    db.setProjectMachinePath('alice', p.id, machine.id, '/work/project')
+    db.setProjectMachineReposRoot('alice', p.id, machine.id, '/work/repos')
+    db.setProjectMachineSsh('alice', p.id, machine.id, 'mac.local', 'alice')
+
+    expect(db.isMachineSharedWithProject(p.id, machine.id)).toBe(false)
+    expect(db.getProject('alice', p.id)!.machines.find((item) => item.agentId === machine.id)).toMatchObject({
+      path: '/work/project', reposRoot: '/work/repos', sshHost: 'mac.local', sshUser: 'alice', sharedWithProject: false
+    })
+    expect(db.getProject('bob', p.id)!.machines.some((item) => item.agentId === machine.id)).toBe(false)
+  })
+
   it('listProjectMachines отдаёт машины проекта с именами и папками (для MCP-моста)', () => {
     const p = db.createProject('alice', { name: 'P1' })
     const other = db.createProject('alice', { name: 'P2' })
@@ -427,9 +443,13 @@ describe('projects: папка машины, дефолт, привязка ча
   it('canUseAgent даёт проектный доступ только участнику в явном контексте и отзывает его сразу', () => {
     const p = db.createProject('alice', { name: 'Shared' })
     const machine = db.createAgent('alice', 'Mac')
+    const unsharedMachine = db.createAgent('alice', 'Personal Mac')
     db.linkMachine('alice', p.id, machine.id)
     db.addMember('alice', p.id, 'bob')
 
+    expect(db.isMachineSharedWithProject(p.id, unsharedMachine.id)).toBe(false)
+    expect(db.canUseAgent('alice', unsharedMachine.id, p.id)).toBe(true)
+    expect(db.canUseAgent('bob', unsharedMachine.id, p.id)).toBe(false)
     expect(db.canUseAgent('alice', machine.id)).toBe(true)
     expect(db.canUseAgent('bob', machine.id)).toBe(false)
     expect(db.canUseAgent('bob', machine.id, p.id)).toBe(true)
