@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-08-19
-checked: 0a645e99
+updated: 2026-08-20
+checked: 9c99776f
 areas:
   - apps/server/src/server.ts
   - apps/llm-runner/src/server.ts
