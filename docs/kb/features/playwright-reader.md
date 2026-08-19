@@ -1,10 +1,11 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-08-16
-checked: de895b5
+updated: 2026-08-19
+checked: 0a645e99
 areas:
   - apps/browser-runner/src
   - packages/shared/src/types.ts
+  - packages/playwright-reader-app
   - packages/ui/src/App.tsx
   - packages/ui/src/store/domains/chatStore.ts
   - apps/server/src/db/database.ts
@@ -15,7 +16,9 @@ areas:
 
 ## Независимый frontend domain
 
-`@voicechat/playwright-reader-app` владеет route `#/playwright-reader[/conversationId]`, отдельным conversation read model и `BrowserSessionState` (`idle`, `starting`, `connected`, `stopped`, `error`). `BrowserSessionPort` инъецируется host-адаптером; UI не заявляет Chromium подключённым при `capabilities.chromium === false`, а недоступная навигация disabled. Полноценная server orchestration Chromium по-прежнему не реализована.
+`@voicechat/playwright-reader-app` владеет route `#/playwright-reader[/conversationId]`, фильтруемым по `assistantKind: 'playwright-reader'` conversation read model, browser-панелью и собственным store/module lifecycle. Chat приходит через `ReaderChatPort`, а сессия — через создаваемый host-адаптером `BrowserSessionPort`; прямых imports host, Web Reader, `chatStore`, transport, browser storage или исходников browser-runner в пакете нет.
+
+Локальная frontend-модель `BrowserSessionState` имеет состояния `idle`, `starting`, `connected`, `stopped`, `error` и capabilities `chromium`, `navigate`, `screencast`. При активации предыдущая session отписывается и dispose-ится, новая запускается для выбранного `conversationId`; смена разговора защищена generation token, `stop` делегируется session, общий dispose очищает подписки и session. UI не заявляет Chromium подключённым при `capabilities.chromium === false`, показывает явную недоступность и блокирует навигацию без `navigate`. Это честная деградация по возможностям adapter; полноценная server orchestration Chromium по-прежнему не реализована.
 
 ## Что это и чем отличается от Web Reader
 
