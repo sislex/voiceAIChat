@@ -1420,13 +1420,52 @@ export class VoiceChatDb {
   }
 
 
-  /** Вернуть чат задачи к папке проекта после удаления изолированного клона. */
+  /**
+   * Единое вычисление машины чата. Сохранённый `null` означает позднее
+   * наследование персонального default пользователя; только наследование получает
+   * безопасный online-fallback. Явный override не заменяется молча.
+   */
+  resolveConversationMachine(
+    userId: string,
+    conversationId: string,
+    options: { execTarget?: string | null; projectId?: string | null; isOnline?: (agentId: string) => boolean } = {}
+  ): {
+    agentId: string | null
+    source: 'explicit' | 'personal_default' | 'fallback' | 'disabled' | 'none'
+    error: 'unavailable' | 'offline' | 'no_online_machine' | null
+  } | null {
+    const conversation = this.getConversation(userId, conversationId)
+    if (!conversation) return null
+    const explicitTarget = options.execTarget === undefined ? conversation.execTarget : options.execTarget
+    const projectId = options.projectId === undefined ? conversation.projectId : options.projectId
+    if (explicitTarget === 'none') return { agentId: null, source: 'disabled', error: null }
+    const usable = this.listUsableAgents(userId, projectId)
+    const isOnline = options.isOnline ?? (() => true)
+    if (explicitTarget) {
+      if (!this.canUseAgent(userId, explicitTarget, projectId)) {
+        return { agentId: explicitTarget, source: 'explicit', error: 'unavailable' }
+      }
+      return {
+        agentId: explicitTarget,
+        source: 'explicit',
+        error: isOnline(explicitTarget) ? null : 'offline'
+      }
+    }
+    const personalDefault = projectId
+      ? this.getUserProjectDefaultMachine(userId, projectId)
+      : this.getSettings(userId).defaultAgentId
+    if (personalDefault && usable.some((agent) => agent.id === personalDefault) && isOnline(personalDefault)) {
+      return { agentId: personalDefault, source: 'personal_default', error: null }
+    }
+    const fallback = usable.find((agent) => isOnline(agent.id))
+    if (fallback) return { agentId: fallback.id, source: 'fallback', error: null }
+    return { agentId: null, source: 'none', error: 'no_online_machine' }
+  }
+
+  /** Вернуть чат задачи к наследованию после удаления изолированного клона. */
   restoreTaskChatWorkdir(userId: string, id: string, projectId: string): Conversation | null {
-    const project = this.getProject(userId, projectId)
-    if (!project) return null
-    const agentId = project.defaultAgentId
-    const path = agentId ? project.machines.find((machine) => machine.agentId === agentId)?.path ?? '' : ''
-    return this.setConversationExecTarget(userId, id, agentId, path || null)
+    if (!this.getProject(userId, projectId)) return null
+    return this.setConversationExecTarget(userId, id, null, null)
   }
 
   setConversationKbContextMode(userId: string, id: string, mode: 'auto' | 'manual' | 'off'): Conversation | null {
@@ -2972,8 +3011,8 @@ export class VoiceChatDb {
 
   /**
    * Привязать чат к проекту (или отвязать при projectId=null). При привязке
-   * ПЕРЕЗАПИСЫВАЕТ у чата машину (=дефолт проекта), рабочую папку (=папка этой
-   * машины) и навыки (=skills проекта). Гейт — членство в проекте.
+   * машина остаётся null: это динамическое наследование персонального default
+   * текущего пользователя. Навыки наследуются от проекта. Гейт — членство.
    */
   setConversationProject(userId: string, convId: string, projectId: string | null): Conversation | null {
     const current = this.getConversation(userId, convId)
@@ -2986,21 +3025,18 @@ export class VoiceChatDb {
     }
     const project = this.getProject(userId, projectId)
     if (!project) return null // не участник / проект не найден
-    const defAgent = project.defaultAgentId
-    const rawPath = defAgent ? project.machines.find((m) => m.agentId === defAgent)?.path ?? '' : ''
-    const workdir = rawPath !== '' ? rawPath : null
     this.db
       .prepare(
-        `UPDATE conversations SET project_id = ?, exec_target = ?, workdir = ?, skill_names = ?, llm_engine_id = NULL, llm_provider = NULL, llm_model = NULL WHERE id = ? AND user_id = ?`
+        `UPDATE conversations SET project_id = ?, exec_target = NULL, workdir = NULL, skill_names = ?, llm_engine_id = NULL, llm_provider = NULL, llm_model = NULL WHERE id = ? AND user_id = ?`
       )
-      .run(projectId, defAgent, workdir, JSON.stringify(project.skills), convId, userId)
+      .run(projectId, JSON.stringify(project.skills), convId, userId)
     return this.getConversation(userId, convId)
   }
 
   /**
    * Открыть связанный с задачей чат текущего пользователя, создав его при
    * отсутствии. Новый чат привязывается к задаче (`task_id`) и её проекту:
-   * машина/папка — из дефолта проекта, навыки — навыки самой карточки (`Task.skills`).
+   * машина/папка остаются null (персональное наследование), навыки — навыки самой карточки (`Task.skills`).
    * Идемпотентно по (userId, taskId): одна задача — не более одного чата на юзера.
    * Имя по умолчанию — «Задача <заголовок>»: в общем списке чатов такой чат сразу
    * отличим от обычного разговора. Дальше его можно переименовать вручную.
@@ -3020,10 +3056,6 @@ export class VoiceChatDb {
         .run(this.now(), existing.id, userId)
       return this.getConversation(userId, existing.id)
     }
-    const project = this.getProject(userId, projectId)
-    const defAgent = project?.defaultAgentId ?? null
-    const rawPath = defAgent ? project?.machines.find((m) => m.agentId === defAgent)?.path ?? '' : ''
-    const workdir = rawPath !== '' ? rawPath : null
     const id = this.newId()
     const ts = this.now()
     const title = task.title.trim() ? `Задача ${task.title.trim()}` : 'Задача'
@@ -3032,7 +3064,7 @@ export class VoiceChatDb {
         `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id)
          VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(id, title, ts, ts, userId, defAgent, workdir, JSON.stringify(task.skills), null, null, null, projectId, taskId)
+      .run(id, title, ts, ts, userId, null, null, JSON.stringify(task.skills), null, null, null, projectId, taskId)
     return this.getConversation(userId, id)
   }
 
@@ -3096,7 +3128,7 @@ export class VoiceChatDb {
    * этап воркфлоу (колонка), машина и папка разработки, последний CI-ран.
    * `null`, если чат не привязан к задаче.
    */
-  getTaskChatContext(userId: string, conversationId: string): TaskChatContext | null {
+  getTaskChatContext(userId: string, conversationId: string, isOnline?: (agentId: string) => boolean): TaskChatContext | null {
     const conv = this.getConversation(userId, conversationId)
     if (!conv?.taskId || !conv.projectId) return null
     const project = this.getProject(userId, conv.projectId)
@@ -3114,7 +3146,8 @@ export class VoiceChatDb {
     const column = this.db.prepare(`SELECT name, semantic_type FROM kanban_columns WHERE id = ?`).get(task.columnId) as
       | { name: string; semantic_type: string | null }
       | undefined
-    const agentId = conv.execTarget && conv.execTarget !== 'none' ? conv.execTarget : project.defaultAgentId
+    const resolution = this.resolveConversationMachine(userId, conversationId, { isOnline })
+    const agentId = resolution?.error ? null : resolution?.agentId ?? null
     const machine = agentId ? project.machines.find((m) => m.agentId === agentId) : undefined
     const displaySummary = this.latestCiRunSummary(task.id)
     const runRow = displaySummary ? this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(displaySummary.id) as CiRunRow | undefined : undefined
@@ -3906,7 +3939,7 @@ export class VoiceChatDb {
 
   // --- Раны и шаги ---
 
-  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; agentOwnerId?: string | null; agentOwnerName?: string; agentSelectionSource?: 'explicit' | 'task_pinned' | 'user_project_default' | 'fallback' | 'unknown'; triggeredBy: string; prevColumnId: string | null; runColumnId?: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
+  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; agentOwnerId?: string | null; agentOwnerName?: string; agentSelectionSource?: 'explicit' | 'task_pinned' | 'project_default' | 'user_project_default' | 'fallback' | 'unknown'; triggeredBy: string; prevColumnId: string | null; runColumnId?: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
     const id = this.newId()
     const ts = this.now()
     this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, agent_owner_id, agent_owner_name, agent_selection_source, status, triggered_by, prev_column_id, run_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.agentOwnerId ?? null, args.agentOwnerName ?? 'неизвестно', args.agentSelectionSource ?? 'unknown', args.triggeredBy, args.prevColumnId, args.runColumnId ?? null, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
@@ -6690,7 +6723,7 @@ function mapCiRun(r: CiRunRow): CiRun {
   return {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
     agentOwnerId: r.agent_owner_id ?? null, agentOwnerName: r.agent_owner_name ?? 'неизвестно',
-    agentSelectionSource: r.agent_selection_source === 'explicit' || r.agent_selection_source === 'task_pinned' || r.agent_selection_source === 'user_project_default' || r.agent_selection_source === 'fallback' ? r.agent_selection_source : 'unknown',
+    agentSelectionSource: r.agent_selection_source === 'explicit' || r.agent_selection_source === 'task_pinned' || r.agent_selection_source === 'project_default' || r.agent_selection_source === 'user_project_default' || r.agent_selection_source === 'fallback' ? r.agent_selection_source : 'unknown',
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
     prevColumnId: r.prev_column_id, runColumnId: r.run_column_id ?? null, terminalColumnId: r.terminal_column_id ?? null, llmEngineId: r.llm_engine_id ?? null, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
     mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),

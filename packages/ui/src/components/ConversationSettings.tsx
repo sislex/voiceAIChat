@@ -62,15 +62,12 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], defaultAgentId, projects, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
   const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'context'>('general')
-  const defaultExecTarget = defaultAgentId && agents.some((a) => a.id === defaultAgentId) ? defaultAgentId : null
-  const [execTarget, setExecTarget] = useState<string | null>(
-    conversation.execTarget ?? (conversation.messageCount === 0 ? defaultExecTarget : null)
-  )
+  const [execTarget, setExecTarget] = useState<string | null>(conversation.execTarget)
   const [workdir, setWorkdir] = useState<string | null>(conversation.workdir)
   const [skillNames, setSkillNames] = useState<string[]>(conversation.skillNames)
   const [llmEngineId, setLlmEngineId] = useState<string | null>(conversation.llmEngineId ?? settings.llmEngineId ?? null)
@@ -93,7 +90,6 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const [skillCommand, setSkillCommand] = useState('')
   const [projectId, setProjectId] = useState<string | null>(conversation.projectId ?? null)
   const [projectMachines, setProjectMachines] = useState<ProjectMachine[]>([])
-  const [projectDefaultAgentId, setProjectDefaultAgentId] = useState<string | null>(null)
   const [availableAgents, setAvailableAgents] = useState<AgentInfo[]>(agents)
   const [machineAccessLost, setMachineAccessLost] = useState(false)
   // Список машин выбранного проекта (для фильтра и подстановки папок).
@@ -101,13 +97,11 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
     let alive = true
     if (!projectId) {
       setProjectMachines([])
-      setProjectDefaultAgentId(null)
       return
     }
     void fetchProjectDetail(projectId).then((d) => {
       if (alive && d) {
         setProjectMachines(d.machines)
-        setProjectDefaultAgentId(d.defaultAgentId)
         void window.ci?.getProjectCiLlm(projectId).then((view) => {
           if (!alive) return
           const inherited = { engineId: settings.llmEngineId ?? null, provider: view.config.provider, model: view.config.model }
@@ -154,10 +148,8 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
     const d = await fetchProjectDetail(id)
     if (!d) return
     setProjectMachines(d.machines)
-    setProjectDefaultAgentId(d.defaultAgentId)
-    setExecTarget(d.defaultAgentId)
-    const dm = d.defaultAgentId ? d.machines.find((m) => m.agentId === d.defaultAgentId) : undefined
-    setWorkdir(dm && dm.path ? dm.path : null)
+    setExecTarget(null)
+    setWorkdir(null)
     setSkillNames([...d.skills])
     setCwd('')
     setEntries([])
@@ -298,12 +290,12 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
               setWorkdir(projectId ? (pm && pm.path ? pm.path : null) : null)
               setCwd(''); setEntries([])
             }}>
-              <option value="">Без машины</option>
+              <option value="">{availableAgents.find((agent) => agent.isEffective)?.effectiveSource === 'fallback' ? 'Автовыбор: ' : 'Моя машина по умолчанию: '}{availableAgents.find((agent) => agent.isEffective)?.name ?? 'нет доступной машины'}</option>
               {availableAgents.some((a) => agents.some((own) => own.id === a.id)) && <optgroup label="Мои машины">
-                {availableAgents.filter((a) => agents.some((own) => own.id === a.id)).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.id === (projectId ? projectDefaultAgentId : defaultAgentId) ? ' — по умолчанию' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
+                {availableAgents.filter((a) => agents.some((own) => own.id === a.id)).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.isDefault ? ' — моя по умолчанию' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
               </optgroup>}
               {projectId && availableAgents.some((a) => !agents.some((own) => own.id === a.id)) && <optgroup label="Машины проекта">
-                {availableAgents.filter((a) => !agents.some((own) => own.id === a.id)).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.id === projectDefaultAgentId ? ' — по умолчанию' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
+                {availableAgents.filter((a) => !agents.some((own) => own.id === a.id)).map((agent) => <option key={agent.id} value={agent.id}>{agent.name}{agent.isDefault ? ' — моя по умолчанию' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
               </optgroup>}
             </select>
           </label>

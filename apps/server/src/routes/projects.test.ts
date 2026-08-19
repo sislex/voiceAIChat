@@ -374,7 +374,7 @@ describe('projects REST: машины проекта (папка, дефолт) 
     expect((await inj(bobTok, { method: 'DELETE', url: `/api/projects/${p.id}/machines/${agent.id}` })).statusCode).toBe(403)
   })
 
-  it('привязка чата к проекту применяет машину/папку/навыки; не-участник → 404', async () => {
+  it('привязка чата к проекту сохраняет наследование машины и навыки; не-участник → 404', async () => {
     const create = await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name: 'P', skills: ['ts'] } })
     const p = create.json() as ProjectDetail
     const agent = db.createAgent('admin', 'M1')
@@ -386,8 +386,8 @@ describe('projects REST: машины проекта (папка, дефолт) 
     expect(linked.statusCode).toBe(200)
     const c = linked.json() as { execTarget: string | null; workdir: string | null; skillNames: string[]; projectId?: string | null }
     expect(c.projectId).toBe(p.id)
-    expect(c.execTarget).toBe(agent.id)
-    expect(c.workdir).toBe('/srv/p')
+    expect(c.execTarget).toBeNull()
+    expect(c.workdir).toBeNull()
     expect(c.skillNames).toEqual(['ts'])
     // не-участник bob не может привязать свой чат к чужому проекту
     const convBob = db.createConversation('bob', 'Chat bob')

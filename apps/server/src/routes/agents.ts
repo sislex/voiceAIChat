@@ -78,7 +78,25 @@ export async function registerAgentRoutes(
       const conversation = db.getConversation(userId, req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       const projectId = req.query.projectId ?? conversation.projectId
-      return withLiveStatus(db.listUsableAgents(userId, projectId))
+      const machines = withLiveStatus(db.listUsableAgents(userId, projectId))
+      const personalDefault = projectId
+        ? db.getUserProjectDefaultMachine(userId, projectId)
+        : db.getSettings(userId).defaultAgentId
+      // Каталог помечает effective именно для опции «наследовать»; явный
+      // conversation.execTarget выбран самим <select> и не подменяет её подпись.
+      const resolution = db.resolveConversationMachine(userId, conversation.id, {
+        execTarget: null,
+        projectId,
+        isOnline: (agentId) => registry.isOnline(agentId)
+      })
+      return machines.map((machine) => ({
+        ...machine,
+        isDefault: machine.id === personalDefault,
+        isEffective: machine.id === resolution?.agentId && resolution.error === null,
+        ...(machine.id === resolution?.agentId && resolution.error === null && (resolution.source === 'personal_default' || resolution.source === 'fallback')
+          ? { effectiveSource: resolution.source }
+          : {})
+      }))
     }
   )
 
