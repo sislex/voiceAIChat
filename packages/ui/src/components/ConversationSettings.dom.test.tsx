@@ -195,15 +195,37 @@ describe('ConversationSettings', () => {
     expect(screen.getByText('Неустановленные плагины не являются активными возможностями.')).toBeInTheDocument()
   })
 
-  it('открывает безопасные подробности по устойчивому URL и не раскрывает системный текст', () => {
-    window.location.hash = ''
+  it('открывает каждый источник по каноническому URL без возврата к родителю', () => {
+    window.location.hash = '#/chat/c1'
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
-    fireEvent.click(screen.getByRole('button', { name: /Правила безопасности/ }))
-    expect(window.location.hash).toBe('#/conversations/c1/context/platform-safety')
+    const titles = Array.from(document.querySelectorAll<HTMLButtonElement>('.context-item')).map((button) => button.querySelector('b')?.textContent ?? '')
+
+    for (const title of titles) {
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(title) }))
+      expect(window.location.hash).toMatch(/^#\/chat\/c1\/context\//)
+      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: '← Ко всем источникам' }))
+      expect(window.location.hash).toBe('#/chat/c1')
+    }
+  })
+
+  it('восстанавливает вложенный экран из URL и при навигации истории', async () => {
+    window.location.hash = '#/chat/c1/context/platform-safety'
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+
+    expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('heading', { name: 'Правила безопасности' })).toBeInTheDocument()
     expect(screen.getByText('Полный текст недоступен, показано описание.')).toBeInTheDocument()
-    expect(screen.getByText('Скрытый текст')).toBeInTheDocument()
+
+    window.location.hash = '#/chat/c1/context/remote-bash'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Команда на удалённой машине' })).toBeInTheDocument())
+
+    window.location.hash = '#/chat/c1'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await waitFor(() => expect(screen.getByText('Что действует прямо сейчас')).toBeInTheDocument())
+    expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
   })
 
 })
