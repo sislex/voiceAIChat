@@ -47,12 +47,11 @@ import { PromptSuggester } from './prompt/suggester.js'
 // RemoteLlmClient по конфигу окружения.
 import { ClaudeCli, CodexCli, ensureCliProfile, getLoginStatus as getRunnerLoginStatus } from '@voicechat/llm-runner/cli'
 import type { LlmClient } from './claude/types.js'
-import { WhisperEngine } from './stt/whisperEngine.js'
-import { isModelPresent, listModels, modelPath } from './stt/models.js'
 import type { SttEngine } from './stt/types.js'
-import { StubDiarizationEngine } from './diarization/stubDiarization.js'
-import { downloadModel } from './stt/download.js'
+import type { SttClient } from './stt/client.js'
+import { RemoteSttClient } from './stt/remoteClient.js'
 import { ModelDownloadManager } from './stt/downloadManager.js'
+import { StubDiarizationEngine } from './diarization/stubDiarization.js'
 import { UploadStore, machineUploadDir, machineUploadPath } from './uploads.js'
 import type { UploadInfo } from '@voicechat/shared'
 import { PiperTtsEngine } from './tts/piperTts.js'
@@ -101,8 +100,10 @@ export interface BuildOptions {
   claude?: LlmClient
   /** Codex-клиент (для тестов — мок). По умолчанию — как claude, но kind='codex'. */
   codex?: LlmClient
-  /** STT-движок (для тестов — мок). По умолчанию WhisperEngine из config. */
+  /** Legacy fake engine нужен только существующим unit-тестам сессии. */
   sttEngine?: SttEngine
+  /** STT transport; production всегда использует RemoteSttClient. */
+  sttClient?: SttClient
   /** TTS-движок (для тестов — мок). По умолчанию Piper/say из config. */
   ttsEngine?: TtsEngine
   /** Переопределение обработчиков WS (для тестов). Иначе — реальная сессия. */
@@ -420,29 +421,43 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = (): WhisperModel => db.getSettings('admin').whisperModel
 
+  const sttClient = opts.sttClient ?? (opts.config.sttRunnerUrl && opts.config.sttRunnerToken
+    ? new RemoteSttClient({ baseUrl: opts.config.sttRunnerUrl, token: opts.config.sttRunnerToken, connectTimeoutMs: opts.config.sttRunnerConnectTimeoutMs })
+    : undefined)
+  let sttRunnerHealthy = Boolean(opts.sttEngine)
+  let runnerModels: import('@voicechat/shared').WhisperModelInfo[] = []
+  const refreshSttHealth = async () => {
+    if (!sttClient) { sttRunnerHealthy = Boolean(opts.sttEngine); return }
+    try {
+      const health = await sttClient.health()
+      sttRunnerHealthy = health.ok && health.whisper.available
+      runnerModels = health.models
+    } catch { sttRunnerHealthy = false; runnerModels = [] }
+  }
+  await refreshSttHealth()
+  const sttHealthTimer = setInterval(() => void refreshSttHealth(), 10_000)
+  app.addHook('onClose', async () => clearInterval(sttHealthTimer))
+
   app.get(REST.sttStatus, async (): Promise<SttStatus> => {
+    await refreshSttHealth()
     const model = machineWhisperModel()
-    return { present: isModelPresent(opts.config.modelsDir, model, { existsSync, statSync }), model }
+    return { present: sttRunnerHealthy && runnerModels.some((item) => item.model === model && item.present), model }
   })
 
-  // Ресурсы контейнера считаем один раз при старте (лимит cgroup стабилен). На их
-  // основе — возможности STT/TTS: при нехватке памяти функции блокируются и в
-  // настройках (UI), и жёстко в WS-сессии (см. createSession). Порог STT зависит
-  // от выбранной модели Whisper, поэтому пересчитываем на каждый вызов (дёшево).
   const resources = detectResources()
-  const capabilities = (): SystemCapabilities =>
-    computeCapabilities(resources, machineWhisperModel(), undefined, {
-      stt: opts.config.minMemSttBytes,
-      tts: opts.config.minMemTtsBytes
-    })
-  app.get(REST.systemCapabilities, async (): Promise<SystemCapabilities> => capabilities())
+  const capabilities = (): SystemCapabilities => {
+    const value = computeCapabilities(resources, machineWhisperModel(), undefined, { stt: opts.config.minMemSttBytes, tts: opts.config.minMemTtsBytes })
+    if (!sttRunnerHealthy) value.stt = { available: false, reason: 'Сервис распознавания речи недоступен' }
+    else if (sttClient && !runnerModels.some((item) => item.model === machineWhisperModel() && item.present)) value.stt = { available: false, reason: 'Модель распознавания речи не установлена' }
+    return value
+  }
+  app.get(REST.systemCapabilities, async (): Promise<SystemCapabilities> => { await refreshSttHealth(); return capabilities() })
 
-  // Управление местом: список моделей с размером и удаление файлов.
-  app.get(REST.sttModels, async () => listModels(opts.config.modelsDir, { existsSync, statSync }))
+  app.get(REST.sttModels, async () => sttClient ? sttClient.models() : import('@voicechat/shared').then(({ WHISPER_MODELS }) => WHISPER_MODELS.map((model) => ({ model, present: false, sizeBytes: 0 }))))
   app.delete<{ Params: { model: WhisperModel } }>('/api/stt/models/:model', async (req) => {
-    const path = modelPath(opts.config.modelsDir, req.params.model)
-    rmSync(path, { force: true })
-    rmSync(`${path}.part`, { force: true }) // и недокачанный остаток
+    if (!sttClient) return { ok: true }
+    await sttClient.deleteModel(req.params.model)
+    await refreshSttHealth()
     return { ok: true }
   })
   app.delete<{ Params: { id: string } }>('/api/tts/voices/:id', async (req) => {
@@ -452,21 +467,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return { ok: true }
   })
 
-  const sttEngine =
-    opts.sttEngine ??
-    new WhisperEngine({
-      whisperCli: opts.config.whisperCli,
-      modelsDir: opts.config.modelsDir,
-      getModel: () => machineWhisperModel()
-    })
+  const sttEngine = opts.sttEngine
+  const modelDownload = sttClient ? new ModelDownloadManager((onProgress) => sttClient.downloadModel(machineWhisperModel(), onProgress)) : undefined
   const ttsEngine = opts.ttsEngine ?? makeTtsEngine(opts.config)
   const diarization = new StubDiarizationEngine()
-
-  // Один менеджер загрузки модели на процесс: переживает переподключения клиентов,
-  // не рестартится при повторном клике, отдаёт текущий прогресс новым соединениям.
-  const modelDownload = new ModelDownloadManager((onProgress) =>
-    downloadModel(machineWhisperModel(), opts.config.modelsDir, onProgress)
-  )
 
   // Вложения разговора с выбранной машиной постоянно хранятся на ней. Сервер
   // только принимает байты запроса и пересылает агенту; без машины сохраняется
@@ -1099,6 +1103,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       turns: turnManager,
       user,
       sttEngine,
+      sttClient,
+      getWhisperModel: machineWhisperModel,
       ttsEngine,
       diarization,
       capabilities,
