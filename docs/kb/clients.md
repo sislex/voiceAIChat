@@ -12,6 +12,10 @@ areas:
 
 # Клиенты и упаковка: web, desktop и agent-tray
 
+## Reader bundles
+
+Web и desktop продолжают монтировать общий legacy `@voicechat/ui` bootstrap. Новый module registry объявляет Web Reader и Playwright Reader отдельными dynamic imports; каждый пакет экспортирует собственный stylesheet. `apps/web-recorder` остаётся отдельным Vite-приложением и не импортируется Reader-пакетами.
+
 Проект имеет три пользовательских host-приложения, но только один продуктовый React-UI. Browser и desktop renderer используют `@voicechat/ui`; agent-tray — отдельная маленькая оболочка управления компаньон-агентом без чата.
 
 ## Browser (`apps/web`)

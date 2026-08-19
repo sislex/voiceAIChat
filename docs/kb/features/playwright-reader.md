@@ -13,6 +13,10 @@ areas:
 
 # Playwright Reader и browser-runner
 
+## Независимый frontend domain
+
+`@voicechat/playwright-reader-app` владеет route `#/playwright-reader[/conversationId]`, отдельным conversation read model и `BrowserSessionState` (`idle`, `starting`, `connected`, `stopped`, `error`). `BrowserSessionPort` инъецируется host-адаптером; UI не заявляет Chromium подключённым при `capabilities.chromium === false`, а недоступная навигация disabled. Полноценная server orchestration Chromium по-прежнему не реализована.
+
 ## Что это и чем отличается от Web Reader
 
 Playwright Reader — отдельный продуктовый режим: слева обычный чат ChatAI, справа
