@@ -20,6 +20,16 @@ it('показывает две таблицы, подписи и readonly-ко�
   expect(screen.getByLabelText('Подсказка: SSH hostname/IP — Mac')).toHaveAttribute('title', expect.stringContaining('SSH-подключения'))
   expect(screen.getByLabelText('Подсказка: SSH hostname/IP — CI')).toHaveAttribute('tabindex', '0')
 })
+it('разрешает редактировать конфигурацию собственной машины без предоставления проекту', async () => {
+  const save = vi.fn(async () => undefined)
+  const unsharedOnline = { ...offline, online: true }
+  render(<ProjectMachinesSettings projectId="p1" machines={[unsharedOnline]} agents={[makeAgent({ id: 'a3', name: 'PC' })]} onShare={vi.fn()} onSave={save} onSetDefault={vi.fn()} />)
+  const input = screen.getByLabelText('Папка проекта: PC')
+  expect(input).not.toHaveAttribute('readonly')
+  await userEvent.type(input, '/work{Enter}')
+  expect(save).toHaveBeenCalledWith('p1', 'a3', 'path', '/work', expect.objectContaining({ agentId: 'a3', sharedWithProject: false, path: '/work' }))
+})
+
 it('сохраняет по Enter один раз и не отправляет неизменённое значение по blur', async () => {
   const save = vi.fn(async () => undefined); setup(save)
   const input = screen.getByLabelText('Папка проекта: Mac')
