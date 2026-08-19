@@ -139,6 +139,42 @@
   padding-top: 4px;
   flex: 1;
 }
+.convo-section-title,
+.convo-section-toggle {
+  margin: 8px 12px 4px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.convo-section-title {
+  padding: 0 2px;
+}
+.convo-section-toggle {
+  width: calc(100% - 24px);
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-medium);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  text-align: left;
+}
+.convo-section-toggle:hover,
+.convo-section-toggle:focus-visible {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.convo-section-count {
+  min-width: 1.8em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-hover);
+  text-align: center;
+}
 .convo {
   margin: 2px 10px;
   padding: 10px 12px;
