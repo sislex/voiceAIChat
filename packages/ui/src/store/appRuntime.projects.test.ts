@@ -179,7 +179,7 @@ describe('voiceStore — связка проекта с чатом', () => {
     const ag = await api['agents:create']({ name: 'M1' })
     await store.actions.linkProjectMachine(pid, ag.id)
     await store.actions.setProjectMachinePath(pid, ag.id, '/srv/p')
-    await store.actions.setProjectDefaultMachine(pid, ag.id)
+    await api['projects:setDefaultMachine']({ id: pid, agentId: ag.id })
     store.actions.setDraft('Обычный чат')
     await store.actions.submitText()
     store.actions.cancelRequest()
