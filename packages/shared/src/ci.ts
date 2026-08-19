@@ -38,6 +38,9 @@ export interface CiTaskMachines {
   selectedAgentId: string | null
   /** Сохранённый id, который больше не существует или недоступен пользователю. */
   unavailableSelection: { agentId: string; name: string | null } | null
+  inheritanceSource?: 'project_default' | 'explicit'
+  effectiveAgentId?: string | null
+  effectiveMachineName?: string | null
 }
 
 // --- Справочник команд ---------------------------------------------------
@@ -698,7 +701,7 @@ export interface CiRun {
   /** Immutable machine ownership/selection snapshot. */
   agentOwnerId?: string | null
   agentOwnerName?: string
-  agentSelectionSource?: 'explicit' | 'task_pinned' | 'user_project_default' | 'fallback' | 'unknown'
+  agentSelectionSource?: 'explicit' | 'task_pinned' | 'project_default' | 'user_project_default' | 'fallback' | 'unknown'
   status: CiStatus
   workspaceId: string | null
   /** Логин запустившего. */

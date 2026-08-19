@@ -112,6 +112,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       </optgroup>}
     </select></label>
     {unavailableAgentId && <div className="ci-warn">Сохранённая машина больше не существует или недоступна. Выбор не изменён автоматически; запуск CI заблокирован до выбора доступной машины.</div>}
+    {!agentId && machines.some((machine) => machine.projectDefault) && <p className="ci-task-hint">По умолчанию проекта: <b>{machines.find((machine) => machine.projectDefault)?.name}</b></p>}
     {!agentId && !machines.some((machine) => machine.projectDefault) && <div className="ci-warn">Машина проекта по умолчанию не задана или недоступна. Запуск CI заблокирован.</div>}
     {selectedMachine && !selectedMachine.online && <div className="ci-warn">Машина offline. CI не ждёт подключения и не запустится, пока вы не выберете online-машину.</div>}
     {saveError && <div className="ci-warn">Не удалось сохранить машину: {saveError}</div>}
