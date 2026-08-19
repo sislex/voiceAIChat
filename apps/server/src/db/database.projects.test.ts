@@ -427,9 +427,13 @@ describe('projects: папка машины, дефолт, привязка ча
   it('canUseAgent даёт проектный доступ только участнику в явном контексте и отзывает его сразу', () => {
     const p = db.createProject('alice', { name: 'Shared' })
     const machine = db.createAgent('alice', 'Mac')
+    const unsharedMachine = db.createAgent('alice', 'Personal Mac')
     db.linkMachine('alice', p.id, machine.id)
     db.addMember('alice', p.id, 'bob')
 
+    expect(db.isMachineSharedWithProject(p.id, unsharedMachine.id)).toBe(false)
+    expect(db.canUseAgent('alice', unsharedMachine.id, p.id)).toBe(true)
+    expect(db.canUseAgent('bob', unsharedMachine.id, p.id)).toBe(false)
     expect(db.canUseAgent('alice', machine.id)).toBe(true)
     expect(db.canUseAgent('bob', machine.id)).toBe(false)
     expect(db.canUseAgent('bob', machine.id, p.id)).toBe(true)
