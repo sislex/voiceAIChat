@@ -1011,7 +1011,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             onStartMerge={(agentId) => props.onStartMerge?.(task.id, agentId)}
           />
         </section>
-        <section className="task-tab-panel" data-testid="task-run-feed-tab" hidden={activeTab !== 'feed'}>
+        <section
+          className="task-tab-panel task-run-feed-tab"
+          data-testid="task-run-feed-tab"
+          hidden={activeTab !== 'feed'}
+          style={{ flex: '1 1 100%', width: '100%', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}
+        >
           <h3 className="jmodal-h">Техническая лента</h3>
           {activeTab === 'feed' && <TaskRunFeed
             projectId={task.projectId}
