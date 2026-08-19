@@ -1,7 +1,7 @@
 ---
 title: Frontend-модуль Operations: граница, store и подключение
-updated: 2026-08-18
-checked: 6fceafd
+updated: 2026-08-19
+checked: 437c35b3
 areas:
   - packages/operations-app
   - packages/ui/src/App.tsx
@@ -49,6 +49,6 @@ Knowledge поддерживает status+search и загрузку докум�
 
 `src/path.ts` нормализует POSIX и Windows paths, строит breadcrumbs и проверяет принадлежность allowedDirs с boundary separator. Сравнение выполняется в lower case и для POSIX тоже, что нужно учитывать на case-sensitive hosts.
 
-Продуктовые стили пакета находятся в `src/styles.css` и используют theme variables `--bg`, `--text`, `--line`; есть компактный mobile layout. Storybook общего `packages/ui` подхватывает `Operations.stories.tsx`.
+Продуктовые стили пакета находятся в `src/styles.css` и используют theme variables `--bg`, `--text`, `--line`; есть компактный mobile layout. Storybook общего `packages/ui` подхватывает `Operations.stories.tsx`; обязательная матрица показывает online/offline machines и restricted utility policy, а дополнительные stories покрывают Explorer, LLM History, Knowledge Base, CI и diagnostics без production transport.
 
-Локальные команды пакета: `npm run -w @voicechat/operations-app typecheck` и `npm run -w @voicechat/operations-app test`. Фактическое покрытие и ограничения архитектурного сканера описаны в [testing-operations.md](testing-operations.md#проверки-operations-frontend).
+Локальные команды пакета: `npm run -w @voicechat/operations-app typecheck` и `npm run -w @voicechat/operations-app test`. Пакет также входит в канонический `npm run verify:frontend`, который объединяет статические архитектурные проверки, typecheck/tests и сборочные frontend-гейты. Фактическое покрытие и общий frontend quality gate описаны в [testing-operations.md](testing-operations.md#единый-frontend-quality-gate).
