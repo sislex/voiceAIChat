@@ -38,7 +38,7 @@ apps/server (Fastify)
    ├── /mcp/remote-bash MCP-инструмент bash для спавнутого claude
    ├── /v1/messages     входящий Anthropic-совместимый gateway
    ├── SQLite           better-sqlite3, WAL
-   ├── whisper-cli      распознавание (spawn)
+   ├── SttClient ──────► STT Runner (WS /v1/transcribe, whisper-cli, модели)
    ├── piper / say      озвучка (spawn)
    └── LLM client       Claude/Codex: локальный spawn (код — apps/llm-runner)
       │                  ИЛИ HTTP → /v1/run
@@ -79,7 +79,7 @@ CLI локально, либо переключиться на `RemoteLlmClient`
 
 **Сборка сервера — `buildServer()` отдельно от `listen()`** (`server.ts` vs
 `index.ts`), и все внешние зависимости инъектируются через `BuildOptions`
-(`db`, `claude`, `codex`, `sttEngine`, `ttsEngine`, `createWsHandlers`,
+(`db`, `claude`, `codex`, `sttClient`, `ttsEngine`, `createWsHandlers`,
 `sessionSecret`). Отсюда тесты через `fastify.inject()` и ws-клиент с моками
 вместо реальных Whisper/CLI.
 

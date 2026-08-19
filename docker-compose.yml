@@ -27,6 +27,7 @@ services:
     depends_on:
       - runner-work
       - runner-personal
+      - stt-runner
     environment:
       HOST: 0.0.0.0
       PORT: "8787"
@@ -40,6 +41,8 @@ services:
       VC_LLM_RUNNER_CLAUDE_URL: http://runner-work:8790
       VC_LLM_RUNNER_CODEX_URL: http://runner-work:8790
       VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
+      VC_STT_RUNNER_URL: http://stt-runner:8791
+      VC_STT_RUNNER_TOKEN: ${VC_STT_RUNNER_TOKEN:-voicechat-stt-runner-local-token}
       # Host-side deploy API доступен только через примонтированный Unix-сокет.
       VC_DEPLOY_API_SOCKET: /run/voicechat/deploy-api.sock
       # Адрес, по которому MCP-эндпоинты сервера (remote-bash, kb, ci-commands)
@@ -63,6 +66,29 @@ services:
     # Дополнительная группа совпадает с владельцем host-side deploy-сокета.
     group_add:
       - "65532"
+    restart: unless-stopped
+
+  stt-runner:
+    build:
+      context: .
+      target: stt-runner-runtime
+    image: voicechat-stt-runner
+    mem_limit: 6g
+    cpus: 6
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8791"
+      VC_STT_RUNNER_TOKEN: ${VC_STT_RUNNER_TOKEN:-voicechat-stt-runner-local-token}
+      VC_MODELS_DIR: /models
+      VC_STT_TEMP_DIR: /stt-tmp
+    volumes:
+      - vc-stt-models:/models
+      - vc-stt-temp:/stt-tmp
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8791/v1/health',{headers:{authorization:'Bearer '+process.env.VC_STT_RUNNER_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   runner-work:
@@ -126,6 +152,8 @@ volumes:
   vc-data:
   vc-claude:
   vc-codex:
+  vc-stt-models:
+  vc-stt-temp:
   vc-runner-work-data:
   vc-runner-personal-data:
   vc-runner-personal-claude:
