@@ -84,4 +84,19 @@ describe('TaskRunFeed', () => {
     fireEvent.click(retry)
     expect(window.ci.getTaskReport).toHaveBeenCalledTimes(2)
   })
+
+  it.each([
+    ['light', 1280],
+    ['dark', 390]
+  ])('сохраняет полноширинный контейнер без внешнего overflow в теме %s при viewport %ipx', async (theme, viewportWidth) => {
+    document.documentElement.dataset.theme = theme
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: viewportWidth })
+    render(<TaskRunFeed projectId="p1" taskId="t1" activeDevelopmentRunId="dev-active" />)
+
+    const feed = (await screen.findByTestId('ci-runfeed')).parentElement!
+    expect(feed).toHaveClass('task-run-feed')
+    expect(feed).toHaveStyle({ width: '100%', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', overflowX: 'hidden' })
+
+    delete document.documentElement.dataset.theme
+  })
 })
