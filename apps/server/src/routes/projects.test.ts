@@ -358,6 +358,27 @@ describe('projects REST: машины проекта (папка, дефолт) 
     expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/default-machine`, payload: { agentId: agent.id } })).statusCode).toBe(403)
   })
 
+  it('владелец настраивает собственную машину без предоставления проекту', async () => {
+    const p = await createProject()
+    const agent = db.createAgent('admin', 'Private Mac')
+
+    expect((await inj(adminTok, {
+      method: 'PATCH', url: `/api/projects/${p.id}/machines/${agent.id}`, payload: { path: '/private/project' }
+    })).statusCode).toBe(200)
+    expect((await inj(adminTok, {
+      method: 'PATCH', url: `/api/projects/${p.id}/machines/${agent.id}`, payload: { reposRoot: '/private/repos' }
+    })).statusCode).toBe(200)
+    const configured = await inj(adminTok, {
+      method: 'PATCH', url: `/api/projects/${p.id}/machines/${agent.id}`,
+      payload: { sshHost: 'private-mac.local', sshUser: 'runner' }
+    })
+    expect(configured.statusCode).toBe(200)
+    expect((configured.json() as ProjectDetail).machines.find((machine) => machine.agentId === agent.id)).toMatchObject({
+      path: '/private/project', reposRoot: '/private/repos', sshHost: 'private-mac.local', sshUser: 'runner', sharedWithProject: false
+    })
+    expect(db.isMachineSharedWithProject(p.id, agent.id)).toBe(false)
+  })
+
   it('список доступен участнику, повторная привязка конфликтует, а управление запрещено', async () => {
     const p = await createProject()
     const agent = db.createAgent('admin', 'Shared Mac')

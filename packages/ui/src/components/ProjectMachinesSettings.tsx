@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import type { CSSProperties } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { ProjectMachine } from '@shared/projects'
 
@@ -18,11 +19,11 @@ const fields: Array<{ key: Field; label: string; help: string }> = [
 ]
 const sectionStyle: CSSProperties = { marginTop: 20, padding: 20, border: '1px solid var(--border-soft)', borderRadius: 'var(--radius-medium)', background: 'var(--surface)' }
 const tableWrapStyle: CSSProperties = { overflowX: 'auto', border: '1px solid var(--border-soft)', borderRadius: 'var(--radius-medium)' }
-type ColumnKey = 'name' | 'online' | 'owner' | 'default' | 'share' | Field
+type ColumnKey = 'name' | 'readiness' | 'default' | 'share' | Field
+type StatusFilter = 'online' | 'offline' | 'all'
 const columns: Array<{ key: ColumnKey; label: string; min: number }> = [
-  { key: 'name', label: 'Имя', min: 120 },
-  { key: 'online', label: 'Онлайн', min: 120 },
-  { key: 'owner', label: 'Владелец', min: 110 },
+  { key: 'name', label: 'Имя', min: 180 },
+  { key: 'readiness', label: 'Готовность', min: 108 },
   { key: 'default', label: 'По умолчанию', min: 120 },
   { key: 'share', label: 'Предоставить этому проекту', min: 190 },
   ...fields.map(({ key, label }) => ({ key, label, min: 170 }))
@@ -33,14 +34,34 @@ const cellStyle: CSSProperties = { boxSizing: 'border-box', padding: '12px', ver
 const inputStyle: CSSProperties = { boxSizing: 'border-box', width: '100%', minWidth: 0, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-medium)', background: 'var(--surface)', color: 'var(--text)', font: 'inherit' }
 const controlCellStyle: CSSProperties = { ...cellStyle, textAlign: 'center', verticalAlign: 'middle' }
 
+function Tooltip({ text, ariaLabel = text, className, children }: { text: string; ariaLabel?: string; className?: string; children?: ReactNode }): JSX.Element {
+  const target = useRef<HTMLSpanElement>(null)
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+  const show = (): void => {
+    const rect = target.current?.getBoundingClientRect()
+    if (rect) setPosition({ left: rect.left + rect.width / 2, top: rect.bottom + 7 })
+  }
+  return <>
+    <span ref={target} className={className} role="img" title={text} aria-label={ariaLabel} tabIndex={0} onMouseEnter={show} onMouseLeave={() => setPosition(null)} onFocus={show} onBlur={() => setPosition(null)}>{children}</span>
+    {position && createPortal(<span role="tooltip" className="proj-machine-tooltip" style={{ left: position.left, top: position.top }}>{text}</span>, document.body)}
+  </>
+}
+
+export function machineReadiness(machine: Pick<ProjectMachine, 'online' | 'path' | 'reposRoot'>): { ready: boolean; reasons: string[]; tooltip: string } {
+  const reasons: string[] = []
+  if (machine.online !== true) reasons.push('Offline')
+  if (!machine.path.trim()) reasons.push('не заполнена «Папка проекта»')
+  if (!machine.reposRoot.trim()) reasons.push('не заполнен «Корень Feature Run»')
+  return { ready: reasons.length === 0, reasons, tooltip: reasons.length === 0 ? 'Готова' : `Не готова: ${reasons.join('; ')}` }
+}
+
 function contentWidth(value: string, min: number): number {
   return Math.min(520, Math.max(min, Math.ceil(value.length * 7.4 + 32)))
 }
 function initialColumnWidths(machines: ProjectMachine[]): Record<ColumnKey, number> {
   const values: Record<ColumnKey, string[]> = {
-    name: machines.map((m) => m.name ?? m.agentId),
-    online: machines.map((m) => `${m.online ? 'online' : 'offline'} Загрузка: ${m.load ?? 0} ${m.unavailableReason ?? ''}`),
-    owner: machines.map((m) => m.owner ?? '—'),
+    name: machines.map((m) => `${m.name ?? m.agentId} ${m.owner ?? '—'}`),
+    readiness: [],
     default: [], share: [],
     path: machines.map((m) => m.path),
     reposRoot: machines.map((m) => m.reposRoot),
@@ -94,25 +115,41 @@ function ConfigCells({ projectId, machine, readonly, onSave }: { projectId: stri
   })}</>
 }
 function Table(p: { title: string; empty: string; projectId: string; machines: ProjectMachine[]; own: boolean; widths: Record<ColumnKey, number>; onResize: (key: ColumnKey, width: number) => void; onShare: ProjectMachinesSettingsProps['onShare']; onSave: ProjectMachinesSettingsProps['onSave']; onSetDefault: ProjectMachinesSettingsProps['onSetDefault'] }): JSX.Element {
-  return <section className="proj-section" style={sectionStyle}><h3 style={{ margin: '0 0 14px', fontSize: 18 }}>{p.title}</h3>{p.machines.length === 0 ? <p className="proj-muted" style={{ margin: 0 }}>{p.empty}</p> :
+  const [filter, setFilter] = useState<StatusFilter>('online')
+  const filtered = p.machines.filter((machine) => filter === 'all' || (machine.online === true) === (filter === 'online'))
+  return <section className="proj-section" style={sectionStyle}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+      <h3 style={{ margin: 0, fontSize: 18 }}>{p.title}</h3>
+      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: 'var(--text-dim)', fontSize: 13 }}>
+        <span aria-hidden="true">⌄</span><span>Фильтр</span>
+        <select aria-label={`Фильтр машин: ${p.title}`} value={filter} onChange={(event) => setFilter(event.target.value as StatusFilter)} className="login-input" style={{ padding: '6px 28px 6px 9px', color: 'var(--text)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-medium)' }}>
+          <option value="online">Онлайн</option><option value="offline">Офлайн</option><option value="all">Все</option>
+        </select>
+      </label>
+    </div>
+    {filtered.length === 0 ? <p className="proj-muted" style={{ margin: 0 }}>{p.machines.length === 0 ? p.empty : 'Нет машин, соответствующих фильтру.'}</p> :
     <div style={tableWrapStyle}><table className="proj-machines-table" style={tableStyle}>
       <colgroup>{columns.map(({ key }) => <col key={key} style={{ width: p.widths[key] }} />)}</colgroup>
       <thead><tr>{columns.map((column) => <ResizableHeader key={column.key} column={column} width={p.widths[column.key]} onResize={p.onResize} />)}</tr></thead>
-      <tbody>{p.machines.map((m) => <tr key={m.agentId}>
-        <td style={cellStyle}><strong>{m.name ?? m.agentId}</strong></td>
-        <td style={cellStyle}><span className={m.online ? 'proj-online' : 'proj-offline'}>{m.online ? '● online' : '○ offline'}</span>
-          <span className="proj-muted" style={{ display: 'block', marginTop: 4, fontSize: 11 }}>Загрузка: {m.load ?? 0}</span>
-          {m.canUse === false && <span className="proj-offline" style={{ display: 'block', marginTop: 4, fontSize: 11 }}>{m.unavailableReason ?? 'недоступна'}</span>}
+      <tbody>{filtered.map((m) => { const readiness = machineReadiness(m); return <tr key={m.agentId}>
+        <td style={cellStyle}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <Tooltip className={`proj-status-dot ${m.online === true ? 'proj-status-dot--online' : 'proj-status-dot--offline'}`} text={m.online === true ? 'Online' : 'Offline'} />
+            <strong style={{ overflowWrap: 'anywhere' }}>{m.name ?? m.agentId}</strong>
+          </span>
+          <span className="proj-muted" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11, fontWeight: 400, overflowWrap: 'anywhere' }}>{m.owner ?? '—'}</span>
+          <Tooltip className="proj-muted proj-machine-load" text="Количество активных CI-запусков, назначенных этой машине" ariaLabel={`Загрузка: ${m.load ?? 0}. Количество активных CI-запусков, назначенных этой машине`}>Загрузка: {m.load ?? 0} <span aria-hidden="true">ⓘ</span></Tooltip>
+          {m.canUse === false && <span className="proj-offline" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11 }}>{m.unavailableReason ?? 'недоступна'}</span>}
         </td>
-        <td style={cellStyle}>{m.owner ?? '—'}</td>
+        <td style={controlCellStyle}><Tooltip className={`proj-status-dot ${readiness.ready ? 'proj-status-dot--ready' : 'proj-status-dot--not-ready'}`} text={readiness.tooltip} /></td>
         <td style={controlCellStyle}><input type="radio" name="project-machine-default" aria-label={`По умолчанию: ${m.name ?? m.agentId}`} checked={m.isMyDefault === true}
-          disabled={m.canUse === false || m.online === false || (p.own && !m.sharedWithProject)} onChange={() => void p.onSetDefault(p.projectId, m.agentId)} /></td>
+          disabled={m.canUse === false || m.online !== true} onChange={() => void p.onSetDefault(p.projectId, m.agentId)} /></td>
         <td style={controlCellStyle}>{p.own
           ? <input type="checkbox" aria-label={`Предоставить текущему проекту: ${m.name ?? m.agentId}`} checked={m.sharedWithProject === true}
               onChange={(e) => void p.onShare(p.projectId, m.agentId, e.target.checked)} />
           : <input type="checkbox" aria-label={`Предоставлена текущему проекту: ${m.name ?? m.agentId}`} checked disabled />}</td>
-        <ConfigCells projectId={p.projectId} machine={m} readonly={!p.own || !m.sharedWithProject} onSave={p.onSave} />
-      </tr>)}</tbody>
+        <ConfigCells projectId={p.projectId} machine={m} readonly={!p.own} onSave={p.onSave} />
+      </tr> })}</tbody>
     </table></div>}</section>
 }
 export function ProjectMachinesSettings(p: ProjectMachinesSettingsProps): JSX.Element {

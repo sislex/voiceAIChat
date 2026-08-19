@@ -3721,6 +3721,49 @@ button.conscmd:hover {
 .proj-git { font-family: monospace; opacity: 0.8; word-break: break-all; }
 .proj-muted { opacity: 0.55; }
 .proj-online { color: #3fb950; }
+.proj-status-dot {
+  position: relative;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  box-sizing: border-box;
+  border: 1.5px solid #111;
+  border-radius: 50%;
+  vertical-align: middle;
+  outline-offset: 3px;
+}
+.proj-status-dot--online,
+.proj-status-dot--ready { background: #3fb950; }
+.proj-status-dot--offline { background: #8c959f; }
+.proj-status-dot--not-ready { background: #f85149; }
+.proj-machine-load {
+  display: block;
+  position: relative;
+  margin-top: 4px;
+  padding-left: 20px;
+  font-size: 11px;
+  cursor: help;
+}
+.proj-machine-tooltip {
+  position: fixed;
+  z-index: 10000;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 6px 8px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--text);
+  color: var(--surface);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+}
 .proj-field-label { font-weight: 600; margin: 8px 0 4px; opacity: 0.8; }
 .proj-section { border-top: 1px solid rgba(128,128,128,0.2); padding-top: 8px; }
 
