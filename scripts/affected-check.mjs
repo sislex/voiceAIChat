@@ -439,6 +439,10 @@ async function main() {
     console.log('[affected-check] full gate: npm run typecheck && npm test')
     run('npm', ['run', 'typecheck'])
     run('npm', ['test'])
+    if (!('error' in diff) && diff.some((file) => /^(?:packages\/(?:ui|ui-kit|app-shell|chat-app|projects-app|operations-app|admin-app)|apps\/(?:web|desktop)|frontend-quality\/)/.test(file))) {
+      console.log('[affected-check] frontend build gates: npm run frontend:build-gates')
+      run('npm', ['run', 'frontend:build-gates'])
+    }
     console.log(`[affected-check] full stage: completed in ${Date.now() - fullStartedAt}ms`)
     return
   }
@@ -451,6 +455,10 @@ async function main() {
   console.log(`[affected-check] fast stage: completed in ${Date.now() - fastStartedAt}ms`)
   const fullStartedAt = Date.now()
   await runPackageGates(decision.packages, { jobs })
+  if (decision.packages.some((pkg) => pkg.id === 'ui' || pkg.id === 'web' || pkg.id === 'desktop')) {
+    console.log('[affected-check] frontend build gates: npm run frontend:build-gates')
+    run('npm', ['run', 'frontend:build-gates'])
+  }
   console.log(`[affected-check] full stage: completed in ${Date.now() - fullStartedAt}ms`)
 }
 
