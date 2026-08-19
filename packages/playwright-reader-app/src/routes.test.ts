@@ -1,0 +1,1 @@
+import{describe,expect,it}from'vitest';import{buildPlaywrightReaderRoute,parsePlaywrightReaderRoute}from'./routes';describe('routes',()=>it('round trips',()=>expect(parsePlaywrightReaderRoute(buildPlaywrightReaderRoute({conversationId:'c /2'}))).toEqual({conversationId:'c /2'})))
