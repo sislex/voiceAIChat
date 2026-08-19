@@ -1,7 +1,7 @@
 ---
 title: Frontend-модуль Administration: граница, store и подключение
-updated: 2026-08-18
-checked: 68de33d
+updated: 2026-08-19
+checked: 437c35b3
 areas:
   - packages/admin-app
   - packages/ui/src/App.tsx
@@ -42,6 +42,6 @@ Host adapter `createAdminClient` в `packages/ui/src/clients/browser.ts` пер�
 
 ## UI и проверки
 
-`src/styles.css` импортирует только стили `@voicechat/ui-kit`, использует theme tokens и имеет mobile breakpoint; пакет не зависит от полного host `app.css`. Storybook общего UI подхватывает `AdminApp.stories.tsx`.
+`src/styles.css` импортирует только стили `@voicechat/ui-kit`, использует theme tokens и имеет mobile breakpoint; пакет не зависит от полного host `app.css`. Storybook общего UI подхватывает `AdminApp.stories.tsx`; обязательная матрица включает overview, empty usage и access matrix с wildcard-доступом модели.
 
-Пакет имеет собственные команды `typecheck` и `test`, JSDOM setup, DOM/a11y, routes, store и architecture tests. Архитектурный тест запрещает host stores, platform apps, прямые transport API, browser storage и глубокие импорты host source. Штатный общий гейт — `npm run affected-check`.
+Пакет имеет собственные команды `typecheck` и `test`, JSDOM setup, DOM/a11y, routes, store и architecture tests. Архитектурный тест запрещает host stores, platform apps, прямые transport API, browser storage и глубокие импорты host source. Пакет входит в канонический `npm run verify:frontend`; общий gate дополнительно проверяет публичные exports, CSS-изоляцию, Storybook-матрицу и role-gated lazy import Administration. `affected-check` запускает дорогие frontend build gates только для frontend-влияния.
