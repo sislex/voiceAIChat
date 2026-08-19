@@ -2934,6 +2934,9 @@ export class VoiceChatDb {
   setProjectMachinePath(userId: string, id: string, agentId: string, path: string): ProjectDetail | null {
     if (!this.isProjectMember(userId, id)) return null
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
+    this.db.prepare(
+      `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
+    ).run(id, agentId, this.now(), userId)
     this.db
       .prepare(`UPDATE project_machines SET path = ? WHERE project_id = ? AND agent_id = ?`)
       .run(path, id, agentId)
@@ -2945,6 +2948,9 @@ export class VoiceChatDb {
   setProjectMachineReposRoot(userId: string, id: string, agentId: string, root: string): ProjectDetail | null {
     if (!this.isProjectMember(userId, id)) return null
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
+    this.db.prepare(
+      `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
+    ).run(id, agentId, this.now(), userId)
     this.db.prepare(`UPDATE project_machines SET repos_root = ? WHERE project_id = ? AND agent_id = ?`).run(root, id, agentId)
     return this.getProject(userId, id)
   }
@@ -2953,6 +2959,9 @@ export class VoiceChatDb {
   setProjectMachineSsh(userId: string, id: string, agentId: string, sshHost: string, sshUser: string): ProjectDetail | null {
     if (!this.isProjectMember(userId, id)) return null
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
+    this.db.prepare(
+      `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
+    ).run(id, agentId, this.now(), userId)
     this.db.prepare(`UPDATE project_machines SET ssh_host = ?, ssh_user = ? WHERE project_id = ? AND agent_id = ?`)
       .run(sshHost.trim(), sshUser.trim(), id, agentId)
     return this.getProject(userId, id)

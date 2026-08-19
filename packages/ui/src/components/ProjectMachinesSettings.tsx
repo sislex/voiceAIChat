@@ -148,7 +148,7 @@ function Table(p: { title: string; empty: string; projectId: string; machines: P
           ? <input type="checkbox" aria-label={`Предоставить текущему проекту: ${m.name ?? m.agentId}`} checked={m.sharedWithProject === true}
               onChange={(e) => void p.onShare(p.projectId, m.agentId, e.target.checked)} />
           : <input type="checkbox" aria-label={`Предоставлена текущему проекту: ${m.name ?? m.agentId}`} checked disabled />}</td>
-        <ConfigCells projectId={p.projectId} machine={m} readonly={!p.own || !m.sharedWithProject} onSave={p.onSave} />
+        <ConfigCells projectId={p.projectId} machine={m} readonly={!p.own} onSave={p.onSave} />
       </tr> })}</tbody>
     </table></div>}</section>
 }
