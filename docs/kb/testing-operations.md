@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-08-19
-checked: 437c35b3
+checked: 0a645e99
 areas:
   - package.json
   - scripts
@@ -21,7 +21,7 @@ areas:
 
 ## Проверки Reader frontend
 
-Оба Reader workspace имеют собственные `typecheck` и `test`. Unit-наборы проверяют route round-trip, независимые conversation selectors, preview fallback без материализации, stale-response protection, browser-session lifecycle/capability degradation и dispose. Architecture tests запрещают host/chatStore/cross-Reader imports, transports, browser storage и imports исходников recorder/browser-runner. `frontend-quality.mjs` включает оба пакета в graph, exports/CSS/lazy/story matrix, а `affected-check` знает их как отдельные workspaces.
+Оба Reader workspace имеют собственные `typecheck` и `test`. Unit-наборы проверяют route round-trip, независимые conversation selectors, preview fallback без материализации, stale-response protection, browser-session lifecycle/capability degradation и dispose. Architecture tests запрещают host/chatStore/cross-Reader imports, transports, browser storage и imports исходников recorder/browser-runner. `frontend-quality.mjs` включает оба пакета в graph, exports/CSS/lazy/story matrix, а `affected-check` знает их как отдельные workspaces. Корневые `frontend:typecheck` и `frontend:test` запускают пакеты отдельно; `verify:frontend` затем выполняет web build, bundle gate, Storybook build и desktop web build. Наличие команд в gate зафиксировано кодом, но KB не утверждает, что конкретный merge SHA прошёл их, если результат запуска не сохранён.
 
 ## Установка зависимостей
 

@@ -1,7 +1,7 @@
 ---
 title: Архитектура: кто с кем разговаривает
-updated: 2026-08-18
-checked: 6fceafd
+updated: 2026-08-19
+checked: 0a645e99
 areas:
   - apps/server/src/server.ts
   - apps/llm-runner/src/server.ts
@@ -12,6 +12,8 @@ areas:
   - packages/ui/src/createApplication.ts
   - packages/ui/src/adapters
   - packages/ui/src/remote
+  - packages/web-reader-app
+  - packages/playwright-reader-app
   - apps/web/src/main.tsx
 ---
 
@@ -19,7 +21,9 @@ areas:
 
 ## Границы Reader-модулей
 
-Reader implementations разделены на workspace-пакеты `packages/web-reader-app` и `packages/playwright-reader-app`. Их core не импортирует host, другой Reader или chat store: Chat передаётся через `ReaderChatPort`, browser/runtime effects — через `WebReaderHostPort`, `WebRecorderPort`, `PreviewRelayPort`, `PlaywrightReaderHostPort` и `BrowserSessionPort`. Host registry содержит динамические imports обоих продуктов; legacy `App` всё ещё является действующим bootstrap и потому временно содержит совместимый старый Reader path.
+Reader implementations разделены на workspace-пакеты `packages/web-reader-app` и `packages/playwright-reader-app`; каждый владеет маршрутом, conversation read model, browser surface, store и lifecycle. Их core не импортирует host, другой Reader или chat store: Chat передаётся через `ReaderChatPort`, browser/runtime effects — через `WebReaderHostPort`, `WebRecorderPort`, `PreviewRelayPort`, `PlaywrightReaderHostPort` и `BrowserSessionPort`. Разрешённая product-зависимость Reader → публичный `@voicechat/chat-app` нужна только для `SplitChatWorkspace`; architecture gates запрещают обратную связь и cross-Reader imports.
+
+`packages/ui/src/moduleRegistry.ts` содержит parser/builders и отдельные dynamic imports обоих Reader, что создаёт границы lazy chunks. Однако это пока только переходный composition path: registry загружает React surface, но не собирает Reader ports/store, а browser/desktop продолжают запускать legacy `App.tsx` с прежней Reader-логикой. Поэтому host-only-adapters состояние ещё не достигнуто полностью и не должно считаться текущим фактом.
 
 ```
 браузер / Electron-renderer

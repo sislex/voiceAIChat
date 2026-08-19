@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-19
-checked: e76af0f2
+checked: 0a645e99
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -9,6 +9,8 @@ areas:
   - packages/ui-kit/package.json
   - packages/chat-app/src
   - packages/chat-app/package.json
+  - packages/web-reader-app
+  - packages/playwright-reader-app
   - packages/projects-app/src
   - packages/projects-app/package.json
   - apps/web/src
@@ -24,9 +26,15 @@ areas:
 
 ## Reader workspace-пакеты
 
-`@voicechat/web-reader-app` и `@voicechat/playwright-reader-app` имеют собственные root/styles exports, route builders/parsers, React-free stores, UI surfaces и Storybook harnesses. Оба используют публичный `SplitChatWorkspace` из `@voicechat/chat-app` и получают Chat только через структурно узкий `ReaderChatPort`; сообщений и LLM lifecycle в Reader stores нет. Legacy `App.tsx` пока сохраняет прежний runtime-путь для browser/desktop bootstrap, поэтому миграция composition path остаётся переходной.
+`@voicechat/web-reader-app` и `@voicechat/playwright-reader-app` — самостоятельные workspace-продукты с root/styles exports, parser/builder собственных hash-маршрутов, React-free store, browser surface, lifecycle модуля и Storybook harness. Web Reader владеет `#/web-reader[/conversationId]` и распознаёт прежний `#/web-recorder/<id>` для host replace; Playwright Reader владеет `#/playwright-reader[/conversationId]`. Каждый store строит свой read model из общего списка бесед: Web принимает `assistantKind: 'web-recorder'` и legacy-беседы с `previewUrl`, Playwright — только `assistantKind: 'playwright-reader'`.
 
-`packages/ui` остаётся React-host для браузера и Electron, а Chat начал выделяться в workspace-пакет `@voicechat/chat-app`. `apps/web` вычисляет URL сервера, вызывает `installRemoteBridges()` до первого импорта состояния приложения, монтирует `<App/>` и подключает стили обоих пакетов. Большая часть продуктовых Chat-компонентов пока всё ещё меняется в `packages/ui`; независимая граница нового пакета описана ниже.
+Оба Reader используют публичный `SplitChatWorkspace` из `@voicechat/chat-app`, но получают Chat только через узкий `ReaderChatPort`: пакет не импортирует `chatStore`, не хранит сообщения и не управляет LLM lifecycle. Платформенные эффекты также инъецируются: Web — через `WebReaderHostPort`, `WebRecorderPort` и `PreviewRelayPort`, Playwright — через `PlaywrightReaderHostPort` и `BrowserSessionPort`. Architecture tests запрещают imports host/другого Reader/chat internals, прямые transport и browser storage API, а также исходники recorder/browser-runner.
+
+Web Reader сохраняет iframe `/api/preview?url=...`; URL разговора имеет приоритет, а project preview служит только нематериализованным fallback. При активации store создаёт recorder для `conversationId`, передаёт ему URL и исполняет relay-запросы только для активной беседы. Generation token отбрасывает устаревшие async-ответы, смена беседы dispose-ит recorder, а общий `dispose()` снимает relay subscription, поэтому поздний результат не доставляется в другой чат. Безопасность конкретного `postMessage` остаётся обязанностью host adapter/существующего recorder-контракта, а пакет видит только transport-agnostic port.
+
+Playwright Reader владеет отдельным `BrowserSessionState` и жизненным циклом start/subscribe/navigate/stop/dispose. Начальное состояние честно объявляет все capabilities выключенными; browser UI показывает недоступность Chromium и блокирует навигацию, пока adapter не вернул `navigate: true`. Это frontend-модель интеграции, не свидетельство готовой server orchestration Chromium.
+
+`packages/ui/src/moduleRegistry.ts` объявляет оба продукта отдельными dynamic imports, а quality gate проверяет lazy loading, публичные exports, изолированный CSS, Storybook states и отсутствие запрещённых зависимостей. При этом `packages/ui` и `apps/web` всё ещё монтируют legacy `App.tsx`; новый registry пока загружает только Reader surfaces без создания и bootstrap их stores. Поэтому целевая схема «host содержит лишь adapters/render slots/регистрацию» выражена контрактами новых пакетов, но фактический browser/desktop composition path ещё не полностью переведён.
 
 ## Слои
 
