@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 32 коммит(ов) в areas после сверки: d924c2e2 Merge task 4012d157-a344-4280-a63e-275ee1366338 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 28 коммит(ов) в areas после сверки: d924c2e2 Merge task 4012d157-a344-4280-a63e-275ee1366338 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 463 коммит(ов) в areas после сверки: 0a645e99 Merge task e84d075e-6d92-4d14-bb67-57767dbbabec … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 464 коммит(ов) в areas после сверки: 9eef40b9 docs(kb): update after merge e84d075e-6d92-4d14-bb67-57767dbbabec … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-16 | ⚠ 50 коммит(ов) в areas после сверки: d924c2e2 Merge task 4012d157-a344-4280-a63e-275ee1366338 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ⚠ код изменён 2026-08-19, сверка 2026-08-18 (по датам: правки того же дня не видны — поставь checked) |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-18 | ⚠ 13 коммит(ов) в areas после сверки: d924c2e2 Merge task 4012d157-a344-4280-a63e-275ee1366338 … |
@@ -34,7 +34,7 @@
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-19 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-19 | ⚠ 7 коммит(ов) в areas после сверки: d924c2e2 Merge task 4012d157-a344-4280-a63e-275ee1366338 … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-19 | ⚠ 7 коммит(ов) в areas после сверки: d924c2e2 Merge task 4012d157-a344-4280-a63e-275ee1366338 … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-15 | ⚠ 32 коммит(ов) в areas после сверки: d924c2e2 Merge task 4012d157-a344-4280-a63e-275ee1366338 … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-15 | ⚠ код изменён 2026-08-19, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-07-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-19 | ✓ |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-19 | ✓ |
