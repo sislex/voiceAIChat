@@ -4482,7 +4482,16 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* Лента рана (RunFeed) */
 .ci-runfeed { display: flex; flex-direction: column; gap: 8px; min-width: 0; max-height: min(70vh, 760px); overflow-y: auto; overflow-x: hidden; position: relative; }
-.task-run-feed { min-width: 0; max-width: 100%; }
+.task-run-feed-tab { flex: 1 1 100%; width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: hidden; }
+.task-run-feed { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.task-run-feed > *, .task-run-feed .ci-runfeed, .task-run-feed .merge-feed { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.task-run-feed .ci-step, .task-run-feed .ci-step-body, .task-run-feed .ci-log,
+.task-run-feed .merge-feed-head, .task-run-feed .merge-collapse, .task-run-feed .merge-terminal,
+.task-run-feed .merge-alert, .task-run-feed .merge-step, .task-run-feed .merge-feed-details,
+.task-run-feed .merge-feed-details dd { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.task-run-feed .ci-log, .task-run-feed .merge-terminal { overflow-x: auto; }
+.task-run-feed .merge-feed-route, .task-run-feed .merge-step-message,
+.task-run-feed .merge-alert, .task-run-feed .merge-feed-details dd { overflow-wrap: anywhere; }
 .task-run-feed__toolbar { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .task-run-feed__toolbar label { display: grid; gap: 4px; min-width: 0; flex: 1 1 320px; }
 .task-run-feed__toolbar .sel { width: 100%; min-width: 0; text-overflow: ellipsis; }
