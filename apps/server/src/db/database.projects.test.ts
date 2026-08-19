@@ -96,6 +96,38 @@ describe('projects: миграция канонического workflow', () =>
     migrated.close()
   })
 
+  it('назначает cancelled существующей колонке по семантике, а имя использует только без неё', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-cancelled-'))
+    const file = join(dir, 'db.sqlite')
+    const first = new VoiceChatDb(file)
+    first.createUser('alice', '', 'developer')
+    const project = first.createProject('alice', { name: 'Legacy cancelled' })
+    const board = first.getBoard('alice', project.id)!
+    const canonical = board.columns.find((item) => item.semanticType === 'cancelled')!
+    const legacy = first.createColumn('alice', project.id, 'Отменены')!
+    const taskA = first.createTask('alice', project.id, { columnId: legacy.id, title: 'Первая' })!
+    const taskB = first.createTask('alice', project.id, { columnId: legacy.id, title: 'Вторая' })!
+    first.close()
+
+    const raw = new Database(file)
+    raw.prepare(`DELETE FROM kanban_columns WHERE id=?`).run(canonical.id)
+    raw.close()
+
+    const migrated = new VoiceChatDb(file)
+    const migratedBoard = migrated.getBoard('alice', project.id)!
+    const cancelled = migratedBoard.columns.find((item) => item.semanticType === 'cancelled')!
+    expect(cancelled.id).toBe(legacy.id)
+    expect(migratedBoard.tasks.filter((item) => item.columnId === legacy.id).map(({ id, position }) => ({ id, position })))
+      .toEqual([{ id: taskA.id, position: taskA.position }, { id: taskB.id, position: taskB.position }])
+    migrated.close()
+
+    const again = new VoiceChatDb(file)
+    expect(again.getBoard('alice', project.id)!.columns.filter((item) => item.semanticType === 'cancelled').map((item) => item.id))
+      .toEqual([legacy.id])
+    again.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   it('переупорядочивает старую доску, переносит legacy-карточки и повторно ничего не меняет', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-kanban-workflow-'))
     const file = join(dir, 'db.sqlite')
