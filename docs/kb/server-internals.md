@@ -169,7 +169,7 @@ Observer-модули как код живут и на сервере, и в и�
 
 `system/resources.ts` читает cgroup v1/v2 лимиты CPU/RAM с fallback на host. `capabilities.ts` сравнивает их с default или `VC_MIN_MEM_STT/TTS`. Недоступность отражается в API и блокирует запуск.
 
-Whisper engine пишет временный WAV и spawn-ит `whisper-cli`; модели перечисляются по ожидаемым GGML-файлам. Download manager не допускает конкурирующие загрузки и публикует progress.
+Сервер не запускает Whisper и не имеет доступа к STT-моделям. `RemoteSttClient` проксирует PCM и lifecycle в защищённый WS `stt-runner /v1/transcribe`; runner единолично владеет `whisper-cli`, моделями, временными WAV, очередью, лимитами и очисткой. Недоступность runner меняет только `capabilities.stt`, не TTS или текстовый чат.
 
 Piper engine ищет `.onnx` и `.json`; catalog знает разрешённые URL. На macOS `say` служит fallback/альтернативой и фильтрует голоса по языкам. TTS engines возвращают унифицированный WAV/audio result.
 

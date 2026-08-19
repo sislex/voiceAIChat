@@ -4,7 +4,10 @@
 import { createWriteStream } from 'node:fs'
 import { rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { progressPercent } from '../stt/download'
+function progressPercent(received: number, total: number): number {
+  if (total <= 0) return 0
+  return Math.min(100, Math.round((received / total) * 100))
+}
 import { voiceUrls } from './piperCatalog'
 
 type FetchLike = (url: string) => Promise<{

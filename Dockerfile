@@ -1,6 +1,7 @@
 # Многостадийные образы voiceAIChat:
 #  • server-runtime — Fastify-сервер + web-билды ChatAI и Web Recorder
 #  • llm-runner-runtime — внутренний исполнитель claude/codex CLI (apps/llm-runner)
+#  • stt-runner-runtime — единственный владелец whisper-cli и STT-моделей
 #
 # Особенности репозитория:
 #  • server и llm-runner НЕ компилируются в JS — запускаются через tsx прямо из
@@ -45,7 +46,6 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app /app
-COPY --from=whisper /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
@@ -53,8 +53,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 FROM runtime-base AS server-runtime
 ENV PORT=8787 \
     VC_WEB_DIR=/app/apps/web/dist \
-    VC_WEB_RECORDER_DIR=/app/apps/web-recorder/dist \
-    VC_WHISPER_CLI=/usr/local/bin/whisper-cli
+    VC_WEB_RECORDER_DIR=/app/apps/web-recorder/dist
 
 RUN mkdir -p /data \
   && chown -R node:node /data
@@ -62,6 +61,19 @@ VOLUME ["/data"]
 EXPOSE 8787
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/server && exec node --import tsx src/index.ts"]
+
+# ---- Изолированный runtime распознавания речи ---------------------------
+FROM runtime-base AS stt-runner-runtime
+ENV PORT=8791 \
+    VC_WHISPER_CLI=/usr/local/bin/whisper-cli \
+    VC_MODELS_DIR=/models \
+    VC_STT_TEMP_DIR=/stt-tmp
+COPY --from=whisper /whisper/build/bin/whisper-cli /usr/local/bin/whisper-cli
+RUN mkdir -p /models /stt-tmp && chown -R node:node /models /stt-tmp
+VOLUME ["/models", "/stt-tmp"]
+EXPOSE 8791
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/stt-runner && exec node --import tsx src/index.ts"]
 
 # ---- Статический Storybook для feature-preview --------------------------
 # Отдельная ветка build-графа: production target не выполняет эту сборку.
