@@ -12,7 +12,7 @@ import type { SttEngine } from './stt/types.js'
 import type { DiarizationEngine } from './diarization/types.js'
 import { createSttSession, type SttSession } from './stt/sttSession.js'
 import type { DownloadEvent } from './stt/downloadManager.js'
-import type { TtsEngine } from './tts/types.js'
+import type { TtsClient } from './tts/client/types.js'
 import { createTtsSession, type TtsSession } from './tts/ttsSession.js'
 import { watchTranscript } from './cc/ccSessions.js'
 import { watchCxTranscript } from './codex/codexSessions.js'
@@ -27,7 +27,7 @@ export interface SessionDeps {
   /** Процесс-глобальный реестр ходов LLM (ходы переживают reconnect). */
   turns: TurnManager
   sttEngine: SttEngine
-  ttsEngine: TtsEngine
+  ttsClient: TtsClient
   diarization?: DiarizationEngine
   /** Возможности системы по ресурсам контейнера (блокировка STT/TTS при нехватке памяти). */
   capabilities: () => SystemCapabilities
@@ -209,7 +209,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
             ctx.send({ t: 'tts.error', message: ttsCap.reason })
             break
           }
-          if (!tts) tts = createTtsSession({ engine: deps.ttsEngine, send: ctx.send })
+          if (!tts) tts = createTtsSession({ client: deps.ttsClient, send: ctx.send, ownerId: deps.user.name })
           tts.speak(msg.text, msg.voice)
           break
         }
