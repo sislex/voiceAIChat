@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import type { CSSProperties } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { ProjectMachine } from '@shared/projects'
 
@@ -22,7 +23,7 @@ type ColumnKey = 'name' | 'readiness' | 'default' | 'share' | Field
 type StatusFilter = 'online' | 'offline' | 'all'
 const columns: Array<{ key: ColumnKey; label: string; min: number }> = [
   { key: 'name', label: 'Имя', min: 180 },
-  { key: 'readiness', label: 'Готовность', min: 140 },
+  { key: 'readiness', label: 'Готовность', min: 108 },
   { key: 'default', label: 'По умолчанию', min: 120 },
   { key: 'share', label: 'Предоставить этому проекту', min: 190 },
   ...fields.map(({ key, label }) => ({ key, label, min: 170 }))
@@ -32,6 +33,19 @@ const headCellStyle: CSSProperties = { position: 'relative', boxSizing: 'border-
 const cellStyle: CSSProperties = { boxSizing: 'border-box', padding: '12px', verticalAlign: 'top', borderBottom: '1px solid var(--border-soft)', color: 'var(--text)', overflow: 'hidden' }
 const inputStyle: CSSProperties = { boxSizing: 'border-box', width: '100%', minWidth: 0, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-medium)', background: 'var(--surface)', color: 'var(--text)', font: 'inherit' }
 const controlCellStyle: CSSProperties = { ...cellStyle, textAlign: 'center', verticalAlign: 'middle' }
+
+function Tooltip({ text, ariaLabel = text, className, children }: { text: string; ariaLabel?: string; className?: string; children?: ReactNode }): JSX.Element {
+  const target = useRef<HTMLSpanElement>(null)
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
+  const show = (): void => {
+    const rect = target.current?.getBoundingClientRect()
+    if (rect) setPosition({ left: rect.left + rect.width / 2, top: rect.bottom + 7 })
+  }
+  return <>
+    <span ref={target} className={className} title={text} aria-label={ariaLabel} tabIndex={0} onMouseEnter={show} onMouseLeave={() => setPosition(null)} onFocus={show} onBlur={() => setPosition(null)}>{children}</span>
+    {position && createPortal(<span role="tooltip" className="proj-machine-tooltip" style={{ left: position.left, top: position.top }}>{text}</span>, document.body)}
+  </>
+}
 
 export function machineReadiness(machine: Pick<ProjectMachine, 'online' | 'path' | 'reposRoot'>): { ready: boolean; reasons: string[]; tooltip: string } {
   const reasons: string[] = []
@@ -47,7 +61,7 @@ function contentWidth(value: string, min: number): number {
 function initialColumnWidths(machines: ProjectMachine[]): Record<ColumnKey, number> {
   const values: Record<ColumnKey, string[]> = {
     name: machines.map((m) => `${m.name ?? m.agentId} ${m.owner ?? '—'}`),
-    readiness: machines.map((m) => machineReadiness(m).tooltip),
+    readiness: [],
     default: [], share: [],
     path: machines.map((m) => m.path),
     reposRoot: machines.map((m) => m.reposRoot),
@@ -119,15 +133,15 @@ function Table(p: { title: string; empty: string; projectId: string; machines: P
       <thead><tr>{columns.map((column) => <ResizableHeader key={column.key} column={column} width={p.widths[column.key]} onResize={p.onResize} />)}</tr></thead>
       <tbody>{filtered.map((m) => { const readiness = machineReadiness(m); return <tr key={m.agentId}>
         <td style={cellStyle}>
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
-            <span className={m.online === true ? 'proj-online' : 'proj-offline'} title={m.online === true ? 'Online' : 'Offline'} aria-label={m.online === true ? 'Online' : 'Offline'} style={{ flex: '0 0 auto' }}>●</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <Tooltip className={`proj-status-dot ${m.online === true ? 'proj-status-dot--online' : 'proj-status-dot--offline'}`} text={m.online === true ? 'Online' : 'Offline'} />
             <strong style={{ overflowWrap: 'anywhere' }}>{m.name ?? m.agentId}</strong>
           </span>
           <span className="proj-muted" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11, fontWeight: 400, overflowWrap: 'anywhere' }}>{m.owner ?? '—'}</span>
-          <span className="proj-muted" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11 }}>Загрузка: {m.load ?? 0}</span>
+          <Tooltip className="proj-muted proj-machine-load" text="Количество активных CI-запусков, назначенных этой машине" ariaLabel={`Загрузка: ${m.load ?? 0}. Количество активных CI-запусков, назначенных этой машине`}>Загрузка: {m.load ?? 0} <span aria-hidden="true">ⓘ</span></Tooltip>
           {m.canUse === false && <span className="proj-offline" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11 }}>{m.unavailableReason ?? 'недоступна'}</span>}
         </td>
-        <td style={controlCellStyle}><span className={readiness.ready ? 'proj-online' : 'proj-offline'} title={readiness.tooltip} aria-label={readiness.tooltip}>●</span></td>
+        <td style={controlCellStyle}><Tooltip className={`proj-status-dot ${readiness.ready ? 'proj-status-dot--ready' : 'proj-status-dot--not-ready'}`} text={readiness.tooltip} /></td>
         <td style={controlCellStyle}><input type="radio" name="project-machine-default" aria-label={`По умолчанию: ${m.name ?? m.agentId}`} checked={m.isMyDefault === true}
           disabled={m.canUse === false || m.online !== true} onChange={() => void p.onSetDefault(p.projectId, m.agentId)} /></td>
         <td style={controlCellStyle}>{p.own

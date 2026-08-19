@@ -239,6 +239,7 @@ export const REST = {
   projectMachine: (id: string, agentId: string) =>
     `/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}`,
   projectDefaultMachine: (id: string) => `/api/projects/${encodeURIComponent(id)}/default-machine`,
+  projectUserDefaultMachine: (id: string) => `/api/projects/${encodeURIComponent(id)}/machines/default`,
   /** Снапшот доски; includeCompleted=1 добавляет давно завершённые задачи. */
   projectBoard: (id: string, includeCompleted?: boolean) =>
     `/api/projects/${encodeURIComponent(id)}/board${includeCompleted ? '?includeCompleted=1' : ''}`,

@@ -335,8 +335,10 @@ export interface IpcInvokeMap {
   'projects:setReposRoot': { arg: { id: string; agentId: string; reposRoot: string }; result: ProjectDetail }
   'projects:setMachineSsh': { arg: { id: string; agentId: string; sshHost: string; sshUser: string }; result: ProjectDetail }
   'projects:setMachinePath': { arg: { id: string; agentId: string; path: string }; result: ProjectDetail }
-  /** Назначить машину проекта по умолчанию (только владелец). */
+  /** Назначить legacy/production-машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
+  /** Назначить персональную машину пользователя по умолчанию для проекта. */
+  'projects:setUserDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */
   'board:get': { arg: { id: string; includeCompleted?: boolean }; result: Board }
   'columns:create': { arg: { projectId: string; name: string }; result: KanbanColumn }
@@ -856,6 +858,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:setReposRoot',
   'projects:setMachineSsh',
   'projects:setDefaultMachine',
+  'projects:setUserDefaultMachine',
   'board:get',
   'columns:create',
   'columns:rename',

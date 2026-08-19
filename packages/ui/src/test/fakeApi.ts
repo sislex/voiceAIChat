@@ -722,6 +722,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (p.machines.some((m) => m.agentId === agentId)) p.defaultAgentId = agentId
       return detail(p)
     },
+    'projects:setUserDefaultMachine': async ({ id, agentId }) => {
+      const result = detail(projects.find((x) => x.id === id)!)
+      result.machines = result.machines.map((machine) => ({ ...machine, isMyDefault: machine.agentId === agentId }))
+      return result
+    },
     'board:get': async ({ id, includeCompleted }) => boardOf(id, includeCompleted),
     'columns:create': async ({ projectId, name }) => {
       const ts = tick()

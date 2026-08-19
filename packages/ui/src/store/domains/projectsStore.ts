@@ -560,7 +560,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       },
       async setProjectDefaultMachine(id, agentId) {
         try {
-          setState({ projectDetail: await client['projects:setDefaultMachine']({ id, agentId }) })
+          setState({ projectDetail: await client['projects:setUserDefaultMachine']({ id, agentId }) })
         } catch (err) {
           fail(err, () => void actions.setProjectDefaultMachine(id, agentId))
         }

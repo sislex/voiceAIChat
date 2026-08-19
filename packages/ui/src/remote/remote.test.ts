@@ -195,6 +195,18 @@ describe('createHttpApi', () => {
     })
   })
 
+  it('сохраняет персональную машину по умолчанию отдельным REST-маршрутом', async () => {
+    mockFetch(() => ({ _text: JSON.stringify({ id: 'p1' }) }))
+    const api = createHttpApi('', 'ws://x/agent')
+
+    await api['projects:setUserDefaultMachine']({ id: 'p1', agentId: 'mac' })
+
+    expect(calls[0]).toMatchObject({
+      url: '/api/projects/p1/machines/default',
+      init: { method: 'PUT', body: JSON.stringify({ agentId: 'mac' }) }
+    })
+  })
+
   it('agents:connectionString использует agentWsUrl', async () => {
     mockFetch(() => ({ _text: '' }))
     const api = createHttpApi('http://srv:8787', 'ws://srv:8787/agent')

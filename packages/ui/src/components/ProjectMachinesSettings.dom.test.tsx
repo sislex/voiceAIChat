@@ -59,8 +59,21 @@ it('показывает статус слева от имени, владель
   expect(screen.queryByRole('columnheader', { name: 'Владелец' })).not.toBeInTheDocument()
   expect(screen.getAllByRole('columnheader', { name: /^Готовность/ })).toHaveLength(2)
   await userEvent.selectOptions(screen.getByLabelText('Фильтр машин: Мои машины'), 'offline')
-  expect(screen.getByLabelText(/Не готова: Offline; не заполнена «Папка проекта»; не заполнен «Корень Feature Run»/)).toHaveClass('proj-offline')
+  expect(screen.getByLabelText(/Не готова: Offline; не заполнена «Папка проекта»; не заполнен «Корень Feature Run»/)).toHaveClass('proj-status-dot--not-ready')
+  expect(screen.getByLabelText('Offline')).toHaveClass('proj-status-dot--offline')
   expect(screen.getByLabelText('Offline')).toHaveAttribute('title', 'Offline')
+  expect(screen.getByLabelText('Offline')).toHaveAttribute('tabindex', '0')
+  await userEvent.hover(screen.getByLabelText('Offline'))
+  expect(screen.getByRole('tooltip')).toHaveTextContent('Offline')
+  expect(screen.getByRole('tooltip').parentElement).toBe(document.body)
+})
+
+it('объясняет, что загрузка — число активных CI-запусков', () => {
+  setup()
+  const loads = screen.getAllByLabelText('Загрузка: 0. Количество активных CI-запусков, назначенных этой машине')
+  expect(loads).toHaveLength(2)
+  expect(loads[0]).toHaveTextContent('Загрузка: 0')
+  expect(loads[0]).toHaveAttribute('tabindex', '0')
 })
 
 it.each([
