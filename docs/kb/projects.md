@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-08-19
-checked: d924c2e2
+updated: 2026-08-20
+checked: 4e7ac5e5
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -194,6 +194,18 @@ tooltip рендерится portal-ом в `document.body`, поэтому го
 взаимоисключающий default. UI сохраняет его отдельным каналом
 `projects:setUserDefaultMachine` через `PUT …/machines/default`; legacy/production
 `projects:setDefaultMachine` продолжает использовать `POST …/default-machine`.
+
+## Миграция системных колонок workflow
+
+При открытии базы канонизация workflow в `apps/server/src/db/database.ts` сначала
+доверяет сохранённой семантике: если у проекта уже есть колонка с
+`semantic_type = 'cancelled'`, именно она сохраняет свой стабильный `id`. Только
+при отсутствии такой колонки миграция один раз распознаёт `custom`-колонку с
+точным названием «Отменены» и меняет ей только `semantic_type` на `cancelled`.
+Карточки при этом не переносятся: их `column_id` и `position` остаются прежними.
+Повторное открытие базы не создаёт вторую cancelled-колонку и не меняет результат.
+Название служит только legacy-фолбэком; при наличии пригодной семантики оно не
+участвует в выборе.
 
 ## Контракт (REST + WS + мост)
 
