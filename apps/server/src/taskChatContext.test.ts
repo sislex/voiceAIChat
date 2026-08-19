@@ -72,8 +72,10 @@ describe('GET /api/conversations/:id/task-context', () => {
       task: { id: task.id, title: 'Скролл в модалке', key: 'VC-3', type: 'task' },
       columnName,
       columnSemantic: 'backlog',
-      agentName: 'Прод-машина',
-      workdir: '/srv/app',
+      // В buildServer реестр не содержит online-подключения: REST не должен
+      // показывать project default как фактически доступную машину чата.
+      agentName: null,
+      workdir: null,
       run: null
     })
   })
@@ -83,6 +85,30 @@ describe('GET /api/conversations/:id/task-context', () => {
     const res = await inj({ method: 'GET', url: `/api/conversations/${conv.id}/task-context` })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toBeNull()
+  })
+
+  it('использует персональный default чата и online-fallback, но не заменяет явный override', () => {
+    const { project, chat } = setup()
+    const fallback = db.createAgent('admin', 'Резервная')
+    db.linkMachine('admin', project.id, fallback.id)
+    db.setProjectMachinePath('admin', project.id, fallback.id, '/srv/fallback')
+    const projectDefault = db.getProject('admin', project.id)!.defaultAgentId!
+    db.setUserProjectDefaultMachine('admin', project.id, projectDefault)
+
+    expect(db.resolveConversationMachine('admin', chat.id, { isOnline: (id) => id === fallback.id })).toEqual({
+      agentId: fallback.id, source: 'fallback', error: null
+    })
+    db.setUserProjectDefaultMachine('admin', project.id, fallback.id)
+    expect(db.resolveConversationMachine('admin', chat.id, { isOnline: (id) => id === fallback.id })).toEqual({
+      agentId: fallback.id, source: 'personal_default', error: null
+    })
+    db.setConversationExecTarget('admin', chat.id, projectDefault)
+    expect(db.resolveConversationMachine('admin', chat.id, { isOnline: (id) => id === fallback.id })).toEqual({
+      agentId: projectDefault, source: 'explicit', error: 'offline'
+    })
+
+    db.restoreTaskChatWorkdir('admin', chat.id, project.id)
+    expect(db.getConversation('admin', chat.id)).toMatchObject({ execTarget: null, workdir: null })
   })
 })
 

@@ -108,13 +108,15 @@ describe('ConversationSettings', () => {
     expect(screen.getByTestId('conv-mode-current')).toHaveTextContent('без своей машины')
   })
 
-  it('предвыбирает машину по умолчанию в новом разговоре и помечает её в списке', () => {
+  it('показывает effective персональную машину, но сохраняет наследование', async () => {
     const conv = { ...conversation, execTarget: null, messageCount: 0 }
     const onSave = vi.fn().mockResolvedValue(undefined)
-    render(<ConversationSettings conversation={conv} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} defaultAgentId="m1" onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    expect(screen.getByText(/Рабочая машина — по умолчанию/)).toBeInTheDocument()
+    const effective = { ...agent, isDefault: true, isEffective: true, effectiveSource: 'personal_default' as const }
+    render(<ConversationSettings conversation={conv} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} fetchMachines={vi.fn().mockResolvedValue([effective])} defaultAgentId="m1" onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    expect(await screen.findByRole('option', { name: 'Моя машина по умолчанию: Рабочая машина' })).toBeInTheDocument()
+    expect(screen.getByText(/Рабочая машина — моя по умолчанию/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    return waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ execTarget: 'm1' })))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ execTarget: null })))
   })
 
   it('просит подтверждение при переходе из плана в полный доступ', async () => {
@@ -132,7 +134,7 @@ describe('ConversationSettings', () => {
   })
 
 
-  it('привязка к проекту подставляет машину/папку проекта и сохраняет projectId', async () => {
+  it('привязка к проекту сохраняет персональное наследование и projectId', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     const summary: ProjectSummary = { id: 'p1', name: 'Proj', description: '', gitUrl: null, technologies: [], skills: ['ts'], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 1, updatedAt: 1, role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual' }
 
@@ -141,9 +143,8 @@ describe('ConversationSettings', () => {
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[summary]} fetchProjectDetail={fetchProjectDetail} onSave={onSave} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.change(screen.getByRole('combobox', { name: 'Проект разговора' }), { target: { value: 'p1' } })
     await waitFor(() => expect(fetchProjectDetail).toHaveBeenCalledWith('p1'))
-    await screen.findByText('/srv/p') // рабочая папка подставилась из проекта
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
-    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1', execTarget: 'm1', workdir: '/srv/p' })))
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1', execTarget: null, workdir: null })))
   })
 
   it('проектный чат объединяет личные и проектные машины без дублей', async () => {
