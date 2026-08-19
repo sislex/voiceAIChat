@@ -70,6 +70,10 @@ export interface ServerConfig {
   llmRunnerToken?: string
   /** Таймаут ожидания заголовков /v1/run, мс (сам ход не ограничен). */
   llmRunnerConnectTimeoutMs?: number
+  /** Внутренний TTS Runner; сервер никогда не запускает TTS-бинари сам. */
+  ttsRunnerUrl?: string
+  /** Обязательный Bearer-токен TTS Runner. */
+  ttsRunnerToken?: string
   /** Unix-сокет host-side API, запускающего voicechat-deploy. */
   deployApiSocket?: string
 }
@@ -180,6 +184,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     llmRunnerCodexUrl: env.VC_LLM_RUNNER_CODEX_URL ?? env.VC_LLM_RUNNER_URL,
     llmRunnerToken: env.VC_LLM_RUNNER_TOKEN,
     llmRunnerConnectTimeoutMs: parsePositiveInt(env.VC_LLM_RUNNER_TIMEOUT_MS),
+    ttsRunnerUrl: env.VC_TTS_RUNNER_URL,
+    ttsRunnerToken: env.VC_TTS_RUNNER_TOKEN,
     deployApiSocket: env.VC_DEPLOY_API_SOCKET
   }
 }

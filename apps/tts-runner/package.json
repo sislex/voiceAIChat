@@ -1,0 +1,11 @@
+{
+  "name": "@voicechat/tts-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": { ".": "./src/server.ts" },
+  "scripts": { "dev": "tsx watch src/index.ts", "start": "tsx src/index.ts", "typecheck": "tsc --noEmit -p tsconfig.json", "build": "tsc --noEmit -p tsconfig.json", "test": "vitest run --silent" },
+  "dependencies": { "@voicechat/shared": "*", "fastify": "^5.1.0" },
+  "devDependencies": { "@types/node": "^22.10.2", "tsx": "^4.19.2", "typescript": "^5.7.2", "vitest": "^2.1.8" }
+}
