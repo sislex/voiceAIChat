@@ -889,12 +889,12 @@ export class VoiceChatDb {
       ['cancelled', 'Отменено'],
       ['decision_required', 'Требуется решение']
     ]
-    type WorkflowColumnRow = { id: string; semantic_type: string; position: number; created_at: number }
+    type WorkflowColumnRow = { id: string; name: string; semantic_type: string; position: number; created_at: number }
     type WorkflowTaskRow = { id: string }
     this.db.transaction(() => {
       const projectIds = this.db.prepare(`SELECT id FROM projects ORDER BY created_at, id`).all() as Array<{ id: string }>
       const loadColumns = (projectId: string) => this.db.prepare(
-        `SELECT id, semantic_type, position, created_at FROM kanban_columns WHERE project_id=? ORDER BY position, created_at, id`
+        `SELECT id, name, semantic_type, position, created_at FROM kanban_columns WHERE project_id=? ORDER BY position, created_at, id`
       ).all(projectId) as WorkflowColumnRow[]
       const mergeColumns = (projectId: string, targetId: string, sourceIds: string[]) => {
         if (!sourceIds.length) return
@@ -913,6 +913,16 @@ export class VoiceChatDb {
 
       for (const { id: projectId } of projectIds) {
         let columns = loadColumns(projectId)
+        // Сохранённая семантика (и тем самым id существующей системной колонки) —
+        // основной признак. Только если её ещё нет, старую системную колонку можно
+        // однократно узнать по точному legacy-заголовку, не двигая её карточки.
+        if (!columns.some(column => column.semantic_type === 'cancelled')) {
+          const legacyCancelled = columns.find(column => column.semantic_type === 'custom' && column.name === 'Отменены')
+          if (legacyCancelled) {
+            this.db.prepare(`UPDATE kanban_columns SET semantic_type='cancelled' WHERE id=?`).run(legacyCancelled.id)
+            columns = loadColumns(projectId)
+          }
+        }
         let nextPosition = Math.max(0, ...columns.map(column => column.position)) + RANK_STEP
         for (const [semantic, name] of workflowColumns) {
           if (columns.some(column => column.semantic_type === semantic)) continue

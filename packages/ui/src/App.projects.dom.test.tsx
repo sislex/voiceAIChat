@@ -241,10 +241,11 @@ describe('App — чаты завершённых задач в сайдбаре
     return { api, projectId: p.id, taskId: task.id, chatId: chat.id }
   }
 
-  /** Список бесед сайдбара, суженный проектом (селект над поиском). */
+  /** Область секций сайдбара, суженная проектом (может пока не содержать списков). */
   async function chatList(): Promise<HTMLElement> {
     await userEvent.selectOptions(await screen.findByLabelText('Проект'), 'Мой проект')
-    return await screen.findByRole('list', { name: 'Беседы' })
+    await waitFor(() => expect(document.querySelector('.convo-groups')).not.toBeNull())
+    return document.querySelector('.convo-groups') as HTMLElement
   }
 
   it('чат задачи из «Готово» скрыт, иконка-фильтр его возвращает', async () => {
@@ -264,7 +265,11 @@ describe('App — чаты завершённых задач в сайдбаре
   it('прямая ссылка открывает скрытый чат и показывает его строку', async () => {
     const { chatId } = await withDoneTaskChat()
     window.location.hash = `#/chat/${chatId}`
-    const list = await screen.findByRole('list', { name: 'Беседы' })
+    const older = await screen.findByRole('button', { name: /Более старые 1/ })
+    // Даже активный старый разговор не раскрывает секцию автоматически.
+    expect(screen.queryByRole('button', { name: 'Задача Скролл' })).not.toBeInTheDocument()
+    await userEvent.click(older)
+    const list = await screen.findByRole('list', { name: 'Более старые беседы: 1' })
     const row = await within(list).findByRole('button', { name: 'Задача Скролл' })
     expect(row).toHaveAttribute('aria-current', 'true')
   })
