@@ -42,7 +42,7 @@ function Tooltip({ text, ariaLabel = text, className, children }: { text: string
     if (rect) setPosition({ left: rect.left + rect.width / 2, top: rect.bottom + 7 })
   }
   return <>
-    <span ref={target} className={className} title={text} aria-label={ariaLabel} tabIndex={0} onMouseEnter={show} onMouseLeave={() => setPosition(null)} onFocus={show} onBlur={() => setPosition(null)}>{children}</span>
+    <span ref={target} className={className} role="img" title={text} aria-label={ariaLabel} tabIndex={0} onMouseEnter={show} onMouseLeave={() => setPosition(null)} onFocus={show} onBlur={() => setPosition(null)}>{children}</span>
     {position && createPortal(<span role="tooltip" className="proj-machine-tooltip" style={{ left: position.left, top: position.top }}>{text}</span>, document.body)}
   </>
 }

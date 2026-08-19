@@ -81,7 +81,7 @@ export function registerProjectRoutes(
     if (agents) {
       project.machines = project.machines.map((machine) => ({ ...machine, online: agents.isOnline(machine.agentId) }))
       const eligible = project.machines
-        .filter((machine) => machine.sharedWithProject && machine.canUse !== false && machine.online === true)
+        .filter((machine) => (machine.ownership === 'mine' || machine.sharedWithProject) && machine.canUse !== false && machine.online === true)
         .map((machine) => machine.agentId)
       const current = project.machines.find((machine) => machine.isMyDefault)
       if (!current || !eligible.includes(current.agentId)) {
