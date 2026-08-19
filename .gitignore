@@ -12,6 +12,7 @@ release/
 .vite/
 .cache/
 coverage/
+artifacts/
 
 # Логи и мусор ОС
 *.log

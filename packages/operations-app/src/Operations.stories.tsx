@@ -6,6 +6,7 @@ type Story=StoryObj<typeof Machines>
 export const MachinesOnline:Story={args:{children:<p>MacBook · online · v1.2 · read-only · network · /work</p>}}
 export const MachinesOffline:Story={args:{children:<p>Домашний ПК · offline</p>}}
 export const Utility:Story={render:()=><MachineUtility><p>MacBook · Terminal · /work</p></MachineUtility>}
+export const UtilityRestricted:Story={render:()=><MachineUtility><p role="status">Команда запрещена политикой машины</p></MachineUtility>}
 export const FileExplorer:Story={render:()=><Explorer><p>/work / src / index.ts</p></Explorer>}
 export const History:Story={render:()=><LlmHistory><p>Claude · session · tokens · cost · live</p></LlmHistory>}
 export const Knowledge:Story={render:()=><KnowledgeBase><p>Topics · search · related files</p></KnowledgeBase>}
