@@ -1,0 +1,2 @@
+import {describe,expect,it} from 'vitest';import{buildWebReaderRoute,parseLegacyWebRecorderRoute,parseWebReaderRoute}from'./routes'
+describe('web reader routes',()=>{it('round trips root and conversation',()=>{expect(parseWebReaderRoute(buildWebReaderRoute({conversationId:null}))).toEqual({conversationId:null});expect(parseWebReaderRoute(buildWebReaderRoute({conversationId:'c /1'}))).toEqual({conversationId:'c /1'})});it('recognizes legacy only for replace by host',()=>expect(parseLegacyWebRecorderRoute('#/web-recorder/c1')).toEqual({conversationId:'c1'}))})

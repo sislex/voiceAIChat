@@ -7,6 +7,8 @@ const FRONTEND = [
   { name: '@voicechat/ui-kit', dir: 'packages/ui-kit', layer: 'shared' },
   { name: '@voicechat/app-shell', dir: 'packages/app-shell', layer: 'shell' },
   { name: '@voicechat/chat-app', dir: 'packages/chat-app', layer: 'product' },
+  { name: '@voicechat/web-reader-app', dir: 'packages/web-reader-app', layer: 'product' },
+  { name: '@voicechat/playwright-reader-app', dir: 'packages/playwright-reader-app', layer: 'product' },
   { name: '@voicechat/projects-app', dir: 'packages/projects-app', layer: 'product' },
   { name: '@voicechat/operations-app', dir: 'packages/operations-app', layer: 'product' },
   { name: '@voicechat/admin-app', dir: 'packages/admin-app', layer: 'product' },
@@ -38,7 +40,7 @@ export function checkArchitecture({ root = ROOT, packages = FRONTEND } = {}) {
       if (!dependency || !edges.has(dependency)) continue
       if (specifier !== dependency && specifier !== `${dependency}/styles.css` && !(dependency === '@voicechat/ui' && specifier === '@voicechat/ui/app.css')) fail('deep workspace import', `${relative(root, file)} -> ${specifier}`)
       edges.get(item.name).add(dependency)
-      if (item.layer === 'product' && (dependency === '@voicechat/app-shell' || dependency === '@voicechat/ui' || dependency === '@voicechat/web' || PRODUCT_NAMES.has(dependency))) fail('product boundary violation', `${relative(root, file)} -> ${specifier}`)
+      if (item.layer === 'product' && (dependency === '@voicechat/app-shell' || dependency === '@voicechat/ui' || dependency === '@voicechat/web' || (PRODUCT_NAMES.has(dependency) && !(dependency === '@voicechat/chat-app' && /reader-app$/.test(item.name))))) fail('product boundary violation', `${relative(root, file)} -> ${specifier}`)
       if (item.layer === 'shell' && (PRODUCT_NAMES.has(dependency) || dependency === '@voicechat/ui')) fail('shell boundary violation', `${relative(root, file)} -> ${specifier}`)
     }
     if (item.layer === 'product' && /\b(fetch|WebSocket|EventSource)\b|from\s*['"]electron['"]|\bwindow\s*\./.test(source)) fail('transport or platform leak', relative(root, file))
@@ -66,6 +68,8 @@ export function checkExports({ root = ROOT, packages = FRONTEND.filter((item) =>
 const STORY_MATRIX = {
   'packages/app-shell/src/AppShell.stories.tsx': ['Default', 'ModuleFailure'],
   'packages/chat-app/src/surfaces.stories.tsx': ['Empty', 'Messages', 'StreamingQueued', 'Disconnected'],
+  'packages/web-reader-app/src/WebReaderApp.stories.tsx': ['Default', 'Empty', 'RecorderReady', 'ActionPending', 'Mobile'],
+  'packages/playwright-reader-app/src/PlaywrightReaderApp.stories.tsx': ['Default', 'SessionConnected', 'CapabilityUnavailable', 'Mobile'],
   'packages/projects-app/src/ProjectsApp.stories.tsx': ['Default', 'Loading', 'KanbanLongCards'],
   'packages/operations-app/src/Operations.stories.tsx': ['MachinesOnline', 'MachinesOffline', 'UtilityRestricted'],
   'packages/admin-app/src/AdminApp.stories.tsx': ['Overview', 'EmptyUsage', 'AccessMatrix']

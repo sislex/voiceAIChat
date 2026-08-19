@@ -10,13 +10,15 @@ export const PACKAGES = [
   { id: 'runner', path: 'apps/llm-runner', workspace: '@voicechat/llm-runner' },
   { id: 'agent', path: 'apps/agent', workspace: '@voicechat/agent' },
   { id: 'ui', path: 'packages/ui', workspace: '@voicechat/ui' },
+  { id: 'web-reader', path: 'packages/web-reader-app', workspace: '@voicechat/web-reader-app' },
+  { id: 'playwright-reader', path: 'packages/playwright-reader-app', workspace: '@voicechat/playwright-reader-app' },
   { id: 'web', path: 'apps/web', workspace: '@voicechat/web' },
   { id: 'desktop', path: 'apps/desktop', prefix: 'apps/desktop' },
   { id: 'agent-tray', path: 'apps/agent-tray', prefix: 'apps/agent-tray' }
 ]
 
 // Это явная карта зависимостей: shared — контракт всех workspace-потребителей.
-const sharedConsumers = ['server', 'runner', 'agent', 'ui', 'web']
+const sharedConsumers = ['server', 'runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web']
 const workspacePackages = PACKAGES.filter((pkg) => pkg.workspace)
 const fullGate = (reason) => ({ full: true, reason, packages: workspacePackages })
 const harmlessPaths = [/^docs\//, /^generated\/kb\//, /^(README|LICENSE)(\.md)?$/]

@@ -7,9 +7,9 @@ import { checkArchitecture, redact, runStatic } from './frontend-quality.mjs'
 
 test('current frontend satisfies static quality gates', () => {
   const result = runStatic()
-  assert.equal(result.architecture.packages, 8)
-  assert.equal(result.stories.modules, 5)
-  assert.equal(result.lazyLoading.lazyProducts, 4)
+  assert.equal(result.architecture.packages, 10)
+  assert.equal(result.stories.modules, 7)
+  assert.equal(result.lazyLoading.lazyProducts, 6)
 })
 test('architecture gate rejects deep imports', () => {
   const root = mkdtempSync(join(tmpdir(), 'frontend-gate-'))

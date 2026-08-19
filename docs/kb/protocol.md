@@ -14,6 +14,10 @@ areas:
 
 # Контракт клиент↔сервер (REST, WS, мосты)
 
+## Reader ports и неизменённые backend-контракты
+
+Выделение Reader не меняет `/api/preview`, `preview.action`/`preview.result`, `voicechat.web-recorder.v1`, conversation schema или browser-runner protocol. Web Reader принимает relay через `PreviewRelayPort`, адресует результат `conversationId` + `requestId` и инвалидирует доставку при смене активного разговора/dispose. Playwright Reader работает через `BrowserSessionPort` и показывает только capabilities, которые вернул adapter.
+
 Источники истины — читай их, а не пересказ:
 `packages/shared/src/protocol.ts` (REST-пути + WS-сообщения),
 `packages/shared/src/ipc.ts` (формы мостов `window.*`),
