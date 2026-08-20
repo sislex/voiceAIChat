@@ -4,10 +4,14 @@
 
 import type { ServerMessage } from '@voicechat/shared'
 import type { SttEngine } from './types.js'
+import type { SttClient, SttRun } from './client.js'
+import { randomUUID } from 'node:crypto'
 import type { DiarizationEngine } from '../diarization/types.js'
 
 export interface SttSessionDeps {
-  engine: SttEngine
+  engine?: SttEngine
+  client?: SttClient
+  getModel?: () => import('@voicechat/shared').WhisperModel
   send: (msg: ServerMessage) => void
   language?: string
   partialIntervalMs?: number
@@ -35,6 +39,7 @@ export function createSttSession(deps: SttSessionDeps): SttSession {
   let running = false
   let pendingFinal = false
   let timer: ReturnType<typeof setInterval> | null = null
+  let remote: SttRun | null = null
 
   function combined(): Int16Array {
     const out = new Int16Array(totalSamples)
@@ -59,6 +64,7 @@ export function createSttSession(deps: SttSessionDeps): SttSession {
         return
       }
       const buffer = combined()
+      if (!deps.engine) return
       const result = await deps.engine.transcribe(buffer, sampleRate, { language, final })
       let segments = result.segments
       if (final && deps.diarization && deps.isDiarizationEnabled?.() && segments.length > 0) {
@@ -94,29 +100,38 @@ export function createSttSession(deps: SttSessionDeps): SttSession {
 
   return {
     start(rate) {
+      remote?.cancel()
+      remote = deps.client?.start({ runId: randomUUID(), model: deps.getModel?.() ?? 'small', language, diarization: deps.isDiarizationEnabled?.() === true }, (event) => {
+        if (event.t === 'partial' || event.t === 'final') deps.send({ t: event.t === 'partial' ? 'stt.partial' : 'stt.final', update: { text: event.text, segments: event.segments.map((segment) => ({ text: segment.text, speakerId: segment.speaker ?? 1, start: segment.startMs / 1000, end: segment.endMs / 1000 })) } })
+        else if (event.t === 'error') deps.send({ t: 'stt.error', message: event.message })
+      }) ?? null
       chunks = []
       totalSamples = 0
       sampleRate = rate || 16_000
       recording = true
       pendingFinal = false
       stopTimer()
-      timer = setInterval(() => {
+      if (!remote) timer = setInterval(() => {
         if (recording) void transcribe(false)
       }, partialIntervalMs)
     },
     chunk(pcm) {
       if (!recording) return
-      chunks.push(pcm)
+      if (remote) remote.write(pcm)
+      else chunks.push(pcm)
       totalSamples += pcm.length
     },
     stop() {
       recording = false
       stopTimer()
-      void transcribe(true)
+      if (remote) remote.end()
+      else void transcribe(true)
     },
     dispose() {
       recording = false
       stopTimer()
+      remote?.cancel()
+      remote = null
     }
   }
 }

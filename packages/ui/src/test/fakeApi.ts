@@ -834,6 +834,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'tasks:startPreparationRun': async ({ projectId, taskId, selection }) => ({ id: `preparation-${taskId}`, projectId, taskId, status: 'running', attempt: 1, maxAttempts: 1, provider: selection?.provider, model: selection?.model, llmEngineId: selection?.llmEngineId, log: '', error: null, readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: null, canRetry: false, canCancel: true }),
     'tasks:retryPreparationRun': async ({ runId, selection }) => ({ id: `${runId}-retry`, projectId: '', taskId: '', status: 'running', attempt: 1, maxAttempts: 1, provider: selection?.provider, model: selection?.model, llmEngineId: selection?.llmEngineId, log: '', error: null, readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: null, canRetry: false, canCancel: true }),
     'tasks:answerPreparationQuestion': async ({ questionId, answer }) => ({ accepted: true, alreadyAnswered: false, question: { questionId, attemptId: '', text: '', material: true, status: 'answered', answer, askedAt: nowMs, answeredAt: nowMs, answeredBy: 'test' } }),
+    'tasks:listPreparationNotifications': async () => [],
+    'tasks:dismissPreparationNotification': async () => ({ dismissed: true }),
     'tasks:exportPreparationRun': async () => {},
     'tasks:delete': async ({ taskId }) => {
       const i = tasks.findIndex((x) => x.id === taskId)

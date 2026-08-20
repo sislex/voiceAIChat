@@ -52,6 +52,8 @@ export interface KbToolEntry {
   /** Ход внутри CI-рана: ран и шаг его ленты — для отчётов по ране и задаче. */
   ciRunId?: string | null
   ciStepId?: string | null
+  /** Preparation-run: expose only search/document/topics, never operational tools. */
+  coreReadOnly?: boolean
 }
 
 /** In-memory брокер: токен хода → контекст. Токен живёт ровно один ход. */
@@ -326,6 +328,7 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         }
       )
 
+      if (!entry?.coreReadOnly) {
       server.registerTool(
         'runtime_context',
         {
@@ -441,6 +444,8 @@ export function registerKbMcp(app: FastifyInstance, opts: RegisterKbMcpOptions):
         }).filter(Boolean)
         return { content: [{ type: 'text', text: JSON.stringify(projects, null, 2) }] }
       })
+
+      }
 
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
       reply.hijack()

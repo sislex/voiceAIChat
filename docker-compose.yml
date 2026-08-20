@@ -28,6 +28,8 @@ services:
       - runner-work
       - runner-personal
       - tts-runner
+      - stt-runner
+      - automation-runner
     environment:
       HOST: 0.0.0.0
       PORT: "8787"
@@ -43,6 +45,8 @@ services:
       VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
       VC_TTS_RUNNER_URL: http://tts-runner:8791
       VC_TTS_RUNNER_TOKEN: ${VC_TTS_RUNNER_TOKEN:-voicechat-tts-local-token}
+      VC_STT_RUNNER_URL: http://stt-runner:8791
+      VC_STT_RUNNER_TOKEN: ${VC_STT_RUNNER_TOKEN:-voicechat-stt-runner-local-token}
       # Host-side deploy API доступен только через примонтированный Unix-сокет.
       VC_DEPLOY_API_SOCKET: /run/voicechat/deploy-api.sock
       # Адрес, по которому MCP-эндпоинты сервера (remote-bash, kb, ci-commands)
@@ -66,6 +70,49 @@ services:
     # Дополнительная группа совпадает с владельцем host-side deploy-сокета.
     group_add:
       - "65532"
+    restart: unless-stopped
+
+  stt-runner:
+    build:
+      context: .
+      target: stt-runner-runtime
+    image: voicechat-stt-runner
+    mem_limit: 6g
+    cpus: 2
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8791"
+      VC_STT_RUNNER_TOKEN: ${VC_STT_RUNNER_TOKEN:-voicechat-stt-runner-local-token}
+      VC_MODELS_DIR: /models
+      VC_STT_TEMP_DIR: /stt-tmp
+    volumes:
+      - vc-stt-models:/models
+      - vc-stt-temp:/stt-tmp
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8791/v1/health',{headers:{authorization:'Bearer '+process.env.VC_STT_RUNNER_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  automation-runner:
+    build:
+      context: .
+      target: automation-runner-runtime
+    image: voicechat-automation-runner
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8800"
+      VC_AUTOMATION_DATA_DIR: /data
+      VC_AUTOMATION_RUNNER_TOKEN: ${VC_AUTOMATION_RUNNER_TOKEN:-voicechat-automation-local-token}
+      VC_LLM_RUNNER_HEALTH_URL: http://runner-work:8790/v1/health
+    volumes:
+      - vc-automation-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8800/v1/health',{headers:{authorization:'Bearer '+process.env.VC_AUTOMATION_RUNNER_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   runner-work:
@@ -151,8 +198,11 @@ services:
 
 volumes:
   vc-data:
+  vc-automation-data:
   vc-claude:
   vc-codex:
+  vc-stt-models:
+  vc-stt-temp:
   vc-runner-work-data:
   vc-runner-personal-data:
   vc-runner-personal-claude:
