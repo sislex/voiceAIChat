@@ -747,5 +747,27 @@ describe('VoiceChatDb — персистентная очередь ходов',
     expect(db.listMessages(U, conversation.id)).toEqual([])
     db.close()
   })
+
+  it('повышает приоритет атомарно и сохраняет текст с вложениями', () => {
+    const db = makeDb()
+    db.createUser(U, '', 'admin')
+    const conversation = db.createConversation(U, 'queue')
+    const first = db.addMessage(U, conversation.id, 'u1', 'Первый', '10:00')
+    const second = db.addMessage(U, conversation.id, 'u1', 'Второй', '10:01', undefined, undefined, undefined, [
+      { uploadId: 'a1', path: '/tmp/image.png', name: 'image.png', mimeType: 'image/png', size: 10 }
+    ])
+    db.enqueueTurn(U, conversation.id, first.id, { segments: [{ speakerId: 1, text: first.text }] })
+    const queued = db.enqueueTurn(U, conversation.id, second.id, { segments: [{ speakerId: 1, text: second.text }], attachments: ['a1'] })[1]
+
+    db.updateQueuedTurn(U, conversation.id, queued.id, 'Исправленный', { segments: [{ speakerId: 1, text: 'Исправленный' }], attachments: ['a1'] })
+    db.prioritizeQueuedTurn(U, conversation.id, queued.id)
+    db.prioritizeQueuedTurn(U, conversation.id, queued.id)
+
+    expect(db.listQueuedTurns(U, conversation.id)).toMatchObject([
+      { id: queued.id, messageId: second.id, text: 'Исправленный', position: 1, attachments: ['a1'], attachmentDetails: [{ name: 'image.png', mimeType: 'image/png' }] },
+      { messageId: first.id, position: 2 }
+    ])
+    db.close()
+  })
 })
 
