@@ -116,6 +116,24 @@ export const MessageQueue: Story = {
   }
 }
 
+/** Мобильный дефолт: очередь доступна, хотя само поле ввода свёрнуто. */
+export const MessageQueueCollapsedComposer: Story = {
+  args: {
+    ...MessageQueue.args,
+    defaultCollapsed: true
+  },
+  parameters: {
+    viewport: { defaultViewport: 'mobile1' }
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
+    await expect(canvas.getAllByTestId('turn-queue-item')).toHaveLength(3)
+    await userEvent.click(canvas.getByRole('button', { name: 'Показать ещё 2' }))
+    await expect(canvas.getAllByTestId('turn-queue-item')).toHaveLength(5)
+  }
+}
+
 /** Ошибка текущего хода оставляет ожидающие элементы на явной паузе. */
 export const MessageQueuePausedAfterError: Story = {
   args: { ...MessageQueue.args, queuePaused: true, requestError: 'Движок недоступен' }
