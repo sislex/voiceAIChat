@@ -10,35 +10,35 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 3 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 1 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 3 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-18 | ✓ |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 9 коммит(ов) в areas после сверки: 42f8ea61 Merge origin/main into CHAT-289 … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 18 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 20 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-18 | ⚠ 14 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-20 | ⚠ 5 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-17 | ⚠ 27 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 49 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-20 | ⚠ 7 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-17 | ⚠ 29 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 51 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 4 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 35 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 31 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 3 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 472 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 1 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 37 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 33 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 5 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 473 коммит(ов) в areas после сверки: 2e761dc7 docs(kb): update after merge 9e1d72bc-f9be-4742-b36b-2139fc8eb32a … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 3 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ⚠ код изменён 2026-08-20, сверка 2026-08-18 (по датам: правки того же дня не видны — поставь checked) |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ✓ |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-19 | ⚠ 5 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ⚠ 2 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-19 | ⚠ 7 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 4 коммит(ов) в areas после сверки: e047ac1b Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-17 | ⚠ 6 коммит(ов) в areas после сверки: 785096bb feat(stt): isolate whisper in STT runner … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-19 | ⚠ 6 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-17 | ⚠ 7 коммит(ов) в areas после сверки: 640f53f5 CHAT-294: implement sequential chat queue … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-19 | ⚠ 8 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 3 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-20 | ⚠ 3 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-19 | ⚠ 8 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-20 | ⚠ 1 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-20 | ⚠ 5 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-19 | ⚠ 10 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-20 | ⚠ 3 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-15 | ⚠ код изменён 2026-08-20, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 1 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-20 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-19 | ⚠ 3 коммит(ов) в areas после сверки: 42f8ea61 Merge origin/main into CHAT-289 … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-20 | ⚠ 2 коммит(ов) в areas после сверки: 4166e971 feat: notify about preparation questions … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-20 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-20, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -56,7 +56,7 @@
 
 ## Журнал сессий
 
-Всего записей: 281. Последние:
+Всего записей: 282. Последние:
 
 - [2026-08-20-macbook-air-user-clarification-notifications.md](log/2026-08-20-macbook-air-user-clarification-notifications.md) — clarification-notifications
 - [2026-08-20-mac-stt-runner.md](log/2026-08-20-mac-stt-runner.md) — stt-runner
@@ -65,9 +65,9 @@
 - [2026-08-20-mac-cancelled-sidebar-history.md](log/2026-08-20-mac-cancelled-sidebar-history.md) — cancelled-sidebar-history
 - [2026-08-20-mac-automation-runner.md](log/2026-08-20-mac-automation-runner.md) — automation-runner
 - [2026-08-20-alexeys-macbook-air-2-task-preparation-notifications-kb.md](log/2026-08-20-alexeys-macbook-air-2-task-preparation-notifications-kb.md) — task-preparation-notifications-kb
+- [2026-08-20-alexeys-macbook-air-2-sequential-chat-queue.md](log/2026-08-20-alexeys-macbook-air-2-sequential-chat-queue.md) — sequential-chat-queue
 - [2026-08-19-macbook-air-user-split-task-chat-default-machines.md](log/2026-08-19-macbook-air-user-split-task-chat-default-machines.md) — split-task-chat-default-machines
 - [2026-08-19-macbook-air-user-run-feed-full-width.md](log/2026-08-19-macbook-air-user-run-feed-full-width.md) — run-feed-full-width
-- [2026-08-19-macbook-air-user-machines-kanban-settings.md](log/2026-08-19-macbook-air-user-machines-kanban-settings.md) — machines-kanban-settings
 
 ## Исторические планы
 
