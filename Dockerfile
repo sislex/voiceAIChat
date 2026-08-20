@@ -104,6 +104,19 @@ EXPOSE 8790
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/llm-runner && exec node --import tsx src/index.ts"]
 
+# ---- Runtime исполнителя TTS --------------------------------------------
+FROM runtime-base AS tts-runner-runtime
+ENV PORT=8791 \
+    VC_TTS_DATA_DIR=/data \
+    VC_TTS_TEMP_DIR=/tmp/voicechat-tts \
+    VC_PIPER_VOICES_DIR=/data/voices
+RUN mkdir -p /data/voices /tmp/voicechat-tts \
+  && chown -R node:node /data /tmp/voicechat-tts
+VOLUME ["/data"]
+EXPOSE 8791
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/tts-runner && exec node --import tsx src/index.ts"]
+
 # ---- Runtime durable Automation Runner -----------------------------------
 FROM runtime-base AS automation-runner-runtime
 ENV PORT=8800 VC_AUTOMATION_DATA_DIR=/data

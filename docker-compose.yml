@@ -27,6 +27,7 @@ services:
     depends_on:
       - runner-work
       - runner-personal
+      - tts-runner
       - stt-runner
       - automation-runner
     environment:
@@ -42,6 +43,8 @@ services:
       VC_LLM_RUNNER_CLAUDE_URL: http://runner-work:8790
       VC_LLM_RUNNER_CODEX_URL: http://runner-work:8790
       VC_LLM_RUNNER_TOKEN: ${VC_LLM_RUNNER_TOKEN:-voicechat-runner-local-token}
+      VC_TTS_RUNNER_URL: http://tts-runner:8791
+      VC_TTS_RUNNER_TOKEN: ${VC_TTS_RUNNER_TOKEN:-voicechat-tts-local-token}
       VC_STT_RUNNER_URL: http://stt-runner:8791
       VC_STT_RUNNER_TOKEN: ${VC_STT_RUNNER_TOKEN:-voicechat-stt-runner-local-token}
       # Host-side deploy API доступен только через примонтированный Unix-сокет.
@@ -155,6 +158,30 @@ services:
       - vc-runner-personal-codex:/home/node/.codex
     restart: unless-stopped
 
+  tts-runner:
+    build:
+      context: .
+      target: tts-runner-runtime
+    image: voicechat-tts-runner
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8791"
+      VC_TTS_RUNNER_TOKEN: ${VC_TTS_RUNNER_TOKEN:-voicechat-tts-local-token}
+      VC_TTS_DATA_DIR: /data
+      VC_PIPER_VOICES_DIR: /data/voices
+      VC_TTS_TEMP_DIR: /tmp/voicechat-tts
+    volumes:
+      - vc-tts-data:/data
+      - vc-tts-temp:/tmp/voicechat-tts
+    mem_limit: 512m
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8791/v1/health',{headers:{authorization:'Bearer '+process.env.VC_TTS_RUNNER_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
   # HTTPS для доступа по IP: без secure-контекста браузер не даёт микрофон.
   caddy:
     image: caddy:2-alpine
@@ -180,4 +207,6 @@ volumes:
   vc-runner-personal-data:
   vc-runner-personal-claude:
   vc-runner-personal-codex:
+  vc-tts-data:
+  vc-tts-temp:
   vc-caddy:
