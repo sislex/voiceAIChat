@@ -931,6 +931,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     return run
   }
 
+  app.get('/api/task-preparation/notifications', async (req) =>
+    db.listTaskPreparationNotifications(uid(req))
+  )
+  app.post<{ Params: { questionId: string } }>('/api/task-preparation/notifications/:questionId/dismiss', async (req, reply) => {
+    const dismissed = db.dismissTaskPreparationNotification(uid(req), req.params.questionId)
+    if (!dismissed) return reply.code(404).send({ error: 'not found' })
+    return { dismissed: true }
+  })
+
   app.post<{ Params: { id: string; taskId: string }; Body: Partial<import('@voicechat/shared').TaskPreparationLlmSelection> }>('/api/projects/:id/tasks/:taskId/preparation/run', async (req, reply) => {
     const selection = req.body?.provider && typeof req.body.model === 'string' ? { llmEngineId: req.body.llmEngineId ?? null, provider: req.body.provider, model: req.body.model } : undefined
     try { return launchTaskPreparation(uid(req), req.params.id, req.params.taskId, selection) }
