@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 40 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 36 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 6 коммит(ов) в areas после сверки: ba1be0d3 feat(ui): add green interface theme … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 484 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 485 коммит(ов) в areas после сверки: 2c65e4ff docs(kb): update after merge dd4289e6-9e90-481d-80f0-9e6103b14121 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 7 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ⚠ код изменён 2026-08-20, сверка 2026-08-18 (по датам: правки того же дня не видны — поставь checked) |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ⚠ 3 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
