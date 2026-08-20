@@ -370,6 +370,26 @@ describe('VoiceBar — сворачивание композера', () => {
     expect(listening.onStopVoice).toHaveBeenCalledOnce()
   })
 
+  it('оставляет очередь и её действия доступными при свёрнутом композере', async () => {
+    const onSendQueuedNow = vi.fn()
+    const queued = {
+      id: 'q-mobile',
+      conversationId: 'c1',
+      messageId: 'm-mobile',
+      text: 'Сообщение с телефона',
+      attachments: [],
+      position: 1,
+      status: 'queued' as const,
+      createdAt: 1
+    }
+    render(<VoiceBar {...makeProps('thinking', { defaultCollapsed: true, queuedTurns: [queued], onSendQueuedNow })} />)
+
+    expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
+    expect(screen.getByTestId('turn-queue')).toHaveTextContent('Сообщение с телефона')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить сейчас сообщение № 1' }))
+    expect(onSendQueuedNow).toHaveBeenCalledWith('q-mobile')
+  })
+
   it('изменение defaultCollapsed после ручного выбора не перезаписывает состояние', async () => {
     const { rerender } = render(<VoiceBar {...makeProps('idle', { defaultCollapsed: false })} />)
     await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))

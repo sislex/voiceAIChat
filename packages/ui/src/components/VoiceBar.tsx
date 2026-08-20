@@ -246,6 +246,77 @@ export function VoiceBar({
     e.target.value = '' // позволяет выбрать тот же файл повторно
   }
 
+  // Очередь остаётся самостоятельной поверхностью возле композера даже когда
+  // само поле свёрнуто (это дефолт на телефоне). Иначе ожидающие сообщения и все
+  // действия над ними пропадали до ручного раскрытия поля ввода.
+  const renderTurnQueue = (): JSX.Element | null => queuedTurns.length > 0 ? (
+    <section className="turn-queue" aria-label="В очереди" data-testid="turn-queue">
+      <div className="turn-queue__header">
+        <strong>В очереди · {queuedTurns.length}</strong>
+        {queuePaused && <span className="turn-queue__paused" role="status">Очередь остановлена после ошибки</span>}
+      </div>
+      <ol className={queueExpanded ? 'turn-queue__list turn-queue__list--expanded' : 'turn-queue__list'}>
+        {(queueExpanded ? queuedTurns : queuedTurns.slice(0, 3)).map((item) => (
+          <li key={item.id} data-testid="turn-queue-item">
+            <div className="turn-queue__meta">№ {item.position} · {item.status === 'failed' ? 'Ошибка отправки' : 'Ожидает'}</div>
+            {editingQueueId === item.id ? (
+              <form className="turn-queue__edit" onSubmit={(event) => {
+                event.preventDefault()
+                if (!queueEditText.trim()) return
+                onEditQueued?.(item.id, queueEditText)
+                setEditingQueueId(null)
+              }}>
+                <label>
+                  <span className="sr-only">Текст ожидающего сообщения</span>
+                  <textarea autoFocus value={queueEditText} onChange={(event) => setQueueEditText(event.target.value)} />
+                </label>
+                <div className="turn-queue__actions">
+                  <button type="submit">Сохранить</button>
+                  <button type="button" onClick={() => setEditingQueueId(null)}>Отмена</button>
+                </div>
+              </form>
+            ) : <p>{item.text}</p>}
+            {item.attachments.length > 0 && (
+              <ul className="turn-queue__attachments" aria-label="Вложения">
+                {item.attachments.map((attachment, index) => {
+                  const detail = item.attachmentDetails?.find((candidate) => candidate.uploadId === attachment) ?? item.attachmentDetails?.[index]
+                  const name = detail?.name ?? `Вложение ${index + 1}`
+                  const image = detail?.mimeType.startsWith('image/') ?? false
+                  return (
+                    <li key={attachment}>
+                      {image ? <span className="turn-queue__image-preview" aria-hidden="true">🖼</span> : <span aria-hidden="true">📎</span>}
+                      <span title={name}>{name}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            {editingQueueId !== item.id && (
+              <div className="turn-queue__actions">
+                <button type="button" aria-label={`Редактировать сообщение № ${item.position}`} onClick={() => {
+                  setEditingQueueId(item.id)
+                  setQueueEditText(item.text)
+                }}>Редактировать</button>
+                <button type="button" aria-label={`Удалить сообщение № ${item.position}`} onClick={() => onDeleteQueued?.(item.id)}>Удалить</button>
+                <button type="button" aria-label={`Отправить сейчас сообщение № ${item.position}`} onClick={() => onSendQueuedNow?.(item.id)}>Отправить сейчас</button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+      {queuedTurns.length > 3 && (
+        <button
+          className="turn-queue__toggle"
+          type="button"
+          aria-expanded={queueExpanded}
+          onClick={() => setQueueExpanded((value) => !value)}
+        >
+          {queueExpanded ? 'Свернуть очередь' : `Показать ещё ${queuedTurns.length - 3}`}
+        </button>
+      )}
+    </section>
+  ) : null
+
   // Свёрнутая панель: строка-заглушка с тем, что в композере осталось, и — если
   // ход не в простое — красная кнопка остановки. Прятать её за разворот нельзя:
   // ход модели и запись должны обрываться одним нажатием откуда угодно.
@@ -261,6 +332,7 @@ export function VoiceBar({
     return (
       <div className="voicebar voicebar--collapsed">
         <div className="vinner">
+          {renderTurnQueue()}
           <div className="vcollapsed">
             <button
               className="vcollapsed-peek"
@@ -392,73 +464,7 @@ export function VoiceBar({
           </div>
         )}
 
-        {queuedTurns.length > 0 && (
-          <section className="turn-queue" aria-label="В очереди" data-testid="turn-queue">
-            <div className="turn-queue__header">
-              <strong>В очереди · {queuedTurns.length}</strong>
-              {queuePaused && <span className="turn-queue__paused" role="status">Очередь остановлена после ошибки</span>}
-            </div>
-            <ol className={queueExpanded ? 'turn-queue__list turn-queue__list--expanded' : 'turn-queue__list'}>
-              {(queueExpanded ? queuedTurns : queuedTurns.slice(0, 3)).map((item) => (
-                <li key={item.id} data-testid="turn-queue-item">
-                  <div className="turn-queue__meta">№ {item.position} · {item.status === 'failed' ? 'Ошибка отправки' : 'Ожидает'}</div>
-                  {editingQueueId === item.id ? (
-                    <form className="turn-queue__edit" onSubmit={(event) => {
-                      event.preventDefault()
-                      if (!queueEditText.trim()) return
-                      onEditQueued?.(item.id, queueEditText)
-                      setEditingQueueId(null)
-                    }}>
-                      <label>
-                        <span className="sr-only">Текст ожидающего сообщения</span>
-                        <textarea autoFocus value={queueEditText} onChange={(event) => setQueueEditText(event.target.value)} />
-                      </label>
-                      <div className="turn-queue__actions">
-                        <button type="submit">Сохранить</button>
-                        <button type="button" onClick={() => setEditingQueueId(null)}>Отмена</button>
-                      </div>
-                    </form>
-                  ) : <p>{item.text}</p>}
-                  {item.attachments.length > 0 && (
-                    <ul className="turn-queue__attachments" aria-label="Вложения">
-                      {item.attachments.map((attachment, index) => {
-                        const detail = item.attachmentDetails?.find((candidate) => candidate.uploadId === attachment) ?? item.attachmentDetails?.[index]
-                        const name = detail?.name ?? `Вложение ${index + 1}`
-                        const image = detail?.mimeType.startsWith('image/') ?? false
-                        return (
-                          <li key={attachment}>
-                            {image ? <span className="turn-queue__image-preview" aria-hidden="true">🖼</span> : <span aria-hidden="true">📎</span>}
-                            <span title={name}>{name}</span>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
-                  {editingQueueId !== item.id && (
-                    <div className="turn-queue__actions">
-                      <button type="button" aria-label={`Редактировать сообщение № ${item.position}`} onClick={() => {
-                        setEditingQueueId(item.id)
-                        setQueueEditText(item.text)
-                      }}>Редактировать</button>
-                      <button type="button" aria-label={`Удалить сообщение № ${item.position}`} onClick={() => onDeleteQueued?.(item.id)}>Удалить</button>
-                      <button type="button" aria-label={`Отправить сейчас сообщение № ${item.position}`} onClick={() => onSendQueuedNow?.(item.id)}>Отправить сейчас</button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ol>
-            {queuedTurns.length > 3 && (
-              <button
-                className="turn-queue__toggle"
-                type="button"
-                aria-expanded={queueExpanded}
-                onClick={() => setQueueExpanded((value) => !value)}
-              >
-                {queueExpanded ? 'Свернуть очередь' : `Показать ещё ${queuedTurns.length - 3}`}
-              </button>
-            )}
-          </section>
-        )}
+        {renderTurnQueue()}
 
         <div className="vrow" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
           {composerMode && (

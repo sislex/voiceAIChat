@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 38 коммит(ов) в areas после сверки: e2ec4fb0 feat: give task preparation read-only project access … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 34 коммит(ов) в areas после сверки: e2ec4fb0 feat: give task preparation read-only project access … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 5 коммит(ов) в areas после сверки: fb77c746 Merge task 53c9daa1-85df-4c58-9abb-52e6f8590ca2 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 477 коммит(ов) в areas после сверки: d897ce13 Merge task b99b76f8-7285-481a-82a6-cb7722c50791 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 478 коммит(ов) в areas после сверки: f231174b docs(kb): update after merge b99b76f8-7285-481a-82a6-cb7722c50791 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 4 коммит(ов) в areas после сверки: e2ec4fb0 feat: give task preparation read-only project access … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ⚠ код изменён 2026-08-20, сверка 2026-08-18 (по датам: правки того же дня не видны — поставь checked) |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ✓ |
@@ -56,8 +56,9 @@
 
 ## Журнал сессий
 
-Всего записей: 283. Последние:
+Всего записей: 284. Последние:
 
+- [2026-08-20-macbook-air-user-sequential-queue-collapsed-composer.md](log/2026-08-20-macbook-air-user-sequential-queue-collapsed-composer.md) — sequential-queue-collapsed-composer
 - [2026-08-20-macbook-air-user-clarification-notifications.md](log/2026-08-20-macbook-air-user-clarification-notifications.md) — clarification-notifications
 - [2026-08-20-mac-stt-runner.md](log/2026-08-20-mac-stt-runner.md) — stt-runner
 - [2026-08-20-mac-kanban-automation-help.md](log/2026-08-20-mac-kanban-automation-help.md) — kanban-automation-help
@@ -67,7 +68,6 @@
 - [2026-08-20-alexeys-macbook-air-2-task-preparation-notifications-kb.md](log/2026-08-20-alexeys-macbook-air-2-task-preparation-notifications-kb.md) — task-preparation-notifications-kb
 - [2026-08-20-alexeys-macbook-air-2-sequential-chat-queue.md](log/2026-08-20-alexeys-macbook-air-2-sequential-chat-queue.md) — sequential-chat-queue
 - [2026-08-20-192-168-1-9-task-preparation-readonly-research.md](log/2026-08-20-192-168-1-9-task-preparation-readonly-research.md) — task-preparation-readonly-research
-- [2026-08-19-macbook-air-user-split-task-chat-default-machines.md](log/2026-08-19-macbook-air-user-split-task-chat-default-machines.md) — split-task-chat-default-machines
 
 ## Исторические планы
 
