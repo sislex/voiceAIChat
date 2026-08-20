@@ -24,6 +24,29 @@
   --skeleton-base: #e6e4dc;
   --skeleton-shine: #f5f4ef;
 }
+[data-theme='green'] {
+  --bg: #f3f8f2;
+  --panel: #e7f0e5;
+  --surface: #ffffff;
+  --text: #172217;
+  --text-dim: #4f604f;
+  --border: #cbdac9;
+  --border-soft: #dfe9dd;
+  --accent: #276b3a;
+  --accent-fg: #ffffff;
+  --accent-soft: #d9eadb;
+  --danger: #a62b24;
+  --danger-fg: #ffffff;
+  --surface-hover: #dce9da;
+  --ci-neutral: #566356;
+  --ci-success: #006b5f;
+  --ci-success-bg: #d3eee9;
+  --ci-removed: #a62b24;
+  --ci-removed-bg: #f6deda;
+  --skeleton-base: #d9e6d7;
+  --skeleton-shine: #eef5ed;
+  color-scheme: light;
+}
 [data-theme='dark'] {
   --bg: #191916;
   --panel: #201f1a;
@@ -58,6 +81,7 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-btn--block { display:flex;width:100% }
 .vc-btn:focus-visible,.vc-btn.is-focus,.vc-toast-action:focus-visible,.vc-toast-close:focus-visible,.vc-confirm-field input:focus-visible { outline:2px solid var(--accent);outline-offset:2px }
 .vc-btn:disabled { opacity:.45;cursor:not-allowed;filter:none }
+.vc-btn:active:not(:disabled) { filter:brightness(.92);transform:translateY(1px) }
 .vc-btn--primary { background:var(--accent);border-color:var(--accent);color:var(--accent-fg) }
 .vc-btn--danger { background:var(--danger);border-color:var(--danger);color:var(--danger-fg) }
 .vc-btn--primary:hover:not(:disabled),.vc-btn--primary.is-hover,.vc-btn--danger:hover:not(:disabled),.vc-btn--danger.is-hover { filter:brightness(1.07) }
