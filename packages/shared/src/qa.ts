@@ -140,6 +140,9 @@ export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): Rea
     for (const question of input.openQuestions ?? []) if (question.material && !question.answer?.trim()) reasons.push(`open_material_question:${question.questionId}`)
     if ((input.contradictions ?? []).some((item) => item.trim())) reasons.push('unresolved_material_contradiction')
     for (const assumption of input.assumptions ?? []) if (assumption.material || !assumption.rationale.trim()) reasons.push(`invalid_assumption:${assumption.id}`)
+    if (!(input.sources ?? []).length) reasons.push('missing_researched_sources')
+    if (!(input.sources ?? []).some((source) => source.kind === 'knowledge' && source.status === 'available')) reasons.push('missing_knowledge_source')
+    if (!(input.sources ?? []).some((source) => source.kind === 'code' && source.status === 'available')) reasons.push('missing_code_source')
     for (const source of input.sources ?? []) if (source.critical && source.status !== 'available') reasons.push(`critical_source_unavailable:${source.id}`)
   }
   return { allowed: reasons.length === 0, reasons: [...new Set(reasons)] }

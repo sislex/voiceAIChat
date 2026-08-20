@@ -2,7 +2,7 @@
 // чтобы тестировать через fastify.inject / ws-клиент.
 
 import { mkdirSync, existsSync, statSync, readdirSync, rmSync } from 'node:fs'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
@@ -869,15 +869,69 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const model = taskPreparationModel(provider, allowedModel)
     const llmEngineId = selection?.llmEngineId ?? stageLlm.llmEngineId ?? null
     const client = provider === 'codex' ? codex : claude
+    const project = db.getProject(userId, projectId)
+    const configuredMachines = (project?.machines ?? []).filter((machine) => machine.canUse !== false && machine.path.trim())
+    const preferredAgentId = db.getUserProjectDefaultMachine(userId, projectId) ?? project?.defaultAgentId ?? null
+    const selectedMachine = configuredMachines.find((machine) => machine.agentId === preferredAgentId) ?? configuredMachines[0] ?? null
+    const projectMachines = db.listProjectMachines(projectId)
+    const kbToken = randomUUID()
+    const kbEnabled = opts.config.kbToolEnabled
+    if (kbEnabled) {
+      kbToolBroker.register(kbToken, {
+        userId,
+        conversationId: null,
+        projectId,
+        turnId: run.id,
+        coreReadOnly: true,
+        runtimeContext: {
+          projectName: project?.name,
+          projectGitUrl: project?.gitUrl ?? null,
+          llm: { provider, model, engineId: llmEngineId, source: 'project' }
+        }
+      })
+    }
+    let toolsClosed = false
+    const closePreparationTools = (): void => {
+      if (toolsClosed) return
+      toolsClosed = true
+      if (kbEnabled) kbToolBroker.unregister(kbToken)
+    }
+    const remote = selectedMachine ? {
+      remote: {
+        mcpUrl: `${remoteBashMcpBaseUrl}&agent=${encodeURIComponent(selectedMachine.agentId)}&cwd=${encodeURIComponent(selectedMachine.path)}&project=${encodeURIComponent(projectId)}`,
+        agentName: selectedMachine.name ?? selectedMachine.agentId,
+        projectMachines: projectMachines.filter((machine) => machine.agentId !== selectedMachine.agentId).map((machine) => machine.name)
+      }
+    } : { executionDisabled: true as const }
+    const kbFields = kbEnabled
+      ? { kbMcpUrl: `${kbMcpBaseUrl}&turn=${encodeURIComponent(kbToken)}`, kbMode: 'manual' as const }
+      : {}
+    const machineDiagnostic = selectedMachine
+      ? `Машина проекта: «${selectedMachine.name ?? selectedMachine.agentId}»; рабочая директория: ${selectedMachine.path}; статус: ${agentRegistry.isOnline(selectedMachine.agentId) ? 'online' : 'offline (инструменты вернут точную диагностику недоступности)'}.`
+      : 'Критичный источник недоступен: в конфигурации проекта нет доступной машины с рабочей директорией.'
     // Чем шла подготовка — первой строкой ленты: без этого причину падения CLI
     // приходится искать в коде подготовки.
     db.setTaskPreparationExecution(run.id, { llmEngineId, provider, model })
-    db.appendTaskPreparationLog(run.id, `[система] Движок: ${provider === 'codex' ? 'Codex' : 'Claude'}, модель: ${model}, CLI-профиль: ${userId}\n`)
+    db.appendTaskPreparationLog(run.id, `[система] Движок: ${provider === 'codex' ? 'Codex' : 'Claude'}, модель: ${model}, CLI-профиль: ${userId}\n[система] ${machineDiagnostic}\n`)
     const answeredContext = (run.questions ?? []).filter((question) => question.answer).map((question) => `Вопрос ${question.questionId}: ${question.text}\\nОтвет: ${question.answer}`).join('\\n')
-    const basePrompt = `Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. Не заменяй строки массивами или объектами. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+    const researchDirective = `Начни с базы знаний проекта, затем сверяй её с кодом; инструменты подготовки работают только на чтение.
+
+Перед формированием DevelopmentReadiness обязательно выполни контролируемое исследование:
+1. Сначала найди тему через mcp__kb__search и прочитай подходящий существующий раздел через mcp__kb__document.
+2. Затем через read-only remote-инструменты найди релевантные файлы внутри настроенной рабочей директории проекта и прочитай фактические API-контракты, общие типы, клиентские компоненты и тесты. Код — источник истины при расхождении с БЗ.
+3. Не вызывай edit, deploy, package managers, сборки, тесты и любые команды, меняющие файлы, процессы, данные или окружение. Разрешены read/grep/machines и bash только для ls/find/git status/log/diff.
+4. Бюджет исследования: не более 12 вызовов инструментов суммарно, не более 8 файлов, не более 24 000 символов полезных выдержек; один вызов — не дольше 120 секунд. Исследуй только рабочую директорию проекта и docs/kb.
+5. В sources перечисли только фактически прочитанные источники, с точным refs и status available|absent|unavailable. Конкретную причину недоступности запиши в summary. Подтверждённое расхождение БЗ и кода запиши как закрытое решение в decisions (contradictions оставь только для неразрешённых противоречий) и опирайся на код.
+6. Не спрашивай доступ к машине или репозиторию: они определены конфигурацией ниже. Вопрос допустим только после исследования, если критичный источник реально недоступен, требования существенно противоречат друг другу либо нужно продуктовое решение.
+7. Если БЗ неполна, не изменяй её сейчас: зафиксируй подтверждённый пробел в финальном блоке kb-gaps для последующего безопасного этапа актуализации.
+
+${machineDiagnostic}`
+    const basePrompt = `${researchDirective}
+
+Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. Не заменяй строки массивами или объектами. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
     const sendAttempt = (attempt: number, correction?: string): void => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
-      const handle = client.send({ userId, prompt, sessionId: null, model, executionDisabled: true }, {
+      const handle = client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, ...remote, ...kbFields }, {
         onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); boardHub.emit(projectId) },
         onSession: () => {},
         onDone: (text) => {
@@ -888,6 +942,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             if (typeof candidate.question === 'string' && candidate.question.trim()) {
               const question = db.createTaskPreparationQuestion(run.id, candidate.question, candidate.material !== false)
               if (!question) throw new Error('Не удалось сохранить уточняющий вопрос')
+              closePreparationTools()
               boardHub.emit(projectId)
               return
             }
@@ -900,6 +955,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             const gate = canConfirmDevelopmentReadiness(readiness)
             if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
             db.completeTaskPreparationRun(userId, run.id, readiness)
+            closePreparationTools()
             boardHub.emit(projectId)
           } catch (error) {
             const message = redactPreparationText(error instanceof Error ? error.message : String(error))
@@ -913,6 +969,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
                 const results = readiness ? developmentReadinessGateResults(readiness) : []
                 db.blockTaskPreparationRun(run.id, message, results.flatMap((item) => item.status === 'fail' ? item.refs : []), results)
               } else db.failTaskPreparationRun(run.id, message)
+              closePreparationTools()
               boardHub.emit(projectId)
             }
           }
@@ -921,10 +978,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           taskPreparationHandles.delete(run.id)
           if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
           if (attempt < 2) sendAttempt(attempt + 1, message)
-          else { db.failTaskPreparationRun(run.id, taskPreparationFailure(provider, userId, message)); boardHub.emit(projectId) }
+          else { db.failTaskPreparationRun(run.id, taskPreparationFailure(provider, userId, message)); closePreparationTools(); boardHub.emit(projectId) }
         }
       })
-      if (handle) taskPreparationHandles.set(run.id, handle)
+      if (handle) taskPreparationHandles.set(run.id, { cancel: () => { closePreparationTools(); handle.cancel() } })
     }
     sendAttempt(1)
     boardHub.emit(projectId)
