@@ -51,6 +51,79 @@ interface ColumnAssigneeFilter {
 
 const EMPTY_COLUMN_ASSIGNEE_FILTER: ColumnAssigneeFilter = { assigneeIds: [], includeUnassigned: false }
 
+type AutomatedStage = 'preparation' | 'development' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'merge'
+
+interface AutomationInfo {
+  title: string
+  starts: string
+  doesNotStart: string
+  steps: string[]
+  result: string
+  storage: string
+  next: string
+}
+
+const AUTOMATION_INFO: Record<AutomatedStage, AutomationInfo> = {
+  preparation: {
+    title: 'Подготовка к разработке',
+    starts: 'При переводе задачи из Backlog в системную стадию подготовки или при явном запуске из карточки. Активная попытка переиспользуется.',
+    doesNotStart: 'При сортировке внутри колонки, обычном переименовании колонки, неполных настройках модели или если задача уже находится на другой стадии. Ошибка, отмена и провал readiness-gate не двигают карточку дальше.',
+    steps: ['Выбираются движок, модель и профиль пользователя из настроек задачи, проекта и пользователя.', 'Модель без инструментов формирует Development Readiness: требования, критерии, тест-кейсы, UI-impact и затронутые компоненты.', 'Система проверяет полноту обязательных требований, кейсов и Storybook-покрытия либо документированного исключения.'],
+    result: 'Успешный gate обновляет описание и критерии задачи, сохраняет сценарии и переводит карточку в Ready for Development; неуспех сохраняет причины.',
+    storage: 'SQLite: task_preparation_runs, связанные события, вопросы, ответы и снимок readiness.',
+    next: 'Сохранённый readiness используется Component QA, созданием автотестов и последующими QA-gate; из Ready перенос в Development запускает development-run.'
+  },
+  development: {
+    title: 'Development / In progress',
+    starts: 'Автоматически только при переходе из системной Ready for Development в системную Development; явные действия запуска из карточки остаются отдельными.',
+    doesNotStart: 'При сортировке внутри Development и переходе из любой иной стадии. Ошибка постановки в очередь оставляет задачу в Ready; активный ран задачи переиспользуется.',
+    steps: ['Создаётся или восстанавливается workspace: клонируется базовая ветка и устанавливаются зависимости.', 'Модель выполняет задачу и системная проверка валидирует её результат.', 'Оставшиеся изменения коммитятся, ветка задачи отправляется в origin с защитой force-with-lease.'],
+    result: 'Успех фиксирует опубликованные branch и commit SHA и переводит задачу в Component QA. Development не выполняет merge, production deploy или обязательный affected-check.',
+    storage: 'SQLite: ci_runs, ci_run_steps, взаимодействия и ci_workspaces; файлы остаются в workspace машины, ветка и коммит — в origin.',
+    next: 'Workspace, ветка и SHA становятся неизменяемым входом Component QA и позднее merge-workflow; workspace сохраняется для QA и доработок.'
+  },
+  component_qa: {
+    title: 'Component QA',
+    starts: 'Из системной Component QA при наличии QA-права, успешного pushed development-workspace и успешного readiness. Повторный старт возвращает существующий queued/running ран.',
+    doesNotStart: 'Не запускается на другой стадии, без опубликованного SHA/readiness или при неполных component-сценариях и Storybook-данных. uiImpact=none создаёт аудируемый skipped-результат без команд.',
+    steps: ['Фиксируются SHA, версия readiness, UI-impact, компоненты и component-сценарии.', 'Последовательно выполняются настроенные test stages (по умолчанию Storybook smoke) с общим 30-минутным бюджетом.', 'Проверяются exit codes, обязательные сценарии, Storybook coverage, актуальность SHA и снимка.'],
+    result: 'Passed/skipped gate переводит задачу в Integration Tests. Ошибка, блокировка, отмена или stale оставляют её в Component QA и разрешают повтор/доработку.',
+    storage: 'SQLite: component_qa_runs с командами, логом, артефактами, снимками и ссылкой на fix-run; исполняется сохранённый development-workspace.',
+    next: 'Результаты видны во вкладке Component QA; провал можно передать в новый development-run как fixContext, успех открывает создание интеграционных автотестов.'
+  },
+  integration_tests: {
+    title: 'Создание интеграционных автотестов',
+    starts: 'Из системной Integration Tests после успешного Component QA, когда доступны актуальные pushed workspace/SHA и обязательные автоматизируемые сценарии.',
+    doesNotStart: 'Не запускается на другой стадии, при активной попытке, устаревшем SHA, отсутствии пригодных сценариев или недоступном workspace. Невыполненный gate не переводит задачу дальше.',
+    steps: ['Фиксируются сценарии и текущий commit SHA.', 'Модель создаёт интеграционные автотесты в development-workspace, затем команды проверяют их.', 'Ссылки на автоматизацию сопоставляются с обязательными кейсами и текущим SHA; результат проверяется gate.'],
+    result: 'Успех сохраняет тесты и ссылки на них и переводит карточку в Automated QA; ошибка остаётся для повтора или отправки на доработку.',
+    storage: 'SQLite: integration_test_runs, команды, лог, снимки кейсов и automation links; код тестов — в workspace/ветке задачи.',
+    next: 'Automated QA использует созданные тесты и их привязку к текущему SHA; сведения также показываются в отдельной вкладке карточки.'
+  },
+  automated_qa: {
+    title: 'Automated QA',
+    starts: 'Из системной Automated QA явным запуском QA-рана, когда предыдущий gate передал задачу на эту стадию и нет активной попытки.',
+    doesNotStart: 'Сам перенос, сортировка или переименование колонки запуск не создают. Ран отклоняется вне своей semantic stage; провал/отмена не двигают карточку.',
+    steps: ['Создаётся попытка для стадии и фиксируется контекст задачи.', 'Выполняются автоматические проверки, а статус, лог, сводка и ошибки обновляются в ходе рана.', 'Сервер повторно проверяет успешный результат и допустимость автоматического перехода.'],
+    result: 'Успешный gate переводит карточку в Manual QA; неуспешная попытка остаётся в Automated QA с доступной историей.',
+    storage: 'SQLite: qa_stage_runs со stage=automated_qa, попытками, статусом, логом, сводкой и входным контекстом.',
+    next: 'История доступна во вкладке Automated QA; успешный результат становится входом следующего ручного quality gate.'
+  },
+  merge: {
+    title: 'Merge',
+    starts: 'По явному запуску для задачи, допущенной в Awaiting Merge, с последним успешно отправленным workspace, source SHA, веткой, main и доступной машиной. Создание рана сразу переносит карточку в Merge.',
+    doesNotStart: 'Отклоняется до создания рана без прав, workspace/SHA/машины, при активном merge или недоступных origin-ветках. Кнопка справки ничего не запускает.',
+    steps: ['Проверяются origin/main и feature, фиксируются их SHA и строится merge-коммит в изолированном clone/worktree.', 'Параллельно выполняются обязательный affected-check и актуализация базы знаний; при изменениях БЗ создаётся отдельный docs(kb)-коммит и нужный gate повторяется.', 'Перед публикацией SHA сверяются повторно; итоговый SHA отправляется сначала в feature, затем тем же SHA в main с lease.'],
+    result: 'Успех переводит задачу в Done и очищает task-копии. Обычная ошибка/отмена остаётся в Merge; конфликт, stale source или неопределённый push ведут в Decision Required.',
+    storage: 'SQLite: merge_runs и шаги/лог/снимки SHA; Git-результат — в feature и main origin, временная работа — в постоянном .merge-клоне и worktree машины.',
+    next: 'Успешный merge завершает workflow без production deploy. Ошибку можно безопасно повторить, а неоднозначный конфликт требует решения пользователя.'
+  }
+}
+
+function automationInfoFor(column: KanbanColumn): AutomationInfo | null {
+  return column.semanticType in AUTOMATION_INFO ? AUTOMATION_INFO[column.semanticType as AutomatedStage] : null
+}
+
 /** Место вставки: ячейка колонки (в свимлейнах их несколько) и соседи задачи. */
 interface DropAt {
   bodyKey: string
@@ -202,6 +275,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [colMenu, setColMenu] = useState<string | null>(null)
+  const [automationInfoColumn, setAutomationInfoColumn] = useState<KanbanColumn | null>(null)
+  const automationInfoButtonRef = useRef<HTMLButtonElement | null>(null)
+  const automationInfoCloseRef = useRef<HTMLButtonElement | null>(null)
   const [wipEditing, setWipEditing] = useState<string | null>(null)
   const [wipDraft, setWipDraft] = useState('')
   const [composerCol, setComposerCol] = useState<string | null>(null)
@@ -254,6 +330,22 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [openAssigneeFilter])
+  useEffect(() => {
+    if (!automationInfoColumn) return
+    automationInfoCloseRef.current?.focus()
+    const close = (): void => {
+      setAutomationInfoColumn(null)
+      requestAnimationFrame(() => automationInfoButtonRef.current?.focus())
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      close()
+    }
+    window.addEventListener('keydown', closeOnEscape, true)
+    return () => window.removeEventListener('keydown', closeOnEscape, true)
+  }, [automationInfoColumn])
   // Esc клавиатурного переноса нужно поймать раньше Esc страницы-обёртки
   // (useDialogStack слушает тот же window в фазе перехвата): иначе доска
   // закрывалась бы вместо отмены переноса. Поэтому именно useLayoutEffect —
@@ -773,6 +865,22 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             )}
             {col.hidden && <span className="jcol-hidden-mark" title="Колонка скрыта">🙈</span>}
           </span>
+        )}
+        {automationInfoFor(col) && (
+          <button
+            type="button"
+            className="jcol-automation-info-button"
+            aria-label={`Об автоматизации стадии «${automationInfoFor(col)!.title}»`}
+            aria-haspopup="dialog"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              automationInfoButtonRef.current = event.currentTarget
+              setAutomationInfoColumn(col)
+            }}
+          >
+            i
+          </button>
         )}
         {(() => {
           const activeMembers = members.filter((member) => member.active !== false)
@@ -1390,6 +1498,46 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           )}
         </div>
       )}
+      {automationInfoColumn && automationInfoFor(automationInfoColumn) && (() => {
+        const info = automationInfoFor(automationInfoColumn)!
+        const close = (): void => {
+          setAutomationInfoColumn(null)
+          requestAnimationFrame(() => automationInfoButtonRef.current?.focus())
+        }
+        return (
+          <div className="jautomation-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget) close() }}>
+            <section
+              className="jautomation-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="jautomation-title"
+              onPointerDown={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === 'Tab') {
+                  event.preventDefault()
+                  automationInfoCloseRef.current?.focus()
+                }
+              }}
+            >
+              <header className="jautomation-dialog-head">
+                <div>
+                  <div className="jautomation-eyebrow">Автоматизация стадии</div>
+                  <h2 id="jautomation-title">{info.title}</h2>
+                </div>
+                <button ref={automationInfoCloseRef} type="button" className="jautomation-close" aria-label="Закрыть справку об автоматизации" onClick={close}>×</button>
+              </header>
+              <div className="jautomation-dialog-body">
+                <section><h3>Когда запускается</h3><p>{info.starts}</p></section>
+                <section><h3>Когда не запускается</h3><p>{info.doesNotStart}</p></section>
+                <section><h3>Последовательность и действия системы</h3><ol>{info.steps.map((step) => <li key={step}>{step}</li>)}</ol></section>
+                <section><h3>Итоговый результат</h3><p>{info.result}</p></section>
+                <section><h3>Где хранится</h3><p>{info.storage}</p></section>
+                <section><h3>Дальнейшее использование</h3><p>{info.next}</p></section>
+              </div>
+            </section>
+          </div>
+        )
+      })()}
       {openTask && board && (
         <TaskModal
           task={openTask}
