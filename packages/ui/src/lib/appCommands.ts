@@ -35,7 +35,7 @@ export interface AppCommandDeps {
   voice: VoiceState
   /** Автоозвучка ответов включена — от неё зависит подпись команды. */
   autoSpeak: boolean
-  theme: 'light' | 'dark'
+  theme: 'light' | 'dark' | 'green'
   /** Web-режим: есть мосты машин и сессии (в desktop команд машин и выхода нет). */
   web: boolean
   /** Палитра открыта — тогда команда «Командная палитра» в ней самой не нужна. */

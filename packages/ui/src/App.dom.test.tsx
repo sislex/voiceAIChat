@@ -352,13 +352,14 @@ describe('App — интеграция UI со стором и IPC', () => {
     expect(chat.getAllByText('Claude')).toHaveLength(2)
   })
 
-  it('тумблер тёмной темы меняет data-theme и сохраняется', async () => {
+  it('зелёная тема применяется без перезагрузки и сохраняется', async () => {
     const api = await renderApp()
     expect(document.querySelector('.app')?.getAttribute('data-theme')).toBe('light')
     await openSettings('Интерфейс')
-    await userEvent.click(screen.getByRole('switch', { name: 'Тёмная тема' }))
-    expect(api._state.settings.theme).toBe('dark')
-    expect(document.querySelector('.app')?.getAttribute('data-theme')).toBe('dark')
+    await userEvent.selectOptions(screen.getByLabelText('Тема интерфейса'), 'green')
+    expect(api._state.settings.theme).toBe('green')
+    expect(document.querySelector('.app')?.getAttribute('data-theme')).toBe('green')
+    expect(document.documentElement.dataset.theme).toBe('green')
   })
 
   it('настройки голосового ввода неактивны', async () => {

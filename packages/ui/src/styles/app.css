@@ -46,6 +46,36 @@
   --skeleton-base: #e6e4dc;
   --skeleton-shine: #f5f4ef;
 }
+[data-theme='green'] {
+  --bg: #f3f8f2;
+  --panel: #e7f0e5;
+  --surface: #ffffff;
+  --text: #172217;
+  --text-dim: #4f604f;
+  --border: #cbdac9;
+  --border-soft: #dfe9dd;
+  --accent: #276b3a;
+  --ci-neutral: #566356;
+  --ci-neutral-bg: #e5ebe4;
+  --ci-progress: #8a4b00;
+  --ci-progress-bg: #f8e8c7;
+  --ci-success: #006b5f;
+  --ci-success-bg: #d3eee9;
+  --ci-removed: #a62b24;
+  --ci-removed-bg: #f6deda;
+  --surface-warning: var(--ci-progress-bg);
+  --surface-danger: var(--ci-removed-bg);
+  --accent-fg: #ffffff;
+  --accent-soft: #d9eadb;
+  --danger: var(--ci-removed);
+  --danger-fg: #ffffff;
+  --surface-hover: #dce9da;
+  --surface-selected: #ccdfca;
+  --skeleton-base: #d9e6d7;
+  --skeleton-shine: #eef5ed;
+  color-scheme: light;
+}
+
 [data-theme='dark'] {
   --bg: #191916;
   --panel: #201f1a;
@@ -74,6 +104,19 @@
   --skeleton-base: #2e2e26;
   --skeleton-shine: #3b3a31;
   color-scheme: dark;
+}
+
+/* Общие состояния управления используют семантические токены во всех темах. */
+:where(button, [role='button']):active:not(:disabled) {
+  filter: brightness(0.92);
+}
+:where(input, textarea, select):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+:where(input, textarea, select):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .app {

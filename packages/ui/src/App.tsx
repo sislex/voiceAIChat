@@ -803,7 +803,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       toggleMic: () => (voice.voice === 'listening' ? voiceActions.stopVoice() : voiceActions.startVoice()),
       stopOrCancel,
       toggleAutoSpeak: () => void settingsActions.updateSettings({ autoSpeak: !settingsState.settings.autoSpeak }),
-      toggleTheme: () => void settingsActions.updateSettings({ theme: settingsState.settings.theme === 'dark' ? 'light' : 'dark' }),
+      toggleTheme: () => void settingsActions.updateSettings({ theme: settingsState.settings.theme === 'light' ? 'dark' : 'light' }),
       openSettings: shellActions.openSettings,
       openBoard: (projectId) => navigate(`/projects/${projectId}`),
       openMachineConsole: (agentId) =>

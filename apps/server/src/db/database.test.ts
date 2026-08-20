@@ -425,6 +425,11 @@ describe('VoiceChatDb — настройки', () => {
     })
   })
 
+  it('сохраняет зелёную тему между чтениями настроек', () => {
+    db.saveSettings(U, { ...DEFAULT_SETTINGS, theme: 'green' })
+    expect(db.getSettings(U).theme).toBe('green')
+  })
+
   it('мержит с дефолтами при частичном/битом конфиге', () => {
     db.saveSettings(U, { ...DEFAULT_SETTINGS, model: 'opus[1m]' })
     const s = db.getSettings(U)

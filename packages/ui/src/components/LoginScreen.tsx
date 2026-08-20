@@ -7,7 +7,7 @@ export interface LoginScreenProps {
   /** Текст ошибки прошлой попытки (null — нет). */
   error?: string | null
   /** Тема интерфейса (для обёртки). */
-  theme?: 'light' | 'dark'
+  theme?: 'light' | 'dark' | 'green'
 }
 
 /** Экран входа многопользовательского режима (web). Пароль может быть пустым. */
