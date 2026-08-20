@@ -54,11 +54,8 @@ import { ModelDownloadManager } from './stt/downloadManager.js'
 import { StubDiarizationEngine } from './diarization/stubDiarization.js'
 import { UploadStore, machineUploadDir, machineUploadPath } from './uploads.js'
 import type { UploadInfo } from '@voicechat/shared'
-import { PiperTtsEngine } from './tts/piperTts.js'
-import { SayTtsEngine } from './tts/sayTts.js'
-import { piperCatalog } from './tts/piperCatalog.js'
-import { downloadPiperVoice } from './tts/voiceDownload.js'
-import type { TtsEngine } from './tts/types.js'
+import { RemoteTtsClient } from './tts/client/remoteTtsClient.js'
+import type { TtsClient } from './tts/client/types.js'
 import type { TtsVoiceCatalog } from '@voicechat/shared'
 import { registerAnthropicGateway } from './anthropic/gateway.js'
 import { detectResources } from './system/resources.js'
@@ -104,8 +101,8 @@ export interface BuildOptions {
   sttEngine?: SttEngine
   /** STT transport; production всегда использует RemoteSttClient. */
   sttClient?: SttClient
-  /** TTS-движок (для тестов — мок). По умолчанию Piper/say из config. */
-  ttsEngine?: TtsEngine
+  /** TTS-клиент (для тестов — FakeTtsClient). По умолчанию HTTP к TTS Runner. */
+  ttsClient?: TtsClient
   /** Переопределение обработчиков WS (для тестов). Иначе — реальная сессия. */
   createWsHandlers?: () => WsHandlers
   /** Секрет подписи токенов сессии (для тестов). Иначе — из dataDir/эфемерный. */
@@ -122,27 +119,6 @@ export interface BuildOptions {
   authStatus?: AuthStatusState
   /** Генератор crop для локальной ретуши; тесты инъектируют детерминированный ответ. */
   imageRetouchGenerator?: RetouchGenerator
-}
-
-function makeTtsEngine(config: ServerConfig): TtsEngine {
-  // Piper выбираем, если есть бинарь и хотя бы один ONNX-голос в каталоге.
-  // Не завязываемся на конкретный текущий голос: он может смениться (и не должен
-  // ронять сервер обратно на say только потому, что старое значение — say-голос).
-  const hasVoices = (() => {
-    try {
-      return readdirSync(config.piperVoicesDir).some((f) => f.endsWith('.onnx'))
-    } catch {
-      return false
-    }
-  })()
-  if (existsSync(config.piperBin) && hasVoices) {
-    return new PiperTtsEngine({
-      piperBin: config.piperBin,
-      voicesDir: config.piperVoicesDir,
-      argsPrefix: config.piperArgsPrefix
-    })
-  }
-  return new SayTtsEngine()
 }
 
 export interface BuiltServer {
@@ -449,6 +425,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const value = computeCapabilities(resources, machineWhisperModel(), undefined, { stt: opts.config.minMemSttBytes, tts: opts.config.minMemTtsBytes })
     if (!sttRunnerHealthy) value.stt = { available: false, reason: 'Сервис распознавания речи недоступен' }
     else if (sttClient && !runnerModels.some((item) => item.model === machineWhisperModel() && item.present)) value.stt = { available: false, reason: 'Модель распознавания речи не установлена' }
+    if (!opts.ttsClient && (!opts.config.ttsRunnerUrl || !opts.config.ttsRunnerToken)) {
+      value.tts = { available: false, reason: 'Нет доступного сервиса озвучки: TTS Runner не настроен' }
+    }
     return value
   }
   app.get(REST.systemCapabilities, async (): Promise<SystemCapabilities> => { await refreshSttHealth(); return capabilities() })
@@ -460,16 +439,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     await refreshSttHealth()
     return { ok: true }
   })
-  app.delete<{ Params: { id: string } }>('/api/tts/voices/:id', async (req) => {
-    const onnx = join(opts.config.piperVoicesDir, `${req.params.id}.onnx`)
-    rmSync(onnx, { force: true })
-    rmSync(`${onnx}.json`, { force: true }) // конфиг голоса
-    return { ok: true }
-  })
-
   const sttEngine = opts.sttEngine
   const modelDownload = sttClient ? new ModelDownloadManager((onProgress) => sttClient.downloadModel(machineWhisperModel(), onProgress)) : undefined
-  const ttsEngine = opts.ttsEngine ?? makeTtsEngine(opts.config)
+  const ttsClient = opts.ttsClient ?? new RemoteTtsClient({ baseUrl: opts.config.ttsRunnerUrl ?? 'http://127.0.0.1:8791', token: opts.config.ttsRunnerToken ?? '' })
   const diarization = new StubDiarizationEngine()
 
   // Вложения разговора с выбранной машиной постоянно хранятся на ней. Сервер
@@ -587,15 +559,17 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
   )
 
-  // TTS: список голосов и каталог для скачивания.
-  app.get(REST.ttsVoices, async () => ttsEngine.listVoices())
+  // Публичные совместимые маршруты проксируют физический каталог TTS Runner.
+  app.get(REST.ttsVoices, async () => ttsClient.listVoices())
+  app.delete<{ Params: { id: string } }>('/api/tts/voices/:id', async (req, reply) => {
+    if (!opts.ttsClient && (!opts.config.ttsRunnerUrl || !opts.config.ttsRunnerToken)) return { ok: true }
+    if (!ttsClient.deleteVoice) return reply.code(503).send({ error: 'TTS runner unavailable' })
+    await ttsClient.deleteVoice(req.params.id)
+    return { ok: true }
+  })
   app.get(REST.ttsCatalog, async (): Promise<TtsVoiceCatalog> => {
-    const downloadable = existsSync(opts.config.piperBin)
-    const voices = piperCatalog().map((v) => ({
-      ...v,
-      installed: existsSync(join(opts.config.piperVoicesDir, `${v.id}.onnx`))
-    }))
-    return { downloadable, voices }
+    const voices = await ttsClient.listVoices()
+    return { downloadable: false, voices: voices.map((voice) => ({ ...voice, installed: true })) }
   })
 
   // Один реестр ходов LLM на процесс: ходы переживают обрыв WS-соединения,
@@ -1171,12 +1145,10 @@ ${machineDiagnostic}`
       sttEngine,
       sttClient,
       getWhisperModel: machineWhisperModel,
-      ttsEngine,
+      ttsClient,
       diarization,
       capabilities,
       modelDownload,
-      downloadVoice: (id, onProgress) =>
-        downloadPiperVoice(id, opts.config.piperVoicesDir, onProgress),
       agentsFeed: {
         // Список машин — только этого пользователя (изоляция).
         list: () => {

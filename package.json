@@ -7,6 +7,7 @@
   "workspaces": [
     "packages/*",
     "apps/llm-runner",
+    "apps/tts-runner",
     "apps/stt-runner",
     "apps/automation-runner",
     "apps/browser-runner",

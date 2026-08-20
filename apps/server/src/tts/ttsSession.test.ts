@@ -6,26 +6,19 @@ import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
-import type { TtsEngine } from './types.js'
+import { FakeTtsClient } from './client/fakeTtsClient.js'
 
 const SECRET = 'test-secret'
 const TOKEN = signToken({ name: 'admin', role: 'admin' }, SECRET)
 
-const mockTts: TtsEngine = {
-  async synthesize(text) {
-    // мини-WAV с текстом в data (для проверки, что дошло)
-    const header = Buffer.alloc(44)
-    header.write('RIFF', 0)
-    header.write('WAVE', 8)
-    const full = Buffer.concat([header, Buffer.from(text)])
-    const audio = full.buffer.slice(full.byteOffset, full.byteOffset + full.byteLength)
-    return { audio, mime: 'audio/wav' }
-  },
-  cancel() {},
-  async listVoices() {
-    return [{ id: 'ru_RU-irina-medium', label: 'Irina' }]
-  }
-}
+const header = Buffer.alloc(44)
+header.write('RIFF', 0)
+header.write('WAVE', 8)
+const body = Buffer.concat([header, Buffer.from('Привет')])
+const mockTts = new FakeTtsClient(
+  body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+  [{ id: 'ru_RU-irina-medium', label: 'Irina' }]
+)
 
 let app: FastifyInstance
 let db: VoiceChatDb
@@ -36,7 +29,7 @@ beforeEach(async () => {
   app = await buildServer({
     config: loadConfig({ PORT: '0' }),
     db,
-    ttsEngine: mockTts,
+    ttsClient: mockTts,
     sessionSecret: SECRET
   })
   await app.listen({ port: 0, host: '127.0.0.1' })

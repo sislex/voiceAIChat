@@ -49,14 +49,14 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web'])
+    assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web'])
   })
 
   for (const file of ['package-lock.json', 'package.json', 'scripts/kb.mjs', '.github/workflows/ci.yml', 'unknown/critical.ts']) {
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web'])
+      assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -70,7 +70,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web'])
+    assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web'])
   })
 })
 
