@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-20
-checked: fb77c746
+checked: a230a25d
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -20,6 +20,9 @@ areas:
   - apps/server/src/turns.ts
   - packages/shared/src/previewInspector.ts
   - packages/shared/src/webRecorder.ts
+  - packages/shared/src/types.ts
+  - apps/server/src/db/database.ts
+  - apps/server/src/routes/rest.ts
 ---
 
 # Интерфейс: React, store, remote-мосты и голосовой UX
@@ -103,6 +106,28 @@ web/desktop host → installRemoteBridges → HTTP + WebSocket → server
 `vi.spyOn`) до стора не доедет.
 
 ## Состояние приложения
+
+### Темы интерфейса
+
+Поддерживаются три темы: `light`, `dark` и `green`; допустимые значения входят
+в общий тип `Settings` в `packages/shared/src/types.ts`. Пользователь выбирает
+тему в разделе «Интерфейс» окна настроек. `settingsStore` сразу обновляет
+локальное состояние и сохраняет целиком обновлённые настройки через общий
+`settings:save`; HTTP-адаптер отправляет их в `PUT /api/settings`, а сервер
+хранит настройки пользователя в БД. Поэтому выбор переживает новый сеанс и идёт
+одним и тем же UI/remote-мостом в браузере и Electron.
+
+`App.tsx` ставит выбранное значение одновременно в `data-theme` корневого
+`.app` и `document.documentElement`: второе необходимо портальным модальным
+окнам вне дерева `.app`. Палитры задаются семантическими CSS-токенами, а не
+отдельными стилями экранов: основной интерфейс — в
+`packages/ui/src/styles/app.css`, общие примитивы — в
+`packages/ui-kit/src/styles.css`. Эти токены покрывают фон, панели, поверхности,
+текст, границы, акцент, hover/selected, disabled/focus/active и семантические
+success/warning/error-состояния, поэтому те же цвета получают навигация, карточки,
+формы, диалоги и канбан. `packages/ui/src/styles/contrast.test.ts` проверяет
+текстовые контрастные пары всех трёх тем и запрещает дополнительным темам
+объявлять неизвестные токены.
 
 Админская карточка пользователя получает персональные запреты моделей через
 `GET/PUT /api/admin/users/:name/llm-access`; пустой список означает полный доступ.
