@@ -406,6 +406,8 @@ export interface IpcInvokeMap {
   'tasks:cancelPreparationRun': { arg: { runId: string }; result: TaskPreparationRun }
   'tasks:retryPreparationRun': { arg: { runId: string; selection?: import('./qa').TaskPreparationLlmSelection }; result: TaskPreparationRun }
   'tasks:answerPreparationQuestion': { arg: { questionId: string; answer: string }; result: import('./qa').PreparationAnswerResult }
+  'tasks:listPreparationNotifications': { arg: void; result: import('./qa').PreparationClarificationNotification[] }
+  'tasks:dismissPreparationNotification': { arg: { questionId: string }; result: { dismissed: boolean } }
   'tasks:exportPreparationRun': { arg: { runId: string; format: 'md' | 'json' }; result: void }
   'tasks:delete': { arg: { projectId: string; taskId: string }; result: void }
   /** Открыть (или создать) связанный с задачей чат текущего пользователя. */
@@ -873,6 +875,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:cancelPreparationRun',
   'tasks:startPreparationRun',
   'tasks:retryPreparationRun',
+  'tasks:answerPreparationQuestion',
+  'tasks:listPreparationNotifications',
+  'tasks:dismissPreparationNotification',
+  'tasks:exportPreparationRun',
   'tasks:delete',
   'tasks:openChat'
 ]

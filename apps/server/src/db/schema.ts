@@ -1107,6 +1107,16 @@ CREATE TABLE IF NOT EXISTS task_preparation_questions (
 );
 CREATE INDEX IF NOT EXISTS idx_task_preparation_questions_attempt ON task_preparation_questions(attempt_id, asked_at);
 
+-- Закрытие относится только к представлению конкретного вопроса конкретным
+-- пользователем и не меняет жизненный цикл подготовки.
+CREATE TABLE IF NOT EXISTS task_preparation_notification_dismissals (
+  question_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  dismissed_at INTEGER NOT NULL,
+  PRIMARY KEY (question_id, user_id),
+  FOREIGN KEY (question_id) REFERENCES task_preparation_questions(question_id) ON DELETE CASCADE
+);
+
 -- Идемпотентный результат обработки task-launch. Ошибка запуска хранится отдельно:
 -- повтор использует уже созданную задачу и повторяет только preparation-run.
 CREATE TABLE IF NOT EXISTS task_launch_results (
