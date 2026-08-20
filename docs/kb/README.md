@@ -22,10 +22,10 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 34 коммит(ов) в areas после сверки: 785096bb feat(stt): isolate whisper in STT runner … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 30 коммит(ов) в areas после сверки: 785096bb feat(stt): isolate whisper in STT runner … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 2 коммит(ов) в areas после сверки: 00ce915f fix(ui): preserve context settings subroutes … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 470 коммит(ов) в areas после сверки: 0ab14c7e docs(kb): update after merge d98300e8-b037-4df8-9429-daa9b5d67065 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 471 коммит(ов) в areas после сверки: be7c9067 docs(kb): update after merge bf829b6e-91fb-458e-90b1-8abd1ef5722f … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ⚠ код изменён 2026-08-20, сверка 2026-08-18 (по датам: правки того же дня не видны — поставь checked) |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-18 | ⚠ 15 коммит(ов) в areas после сверки: 785096bb feat(stt): isolate whisper in STT runner … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ✓ |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-19 | ⚠ 4 коммит(ов) в areas после сверки: 785096bb feat(stt): isolate whisper in STT runner … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 4 коммит(ов) в areas после сверки: e047ac1b Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-17 | ⚠ 6 коммит(ов) в areas после сверки: 785096bb feat(stt): isolate whisper in STT runner … |
@@ -56,8 +56,9 @@
 
 ## Журнал сессий
 
-Всего записей: 279. Последние:
+Всего записей: 280. Последние:
 
+- [2026-08-20-macbook-air-user-clarification-notifications.md](log/2026-08-20-macbook-air-user-clarification-notifications.md) — clarification-notifications
 - [2026-08-20-mac-stt-runner.md](log/2026-08-20-mac-stt-runner.md) — stt-runner
 - [2026-08-20-mac-kanban-automation-help.md](log/2026-08-20-mac-kanban-automation-help.md) — kanban-automation-help
 - [2026-08-20-mac-context-inspector-routing.md](log/2026-08-20-mac-context-inspector-routing.md) — context-inspector-routing
@@ -67,7 +68,6 @@
 - [2026-08-19-macbook-air-user-run-feed-full-width.md](log/2026-08-19-macbook-air-user-run-feed-full-width.md) — run-feed-full-width
 - [2026-08-19-macbook-air-user-machines-kanban-settings.md](log/2026-08-19-macbook-air-user-machines-kanban-settings.md) — machines-kanban-settings
 - [2026-08-19-mac-local-image-retouch-kb.md](log/2026-08-19-mac-local-image-retouch-kb.md) — local-image-retouch-kb
-- [2026-08-19-mac-frontend-quality-gates.md](log/2026-08-19-mac-frontend-quality-gates.md) — frontend-quality-gates
 
 ## Исторические планы
 

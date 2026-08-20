@@ -1,7 +1,7 @@
 ---
 title: Интерактивная подготовка задачи и Development Brief
-updated: 2026-08-18
-checked: 87f05cb3
+updated: 2026-08-20
+checked: be7c9067
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/ipc.ts
@@ -10,6 +10,8 @@ areas:
   - apps/server/src/server.ts
   - apps/server/src/ci/modelHooks.ts
   - packages/ui/src/components/kanban/TaskPreparationTab.tsx
+  - packages/ui/src/components/ClarificationNotification.tsx
+  - packages/ui/src/App.tsx
   - packages/ui/src/remote/httpApi.ts
 ---
 
@@ -26,6 +28,14 @@ areas:
 Хронология хранится append-only в `task_preparation_events`. Каждая запись имеет `eventId`, `attemptId`, timestamp, тип, фазу и текст; пара `(attempt_id, sequence)` уникальна. `appendTaskPreparationEvent` вычисляет и записывает следующий sequence в SQLite-транзакции, а чтение всегда сортирует по sequence. В ленту попадают создание и старт попытки, смены состояния, вывод модели, вопрос и принятый ответ, проверка, сохранение brief и терминальный исход.
 
 Если модель вместо brief возвращает существенный вопрос, сервер сохраняет его в `task_preparation_questions` и переводит ту же попытку в `waiting_for_answer`. Ответ принимается условным `UPDATE ... WHERE answered_at IS NULL`: только первая конкурентная запись меняет строку, повтор возвращает `alreadyAnswered: true` и уже сохранённый ответ. Успешный ответ возвращает попытку в `queued`, после чего сервер продолжает тот же attempt и включает сохранённые пары вопрос/ответ в новый промпт. Пустой ответ отклоняется. Отдельной синхронизации вопроса со связанным чатом в этом контуре нет.
+
+## Внутренние уведомления об уточнении
+
+`GET /api/task-preparation/notifications` возвращает текущему пользователю явный снимок только существенных открытых вопросов попыток в `waiting_for_answer`. Элемент адресуется устойчивым `questionId`, содержит attempt, проект, задачу, отображаемые названия, текст и время вопроса. Поэтому клиент не разбирает лог модели, а повторное чтение или переподключение не создаёт новую идентичность. Ответ или любой переход попытки из ожидания исключает вопрос из снимка.
+
+Закрытие хранится отдельно от подготовки в `task_preparation_notification_dismissals` по паре `(question_id, user_id)` и записывается идемпотентным `POST /api/task-preparation/notifications/:questionId/dismiss`; оно не отвечает на вопрос и не меняет статус рана. `App` опрашивает снимок раз в 1,5 секунды и при возврате окна на экран, скрывает элементы с `dismissedAt`, поэтому перезагрузка и несколько окон сходятся к серверному состоянию. Перед переходом UI перечитывает снимок: актуальный вопрос открывает существующий адресуемый `TaskModal` на маршруте `/projects/:projectId/task/:taskId/preparation`, а исчезнувший или недоступный вопрос оставляет уведомление на месте с доступной ошибкой для повторной попытки.
+
+Визуальные компоненты `ClarificationNotification` и `NotificationContainer` неблокирующие и не получают фокус автоматически; контейнер учитывает мобильные safe area, `dvh`, длинный текст и крупные зоны действий. Их Storybook id — `chatai-clarification-notification` и `chatai-notification-container`; интерактивные сценарии проверяют переход и независимое закрытие.
 
 ## DevelopmentReadiness и readiness-гейт
 

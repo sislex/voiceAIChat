@@ -488,6 +488,18 @@ export interface PreparationQuestion {
   answeredAt: number | null; answeredBy: string | null
 }
 export interface PreparationAnswerResult { accepted: boolean; alreadyAnswered: boolean; question: PreparationQuestion }
+/** Явное серверное состояние вопроса подготовки, требующего участия пользователя. */
+export interface PreparationClarificationNotification {
+  questionId: string
+  attemptId: string
+  projectId: string
+  projectName: string
+  taskId: string
+  taskTitle: string
+  text: string
+  askedAt: number
+  dismissedAt: number | null
+}
 export interface TaskPreparationLlmSelection {
   llmEngineId?: string | null
   provider: 'claude' | 'codex'
