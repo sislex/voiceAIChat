@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 34 коммит(ов) в areas после сверки: 785096bb feat(stt): isolate whisper in STT runner … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 30 коммит(ов) в areas после сверки: 785096bb feat(stt): isolate whisper in STT runner … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 2 коммит(ов) в areas после сверки: 00ce915f fix(ui): preserve context settings subroutes … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 470 коммит(ов) в areas после сверки: 0ab14c7e docs(kb): update after merge d98300e8-b037-4df8-9429-daa9b5d67065 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 471 коммит(ов) в areas после сверки: be7c9067 docs(kb): update after merge bf829b6e-91fb-458e-90b1-8abd1ef5722f … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ⚠ код изменён 2026-08-20, сверка 2026-08-18 (по датам: правки того же дня не видны — поставь checked) |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-18 | ⚠ 15 коммит(ов) в areas после сверки: 785096bb feat(stt): isolate whisper in STT runner … |
