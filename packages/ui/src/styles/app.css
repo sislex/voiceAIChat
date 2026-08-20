@@ -6034,3 +6034,20 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .retouch-toolbar{display:flex;gap:8px;flex-wrap:wrap}.retouch-toolbar button,.retouch-editor>button{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-raised);color:var(--text);cursor:pointer}.retouch-toolbar button.active{border-color:var(--accent);color:var(--accent)}
 .retouch-canvas-wrap{position:relative;display:grid;place-items:center;min-height:220px;overflow:auto;background:#111}.retouch-canvas-wrap img{display:block;max-width:100%;max-height:62vh;object-fit:contain;user-select:none}.retouch-canvas-wrap canvas{position:absolute;inset:50% auto auto 50%;max-width:100%;max-height:62vh;transform:translate(-50%,-50%);touch-action:none;cursor:crosshair}
 .retouch-editor textarea{box-sizing:border-box;width:100%;min-height:84px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font:inherit}.retouch-reference{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+/* Устойчивые внутренние уведомления подготовки: поверх рабочего интерфейса, но
+   ниже диалогов и тостов; safe-area и dvh сохраняют действия над клавиатурой. */
+.clarification-notifications{position:fixed;z-index:1100;right:16px;bottom:max(16px,env(safe-area-inset-bottom));width:min(420px,calc(100vw - 32px));max-height:min(70dvh,620px);overflow:auto;overscroll-behavior:contain;pointer-events:none}
+.clarification-notifications>[role=list]{display:grid;gap:10px}
+.clarification-notifications [role=listitem]{min-width:0;pointer-events:auto}
+.clarification-notification{box-sizing:border-box;display:grid;gap:12px;min-width:0;padding:14px;border:1px solid var(--border);border-left:4px solid var(--ci-progress);border-radius:var(--radius-medium);background:var(--surface);box-shadow:var(--shadow-lg);overflow-wrap:anywhere}
+.clarification-notification h2{margin:0 0 6px;font-size:16px}
+.clarification-notification p{margin:0;line-height:1.4}
+.clarification-notification__context{display:flex;min-width:0;flex-wrap:wrap;gap:4px 10px;font-size:13px}
+.clarification-notification__context span,.clarification-notification__stale{color:var(--text-dim)}
+.clarification-notification__question{display:-webkit-box;margin-top:8px!important;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3}
+.clarification-notification__actions{display:flex;flex-wrap:wrap;gap:8px}
+.clarification-notification__error{color:var(--danger);font-size:13px}
+.clarification-notification--stale{opacity:.78;border-left-color:var(--ci-neutral)}
+@media(max-width:720px){.clarification-notifications{right:max(8px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));left:max(8px,env(safe-area-inset-left));width:auto;max-height:min(55dvh,420px)}.clarification-notification{padding:12px}.clarification-notification__actions{display:grid;grid-template-columns:1fr 1fr}.clarification-notification__actions .vc-btn{min-height:44px;width:100%}}
+@media(prefers-reduced-motion:reduce){.clarification-notification{scroll-behavior:auto}}

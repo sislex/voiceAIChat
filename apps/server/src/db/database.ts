@@ -171,6 +171,7 @@ import {
   type PreparationEvent,
   type PreparationQuestion,
   type PreparationAnswerResult,
+  type PreparationClarificationNotification,
   type TaskPreparationPhase,
   type PreparationGateResult,
   redactPreparationText,
@@ -5892,6 +5893,44 @@ export class VoiceChatDb {
       this.appendTaskPreparationEvent(row.attempt_id, 'answer_accepted', 'clarification', 'Ответ принят', { questionId })
       return { accepted: true, alreadyAnswered: false, question }
     })()
+  }
+
+  listTaskPreparationNotifications(userId: string): PreparationClarificationNotification[] {
+    const rows = this.db.prepare(`
+      SELECT q.question_id,q.attempt_id,q.text,q.asked_at,
+             r.project_id,r.task_id,p.name AS project_name,t.title AS task_title,
+             d.dismissed_at
+      FROM task_preparation_questions q
+      JOIN task_preparation_runs r ON r.id=q.attempt_id
+      JOIN projects p ON p.id=r.project_id
+      JOIN tasks t ON t.id=r.task_id
+      JOIN project_members m ON m.project_id=r.project_id AND m.username=?
+      LEFT JOIN task_preparation_notification_dismissals d
+        ON d.question_id=q.question_id AND d.user_id=?
+      WHERE q.material=1 AND q.answered_at IS NULL AND r.status='waiting_for_answer'
+      ORDER BY q.asked_at,q.question_id
+    `).all(userId, userId) as Record<string, unknown>[]
+    return rows.map((row) => ({
+      questionId: String(row.question_id), attemptId: String(row.attempt_id),
+      projectId: String(row.project_id), projectName: String(row.project_name),
+      taskId: String(row.task_id), taskTitle: String(row.task_title),
+      text: String(row.text), askedAt: Number(row.asked_at),
+      dismissedAt: row.dismissed_at == null ? null : Number(row.dismissed_at)
+    }))
+  }
+
+  dismissTaskPreparationNotification(userId: string, questionId: string): boolean {
+    const now = this.now()
+    const result = this.db.prepare(`
+      INSERT OR IGNORE INTO task_preparation_notification_dismissals (question_id,user_id,dismissed_at)
+      SELECT q.question_id,?,?
+      FROM task_preparation_questions q
+      JOIN task_preparation_runs r ON r.id=q.attempt_id
+      JOIN project_members m ON m.project_id=r.project_id AND m.username=?
+      WHERE q.question_id=? AND q.material=1 AND q.answered_at IS NULL AND r.status='waiting_for_answer'
+    `).run(userId, now, userId, questionId)
+    if (result.changes) return true
+    return Boolean(this.db.prepare(`SELECT 1 FROM task_preparation_notification_dismissals WHERE question_id=? AND user_id=?`).get(questionId, userId))
   }
 
   confirmedDevelopmentReadiness(taskId: string): DevelopmentReadiness | null {

@@ -374,6 +374,31 @@ describe('интерактивная попытка, события и эксп�
     expect(done.events!.some((event) => event.type === 'answer_accepted')).toBe(true)
   })
 
+  it('восстанавливает и дедуплицирует уведомление, хранит закрытие и убирает его после ответа', async () => {
+    const { project, task } = await taskInBacklog()
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify({ question: 'Какой контракт выбрать?', material: true }) : READINESS })
+    const started = await launch(adminTok, project.id, task.id)
+    let questionId = ''
+    for (let i = 0; i < 100; i++) {
+      const current = (await inj(adminTok, { method: 'GET', url: `/api/task-preparation/runs/${started.id}` })).json() as TaskPreparationRun
+      questionId = current.questions?.find((question) => question.status === 'open')?.questionId ?? ''
+      if (questionId) break
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    const first = await inj(adminTok, { method: 'GET', url: '/api/task-preparation/notifications' })
+    const repeated = await inj(adminTok, { method: 'GET', url: '/api/task-preparation/notifications' })
+    expect(first.json()).toEqual(repeated.json())
+    expect(first.json()).toMatchObject([{ questionId, projectId: project.id, taskId: task.id, taskTitle: task.title, dismissedAt: null }])
+
+    const dismissed = await inj(adminTok, { method: 'POST', url: `/api/task-preparation/notifications/${questionId}/dismiss` })
+    expect(dismissed.json()).toEqual({ dismissed: true })
+    expect((await inj(adminTok, { method: 'POST', url: `/api/task-preparation/notifications/${questionId}/dismiss` })).json()).toEqual({ dismissed: true })
+    expect((await inj(adminTok, { method: 'GET', url: '/api/task-preparation/notifications' })).json()).toMatchObject([{ questionId, dismissedAt: expect.any(Number) }])
+
+    await inj(adminTok, { method: 'POST', url: `/api/task-preparation/questions/${questionId}/answer`, payload: { answer: 'REST v2' } })
+    expect((await inj(adminTok, { method: 'GET', url: '/api/task-preparation/notifications' })).json()).toEqual([])
+  })
+
   it('редактирует секреты до хранения и экспортирует один сохранённый снимок', async () => {
     const { project, task } = await taskInBacklog()
     claudeAnswer = () => ({ error: 'Authorization: Bearer super-secret-token-value' })
