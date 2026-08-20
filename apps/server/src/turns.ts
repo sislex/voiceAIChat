@@ -312,6 +312,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       return
     }
     starting.add(conversationId)
+    // Явная новая отправка/повтор — реакция пользователя, снимающая паузу после ошибки.
+    deps.db.setTurnQueuePaused(userId, conversationId, false)
 
     const conv = deps.db.getConversation(userId, conversationId)
     const settings = deps.db.getSettings(userId)
@@ -866,7 +868,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     queueMicrotask(() => void start({ userId, conversationId, messageId: next.messageId, ...next.payload }))
   }
 
-  /** Остановка сохраняет partial и ставит очередь на понятную паузу. */
+  /** Остановка сохраняет partial и затем автоматически продвигает очередь. */
   function cancelTurn(conversationId: string, notify: boolean): TurnState | undefined {
     const turn = turns.get(conversationId)
     if (!turn) return undefined
@@ -874,7 +876,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turn.done = true
     releaseTurnTools(turn)
     turn.handle.cancel()
-    deps.db.setTurnQueuePaused(turn.userId, conversationId, true)
+    deps.db.setTurnQueuePaused(turn.userId, conversationId, false)
     const meta: TurnMeta = {
       ...turn.usage,
       durationMs: now() - turn.startedAt,
@@ -887,7 +889,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       ? deps.db.addMessage(turn.userId, conversationId, 'ai', turn.partial, timeHHMM(), turn.provider, meta, turn.execTarget)
       : undefined
     if (notify) broadcast({ t: 'claude.done', conversationId, text: turn.partial, meta, engine: turn.provider, ...(message ? { message } : {}) }, turn.userId)
-    emitQueue(turn.userId, conversationId)
+    dispatchNext(turn.userId, conversationId)
     return turn
   }
 
@@ -913,36 +915,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   }
 
   function sendQueuedNow(userId: string, conversationId: string, id: string): void {
-    const selected = deps.db.listQueuedTurns(userId, conversationId).find((item) => item.id === id)
-    if (!selected) return
-    const queued = deps.db.takeQueuedTurn(userId, conversationId, id, false)
-    if (!queued) return
-    const active = cancelTurn(conversationId, true)
-    const activeMessage = active?.source.messageId
-      ? deps.db.listMessages(userId, conversationId).find((message) => message.id === active.source.messageId)
-      : [...deps.db.listMessages(userId, conversationId)].reverse().find((message) => message.role !== 'ai' && message.id !== queued.messageId)
-    const selectedMessage = queued.message
-    const original = activeMessage?.text ?? active?.source.segments.map((segment) => segment.text).join('\n') ?? ''
-    const addition = selectedMessage?.text ?? selected.text
-    const combined = `Исходный вопрос:\n${original}\n\nДополнение:\n${addition}\n\nОтветь на итоговый вопрос с учётом дополнения.`
-    const attachments = [...new Set([...(active?.source.attachments ?? []), ...(queued.payload.attachments ?? [])])]
-    const messageAttachments = [...(activeMessage?.attachments ?? []), ...(selectedMessage?.attachments ?? [])]
-    const combinedMessage = deps.db.addMessage(
-      userId, conversationId, 'u1', combined, timeHHMM(), undefined, undefined,
-      active?.source.execTarget ?? queued.payload.execTarget,
-      messageAttachments
-    )
-    deps.db.setTurnQueuePaused(userId, conversationId, false)
+    // Это приоритизация, а не параллельный запуск: активный ответ не прерывается.
+    // Повтор команды для первого элемента — безопасный no-op.
+    deps.db.prioritizeQueuedTurn(userId, conversationId, id)
     emitQueue(userId, conversationId)
-    queueMicrotask(() => void start({
-      userId,
-      conversationId,
-      messageId: combinedMessage.id,
-      segments: [{ speakerId: 1, text: combined }],
-      attachments,
-      verbose: active?.source.verbose ?? queued.payload.verbose,
-      execTarget: active?.source.execTarget ?? queued.payload.execTarget
-    }))
   }
 
   function resumeQueues(userId: string): void {

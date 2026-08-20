@@ -382,6 +382,8 @@ export interface QueuedTurn {
   messageId: string
   text: string
   attachments: string[]
+  /** Метаданные для превью; upload-id в attachments остаются авторитетным payload запуска. */
+  attachmentDetails?: MessageAttachment[]
   position: number
   status: 'queued' | 'failed'
   createdAt: number
