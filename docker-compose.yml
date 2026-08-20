@@ -75,7 +75,7 @@ services:
       target: stt-runner-runtime
     image: voicechat-stt-runner
     mem_limit: 6g
-    cpus: 6
+    cpus: 2
     environment:
       HOST: 0.0.0.0
       PORT: "8791"
