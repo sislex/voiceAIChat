@@ -261,6 +261,25 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     setState({ board: await client['board:get']({ id, includeCompleted: getState().boardIncludeCompleted }) })
   }
 
+  async function loadBoardForCompletedFilter(includeCompleted: boolean): Promise<void> {
+    const id = getState().activeProjectId
+    if (!id || getState().boardIncludeCompleted !== includeCompleted) return
+
+    // Смена состава снапшота — блокирующая загрузка: прежняя доска относится к
+    // другому фильтру и не должна оставаться на экране даже как stale content.
+    setState({ board: null, boardLoading: true, boardError: null })
+    boardBridge?.subscribe(id, includeCompleted)
+    try {
+      const board = await client['board:get']({ id, includeCompleted })
+      if (getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
+      setState({ board, boardLoading: false, boardError: null })
+    } catch (err) {
+      if (getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
+      setState({ boardLoading: false, boardError: err instanceof Error ? err.message : String(err) })
+      fail(err, () => void loadBoardForCompletedFilter(includeCompleted))
+    }
+  }
+
   async function openBoard(id: string): Promise<void> {
     setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectSettingsOpen: false })
     try {
@@ -588,6 +607,9 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           deps.chat.scheduleConversationsRefresh()
           return
         }
+        // Во время блокирующей смены фильтра только соответствующий REST-ответ
+        // завершает загрузку; старый realtime-снимок не должен вернуть доску.
+        if (getState().boardLoading) return
         const ciSummaries = { ...getState().ciSummaries }
         for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
         const prev = getState().board
@@ -598,14 +620,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       async setBoardIncludeCompleted(include) {
         if (getState().boardIncludeCompleted === include) return
         setState({ boardIncludeCompleted: include })
-        const id = getState().activeProjectId
-        if (!id) return
-        boardBridge?.subscribe(id, include)
-        try {
-          setState({ board: await client['board:get']({ id, includeCompleted: include }) })
-        } catch (err) {
-          fail(err, () => void actions.setBoardIncludeCompleted(include))
-        }
+        await loadBoardForCompletedFilter(include)
       },
       async createColumn(name) {
         const id = getState().activeProjectId

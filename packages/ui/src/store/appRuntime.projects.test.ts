@@ -10,6 +10,16 @@ function makeStore(): { store: TestStore; api: FakeApi } {
   return { store, api }
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((ok, fail) => {
+    resolve = ok
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
+
 // Выбор проекта в сайдбаре персистится в localStorage — чистим между тестами,
 // иначе выбор из одного кейса протекает в следующий.
 beforeEach(() => {
@@ -32,6 +42,103 @@ describe('voiceStore — проекты и доска', () => {
     await store.actions.openBoard(id)
     expect(store.getState().activeProjectId).toBe(id)
     expect(store.getState().board?.columns.map((c) => c.semanticType)).toEqual(['backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done', 'cancelled', 'decision_required'])
+  })
+
+  it('включение показа завершённых немедленно скрывает старую доску до нового снимка', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    const oldBoard = store.getState().board!
+    const nextBoard = { ...oldBoard, tasks: [] }
+    const request = deferred<typeof nextBoard>()
+    api['board:get'] = vi.fn(async ({ includeCompleted }) => {
+      expect(includeCompleted).toBe(true)
+      return await request.promise
+    })
+
+    const pending = store.actions.setBoardIncludeCompleted(true)
+
+    expect(store.getState()).toMatchObject({
+      boardIncludeCompleted: true,
+      board: null,
+      boardLoading: true,
+      boardError: null
+    })
+    request.resolve(nextBoard)
+    await pending
+    expect(store.getState()).toMatchObject({
+      board: nextBoard,
+      boardLoading: false,
+      boardError: null
+    })
+  })
+
+  it('выключение показа завершённых также скрывает старую доску до нового снимка', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    await store.actions.setBoardIncludeCompleted(true)
+    const oldBoard = store.getState().board!
+    const nextBoard = { ...oldBoard, tasks: [] }
+    const request = deferred<typeof nextBoard>()
+    api['board:get'] = vi.fn(async ({ includeCompleted }) => {
+      expect(includeCompleted).toBe(false)
+      return await request.promise
+    })
+
+    const pending = store.actions.setBoardIncludeCompleted(false)
+
+    expect(store.getState()).toMatchObject({
+      boardIncludeCompleted: false,
+      board: null,
+      boardLoading: true,
+      boardError: null
+    })
+    request.resolve(nextBoard)
+    await pending
+    expect(store.getState()).toMatchObject({
+      board: nextBoard,
+      boardLoading: false,
+      boardError: null
+    })
+  })
+
+  it('ошибка смены фильтра завершает лоадер и штатный повтор снова запускает загрузку', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    const retryBoard = store.getState().board!
+    const retryRequest = deferred<typeof retryBoard>()
+    let attempt = 0
+    api['board:get'] = vi.fn(async () => {
+      attempt += 1
+      if (attempt === 1) throw new Error('Снимок недоступен')
+      return await retryRequest.promise
+    })
+
+    await store.actions.setBoardIncludeCompleted(true)
+
+    expect(store.getState()).toMatchObject({
+      board: null,
+      boardLoading: false,
+      boardError: 'Снимок недоступен'
+    })
+    const notice = store.getState().notices.at(-1)!
+    expect(notice.retry).toBeTypeOf('function')
+
+    notice.retry?.()
+    expect(store.getState()).toMatchObject({
+      board: null,
+      boardLoading: true,
+      boardError: null
+    })
+    retryRequest.resolve(retryBoard)
+    await vi.waitFor(() => expect(store.getState().boardLoading).toBe(false))
+    expect(store.getState().board).not.toBeNull()
+    expect(store.getState().boardError).toBeNull()
   })
 
   it('createTaskAndStartCi создаёт задачу и запускает CI с моделью из предложения', async () => {
