@@ -844,7 +844,7 @@ describe('turns: управляемая персистентная очеред�
     return { client, handlers, cancels: () => cancels }
   }
 
-  it('Stop завершает CLI, сохраняет partial как interrupted и не запускает очередь', async () => {
+  it('Stop завершает CLI, сохраняет partial и однократно продвигает очередь', async () => {
     const db = freshDb()
     const conversation = db.createConversation(U, 'queue')
     const activeMessage = db.addMessage(U, conversation.id, 'u1', 'Активный', '10:00')
@@ -855,12 +855,14 @@ describe('turns: управляемая персистентная очеред�
     await turns.start({ userId: U, conversationId: conversation.id, messageId: queuedMessage.id, segments: [{ speakerId: 1, text: 'Следующий' }] })
     llm.handlers[0].onDelta('Часть ответа')
     turns.cancel(conversation.id)
+    await new Promise<void>((resolve) => queueMicrotask(() => resolve()))
 
     expect(llm.cancels()).toBe(1)
-    expect(llm.handlers).toHaveLength(1)
+    expect(llm.handlers).toHaveLength(2)
     expect(db.listMessages(U, conversation.id).find((message) => message.role === 'ai' && message.meta?.interrupted)).toMatchObject({ role: 'ai', text: 'Часть ответа', meta: { interrupted: true } })
-    expect(db.isTurnQueuePaused(U, conversation.id)).toBe(true)
-    expect(db.listQueuedTurns(U, conversation.id)).toMatchObject([{ messageId: queuedMessage.id }])
+    expect(db.isTurnQueuePaused(U, conversation.id)).toBe(false)
+    expect(db.listQueuedTurns(U, conversation.id)).toEqual([])
+    expect(db.listMessages(U, conversation.id).at(-1)).toMatchObject({ id: queuedMessage.id, text: 'Следующий' })
     llm.handlers[0].onDelta(' поздний токен')
     expect(db.listMessages(U, conversation.id).find((message) => message.role === 'ai' && message.meta?.interrupted)?.text).toBe('Часть ответа')
     db.close()
@@ -890,28 +892,30 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
-  it('Отправить сейчас прерывает активный ход и запускает один понятный объединённый prompt', async () => {
+  it('Отправить сейчас повышает приоритет, не прерывая активный ход', async () => {
     const db = freshDb()
     const conversation = db.createConversation(U, 'queue')
     const active = db.addMessage(U, conversation.id, 'u1', 'Базовый вопрос', '10:00')
-    const addition = db.addMessage(U, conversation.id, 'u1', 'Добавь пример', '10:01')
-    const requests: LlmRequest[] = []
-    const handlers: LlmStreamHandlers[] = []
-    const client: LlmClient = { send(req, next) { requests.push(req); handlers.push(next); return { cancel: () => {} } } }
-    const turns = createTurnManager({ db, claude: client })
+    const first = db.addMessage(U, conversation.id, 'u1', 'Первый ожидающий', '10:01')
+    const priority = db.addMessage(U, conversation.id, 'u1', 'Приоритетный', '10:02')
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client })
     await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: active.text }] })
-    await turns.start({ userId: U, conversationId: conversation.id, messageId: addition.id, segments: [{ speakerId: 1, text: addition.text }] })
-    const queued = db.listQueuedTurns(U, conversation.id)[0]
-    turns.sendQueuedNow(U, conversation.id, queued.id)
-    await new Promise<void>((resolve) => queueMicrotask(() => resolve()))
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: first.id, segments: [{ speakerId: 1, text: first.text }] })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: priority.id, segments: [{ speakerId: 1, text: priority.text }], attachments: ['image-1'] })
+    const selected = db.listQueuedTurns(U, conversation.id)[1]
+    turns.sendQueuedNow(U, conversation.id, selected.id)
+    turns.sendQueuedNow(U, conversation.id, selected.id)
 
-    expect(requests).toHaveLength(2)
-    expect(requests[1].prompt).toContain('Исходный вопрос:')
-    expect(requests[1].prompt).toContain('Базовый вопрос')
-    expect(requests[1].prompt).toContain('Дополнение:')
-    expect(requests[1].prompt).toContain('Добавь пример')
-    expect(db.listQueuedTurns(U, conversation.id)).toEqual([])
-    expect(db.listMessages(U, conversation.id).find((message) => message.text.includes('Ответь на итоговый вопрос'))?.text).toContain('Ответь на итоговый вопрос')
+    expect(llm.cancels()).toBe(0)
+    expect(llm.handlers).toHaveLength(1)
+    expect(db.listQueuedTurns(U, conversation.id).map((item) => item.messageId)).toEqual([priority.id, first.id])
+    expect(db.listQueuedTurns(U, conversation.id)[0]?.attachments).toEqual(['image-1'])
+
+    llm.handlers[0].onDone('Ответ')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(llm.handlers).toHaveLength(2)
+    expect(db.listMessages(U, conversation.id).at(-1)?.id).toBe(priority.id)
     db.close()
   })
 })
