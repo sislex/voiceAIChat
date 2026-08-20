@@ -4,8 +4,16 @@ import userEvent from '@testing-library/user-event'
 import App, { appendWidgetAction } from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import type { Board } from '@shared/projects'
 
 const SLOW = { frame: 100_000, transcribe: 100_000, think: 100_000, speak: 100_000 }
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((ok, fail) => { resolve = ok; reject = fail })
+  return { promise, resolve, reject }
+}
 
 // Раздел «Проекты» — одна страница проекта: общая шапка (имя + вкладки «Канбан»
 // и «Настройки») и переключаемое содержимое. Страницы-списка проектов нет:
@@ -194,13 +202,79 @@ describe('App — завершённые задачи скрыты с доски
     return { api, projectId: p.id, taskId: task.id }
   }
 
-  it('«Показать завершённые» запрашивает доску целиком и возвращает карточку', async () => {
-    const { projectId } = await withCompleted()
+  it('при включении показа завершённых заменяет старую доску общим лоадером до актуального снимка', async () => {
+    const { api, projectId } = await withCompleted()
     window.location.hash = `#/projects/${projectId}`
     await screen.findByTestId('kanban-board')
-    expect(screen.queryByText('Завершённая')).not.toBeInTheDocument()
+    const getBoard = api['board:get']
+    const request = deferred<Board>()
+    api['board:get'] = async ({ includeCompleted }) => {
+      expect(includeCompleted).toBe(true)
+      return await request.promise
+    }
 
     await userEvent.click(screen.getByRole('checkbox', { name: /Показать завершённые/ }))
+
+    expect(screen.getByTestId('kanban-skeleton')).toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-column')).not.toBeInTheDocument()
+    expect(screen.queryByText('Завершённая')).not.toBeInTheDocument()
+
+    request.resolve(await getBoard({ id: projectId, includeCompleted: true }))
+    expect(await screen.findByText('Завершённая')).toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-skeleton')).not.toBeInTheDocument()
+  })
+
+  it('при выключении показа завершённых также скрывает всю старую доску до нового снимка', async () => {
+    const { api, projectId } = await withCompleted()
+    window.location.hash = `#/projects/${projectId}`
+    await screen.findByTestId('kanban-board')
+    const getBoard = api['board:get']
+    await userEvent.click(screen.getByRole('checkbox', { name: /Показать завершённые/ }))
+    expect(await screen.findByText('Завершённая')).toBeInTheDocument()
+    const request = deferred<Board>()
+    api['board:get'] = async ({ includeCompleted }) => {
+      expect(includeCompleted).toBe(false)
+      return await request.promise
+    }
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /Показать завершённые/ }))
+
+    expect(screen.getByTestId('kanban-skeleton')).toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-column')).not.toBeInTheDocument()
+    expect(screen.queryByText('Завершённая')).not.toBeInTheDocument()
+
+    request.resolve(await getBoard({ id: projectId, includeCompleted: false }))
+    await screen.findByTestId('kanban-board')
+    expect(screen.queryByTestId('kanban-skeleton')).not.toBeInTheDocument()
+    expect(screen.queryByText('Завершённая')).not.toBeInTheDocument()
+  })
+
+  it('ошибка смены фильтра завершает лоадер, а штатный повтор снова его показывает', async () => {
+    const { api, projectId } = await withCompleted()
+    window.location.hash = `#/projects/${projectId}`
+    await screen.findByTestId('kanban-board')
+    const getBoard = api['board:get']
+    const first = deferred<Board>()
+    const retry = deferred<Board>()
+    let attempts = 0
+    api['board:get'] = async () => (attempts++ === 0 ? await first.promise : await retry.promise)
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /Показать завершённые/ }))
+    expect(screen.getByTestId('kanban-skeleton')).toBeInTheDocument()
+    first.reject(new Error('Снимок недоступен'))
+
+    const error = await screen.findByText('Не удалось загрузить доску')
+    expect(error).toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-skeleton')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
+    const retryButton = screen.getAllByRole('button', { name: /Повторить/ }).at(-1)!
+    await userEvent.click(retryButton)
+    expect(screen.getByTestId('kanban-skeleton')).toBeInTheDocument()
+    expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
+
+    retry.resolve(await getBoard({ id: projectId, includeCompleted: true }))
     expect(await screen.findByText('Завершённая')).toBeInTheDocument()
   })
 
