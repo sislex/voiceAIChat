@@ -21,7 +21,7 @@ function compatibleReadiness(): string {
     businessRules: ['Правило'], errorsAndEdgeCases: [], uiStates: [],
     contractChanges: [], dataChanges: [], constraints: [], contradictions: [],
     acceptanceCriteriaItems: [{ id: 'AC-1', title: 'Критерий', precondition: 'Условие', action: 'Действие', observableResult: 'Результат' }],
-    openQuestions: [], decisions: [], assumptions: [], sources: []
+    openQuestions: [], decisions: [], assumptions: [], sources: [{ id: 'kb', kind: 'knowledge', status: 'available', summary: 'Раздел БЗ прочитан', refs: ['features/task-preparation'], critical: true }, { id: 'code', kind: 'code', status: 'available', summary: 'Контракт прочитан', refs: ['packages/shared/src/qa.ts'], critical: true }]
   })
 }
 
@@ -141,6 +141,41 @@ describe('подготовка к разработке: движок из нас
     // в чужую авторизацию.
     expect(codexCalls[0]).toMatchObject({ userId: 'bob', model: DEFAULT_CODEX_MODEL, sessionId: null, executionDisabled: true })
     expect(run.status).toBe('success')
+  })
+
+  it('подключает БЗ и настроенную рабочую директорию машины только для чтения с явным бюджетом', async () => {
+    const { project, task } = await taskInBacklog()
+    const machine = db.createAgent('admin', 'Project machine')
+    db.linkMachine('admin', project.id, machine.id)
+    db.setProjectMachinePath('admin', project.id, machine.id, '/srv/project')
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(1)
+    expect(claudeCalls[0]).toMatchObject({
+      permissionMode: 'default',
+      readOnlyRemote: true,
+      remote: { agentName: 'Project machine' }
+    })
+    expect(claudeCalls[0].executionDisabled).toBeUndefined()
+    expect(claudeCalls[0].remote?.mcpUrl).toContain(`agent=${machine.id}`)
+    expect(claudeCalls[0].remote?.mcpUrl).toContain('cwd=%2Fsrv%2Fproject')
+    expect(claudeCalls[0].kbMcpUrl).toContain('/mcp/kb')
+    expect(claudeCalls[0].prompt).toContain('Сначала найди тему через mcp__kb__search')
+    expect(claudeCalls[0].prompt).toContain('не более 12 вызовов инструментов')
+    expect(claudeCalls[0].prompt).toContain('не более 8 файлов')
+    expect(claudeCalls[0].prompt).toContain('любые команды, меняющие файлы')
+  })
+
+  it('без настроенной машины передаёт конкретную диагностику вместо запроса доступа', async () => {
+    const { project, task } = await taskInBacklog()
+
+    await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(claudeCalls[0]).toMatchObject({ executionDisabled: true, readOnlyRemote: true })
+    expect(claudeCalls[0].prompt).toContain('в конфигурации проекта нет доступной машины с рабочей директорией')
+    expect(claudeCalls[0].prompt).toContain('Не спрашивай доступ к машине или репозиторию')
   })
 
   it('явный выбор при запуске перебивает наследование и сохраняется снимком попытки', async () => {
@@ -287,7 +322,7 @@ describe('подготовка к разработке: диагностика �
       openQuestions: [],
       decisions: [],
       assumptions: [],
-      sources: []
+      sources: [{ id: 'kb', kind: 'knowledge', status: 'available', summary: 'Раздел БЗ прочитан', refs: ['features/task-preparation'], critical: true }, { id: 'code', kind: 'code', status: 'available', summary: 'Контракт прочитан', refs: ['packages/shared/src/qa.ts'], critical: true }]
     })
     claudeAnswer = () => ({ text: compatible })
 
@@ -309,7 +344,7 @@ describe('подготовка к разработке: диагностика �
       businessRules: [{ id: 'BR-1', text: '' }], errorsAndEdgeCases: [], uiStates: [],
       contractChanges: [], dataChanges: [], constraints: [], contradictions: [],
       acceptanceCriteriaItems: [{ id: 'AC-1', title: 'Критерий', precondition: 'Условие', action: 'Действие', observableResult: 'Результат' }],
-      openQuestions: [], decisions: [], assumptions: [], sources: []
+      openQuestions: [], decisions: [], assumptions: [], sources: [{ id: 'kb', kind: 'knowledge', status: 'available', summary: 'Раздел БЗ прочитан', refs: ['features/task-preparation'], critical: true }, { id: 'code', kind: 'code', status: 'available', summary: 'Контракт прочитан', refs: ['packages/shared/src/qa.ts'], critical: true }]
     })
     claudeAnswer = (attempt) => ({ text: attempt === 1 ? malformed : compatibleReadiness() })
 
