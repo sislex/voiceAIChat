@@ -544,16 +544,19 @@ export function SettingsModal({
               <>
                 <div className="frow">
                   <div>
-                    <p className="flab">Тёмная тема</p>
-                    <p className="fsub">Переключить оформление интерфейса</p>
+                    <p className="flab">Тема интерфейса</p>
+                    <p className="fsub">Применяется сразу и сохраняется для следующего входа</p>
                   </div>
-                  <button
-                    className={settings.theme === 'dark' ? 'sw on' : 'sw'}
-                    onClick={() => onChange({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}
-                    role="switch"
-                    aria-checked={settings.theme === 'dark'}
-                    aria-label="Тёмная тема" title="Тёмная тема"
-                  />
+                  <select
+                    className="sel"
+                    aria-label="Тема интерфейса"
+                    value={settings.theme}
+                    onChange={(e) => onChange({ theme: e.target.value as Settings['theme'] })}
+                  >
+                    <option value="light">Светлая</option>
+                    <option value="dark">Тёмная</option>
+                    <option value="green">Зелёная</option>
+                  </select>
                 </div>
 
                 <div className="frow">
