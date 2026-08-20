@@ -9,6 +9,7 @@ import type { VoiceChatDb } from './db/database.js'
 import type { TurnManager } from './turns.js'
 import type { PtyEvent } from './agents/registry.js'
 import type { SttEngine } from './stt/types.js'
+import type { SttClient } from './stt/client.js'
 import type { DiarizationEngine } from './diarization/types.js'
 import { createSttSession, type SttSession } from './stt/sttSession.js'
 import type { DownloadEvent } from './stt/downloadManager.js'
@@ -26,7 +27,9 @@ export interface SessionDeps {
   user: SessionUser
   /** Процесс-глобальный реестр ходов LLM (ходы переживают reconnect). */
   turns: TurnManager
-  sttEngine: SttEngine
+  sttEngine?: SttEngine
+  sttClient?: SttClient
+  getWhisperModel?: () => import('@voicechat/shared').WhisperModel
   ttsClient: TtsClient
   diarization?: DiarizationEngine
   /** Возможности системы по ресурсам контейнера (блокировка STT/TTS при нехватке памяти). */
@@ -187,6 +190,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
           stt?.dispose()
           stt = createSttSession({
             engine: deps.sttEngine,
+            client: deps.sttClient,
+            getModel: deps.getWhisperModel,
             send: ctx.send,
             language: deps.language,
             diarization: deps.diarization,

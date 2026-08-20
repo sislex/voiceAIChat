@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-08-19
-checked: e76af0f2
+updated: 2026-08-20
+checked: 9c99776f
 areas:
   - apps/server/src
 ---
@@ -169,7 +169,7 @@ Observer-модули как код живут и на сервере, и в и�
 
 `system/resources.ts` читает cgroup v1/v2 лимиты CPU/RAM с fallback на host. `capabilities.ts` сравнивает их с default или `VC_MIN_MEM_STT/TTS`. Недоступность отражается в API и блокирует запуск.
 
-Whisper engine пишет временный WAV и spawn-ит `whisper-cli`; модели перечисляются по ожидаемым GGML-файлам. Download manager не допускает конкурирующие загрузки и публикует progress.
+Сервер не запускает Whisper и не имеет доступа к STT-моделям. `RemoteSttClient` проксирует PCM и lifecycle в защищённый WS `stt-runner /v1/transcribe`; runner единолично владеет `whisper-cli`, моделями, временными WAV, очередью, лимитами и очисткой. Недоступность runner меняет только `capabilities.stt`, не TTS или текстовый чат.
 
 Синтез вынесен в отдельный `@voicechat/tts-runner`: только этот процесс запускает Piper или macOS `say`, владеет каталогом голосов и временными WAV. Внутренний ресурсный API `/v1/runs` защищён Bearer-токеном: создание и статус возвращают JSON-ресурс, WAV читается отдельно через `/v1/runs/:runId/audio`, отмена — `DELETE /v1/runs/:runId`. Runner ограничивает длину текста, очередь, конкурентность, время процесса и размер WAV, а после старта очищает оставшиеся временные файлы.
 

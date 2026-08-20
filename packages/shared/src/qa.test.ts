@@ -42,6 +42,29 @@ describe('development readiness gate', () => {
       'missing_expected_result:TC-1', 'missing_ui_impact'
     ])
   })
+  it('requires actually researched knowledge and code sources for schema v2', () => {
+    const input: DevelopmentReadiness = {
+      ...ready(),
+      schemaVersion: 2,
+      goal: 'Goal',
+      scope: ['In scope'],
+      outOfScope: ['Out of scope'],
+      acceptanceCriteriaItems: [{ id: 'AC-1', title: 'Criterion', precondition: 'Given', action: 'When', observableResult: 'Then' }],
+      sources: []
+    }
+    expect(canConfirmDevelopmentReadiness(input).reasons).toEqual(expect.arrayContaining([
+      'missing_researched_sources', 'missing_knowledge_source', 'missing_code_source'
+    ]))
+    input.sources = [
+      { id: 'kb', kind: 'knowledge' as const, status: 'available' as const, summary: 'Read', refs: ['task-preparation'], critical: true },
+      { id: 'code', kind: 'code' as const, status: 'available' as const, summary: 'Read', refs: ['qa.ts'], critical: true }
+    ]
+    expect(canConfirmDevelopmentReadiness(input).allowed).toBe(true)
+    input.sources[1] = { ...input.sources[1], status: 'absent', summary: 'Файл не найден' }
+    expect(canConfirmDevelopmentReadiness(input).reasons).toEqual(expect.arrayContaining([
+      'missing_code_source', 'critical_source_unavailable:code'
+    ]))
+  })
   it('requires Storybook coverage or an explicit alternative for UI work', () => {
     const input = ready()
     input.uiImpact = 'new_components'

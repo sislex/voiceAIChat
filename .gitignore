@@ -27,8 +27,8 @@ artifacts/
 .venv/
 
 # Тяжёлые ассеты (модели/голоса/рантаймы) — качаются, не в гит
-models/
-!models/.gitkeep
+/models/
+!/models/.gitkeep
 **/resources/piper-runtime/
 **/resources/piper-voices/
 

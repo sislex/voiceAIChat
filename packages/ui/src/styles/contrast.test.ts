@@ -22,8 +22,7 @@ import {
   CONTRAST_PAIRS,
   fmtRatio,
   type ContrastPair,
-  type Rgb,
-  type ThemeName
+  type Rgb
 } from '../stories/foundations/tokens'
 const css = readFileSync(fileURLToPath(new URL('./app.css', import.meta.url)), 'utf8')
 
@@ -40,9 +39,11 @@ function customProps(selector: string): Record<string, string> {
   return out
 }
 
+type TestedThemeName = 'light' | 'dark' | 'green'
 const LIGHT = customProps(':root')
 const DARK = { ...LIGHT, ...customProps("[data-theme='dark']") }
-const THEMES: Record<ThemeName, Record<string, string>> = { light: LIGHT, dark: DARK }
+const GREEN = { ...LIGHT, ...customProps("[data-theme='green']") }
+const THEMES: Record<TestedThemeName, Record<string, string>> = { light: LIGHT, dark: DARK, green: GREEN }
 
 /** `var(--другой)` — ссылка внутри той же темы (например `--danger: var(--ci-removed)`). */
 function resolve(value: string, theme: Record<string, string>, depth = 0): string {
@@ -62,7 +63,7 @@ function hexToRgb(value: string): Rgb {
   return [0, 2, 4].map((i) => Number.parseInt(long[1].slice(i, i + 2), 16)) as unknown as Rgb
 }
 
-function ratioOf(pair: ContrastPair, name: ThemeName): number {
+function ratioOf(pair: ContrastPair, name: TestedThemeName): number {
   const theme = THEMES[name]
   const fg = theme[pair.fg]
   const bg = theme[pair.bg]
@@ -71,7 +72,7 @@ function ratioOf(pair: ContrastPair, name: ThemeName): number {
   return contrastRatio(hexToRgb(resolve(fg, theme)), hexToRgb(resolve(bg, theme)))
 }
 
-const themes: ThemeName[] = ['light', 'dark']
+const themes: TestedThemeName[] = ['light', 'dark', 'green']
 
 describe('контраст токенов', () => {
   // Гейтим текстовые пары (WCAG 1.4.3). Пары kind: 'ui' (рамки) и 'decor'
@@ -102,10 +103,10 @@ describe('контраст токенов', () => {
     }
   })
 
-  it('обе темы объявляют один набор токенов', () => {
-    // Тёмная тема наследует :root, но пара «цвет и его подложка» должна
-    // переопределяться целиком: иначе светлый фон останется под тёмным текстом.
-    const darkOnly = Object.keys(customProps("[data-theme='dark']")).filter((name) => !(name in LIGHT))
-    expect(darkOnly).toEqual([])
+  it('дополнительные темы объявляют только известные токены', () => {
+    for (const selector of ["[data-theme='dark']", "[data-theme='green']"]) {
+      const themeOnly = Object.keys(customProps(selector)).filter((name) => !(name in LIGHT))
+      expect(themeOnly, selector).toEqual([])
+    }
   })
 })

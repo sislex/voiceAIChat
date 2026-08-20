@@ -672,7 +672,7 @@ export interface Settings {
   /** Режим консоли: показывать активность агента (команды, thinking, mode…). */
   showConsole: boolean
   /** Тема интерфейса. */
-  theme: 'light' | 'dark'
+  theme: 'light' | 'dark' | 'green'
   /** Пользователь прошёл (или пропустил) приветственный мастер. */
   onboarded: boolean
   /** Режим прав агента для Claude CLI. */

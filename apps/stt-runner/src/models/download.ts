@@ -5,7 +5,7 @@
 import { createWriteStream, mkdirSync } from 'node:fs'
 import { rm, rename } from 'node:fs/promises'
 import type { WhisperModel } from '@voicechat/shared'
-import { modelFileName, modelPath } from './models'
+import { modelFileName, modelPath } from './catalog.js'
 
 const HF_BASE = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main'
 

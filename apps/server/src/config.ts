@@ -10,10 +10,6 @@ export interface ServerConfig {
   host: string
   /** Каталог данных (БД, модели). */
   dataDir: string
-  /** Каталог GGML-моделей Whisper. */
-  modelsDir: string
-  /** Путь к исполняемому whisper-cli (whisper.cpp). */
-  whisperCli: string
   /** Каталог голосов Piper. */
   piperVoicesDir: string
   /** Путь к исполняемому piper (или python для `python -m piper`). */
@@ -74,6 +70,10 @@ export interface ServerConfig {
   ttsRunnerUrl?: string
   /** Обязательный Bearer-токен TTS Runner. */
   ttsRunnerToken?: string
+  /** Внутренний STT Runner; сервер никогда не открывает его браузеру. */
+  sttRunnerUrl?: string
+  sttRunnerToken?: string
+  sttRunnerConnectTimeoutMs?: number
   /** Unix-сокет host-side API, запускающего voicechat-deploy. */
   deployApiSocket?: string
 }
@@ -85,11 +85,6 @@ const DEFAULT_DATA_DIR = join(homedir(), '.voicechat-server')
 // путей нет → откат к дефолтам, а env всегда имеет приоритет.
 const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const REPO = {
-  whisperCli: join(
-    REPO_ROOT,
-    'apps/desktop/node_modules/nodejs-whisper/cpp/whisper.cpp/build/bin/whisper-cli'
-  ),
-  modelsDir: join(REPO_ROOT, 'apps/desktop/node_modules/nodejs-whisper/cpp/whisper.cpp/models'),
   piperBin: join(REPO_ROOT, '.venv-piper/bin/piper'),
   piperVoicesDir: join(REPO_ROOT, 'apps/desktop/resources/piper-voices'),
   agentAppDir: join(REPO_ROOT, 'apps/agent-tray/release'),
@@ -150,14 +145,11 @@ function parsePositiveInt(raw: string | undefined): number | undefined {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const dataDir = env.VC_DATA_DIR ?? DEFAULT_DATA_DIR
-  const modelsDir = pick(env.VC_MODELS_DIR, REPO.modelsDir, join(dataDir, 'models'))
   return {
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? '127.0.0.1',
     dataDir,
-    modelsDir,
-    whisperCli: pick(env.VC_WHISPER_CLI, REPO.whisperCli, join(dataDir, 'whisper-cli')),
-    piperVoicesDir: pick(env.VC_PIPER_VOICES_DIR, REPO.piperVoicesDir, join(modelsDir, 'piper')),
+    piperVoicesDir: pick(env.VC_PIPER_VOICES_DIR, REPO.piperVoicesDir, join(dataDir, 'models', 'piper')),
     piperBin: pick(env.VC_PIPER_BIN, REPO.piperBin, 'piper'),
     piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : [],
     agentAppPath: env.VC_AGENT_APP ?? (AUTODISCOVER ? findDmg(REPO.agentAppDir) : undefined),
@@ -186,6 +178,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     llmRunnerConnectTimeoutMs: parsePositiveInt(env.VC_LLM_RUNNER_TIMEOUT_MS),
     ttsRunnerUrl: env.VC_TTS_RUNNER_URL,
     ttsRunnerToken: env.VC_TTS_RUNNER_TOKEN,
+    sttRunnerUrl: env.VC_STT_RUNNER_URL,
+    sttRunnerToken: env.VC_STT_RUNNER_TOKEN,
+    sttRunnerConnectTimeoutMs: parsePositiveInt(env.VC_STT_RUNNER_TIMEOUT_MS),
     deployApiSocket: env.VC_DEPLOY_API_SOCKET
   }
 }

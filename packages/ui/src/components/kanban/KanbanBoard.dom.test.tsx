@@ -61,6 +61,51 @@ describe('KanbanBoard (изолированный)', () => {
     expect(surface).toContainElement(screen.getByTestId('kanban-column'))
   })
 
+  it('показывает справку только для шести автоматизированных semantic type, независимо от названия', () => {
+    const semanticTypes = ['preparation', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'merge', 'backlog', 'ready', 'manual_qa', 'custom'] as const
+    renderBoard({
+      board: {
+        columns: semanticTypes.map((semanticType, index) => ({ ...board.columns[0]!, id: `c-${semanticType}`, name: semanticType === 'development' ? 'Переименовано пользователем' : semanticType, semanticType, position: (index + 1) * 1024 })),
+        tasks: []
+      }
+    })
+
+    const buttons = screen.getAllByRole('button', { name: /Об автоматизации стадии/ })
+    expect(buttons).toHaveLength(6)
+    expect(screen.getByRole('button', { name: 'Об автоматизации стадии «Development / In progress»' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Backlog/ })).not.toBeInTheDocument()
+  })
+
+  it('открывает описание выбранной стадии и закрывает его кнопкой с возвратом фокуса', async () => {
+    renderBoard({ board: { columns: [{ ...board.columns[0]!, name: 'Любое имя', semanticType: 'component_qa' }], tasks: [] } })
+    const opener = screen.getByRole('button', { name: 'Об автоматизации стадии «Component QA»' })
+    await userEvent.click(opener)
+
+    const dialog = screen.getByRole('dialog', { name: 'Component QA' })
+    expect(within(dialog).getByRole('heading', { name: 'Когда запускается' })).toBeInTheDocument()
+    expect(within(dialog).getByText(/component_qa_runs/)).toBeInTheDocument()
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Закрыть справку об автоматизации' }))
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Закрыть справку об автоматизации' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(document.activeElement).toBe(opener))
+  })
+
+  it('Escape закрывает справку, возвращает фокус и кнопка не начинает перенос колонки', async () => {
+    const props = renderBoard({ board: { columns: [{ ...board.columns[0]!, semanticType: 'merge' }], tasks: [] } })
+    const opener = screen.getByRole('button', { name: 'Об автоматизации стадии «Merge»' })
+    fireEvent.pointerDown(opener, { pointerId: 1, pointerType: 'mouse', clientX: 10, clientY: 10 })
+    fireEvent.pointerMove(window, { pointerId: 1, pointerType: 'mouse', clientX: 100, clientY: 100 })
+    fireEvent.pointerUp(window, { pointerId: 1, pointerType: 'mouse', clientX: 100, clientY: 100 })
+    await userEvent.click(opener)
+    expect(screen.getByRole('dialog', { name: 'Merge' })).toBeInTheDocument()
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(document.activeElement).toBe(opener))
+    expect(props.onReorderColumns).not.toHaveBeenCalled()
+  })
+
   it('открытие и закрытие карточки сохраняет общую вертикальную позицию доски', async () => {
     renderBoard()
     const surface = screen.getByTestId('kanban-board')

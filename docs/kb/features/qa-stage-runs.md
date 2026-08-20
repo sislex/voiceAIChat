@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
-updated: 2026-08-16
-checked: de895b5
+updated: 2026-08-20
+checked: 2ba06683
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
@@ -14,6 +14,9 @@ areas:
   - packages/ui/src/components/qa/QaStageRunPanel.tsx
   - packages/ui/src/components/kanban/TaskModal.tsx
   - packages/ui/src/components/kanban/TaskCard.tsx
+  - packages/ui/src/components/kanban/KanbanBoard.tsx
+  - packages/ui/src/components/kanban/KanbanBoard.dom.test.tsx
+  - packages/ui/src/styles/app.css
   - packages/ui/src/remote/qaBridge.ts
 ---
 
@@ -341,6 +344,60 @@ integration-ран при этом не переводится в `failed`. URL-
 есть активный ран, состояние опрашивается раз в 2 секунды, а ответ старше
 локального снимка (сравнение по `finishedAt`/`startedAt`/`createdAt`)
 отбрасывается.
+
+## Жизненный цикл и переходы
+
+Специализированный Integration Tests запускается только явным `POST
+…/qa/integration/runs` (в UI — действие панели), а не переносом или сортировкой
+карточки. `startIntegrationTestRun` требует QA-право и сверяет системную колонку
+`integration_tests`, актуальный pushed development-workspace с машиной, путём,
+веткой и SHA, успешный development-ран и успешный readiness-снимок. Несоблюдение
+предусловий создаёт аудируемый `blocked`-ран в `integration_test_runs`; живой
+`queued|running` ран того же SHA и версии снимка переиспользуется. Если
+обязательных automatable-кейсов нет, а исключённые обязательные кейсы полностью
+обоснованы, старт сразу сохраняет `skipped` и транзакционно переносит задачу в
+`automated_qa`.
+
+Обычный Integration Tests ран исполняет последовательность команд в сохранённом
+development-workspace, валидирует, что HEAD-дифф содержит только тестовые файлы,
+записывает команды, общий лог, снимок кейсов и `automation_links` в
+`integration_test_runs`, а ссылки также в readiness-снимок; код тестов остаётся
+в workspace и ветке задачи. После `passed` автоматического переноса нет:
+`completeIntegrationTestRun` по явному запросу повторно проверяет статус, команды,
+блокеры, текущие SHA и semantic version, полноту automation links, текущую колонку
+и разрешённость workflow-перехода, затем переводит задачу в `automated_qa`.
+`failed|blocked|cancelled|stale` её не двигают и допускают повтор либо
+development fix-run. Источники: `apps/server/src/db/database.ts`,
+`apps/server/src/ci/integrationTests.ts`, `apps/server/src/routes/qa.ts`.
+
+Automated QA запускается только явным `POST …/qa/runs/automated_qa` для задачи,
+уже находящейся в системной колонке `automated_qa`; перенос, сортировка,
+переименование колонки и открытие вкладки рана не создают. Повторный старт
+возвращает существующий активный ран. Попытка хранится в `qa_stage_runs` со
+`stage='automated_qa'`: там лежат статус и номер попытки, инициатор, ветка/SHA,
+текущий шаг, progress, лог, result, причины gate, ошибка и временные метки.
+Неуспешный gate, отмена и прерывание не меняют колонку; внутренний
+`completeQaStageRun` при `result.gatePassed === true` транзакционно ставит
+`success` и переводит карточку в `manual_qa`.
+
+При этом у Automated QA сейчас нет runner'а и публичного маршрута завершения:
+REST-старт лишь создаёт `running/starting`, а `completeQaStageRun` вызывают
+только тесты. Поэтому в штатном runtime автоматические проверки, успешный gate и
+переход в `manual_qa` по этой линии фактически не происходят; рестарт сервера
+закрывает зависшую активную попытку как `interrupted`. Это ограничение нужно
+учитывать при чтении справки канбана.
+
+## Справка об автоматизации на канбане
+
+`KanbanBoard` показывает кнопку «i» по semantic type, а не по редактируемому
+названию, только для шести стадий: `preparation`, `development`,
+`component_qa`, `integration_tests`, `automated_qa`, `merge`. Диалог
+описывает условия старта и отказа, этапы, результат, хранение и дальнейшее
+использование. Кнопка гасит pointer-событие, поэтому не начинает перенос колонки;
+диалог получает фокус на кнопке закрытия, закрывается этой кнопкой, Escape или
+кликом по фону и возвращает фокус инициатору. На узких экранах он становится
+нижней панелью с прокручиваемым телом. DOM-тесты фиксируют выбор по semantic type,
+возврат фокуса, Escape и отсутствие reorder.
 
 ## Проверки
 

@@ -171,6 +171,7 @@ import {
   type PreparationEvent,
   type PreparationQuestion,
   type PreparationAnswerResult,
+  type PreparationClarificationNotification,
   type TaskPreparationPhase,
   type PreparationGateResult,
   redactPreparationText,
@@ -1517,21 +1518,24 @@ export class VoiceChatDb {
     if (!this.ownsConversation(userId, conversationId)) return []
     const rows = this.db.prepare(
       `SELECT q.id, q.conversation_id, q.message_id, q.payload, q.status, q.position,
-              q.created_at, m.text
+              q.created_at, m.text, m.attachments AS message_attachments
        FROM conversation_turn_queue q
        JOIN messages m ON m.id = q.message_id
        WHERE q.user_id = ? AND q.conversation_id = ? AND q.status IN ('queued','failed')
        ORDER BY q.position, q.created_at`
-    ).all(userId, conversationId) as Array<{ id: string; conversation_id: string; message_id: string; payload: string; status: string; position: number; created_at: number; text: string }>
+    ).all(userId, conversationId) as Array<{ id: string; conversation_id: string; message_id: string; payload: string; status: string; position: number; created_at: number; text: string; message_attachments: string | null }>
     return rows.map((row, index) => {
       let payload: QueueTurnPayload = { segments: [] }
       try { payload = JSON.parse(row.payload) as QueueTurnPayload } catch { /* keep recoverable row visible */ }
+      let attachmentDetails: MessageAttachment[] = []
+      try { attachmentDetails = row.message_attachments ? JSON.parse(row.message_attachments) as MessageAttachment[] : [] } catch { /* attachment ids still remain usable */ }
       return {
         id: row.id,
         conversationId: row.conversation_id,
         messageId: row.message_id,
         text: row.text,
         attachments: payload.attachments ?? [],
+        ...(attachmentDetails.length ? { attachmentDetails } : {}),
         position: index + 1,
         status: row.status === 'failed' ? 'failed' : 'queued',
         createdAt: row.created_at
@@ -1600,6 +1604,38 @@ export class VoiceChatDb {
       if (!row) return
       this.db.prepare(`DELETE FROM conversation_turn_queue WHERE id = ?`).run(id)
       this.db.prepare(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`).run(row.message_id, conversationId)
+    })()
+    return this.listQueuedTurns(userId, conversationId)
+  }
+
+  /** Идемпотентно повышает ожидающий элемент до первого места, не трогая активный ход. */
+  prioritizeQueuedTurn(userId: string, conversationId: string, id: string): QueuedTurn[] {
+    this.db.transaction(() => {
+      const selected = this.db.prepare(
+        `SELECT position FROM conversation_turn_queue
+         WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
+      ).get(id, conversationId, userId) as { position: number } | undefined
+      if (!selected) return
+      const first = this.db.prepare(
+        `SELECT MIN(position) AS position FROM conversation_turn_queue
+         WHERE conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
+      ).get(conversationId, userId) as { position: number | null }
+      if (first.position === null || selected.position === first.position) return
+      // UNIQUE(conversation_id, position) проверяется SQLite после каждой строки,
+      // поэтому переставляем через заведомо свободный отрицательный/временный диапазон.
+      this.db.prepare(`UPDATE conversation_turn_queue SET position = -1, updated_at = ? WHERE id = ?`)
+        .run(this.now(), id)
+      this.db.prepare(
+        `UPDATE conversation_turn_queue SET position = position + 1000000, updated_at = ?
+         WHERE conversation_id = ? AND user_id = ? AND status IN ('queued','failed') AND position < ? AND position >= 0`
+      ).run(this.now(), conversationId, userId, selected.position)
+      this.db.prepare(
+        `UPDATE conversation_turn_queue SET position = position - 999999
+         WHERE conversation_id = ? AND user_id = ? AND position >= 1000000`
+      ).run(conversationId, userId)
+      this.db.prepare(
+        `UPDATE conversation_turn_queue SET position = ?, status = 'queued', updated_at = ? WHERE id = ?`
+      ).run(first.position, this.now(), id)
     })()
     return this.listQueuedTurns(userId, conversationId)
   }
@@ -5892,6 +5928,44 @@ export class VoiceChatDb {
       this.appendTaskPreparationEvent(row.attempt_id, 'answer_accepted', 'clarification', 'Ответ принят', { questionId })
       return { accepted: true, alreadyAnswered: false, question }
     })()
+  }
+
+  listTaskPreparationNotifications(userId: string): PreparationClarificationNotification[] {
+    const rows = this.db.prepare(`
+      SELECT q.question_id,q.attempt_id,q.text,q.asked_at,
+             r.project_id,r.task_id,p.name AS project_name,t.title AS task_title,
+             d.dismissed_at
+      FROM task_preparation_questions q
+      JOIN task_preparation_runs r ON r.id=q.attempt_id
+      JOIN projects p ON p.id=r.project_id
+      JOIN tasks t ON t.id=r.task_id
+      JOIN project_members m ON m.project_id=r.project_id AND m.username=?
+      LEFT JOIN task_preparation_notification_dismissals d
+        ON d.question_id=q.question_id AND d.user_id=?
+      WHERE q.material=1 AND q.answered_at IS NULL AND r.status='waiting_for_answer'
+      ORDER BY q.asked_at,q.question_id
+    `).all(userId, userId) as Record<string, unknown>[]
+    return rows.map((row) => ({
+      questionId: String(row.question_id), attemptId: String(row.attempt_id),
+      projectId: String(row.project_id), projectName: String(row.project_name),
+      taskId: String(row.task_id), taskTitle: String(row.task_title),
+      text: String(row.text), askedAt: Number(row.asked_at),
+      dismissedAt: row.dismissed_at == null ? null : Number(row.dismissed_at)
+    }))
+  }
+
+  dismissTaskPreparationNotification(userId: string, questionId: string): boolean {
+    const now = this.now()
+    const result = this.db.prepare(`
+      INSERT OR IGNORE INTO task_preparation_notification_dismissals (question_id,user_id,dismissed_at)
+      SELECT q.question_id,?,?
+      FROM task_preparation_questions q
+      JOIN task_preparation_runs r ON r.id=q.attempt_id
+      JOIN project_members m ON m.project_id=r.project_id AND m.username=?
+      WHERE q.question_id=? AND q.material=1 AND q.answered_at IS NULL AND r.status='waiting_for_answer'
+    `).run(userId, now, userId, questionId)
+    if (result.changes) return true
+    return Boolean(this.db.prepare(`SELECT 1 FROM task_preparation_notification_dismissals WHERE question_id=? AND user_id=?`).get(questionId, userId))
   }
 
   confirmedDevelopmentReadiness(taskId: string): DevelopmentReadiness | null {

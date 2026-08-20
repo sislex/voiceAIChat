@@ -2,14 +2,20 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-08-19
-checked: 507a85e0
+updated: 2026-08-20
+checked: b73e15b6
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - apps/server/src/ci
+  - apps/server/src/automationClient.ts
+  - apps/automation-runner/src
+  - packages/shared/src/automation.ts
+  - docs/automation-runner.md
+  - Dockerfile
+  - docker-compose.yml
   - scripts/affected-check.mjs
   - apps/server/src/kb/codeUpdate.ts
   - apps/server/src/kb/autoContext.ts
@@ -75,6 +81,42 @@ packages:
 Заменил Feature Run полностью: UI, маршруты, координатор, контракт `features:*` и
 таблицы `features`/`feature_events`/`agent_tasks`/`feature_deployments`/`repository_slots`
 удалены (миграция сносит их при старте). Корень рабочих копий — `project_machines.repos_root`.
+
+## Отдельный Automation Runner
+
+`@voicechat/automation-runner` — внутренний Fastify execution-plane для durable-задач
+подготовки, разработки, Component QA, интеграционных и автоматических тестов и merge.
+Общий Automation Protocol v1, типы снимка, состояния, результаты и пути API находятся
+в `packages/shared/src/automation.ts`. Все `/v1/*` требуют единого Bearer-токена.
+Основной сервер обращается к сервису только через `AutomationClient`
+(`apps/server/src/automationClient.ts`), который сохраняет HTTP-статус и код ошибки
+для политики повторной доставки.
+
+`AutomationStore` хранит неизменяемый снимок задания, состояние, терминальный
+результат, паузы и упорядоченные события в SQLite WAL. Уникальный
+`idempotencyKey` превращает повторный `POST /v1/jobs` в чтение того же задания;
+позиция события монотонна внутри задания, а `eventId` стабилен, поэтому сервер
+может реплеить события через `GET /v1/jobs/:id/events?after=<position>`.
+Ответ на паузу принимается один раз и возвращает задание в очередь. При открытии
+БД незавершённые состояния `running` и `cancelling` переводятся в `queued`;
+паузы и терминальные состояния сохраняются.
+
+`DurableQueue` выбирает queued-задания FIFO с настраиваемой конкуренцией.
+Отмена queued или paused задания сразу фиксирует `cancelled`; активная отмена
+переходит через `cancelling`, посылает cooperative cancel и после grace-периода
+вызывает force cancel. Поздний ответ исполнителя не может перезаписать отмену:
+он записывается как `executor.late_result`, а итог остаётся `cancelled`.
+Детали реализации и маршруты — в `apps/automation-runner/src/server.ts`,
+`store.ts` и `queue.ts`.
+
+В Docker это отдельный target `automation-runner-runtime` и внутренний Compose-
+сервис на порту 8800 без публикации порта хоста. SQLite лежит в постоянном томе
+`vc-automation-data`; healthcheck тоже аутентифицирован и сообщает только размеры
+очереди и доступность Machine Execution/LLM Runner. Точка входа сейчас намеренно
+fail-closed: production-`AutomationExecutor` завершает задания ошибкой
+`executor_adapter_not_configured`. Реальные адаптеры стадий через
+`MachineExecutionPort` и `LlmRunnerPort`, а также серверные transactional outbox,
+reconciliation/realtime и финальные бизнес-переходы в этом срезе не подключены.
 
 ## Модель данных
 

@@ -65,14 +65,14 @@ describe('VoiceBar — состояния', () => {
 
   it('ожидание: одна строка и одна кнопка остановки', () => {
     setup('thinking')
-    expect(screen.getByTestId('request-status')).toHaveTextContent('Claude обрабатывает запрос…')
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Готовим ответ…')
     expect(screen.getAllByLabelText('Остановить ответ')).toHaveLength(1)
     expect(screen.queryByText(/Текст передан движку/)).not.toBeInTheDocument()
   })
 
   it('ожидание: имя движка из aiLabel (Codex)', () => {
     setup('thinking', { aiLabel: 'Codex' })
-    expect(screen.getByTestId('request-status')).toHaveTextContent('Codex обрабатывает запрос…')
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Готовим ответ…')
   })
 
   it('speaking: поле ввода и отправка в очередь доступны, есть стоп озвучки', () => {
@@ -411,32 +411,47 @@ describe('VoiceBar — доступность', () => {
 
 describe('VoiceBar — серверная очередь', () => {
   const item = { id: 'q1', conversationId: 'c1', messageId: 'm2', text: 'Следующий вопрос', attachments: ['f1'], position: 1, status: 'queued' as const, createdAt: 1 }
+  const items = Array.from({ length: 5 }, (_, index) => ({ ...item, id: `q${index + 1}`, messageId: `m${index + 1}`, text: `Вопрос ${index + 1}`, attachments: [], position: index + 1 }))
 
-  it('показывает текст, позицию, статус, вложения и явную паузу', () => {
+  it('показывает текст, позицию, вложения и паузу только после ошибки', () => {
     setup('thinking', { queuedTurns: [item], queuePaused: true })
-    expect(screen.getByTestId('turn-queue')).toHaveTextContent('В очереди')
+    expect(screen.getByTestId('turn-queue')).toHaveTextContent('В очереди · 1')
     expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('№ 1 · Ожидает')
     expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('Следующий вопрос')
-    expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('1 влож.')
-    expect(screen.getByText('Пауза после остановки')).toBeInTheDocument()
+    expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('Вложение 1')
+    expect(screen.getByText('Очередь остановлена после ошибки')).toHaveAttribute('role', 'status')
   })
 
-  it('вызывает удаление и принудительную отправку выбранного элемента', async () => {
+  it('сворачивает очередь до трёх элементов и раскрывает ограниченный список', async () => {
+    setup('thinking', { queuedTurns: items })
+    expect(screen.getAllByTestId('turn-queue-item')).toHaveLength(3)
+    const toggle = screen.getByRole('button', { name: 'Показать ещё 2' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(toggle)
+    expect(screen.getAllByTestId('turn-queue-item')).toHaveLength(5)
+    expect(screen.getByRole('button', { name: 'Свернуть очередь' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('вызывает удаление и повышение приоритета выбранного элемента', async () => {
     const onDeleteQueued = vi.fn()
     const onSendQueuedNow = vi.fn()
     setup('thinking', { queuedTurns: [item], onDeleteQueued, onSendQueuedNow })
-    await userEvent.click(screen.getByRole('button', { name: 'Удалить' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Отправить сейчас' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить сообщение № 1' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить сейчас сообщение № 1' }))
     expect(onDeleteQueued).toHaveBeenCalledWith('q1')
     expect(onSendQueuedNow).toHaveBeenCalledWith('q1')
   })
 
-  it('редактирует вопрос без создания второй карточки', async () => {
+  it('редактирует вопрос на месте без window.prompt', async () => {
     const onEditQueued = vi.fn()
-    vi.spyOn(window, 'prompt').mockReturnValueOnce('Новая формулировка')
     setup('thinking', { queuedTurns: [item], onEditQueued })
-    await userEvent.click(screen.getByRole('button', { name: 'Редактировать' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать сообщение № 1' }))
+    const input = screen.getByLabelText('Текст ожидающего сообщения')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'Новая формулировка')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
     expect(onEditQueued).toHaveBeenCalledWith('q1', 'Новая формулировка')
+    expect(screen.getAllByTestId('turn-queue-item')).toHaveLength(1)
   })
 })
 

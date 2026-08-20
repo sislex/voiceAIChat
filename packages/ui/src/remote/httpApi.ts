@@ -349,6 +349,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/task-preparation/runs/${encodeURIComponent(runId)}/retry`, { method: 'POST', body: JSON.stringify(selection ?? {}) }),
     'tasks:answerPreparationQuestion': ({ questionId, answer }) =>
       req(`/api/task-preparation/questions/${encodeURIComponent(questionId)}/answer`, { method: 'POST', body: JSON.stringify({ answer }) }),
+    'tasks:listPreparationNotifications': () =>
+      req('/api/task-preparation/notifications'),
+    'tasks:dismissPreparationNotification': ({ questionId }) =>
+      req(`/api/task-preparation/notifications/${encodeURIComponent(questionId)}/dismiss`, { method: 'POST' }),
     'tasks:exportPreparationRun': async ({ runId, format }) => {
       const token = getToken()
       const response = await fetch(httpBase + `/api/task-preparation/runs/${encodeURIComponent(runId)}/export/${format}`, {

@@ -6,6 +6,7 @@ import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import type { Board, ProjectMember, Task } from '@shared/projects'
+import type { PreparationClarificationNotification } from '@shared/qa'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
@@ -43,6 +44,7 @@ import { Skeleton } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { KnowledgeBase } from './components/KnowledgeBase'
+import { NotificationContainer } from './components/ClarificationNotification'
 import { KbUsagePanel } from './components/kb/KbUsagePanel'
 import { hasPendingKbUsage } from './lib/kbUsage'
 import { CommandPalette } from './components/CommandPalette'
@@ -516,6 +518,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [assistantTaskId, setAssistantTaskId] = useState<string | null>(null)
   const [assistantField, setAssistantField] = useState<keyof SupportedTaskPatch | null>(null)
   const [widgetActions, setWidgetActions] = useState<WidgetUserAction[]>([])
+  const [clarificationNotifications, setClarificationNotifications] = useState<PreparationClarificationNotification[]>([])
+  const [clarificationErrors, setClarificationErrors] = useState<Record<string, string>>({})
+  const [clarificationNavigatingId, setClarificationNavigatingId] = useState<string | null>(null)
   const setKanbanAssistantOpen = (open: boolean): void => { setAssistantOpen(open); globalThis.localStorage?.setItem('voicechat.kanbanAssistantOpen', open ? '1' : '0') }
   const rememberWidgetAction = useCallback((kind: string, label: string, targetId?: string): void => {
     setWidgetActions((items) => appendWidgetAction(items, { kind, label, ...(targetId ? { targetId } : {}) }))
@@ -592,6 +597,59 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const authed = !session.authRequired || Boolean(session.currentUser)
+  const refreshClarificationNotifications = useCallback(async (): Promise<PreparationClarificationNotification[]> => {
+    if (!authed) { setClarificationNotifications([]); return [] }
+    const snapshot = await api['tasks:listPreparationNotifications']()
+    const visible = snapshot.filter((item) => item.dismissedAt == null)
+    setClarificationNotifications((previous) => [
+      ...visible,
+      ...previous.filter((item) => clarificationErrors[item.questionId] && !visible.some((next) => next.questionId === item.questionId))
+    ])
+    return snapshot
+  }, [api, authed, clarificationErrors])
+  useEffect(() => {
+    if (!authed) return
+    let active = true
+    const refresh = (): void => {
+      void refreshClarificationNotifications().catch(() => {
+        // Фоновая синхронизация не подменяет уже показанные уведомления ошибкой.
+      })
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 1500)
+    const onVisible = (): void => { if (active && document.visibilityState === 'visible') refresh() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => { active = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
+  }, [authed, refreshClarificationNotifications])
+
+  const dismissClarificationNotification = useCallback(async (notification: PreparationClarificationNotification): Promise<void> => {
+    try {
+      await api['tasks:dismissPreparationNotification']({ questionId: notification.questionId })
+      setClarificationNotifications((items) => items.filter((item) => item.questionId !== notification.questionId))
+      setClarificationErrors((errors) => { const next = { ...errors }; delete next[notification.questionId]; return next })
+    } catch (reason) {
+      setClarificationErrors((errors) => ({ ...errors, [notification.questionId]: reason instanceof Error ? reason.message : String(reason) }))
+    }
+  }, [api])
+
+  const openClarificationNotification = useCallback(async (notification: PreparationClarificationNotification): Promise<void> => {
+    setClarificationNavigatingId(notification.questionId)
+    setClarificationErrors((errors) => { const next = { ...errors }; delete next[notification.questionId]; return next })
+    try {
+      // Проверка перехода не применяет снимок до успеха: если вопрос исчез во
+      // время клика, карточка уведомления остаётся видимой вместе с ошибкой.
+      const snapshot = await api['tasks:listPreparationNotifications']()
+      const current = snapshot.find((item) => item.questionId === notification.questionId && item.dismissedAt == null)
+      if (!current) throw new Error('Вопрос уже неактуален или недоступен.')
+      setClarificationNotifications(snapshot.filter((item) => item.dismissedAt == null))
+      navigate(`/projects/${current.projectId}/task/${current.taskId}/preparation`)
+    } catch (reason) {
+      setClarificationNotifications((items) => items.some((item) => item.questionId === notification.questionId) ? items : [...items, notification])
+      setClarificationErrors((errors) => ({ ...errors, [notification.questionId]: reason instanceof Error ? reason.message : String(reason) }))
+    } finally {
+      setClarificationNavigatingId(null)
+    }
+  }, [api, navigate])
   // Состояние оболочки живёт в shellStore: выдвижной сайдбар на телефоне и
   // свёрнутый на десктопе (персист под прежним ключом `vc:sidebarCollapsed`).
   const sidebarOpen = shell.sidebarOpen
@@ -623,7 +681,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [compactChat, sidebarOpen])
-  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
+  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(chatRoute?.kind === 'context-item')
+  useEffect(() => {
+    if (chatRoute?.kind === 'context-item') setConversationSettingsOpen(true)
+  }, [chatRoute?.kind])
   const [taskProposal, setTaskProposal] = useState<{
     projectId: string
     messageId: string
@@ -742,7 +803,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       toggleMic: () => (voice.voice === 'listening' ? voiceActions.stopVoice() : voiceActions.startVoice()),
       stopOrCancel,
       toggleAutoSpeak: () => void settingsActions.updateSettings({ autoSpeak: !settingsState.settings.autoSpeak }),
-      toggleTheme: () => void settingsActions.updateSettings({ theme: settingsState.settings.theme === 'dark' ? 'light' : 'dark' }),
+      toggleTheme: () => void settingsActions.updateSettings({ theme: settingsState.settings.theme === 'light' ? 'dark' : 'light' }),
       openSettings: shellActions.openSettings,
       openBoard: (projectId) => navigate(`/projects/${projectId}`),
       openMachineConsole: (agentId) =>
@@ -1196,6 +1257,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         )
       })()}
       {!inReader && !inPlaywrightReader && <>
+      <NotificationContainer
+        notifications={clarificationNotifications}
+        navigatingId={clarificationNavigatingId}
+        errors={clarificationErrors}
+        onOpen={(notification) => void openClarificationNotification(notification)}
+        onDismiss={(notification) => void dismissClarificationNotification(notification)}
+      />
       <Sidebar
         open={sidebarOpen}
         onToggleCollapse={() => shellActions.setSidebarCollapsed(true)}
@@ -1766,7 +1834,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             if (!agent) return
             await operationsActions.setAgentPolicy(agentId, { ...agent.policy, skills: [...agent.policy.skills, skill] })
           }}
-          onClose={() => setConversationSettingsOpen(false)}
+          onClose={() => {
+            setConversationSettingsOpen(false)
+            if (chatRoute?.kind === 'context-item') navigate(`/chat/${activeConversation.id}`)
+          }}
         />
       )}
 

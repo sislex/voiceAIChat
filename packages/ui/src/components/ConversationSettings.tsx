@@ -66,7 +66,8 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
-  const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'context'>('general')
+  const contextRoutePrefix = `#/chat/${encodeURIComponent(conversation.id)}/context/`
+  const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'context'>(() => window.location.hash.startsWith(contextRoutePrefix) ? 'context' : 'general')
   const [execTarget, setExecTarget] = useState<string | null>(conversation.execTarget)
   const [workdir, setWorkdir] = useState<string | null>(conversation.workdir)
   const [skillNames, setSkillNames] = useState<string[]>(conversation.skillNames)
@@ -92,6 +93,19 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const [projectMachines, setProjectMachines] = useState<ProjectMachine[]>([])
   const [availableAgents, setAvailableAgents] = useState<AgentInfo[]>(agents)
   const [machineAccessLost, setMachineAccessLost] = useState(false)
+  useEffect(() => {
+    const syncContextRoute = (): void => {
+      if (window.location.hash.startsWith(contextRoutePrefix)) setActiveTab('context')
+    }
+    window.addEventListener('hashchange', syncContextRoute)
+    return () => window.removeEventListener('hashchange', syncContextRoute)
+  }, [contextRoutePrefix])
+  const selectTab = (tab: 'general' | 'llm' | 'context'): void => {
+    if (window.location.hash.startsWith(contextRoutePrefix)) {
+      window.location.hash = `/chat/${encodeURIComponent(conversation.id)}`
+    }
+    setActiveTab(tab)
+  }
   // Список машин выбранного проекта (для фильтра и подстановки папок).
   useEffect(() => {
     let alive = true
@@ -259,7 +273,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
       <SettingsPage
         ariaLabel="Разделы настроек чата"
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={selectTab}
         tabs={[{ id: 'general', label: 'Общее' }, { id: 'llm', label: 'LLM' }, { id: 'context', label: 'Контекст и инструкции' }]}
       />
       <main className={`convsettings-body convsettings-tab-${activeTab}`}>

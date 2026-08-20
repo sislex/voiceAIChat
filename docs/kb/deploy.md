@@ -1,6 +1,6 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-08-18
+updated: 2026-08-20
 checked: 48e5f7d
 areas:
   - Dockerfile
@@ -96,6 +96,11 @@ areas:
 или выключает распознавание речи (см. `stt-tts.md`). При `1g` доступна модель
 `small` и TTS; для `small+medium` нужно `1536m`, для `large-v3-turbo` — 2 ГБ+.
 Меняешь `mem_limit` — знай, что меняешь набор возможностей приложения.
+
+Production-хост имеет 2 CPU, поэтому лимит `cpus` любого сервиса в
+`docker-compose.yml` не должен превышать `2`. Большее значение Docker отклоняет
+при создании контейнера (`range of CPUs ... only 2 CPUs available`) ещё до
+запуска health check; для `stt-runner` установлен лимит `cpus: 2`.
 
 ## Переменные окружения
 

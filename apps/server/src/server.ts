@@ -2,7 +2,7 @@
 // чтобы тестировать через fastify.inject / ws-клиент.
 
 import { mkdirSync, existsSync, statSync, readdirSync, rmSync } from 'node:fs'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
@@ -47,12 +47,11 @@ import { PromptSuggester } from './prompt/suggester.js'
 // RemoteLlmClient по конфигу окружения.
 import { ClaudeCli, CodexCli, ensureCliProfile, getLoginStatus as getRunnerLoginStatus } from '@voicechat/llm-runner/cli'
 import type { LlmClient } from './claude/types.js'
-import { WhisperEngine } from './stt/whisperEngine.js'
-import { isModelPresent, listModels, modelPath } from './stt/models.js'
 import type { SttEngine } from './stt/types.js'
-import { StubDiarizationEngine } from './diarization/stubDiarization.js'
-import { downloadModel } from './stt/download.js'
+import type { SttClient } from './stt/client.js'
+import { RemoteSttClient } from './stt/remoteClient.js'
 import { ModelDownloadManager } from './stt/downloadManager.js'
+import { StubDiarizationEngine } from './diarization/stubDiarization.js'
 import { UploadStore, machineUploadDir, machineUploadPath } from './uploads.js'
 import type { UploadInfo } from '@voicechat/shared'
 import { RemoteTtsClient } from './tts/client/remoteTtsClient.js'
@@ -98,8 +97,10 @@ export interface BuildOptions {
   claude?: LlmClient
   /** Codex-клиент (для тестов — мок). По умолчанию — как claude, но kind='codex'. */
   codex?: LlmClient
-  /** STT-движок (для тестов — мок). По умолчанию WhisperEngine из config. */
+  /** Legacy fake engine нужен только существующим unit-тестам сессии. */
   sttEngine?: SttEngine
+  /** STT transport; production всегда использует RemoteSttClient. */
+  sttClient?: SttClient
   /** TTS-клиент (для тестов — FakeTtsClient). По умолчанию HTTP к TTS Runner. */
   ttsClient?: TtsClient
   /** Переопределение обработчиков WS (для тестов). Иначе — реальная сессия. */
@@ -396,51 +397,52 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = (): WhisperModel => db.getSettings('admin').whisperModel
 
+  const sttClient = opts.sttClient ?? (opts.config.sttRunnerUrl && opts.config.sttRunnerToken
+    ? new RemoteSttClient({ baseUrl: opts.config.sttRunnerUrl, token: opts.config.sttRunnerToken, connectTimeoutMs: opts.config.sttRunnerConnectTimeoutMs })
+    : undefined)
+  let sttRunnerHealthy = Boolean(opts.sttEngine)
+  let runnerModels: import('@voicechat/shared').WhisperModelInfo[] = []
+  const refreshSttHealth = async () => {
+    if (!sttClient) { sttRunnerHealthy = Boolean(opts.sttEngine); return }
+    try {
+      const health = await sttClient.health()
+      sttRunnerHealthy = health.ok && health.whisper.available
+      runnerModels = health.models
+    } catch { sttRunnerHealthy = false; runnerModels = [] }
+  }
+  await refreshSttHealth()
+  const sttHealthTimer = setInterval(() => void refreshSttHealth(), 10_000)
+  app.addHook('onClose', async () => clearInterval(sttHealthTimer))
+
   app.get(REST.sttStatus, async (): Promise<SttStatus> => {
+    await refreshSttHealth()
     const model = machineWhisperModel()
-    return { present: isModelPresent(opts.config.modelsDir, model, { existsSync, statSync }), model }
+    return { present: sttRunnerHealthy && runnerModels.some((item) => item.model === model && item.present), model }
   })
 
-  // Ресурсы контейнера считаем один раз при старте (лимит cgroup стабилен). На их
-  // основе — возможности STT/TTS: при нехватке памяти функции блокируются и в
-  // настройках (UI), и жёстко в WS-сессии (см. createSession). Порог STT зависит
-  // от выбранной модели Whisper, поэтому пересчитываем на каждый вызов (дёшево).
   const resources = detectResources()
   const capabilities = (): SystemCapabilities => {
-    const value = computeCapabilities(resources, machineWhisperModel(), undefined, {
-      stt: opts.config.minMemSttBytes,
-      tts: opts.config.minMemTtsBytes
-    })
+    const value = computeCapabilities(resources, machineWhisperModel(), undefined, { stt: opts.config.minMemSttBytes, tts: opts.config.minMemTtsBytes })
+    if (!sttRunnerHealthy) value.stt = { available: false, reason: 'Сервис распознавания речи недоступен' }
+    else if (sttClient && !runnerModels.some((item) => item.model === machineWhisperModel() && item.present)) value.stt = { available: false, reason: 'Модель распознавания речи не установлена' }
     if (!opts.ttsClient && (!opts.config.ttsRunnerUrl || !opts.config.ttsRunnerToken)) {
       value.tts = { available: false, reason: 'Нет доступного сервиса озвучки: TTS Runner не настроен' }
     }
     return value
   }
-  app.get(REST.systemCapabilities, async (): Promise<SystemCapabilities> => capabilities())
+  app.get(REST.systemCapabilities, async (): Promise<SystemCapabilities> => { await refreshSttHealth(); return capabilities() })
 
-  // Управление местом: список моделей с размером и удаление файлов.
-  app.get(REST.sttModels, async () => listModels(opts.config.modelsDir, { existsSync, statSync }))
+  app.get(REST.sttModels, async () => sttClient ? sttClient.models() : import('@voicechat/shared').then(({ WHISPER_MODELS }) => WHISPER_MODELS.map((model) => ({ model, present: false, sizeBytes: 0 }))))
   app.delete<{ Params: { model: WhisperModel } }>('/api/stt/models/:model', async (req) => {
-    const path = modelPath(opts.config.modelsDir, req.params.model)
-    rmSync(path, { force: true })
-    rmSync(`${path}.part`, { force: true }) // и недокачанный остаток
+    if (!sttClient) return { ok: true }
+    await sttClient.deleteModel(req.params.model)
+    await refreshSttHealth()
     return { ok: true }
   })
-  const sttEngine =
-    opts.sttEngine ??
-    new WhisperEngine({
-      whisperCli: opts.config.whisperCli,
-      modelsDir: opts.config.modelsDir,
-      getModel: () => machineWhisperModel()
-    })
+  const sttEngine = opts.sttEngine
+  const modelDownload = sttClient ? new ModelDownloadManager((onProgress) => sttClient.downloadModel(machineWhisperModel(), onProgress)) : undefined
   const ttsClient = opts.ttsClient ?? new RemoteTtsClient({ baseUrl: opts.config.ttsRunnerUrl ?? 'http://127.0.0.1:8791', token: opts.config.ttsRunnerToken ?? '' })
   const diarization = new StubDiarizationEngine()
-
-  // Один менеджер загрузки модели на процесс: переживает переподключения клиентов,
-  // не рестартится при повторном клике, отдаёт текущий прогресс новым соединениям.
-  const modelDownload = new ModelDownloadManager((onProgress) =>
-    downloadModel(machineWhisperModel(), opts.config.modelsDir, onProgress)
-  )
 
   // Вложения разговора с выбранной машиной постоянно хранятся на ней. Сервер
   // только принимает байты запроса и пересылает агенту; без машины сохраняется
@@ -841,15 +843,69 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const model = taskPreparationModel(provider, allowedModel)
     const llmEngineId = selection?.llmEngineId ?? stageLlm.llmEngineId ?? null
     const client = provider === 'codex' ? codex : claude
+    const project = db.getProject(userId, projectId)
+    const configuredMachines = (project?.machines ?? []).filter((machine) => machine.canUse !== false && machine.path.trim())
+    const preferredAgentId = db.getUserProjectDefaultMachine(userId, projectId) ?? project?.defaultAgentId ?? null
+    const selectedMachine = configuredMachines.find((machine) => machine.agentId === preferredAgentId) ?? configuredMachines[0] ?? null
+    const projectMachines = db.listProjectMachines(projectId)
+    const kbToken = randomUUID()
+    const kbEnabled = opts.config.kbToolEnabled
+    if (kbEnabled) {
+      kbToolBroker.register(kbToken, {
+        userId,
+        conversationId: null,
+        projectId,
+        turnId: run.id,
+        coreReadOnly: true,
+        runtimeContext: {
+          projectName: project?.name,
+          projectGitUrl: project?.gitUrl ?? null,
+          llm: { provider, model, engineId: llmEngineId, source: 'project' }
+        }
+      })
+    }
+    let toolsClosed = false
+    const closePreparationTools = (): void => {
+      if (toolsClosed) return
+      toolsClosed = true
+      if (kbEnabled) kbToolBroker.unregister(kbToken)
+    }
+    const remote = selectedMachine ? {
+      remote: {
+        mcpUrl: `${remoteBashMcpBaseUrl}&agent=${encodeURIComponent(selectedMachine.agentId)}&cwd=${encodeURIComponent(selectedMachine.path)}&project=${encodeURIComponent(projectId)}`,
+        agentName: selectedMachine.name ?? selectedMachine.agentId,
+        projectMachines: projectMachines.filter((machine) => machine.agentId !== selectedMachine.agentId).map((machine) => machine.name)
+      }
+    } : { executionDisabled: true as const }
+    const kbFields = kbEnabled
+      ? { kbMcpUrl: `${kbMcpBaseUrl}&turn=${encodeURIComponent(kbToken)}`, kbMode: 'manual' as const }
+      : {}
+    const machineDiagnostic = selectedMachine
+      ? `Машина проекта: «${selectedMachine.name ?? selectedMachine.agentId}»; рабочая директория: ${selectedMachine.path}; статус: ${agentRegistry.isOnline(selectedMachine.agentId) ? 'online' : 'offline (инструменты вернут точную диагностику недоступности)'}.`
+      : 'Критичный источник недоступен: в конфигурации проекта нет доступной машины с рабочей директорией.'
     // Чем шла подготовка — первой строкой ленты: без этого причину падения CLI
     // приходится искать в коде подготовки.
     db.setTaskPreparationExecution(run.id, { llmEngineId, provider, model })
-    db.appendTaskPreparationLog(run.id, `[система] Движок: ${provider === 'codex' ? 'Codex' : 'Claude'}, модель: ${model}, CLI-профиль: ${userId}\n`)
+    db.appendTaskPreparationLog(run.id, `[система] Движок: ${provider === 'codex' ? 'Codex' : 'Claude'}, модель: ${model}, CLI-профиль: ${userId}\n[система] ${machineDiagnostic}\n`)
     const answeredContext = (run.questions ?? []).filter((question) => question.answer).map((question) => `Вопрос ${question.questionId}: ${question.text}\\nОтвет: ${question.answer}`).join('\\n')
-    const basePrompt = `Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. Не заменяй строки массивами или объектами. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+    const researchDirective = `Начни с базы знаний проекта, затем сверяй её с кодом; инструменты подготовки работают только на чтение.
+
+Перед формированием DevelopmentReadiness обязательно выполни контролируемое исследование:
+1. Сначала найди тему через mcp__kb__search и прочитай подходящий существующий раздел через mcp__kb__document.
+2. Затем через read-only remote-инструменты найди релевантные файлы внутри настроенной рабочей директории проекта и прочитай фактические API-контракты, общие типы, клиентские компоненты и тесты. Код — источник истины при расхождении с БЗ.
+3. Не вызывай edit, deploy, package managers, сборки, тесты и любые команды, меняющие файлы, процессы, данные или окружение. Разрешены read/grep/machines и bash только для ls/find/git status/log/diff.
+4. Бюджет исследования: не более 12 вызовов инструментов суммарно, не более 8 файлов, не более 24 000 символов полезных выдержек; один вызов — не дольше 120 секунд. Исследуй только рабочую директорию проекта и docs/kb.
+5. В sources перечисли только фактически прочитанные источники, с точным refs и status available|absent|unavailable. Конкретную причину недоступности запиши в summary. Подтверждённое расхождение БЗ и кода запиши как закрытое решение в decisions (contradictions оставь только для неразрешённых противоречий) и опирайся на код.
+6. Не спрашивай доступ к машине или репозиторию: они определены конфигурацией ниже. Вопрос допустим только после исследования, если критичный источник реально недоступен, требования существенно противоречат друг другу либо нужно продуктовое решение.
+7. Если БЗ неполна, не изменяй её сейчас: зафиксируй подтверждённый пробел в финальном блоке kb-gaps для последующего безопасного этапа актуализации.
+
+${machineDiagnostic}`
+    const basePrompt = `${researchDirective}
+
+Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. Не заменяй строки массивами или объектами. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
     const sendAttempt = (attempt: number, correction?: string): void => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
-      const handle = client.send({ userId, prompt, sessionId: null, model, executionDisabled: true }, {
+      const handle = client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, ...remote, ...kbFields }, {
         onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); boardHub.emit(projectId) },
         onSession: () => {},
         onDone: (text) => {
@@ -860,6 +916,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             if (typeof candidate.question === 'string' && candidate.question.trim()) {
               const question = db.createTaskPreparationQuestion(run.id, candidate.question, candidate.material !== false)
               if (!question) throw new Error('Не удалось сохранить уточняющий вопрос')
+              closePreparationTools()
               boardHub.emit(projectId)
               return
             }
@@ -872,6 +929,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             const gate = canConfirmDevelopmentReadiness(readiness)
             if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
             db.completeTaskPreparationRun(userId, run.id, readiness)
+            closePreparationTools()
             boardHub.emit(projectId)
           } catch (error) {
             const message = redactPreparationText(error instanceof Error ? error.message : String(error))
@@ -885,6 +943,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
                 const results = readiness ? developmentReadinessGateResults(readiness) : []
                 db.blockTaskPreparationRun(run.id, message, results.flatMap((item) => item.status === 'fail' ? item.refs : []), results)
               } else db.failTaskPreparationRun(run.id, message)
+              closePreparationTools()
               boardHub.emit(projectId)
             }
           }
@@ -893,15 +952,24 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           taskPreparationHandles.delete(run.id)
           if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
           if (attempt < 2) sendAttempt(attempt + 1, message)
-          else { db.failTaskPreparationRun(run.id, taskPreparationFailure(provider, userId, message)); boardHub.emit(projectId) }
+          else { db.failTaskPreparationRun(run.id, taskPreparationFailure(provider, userId, message)); closePreparationTools(); boardHub.emit(projectId) }
         }
       })
-      if (handle) taskPreparationHandles.set(run.id, handle)
+      if (handle) taskPreparationHandles.set(run.id, { cancel: () => { closePreparationTools(); handle.cancel() } })
     }
     sendAttempt(1)
     boardHub.emit(projectId)
     return run
   }
+
+  app.get('/api/task-preparation/notifications', async (req) =>
+    db.listTaskPreparationNotifications(uid(req))
+  )
+  app.post<{ Params: { questionId: string } }>('/api/task-preparation/notifications/:questionId/dismiss', async (req, reply) => {
+    const dismissed = db.dismissTaskPreparationNotification(uid(req), req.params.questionId)
+    if (!dismissed) return reply.code(404).send({ error: 'not found' })
+    return { dismissed: true }
+  })
 
   app.post<{ Params: { id: string; taskId: string }; Body: Partial<import('@voicechat/shared').TaskPreparationLlmSelection> }>('/api/projects/:id/tasks/:taskId/preparation/run', async (req, reply) => {
     const selection = req.body?.provider && typeof req.body.model === 'string' ? { llmEngineId: req.body.llmEngineId ?? null, provider: req.body.provider, model: req.body.model } : undefined
@@ -1075,6 +1143,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       turns: turnManager,
       user,
       sttEngine,
+      sttClient,
+      getWhisperModel: machineWhisperModel,
       ttsClient,
       diarization,
       capabilities,

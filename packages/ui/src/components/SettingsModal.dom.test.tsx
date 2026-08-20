@@ -118,6 +118,21 @@ describe('SettingsModal — модели Codex', () => {
   })
 })
 
+describe('SettingsModal — тема интерфейса', () => {
+  it('показывает зелёную тему и сохраняет её выбор', async () => {
+    const onChange = vi.fn()
+    renderModal('admin', { onChange })
+    await userEvent.click(screen.getByRole('button', { name: 'Интерфейс' }))
+
+    const select = screen.getByLabelText('Тема интерфейса')
+    expect(within(select).getAllByRole('option').map((option) => (option as HTMLOptionElement).value))
+      .toEqual(['light', 'dark', 'green'])
+
+    await userEvent.selectOptions(select, 'green')
+    expect(onChange).toHaveBeenCalledWith({ theme: 'green' })
+  })
+})
+
 describe('SettingsModal — машины вынесены отдельно', () => {
   it('не показывает управление машинами в настройках', () => {
     renderModal('admin')
