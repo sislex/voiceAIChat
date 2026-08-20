@@ -83,6 +83,44 @@ export const WithAttachments: Story = {
   }
 }
 
+const queuedTurns = Array.from({ length: 5 }, (_, index) => ({
+  id: `queue-${index + 1}`,
+  conversationId: 'storybook-chat',
+  messageId: `message-${index + 1}`,
+  text: index === 1 ? 'Очень длинное ожидающее сообщение, проверяющее перенос текста и доступность действий при увеличенном размере шрифта.' : `Ожидающее сообщение ${index + 1}`,
+  attachments: index === 0 ? ['image-upload', 'document-upload'] : [],
+  ...(index === 0 ? { attachmentDetails: [
+    { uploadId: 'image-upload', path: '/fixtures/image.png', name: 'image.png', mimeType: 'image/png', size: 1024 },
+    { uploadId: 'document-upload', path: '/fixtures/document.pdf', name: 'document.pdf', mimeType: 'application/pdf', size: 2048 }
+  ] } : {}),
+  position: index + 1,
+  status: 'queued' as const,
+  createdAt: index + 1
+}))
+
+/** Свёрнутая очередь показывает первые три элемента и счётчик остальных. */
+export const MessageQueue: Story = {
+  args: {
+    state: 'thinking',
+    queuedTurns,
+    onEditQueued: fn(),
+    onDeleteQueued: fn(),
+    onSendQueuedNow: fn()
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getAllByTestId('turn-queue-item')).toHaveLength(3)
+    await userEvent.click(canvas.getByRole('button', { name: 'Показать ещё 2' }))
+    await expect(canvas.getAllByTestId('turn-queue-item')).toHaveLength(5)
+    await userEvent.click(canvas.getByRole('button', { name: 'Отправить сейчас сообщение № 5' }))
+  }
+}
+
+/** Ошибка текущего хода оставляет ожидающие элементы на явной паузе. */
+export const MessageQueuePausedAfterError: Story = {
+  args: { ...MessageQueue.args, queuePaused: true, requestError: 'Движок недоступен' }
+}
+
 /**
  * Свёрнутый композер — то, с чего чат открывается: поле убрано в строку, в ней
  * черновик (иначе вложения или состояние хода). Так под ленту сообщений
