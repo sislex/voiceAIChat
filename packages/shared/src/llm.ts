@@ -16,6 +16,13 @@ export interface LlmAttachment {
   runnerName: string
   /** Содержимое файла в base64. */
   dataBase64: string
+  /**
+   * Не подменять serverPath в prompt путём временной копии исполнителя.
+   * Используется для файлов, чей авторитетный путь существует на выбранной машине:
+   * модель должна передавать его remote-инструментам, а runner-копия остаётся
+   * дополнительным визуальным входом CLI.
+   */
+  preserveServerPath?: boolean
 }
 
 export interface LlmRequest {

@@ -166,8 +166,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'messages:delete': async ({ conversationId, messageId }) => {
       await req(REST.message(conversationId, messageId), { method: 'DELETE' })
     },
-    'uploads:add': ({ name, dataBase64, mimeType, agentId }) =>
-      req(REST.uploads, { method: 'POST', body: JSON.stringify({ name, dataBase64, ...(mimeType ? { mimeType } : {}), ...(agentId ? { agentId } : {}) }) }),
+    'uploads:add': ({ name, dataBase64, mimeType, agentId, conversationId }) =>
+      req(REST.uploads, { method: 'POST', body: JSON.stringify({ name, dataBase64, ...(mimeType ? { mimeType } : {}), ...(agentId ? { agentId } : {}), ...(conversationId ? { conversationId } : {}) }) }),
     'images:retouch': (body) => req(REST.imageRetouch, { method: 'POST', body: JSON.stringify(body) }),
     'settings:get': () => req(REST.settings),
     'llm:access': () => req(REST.meLlmAccess),
