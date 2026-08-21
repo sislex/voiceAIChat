@@ -54,6 +54,9 @@ import {
   type WorkItemType,
   type WorkItemDefaultSkills,
   type KanbanColumnSemanticType,
+  type MachineStorage,
+  type ChatStorageBinding,
+  validateStorageRelativePath,
 
   estimateKbTokens,
   type KbDocumentKind,
@@ -2061,6 +2064,72 @@ export class VoiceChatDb {
       }
     })()
     return { conversationsImported, messagesImported }
+  }
+
+  // ---- Machine storage -----------------------------------------------------
+
+  listMachineStorages(userId: string, machineId?: string): MachineStorage[] {
+    const rows = this.db.prepare(
+      `SELECT s.id, s.machine_id, s.root_path, s.format_version
+       FROM machine_storages s JOIN agents a ON a.id = s.machine_id
+       WHERE a.user_id = ? AND (? IS NULL OR s.machine_id = ?)
+       ORDER BY s.created_at ASC`
+    ).all(userId, machineId ?? null, machineId ?? null) as Array<{ id: string; machine_id: string; root_path: string; format_version: number }>
+    return rows.map((row) => ({
+      id: row.id,
+      machineId: row.machine_id,
+      rootPath: row.root_path,
+      formatVersion: row.format_version,
+      status: 'ready'
+    }))
+  }
+
+  saveMachineStorage(userId: string, machineId: string, rootPath: string, formatVersion: number): MachineStorage {
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(machineId, userId)) {
+      throw new Error('Машина не найдена')
+    }
+    const normalized = rootPath.trim().replace(/[\\/]+$/, '')
+    if (!normalized) throw new Error('rootPath required')
+    const existing = this.db.prepare(
+      `SELECT id FROM machine_storages WHERE machine_id = ? AND root_path = ?`
+    ).get(machineId, normalized) as { id: string } | undefined
+    const id = existing?.id ?? this.newId()
+    const now = this.now()
+    this.db.prepare(
+      `INSERT INTO machine_storages (id,machine_id,root_path,format_version,created_at,updated_at)
+       VALUES (?,?,?,?,?,?)
+       ON CONFLICT(machine_id,root_path) DO UPDATE SET format_version=excluded.format_version,updated_at=excluded.updated_at`
+    ).run(id, machineId, normalized, formatVersion, now, now)
+    return { id, machineId, rootPath: normalized, formatVersion, status: 'ready' }
+  }
+
+  getChatStorageBinding(userId: string, conversationId: string): ChatStorageBinding | null {
+    if (!this.ownsConversation(userId, conversationId)) return null
+    const row = this.db.prepare(
+      `SELECT conversation_id,machine_id,storage_id,relative_path FROM chat_storage_bindings WHERE conversation_id=?`
+    ).get(conversationId) as { conversation_id: string; machine_id: string; storage_id: string; relative_path: string } | undefined
+    return row ? {
+      conversationId: row.conversation_id,
+      machineId: row.machine_id,
+      storageId: row.storage_id,
+      relativePath: row.relative_path
+    } : null
+  }
+
+  saveChatStorageBinding(userId: string, binding: ChatStorageBinding): ChatStorageBinding {
+    if (!this.ownsConversation(userId, binding.conversationId)) throw new Error('Чат не найден')
+    const storage = this.db.prepare(
+      `SELECT s.machine_id FROM machine_storages s JOIN agents a ON a.id=s.machine_id
+       WHERE s.id=? AND a.user_id=?`
+    ).get(binding.storageId, userId) as { machine_id: string } | undefined
+    if (!storage || storage.machine_id !== binding.machineId) throw new Error('Хранилище не найдено')
+    const relativePath = validateStorageRelativePath(binding.relativePath)
+    this.db.prepare(
+      `INSERT INTO chat_storage_bindings (conversation_id,machine_id,storage_id,relative_path,updated_at)
+       VALUES (?,?,?,?,?)
+       ON CONFLICT(conversation_id) DO UPDATE SET machine_id=excluded.machine_id,storage_id=excluded.storage_id,relative_path=excluded.relative_path,updated_at=excluded.updated_at`
+    ).run(binding.conversationId, binding.machineId, binding.storageId, relativePath, this.now())
+    return { ...binding, relativePath }
   }
 
   // ---- Agents (машины для удалённого выполнения команд) ------------------

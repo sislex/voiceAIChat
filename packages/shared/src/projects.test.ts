@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedTaskTestEnvironmentPath, validateStorageRelativePath } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -130,6 +130,21 @@ describe('ключ задачи', () => {
   it('строится из имени проекта и номера', () => {
     expect(projectKey('Voice Chat')).toBe('VC')
     expect(issueKey('Voice Chat', { seq: 42 })).toBe('VC-42')
+  })
+})
+
+describe('portable storage paths', () => {
+  it('builds isolated paths for all chat and environment contexts', () => {
+    expect(recommendedChatStoragePath({ kind: 'chat', conversationId: 'c-1' })).toBe('chats/c-1')
+    expect(recommendedChatStoragePath({ kind: 'project', projectId: 'p-1', conversationId: 'c-1' })).toBe('projects/p-1/chats/c-1')
+    expect(recommendedChatStoragePath({ kind: 'task', projectId: 'p-1', taskId: 't-1', conversationId: 'c-1' })).toBe('projects/p-1/tasks/t-1/chats/c-1')
+    expect(recommendedEnvironmentPath('p-1', 'production')).toBe('projects/p-1/environments/production')
+    expect(recommendedTaskTestEnvironmentPath('p-1', 't-1')).toBe('projects/p-1/tasks/t-1/environments/test')
+  })
+
+  it('rejects absolute paths and traversal', () => {
+    expect(() => validateStorageRelativePath('/etc/passwd')).toThrow()
+    expect(() => validateStorageRelativePath('chats/../secret')).toThrow()
   })
 })
 

@@ -1,3 +1,55 @@
+export const MACHINE_STORAGE_FORMAT_VERSION = 1
+
+export type MachineStorageStatus = 'ready' | 'offline' | 'unavailable'
+
+export interface MachineStorage {
+  id: string
+  machineId: string
+  rootPath: string
+  status: MachineStorageStatus
+  formatVersion: number
+}
+
+export interface ChatStorageBinding {
+  conversationId: string
+  machineId: string
+  storageId: string
+  relativePath: string
+}
+
+export type StorageContext =
+  | { kind: 'chat'; conversationId: string }
+  | { kind: 'project'; projectId: string; conversationId: string }
+  | { kind: 'task'; projectId: string; taskId: string; conversationId: string }
+
+const SAFE_STORAGE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+export function validateStorageRelativePath(path: string): string {
+  if (/^(?:[\\/]|[A-Za-z]:[\\/])/.test(path)) throw new Error('relativePath must be relative')
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/g, '')
+  if (!normalized || normalized.split('/').some((part) => !SAFE_STORAGE_SEGMENT.test(part) || part === '.' || part === '..')) {
+    throw new Error('relativePath must contain only safe relative path segments')
+  }
+  return normalized
+}
+
+export function recommendedChatStoragePath(context: StorageContext): string {
+  const conversationId = validateStorageRelativePath(context.conversationId)
+  if (context.kind === 'chat') return `chats/${conversationId}`
+  const projectId = validateStorageRelativePath(context.projectId)
+  if (context.kind === 'project') return `projects/${projectId}/chats/${conversationId}`
+  const taskId = validateStorageRelativePath(context.taskId)
+  return `projects/${projectId}/tasks/${taskId}/chats/${conversationId}`
+}
+
+export function recommendedEnvironmentPath(projectId: string, kind: 'production' | 'staging'): string {
+  return `projects/${validateStorageRelativePath(projectId)}/environments/${kind}`
+}
+
+export function recommendedTaskTestEnvironmentPath(projectId: string, taskId: string): string {
+  return `projects/${validateStorageRelativePath(projectId)}/tasks/${validateStorageRelativePath(taskId)}/environments/test`
+}
+
 import type { CiRunSummary, CiReuseStrategy, CiStatus, CiRunMode } from './ci'
 import type { KbContextMode } from './types'
 
