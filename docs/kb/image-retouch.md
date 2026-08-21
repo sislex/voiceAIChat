@@ -1,7 +1,7 @@
 ---
 title: Локальная AI-ретушь изображений
-updated: 2026-08-19
-checked: e76af0f2
+updated: 2026-08-21
+checked: 36299c05
 areas:
   - packages/shared/src/imageRetouch.ts
   - packages/shared/src/types.ts
@@ -34,8 +34,11 @@ desktop использует тот же `images:retouch` из `IpcInvokeMap`.
 
 `POST /api/images/retouch` принимает только источник и референсы, уже
 принадлежащие текущему разговору либо зарегистрированные в `UploadStore`.
-Вложения без `agentId` читаются из runner/server storage с ограниченными
-корнями, а удалённые — через файловый API указанной доступной машины.
+Редактор загружает новые референсы через `uploads:add` с `conversationId`: если
+явный `agentId` не передан, сервер разрешает машину разговора и сохраняет файл в
+её `.voicechat_uploads`, поэтому оригинал и все референсы читаются с корректной
+машины-источника. Вложения без `agentId` читаются из runner/server storage с
+ограниченными корнями, а удалённые — через файловый API указанной доступной машины.
 
 `apps/server/src/imageRetouch.ts` декодирует оригинал через Sharp, валидирует
 геометрию и извлекает минимальный bounding crop. Генератор получает только этот
