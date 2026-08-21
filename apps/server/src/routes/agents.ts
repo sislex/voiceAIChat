@@ -6,6 +6,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
   REST,
   AGENT_VERSION,
+  MACHINE_STORAGE_FORMAT_VERSION,
+  recommendedChatStoragePath,
   agentOsFromPlatform,
   installCommand,
   installScriptUrl,
@@ -69,6 +71,90 @@ export async function registerAgentRoutes(
 
   app.get(REST.agents, async (req): Promise<AgentInfo[]> =>
     withLiveStatus(db.listAgents(uid(req)))
+  )
+
+  app.get<{ Params: { id: string } }>('/api/agents/:id/storages', async (req, reply) => {
+    const userId = uid(req)
+    if (!db.listAgents(userId).some((agent) => agent.id === req.params.id)) {
+      return reply.code(404).send({ error: 'not found' })
+    }
+    return db.listMachineStorages(userId, req.params.id).map((storage) => ({
+      ...storage,
+      status: registry.isOnline(storage.machineId) ? 'ready' as const : 'offline' as const
+    }))
+  })
+
+  app.post<{ Params: { id: string }; Body: { rootPath?: string } }>(
+    '/api/agents/:id/storages',
+    async (req, reply) => {
+      const userId = uid(req)
+      const machineId = req.params.id
+      const rootPath = req.body?.rootPath?.trim().replace(/[\\/]+$/, '')
+      if (!rootPath) return reply.code(400).send({ error: 'rootPath required' })
+      if (!db.listAgents(userId).some((agent) => agent.id === machineId)) {
+        return reply.code(404).send({ error: 'not found' })
+      }
+      if (!registry.isOnline(machineId)) {
+        return reply.code(409).send({ error: 'Машина не в сети' })
+      }
+      const storage = db.saveMachineStorage(userId, machineId, rootPath, MACHINE_STORAGE_FORMAT_VERSION)
+      const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
+      const child = (name: string): string => `${rootPath}${separator}${name.replace(/\//g, separator)}`
+      try {
+        for (const directory of [
+          rootPath,
+          child('.voicechat'),
+          child('.voicechat/index'),
+          child('.voicechat/locks'),
+          child('.voicechat/migrations'),
+          child('.voicechat/temporary')
+        ]) await registry.fsMkdir(machineId, directory)
+        const marker = JSON.stringify({
+          id: storage.id,
+          formatVersion: storage.formatVersion
+        }, null, 2) + '\n'
+        await registry.fsWrite(machineId, child('.voicechat/storage.json'), Buffer.from(marker).toString('base64'))
+        return storage
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
+      }
+    }
+  )
+
+  app.get<{ Params: { id: string } }>('/api/conversations/:id/storage', async (req, reply) => {
+    const binding = db.getChatStorageBinding(uid(req), req.params.id)
+    if (!binding) return reply.code(404).send({ error: 'not found' })
+    return binding
+  })
+
+  app.put<{ Params: { id: string }; Body: { machineId?: string; storageId?: string; relativePath?: string } }>(
+    '/api/conversations/:id/storage',
+    async (req, reply) => {
+      const userId = uid(req)
+      const conversation = db.getConversation(userId, req.params.id)
+      if (!conversation) return reply.code(404).send({ error: 'not found' })
+      const machineId = req.body?.machineId
+      const storageId = req.body?.storageId
+      let relativePath = req.body?.relativePath
+      if (!machineId || !storageId) return reply.code(400).send({ error: 'machineId and storageId required' })
+      if (!relativePath) {
+        relativePath = conversation.taskId && conversation.projectId
+          ? recommendedChatStoragePath({ kind: 'task', projectId: conversation.projectId, taskId: conversation.taskId, conversationId: conversation.id })
+          : conversation.projectId
+            ? recommendedChatStoragePath({ kind: 'project', projectId: conversation.projectId, conversationId: conversation.id })
+            : recommendedChatStoragePath({ kind: 'chat', conversationId: conversation.id })
+      }
+      try {
+        return db.saveChatStorageBinding(userId, {
+          conversationId: conversation.id,
+          machineId,
+          storageId,
+          relativePath
+        })
+      } catch (error) {
+        return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
+      }
+    }
   )
 
   app.get<{ Params: { id: string }; Querystring: { projectId?: string } }>(

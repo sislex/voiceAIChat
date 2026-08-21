@@ -146,6 +146,28 @@ CREATE TABLE IF NOT EXISTS agents (
   user_id    TEXT
 );
 
+CREATE TABLE IF NOT EXISTS machine_storages (
+  id             TEXT PRIMARY KEY,
+  machine_id     TEXT NOT NULL,
+  root_path      TEXT NOT NULL,
+  format_version INTEGER NOT NULL,
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL,
+  UNIQUE(machine_id, root_path),
+  FOREIGN KEY (machine_id) REFERENCES agents(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS chat_storage_bindings (
+  conversation_id TEXT PRIMARY KEY,
+  machine_id      TEXT NOT NULL,
+  storage_id      TEXT NOT NULL,
+  relative_path   TEXT NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+  FOREIGN KEY (machine_id) REFERENCES agents(id) ON DELETE RESTRICT,
+  FOREIGN KEY (storage_id) REFERENCES machine_storages(id) ON DELETE RESTRICT
+);
+
 CREATE TABLE IF NOT EXISTS users (
   name          TEXT PRIMARY KEY,
   password_hash TEXT NOT NULL,
