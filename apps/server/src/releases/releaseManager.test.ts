@@ -216,7 +216,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     db.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.0',sha:'fixed-sha',status:'ready'})
     await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/0.1.35')).rejects.toThrow('Версия подготовки 0.1.0 не соответствует ветке release/0.1.35 (0.1.35)')
     expect(commands).toEqual([])
-    const list=db.listProjectReleases('owner',projectId)
+    const list=db.listProjectReleaseSummaries('owner',projectId)
     expect(list).toHaveLength(1)
     expect(list[0]).toEqual(expect.objectContaining({id:expect.any(String),branch:'release/0.1.35',sha:'fixed-sha',status:'ready',previousReleaseId:null,durationMs:null}))
     expect(list[0]).not.toHaveProperty('steps')
