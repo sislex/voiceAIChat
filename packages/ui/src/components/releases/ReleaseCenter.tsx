@@ -3,9 +3,9 @@ import { compareReleaseBranches, DEFAULT_RELEASE_TIMEOUTS, releaseFailureSummary
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
 import { loadView, type LoadStatus } from '../../lib/loadState'
-import { EmptyState } from '@voicechat/ui-kit'
-import { ErrorState } from '@voicechat/ui-kit'
-import { RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
+import { EmptyState } from '../ui/EmptyState'
+import { ErrorState } from '../ui/ErrorState'
+import { RefreshIndicator, Skeleton } from '../ui/Skeleton'
 
 interface Props { projectId:string; baseBranch:string; owner:boolean; machines?:ProjectMachine[]; agents?:AgentInfo[]; agentsStatus?:LoadStatus; agentsError?:string|null; defaultAgentId?:string|null; releaseTimeouts?:ReleaseTimeouts; api?:RendererApi }
 type Tab='releases'|'deploy'
@@ -18,7 +18,6 @@ const duration=(release:ProjectRelease):number|null=>{
   if(!starts.length)return null
   return (finishes.length?Math.max(...finishes):Date.now())-Math.min(...starts)
 }
-const summaryDuration=(release:ProjectReleaseSummary):number|null=>release.durationMs
 const fmtDuration=(ms:number|null):string=>{
   if(ms==null)return '—'
   const seconds=Math.max(0,Math.round(ms/1000))
@@ -65,11 +64,10 @@ export function ReleaseCenter({projectId,baseBranch,owner,machines=[],agents=[],
   const [releaseItems,setReleaseItems]=useState<ProjectReleaseSummary[]>([])
   const [deploymentItems,setDeploymentItems]=useState<ProjectReleaseSummary[]>([])
   const [releaseStatus,setReleaseStatus]=useState<LoadStatus>('idle')
-  const [deploymentStatus,setDeploymentStatus]=useState<LoadStatus>('idle')
   const [releaseError,setReleaseError]=useState('')
   const [deploymentError,setDeploymentError]=useState('')
   const [detail,setDetail]=useState<ProjectRelease|null>(null)
-  const [detailId,setDetailId]=useState<string|null>(null)
+  const [detailReleaseId,setDetailReleaseId]=useState('')
   const [detailStatus,setDetailStatus]=useState<LoadStatus>('idle')
   const [detailError,setDetailError]=useState('')
   const detailRequest=useRef(0)
@@ -99,45 +97,44 @@ export function ReleaseCenter({projectId,baseBranch,owner,machines=[],agents=[],
   const [timeouts,setTimeouts]=useState(releaseTimeouts)
   const refreshReleases=useCallback(async()=>{
     setReleaseStatus('loading')
-    try{const next=await api['releases:list']({projectId});setReleaseItems(next.filter(item=>!item.previousReleaseId));setReleaseError('');setReleaseStatus('ready')}
-    catch(reason){setReleaseError(reason instanceof Error?reason.message:String(reason));setReleaseStatus('error')}
-  },[api,projectId])
-  const refreshDeployments=useCallback(async()=>{
-    setDeploymentStatus('loading')
     try{
-      const [nextBranches,next]=await Promise.all([api['releases:branches']({projectId}),api['releases:list']({projectId})])
-      const nextDeployments=next.filter(item=>item.previousReleaseId)
-      const deployable=nextBranches.filter(branch=>next.some(item=>item.branch===branch.branch&&item.status==='ready'))
-      setBranches(nextBranches);setDeploymentItems(nextDeployments);setSelected(current=>deployable.some(item=>item.branch===current)?current:(deployable[0]?.branch??''));setDeploymentError('');setDeploymentStatus('ready')
-    }catch(reason){setDeploymentError(reason instanceof Error?reason.message:String(reason));setDeploymentStatus('error')}
+      const next=await api['releases:list']({projectId})
+      setReleaseItems(next.filter(item=>!item.previousReleaseId));setDeploymentItems(next.filter(item=>item.previousReleaseId));setReleaseError('');setReleaseStatus('ready')
+    }catch(reason){setReleaseError(reason instanceof Error?reason.message:String(reason));setReleaseStatus('error')}
   },[api,projectId])
-  const refresh=useCallback(async()=>{await Promise.all([refreshReleases(),refreshDeployments()])},[refreshDeployments,refreshReleases])
+  const refreshBranches=useCallback(async()=>{
+    try{
+      const next=await api['releases:branches']({projectId})
+      setBranches(next);setDeploymentError('')
+    }catch(reason){setDeploymentError(reason instanceof Error?reason.message:String(reason))}
+  },[api,projectId])
+  const refresh=useCallback(async()=>{await Promise.all([refreshReleases(),refreshBranches()])},[refreshBranches,refreshReleases])
   useEffect(()=>{void refresh()},[refresh])
   const openDetail=useCallback(async(releaseId:string)=>{
     const request=++detailRequest.current
-    setDetailId(releaseId);setDetail(null);setDetailError('');setDetailStatus('loading')
+    setDetailReleaseId(releaseId);setDetail(null);setDetailError('');setDetailStatus('loading')
     try{
       const next=await api['releases:get']({projectId,releaseId})
       if(request!==detailRequest.current)return
       if(!next)throw new Error('Релиз не найден')
       setDetail(next);setDetailStatus('ready')
-    }catch(reason){
-      if(request!==detailRequest.current)return
-      setDetailError(reason instanceof Error?reason.message:String(reason));setDetailStatus('error')
-    }
+    }catch(reason){if(request===detailRequest.current){setDetailError(reason instanceof Error?reason.message:String(reason));setDetailStatus('error')}}
   },[api,projectId])
+  const closeDetail=useCallback(()=>{detailRequest.current+=1;setDetailReleaseId('');setDetail(null);setDetailError('');setDetailStatus('idle');void refresh()},[refresh])
   useEffect(()=>{
     if(!detail||terminal.has(detail.status))return
-    const update=async()=>{try{const next=await api['releases:get']({projectId,releaseId:detail.id});if(next)setDetail(current=>current?.id===next.id?next:current)}catch{}}
+    let cancelled=false
+    const update=async()=>{try{const next=await api['releases:get']({projectId,releaseId:detail.id});if(next&&!cancelled)setDetail(next)}catch{}}
     const id=window.setInterval(()=>void update(),2000)
-    return()=>window.clearInterval(id)
+    return()=>{cancelled=true;window.clearInterval(id)}
   },[api,projectId,detail])
   const releases=[...releaseItems,...deploymentItems]
   const preparations=releaseItems
   const deployments=deploymentItems
   const releaseView=loadView(releaseStatus,preparations.length>0)
-  const deploymentView=loadView(deploymentStatus,deployments.length>0)
+  const deploymentView=loadView(releaseStatus,deployments.length>0)
   const readyBranches=useMemo(()=>branches.filter(branch=>releaseItems.some(item=>item.branch===branch.branch&&item.status==='ready')),[branches,releaseItems])
+  useEffect(()=>setSelected(current=>readyBranches.some(item=>item.branch===current)?current:(readyBranches[0]?.branch??'')),[readyBranches])
   const prepared=releases.find(item=>item.branch===selected&&item.status==='ready')
   const current=deployments.find(item=>item.status==='released')
   const latestDeploy=deployments[0]
@@ -147,14 +144,12 @@ export function ReleaseCenter({projectId,baseBranch,owner,machines=[],agents=[],
       :`Будет выполнено обновление production с ${current.branch} на ${selected}.`
     :''
   const saveDefaultMachine=async(agentId:string):Promise<void>=>{const previous=selectedAgentId;setSelectedAgentId(agentId);setMachineSaving(true);setMachineSaveError('');try{if(!machines.some(machine=>machine.agentId===agentId))await api['projects:linkMachine']({id:projectId,agentId});await api['projects:setDefaultMachine']({id:projectId,agentId})}catch(reason){setSelectedAgentId(previous);setMachineSaveError(reason instanceof Error?reason.message:String(reason))}finally{setMachineSaving(false)}}
-  const showCreatedDetail=(release:ProjectRelease):void=>{detailRequest.current+=1;setDetailId(release.id);setDetail(release);setDetailError('');setDetailStatus('ready')}
-  const create=async():Promise<void>=>{setBusy(true);setError('');try{const release=await api['releases:createBranch']({projectId,branch:`release/${version}`,baseBranch});showCreatedDetail(release);setVersion('');await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
+  const create=async():Promise<void>=>{setBusy(true);setError('');try{const release=await api['releases:createBranch']({projectId,branch:`release/${version}`,baseBranch});detailRequest.current+=1;setDetailReleaseId(release.id);setDetail(release);setDetailStatus('ready');setVersion('');await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
   const saveSettings=async():Promise<void>=>{setBusy(true);setError('');try{await api['projects:update']({id:projectId,releaseTimeouts:timeouts});setSettingsOpen(false)}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
   const remove=async(release:ProjectReleaseSummary):Promise<void>=>{const typed=window.prompt(`Введите ${release.branch}, чтобы удалить ветку из origin`);if(typed!==release.branch)return;setBusy(true);try{await api['releases:delete']({projectId,releaseId:release.id,branch:release.branch});await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
-  const deploy=async():Promise<void>=>{setBusy(true);setError('');try{const release=await api['releases:deploy']({projectId,branch:selected});showCreatedDetail(release);await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
-  const closeDetail=():void=>{detailRequest.current+=1;setDetailId(null);setDetail(null);setDetailError('');setDetailStatus('idle');void refresh()}
-  if(detailStatus==='loading')return <section className="release-detail" aria-busy="true"><header><button className="vc-btn vc-btn--secondary" onClick={closeDetail}>← К списку</button><h2>Загрузка релиза…</h2></header><Skeleton variant="list" item="block" count={4} height={64}/></section>
-  if(detailStatus==='error')return <section className="release-detail"><header><button className="vc-btn vc-btn--secondary" onClick={closeDetail}>← К списку</button><h2>Не удалось загрузить релиз</h2></header><ErrorState message="Не удалось загрузить подробности релиза" detail={detailError} onRetry={detailId?()=>void openDetail(detailId):undefined}/></section>
+  const deploy=async():Promise<void>=>{setBusy(true);setError('');try{const release=await api['releases:deploy']({projectId,branch:selected});detailRequest.current+=1;setDetailReleaseId(release.id);setDetail(release);setDetailStatus('ready');await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
+  if(detailStatus==='loading')return <section className="release-detail" aria-busy="true"><button className="vc-btn vc-btn--secondary" onClick={closeDetail}>← К списку</button><RefreshIndicator label="Загружаем подробности релиза…"/><Skeleton variant="list" item="block" count={4} height={49}/></section>
+  if(detailStatus==='error')return <section className="release-detail"><button className="vc-btn vc-btn--secondary" onClick={closeDetail}>← К списку</button><ErrorState message="Не удалось загрузить подробности релиза" detail={detailError} onRetry={()=>void openDetail(detailReleaseId)}/></section>
   if(detail)return <ReleaseDetail release={detail} onBack={closeDetail}/>
   return <section className="release-center" aria-label="Релизы и деплой">
     <nav className="release-tabs" role="tablist" aria-label="Разделы релизов"><button role="tab" aria-selected={tab==='releases'} onClick={()=>setTab('releases')}>Релизы</button><button role="tab" aria-selected={tab==='deploy'} onClick={()=>setTab('deploy')}>Деплой</button></nav>
@@ -166,13 +161,14 @@ export function ReleaseCenter({projectId,baseBranch,owner,machines=[],agents=[],
       <header><div><h2>Релизы</h2><p>Подготовка и история сборок</p></div><span>{releaseView.refreshing&&<RefreshIndicator label="Обновляем релизы…"/>}<button className="vc-btn vc-btn--secondary" disabled={releaseStatus==='loading'} onClick={()=>void refreshReleases()}>Обновить</button></span></header>
       <div className="release-create"><label>Машина проекта по умолчанию<select aria-label="Машина проекта по умолчанию" value={selectedAgentId} disabled={!owner||machineSaving||agentsStatus==='loading'||availableMachines.length===0} onChange={event=>void saveDefaultMachine(event.target.value)}><option value="" disabled>{agentsStatus==='loading'?'Загрузка машин…':availableMachines.length===0?'Доступных машин нет':'Выберите машину'}</option>{selectedAgentId&&!availableMachines.some(machine=>machine.agentId===selectedAgentId)&&<option value={selectedAgentId}>Ранее выбранная машина · недоступна</option>}{availableMachines.map(machine=><option key={machine.agentId} value={machine.agentId}>{machine.name??machine.agentId} · {machine.online?'online':'offline'}{machines.some(item=>item.agentId===machine.agentId)?' · машина проекта':' · личная машина'}</option>)}</select></label>{machineSaving&&<RefreshIndicator label="Сохраняем выбор…"/>}{agentsStatus==='error'&&<ErrorState compact message="Не удалось загрузить машины" detail={agentsError}/>} {machineSaveError&&<ErrorState compact message="Не удалось сохранить машину по умолчанию" detail={machineSaveError}/>} {machineProblem&&<p role="alert">{machineProblem}</p>}<label>Новая версия <input value={version} placeholder="1.2.3" onChange={event=>setVersion(event.target.value)}/></label><button className="vc-btn vc-btn--primary" disabled={!owner||busy||machineSaving||Boolean(machineProblem)||!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)} onClick={()=>void create()}>Собрать новый релиз</button></div>
       {releaseView.staleError&&<ErrorState compact message="Не удалось обновить релизы" detail={releaseError} onRetry={()=>void refreshReleases()}/>}
-      <div className="release-table-wrap" aria-busy={releaseStatus==='loading'}>{releaseView.state==='skeleton'?<Skeleton variant="list" item="block" count={5} height={49}/>:releaseView.state==='error'?<ErrorState message="Не удалось загрузить релизы" detail={releaseError} onRetry={()=>void refreshReleases()}/>:releaseView.state==='empty'?<EmptyState title="Релизов пока нет" description="Соберите новый релиз — он появится в этом списке."/>:<table className="release-table"><thead><tr><th>Название</th><th>Дата</th><th>Время сборки</th><th>Статус</th><th>Действия</th></tr></thead><tbody>{preparations.map(release=><tr key={release.id} tabIndex={0} onClick={()=>void openDetail(release.id)} onKeyDown={event=>{if(event.key==='Enter')void openDetail(release.id)}}><td><strong>{release.branch}</strong><small>{release.sha.slice(0,12)}</small></td><td>{new Date(release.createdAt).toLocaleString()}</td><td>{fmtDuration(summaryDuration(release))}</td><td><span className="release-status" data-status={release.status}>{statusLabels[release.status]??release.status}</span></td><td>{owner&&['ready','failed'].includes(release.status)&&<button className="vc-btn vc-btn--secondary" onClick={event=>{event.stopPropagation();void remove(release)}}>Удалить</button>}</td></tr>)}</tbody></table>}</div>
+      <div className="release-table-wrap" aria-busy={releaseStatus==='loading'}>{releaseView.state==='skeleton'?<Skeleton variant="list" item="block" count={5} height={49}/>:releaseView.state==='error'?<ErrorState message="Не удалось загрузить релизы" detail={releaseError} onRetry={()=>void refreshReleases()}/>:releaseView.state==='empty'?<EmptyState title="Релизов пока нет" description="Соберите новый релиз — он появится в этом списке."/>:<table className="release-table"><thead><tr><th>Название</th><th>Дата</th><th>Время сборки</th><th>Статус</th><th>Действия</th></tr></thead><tbody>{preparations.map(release=><tr key={release.id} tabIndex={0} onClick={()=>void openDetail(release.id)} onKeyDown={event=>{if(event.key==='Enter')void openDetail(release.id)}}><td><strong>{release.branch}</strong><small>{release.sha.slice(0,12)}</small></td><td>{new Date(release.createdAt).toLocaleString()}</td><td>{fmtDuration(release.durationMs)}</td><td><span className="release-status" data-status={release.status}>{statusLabels[release.status]??release.status}</span></td><td>{owner&&['ready','failed'].includes(release.status)&&<button className="vc-btn vc-btn--secondary" onClick={event=>{event.stopPropagation();void remove(release)}}>Удалить</button>}</td></tr>)}</tbody></table>}</div>
     </div>:<div className="release-pane">
-      <header><div><h2>Деплой</h2><p>Публикация подготовленного релиза в production</p></div><span>{deploymentView.refreshing&&<RefreshIndicator label="Обновляем деплои…"/>}<button className="vc-btn vc-btn--secondary" disabled={deploymentStatus==='loading'} onClick={()=>void refreshDeployments()}>Обновить</button></span></header>
-      {latestDeploy&&<button className="release-last-deploy" onClick={()=>void openDetail(latestDeploy.id)}><span>Последний деплой</span><strong>{latestDeploy.branch}</strong><span>{statusLabels[latestDeploy.status]??latestDeploy.status} · {fmtDuration(summaryDuration(latestDeploy))}</span></button>}
+      <header><div><h2>Деплой</h2><p>Публикация подготовленного релиза в production</p></div><span>{deploymentView.refreshing&&<RefreshIndicator label="Обновляем деплои…"/>}<button className="vc-btn vc-btn--secondary" disabled={releaseStatus==='loading'} onClick={()=>void refresh()}>Обновить</button></span></header>
+      {latestDeploy&&<button className="release-last-deploy" onClick={()=>void openDetail(latestDeploy.id)}><span>Последний деплой</span><strong>{latestDeploy.branch}</strong><span>{statusLabels[latestDeploy.status]??latestDeploy.status} · {fmtDuration(latestDeploy.durationMs)}</span></button>}
       <div className="release-deploy"><label>Релиз <select value={selected} onChange={event=>setSelected(event.target.value)}><option value="" disabled>{readyBranches.length?'Выберите релиз':'Готовых релизов нет'}</option>{readyBranches.map(branch=><option key={branch.branch} value={branch.branch}>{branch.branch} · {branch.sha.slice(0,12)}</option>)}</select></label>{transition&&<p role="status">{transition}</p>}<button className="vc-btn vc-btn--primary" disabled={!owner||busy||!prepared} onClick={()=>void deploy()}>Задеплоить</button></div>
-      {deploymentView.staleError&&<ErrorState compact message="Не удалось обновить деплои" detail={deploymentError} onRetry={()=>void refreshDeployments()}/>}
-      <div className="release-table-wrap" aria-busy={deploymentStatus==='loading'}>{deploymentView.state==='skeleton'?<Skeleton variant="list" item="block" count={5} height={49}/>:deploymentView.state==='error'?<ErrorState message="Не удалось загрузить деплои" detail={deploymentError} onRetry={()=>void refreshDeployments()}/>:deploymentView.state==='empty'?<EmptyState title="Деплоев пока нет" description="Выберите готовый релиз и опубликуйте его в production."/>:<table className="release-table"><thead><tr><th>Релиз</th><th>Дата</th><th>Длительность</th><th>Статус</th></tr></thead><tbody>{deployments.map(release=><tr key={release.id} tabIndex={0} onClick={()=>void openDetail(release.id)} onKeyDown={event=>{if(event.key==='Enter')void openDetail(release.id)}}><td>{release.branch}</td><td>{new Date(release.createdAt).toLocaleString()}</td><td>{fmtDuration(summaryDuration(release))}</td><td>{statusLabels[release.status]??release.status}</td></tr>)}</tbody></table>}</div>
+      {deploymentError&&<ErrorState compact message="Не удалось загрузить release-ветки" detail={deploymentError} onRetry={()=>void refreshBranches()}/>}
+      {deploymentView.staleError&&<ErrorState compact message="Не удалось обновить деплои" detail={releaseError} onRetry={()=>void refreshReleases()}/>}
+      <div className="release-table-wrap" aria-busy={releaseStatus==='loading'}>{deploymentView.state==='skeleton'?<Skeleton variant="list" item="block" count={5} height={49}/>:deploymentView.state==='error'?<ErrorState message="Не удалось загрузить деплои" detail={releaseError} onRetry={()=>void refreshReleases()}/>:deploymentView.state==='empty'?<EmptyState title="Деплоев пока нет" description="Выберите готовый релиз и опубликуйте его в production."/>:<table className="release-table"><thead><tr><th>Релиз</th><th>Дата</th><th>Длительность</th><th>Статус</th></tr></thead><tbody>{deployments.map(release=><tr key={release.id} tabIndex={0} onClick={()=>void openDetail(release.id)} onKeyDown={event=>{if(event.key==='Enter')void openDetail(release.id)}}><td>{release.branch}</td><td>{new Date(release.createdAt).toLocaleString()}</td><td>{fmtDuration(release.durationMs)}</td><td>{statusLabels[release.status]??release.status}</td></tr>)}</tbody></table>}</div>
     </div>}
   </section>
 }

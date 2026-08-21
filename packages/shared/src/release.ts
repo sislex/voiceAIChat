@@ -51,7 +51,7 @@ export function releaseFailureSummary(kind: string, log: string): string {
   return (explicit ?? fallback).replace(/^error:\s*/i, '').slice(0, 240)
 }
 
-/** Lightweight row returned by the releases list endpoint. */
+/** Облегчённая строка списка: без шагов, логов и служебных снимков рана. */
 export interface ProjectReleaseSummary {
   id: string
   branch: string
