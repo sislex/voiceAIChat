@@ -632,9 +632,20 @@ PTY-процесс принадлежит `AgentRegistry`, а не WebSocket б�
 в `machine_storages` с устойчивым id, id машины, абсолютным `rootPath` и версией
 формата; повторная настройка той же пары машина+путь сохраняет прежний id. REST:
 `GET/POST /api/agents/:id/storages`. Настройка разрешена только владельцу online-машины.
-Сервер создаёт минимальную служебную структуру `.voicechat/{index,locks,migrations,temporary}`
-и marker `.voicechat/storage.json` с id и `formatVersion=1`. Каталоги пользовательских
-данных создаются лениво.
+Сервер принимает только абсолютный нормализованный путь в синтаксисе ОС машины:
+POSIX, Windows drive, UNC или MSYS `/c/...`. Корни дисков/ресурсов и выход за
+`policy.allowedDirs` отклоняются. Рекомендуемый корень строится из
+`telemetry.os.homePath`: `~/ChatAI` на macOS/Linux и `%USERPROFILE%\\ChatAI`
+на Windows.
+
+Регистрация готовит и проверяет файловую систему до записи в БД: создаёт
+`.voicechat/{index,locks,migrations,temporary}`, читает существующий marker и только
+после успешной записи/повторного чтения `.voicechat/storage.json` сохраняет
+`machine_storages`. Тот же каталог сохраняет прежний id; найденный корректный marker
+можно подключить, а повреждённый, конфликтующий или с иной версией не перезаписывается.
+`GET` повторно читает каталог и marker: offline-машина получает `offline`, доступный
+совпадающий marker — `ready`, а отсутствующий диск, права или конфликт — `unavailable`
+с диагностикой. Каталоги пользовательских данных создаются лениво.
 
 Файловая директория разговора хранится отдельно от `conversations.workdir` в
 `chat_storage_bindings`: `conversationId + machineId + storageId + relativePath`.

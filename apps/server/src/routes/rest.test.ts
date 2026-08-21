@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
+import { AgentRegistry } from '../agents/registry.js'
 import { signToken } from '../users/accounts.js'
 import { isPublicAddress, previewInspectorScript, rewritePreviewBody, upstreamRequestHeaders } from './previewProxy.js'
 
@@ -13,6 +14,7 @@ let app: FastifyInstance
 let db: VoiceChatDb
 let token: string
 let dataDir: string
+let agentRegistry: AgentRegistry
 
 const SECRET = 'test-secret'
 const U = 'admin'
@@ -41,6 +43,7 @@ beforeEach(async () => {
   // Явно изолируем каталоги моделей/голосов во временную папку — тесты удаления
   // не должны касаться реальных файлов репозитория.
   triggerDeploy.mockReset()
+  agentRegistry = new AgentRegistry()
   triggerDeploy.mockResolvedValue({ status: 'accepted', message: 'deployment started' })
   app = await buildServer({
     config: loadConfig({
@@ -50,6 +53,7 @@ beforeEach(async () => {
       VC_PIPER_VOICES_DIR: join(dataDir, 'voices')
     }),
     db,
+    agentRegistry,
     sessionSecret: SECRET,
     deployTrigger: { trigger: triggerDeploy }
   })
@@ -59,6 +63,64 @@ beforeEach(async () => {
 afterEach(async () => {
   await app.close()
   db.close()
+})
+
+describe('REST: хранилище машины', () => {
+  function connectFs(machineId: string, failMkdir = false) {
+    const directories = new Set<string>()
+    const files = new Map<string, string>()
+    const socket = {
+      close: vi.fn(),
+      send(data: string) {
+        const message = JSON.parse(data) as { t: string; opId?: string; path?: string; dataBase64?: string }
+        if (!message.opId || !message.path) return
+        if (message.t === 'fs.mkdir') {
+          if (failMkdir) return agentRegistry.handleMessage(machineId, { t: 'fs.error', opId: message.opId, message: 'EACCES permission denied' })
+          directories.add(message.path)
+          return agentRegistry.handleMessage(machineId, { t: 'fs.result', opId: message.opId, result: { root: '/', cwd: message.path } })
+        }
+        if (message.t === 'fs.write') {
+          files.set(message.path, message.dataBase64 ?? '')
+          return agentRegistry.handleMessage(machineId, { t: 'fs.result', opId: message.opId, result: { root: '/', cwd: message.path } })
+        }
+        if (message.t === 'fs.read') {
+          const dataBase64 = files.get(message.path)
+          return dataBase64 === undefined
+            ? agentRegistry.handleMessage(machineId, { t: 'fs.error', opId: message.opId, message: 'ENOENT not found' })
+            : agentRegistry.handleMessage(machineId, { t: 'fs.result', opId: message.opId, result: { root: '/', cwd: message.path, dataBase64 } })
+        }
+        if (message.t === 'fs.list') {
+          return directories.has(message.path)
+            ? agentRegistry.handleMessage(machineId, { t: 'fs.result', opId: message.opId, result: { root: '/', cwd: message.path, entries: [] } })
+            : agentRegistry.handleMessage(machineId, { t: 'fs.error', opId: message.opId, message: 'ENOENT missing disk' })
+        }
+      }
+    }
+    agentRegistry.register(machineId, 'Мак', socket, db.listAgents(U).find((item) => item.id === machineId)!.policy, '0.11.0')
+    return { directories, files }
+  }
+
+  it('готовит marker до записи в БД, сохраняет id и проверяет фактический status', async () => {
+    const machine = db.createAgent(U, 'Мак')
+    const fs = connectFs(machine.id)
+    const first = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })
+    expect(first.statusCode).toBe(200)
+    expect(db.listMachineStorages(U, machine.id)).toHaveLength(1)
+    expect(fs.directories).toContain('/Users/me/ChatAI/.voicechat/temporary')
+    const second = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI/' } })
+    expect(second.json().id).toBe(first.json().id)
+    const listed = await inj({ method: 'GET', url: `/api/agents/${machine.id}/storages` })
+    expect(listed.json()[0]).toMatchObject({ id: first.json().id, status: 'ready', primary: true })
+  })
+
+  it('не оставляет ready-запись при ошибке прав', async () => {
+    const machine = db.createAgent(U, 'Закрытый диск')
+    connectFs(machine.id, true)
+    const response = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Volumes/Locked/ChatAI' } })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toMatch(/Нет прав/)
+    expect(db.listMachineStorages(U, machine.id)).toEqual([])
+  })
 })
 
 describe('REST: аутентификация', () => {

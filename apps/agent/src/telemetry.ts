@@ -4,7 +4,7 @@
 
 import { exec as execCb } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { arch, cpus, freemem, platform, release, totalmem } from 'node:os'
+import { arch, cpus, freemem, homedir, platform, release, totalmem } from 'node:os'
 import { promisify } from 'node:util'
 import type { AgentTelemetry, DiskUsage } from '@voicechat/shared'
 import { resolveShellInfo, type ShellResolution } from './platform.js'
@@ -114,6 +114,7 @@ export function createTelemetryCollector(
         release: release(),
         arch: arch(),
         isAndroid: isTermux(),
+        homePath: homedir(),
         shell: shellInfo.shell,
         shellDegraded: shellInfo.degraded
       },

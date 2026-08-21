@@ -117,6 +117,8 @@ export type OperationsClient = Pick<
   RendererApi,
   | 'agents:list'
   | 'agents:create'
+  | 'agents:listStorages'
+  | 'agents:registerStorage'
   | 'agents:delete'
   | 'agents:setPolicy'
   | 'agents:regenerateToken'
