@@ -50,7 +50,7 @@ export function registerReleaseRoutes(app:FastifyInstance,db:VoiceChatDb,release
   })
   app.get<{Params:{id:string}}>('/api/projects/:id/releases',async(req,reply)=>{
     if(!project(req,req.params.id))return nf(reply)
-    return db.listProjectReleases(uid(req),req.params.id)
+    return db.listProjectReleaseSummaries(uid(req),req.params.id)
   })
   app.post<{Params:{id:string};Body:{branch?:string}}>('/api/projects/:id/releases/deploy',deployGuard,async(req,reply)=>{
     const production=productionTarget(req,req.params.id)

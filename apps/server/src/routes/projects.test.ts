@@ -107,6 +107,24 @@ describe('projects REST: доступ', () => {
     })
   })
 
+  it('список релизов возвращает только лёгкие строки, а шаги и логи — в detail', async () => {
+    const p = await createProject('Release summaries')
+    const release = db.createProjectRelease('admin', p.id, { branch: 'release/1.2.3', version: '1.2.3', sha: 'abc', status: 'preparing' })
+    db.setProjectReleaseStep(release.id, 'regression', 'running', 'x'.repeat(100_000), 'admin')
+
+    const listResponse = await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases` })
+    expect(listResponse.statusCode).toBe(200)
+    const [summary] = listResponse.json() as Array<Record<string, unknown>>
+    expect(summary).toEqual(expect.objectContaining({ id: release.id, branch: 'release/1.2.3', sha: 'abc', status: 'preparing', previousReleaseId: null }))
+    expect(summary).not.toHaveProperty('steps')
+    expect(summary).not.toHaveProperty('triggeredBy')
+    expect(listResponse.body.length).toBeLessThan(1_000)
+
+    const detail = await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases/${release.id}` })
+    expect(detail.statusCode).toBe(200)
+    expect(detail.json().steps.find((step: { kind: string }) => step.kind === 'regression').log).toHaveLength(100_000)
+  })
+
   it('создание, список, изоляция по членству', async () => {
     const p = await createProject()
     expect(p.role).toBe('owner')
