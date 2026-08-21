@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 46 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 42 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 10 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 494 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 495 коммит(ов) в areas после сверки: fd2a9d74 docs(kb): update after merge 7e44acb7-588c-4d36-b090-39d29f2d2ca4 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 14 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ⚠ код изменён 2026-08-21, сверка 2026-08-18 (по датам: правки того же дня не видны — поставь checked) |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ⚠ 10 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
