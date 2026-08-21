@@ -153,6 +153,11 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
           ...(kbContextMode !== undefined ? { kbContextMode } : {})
         })
       }),
+    'conversations:getStorage': async ({ id }) => {
+      try { return await req(REST.conversationStorage(id)) } catch { return null }
+    },
+    'conversations:setStorage': ({ id, machineId, storageId, relativePath }) =>
+      req(REST.conversationStorage(id), { method: 'PUT', body: JSON.stringify({ machineId, storageId, ...(relativePath ? { relativePath } : {}) }) }),
     'conversations:delete': async ({ id }) => {
       await req(REST.conversation(id), { method: 'DELETE' })
     },

@@ -9,6 +9,11 @@ import {
   AGENT_VERSION,
   MACHINE_STORAGE_FORMAT_VERSION,
   recommendedChatStoragePath,
+  managedChatAttachmentsPath,
+  managedChatArtifactsPath,
+  managedChatTemporaryPath,
+  MANAGED_ENVIRONMENT_DIRECTORIES,
+  validateStorageRelativePath,
   isMachineStoragePathAllowed,
   normalizeMachineStoragePath,
   agentOsFromPlatform,
@@ -102,6 +107,62 @@ export async function registerAgentRoutes(
     if (/EACCES|EPERM|permission|denied|доступ/i.test(message)) return 'Нет прав чтения или записи в выбранной директории'
     if (/ENOENT|ENODEV|ENXIO|not found|no such|не найден/i.test(message)) return 'Директория или диск недоступны'
     return message
+  }
+
+  const ensureManagedChat = async (
+    userId: string,
+    machineId: string,
+    storageId: string,
+    relativePath: string,
+    conversation: { id: string; projectId?: string | null; taskId?: string | null }
+  ): Promise<void> => {
+    const storage = db.listMachineStorages(userId, machineId).find((item) => item.id === storageId)
+    if (!storage) throw new Error('Хранилище не найдено')
+    if (!registry.isOnline(machineId)) throw new Error('Машина не в сети')
+    const platform = registry.platformOf(machineId) ?? 'linux'
+    const rel = validateStorageRelativePath(relativePath)
+    const absolute = (path: string): string => storagePath(storage.rootPath, platform, path)
+    const directories = new Set<string>([
+      'global', 'chats', 'projects', rel,
+      managedChatAttachmentsPath(rel), managedChatArtifactsPath(rel), managedChatTemporaryPath(rel)
+    ])
+    const environmentRoots: Array<{ path: string; kind: string }> = []
+    if (conversation.projectId) {
+      directories.add(`projects/${conversation.projectId}`)
+      directories.add(`projects/${conversation.projectId}/shared`)
+      directories.add(`projects/${conversation.projectId}/chats`)
+      directories.add(`projects/${conversation.projectId}/tasks`)
+      directories.add(`projects/${conversation.projectId}/environments/previews`)
+      for (const kind of ['production', 'staging'] as const) {
+        const path = `projects/${conversation.projectId}/environments/${kind}`
+        environmentRoots.push({ path, kind })
+        for (const directory of MANAGED_ENVIRONMENT_DIRECTORIES) directories.add(`${path}/${directory}`)
+      }
+    }
+    if (conversation.projectId && conversation.taskId) {
+      const taskRoot = `projects/${conversation.projectId}/tasks/${conversation.taskId}`
+      for (const path of ['attachments', 'artifacts', 'chats', 'runs']) directories.add(`${taskRoot}/${path}`)
+      const testPath = `${taskRoot}/environments/test`
+      environmentRoots.push({ path: testPath, kind: 'test' })
+      for (const directory of MANAGED_ENVIRONMENT_DIRECTORIES) directories.add(`${testPath}/${directory}`)
+    }
+    for (const directory of directories) await registry.fsMkdir(machineId, absolute(directory))
+    const writeJsonIfMissing = async (path: string, value: unknown): Promise<void> => {
+      const target = absolute(path)
+      try {
+        await registry.fsRead(machineId, target)
+      } catch (error) {
+        if (!/ENOENT|not found|no such|не найден/i.test(error instanceof Error ? error.message : String(error))) throw error
+        await registry.fsWrite(machineId, target, Buffer.from(JSON.stringify(value, null, 2) + '\n').toString('base64'))
+      }
+    }
+    const now = new Date().toISOString()
+    await writeJsonIfMissing(`${rel}/chat.json`, { formatVersion: MACHINE_STORAGE_FORMAT_VERSION, conversationId: conversation.id, createdAt: now })
+    if (conversation.projectId) await writeJsonIfMissing(`projects/${conversation.projectId}/project.json`, { formatVersion: MACHINE_STORAGE_FORMAT_VERSION, projectId: conversation.projectId, createdAt: now })
+    if (conversation.projectId && conversation.taskId) await writeJsonIfMissing(`projects/${conversation.projectId}/tasks/${conversation.taskId}/task.json`, { formatVersion: MACHINE_STORAGE_FORMAT_VERSION, projectId: conversation.projectId, taskId: conversation.taskId, createdAt: now })
+    for (const environment of environmentRoots) {
+      await writeJsonIfMissing(`${environment.path}/environment.json`, { formatVersion: MACHINE_STORAGE_FORMAT_VERSION, projectId: conversation.projectId, taskId: conversation.taskId ?? null, kind: environment.kind, createdAt: now })
+    }
   }
 
   app.get<{ Params: { id: string } }>('/api/agents/:id/storages', async (req, reply) => {
@@ -202,6 +263,7 @@ export async function registerAgentRoutes(
             : recommendedChatStoragePath({ kind: 'chat', conversationId: conversation.id })
       }
       try {
+        await ensureManagedChat(userId, machineId, storageId, relativePath, conversation)
         return db.saveChatStorageBinding(userId, {
           conversationId: conversation.id,
           machineId,

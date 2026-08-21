@@ -394,6 +394,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         status
       }
     },
+    'conversations:getStorage': async () => null,
+    'conversations:setStorage': async ({ id, machineId, storageId, relativePath }) => ({ conversationId: id, machineId, storageId, relativePath: relativePath ?? `chats/${id}` }),
     'conversations:setExecTarget': async ({ id, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode }) => {
       const conv = conversations.find((c) => c.id === id)
       if (!conv) throw new Error('not found')

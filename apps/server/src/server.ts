@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, type ImageRetouchRequest, type ImageRetouchResult, type MessageAttachment, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, managedChatAttachmentsPath, REST, clampModel, firstAllowedProvider, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, type ImageRetouchRequest, type ImageRetouchResult, type MessageAttachment, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -52,7 +52,7 @@ import type { SttClient } from './stt/client.js'
 import { RemoteSttClient } from './stt/remoteClient.js'
 import { ModelDownloadManager } from './stt/downloadManager.js'
 import { StubDiarizationEngine } from './diarization/stubDiarization.js'
-import { UploadStore, machineUploadDir, machineUploadPath } from './uploads.js'
+import { UploadStore, machineManagedFilePath, machineUploadDir, machineUploadPath } from './uploads.js'
 import type { UploadInfo } from '@voicechat/shared'
 import { RemoteTtsClient } from './tts/client/remoteTtsClient.js'
 import type { TtsClient } from './tts/client/types.js'
@@ -472,8 +472,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         }
         try {
           const root = (await agentRegistry.fsList(agentId, '')).root
-          const target = machineUploadPath(root, randomBytes(16).toString('hex'), uploadName)
-          await agentRegistry.fsMkdir(agentId, machineUploadDir(root))
+          const binding = conversationId ? db.getChatStorageBinding(userId, conversationId) : undefined
+          const storage = binding?.machineId === agentId
+            ? db.listMachineStorages(userId, agentId).find((item) => item.id === binding.storageId)
+            : undefined
+          const separator = (storage?.rootPath ?? root).includes('\\') && !(storage?.rootPath ?? root).includes('/') ? '\\' : '/'
+          const directory = storage && binding
+            ? `${storage.rootPath.replace(/[/\\]$/, '')}${separator}${managedChatAttachmentsPath(binding.relativePath).replace(/[\\/]/g, separator)}`
+            : machineUploadDir(root)
+          const target = storage
+            ? machineManagedFilePath(directory, randomBytes(16).toString('hex'), uploadName)
+            : machineUploadPath(root, randomBytes(16).toString('hex'), uploadName)
+          await agentRegistry.fsMkdir(agentId, directory)
           await agentRegistry.fsWrite(agentId, target, dataBase64)
           const rec = uploads.saveRemote(uploadName, target, agentId, bytes.byteLength, safeMime)
           return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size, agentId: rec.agentId }

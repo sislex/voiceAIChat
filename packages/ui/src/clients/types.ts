@@ -95,6 +95,8 @@ export type ChatClient = Pick<
   | 'conversations:setPreviewUrl'
   | 'conversations:setStatus'
   | 'conversations:setExecTarget'
+  | 'conversations:getStorage'
+  | 'conversations:setStorage'
   | 'conversations:listMachines'
   | 'conversations:taskContext'
   | 'conversations:taskChats'
