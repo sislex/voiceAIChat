@@ -918,6 +918,7 @@ export function createFakeCi(): FakeCi {
   const logs = new Map<string, CiLogLine[]>()
   let projectLlm: CiLlmConfig = { ...DEFAULT_CI_LLM_CONFIG }
   let taskLlm: CiLlmConfig | null = null
+  let taskProcessStages: import('@shared/ci').CiProcessStage[] = ['before_model', 'model_work', 'after_model', 'summary']
   /** Паузы ранов, чтобы Storybook/dom-тесты умели показывать вопрос модели. */
   const interactions = new Map<string, CiInteraction[]>()
   type L = (...args: never[]) => void
@@ -1018,9 +1019,12 @@ export function createFakeCi(): FakeCi {
     getTaskPreparationLlm: async () => ({ llmEngineId: (taskLlm ?? projectLlm).llmEngineId ?? null, provider: (taskLlm ?? projectLlm).provider, model: (taskLlm ?? projectLlm).model }),
     putTaskCiLlm: async (_pid, _tid, config) => { taskLlm = { ...config }; return { ...config } },
     resetTaskCiLlm: async () => { taskLlm = null; return { config: { ...projectLlm }, overridden: false, projectDefault: { ...projectLlm } } },
-    getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] } }),
+    getTaskCi: async () => ({ config: { beforeModel: [], afterModel: [] }, overridden: false, projectDefault: { beforeModel: [], afterModel: [] }, enabledStages: [...taskProcessStages] }),
     getTaskMachines: async () => ({ machines: [], selectedAgentId: null, unavailableSelection: null }),
-    putTaskCi: async (_pid, _tid, config) => config,
+    putTaskCi: async (_pid, _tid, config) => {
+      if (config.enabledStages) taskProcessStages = [...config.enabledStages]
+      return { beforeModel: config.beforeModel ?? [], afterModel: config.afterModel ?? [], enabledStages: [...taskProcessStages] }
+    },
     startRun: async (projectId, taskId, options) => { const run = { ...mkRun(projectId, taskId), mode: options?.mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
     startMerge: async (projectId, taskId) => ({ id: `merge-${taskId}`, projectId, taskId, status: 'queued', triggeredBy: 'admin', sourceBranch: `feature/${taskId}`, targetBranch: 'main', sourceSha: null, targetSha: null, mergeSha: null, revertSha: null, agentId: 'a1', llmEngineId: null, llmProvider: 'claude', llmModel: '', stage: 'queued', stages: [], conflicts: [], conflictDetails: [], checks: [], deployId: null, deployVersion: null, productionStatus: null, error: null, recommendedAction: null, log: '', canCancel: true, canRetry: false, pushStartedAt: null, startedAt: now(), finishedAt: null, createdAt: now() }),
     getMerge: async () => { throw new Error('merge run not found') },
