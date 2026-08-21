@@ -209,6 +209,7 @@ import {
   integrationTestGate,
   RELEASE_STEP_ORDER,
   type ProjectRelease,
+  type ProjectReleaseSummary,
   type ReleaseStepKind,
   type ReleaseStepStatus,
   type ReleaseTimeouts,
@@ -6657,6 +6658,13 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT id FROM project_releases WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at DESC`).all(projectId) as Array<{id:string}>).map(({id})=>this.mapProjectRelease(this.releaseRow(id)!))
   }
 
+  listProjectReleaseSummaries(userId:string,projectId:string):ProjectReleaseSummary[] {
+    if (!this.isProjectMember(userId,projectId)) return []
+    const rows=this.db.prepare(`SELECT r.id,r.branch,r.commit_sha,r.status,r.previous_release_id,r.created_at,MIN(s.started_at) AS started_at,MAX(s.finished_at) AS finished_at,MAX(CASE WHEN s.started_at IS NOT NULL AND s.finished_at IS NULL THEN 1 ELSE 0 END) AS running FROM project_releases r LEFT JOIN project_release_steps s ON s.release_id=r.id WHERE r.project_id=? AND r.deleted_at IS NULL GROUP BY r.id ORDER BY r.created_at DESC`).all(projectId) as ReleaseSummaryRow[]
+    const now=this.now()
+    return rows.map(row=>({id:row.id,branch:row.branch,sha:row.commit_sha,status:row.status as ProjectRelease['status'],previousReleaseId:row.previous_release_id,createdAt:row.created_at,durationMs:row.started_at==null?null:(row.running?now:row.finished_at??now)-row.started_at}))
+  }
+
   listActiveProjectReleases():ProjectRelease[] {
     return (this.db.prepare(`SELECT * FROM project_releases WHERE status IN ('switching','building','health_check') ORDER BY created_at`).all() as ReleaseRow[])
       .map(row=>this.mapProjectRelease(row))
@@ -6716,6 +6724,7 @@ export class VoiceChatDb {
 
 // ============== Релизы: строки БД ==================
 interface ReleaseRow { id:string;project_id:string;version:string;branch:string;commit_sha:string;status:string;triggered_by:string;attempt:number;previous_release_id:string|null;created_at:number;released_at:number|null;agent_id:string|null;checkout_path:string|null;deleted_at:number|null }
+interface ReleaseSummaryRow { id:string;branch:string;commit_sha:string;status:string;previous_release_id:string|null;created_at:number;started_at:number|null;finished_at:number|null;running:number }
 interface ReleaseStepRow { id:string;release_id:string;kind:string;position:number;status:string;model:string|null;attempt:number;log:string;started_at:number|null;finished_at:number|null;limit_ms:number|null }
 
 // ============== Ручное QA: строки БД и мапперы ==================
