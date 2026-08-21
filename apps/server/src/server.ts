@@ -207,7 +207,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       }
     }
   )
-  await app.register(fastifyWebsocket)
+  // fs.read передаёт до 32 MiB как base64 в одном сообщении (~42.7 MiB + JSON).
+  // Явный предел делает допустимый размер независимым от дефолта библиотеки ws.
+  await app.register(fastifyWebsocket, { options: { maxPayload: 48 * 1024 * 1024 } })
 
   const db =
     opts.db ??
