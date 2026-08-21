@@ -51,6 +51,17 @@ export function releaseFailureSummary(kind: string, log: string): string {
   return (explicit ?? fallback).replace(/^error:\s*/i, '').slice(0, 240)
 }
 
+/** Lightweight row returned by the releases list endpoint. */
+export interface ProjectReleaseSummary {
+  id: string
+  branch: string
+  sha: string
+  status: ReleaseStatus
+  previousReleaseId: string | null
+  createdAt: number
+  durationMs: number | null
+}
+
 export interface ProjectRelease {
   id: string
   projectId: string

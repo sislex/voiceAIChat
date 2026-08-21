@@ -6,7 +6,7 @@ import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 import { ProjectNotFoundPage, ProjectPage, ProjectsEmptyPage, type ProjectSection } from './ProjectPage'
 import { ReleaseCenter } from './releases/ReleaseCenter'
 import { createFakeApi } from '../test/fakeApi'
-import type { ProjectRelease } from '@voicechat/shared'
+import type { ProjectRelease, ProjectReleaseSummary } from '@voicechat/shared'
 
 function renderPage(section: ProjectSection = 'board'): { onSectionChange: (s: ProjectSection) => void } {
   const onSectionChange = vi.fn()
@@ -114,7 +114,7 @@ describe('ReleaseCenter — список, деплой и лента', () => {
   const api = () => {
     const value = createFakeApi()
     value['releases:branches'] = vi.fn(async () => [{ branch: prepared.branch, version: prepared.version, sha: prepared.sha }])
-    value['releases:list'] = vi.fn(async () => [deployment, prepared])
+    value['releases:list'] = vi.fn(async () => [{ ...deployment, durationMs: 6_000 }, { ...prepared, durationMs: 4_000 }])
     value['releases:get'] = vi.fn(async ({ releaseId }) => releaseId === deployment.id ? deployment : prepared)
     return value
   }
@@ -126,6 +126,37 @@ describe('ReleaseCenter — список, деплой и лента', () => {
     expect(screen.getByText('База знаний')).toBeInTheDocument()
     expect(screen.getByText('Regression')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Скачать лог' })).toBeInTheDocument()
+  })
+
+  it('при открытии заново загружает detail, не показывает прошлый релиз и обрабатывает повторный выбор', async () => {
+    const value = api()
+    const resolvers: Array<(release: ProjectRelease) => void> = []
+    value['releases:get'] = vi.fn(() => new Promise<ProjectRelease>(resolve => { resolvers.push(resolve) }))
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    await screen.findByRole('columnheader', { name: 'Время сборки' })
+
+    await userEvent.click(screen.getByText('release/1.2.3'))
+    expect(screen.getByRole('heading', { name: 'Загрузка релиза…' })).toBeInTheDocument()
+    expect(screen.queryByText('База знаний')).not.toBeInTheDocument()
+    resolvers.shift()?.(prepared)
+    expect(await screen.findByText('База знаний')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '← К списку' }))
+    await userEvent.click(await screen.findByText('release/1.2.3'))
+    expect(value['releases:get']).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('heading', { name: 'Загрузка релиза…' })).toBeInTheDocument()
+    expect(screen.queryByText('База знаний')).not.toBeInTheDocument()
+  })
+
+  it('показывает ошибку загрузки detail и позволяет повторить запрос', async () => {
+    const value = api()
+    value['releases:get'] = vi.fn().mockRejectedValueOnce(new Error('detail down')).mockResolvedValueOnce(prepared)
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
+    await userEvent.click(await screen.findByText('release/1.2.3'))
+    expect(await screen.findByText('Не удалось загрузить подробности релиза')).toBeInTheDocument()
+    expect(screen.getByText('detail down')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(await screen.findByText('База знаний')).toBeInTheDocument()
   })
 
   it('в деплое скрывает подготовительные skipped-шаги', async () => {
@@ -161,7 +192,7 @@ describe('ReleaseCenter — список, деплой и лента', () => {
   it('показывает независимые загрузки и ошибки релизов и деплоев', async () => {
     const value = createFakeApi()
     const rejectReleases: Array<(reason: Error) => void> = []
-    value['releases:list'] = vi.fn(() => new Promise<ProjectRelease[]>((_resolve, reject) => { rejectReleases.push(reject) }))
+    value['releases:list'] = vi.fn(() => new Promise<ProjectReleaseSummary[]>((_resolve, reject) => { rejectReleases.push(reject) }))
     value['releases:branches'] = vi.fn(async () => [])
     render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
     expect(screen.getByTestId('skeleton-list')).toBeInTheDocument()
