@@ -240,6 +240,15 @@ describe('подготовка к разработке: движок из нас
 })
 
 describe('подготовка к разработке: диагностика и контракт', () => {
+  it('промпт перечисляет допустимые kind и status источников', async () => {
+    const { project, task } = await taskInBacklog()
+
+    await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(claudeCalls[0].prompt).toContain('kind принимает только knowledge|hierarchy|related_tasks|code|tests|storybook')
+    expect(claudeCalls[0].prompt).toContain('status принимает только available|absent|unavailable')
+  })
+
   it('ошибка авторизации CLI называет движок и профиль пользователя', async () => {
     const { project, task } = await taskInBacklog()
     useCodex('bob')
