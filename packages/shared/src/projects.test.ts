@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedTaskTestEnvironmentPath, validateStorageRelativePath } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedTaskTestEnvironmentPath, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -145,6 +145,28 @@ describe('portable storage paths', () => {
   it('rejects absolute paths and traversal', () => {
     expect(() => validateStorageRelativePath('/etc/passwd')).toThrow()
     expect(() => validateStorageRelativePath('chats/../secret')).toThrow()
+  })
+})
+
+describe('machine storage root paths', () => {
+  it('normalizes POSIX, Windows, UNC and MSYS paths', () => {
+    expect(normalizeMachineStoragePath('/Users/me/ChatAI/', 'darwin')).toBe('/Users/me/ChatAI')
+    expect(normalizeMachineStoragePath('c:/Users/me/ChatAI/', 'win32')).toBe('C:\\Users\\me\\ChatAI')
+    expect(normalizeMachineStoragePath('/c/Users/me/ChatAI', 'win32')).toBe('C:\\Users\\me\\ChatAI')
+    expect(normalizeMachineStoragePath('\\\\server\\share\\ChatAI', 'win32')).toBe('\\\\server\\share\\ChatAI')
+  })
+
+  it('rejects roots, relative and non-normalized paths and enforces allowedDirs boundaries', () => {
+    expect(() => normalizeMachineStoragePath('/', 'linux')).toThrow(/Корень/)
+    expect(() => normalizeMachineStoragePath('C:\\', 'win32')).toThrow(/Корень/)
+    expect(() => normalizeMachineStoragePath('/safe/../escape', 'linux')).toThrow(/нормализован/)
+    expect(isMachineStoragePathAllowed('/safe/ChatAI', ['/safe'], 'linux')).toBe(true)
+    expect(isMachineStoragePathAllowed('/safety/ChatAI', ['/safe'], 'linux')).toBe(false)
+  })
+
+  it('builds the platform recommendation from the reported home directory', () => {
+    expect(recommendedMachineStoragePath('darwin', '/Users/me')).toBe('/Users/me/ChatAI')
+    expect(recommendedMachineStoragePath('win32', 'C:\\Users\\me')).toBe('C:\\Users\\me\\ChatAI')
   })
 })
 

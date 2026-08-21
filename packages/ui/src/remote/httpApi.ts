@@ -189,6 +189,9 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'mcp:list': () => req(REST.mcpServers),
     'auth:status': () => req(REST.authStatus),
     'agents:list': () => req(REST.agents),
+    'agents:listStorages': ({ id }) => req(`/api/agents/${encodeURIComponent(id)}/storages`),
+    'agents:registerStorage': ({ id, rootPath }) =>
+      req(`/api/agents/${encodeURIComponent(id)}/storages`, { method: 'POST', body: JSON.stringify({ rootPath }) }),
     'agents:create': ({ name }) =>
       req(REST.agents, { method: 'POST', body: JSON.stringify({ name }) }),
     'agents:delete': async ({ id }) => {

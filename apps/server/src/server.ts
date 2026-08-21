@@ -107,6 +107,8 @@ export interface BuildOptions {
   createWsHandlers?: () => WsHandlers
   /** Секрет подписи токенов сессии (для тестов). Иначе — из dataDir/эфемерный. */
   sessionSecret?: string
+  /** Реестр машин (для маршрутных тестов с фейковыми fs-ответами). */
+  agentRegistry?: AgentRegistry
   /** Исполнитель CI-команд (в тестах — мок). По умолчанию поверх AgentRegistry. */
   ciExecutor?: CommandExecutor
   /** Хук шага «Актуализировать базу знаний» (в тестах — мок). По умолчанию — из createCiModelHooks. */
@@ -245,7 +247,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   // Реестр создаётся до REST: task-chat context обязан показывать ту же effective
   // online-машину, которую затем использует фактический ход.
-  const agentRegistry = new AgentRegistry()
+  const agentRegistry = opts.agentRegistry ?? new AgentRegistry()
   await registerRest(app, db, opts.config.dataDir, {
     runnerFs: runnerFs ?? undefined,
     authStatus,

@@ -1,6 +1,7 @@
 // REST для машин-агентов: список (с онлайн-статусом), создание (одноразовый
 // токен), удаление (отзыв токена + разрыв соединения).
 
+import { randomUUID } from 'node:crypto'
 import { createReadStream, existsSync } from 'node:fs'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
@@ -8,6 +9,8 @@ import {
   AGENT_VERSION,
   MACHINE_STORAGE_FORMAT_VERSION,
   recommendedChatStoragePath,
+  isMachineStoragePathAllowed,
+  normalizeMachineStoragePath,
   agentOsFromPlatform,
   installCommand,
   installScriptUrl,
@@ -73,14 +76,51 @@ export async function registerAgentRoutes(
     withLiveStatus(db.listAgents(uid(req)))
   )
 
+  const storagePath = (rootPath: string, platform: string, name: string): string => {
+    const separator = platform === 'win32' ? '\\' : '/'
+    return rootPath + separator + name.replace(/[\\/]/g, separator)
+  }
+  const markerAt = async (machineId: string, rootPath: string, platform: string): Promise<{ id: string; formatVersion: number } | null> => {
+    try {
+      const result = await registry.fsRead(machineId, storagePath(rootPath, platform, '.voicechat/storage.json'))
+      const raw = Buffer.from(result.dataBase64 ?? '', 'base64').toString('utf8')
+      const marker = JSON.parse(raw) as { id?: unknown; formatVersion?: unknown }
+      if (typeof marker.id !== 'string' || !marker.id || !Number.isInteger(marker.formatVersion)) {
+        throw new Error('Повреждён marker .voicechat/storage.json')
+      }
+      return { id: marker.id, formatVersion: marker.formatVersion as number }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (/ENOENT|not found|не найден/i.test(message)) return null
+      if (/marker/.test(message)) throw error
+      if (/JSON|Unexpected token|Unexpected end/i.test(message)) throw new Error('Повреждён marker .voicechat/storage.json')
+      throw error
+    }
+  }
+  const storageError = (error: unknown): string => {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/EACCES|EPERM|permission|denied|доступ/i.test(message)) return 'Нет прав чтения или записи в выбранной директории'
+    if (/ENOENT|ENODEV|ENXIO|not found|no such|не найден/i.test(message)) return 'Директория или диск недоступны'
+    return message
+  }
+
   app.get<{ Params: { id: string } }>('/api/agents/:id/storages', async (req, reply) => {
     const userId = uid(req)
-    if (!db.listAgents(userId).some((agent) => agent.id === req.params.id)) {
-      return reply.code(404).send({ error: 'not found' })
-    }
-    return db.listMachineStorages(userId, req.params.id).map((storage) => ({
-      ...storage,
-      status: registry.isOnline(storage.machineId) ? 'ready' as const : 'offline' as const
+    if (!db.listAgents(userId).some((agent) => agent.id === req.params.id)) return reply.code(404).send({ error: 'not found' })
+    const storages = db.listMachineStorages(userId, req.params.id)
+    if (!registry.isOnline(req.params.id)) return storages.map((storage, index) => ({ ...storage, primary: index === 0, status: 'offline' as const }))
+    const platform = registry.platformOf(req.params.id) ?? 'linux'
+    return Promise.all(storages.map(async (storage, index) => {
+      try {
+        await registry.fsList(storage.machineId, storage.rootPath)
+        const marker = await markerAt(storage.machineId, storage.rootPath, platform)
+        if (!marker || marker.id !== storage.id || marker.formatVersion !== storage.formatVersion) {
+          return { ...storage, primary: index === 0, status: 'unavailable' as const, error: 'Marker хранилища отсутствует или конфликтует' }
+        }
+        return { ...storage, primary: index === 0, status: 'ready' as const }
+      } catch (error) {
+        return { ...storage, primary: index === 0, status: 'unavailable' as const, error: storageError(error) }
+      }
     }))
   })
 
@@ -89,34 +129,51 @@ export async function registerAgentRoutes(
     async (req, reply) => {
       const userId = uid(req)
       const machineId = req.params.id
-      const rootPath = req.body?.rootPath?.trim().replace(/[\\/]+$/, '')
-      if (!rootPath) return reply.code(400).send({ error: 'rootPath required' })
-      if (!db.listAgents(userId).some((agent) => agent.id === machineId)) {
-        return reply.code(404).send({ error: 'not found' })
-      }
-      if (!registry.isOnline(machineId)) {
-        return reply.code(409).send({ error: 'Машина не в сети' })
-      }
-      const storage = db.saveMachineStorage(userId, machineId, rootPath, MACHINE_STORAGE_FORMAT_VERSION)
-      const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
-      const child = (name: string): string => `${rootPath}${separator}${name.replace(/\//g, separator)}`
+      const agent = db.listAgents(userId).find((item) => item.id === machineId)
+      if (!agent) return reply.code(404).send({ error: 'not found' })
+      if (!registry.isOnline(machineId)) return reply.code(409).send({ error: 'Машина не в сети' })
+      const platform = registry.platformOf(machineId) ?? 'linux'
+      let rootPath: string
       try {
-        for (const directory of [
-          rootPath,
-          child('.voicechat'),
-          child('.voicechat/index'),
-          child('.voicechat/locks'),
-          child('.voicechat/migrations'),
-          child('.voicechat/temporary')
-        ]) await registry.fsMkdir(machineId, directory)
-        const marker = JSON.stringify({
-          id: storage.id,
-          formatVersion: storage.formatVersion
-        }, null, 2) + '\n'
-        await registry.fsWrite(machineId, child('.voicechat/storage.json'), Buffer.from(marker).toString('base64'))
-        return storage
+        rootPath = normalizeMachineStoragePath(req.body?.rootPath ?? '', platform)
       } catch (error) {
-        return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
+        return reply.code(400).send({ error: storageError(error) })
+      }
+      if (!isMachineStoragePathAllowed(rootPath, agent.policy.allowedDirs, platform)) {
+        return reply.code(403).send({ error: 'Путь находится вне разрешённых директорий машины' })
+      }
+      const existing = db.listMachineStorages(userId)
+      const registered = existing.find((storage) => storage.machineId === machineId && storage.rootPath === rootPath)
+      const separator = platform === 'win32' ? '\\' : '/'
+      const child = (name: string): string => rootPath + separator + name.replace(/[\\/]/g, separator)
+      try {
+        const foundMarker = await markerAt(machineId, rootPath, platform)
+        if (foundMarker) {
+          const owner = existing.find((storage) => storage.id === foundMarker.id)
+          if (owner && (owner.machineId !== machineId || owner.rootPath !== rootPath)) {
+            return reply.code(409).send({ error: 'Конфликт marker: storageId уже зарегистрирован для другого каталога' })
+          }
+          if (registered && foundMarker.id !== registered.id) {
+            return reply.code(409).send({ error: 'Конфликт marker: каталог и запись сервера относятся к разным хранилищам' })
+          }
+          if (foundMarker.formatVersion !== MACHINE_STORAGE_FORMAT_VERSION) {
+            return reply.code(409).send({ error: `Неподдерживаемая версия marker: ${foundMarker.formatVersion}` })
+          }
+        }
+        const storageId = registered?.id ?? foundMarker?.id ?? randomUUID()
+        for (const directory of [rootPath, child('.voicechat'), child('.voicechat/index'), child('.voicechat/locks'), child('.voicechat/migrations'), child('.voicechat/temporary')]) {
+          await registry.fsMkdir(machineId, directory)
+        }
+        await registry.fsList(machineId, rootPath)
+        if (!foundMarker) {
+          const marker = JSON.stringify({ id: storageId, formatVersion: MACHINE_STORAGE_FORMAT_VERSION }, null, 2) + '\n'
+          await registry.fsWrite(machineId, child('.voicechat/storage.json'), Buffer.from(marker).toString('base64'))
+          const verified = await markerAt(machineId, rootPath, platform)
+          if (!verified || verified.id !== storageId) throw new Error('Не удалось проверить записанный marker хранилища')
+        }
+        return db.saveMachineStorage(userId, machineId, rootPath, MACHINE_STORAGE_FORMAT_VERSION, storageId)
+      } catch (error) {
+        return reply.code(400).send({ error: storageError(error) })
       }
     }
   )
