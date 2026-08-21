@@ -56,8 +56,54 @@ export const ListeningWithoutDiarization: Story = {
 /** Распознавание: транскрипт финализируется, композер ещё заблокирован. */
 export const Transcribing: Story = { args: { state: 'transcribing' } }
 
-/** Запрос ушёл движку, токенов ещё нет: спиннер и «Остановить запрос». */
-export const WaitingForModel: Story = { args: { state: 'thinking' } }
+const waitingInFeedStoryCss = `
+  .waiting-in-feed-story { display: grid; min-height: 420px; grid-template-rows: 1fr auto; }
+  .waiting-in-feed-story__timeline {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 10px;
+    min-height: 260px;
+    padding: 20px 14px;
+    background: var(--bg);
+  }
+  .waiting-in-feed-story__message {
+    align-self: flex-end;
+    max-width: min(76%, 560px);
+    padding: 9px 12px;
+    border-radius: 14px 14px 4px 14px;
+    background: var(--accent);
+    color: white;
+  }
+  .waiting-in-feed-story__preparing {
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 26px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .waiting-in-feed-story__dots { letter-spacing: 2px; color: var(--accent); }
+`
+
+/** До первого фрагмента подготовка видна в ленте, не увеличивая нижнюю панель. */
+export const WaitingForModel: Story = {
+  args: { state: 'thinking', draft: 'Следующее сообщение в очередь' },
+  render: (args) => (
+    <div className="waiting-in-feed-story">
+      <style>{waitingInFeedStoryCss}</style>
+      <div className="waiting-in-feed-story__timeline" role="log" aria-label="Сообщения">
+        <div className="waiting-in-feed-story__message">Проверь, почему последний тест падает только в CI</div>
+        <div className="waiting-in-feed-story__preparing" role="status">
+          <span className="waiting-in-feed-story__dots" aria-hidden="true">•••</span>
+          <span>Готовим ответ…</span>
+        </div>
+      </div>
+      <VoiceBar {...args} />
+    </div>
+  )
+}
 
 /** Пошёл стрим ответа: композер снова доступен под черновик, отправка — нет. */
 export const ReplyStreaming: Story = {
@@ -75,11 +121,31 @@ export const Speaking: Story = { args: { state: 'speaking' } }
  */
 export const MicUnavailable: Story = { args: { voiceInputEnabled: false } }
 
-/** Вложения: чипы с крестиком «убрать» над строкой ввода. */
+const attachmentPreviewStoryCss = `
+  .attachment-preview-story .attchips { align-items: flex-end; }
+  .attachment-preview-story .attpreview-image {
+    background:
+      linear-gradient(145deg, transparent 55%, rgba(255,255,255,.22) 56% 64%, transparent 65%),
+      radial-gradient(circle at 72% 28%, #ffd166 0 7px, transparent 8px),
+      linear-gradient(155deg, #7db7e8 0 48%, #4f8f6a 49% 67%, #315f49 68%);
+  }
+  .attachment-preview-story .attpreview-image > span { display: none; }
+`
+
+/** Изображение показано миниатюрой с именем снизу; прочие файлы остаются чипами. */
 export const WithAttachments: Story = {
+  decorators: [(Story) => (
+    <div className="attachment-preview-story">
+      <style>{attachmentPreviewStoryCss}</style>
+      <Story />
+    </div>
+  )],
   args: {
     draft: 'Вот скриншот и лог рана',
-    attachments: [makeUpload({ name: 'скриншот-падения.png' }), makeUpload({ name: 'ci-run-1934.log' })]
+    attachments: [
+      makeUpload({ name: 'скриншот-падения.png' }),
+      makeUpload({ name: 'ci-run-1934.log', mimeType: 'text/plain' })
+    ]
   }
 }
 
@@ -98,8 +164,39 @@ const queuedTurns = Array.from({ length: 5 }, (_, index) => ({
   createdAt: index + 1
 }))
 
+function MessageQueueDemo(args: Parameters<typeof VoiceBar>[0]): JSX.Element {
+  const [items, setItems] = useState(queuedTurns)
+
+  return (
+    <VoiceBar
+      {...args}
+      queuedTurns={items}
+      onEditQueued={(id, text) => {
+        setItems((current) => current.map((item) => item.id === id ? { ...item, text } : item))
+        args.onEditQueued?.(id, text)
+      }}
+      onDeleteQueued={(id) => {
+        setItems((current) => current
+          .filter((item) => item.id !== id)
+          .map((item, index) => ({ ...item, position: index + 1 })))
+        args.onDeleteQueued?.(id)
+      }}
+      onSendQueuedNow={(id) => {
+        setItems((current) => {
+          const selected = current.find((item) => item.id === id)
+          if (!selected) return current
+          return [selected, ...current.filter((item) => item.id !== id)]
+            .map((item, index) => ({ ...item, position: index + 1 }))
+        })
+        args.onSendQueuedNow?.(id)
+      }}
+    />
+  )
+}
+
 /** Свёрнутая очередь показывает первые три элемента и счётчик остальных. */
 export const MessageQueue: Story = {
+  render: (args) => <MessageQueueDemo {...args} />,
   args: {
     state: 'thinking',
     queuedTurns,
@@ -113,6 +210,7 @@ export const MessageQueue: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Показать ещё 2' }))
     await expect(canvas.getAllByTestId('turn-queue-item')).toHaveLength(5)
     await userEvent.click(canvas.getByRole('button', { name: 'Отправить сейчас сообщение № 5' }))
+    await expect(canvas.getAllByTestId('turn-queue-item')[0]).toHaveTextContent('Ожидающее сообщение 5')
   }
 }
 

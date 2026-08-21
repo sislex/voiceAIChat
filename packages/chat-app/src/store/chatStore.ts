@@ -839,7 +839,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   // --- Отправка -------------------------------------------------------------
 
-  async function submitText(previewElement?: PreviewElementPayload): Promise<boolean> {
+  async function performSubmitText(previewElement?: PreviewElementPayload): Promise<boolean> {
     const state = getState()
     const text = state.draft.trim()
     const atts = state.attachments
@@ -885,6 +885,21 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       beginReply(segments, atts.map((a) => a.id), execTarget)
     }
     return true
+  }
+
+  let submitTextInFlight: Promise<boolean> | null = null
+
+  function submitText(previewElement?: PreviewElementPayload): Promise<boolean> {
+    // Два keydown/click до первого ответа API видят один и тот же черновик.
+    // Выполняем только первый вызов; после его завершения следующий ввод снова доступен.
+    if (submitTextInFlight) return Promise.resolve(false)
+    const pending = performSubmitText(previewElement)
+    submitTextInFlight = pending
+    const clear = (): void => {
+      if (submitTextInFlight === pending) submitTextInFlight = null
+    }
+    void pending.then(clear, clear)
+    return pending
   }
 
   /** Персист распознанных сегментов как реплик пользователя, затем ответ. */
@@ -982,27 +997,29 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
     if (getState().liveActivity.length) setState({ liveActivity: [] })
     if (getState().liveUsage) setState({ liveUsage: null }) // итог хода — в meta
-    await statusUpdate
     if (meta && Object.keys(meta).length > 0) setState({ lastTurnMeta: meta })
     const v = voice.state()
     if (v !== 'thinking' && v !== 'speaking') {
       setState({ streamingReply: '' })
       voice.beginTurn()
       // Ход доиграл, пока вкладка была в idle (например, после F5).
-      if (message) {
-        appendPersisted(message)
-        await refreshConversations()
-      }
+      if (message) appendPersisted(message)
+      await Promise.all([statusUpdate, message ? refreshConversations() : Promise.resolve()])
       return
     }
 
     if (!voice.autoSpeakActive()) {
-      void finishReply(text || getState().streamingReply, engine, meta, message)
+      // Запускаем фиксацию сразу, до сетевого обновления статуса. Иначе сервер
+      // успевает продвинуть очередь, а первые токены следующего ответа попадают
+      // в ещё не очищенный streamingReply предыдущего хода.
+      const replyUpdate = finishReply(text || getState().streamingReply, engine, meta, message)
+      await Promise.all([statusUpdate, replyUpdate])
       return
     }
 
     const full = (text || getState().streamingReply).trim()
     setState({ streamingReply: '' })
+    await statusUpdate
     if (full) {
       if (message) appendPersisted(message)
       else await persistMessage('ai', full, engine, meta)
@@ -1059,8 +1076,20 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
     if (conversationId === state.activeId) {
       const visible = state.messages.filter((message) => !queuedIds.has(message.id))
-      patch.messages =
-        published && !visible.some((message) => message.id === published.id) ? [...visible, published] : visible
+      const publishedIndex = published ? visible.findIndex((message) => message.id === published.id) : -1
+      patch.messages = published
+        ? publishedIndex >= 0
+          ? visible.map((message) => (message.id === published.id ? published : message))
+          : [...visible, published]
+        : visible
+      if (publishedIndex >= 0) {
+        // Тот же messageId означает замену активного запроса через «Отправить
+        // сейчас»: старый partial не должен стать началом нового ответа.
+        patch.streamingReply = ''
+        patch.liveActivity = []
+        patch.liveUsage = null
+        patch.lastTurnMeta = null
+      }
     }
     setState(patch)
   }

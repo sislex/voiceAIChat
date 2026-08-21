@@ -679,6 +679,19 @@ describe('ChatColumn — автопрокрутка ленты', () => {
   })
 })
 
+describe('ChatColumn — подготовка ответа', () => {
+  it('показывает «Готовим ответ…» в ленте до первого фрагмента и убирает после начала стрима', () => {
+    const { rerender } = render(<ChatColumn title="Тест" state="thinking" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} />)
+    const preparing = screen.getByTestId('reply-preparing')
+    expect(preparing).toHaveTextContent('Готовим ответ…')
+    expect(preparing).toHaveAttribute('role', 'status')
+
+    rerender(<ChatColumn title="Тест" state="thinking" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} streamingReply="Первый фрагмент" />)
+    expect(screen.queryByTestId('reply-preparing')).not.toBeInTheDocument()
+    expect(screen.getByTestId('streaming')).toHaveTextContent('Первый фрагмент')
+  })
+})
+
 describe('ChatColumn — доступность', () => {
   it('без нарушений axe: лента с ответом модели', async () => {
     renderCol({ canSpeak: true, onSpeakMessage: vi.fn(), onDeleteMessage: vi.fn(), onEditMessage: vi.fn(), turnMeta: null })
