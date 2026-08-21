@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 49 коммит(ов) в areas после сверки: a460971a Merge task 04cb59a8-31da-482e-ace6-a710c031bea4 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 45 коммит(ов) в areas после сверки: a460971a Merge task 04cb59a8-31da-482e-ace6-a710c031bea4 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 13 коммит(ов) в areas после сверки: a460971a Merge task 04cb59a8-31da-482e-ace6-a710c031bea4 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 499 коммит(ов) в areas после сверки: a460971a Merge task 04cb59a8-31da-482e-ace6-a710c031bea4 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 500 коммит(ов) в areas после сверки: ee1be3f4 docs(kb): update after merge 04cb59a8-31da-482e-ace6-a710c031bea4 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 19 коммит(ов) в areas после сверки: a460971a Merge task 04cb59a8-31da-482e-ace6-a710c031bea4 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ⚠ код изменён 2026-08-21, сверка 2026-08-18 (по датам: правки того же дня не видны — поставь checked) |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ⚠ 13 коммит(ов) в areas после сверки: a460971a Merge task 04cb59a8-31da-482e-ace6-a710c031bea4 … |
