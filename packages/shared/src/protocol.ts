@@ -191,6 +191,8 @@ export const REST = {
   agentApp: '/api/agents/app',
   desktopApp: '/api/app/desktop',
   agent: (id: string) => `/api/agents/${encodeURIComponent(id)}`,
+  agentStorages: (id: string) => `/api/agents/${encodeURIComponent(id)}/storages`,
+  conversationStorage: (id: string) => `/api/conversations/${encodeURIComponent(id)}/storage`,
   agentPolicy: (id: string) => `/api/agents/${encodeURIComponent(id)}/policy`,
   agentToken: (id: string) => `/api/agents/${encodeURIComponent(id)}/token`,
   /** Обновить агента на машине: сервер выполняет на ней ту же команду установки. */

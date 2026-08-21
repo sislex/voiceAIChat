@@ -708,6 +708,30 @@ describe('VoiceChatDb — миграции', () => {
   })
 })
 
+describe('VoiceChatDb — хранилища машин', () => {
+  it('keeps stable storage ids and portable chat bindings', () => {
+    const db = makeDb()
+    db.createUser(U, '', 'admin')
+    const machine = db.createAgent(U, 'MacBook')
+    const first = db.saveMachineStorage(U, machine.id, '/Users/admin/ChatAI/', 1)
+    const replay = db.saveMachineStorage(U, machine.id, '/Users/admin/ChatAI', 1)
+    expect(replay.id).toBe(first.id)
+    expect(db.listMachineStorages(U, machine.id)).toEqual([first])
+
+    const conversation = db.createConversation(U, 'Storage')
+    const binding = db.saveChatStorageBinding(U, {
+      conversationId: conversation.id,
+      machineId: machine.id,
+      storageId: first.id,
+      relativePath: 'chats/chat-1/'
+    })
+    expect(binding.relativePath).toBe('chats/chat-1')
+    expect(db.getChatStorageBinding(U, conversation.id)).toEqual(binding)
+    expect(() => db.saveChatStorageBinding(U, { ...binding, relativePath: '../outside' })).toThrow()
+    db.close()
+  })
+})
+
 describe('VoiceChatDb — персистентная очередь ходов', () => {
   it('дедуплицирует повторную доставку, сохраняет порядок и переживает restart', () => {
     const dir = mkdtempSync(join(tmpdir(), 'voicechat-queue-'))

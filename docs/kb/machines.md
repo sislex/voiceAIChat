@@ -623,3 +623,20 @@ PTY-процесс принадлежит `AgentRegistry`, а не WebSocket б�
 ## Operations read model и lifecycle
 
 `@voicechat/operations-app` публикует `MachineCatalogEntry` только с `id`, `name`, `platform`, `online`, `version`, capabilities и безопасной policy summary (`readOnly`, `network`, `allowedDirs`). Токены и transport handles в модель не входят. `MachineUtilityPort` принимает kind, `agentId`, path и `revealFile`; выбор online-машины и cwd остаётся внутри Operations. Console, PTY и Explorer имеют независимые controller generations; поздние ответы Explorer и заменённые PTY-сессии игнорируются.
+
+## Постоянное хранилище машины
+
+Пользовательская машина может иметь один или несколько корней ChatAI. Сервер хранит их
+в `machine_storages` с устойчивым id, id машины, абсолютным `rootPath` и версией
+формата; повторная настройка той же пары машина+путь сохраняет прежний id. REST:
+`GET/POST /api/agents/:id/storages`. Настройка разрешена только владельцу online-машины.
+Сервер создаёт минимальную служебную структуру `.voicechat/{index,locks,migrations,temporary}`
+и marker `.voicechat/storage.json` с id и `formatVersion=1`. Каталоги пользовательских
+данных создаются лениво.
+
+Файловая директория разговора хранится отдельно от `conversations.workdir` в
+`chat_storage_bindings`: `conversationId + machineId + storageId + relativePath`.
+Контракт доступен через `GET/PUT /api/conversations/:id/storage`; при пустом
+`relativePath` сервер выбирает изолированный путь обычного, проектного или task-чата.
+Абсолютные пути и `..` в относительной части отклоняются. Поэтому перенос корня не
+требует обновлять каждую привязку чата, а рабочий Git-cwd остаётся независимым.
