@@ -52,6 +52,22 @@ export type CiCommandScope = 'global' | 'project'
 export type CiSlot = 'before_model' | 'after_model'
 export const CI_SLOTS: CiSlot[] = ['before_model', 'after_model']
 
+/** Управляемые этапы development-процесса в неизменяемом порядке выполнения. */
+export const CI_PROCESS_STAGES = ['before_model', 'model_work', 'after_model', 'summary'] as const
+export type CiProcessStage = typeof CI_PROCESS_STAGES[number]
+export const CI_PROCESS_STAGE_LABELS: Record<CiProcessStage, string> = {
+  before_model: 'Подготовка',
+  model_work: 'Работа модели',
+  after_model: 'Финальные команды',
+  summary: 'Резюме модели'
+}
+
+export function normalizeCiProcessStages(value: unknown): CiProcessStage[] {
+  if (!Array.isArray(value)) return [...CI_PROCESS_STAGES]
+  const selected = new Set(value.filter((item): item is CiProcessStage => typeof item === 'string' && CI_PROCESS_STAGES.includes(item as CiProcessStage)))
+  return CI_PROCESS_STAGES.filter((stage) => selected.has(stage))
+}
+
 /**
  * Шаг, который выполняет не shell на машине, а сам сервер. В справочнике он
  * выглядит обычной командой (его можно двигать внутри слота и убирать из

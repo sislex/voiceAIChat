@@ -426,6 +426,12 @@ CREATE TABLE IF NOT EXISTS ci_slot_commands (
 );
 CREATE INDEX IF NOT EXISTS idx_ci_slot_commands_owner ON ci_slot_commands(owner_type, owner_id, slot, position);
 
+CREATE TABLE IF NOT EXISTS ci_task_process_stages (
+  task_id     TEXT PRIMARY KEY,
+  stages_json TEXT NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS ci_llm_configs (
   owner_type TEXT NOT NULL,
   owner_id   TEXT NOT NULL,

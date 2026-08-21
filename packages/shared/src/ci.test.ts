@@ -33,6 +33,7 @@ import {
   normCiStageModels,
   resolveCiStageModel,
   resolveCiStageLlm,
+  normalizeCiProcessStages,
   DEFAULT_CI_GLOBAL_SETTINGS,
   DEFAULT_CI_STAGE_MODELS,
   sumCiUsageTotals,
@@ -102,6 +103,13 @@ describe('списки и статусы', () => {
     expect(CI_STATUSES).toContain('awaiting_input')
     expect(isTerminalCiStatus('awaiting_input')).toBe(false)
     expect(isTerminalCiStatus('success')).toBe(true)
+  })
+})
+
+describe('normalizeCiProcessStages', () => {
+  it('defaults to every stage and preserves canonical order for a selection', () => {
+    expect(normalizeCiProcessStages(undefined)).toEqual(['before_model', 'model_work', 'after_model', 'summary'])
+    expect(normalizeCiProcessStages(['summary', 'before_model', 'summary', 'unknown'])).toEqual(['before_model', 'summary'])
   })
 })
 

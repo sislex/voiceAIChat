@@ -33,7 +33,8 @@ export const Overridden: Story = {
       ci.getTaskCi = async () => ({
         config: { beforeModel: ['cmd-1', 'cmd-2'], afterModel: ['cmd-3', 'cmd-5'] },
         overridden: true,
-        projectDefault: { beforeModel: ['cmd-1'], afterModel: [] }
+        projectDefault: { beforeModel: ['cmd-1'], afterModel: [] },
+        enabledStages: ['before_model', 'model_work', 'after_model', 'summary']
       })
       ci.getTaskCiLlm = async () => ({
         config: makeLlmConfig({ provider: 'claude', model: 'opus', mode: 'plan' }),
@@ -71,7 +72,8 @@ export const CleanupWarning: Story = {
       bridges.ci.getTaskCi = async () => ({
         config: { beforeModel: [], afterModel: ['cmd-5'] },
         overridden: true,
-        projectDefault: { beforeModel: [], afterModel: [] }
+        projectDefault: { beforeModel: [], afterModel: [] },
+        enabledStages: ['before_model', 'model_work', 'after_model', 'summary']
       })
     })
   ]

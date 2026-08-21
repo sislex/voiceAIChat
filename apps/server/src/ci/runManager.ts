@@ -1463,11 +1463,15 @@ fi`
     }
 
     const slots = deps.db.resolveTaskSlots(runRow.projectId, runRow.taskId)
-    const total = slots.beforeModel.length + slots.afterModel.length + 2
-    const beforeLen = slots.beforeModel.length
+    const enabledStages = new Set(deps.db.getTaskProcessStages(runRow.taskId))
+    const total = (enabledStages.has('before_model') ? slots.beforeModel.length : 0)
+      + (enabledStages.has('model_work') ? 1 : 0)
+      + (enabledStages.has('after_model') ? slots.afterModel.length : 0)
+      + (enabledStages.has('summary') ? 1 : 0)
+    const beforeLen = enabledStages.has('before_model') ? slots.beforeModel.length : 0
     // Точка возобновления при «повторе с упавшего шага»: сколько шагов уже пройдено
     // и с какого номера нумеровать новые шаги (чтобы не пересекаться со старыми).
-    let done = resume ? (resume.kind === 'model' ? beforeLen : resume.slot === 'before_model' ? resume.index : beforeLen + 1 + resume.index) : 0
+    let done = resume ? (resume.kind === 'model' ? beforeLen : resume.slot === 'before_model' ? resume.index : beforeLen + (enabledStages.has('model_work') ? 1 : 0) + resume.index) : 0
     const posBase = resume ? (deps.db.getCiRun(userId, runId)?.steps.length ?? 0) : 0
     // Системные шаги, вставленные между командами слота, сдвигают позиции в ленте.
     let extraSteps = 0
@@ -1484,7 +1488,7 @@ fi`
     }
 
     // Системный шаг подготовки директории (пропускаем при повторе — директория есть).
-    if (!resume && repoRoot && agentId) {
+    if (enabledStages.has('before_model') && !resume && repoRoot && agentId) {
       const prepStep = deps.db.addCiRunStep({ runId, slot: 'before_model', position: 0, kind: 'command', initiatedBy: 'system', title: 'Подготовка рабочей директории', status: 'running' })
       emitStep(prepStep, userId)
       const ps = now()
@@ -1628,12 +1632,13 @@ fi`
     }
 
     // 1) Слот «до».
-    const beforeOk = await runSlot('before_model', slots.beforeModel, 'Подготовка', resume?.kind === 'command' && resume.slot === 'before_model' ? resume.index : resume ? slots.beforeModel.length : 0)
+    const beforeOk = !enabledStages.has('before_model') || await runSlot('before_model', slots.beforeModel, 'Подготовка', resume?.kind === 'command' && resume.slot === 'before_model' ? resume.index : resume ? slots.beforeModel.length : 0)
     if (!beforeOk) return
     // Команды подготовки исполняются из контейнера workspace и сами заходят в
     // $SLUG. Перед выдачей MCP модели проверяем именно корень клона: иначе CLI
     // честно стартовал в родительской папке, не находил репозиторий и пустой ран
     // всё равно доходил до merge/success.
+    if (enabledStages.has('before_model')) {
     const repoStep = deps.db.addCiRunStep({ runId, slot: 'before_model', position: posBase + done + 1 + extraSteps++, kind: 'command', initiatedBy: 'system', title: 'Проверка рабочей директории модели', workdir: repoPath, status: 'running' })
     emitStep(repoStep, userId)
     const repoStarted = now()
@@ -1658,6 +1663,7 @@ fi`
       else rollbackAndFail(runId, userId, runRow.prevColumnId, 'script_error')
       return
     }
+    }
     if (signal.aborted) {
       finishCancelled()
       return
@@ -1669,7 +1675,7 @@ fi`
     let modelCancelled = false
     /** Модель работала, но рабочая копия пуста — слот «после» не запускаем. */
     let emptyWork = false
-    if (!(resume?.kind === 'command' && resume.slot === 'after_model')) {
+    if (enabledStages.has('model_work') && !(resume?.kind === 'command' && resume.slot === 'after_model')) {
       progress(runId, done, total, 'Модель работает', userId)
       const mwStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_work', initiatedBy: 'system', title: 'Работа модели', status: 'running' })
       emitStep(mwStep, userId)
@@ -1733,7 +1739,7 @@ fi`
       finishCancelled()
       return
     }
-    if (!emptyWork) {
+    if (enabledStages.has('after_model') && !emptyWork) {
       const afterOk = await runSlot('after_model', slots.afterModel, 'Финальные команды', resume?.kind === 'command' && resume.slot === 'after_model' ? resume.index : 0)
       if (!afterOk && !signal.aborted) afterFailed = true
       // Единственная обязательная граница успешного development-рана: после
@@ -1746,7 +1752,7 @@ fi`
     }
 
     // 4) Резюме модели.
-    if (!signal.aborted) {
+    if (enabledStages.has('summary') && !signal.aborted) {
       progress(runId, done, total, 'Резюме', userId)
       const sumStep = deps.db.addCiRunStep({ runId, slot: null, position: posBase + done + 1 + extraSteps, kind: 'model_summary', initiatedBy: 'system', title: 'Резюме модели', status: 'running' })
       emitStep(sumStep, userId)

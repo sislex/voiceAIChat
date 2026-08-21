@@ -1,7 +1,7 @@
 // CI-настройки задачи: команды и наследуемый движок/модель.
 import { useEffect, useState, type JSX } from 'react'
-import type { CiCommand, CiClarifyLevel, CiLlmConfig, CiRunMode, CiSlotConfig, CiTaskMachine } from '@shared/ci'
-import { CI_CLARIFY_MAX_LIMIT, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
+import type { CiCommand, CiClarifyLevel, CiLlmConfig, CiProcessStage, CiRunMode, CiSlotConfig, CiTaskMachine } from '@shared/ci'
+import { CI_CLARIFY_MAX_LIMIT, CI_PROCESS_STAGES, CI_PROCESS_STAGE_LABELS, DEFAULT_CI_CLAUDE_MODEL, DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CODEX_MODELS } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
@@ -31,6 +31,10 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [unavailableAgentId, setUnavailableAgentId] = useState<string | null>(null)
   const [unavailableName, setUnavailableName] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [enabledStages, setEnabledStages] = useState<CiProcessStage[]>([...CI_PROCESS_STAGES])
+  const [stagesLoading, setStagesLoading] = useState(true)
+  const [stagesSaved, setStagesSaved] = useState(true)
+  const [stagesError, setStagesError] = useState<string | null>(null)
   const [forceStatus, setForceStatus] = useState<{ kind: 'idle' | 'started' | 'error'; text?: string }>({ kind: 'idle' })
 
   useEffect(() => {
@@ -40,9 +44,13 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     void bridge.listCommands(props.projectId).then((value) => {
       if (!cancelled) setCommands(value)
     })
+    setStagesLoading(true)
     void bridge.getTaskCi(props.projectId, props.taskId).then((r) => {
       if (cancelled) return
       setBefore(r.config.beforeModel); setAfter(r.config.afterModel); setOverridden(r.overridden)
+      setEnabledStages(r.enabledStages); setStagesLoading(false); setStagesError(null)
+    }).catch((error: unknown) => {
+      if (!cancelled) { setStagesLoading(false); setStagesError(error instanceof Error ? error.message : String(error)) }
     })
     void bridge.getTaskCiLlm(props.projectId, props.taskId).then((r) => {
       if (cancelled) return
@@ -71,6 +79,12 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     const cfg: CiSlotConfig = { beforeModel: before, afterModel: after }
     void window.ci?.putTaskCi(props.projectId, props.taskId, cfg).then(() => { setSaved(true); setOverridden(true) })
   }
+  const saveStages = (): void => {
+    setStagesError(null)
+    void window.ci?.putTaskCi(props.projectId, props.taskId, { enabledStages })
+      .then((result) => { setEnabledStages(result.enabledStages); setStagesSaved(true) })
+      .catch((error: unknown) => setStagesError(error instanceof Error ? error.message : String(error)))
+  }
   const access = props.llmAccess ?? []
   const models = llm.provider === 'codex' ? allowedModels(access, 'codex') : allowedModels(access, 'claude')
   const changeProvider = (provider: 'claude' | 'codex'): void => {
@@ -85,6 +99,21 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
 
   return <section className="ci-task">
     {props.section === 'commands' && <>
+    <div className="ci-task-head"><span className="ci-task-title">Этапы процесса InProgress</span></div>
+    {stagesLoading ? <p className="ci-task-hint" role="status">Загрузка этапов…</p> : <div className="ci-task-stages">
+      {CI_PROCESS_STAGES.map((stage) => <label key={stage}><input
+        type="checkbox"
+        checked={enabledStages.includes(stage)}
+        onChange={(event) => {
+          const selected = new Set(enabledStages)
+          if (event.target.checked) selected.add(stage); else selected.delete(stage)
+          setEnabledStages(CI_PROCESS_STAGES.filter((item) => selected.has(item)))
+          setStagesSaved(false); setStagesError(null)
+        }}
+      />{CI_PROCESS_STAGE_LABELS[stage]}</label>)}
+    </div>}
+    {!stagesSaved && <Button variant="primary" className="ci-task-save" onClick={saveStages}>Сохранить этапы</Button>}
+    {stagesError && <div className="ci-warn" role="alert">Не удалось сохранить этапы: {stagesError}</div>}
     <div className="ci-task-head"><span className="ci-task-title">Команды воркфлоу</span><span className={`lozenge ${overridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{overridden ? 'переопределено' : 'унаследовано'}</span></div>
     <CiSlotEditor label="До работы модели" commands={commands} value={before} onChange={(v) => { setBefore(v); setSaved(false) }} />
     <CiSlotEditor label="После работы модели" commands={commands} value={after} onChange={(v) => { setAfter(v); setSaved(false) }} />
