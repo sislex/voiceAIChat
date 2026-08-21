@@ -3,9 +3,14 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
 import { toFtsMatchQuery } from './fts.js'
 import { calculateKbHit, filesReadFromCiLog } from '../ci/kbHit.js'
+import { testStages } from '../ci/testStages.js'
 import {
   DEFAULT_SETTINGS,
   DEFAULT_AGENT_POLICY,
+  DEFAULT_CODEX_MODEL,
+  isProviderAllowed,
+  firstAllowedProvider,
+  clampModel,
   type AgentCreated,
   type AgentPolicy,
   type Conversation,
@@ -43,10 +48,15 @@ import {
   type ProjectMember,
   type ProjectSummary,
   type Task,
+  type TaskRunResult,
+  normalizeTaskRunOutcome,
   type TaskPriority,
   type WorkItemType,
   type WorkItemDefaultSkills,
   type KanbanColumnSemanticType,
+  type MachineStorage,
+  type ChatStorageBinding,
+  validateStorageRelativePath,
 
   estimateKbTokens,
   type KbDocumentKind,
@@ -69,6 +79,9 @@ import {
   type CiCommandScope,
   type CiSlot,
   type CiSlotConfig,
+  type CiProcessStage,
+  CI_PROCESS_STAGES,
+  normalizeCiProcessStages,
   type CiLlmConfig,
   DEFAULT_CI_CLAUDE_MODEL,
   CI_KB_UPDATE_COMMAND_ID,
@@ -96,6 +109,7 @@ import {
   type TaskRepository,
   ACTIVE_MERGE_STATUSES,
   type CiRunDetail,
+  type CiExecutionLlmSnapshot,
   type CiStageRun,
   type CiRunStep,
   type CiStatus,
@@ -128,6 +142,14 @@ import {
   type CiRunReport,
   type CiRunReportStep,
   type CiTaskReport,
+  type TaskTimeline,
+  type TaskTimelineAttempt,
+  type TaskTimelineStage,
+  type TaskTimelineStatus,
+  mergedTimelineDuration,
+  subtractTimelineIntervals,
+  timelineDuration,
+  timelineIso,
   type KbGapNote,
   CI_TOOL_KINDS,
   CI_TOOL_RESPONSES_KEEP,
@@ -141,13 +163,32 @@ import {
   buildCiAutomationProgress,
   isVerificationCommand,
   canCompleteQa,
+  canCompleteComponentQa,
+  componentQaLaunchReasons,
+  componentQaSemanticVersion,
+  canTransitionWorkflow,
   validateQaResult,
+  QA_RESULT_STATUSES,
   type AcceptanceCriterion,
   type AcceptanceCriterionSnapshot,
   type AcceptanceCriterionVersion,
   type QaTaskState,
   type TaskPreparationRun,
+  type PreparationEvent,
+  type PreparationQuestion,
+  type PreparationAnswerResult,
+  type PreparationClarificationNotification,
+  type TaskPreparationPhase,
+  type PreparationGateResult,
+  redactPreparationText,
+  developmentReadinessGateResults,
+  type TaskLaunchResult,
   type DevelopmentReadiness,
+  type AnyQaStageRun,
+  type QaRunStage,
+  type QaStageRunStatus,
+  QA_RUN_KIND,
+  canCompleteAutomation,
   type QaSession,
   type QaCriterionResult,
   type QaAttachment,
@@ -156,6 +197,16 @@ import {
   type QaIssueClassification,
   type QaSeverity,
   type QaFrequency,
+  type ComponentQaRun,
+  type ComponentQaTaskState,
+  type ComponentQaScenarioSnapshot,
+  type ComponentQaCommandResult,
+  type ComponentQaArtifact,
+  type IntegrationTestRun,
+  type IntegrationTestTaskState,
+  type IntegrationTestCommandResult,
+  integrationTestSemanticVersion,
+  integrationTestGate,
   RELEASE_STEP_ORDER,
   type ProjectRelease,
   type ProjectReleaseSummary,
@@ -315,6 +366,11 @@ const NOT_DONE_TASK_CHAT = `(c.task_id IS NULL OR NOT EXISTS (
     SELECT 1 FROM tasks t JOIN kanban_columns k ON k.id = t.column_id
     WHERE t.id = c.task_id AND k.semantic_type = 'done'))`
 
+/** Отменённые задачи не входят ни в одну стандартную выборку разговоров. */
+const NOT_CANCELLED_TASK_CHAT = `(c.task_id IS NULL OR NOT EXISTS (
+    SELECT 1 FROM tasks t JOIN kanban_columns k ON k.id = t.column_id
+    WHERE t.id = c.task_id AND k.semantic_type = 'cancelled'))`
+
 /** Шаг дробного ранга для порядка колонок/задач. */
 const RANK_STEP = 1024
 /** Порог схлопывания дробного ранга — ниже него колонка ренормализуется. */
@@ -387,6 +443,8 @@ interface TaskRow {
   parent_id: string | null
   priority: string
   assignee: string | null
+  created_by: string | null
+  created_by_name: string | null
   agent_id: string | null
   labels: string | null
   skills: string | null
@@ -465,7 +523,7 @@ function normPriority(raw: string): TaskPriority {
 }
 
 function normColumnSemantic(raw: string): KanbanColumnSemanticType {
-  return raw === 'backlog' || raw === 'preparation' || raw === 'ready' || raw === 'development' || raw === 'component_qa' || raw === 'integration_tests' || raw === 'automated_qa' || raw === 'testing' || raw === 'qa_preparation' || raw === 'manual_qa' || raw === 'awaiting_merge' || raw === 'merge' || raw === 'decision_required' || raw === 'done' ? raw : 'custom'
+  return raw === 'backlog' || raw === 'preparation' || raw === 'ready' || raw === 'development' || raw === 'component_qa' || raw === 'integration_tests' || raw === 'automated_qa' || raw === 'testing' || raw === 'qa_preparation' || raw === 'manual_qa' || raw === 'awaiting_merge' || raw === 'merge' || raw === 'decision_required' || raw === 'done' || raw === 'cancelled' ? raw : 'custom'
 }
 
 function normWorkItemType(raw: string): WorkItemType {
@@ -497,6 +555,8 @@ function mapTask(r: TaskRow): Task {
     acceptanceCriteria: r.acceptance_criteria,
     priority: normPriority(r.priority),
     assignee: r.assignee,
+    createdBy: r.created_by,
+    createdByName: r.created_by_name,
     agentId: r.agent_id ?? null,
     labels: parseStringArray(r.labels),
     skills: parseStringArray(r.skills),
@@ -619,11 +679,11 @@ export class VoiceChatDb {
     // Unicode-lower для регистронезависимого поиска (SQLite LIKE/lower() — только ASCII).
     this.db.function('ulower', (s: unknown) => (typeof s === 'string' ? s.toLowerCase() : ''))
     this.db.exec(SCHEMA_SQL)
-    this.migrate()
+    // До `migrate()`: миграции тоже пишут строки (например, недостающие
+    // workflow-колонки канбана) и требуют уже готовых `newId`/`now`.
     this.newId = deps.newId ?? (() => randomUUID())
     this.now = deps.now ?? (() => Date.now())
-    // Не в `migrate()`: сидирование пишет строки и потому требует уже готовых
-    // `newId`/`now`, а миграция идёт до их присвоения.
+    this.migrate()
     this.ensureKbUpdateCommand()
     this.pruneDevelopmentAfterModelCommands()
     this.setupMessagesFts()
@@ -636,6 +696,22 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE users SET role = 'developer' WHERE role = 'user'`).run()
     this.db.prepare(`UPDATE users SET role = 'admin' WHERE name IN ('admin', 'admin1')`).run()
     this.db.prepare(`UPDATE llm_engines SET allowed_roles = replace(allowed_roles, '"user"', '"developer"') WHERE allowed_roles LIKE '%"user"%'`).run()
+
+    const preparationCols = this.db.prepare(`PRAGMA table_info(task_preparation_runs)`).all() as Array<{ name: string }>
+    const addPreparationColumn = (name: string, sql: string): void => {
+      if (preparationCols.length && !preparationCols.some((column) => column.name === name)) this.db.exec(sql)
+    }
+    addPreparationColumn('phase', `ALTER TABLE task_preparation_runs ADD COLUMN phase TEXT NOT NULL DEFAULT 'initialization'`)
+    addPreparationColumn('task_key', `ALTER TABLE task_preparation_runs ADD COLUMN task_key TEXT NOT NULL DEFAULT ''`)
+    addPreparationColumn('llm_engine_id', `ALTER TABLE task_preparation_runs ADD COLUMN llm_engine_id TEXT`)
+    addPreparationColumn('provider', `ALTER TABLE task_preparation_runs ADD COLUMN provider TEXT NOT NULL DEFAULT 'claude'`)
+    addPreparationColumn('model', `ALTER TABLE task_preparation_runs ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
+    addPreparationColumn('profile_id', `ALTER TABLE task_preparation_runs ADD COLUMN profile_id TEXT NOT NULL DEFAULT ''`)
+    addPreparationColumn('gate_results_json', `ALTER TABLE task_preparation_runs ADD COLUMN gate_results_json TEXT NOT NULL DEFAULT '[]'`)
+    addPreparationColumn('started_at', `ALTER TABLE task_preparation_runs ADD COLUMN started_at INTEGER`)
+    if (preparationCols.length) {
+      this.db.exec(`DROP INDEX IF EXISTS idx_task_preparation_active; CREATE UNIQUE INDEX idx_task_preparation_active ON task_preparation_runs(task_id) WHERE status IN ('queued','running','waiting_for_answer','validating')`)
+    }
 
     const agentCols = this.db.prepare(`PRAGMA table_info(agents)`).all() as Array<{ name: string }>
     if (!agentCols.some((c) => c.name === 'policy')) {
@@ -716,6 +792,12 @@ export class VoiceChatDb {
     } else if (pmCols.length && !pmCols.some((c) => c.name === 'repos_root')) {
       this.db.exec(`ALTER TABLE project_machines ADD COLUMN repos_root TEXT NOT NULL DEFAULT ''`)
     }
+    if (pmCols.length && !pmCols.some((c) => c.name === 'ssh_host')) {
+      this.db.exec(`ALTER TABLE project_machines ADD COLUMN ssh_host TEXT NOT NULL DEFAULT ''`)
+    }
+    if (pmCols.length && !pmCols.some((c) => c.name === 'ssh_user')) {
+      this.db.exec(`ALTER TABLE project_machines ADD COLUMN ssh_user TEXT NOT NULL DEFAULT ''`)
+    }
     if (pmCols.length && !pmCols.some((c) => c.name === 'added_at')) {
       this.db.exec(`ALTER TABLE project_machines ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0`)
     }
@@ -729,6 +811,9 @@ export class VoiceChatDb {
     if (taskCols.length && !taskCols.some((c) => c.name === 'type')) this.db.exec(`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'parent_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN parent_id TEXT`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'acceptance_criteria')) this.db.exec(`ALTER TABLE tasks ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`)
+    // Старым карточкам автора не угадываем: NULL отображается как «Нет данных».
+    if (taskCols.length && !taskCols.some((c) => c.name === 'created_by')) this.db.exec(`ALTER TABLE tasks ADD COLUMN created_by TEXT`)
+    if (taskCols.length && !taskCols.some((c) => c.name === 'created_by_name')) this.db.exec(`ALTER TABLE tasks ADD COLUMN created_by_name TEXT`)
     // NULL у старых карточек сохраняет прежнее поведение: машина проекта по умолчанию.
     if (taskCols.length && !taskCols.some((c) => c.name === 'agent_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN agent_id TEXT`)
     if (taskCols.length && !taskCols.some((c) => c.name === 'labels')) this.db.exec(`ALTER TABLE tasks ADD COLUMN labels TEXT NOT NULL DEFAULT '[]'`)
@@ -809,14 +894,15 @@ export class VoiceChatDb {
       ['awaiting_merge', 'Ожидает мержа'],
       ['merge', 'Мерж'],
       ['done', 'Готово'],
+      ['cancelled', 'Отменено'],
       ['decision_required', 'Требуется решение']
     ]
-    type WorkflowColumnRow = { id: string; semantic_type: string; position: number; created_at: number }
+    type WorkflowColumnRow = { id: string; name: string; semantic_type: string; position: number; created_at: number }
     type WorkflowTaskRow = { id: string }
     this.db.transaction(() => {
       const projectIds = this.db.prepare(`SELECT id FROM projects ORDER BY created_at, id`).all() as Array<{ id: string }>
       const loadColumns = (projectId: string) => this.db.prepare(
-        `SELECT id, semantic_type, position, created_at FROM kanban_columns WHERE project_id=? ORDER BY position, created_at, id`
+        `SELECT id, name, semantic_type, position, created_at FROM kanban_columns WHERE project_id=? ORDER BY position, created_at, id`
       ).all(projectId) as WorkflowColumnRow[]
       const mergeColumns = (projectId: string, targetId: string, sourceIds: string[]) => {
         if (!sourceIds.length) return
@@ -835,6 +921,16 @@ export class VoiceChatDb {
 
       for (const { id: projectId } of projectIds) {
         let columns = loadColumns(projectId)
+        // Сохранённая семантика (и тем самым id существующей системной колонки) —
+        // основной признак. Только если её ещё нет, старую системную колонку можно
+        // однократно узнать по точному legacy-заголовку, не двигая её карточки.
+        if (!columns.some(column => column.semantic_type === 'cancelled')) {
+          const legacyCancelled = columns.find(column => column.semantic_type === 'custom' && column.name === 'Отменены')
+          if (legacyCancelled) {
+            this.db.prepare(`UPDATE kanban_columns SET semantic_type='cancelled' WHERE id=?`).run(legacyCancelled.id)
+            columns = loadColumns(projectId)
+          }
+        }
         let nextPosition = Math.max(0, ...columns.map(column => column.position)) + RANK_STEP
         for (const [semantic, name] of workflowColumns) {
           if (columns.some(column => column.semantic_type === semantic)) continue
@@ -948,9 +1044,15 @@ export class VoiceChatDb {
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'checks_json')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN checks_json TEXT NOT NULL DEFAULT '[]'`)
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'recommended_action')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN recommended_action TEXT`)
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'push_started_at')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN push_started_at INTEGER`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'requested_llm_provider')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN requested_llm_provider TEXT`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'requested_llm_model')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN requested_llm_model TEXT`)
+    if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'llm_fallback_reason')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN llm_fallback_reason TEXT`)
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'run_column_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN run_column_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'terminal_column_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN terminal_column_id TEXT`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'agent_owner_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN agent_owner_id TEXT`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'agent_owner_name')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN agent_owner_name TEXT`)
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'agent_selection_source')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN agent_selection_source TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_engine_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_engine_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_provider')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_provider TEXT NOT NULL DEFAULT 'claude'`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'llm_model')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN llm_model TEXT NOT NULL DEFAULT '${DEFAULT_CI_CLAUDE_MODEL}'`)
@@ -1126,7 +1228,7 @@ export class VoiceChatDb {
 
   // ---- Conversations ----------------------------------------------------
 
-  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | null = null): Conversation {
+  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | null = null): Conversation {
     const id = this.newId()
     const ts = this.now()
     this.db
@@ -1223,7 +1325,8 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND (c.assistant_kind IS NULL OR c.assistant_kind = 'web-recorder')
+           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader'))
+           AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
          ORDER BY c.updated_at DESC`
       )
@@ -1273,7 +1376,8 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND (c.assistant_kind IS NULL OR c.assistant_kind = 'web-recorder')
+           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader'))
+           AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
             OR EXISTS (SELECT 1 FROM messages m
@@ -1334,13 +1438,52 @@ export class VoiceChatDb {
   }
 
 
-  /** Вернуть чат задачи к папке проекта после удаления изолированного клона. */
+  /**
+   * Единое вычисление машины чата. Сохранённый `null` означает позднее
+   * наследование персонального default пользователя; только наследование получает
+   * безопасный online-fallback. Явный override не заменяется молча.
+   */
+  resolveConversationMachine(
+    userId: string,
+    conversationId: string,
+    options: { execTarget?: string | null; projectId?: string | null; isOnline?: (agentId: string) => boolean } = {}
+  ): {
+    agentId: string | null
+    source: 'explicit' | 'personal_default' | 'fallback' | 'disabled' | 'none'
+    error: 'unavailable' | 'offline' | 'no_online_machine' | null
+  } | null {
+    const conversation = this.getConversation(userId, conversationId)
+    if (!conversation) return null
+    const explicitTarget = options.execTarget === undefined ? conversation.execTarget : options.execTarget
+    const projectId = options.projectId === undefined ? conversation.projectId : options.projectId
+    if (explicitTarget === 'none') return { agentId: null, source: 'disabled', error: null }
+    const usable = this.listUsableAgents(userId, projectId)
+    const isOnline = options.isOnline ?? (() => true)
+    if (explicitTarget) {
+      if (!this.canUseAgent(userId, explicitTarget, projectId)) {
+        return { agentId: explicitTarget, source: 'explicit', error: 'unavailable' }
+      }
+      return {
+        agentId: explicitTarget,
+        source: 'explicit',
+        error: isOnline(explicitTarget) ? null : 'offline'
+      }
+    }
+    const personalDefault = projectId
+      ? this.getUserProjectDefaultMachine(userId, projectId)
+      : this.getSettings(userId).defaultAgentId
+    if (personalDefault && usable.some((agent) => agent.id === personalDefault) && isOnline(personalDefault)) {
+      return { agentId: personalDefault, source: 'personal_default', error: null }
+    }
+    const fallback = usable.find((agent) => isOnline(agent.id))
+    if (fallback) return { agentId: fallback.id, source: 'fallback', error: null }
+    return { agentId: null, source: 'none', error: 'no_online_machine' }
+  }
+
+  /** Вернуть чат задачи к наследованию после удаления изолированного клона. */
   restoreTaskChatWorkdir(userId: string, id: string, projectId: string): Conversation | null {
-    const project = this.getProject(userId, projectId)
-    if (!project) return null
-    const agentId = project.defaultAgentId
-    const path = agentId ? project.machines.find((machine) => machine.agentId === agentId)?.path ?? '' : ''
-    return this.setConversationExecTarget(userId, id, agentId, path || null)
+    if (!this.getProject(userId, projectId)) return null
+    return this.setConversationExecTarget(userId, id, null, null)
   }
 
   setConversationKbContextMode(userId: string, id: string, mode: 'auto' | 'manual' | 'off'): Conversation | null {
@@ -1382,21 +1525,24 @@ export class VoiceChatDb {
     if (!this.ownsConversation(userId, conversationId)) return []
     const rows = this.db.prepare(
       `SELECT q.id, q.conversation_id, q.message_id, q.payload, q.status, q.position,
-              q.created_at, m.text
+              q.created_at, m.text, m.attachments AS message_attachments
        FROM conversation_turn_queue q
        JOIN messages m ON m.id = q.message_id
        WHERE q.user_id = ? AND q.conversation_id = ? AND q.status IN ('queued','failed')
        ORDER BY q.position, q.created_at`
-    ).all(userId, conversationId) as Array<{ id: string; conversation_id: string; message_id: string; payload: string; status: string; position: number; created_at: number; text: string }>
+    ).all(userId, conversationId) as Array<{ id: string; conversation_id: string; message_id: string; payload: string; status: string; position: number; created_at: number; text: string; message_attachments: string | null }>
     return rows.map((row, index) => {
       let payload: QueueTurnPayload = { segments: [] }
       try { payload = JSON.parse(row.payload) as QueueTurnPayload } catch { /* keep recoverable row visible */ }
+      let attachmentDetails: MessageAttachment[] = []
+      try { attachmentDetails = row.message_attachments ? JSON.parse(row.message_attachments) as MessageAttachment[] : [] } catch { /* attachment ids still remain usable */ }
       return {
         id: row.id,
         conversationId: row.conversation_id,
         messageId: row.message_id,
         text: row.text,
         attachments: payload.attachments ?? [],
+        ...(attachmentDetails.length ? { attachmentDetails } : {}),
         position: index + 1,
         status: row.status === 'failed' ? 'failed' : 'queued',
         createdAt: row.created_at
@@ -1467,6 +1613,99 @@ export class VoiceChatDb {
       this.db.prepare(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`).run(row.message_id, conversationId)
     })()
     return this.listQueuedTurns(userId, conversationId)
+  }
+
+  /** Идемпотентно повышает ожидающий элемент до первого места, не трогая активный ход. */
+  prioritizeQueuedTurn(userId: string, conversationId: string, id: string): QueuedTurn[] {
+    this.db.transaction(() => {
+      const selected = this.db.prepare(
+        `SELECT position FROM conversation_turn_queue
+         WHERE id = ? AND conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
+      ).get(id, conversationId, userId) as { position: number } | undefined
+      if (!selected) return
+      const first = this.db.prepare(
+        `SELECT MIN(position) AS position FROM conversation_turn_queue
+         WHERE conversation_id = ? AND user_id = ? AND status IN ('queued','failed')`
+      ).get(conversationId, userId) as { position: number | null }
+      if (first.position === null || selected.position === first.position) return
+      // UNIQUE(conversation_id, position) проверяется SQLite после каждой строки,
+      // поэтому переставляем через заведомо свободный отрицательный/временный диапазон.
+      this.db.prepare(`UPDATE conversation_turn_queue SET position = -1, updated_at = ? WHERE id = ?`)
+        .run(this.now(), id)
+      this.db.prepare(
+        `UPDATE conversation_turn_queue SET position = position + 1000000, updated_at = ?
+         WHERE conversation_id = ? AND user_id = ? AND status IN ('queued','failed') AND position < ? AND position >= 0`
+      ).run(this.now(), conversationId, userId, selected.position)
+      this.db.prepare(
+        `UPDATE conversation_turn_queue SET position = position - 999999
+         WHERE conversation_id = ? AND user_id = ? AND position >= 1000000`
+      ).run(conversationId, userId)
+      this.db.prepare(
+        `UPDATE conversation_turn_queue SET position = ?, status = 'queued', updated_at = ? WHERE id = ?`
+      ).run(first.position, this.now(), id)
+    })()
+    return this.listQueuedTurns(userId, conversationId)
+  }
+
+  /**
+   * Атомарно присоединяет выбранную ожидающую реплику к активной пользовательской
+   * реплике. Скрытое сообщение и строка очереди удаляются, активное сохраняет id
+   * и позицию истории, а CLI-сессия сбрасывается для чистого перезапуска.
+   */
+  mergeQueuedTurnIntoMessage(
+    userId: string,
+    conversationId: string,
+    id: string,
+    activeMessageId: string,
+    activePayload: QueueTurnPayload
+  ): { message: Message; payload: QueueTurnPayload } | null {
+    return this.db.transaction(() => {
+      if (!this.ownsConversation(userId, conversationId)) return null
+      const queued = this.db.prepare(
+        `SELECT q.message_id, q.payload, m.text, m.attachments
+           FROM conversation_turn_queue q
+           JOIN messages m ON m.id = q.message_id AND m.conversation_id = q.conversation_id
+          WHERE q.id = ? AND q.conversation_id = ? AND q.user_id = ?
+            AND q.status IN ('queued','failed')`
+      ).get(id, conversationId, userId) as { message_id: string; payload: string; text: string; attachments: string | null } | undefined
+      const active = this.db.prepare(
+        `SELECT text, attachments FROM messages
+          WHERE id = ? AND conversation_id = ? AND state = 'published' AND role <> 'ai'`
+      ).get(activeMessageId, conversationId) as { text: string; attachments: string | null } | undefined
+      if (!queued || !active || queued.message_id === activeMessageId) return null
+
+      let queuedPayload: QueueTurnPayload
+      try { queuedPayload = JSON.parse(queued.payload) as QueueTurnPayload } catch { return null }
+      const parseDetails = (value: string | null): MessageAttachment[] => {
+        try { return value ? JSON.parse(value) as MessageAttachment[] : [] } catch { return [] }
+      }
+      const details = [...parseDetails(active.attachments), ...parseDetails(queued.attachments)]
+      const uniqueDetails = details.filter((item, index) => {
+        const key = item.uploadId ?? item.path
+        return details.findIndex((candidate) => (candidate.uploadId ?? candidate.path) === key) === index
+      })
+      const attachmentIds = [...(activePayload.attachments ?? []), ...(queuedPayload.attachments ?? [])]
+        .filter((value, index, all) => all.indexOf(value) === index)
+      const payload: QueueTurnPayload = {
+        ...activePayload,
+        ...queuedPayload,
+        segments: [...activePayload.segments, ...queuedPayload.segments],
+        attachments: attachmentIds
+      }
+      const text = [active.text.trim(), queued.text.trim()].filter(Boolean).join('\n\n')
+
+      this.db.prepare(
+        `UPDATE messages SET text = ?, attachments = ? WHERE id = ? AND conversation_id = ?`
+      ).run(text, uniqueDetails.length ? JSON.stringify(uniqueDetails) : null, activeMessageId, conversationId)
+      this.db.prepare(`DELETE FROM conversation_turn_queue WHERE id = ?`).run(id)
+      this.db.prepare(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`).run(queued.message_id, conversationId)
+      this.db.prepare(`UPDATE conversations SET claude_session_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?`)
+        .run(this.now(), conversationId, userId)
+
+      const message = this.listMessages(userId, conversationId).find((item) => item.id === activeMessageId)
+      if (!message) throw new Error('active message not found')
+      return { message, payload }
+    })()
   }
 
   takeQueuedTurn(userId: string, conversationId: string, id?: string, publish = true): { id: string; messageId: string; payload: QueueTurnPayload; message: Message } | null {
@@ -1597,6 +1836,8 @@ export class VoiceChatDb {
    * страницы не «дышали»: курсор кодирует именно эту пару.
    *
    * `projectId`: undefined — по всем беседам, null — только беседы без проекта.
+   * Сообщения чатов отменённых задач исключаются до LIMIT/курсора; прямой поиск
+   * внутри такого разговора намеренно не превращает его в стандартную выборку.
    */
   searchMessages(userId: string, opts: MessageSearchOptions): MessageSearchResult {
     const match = toFtsMatchQuery(opts.q ?? '')
@@ -1604,7 +1845,7 @@ export class VoiceChatDb {
     // Индекса нет (сборка SQLite без FTS5) или искать нечего — пустая страница.
     if (!match || !this.ftsReady) return { hits: [], nextCursor: null, match }
 
-    const where = ['messages_fts MATCH ?', 'c.user_id = ?', "m.state = 'published'"]
+    const where = ['messages_fts MATCH ?', 'c.user_id = ?', "m.state = 'published'", NOT_CANCELLED_TASK_CHAT]
     const params: unknown[] = [match, userId]
     if (opts.projectId !== undefined) {
       if (opts.projectId === null) where.push('c.project_id IS NULL')
@@ -1829,6 +2070,72 @@ export class VoiceChatDb {
     return { conversationsImported, messagesImported }
   }
 
+  // ---- Machine storage -----------------------------------------------------
+
+  listMachineStorages(userId: string, machineId?: string): MachineStorage[] {
+    const rows = this.db.prepare(
+      `SELECT s.id, s.machine_id, s.root_path, s.format_version
+       FROM machine_storages s JOIN agents a ON a.id = s.machine_id
+       WHERE a.user_id = ? AND (? IS NULL OR s.machine_id = ?)
+       ORDER BY s.created_at ASC`
+    ).all(userId, machineId ?? null, machineId ?? null) as Array<{ id: string; machine_id: string; root_path: string; format_version: number }>
+    return rows.map((row) => ({
+      id: row.id,
+      machineId: row.machine_id,
+      rootPath: row.root_path,
+      formatVersion: row.format_version,
+      status: 'ready'
+    }))
+  }
+
+  saveMachineStorage(userId: string, machineId: string, rootPath: string, formatVersion: number, preferredId?: string): MachineStorage {
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(machineId, userId)) {
+      throw new Error('Машина не найдена')
+    }
+    const normalized = rootPath.trim().replace(/[\\/]+$/, '')
+    if (!normalized) throw new Error('rootPath required')
+    const existing = this.db.prepare(
+      `SELECT id FROM machine_storages WHERE machine_id = ? AND root_path = ?`
+    ).get(machineId, normalized) as { id: string } | undefined
+    const id = existing?.id ?? preferredId ?? this.newId()
+    const now = this.now()
+    this.db.prepare(
+      `INSERT INTO machine_storages (id,machine_id,root_path,format_version,created_at,updated_at)
+       VALUES (?,?,?,?,?,?)
+       ON CONFLICT(machine_id,root_path) DO UPDATE SET format_version=excluded.format_version,updated_at=excluded.updated_at`
+    ).run(id, machineId, normalized, formatVersion, now, now)
+    return { id, machineId, rootPath: normalized, formatVersion, status: 'ready' }
+  }
+
+  getChatStorageBinding(userId: string, conversationId: string): ChatStorageBinding | null {
+    if (!this.ownsConversation(userId, conversationId)) return null
+    const row = this.db.prepare(
+      `SELECT conversation_id,machine_id,storage_id,relative_path FROM chat_storage_bindings WHERE conversation_id=?`
+    ).get(conversationId) as { conversation_id: string; machine_id: string; storage_id: string; relative_path: string } | undefined
+    return row ? {
+      conversationId: row.conversation_id,
+      machineId: row.machine_id,
+      storageId: row.storage_id,
+      relativePath: row.relative_path
+    } : null
+  }
+
+  saveChatStorageBinding(userId: string, binding: ChatStorageBinding): ChatStorageBinding {
+    if (!this.ownsConversation(userId, binding.conversationId)) throw new Error('Чат не найден')
+    const storage = this.db.prepare(
+      `SELECT s.machine_id FROM machine_storages s JOIN agents a ON a.id=s.machine_id
+       WHERE s.id=? AND a.user_id=?`
+    ).get(binding.storageId, userId) as { machine_id: string } | undefined
+    if (!storage || storage.machine_id !== binding.machineId) throw new Error('Хранилище не найдено')
+    const relativePath = validateStorageRelativePath(binding.relativePath)
+    this.db.prepare(
+      `INSERT INTO chat_storage_bindings (conversation_id,machine_id,storage_id,relative_path,updated_at)
+       VALUES (?,?,?,?,?)
+       ON CONFLICT(conversation_id) DO UPDATE SET machine_id=excluded.machine_id,storage_id=excluded.storage_id,relative_path=excluded.relative_path,updated_at=excluded.updated_at`
+    ).run(binding.conversationId, binding.machineId, binding.storageId, relativePath, this.now())
+    return { ...binding, relativePath }
+  }
+
   // ---- Agents (машины для удалённого выполнения команд) ------------------
 
   /** Создаёт машину-агента пользователя; возвращает токен открытым текстом (раз). */
@@ -1873,10 +2180,10 @@ export class VoiceChatDb {
        FROM agents a
        WHERE a.user_id = ?
           OR (? IS NOT NULL AND EXISTS (
-            SELECT 1 FROM project_machines pm
-            JOIN project_members member ON member.project_id = pm.project_id
+            SELECT 1 FROM machine_project_shares share
+            JOIN project_members member ON member.project_id = share.project_id
             JOIN users u ON u.name = member.username
-            WHERE pm.project_id = ? AND pm.agent_id = a.id
+            WHERE share.project_id = ? AND share.agent_id = a.id AND share.shared = 1
               AND member.username = ? AND u.blocked = 0
           ))
        ORDER BY a.created_at ASC`
@@ -1892,11 +2199,74 @@ export class VoiceChatDb {
     if (this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) return true
     if (!projectId) return false
     return Boolean(this.db.prepare(
-      `SELECT 1 FROM project_machines pm
-       JOIN project_members member ON member.project_id = pm.project_id
+      `SELECT 1 FROM machine_project_shares share
+       JOIN project_members member ON member.project_id = share.project_id
        JOIN users u ON u.name = member.username
-       WHERE pm.project_id = ? AND pm.agent_id = ? AND member.username = ? AND u.blocked = 0`
+       WHERE share.project_id = ? AND share.agent_id = ? AND share.shared = 1
+         AND member.username = ? AND u.blocked = 0`
     ).get(projectId, agentId, userId))
+  }
+
+  getUserProjectDefaultMachine(userId: string, projectId: string): string | null {
+    const row = this.db.prepare(
+      `SELECT d.agent_id FROM user_project_machine_defaults d
+       WHERE d.username = ? AND d.project_id = ?`
+    ).get(userId, projectId) as { agent_id: string } | undefined
+    return row && this.canUseAgent(userId, row.agent_id, projectId) ? row.agent_id : null
+  }
+
+  setUserProjectDefaultMachine(userId: string, projectId: string, agentId: string | null): void {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
+    if (agentId === null) {
+      this.db.prepare(`DELETE FROM user_project_machine_defaults WHERE username=? AND project_id=?`).run(userId, projectId)
+      return
+    }
+    if (!this.canUseAgent(userId, agentId, projectId)) throw new Error('Машина недоступна в этом проекте')
+    this.db.prepare(
+      `INSERT INTO user_project_machine_defaults (username,project_id,agent_id,updated_at)
+       VALUES (?,?,?,?)
+       ON CONFLICT(username,project_id) DO UPDATE SET agent_id=excluded.agent_id,updated_at=excluded.updated_at`
+    ).run(userId, projectId, agentId, this.now())
+  }
+
+  setMachineSharedWithProject(userId: string, projectId: string, agentId: string, shared: boolean): void {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) {
+      throw new Error('Только владелец машины может менять предоставление')
+    }
+    const previous = Boolean((this.db.prepare(
+      `SELECT shared FROM machine_project_shares WHERE project_id=? AND agent_id=?`
+    ).get(projectId, agentId) as { shared: number } | undefined)?.shared)
+    if (previous === shared) return
+    const ts = this.now()
+    this.db.transaction(() => {
+      this.db.prepare(
+        `INSERT INTO machine_project_shares (project_id,agent_id,shared,created_at,updated_at,updated_by)
+         VALUES (?,?,?,?,?,?)
+         ON CONFLICT(project_id,agent_id) DO UPDATE SET shared=excluded.shared,updated_at=excluded.updated_at,updated_by=excluded.updated_by`
+      ).run(projectId, agentId, shared ? 1 : 0, ts, ts, userId)
+      this.db.prepare(
+        `INSERT INTO machine_project_share_audit (id,project_id,agent_id,actor,old_value,new_value,created_at)
+         VALUES (?,?,?,?,?,?,?)`
+      ).run(this.newId(), projectId, agentId, userId, previous ? 1 : 0, shared ? 1 : 0, ts)
+      if (!shared) {
+        this.db.prepare(`DELETE FROM user_project_machine_defaults WHERE project_id=? AND agent_id=?`).run(projectId, agentId)
+      }
+    })()
+  }
+
+  isMachineSharedWithProject(projectId: string, agentId: string): boolean {
+    return Boolean((this.db.prepare(
+      `SELECT shared FROM machine_project_shares WHERE project_id=? AND agent_id=?`
+    ).get(projectId, agentId) as { shared: number } | undefined)?.shared)
+  }
+
+  listMachineShareAudit(projectId: string): Array<{ actor: string; agentId: string; oldValue: boolean; newValue: boolean; createdAt: number }> {
+    return (this.db.prepare(
+      `SELECT actor,agent_id,old_value,new_value,created_at FROM machine_project_share_audit
+       WHERE project_id=? ORDER BY created_at,rowid`
+    ).all(projectId) as Array<{ actor: string; agent_id: string; old_value: number; new_value: number; created_at: number }>)
+      .map((row) => ({ actor: row.actor, agentId: row.agent_id, oldValue: !!row.old_value, newValue: !!row.new_value, createdAt: row.created_at }))
   }
 
   /** Ищет агента по хэшу токена (авторизация WS-подключения). Глобально по токену. */
@@ -2002,6 +2372,17 @@ export class VoiceChatDb {
 
   deleteUser(name: string): void {
     this.db.prepare(`DELETE FROM users WHERE name = ?`).run(name)
+  }
+
+  /** Делает конкретный Bearer-токен недействительным даже после рестарта сервера. */
+  revokeSession(token: string): void {
+    const hash = createHash('sha256').update(token).digest('hex')
+    this.db.prepare(`INSERT OR IGNORE INTO session_revocations (token_hash, created_at) VALUES (?, ?)`).run(hash, this.now())
+  }
+
+  isSessionRevoked(token: string): boolean {
+    const hash = createHash('sha256').update(token).digest('hex')
+    return Boolean(this.db.prepare(`SELECT 1 FROM session_revocations WHERE token_hash = ?`).get(hash))
   }
 
   /** Deny-list rows only: an empty list means every provider and model is allowed. */
@@ -2267,7 +2648,7 @@ export class VoiceChatDb {
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       projectId: row.project_id ?? null,
-      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' ? row.assistant_kind : null,
+      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' ? row.assistant_kind : null,
       previewUrl: row.preview_url ?? null,
       projectPreviewUrl: row.project_id ? ((this.db.prepare(`SELECT preview_url FROM projects WHERE id = ?`).get(row.project_id) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,
@@ -2283,6 +2664,15 @@ export class VoiceChatDb {
     return (
       this.db
         .prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ?`)
+        .get(projectId, userId) !== undefined
+    )
+  }
+
+  /** Назначать задачи можно только незаблокированному участнику проекта. */
+  private isActiveProjectMember(userId: string, projectId: string): boolean {
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM project_members pm JOIN users u ON u.name = pm.username WHERE pm.project_id = ? AND pm.username = ? AND u.blocked = 0`)
         .get(projectId, userId) !== undefined
     )
   }
@@ -2409,6 +2799,7 @@ export class VoiceChatDb {
         ['Ожидает мержа', 'awaiting_merge'],
         ['Мерж', 'merge'],
         ['Готово', 'done'],
+        ['Отменено', 'cancelled'],
         ['Требуется решение', 'decision_required']
       ].forEach(([name, semantic], i) =>
         this.db.prepare(`INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`).run(this.newId(), id, name, semantic, (i + 1) * RANK_STEP, ts)
@@ -2447,36 +2838,58 @@ export class VoiceChatDb {
     if (!row) return null
     const members = (
       this.db
-        .prepare(`SELECT username, role, added_at FROM project_members WHERE project_id = ? ORDER BY added_at ASC`)
-        .all(id) as ProjectMemberRow[]
+        .prepare(`SELECT pm.username, pm.role, pm.added_at, u.blocked FROM project_members pm JOIN users u ON u.name = pm.username WHERE pm.project_id = ? ORDER BY pm.added_at ASC`)
+        .all(id) as Array<ProjectMemberRow & { blocked: number }>
     ).map(
       (m): ProjectMember => ({
         username: m.username,
         role: m.role === 'owner' ? 'owner' : 'member',
-        addedAt: m.added_at
+        addedAt: m.added_at,
+        active: m.blocked === 0
       })
     )
     const machines = (
       this.db.prepare(
-        `SELECT pm.agent_id, pm.path, pm.repos_root, pm.added_at, a.name, a.user_id
-         FROM project_machines pm JOIN agents a ON a.id = pm.agent_id
-         WHERE pm.project_id = ? ORDER BY a.name ASC`
-      ).all(id) as Array<{
+        `SELECT a.id AS agent_id,
+                COALESCE(pm.path,'') AS path,
+                COALESCE(pm.repos_root,'') AS repos_root,
+                COALESCE(pm.ssh_host,'') AS ssh_host,
+                COALESCE(pm.ssh_user,'') AS ssh_user,
+                COALESCE(pm.added_at, share.created_at, a.created_at) AS added_at,
+                a.name, a.user_id,
+                CASE WHEN share.shared = 1 THEN 1 ELSE 0 END AS shared
+         FROM agents a
+         LEFT JOIN project_machines pm ON pm.agent_id=a.id AND pm.project_id=?
+         LEFT JOIN machine_project_shares share ON share.agent_id=a.id AND share.project_id=?
+         WHERE a.user_id=? OR (share.shared=1 AND a.user_id<>?)
+         ORDER BY CASE WHEN a.user_id=? THEN 0 ELSE 1 END, a.name ASC`
+      ).all(id, id, userId, userId, userId) as Array<{
         agent_id: string
         path: string | null
         repos_root: string | null
+        ssh_host: string | null
+        ssh_user: string | null
         added_at: number
         name: string
         user_id: string
+        shared: number
       }>
     ).map((x) => ({
       agentId: x.agent_id,
       name: x.name,
       owner: x.user_id,
+      ownership: x.user_id === userId ? 'mine' as const : 'other' as const,
+      sharedWithProject: !!x.shared,
+      isMyDefault: this.getUserProjectDefaultMachine(userId, id) === x.agent_id,
+      canUse: x.user_id === userId || !!x.shared,
+      unavailableReason: null,
+      load: this.countActiveCiRunsByAgent()[x.agent_id] ?? 0,
       online: false,
       addedAt: x.added_at,
       path: x.path ?? '',
-      reposRoot: x.repos_root ?? ''
+      reposRoot: x.repos_root ?? '',
+      sshHost: x.ssh_host ?? '',
+      sshUser: x.ssh_user ?? ''
     }))
     return {
       ...this.mapProjectSummary(row, row.my_role),
@@ -2718,29 +3131,31 @@ export class VoiceChatDb {
   }
 
   linkMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
+    if (!this.isProjectMember(userId, id)) return null
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) {
       throw new Error(`Машина ${agentId} не найдена`)
     }
-    this.db
-      .prepare(`INSERT INTO project_machines (project_id, agent_id, path, added_at, added_by) VALUES (?, ?, '', ?, ?)`)
-      .run(id, agentId, this.now(), userId)
+    this.db.prepare(
+      `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
+    ).run(id, agentId, this.now(), userId)
+    this.setMachineSharedWithProject(userId, id, agentId, true)
     return this.getProject(userId, id)
   }
 
   unlinkMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
-    this.db.transaction(() => {
-      this.db.prepare(`DELETE FROM project_machines WHERE project_id = ? AND agent_id = ?`).run(id, agentId)
-      // Снятая машина не может оставаться дефолтной.
-      this.db.prepare(`UPDATE projects SET default_agent_id = NULL WHERE id = ? AND default_agent_id = ?`).run(id, agentId)
-    })()
+    if (!this.isProjectMember(userId, id)) return null
+    this.setMachineSharedWithProject(userId, id, agentId, false)
+    this.db.prepare(`UPDATE projects SET default_agent_id=NULL WHERE id=? AND default_agent_id=?`).run(id, agentId)
     return this.getProject(userId, id)
   }
 
   /** Задать папку проекта на конкретной машине (только владелец). */
   setProjectMachinePath(userId: string, id: string, agentId: string, path: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
+    if (!this.isProjectMember(userId, id)) return null
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
+    this.db.prepare(
+      `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
+    ).run(id, agentId, this.now(), userId)
     this.db
       .prepare(`UPDATE project_machines SET path = ? WHERE project_id = ? AND agent_id = ?`)
       .run(path, id, agentId)
@@ -2750,8 +3165,24 @@ export class VoiceChatDb {
 
   /** Корень пула рабочих копий CI на этой машине. */
   setProjectMachineReposRoot(userId: string, id: string, agentId: string, root: string): ProjectDetail | null {
-    if (!this.isProjectOwner(userId, id)) return null
+    if (!this.isProjectMember(userId, id)) return null
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
+    this.db.prepare(
+      `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
+    ).run(id, agentId, this.now(), userId)
     this.db.prepare(`UPDATE project_machines SET repos_root = ? WHERE project_id = ? AND agent_id = ?`).run(root, id, agentId)
+    return this.getProject(userId, id)
+  }
+
+  /** Явные SSH-настройки машины для ручного preview-туннеля. */
+  setProjectMachineSsh(userId: string, id: string, agentId: string, sshHost: string, sshUser: string): ProjectDetail | null {
+    if (!this.isProjectMember(userId, id)) return null
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
+    this.db.prepare(
+      `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
+    ).run(id, agentId, this.now(), userId)
+    this.db.prepare(`UPDATE project_machines SET ssh_host = ?, ssh_user = ? WHERE project_id = ? AND agent_id = ?`)
+      .run(sshHost.trim(), sshUser.trim(), id, agentId)
     return this.getProject(userId, id)
   }
 
@@ -2769,31 +3200,32 @@ export class VoiceChatDb {
 
   /**
    * Привязать чат к проекту (или отвязать при projectId=null). При привязке
-   * ПЕРЕЗАПИСЫВАЕТ у чата машину (=дефолт проекта), рабочую папку (=папка этой
-   * машины) и навыки (=skills проекта). Гейт — членство в проекте.
+   * машина остаётся null: это динамическое наследование персонального default
+   * текущего пользователя. Навыки наследуются от проекта. Гейт — членство.
    */
   setConversationProject(userId: string, convId: string, projectId: string | null): Conversation | null {
+    const current = this.getConversation(userId, convId)
+    if (!current) return null
+    // Playwright Reader is a non-project product mode by contract.
+    if (current.assistantKind === 'playwright-reader' && projectId !== null) return null
     if (projectId === null) {
       this.db.prepare(`UPDATE conversations SET project_id = NULL WHERE id = ? AND user_id = ?`).run(convId, userId)
       return this.getConversation(userId, convId)
     }
     const project = this.getProject(userId, projectId)
     if (!project) return null // не участник / проект не найден
-    const defAgent = project.defaultAgentId
-    const rawPath = defAgent ? project.machines.find((m) => m.agentId === defAgent)?.path ?? '' : ''
-    const workdir = rawPath !== '' ? rawPath : null
     this.db
       .prepare(
-        `UPDATE conversations SET project_id = ?, exec_target = ?, workdir = ?, skill_names = ?, llm_engine_id = NULL, llm_provider = NULL, llm_model = NULL WHERE id = ? AND user_id = ?`
+        `UPDATE conversations SET project_id = ?, exec_target = NULL, workdir = NULL, skill_names = ?, llm_engine_id = NULL, llm_provider = NULL, llm_model = NULL WHERE id = ? AND user_id = ?`
       )
-      .run(projectId, defAgent, workdir, JSON.stringify(project.skills), convId, userId)
+      .run(projectId, JSON.stringify(project.skills), convId, userId)
     return this.getConversation(userId, convId)
   }
 
   /**
    * Открыть связанный с задачей чат текущего пользователя, создав его при
    * отсутствии. Новый чат привязывается к задаче (`task_id`) и её проекту:
-   * машина/папка — из дефолта проекта, навыки — навыки самой карточки (`Task.skills`).
+   * машина/папка остаются null (персональное наследование), навыки — навыки самой карточки (`Task.skills`).
    * Идемпотентно по (userId, taskId): одна задача — не более одного чата на юзера.
    * Имя по умолчанию — «Задача <заголовок>»: в общем списке чатов такой чат сразу
    * отличим от обычного разговора. Дальше его можно переименовать вручную.
@@ -2813,10 +3245,6 @@ export class VoiceChatDb {
         .run(this.now(), existing.id, userId)
       return this.getConversation(userId, existing.id)
     }
-    const project = this.getProject(userId, projectId)
-    const defAgent = project?.defaultAgentId ?? null
-    const rawPath = defAgent ? project?.machines.find((m) => m.agentId === defAgent)?.path ?? '' : ''
-    const workdir = rawPath !== '' ? rawPath : null
     const id = this.newId()
     const ts = this.now()
     const title = task.title.trim() ? `Задача ${task.title.trim()}` : 'Задача'
@@ -2825,7 +3253,7 @@ export class VoiceChatDb {
         `INSERT INTO conversations (id, title, created_at, updated_at, claude_session_id, user_id, exec_target, workdir, skill_names, llm_engine_id, llm_provider, llm_model, project_id, task_id)
          VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(id, title, ts, ts, userId, defAgent, workdir, JSON.stringify(task.skills), null, null, null, projectId, taskId)
+      .run(id, title, ts, ts, userId, null, null, JSON.stringify(task.skills), null, null, null, projectId, taskId)
     return this.getConversation(userId, id)
   }
 
@@ -2869,7 +3297,7 @@ export class VoiceChatDb {
            FROM tasks t WHERE t.project_id = ? ORDER BY t.column_id ASC, t.position ASC`
         )
         .all(userId, userId, userId, projectId) as TaskRow[]
-    ).map(mapTask)
+    ).map((row) => ({ ...mapTask(row), latestRunResult: this.latestTaskRunResult(row.id) }))
     // Фильтруем на сервере: иначе payload доски рос бы бесконечно вместе с
     // колонкой «Готово». includeCompleted → порог null, скрывать нечего.
     const retention = opts?.includeCompleted ? null : this.doneRetentionDays(projectId)
@@ -2889,7 +3317,7 @@ export class VoiceChatDb {
    * этап воркфлоу (колонка), машина и папка разработки, последний CI-ран.
    * `null`, если чат не привязан к задаче.
    */
-  getTaskChatContext(userId: string, conversationId: string): TaskChatContext | null {
+  getTaskChatContext(userId: string, conversationId: string, isOnline?: (agentId: string) => boolean): TaskChatContext | null {
     const conv = this.getConversation(userId, conversationId)
     if (!conv?.taskId || !conv.projectId) return null
     const project = this.getProject(userId, conv.projectId)
@@ -2907,7 +3335,8 @@ export class VoiceChatDb {
     const column = this.db.prepare(`SELECT name, semantic_type FROM kanban_columns WHERE id = ?`).get(task.columnId) as
       | { name: string; semantic_type: string | null }
       | undefined
-    const agentId = conv.execTarget && conv.execTarget !== 'none' ? conv.execTarget : project.defaultAgentId
+    const resolution = this.resolveConversationMachine(userId, conversationId, { isOnline })
+    const agentId = resolution?.error ? null : resolution?.agentId ?? null
     const machine = agentId ? project.machines.find((m) => m.agentId === agentId) : undefined
     const displaySummary = this.latestCiRunSummary(task.id)
     const runRow = displaySummary ? this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(displaySummary.id) as CiRunRow | undefined : undefined
@@ -3071,7 +3500,6 @@ export class VoiceChatDb {
     projectId: string,
     args: {
       columnId: string
-
       title: string
       description?: string
       acceptanceCriteria?: string
@@ -3084,67 +3512,75 @@ export class VoiceChatDb {
       skills?: string[]
       storyPoints?: number | null
       dueDate?: number | null
+      source?: string
+      idempotencyKey?: string
     }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
-
+    const key = args.idempotencyKey?.trim()
+    if (key) {
+      const prior = this.db.prepare(
+        `SELECT task_id FROM task_creation_requests WHERE actor = ? AND idempotency_key = ?`
+      ).get(userId, key) as { task_id: string } | undefined
+      if (prior) return this.getTask(projectId, prior.task_id)
+    }
     if (!this.columnInProject(projectId, args.columnId)) return null
-    if (args.assignee != null && !this.isProjectMember(args.assignee, projectId)) {
-      throw new Error('Исполнитель не участник проекта')
+
+    const explicit = args.assignee !== undefined && args.assignee !== null
+    const userCreation = args.source !== undefined
+    const createdBy = userCreation ? userId : null
+    const assignee = explicit ? args.assignee! : userCreation ? userId : null
+    if (assignee !== null && !this.isActiveProjectMember(assignee, projectId)) {
+      throw new Error(explicit
+        ? 'Исполнитель должен быть активным и незаблокированным участником проекта'
+        : 'Создатель не может быть назначен исполнителем в этом проекте')
     }
     const itemType = args.type ?? 'task'
-    // Навыки карточки: явно переданные, иначе — навыки по умолчанию из настроек
-    // проекта для этого типа элемента (эпик/стори/таск).
     const skills = args.skills ?? this.projectDefaultSkills(projectId, itemType)
     const parent = args.parentId ? this.getTask(projectId, args.parentId) : null
-
     if (itemType === 'epic' && args.parentId) throw new Error('Эпик не может иметь родителя')
     if (args.parentId && !parent) throw new Error('Родитель не найден в проекте')
     if (itemType === 'story' && parent?.type !== 'epic') throw new Error('Родителем истории может быть только эпик')
     if (itemType === 'task' && parent && parent.type !== 'story' && parent.type !== 'epic') throw new Error('Недопустимый родитель задачи')
+
     const id = this.newId()
     const ts = this.now()
-    const max = (
-      this.db
-        .prepare(`SELECT MAX(position) AS m FROM tasks WHERE project_id = ? AND column_id = ?`)
-        .get(projectId, args.columnId) as { m: number | null }
-    ).m
-    const position = (max ?? 0) + RANK_STEP
-    // Карточку могут создать сразу в «Готово» — тогда отсчёт начинается сейчас.
-    const doneAt = this.isDoneColumn(args.columnId) ? ts : null
-    const seq = (
-      this.db.prepare(`UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`).get(projectId) as { task_seq: number }
-    ).task_seq
-    this.db
-      .prepare(
-        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        id,
-        projectId,
-        args.columnId,
-        args.title,
-        args.description ?? '',
-        args.acceptanceCriteria ?? '',
-        itemType,
-        args.parentId ?? null,
-        normPriority(args.priority ?? 'medium'),
-        args.assignee ?? null,
+    const created = this.db.transaction(() => {
+      if (key) {
+        const prior = this.db.prepare(
+          `SELECT task_id FROM task_creation_requests WHERE actor = ? AND idempotency_key = ?`
+        ).get(userId, key) as { task_id: string } | undefined
+        if (prior) return prior.task_id
+      }
+      const max = this.db.prepare(
+        `SELECT MAX(position) AS m FROM tasks WHERE project_id = ? AND column_id = ?`
+      ).get(projectId, args.columnId) as { m: number | null }
+      const seq = (this.db.prepare(
+        `UPDATE projects SET task_seq = task_seq + 1 WHERE id = ? RETURNING task_seq`
+      ).get(projectId) as { task_seq: number }).task_seq
+      this.db.prepare(
+        `INSERT INTO tasks (id, project_id, column_id, title, description, acceptance_criteria, type, parent_id, priority, assignee, created_by, created_by_name, agent_id, labels, skills, story_points, due_date, flagged, done_at, seq, position, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
+      ).run(
+        id, projectId, args.columnId, args.title, args.description ?? '',
+        args.acceptanceCriteria ?? '', itemType, args.parentId ?? null,
+        normPriority(args.priority ?? 'medium'), assignee, createdBy, createdBy,
         this.validateTaskAgent(userId, projectId, args.agentId),
-        JSON.stringify(args.labels ?? []),
-        JSON.stringify(skills),
-        args.storyPoints ?? null,
-
-        args.dueDate ?? null,
-        doneAt,
-        seq,
-        position,
-        ts,
-        ts
+        JSON.stringify(args.labels ?? []), JSON.stringify(skills),
+        args.storyPoints ?? null, args.dueDate ?? null,
+        this.isDoneColumn(args.columnId) ? ts : null, seq, (max.m ?? 0) + RANK_STEP, ts, ts
       )
-    this.touchProject(projectId, ts)
-    return this.getTask(projectId, id)
+      this.db.prepare(
+        `INSERT INTO task_creation_audit (id, project_id, task_id, created_by, created_by_name, assignee, source, assignment_method, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(this.newId(), projectId, id, createdBy, createdBy, assignee, args.source ?? 'system', userCreation ? (explicit ? 'explicit' : 'automatic') : 'system', ts)
+      if (key) this.db.prepare(
+        `INSERT INTO task_creation_requests (actor, idempotency_key, task_id) VALUES (?, ?, ?)`
+      ).run(userId, key, id)
+      this.touchProject(projectId, ts)
+      return id
+    })()
+    return this.getTask(projectId, created)
   }
 
   updateTask(
@@ -3157,8 +3593,8 @@ export class VoiceChatDb {
     const current = this.getTask(projectId, taskId)
 
     if (!current) return null
-    if (fields.assignee != null && !this.isProjectMember(fields.assignee, projectId)) {
-      throw new Error('Исполнитель не участник проекта')
+    if (fields.assignee != null && !this.isActiveProjectMember(fields.assignee, projectId)) {
+      throw new Error('Исполнитель должен быть активным участником проекта')
     }
     if (fields.agentId !== undefined) this.validateTaskAgent(userId, projectId, fields.agentId)
     const nextType = fields.type ?? current.type
@@ -3504,6 +3940,18 @@ export class VoiceChatDb {
     return this.getCiSlotConfig('project', projectId)
   }
 
+  getTaskProcessStages(taskId: string): CiProcessStage[] {
+    const row = this.db.prepare(`SELECT stages_json FROM ci_task_process_stages WHERE task_id = ?`).get(taskId) as { stages_json: string } | undefined
+    if (!row) return [...CI_PROCESS_STAGES]
+    try { return normalizeCiProcessStages(JSON.parse(row.stages_json)) } catch { return [...CI_PROCESS_STAGES] }
+  }
+
+  setTaskProcessStages(taskId: string, stages: unknown): CiProcessStage[] {
+    const normalized = normalizeCiProcessStages(stages)
+    this.db.prepare(`INSERT INTO ci_task_process_stages (task_id, stages_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET stages_json=excluded.stages_json`).run(taskId, JSON.stringify(normalized))
+    return normalized
+  }
+
   getCiLlmConfig(ownerType: 'project' | 'task', ownerId: string): CiLlmConfig | null {
     const row = this.db.prepare(`SELECT llm_engine_id, provider, model, mode, clarify_level, clarify_max FROM ci_llm_configs WHERE owner_type = ? AND owner_id = ?`).get(ownerType, ownerId) as
       | { llm_engine_id: string | null; provider: string; model: string; mode: string; clarify_level: string; clarify_max: number }
@@ -3692,10 +4140,10 @@ export class VoiceChatDb {
 
   // --- Раны и шаги ---
 
-  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; triggeredBy: string; prevColumnId: string | null; runColumnId?: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
+  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; agentOwnerId?: string | null; agentOwnerName?: string; agentSelectionSource?: 'explicit' | 'task_pinned' | 'project_default' | 'user_project_default' | 'fallback' | 'unknown'; triggeredBy: string; prevColumnId: string | null; runColumnId?: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
     const id = this.newId()
     const ts = this.now()
-    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, status, triggered_by, prev_column_id, run_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.triggeredBy, args.prevColumnId, args.runColumnId ?? null, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
+    this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, agent_owner_id, agent_owner_name, agent_selection_source, status, triggered_by, prev_column_id, run_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.agentOwnerId ?? null, args.agentOwnerName ?? 'неизвестно', args.agentSelectionSource ?? 'unknown', args.triggeredBy, args.prevColumnId, args.runColumnId ?? null, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
     return mapCiRun(this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(id) as CiRunRow)
   }
 
@@ -3722,13 +4170,21 @@ export class VoiceChatDb {
     return r ? mapCiRun(r) : null
   }
 
+  activeCiRunForTask(taskId: string): CiRun | null {
+    const r = this.db.prepare(
+      `SELECT * FROM ci_runs WHERE task_id = ? AND status IN ('queued', 'running', 'awaiting_input') ORDER BY created_at DESC, rowid DESC LIMIT 1`
+    ).get(taskId) as CiRunRow | undefined
+    return r ? mapCiRun(r) : null
+  }
+
   getCiRun(userId: string, runId: string): CiRunDetail | null {
     const r = this.db.prepare(`SELECT * FROM ci_runs WHERE id = ?`).get(runId) as CiRunRow | undefined
     if (!r || !this.isProjectMember(userId, r.project_id)) return null
     const run = mapCiRun(r)
     const steps = (this.db.prepare(`SELECT * FROM ci_run_steps WHERE run_id = ? ORDER BY position ASC, id ASC`).all(runId) as CiRunStepRow[]).map(mapCiRunStep)
     const fixAttempts = (this.db.prepare(`SELECT f.* FROM ci_fix_attempts f JOIN ci_run_steps s ON s.id = f.run_step_id WHERE s.run_id = ? ORDER BY f.created_at ASC`).all(runId) as CiFixRow[]).map(mapCiFix)
-    return { run, stageRuns: this.listCiStageRuns(runId), steps, fixAttempts, interactions: this.listCiInteractions(runId) }
+    const stageRuns = this.listCiStageRuns(runId)
+    return { run, executionLlm: this.ciExecutionLlm(run, stageRuns), stageRuns, steps, fixAttempts, interactions: this.listCiInteractions(runId) }
   }
 
   listCiRunsForTask(userId: string, projectId: string, taskId: string): CiRun[] {
@@ -3781,6 +4237,22 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE ci_stage_runs SET ${set.join(', ')} WHERE id = ?`).run(...values, id)
     const row = this.db.prepare(`SELECT run_id FROM ci_stage_runs WHERE id = ?`).get(id) as { run_id: string } | undefined
     return row ? this.listCiStageRuns(row.run_id).find((stage) => stage.id === id) ?? null : null
+  }
+
+  private ciExecutionLlm(run: CiRun, stageRuns: CiStageRun[]): CiExecutionLlmSnapshot {
+    const stage = [...stageRuns].reverse().find((item) => ['queued', 'running', 'awaiting_input'].includes(item.status))
+      ?? stageRuns.at(-1)
+    const base = {
+      llmEngineId: run.llmEngineId ?? null, provider: run.llmProvider ?? null,
+      model: run.llmModel || null
+    }
+    if (stage) return {
+      source: 'stage', stage: stage.stage, llmEngineId: stage.llm.llmEngineId ?? null,
+      provider: stage.llm.provider ?? null, model: stage.llm.model || null, base
+    }
+    return {
+      source: 'run', stage: null, ...base, base
+    }
   }
 
   listCiStageRuns(runId: string): CiStageRun[] {
@@ -4238,6 +4710,161 @@ export class VoiceChatDb {
     return r ? mapCiWorkspace(r) : null
   }
 
+  taskTimeline(userId: string, projectId: string, taskId: string): TaskTimeline | null {
+    if (!this.getProject(userId, projectId)) return null
+    const task = this.db.prepare(`SELECT id, created_at, updated_at, done_at FROM tasks WHERE id = ? AND project_id = ?`).get(taskId, projectId) as { id: string; created_at: number; updated_at: number; done_at: number | null } | undefined
+    if (!task) return null
+
+    type Raw = {
+      id: string; type: string; title: string; status: string; attempt: number
+      queued: number | null; started: number | null; finished: number | null
+      executor: string | null; machine: string | null; model: string | null
+      reason_code: string | null; reason_message: string | null; kind: string
+      position: number | null
+    }
+    const rows: Raw[] = []
+    const append = (sql: string): void => {
+      rows.push(...this.db.prepare(sql).all(taskId) as Raw[])
+    }
+
+    append(`SELECT r.id, 'development' type, 'Development' title, r.status, ROW_NUMBER() OVER (ORDER BY r.created_at, r.id) attempt,
+      r.created_at queued, r.started_at started, r.finished_at finished, r.triggered_by executor, a.name machine,
+      (SELECT NULLIF(u.model, '') FROM ci_run_usage u WHERE u.run_id=r.id ORDER BY u.at LIMIT 1) model,
+      NULL reason_code, NULL reason_message, 'ci' kind, 20 position
+      FROM ci_runs r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=?`)
+    append(`SELECT s.id, 'development_step:' || COALESCE(s.command_id, s.kind || ':' || s.title) type, s.title,
+      s.status, s.attempt, NULL queued, s.started_at started, s.finished_at finished, r.triggered_by executor, a.name machine,
+      (SELECT NULLIF(u.model, '') FROM ci_run_usage u WHERE u.run_id=r.id AND u.step_id=s.id ORDER BY u.at LIMIT 1) model,
+      CASE WHEN s.status IN ('failed','timeout','cancelled','skipped') THEN 'step_' || s.status END reason_code,
+      CASE WHEN s.exit_code IS NOT NULL AND s.exit_code <> 0 THEN 'exit ' || s.exit_code END reason_message,
+      'ci_step' kind, 21 position FROM ci_run_steps s JOIN ci_runs r ON r.id=s.run_id LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=?`)
+    append(`SELECT r.id, 'task_preparation' type, 'Создание и подготовка задачи' title, r.status, r.attempt,
+      r.created_at queued, NULL started, r.finished_at finished, NULL executor, NULL machine, NULL model,
+      CASE WHEN r.error IS NOT NULL THEN 'preparation_error' END reason_code, r.error reason_message, 'task_preparation' kind, 10 position
+      FROM task_preparation_runs r WHERE r.task_id=?`)
+    append(`SELECT r.id, 'component_qa' type, 'Component QA' title, r.status, r.attempt,
+      r.created_at queued, r.started_at started, r.finished_at finished, NULL executor, NULL machine, NULL model,
+      r.failure_classification reason_code, CASE WHEN length(r.blocker_reasons_json)>2 THEN r.blocker_reasons_json END reason_message,
+      'component_qa' kind, 30 position FROM component_qa_runs r WHERE r.task_id=?`)
+    append(`SELECT r.id, 'integration_tests' type, 'Создание и запуск интеграционных тестов' title, r.status, r.attempt,
+      r.created_at queued, r.started_at started, r.finished_at finished, NULL executor, NULL machine, NULL model,
+      r.failure_classification reason_code, COALESCE(r.failure_reason, r.stale_reason) reason_message,
+      'integration_tests' kind, 40 position FROM integration_test_runs r WHERE r.task_id=?`)
+    append(`SELECT r.id, r.stage type,
+      CASE r.stage WHEN 'automated_qa' THEN 'Automated QA' WHEN 'component_qa' THEN 'Component QA' ELSE 'Интеграционные тесты' END title,
+      r.status, r.attempt, r.created_at queued, r.started_at started, r.finished_at finished, r.triggered_by executor,
+      NULL machine, NULLIF(r.llm_model,'') model,
+      CASE WHEN r.error IS NOT NULL THEN 'qa_error' WHEN length(r.gate_reasons_json)>2 THEN 'gate_failed' END reason_code,
+      COALESCE(r.error, CASE WHEN length(r.gate_reasons_json)>2 THEN r.gate_reasons_json END) reason_message,
+      'qa_stage' kind, CASE r.stage WHEN 'component_qa' THEN 30 WHEN 'integration_tests' THEN 40 ELSE 50 END position
+      FROM qa_stage_runs r WHERE r.task_id=?`)
+    append(`SELECT r.id, 'manual_qa_preparation' type, 'Подготовка ручного тестирования' title, r.status, r.attempt,
+      r.created_at queued, NULL started, r.finished_at finished, NULL executor, NULL machine, NULL model,
+      CASE WHEN r.error IS NOT NULL THEN 'qa_preparation_error' END reason_code, r.error reason_message,
+      'qa_preparation' kind, 60 position FROM qa_preparation_runs r WHERE r.task_id=?`)
+    append(`SELECT r.id, 'manual_qa' type, 'Ручное тестирование' title, r.status,
+      ROW_NUMBER() OVER (ORDER BY r.started_at, r.id) attempt, NULL queued, r.started_at started, r.finished_at finished,
+      COALESCE(r.tester_id,r.initiated_by) executor, NULL machine, NULL model,
+      CASE WHEN r.stale_reason IS NOT NULL THEN 'stale' END reason_code, r.stale_reason reason_message,
+      'qa_session' kind, 70 position FROM qa_sessions r WHERE r.task_id=?`)
+    append(`SELECT r.id, 'merge' type, 'Merge и push' title, r.status,
+      ROW_NUMBER() OVER (ORDER BY r.created_at, r.id) attempt, r.created_at queued, r.started_at started, r.finished_at finished,
+      r.triggered_by executor, a.name machine, NULL model,
+      CASE WHEN r.error IS NOT NULL THEN 'merge_error' END reason_code, r.error reason_message,
+      'merge' kind, 80 position FROM merge_runs r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=?`)
+
+    const normalize = (status: string): TaskTimelineStatus => {
+      if (status === 'queued') return 'queued'
+      if (status === 'running' || status === 'active' || ['checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing'].includes(status)) return 'running'
+      if (status === 'awaiting_input') return 'awaiting_input'
+      if (['success','passed','done'].includes(status)) return 'succeeded'
+      if (status === 'cancelled') return 'cancelled'
+      if (status === 'skipped') return 'skipped'
+      return 'failed'
+    }
+    const waitingRows = this.db.prepare(`SELECT i.run_id, i.created_at started, i.answered_at finished
+      FROM ci_interactions i JOIN ci_runs r ON r.id=i.run_id WHERE r.task_id=? ORDER BY i.seq`).all(taskId) as Array<{ run_id: string; started: number; finished: number | null }>
+    const toInterval = (start: number, end: number | null) => ({ startedAt: timelineIso(start)!, finishedAt: timelineIso(end), durationMs: timelineDuration(start, end) })
+    const attempts = rows.map((row): TaskTimelineAttempt & { _position: number | null; _type: string; _title: string; _rawStart: number | null; _rawFinish: number | null; _active: Array<{ start: number; end: number | null }>; _queue: Array<{ start: number; end: number | null }>; _waiting: Array<{ start: number; end: number | null }> } => {
+      const waiting = row.kind === 'ci' ? waitingRows.filter((item) => item.run_id === row.id).map((item) => ({ start: item.started, end: item.finished })) : []
+      const active = row.started == null ? [] : subtractTimelineIntervals([{ start: row.started, end: row.finished }], waiting)
+      const queue = row.queued != null && row.started != null ? [{ start: row.queued, end: row.started }] : []
+      const status = normalize(row.status)
+      return {
+        id: `${row.kind}:${row.id}`, number: row.attempt, status,
+        queuedAt: timelineIso(row.queued), startedAt: timelineIso(row.started), finishedAt: timelineIso(row.finished),
+        queueIntervals: queue.map((item) => toInterval(item.start, item.end)),
+        activeIntervals: active.map((item) => toInterval(item.start, item.end)),
+        awaitingInputIntervals: waiting.map((item) => toInterval(item.start, item.end)),
+        queueDuration: queue.length ? mergedTimelineDuration(queue) : row.queued == null || row.started == null ? null : 0,
+        activeDuration: row.started == null ? null : mergedTimelineDuration(active),
+        awaitingInputDuration: waiting.length ? mergedTimelineDuration(waiting) : 0,
+        calendarDuration: timelineDuration(row.queued ?? row.started, row.finished),
+        executor: row.executor, machine: row.machine, model: row.model,
+        reason: row.reason_code || row.reason_message ? { code: row.reason_code, message: row.reason_message } : null,
+        runs: [{ id: row.id, kind: row.kind }],
+        dataComplete: row.started != null && (row.finished != null || ['running','awaiting_input'].includes(status)),
+        _position: row.position, _type: row.type, _title: row.title, _rawStart: row.started, _rawFinish: row.finished,
+        _active: active, _queue: queue, _waiting: waiting
+      }
+    })
+
+    const grouped = new Map<string, typeof attempts>()
+    for (const attempt of attempts) grouped.set(attempt._type, [...(grouped.get(attempt._type) ?? []), attempt])
+    const stages: TaskTimelineStage[] = [...grouped.entries()].map(([type, items]) => {
+      items.sort((a, b) => a.number - b.number || a.id.localeCompare(b.id))
+      const latest = items[items.length - 1]
+      const starts = items.map((item) => item._rawStart).filter((value): value is number => value != null)
+      const finishes = items.map((item) => item._rawFinish).filter((value): value is number => value != null)
+      const queued = items.map((item) => item.queuedAt ? Date.parse(item.queuedAt) : null).filter((value): value is number => value != null)
+      const allTerminal = items.every((item) => ['succeeded','failed','cancelled','skipped'].includes(item.status))
+      return {
+        id: `stage:${type}`, type, title: latest._title, status: latest.status,
+        queuedAt: timelineIso(queued.length ? Math.min(...queued) : null),
+        startedAt: timelineIso(starts.length ? Math.min(...starts) : null),
+        finishedAt: timelineIso(allTerminal && finishes.length ? Math.max(...finishes) : null),
+        queueDuration: items.some((item) => item.queueDuration != null) ? mergedTimelineDuration(items.flatMap((item) => item._queue)) : null,
+        activeDuration: items.some((item) => item.activeDuration != null) ? mergedTimelineDuration(items.flatMap((item) => item._active)) : null,
+        awaitingInputDuration: mergedTimelineDuration(items.flatMap((item) => item._waiting)),
+        calendarDuration: timelineDuration(queued.length ? Math.min(...queued) : starts.length ? Math.min(...starts) : null, allTerminal && finishes.length ? Math.max(...finishes) : null),
+        attemptCount: items.filter((item) => item.status !== 'skipped' || item.runs.length > 0).length,
+        successfulDuration: items.filter((item) => item.status === 'succeeded').reduce((sum, item) => sum + (item.calendarDuration ?? 0), 0),
+        unsuccessfulDuration: items.filter((item) => ['failed','cancelled'].includes(item.status)).reduce((sum, item) => sum + (item.calendarDuration ?? 0), 0),
+        executor: latest.executor, machine: latest.machine, model: latest.model, reason: latest.reason,
+        runs: items.flatMap((item) => item.runs), attempts: items.map(({ _position, _type, _title, _rawStart, _rawFinish, _active, _queue, _waiting, ...attempt }) => attempt),
+        workflowPosition: latest._position, dataComplete: items.every((item) => item.dataComplete)
+      }
+    }).sort((a, b) => (a.workflowPosition ?? Number.MAX_SAFE_INTEGER) - (b.workflowPosition ?? Number.MAX_SAFE_INTEGER)
+      || (a.queuedAt || a.startedAt ? Date.parse(a.queuedAt ?? a.startedAt!) : task.created_at)
+        - (b.queuedAt || b.startedAt ? Date.parse(b.queuedAt ?? b.startedAt!) : task.created_at)
+      || a.id.localeCompare(b.id))
+
+    if (task.done_at != null) stages.push({
+      id: 'stage:completion', type: 'completion', title: 'Завершение', status: 'succeeded',
+      queuedAt: null, startedAt: timelineIso(task.done_at), finishedAt: timelineIso(task.done_at),
+      queueDuration: null, activeDuration: 0, awaitingInputDuration: 0, calendarDuration: 0,
+      attemptCount: 0, successfulDuration: 0, unsuccessfulDuration: 0, executor: null, machine: null, model: null,
+      reason: null, runs: [], attempts: [], workflowPosition: 100, dataComplete: true
+    })
+    const starts = attempts.map((item) => item._rawStart).filter((value): value is number => value != null)
+    const facts = [task.created_at, task.updated_at, task.done_at, ...rows.flatMap((row) => [row.queued, row.started, row.finished]), ...waitingRows.flatMap((row) => [row.started, row.finished])]
+      .filter((value): value is number => value != null)
+    return {
+      version: 1, taskId, generatedAt: new Date(this.now()).toISOString(),
+      summary: {
+        createdAt: timelineIso(task.created_at)!,
+        firstStartedAt: timelineIso(starts.length ? Math.min(...starts) : null),
+        finishedAt: timelineIso(task.done_at),
+        calendarDuration: timelineDuration(task.created_at, task.done_at),
+        activeDuration: mergedTimelineDuration(attempts.flatMap((item) => item._active)),
+        queueDuration: mergedTimelineDuration(attempts.flatMap((item) => item._queue)),
+        awaitingInputDuration: mergedTimelineDuration(attempts.flatMap((item) => item._waiting)),
+        lastChangedAt: timelineIso(Math.max(...facts))!
+      },
+      stages
+    }
+  }
+
   findLatestCiRunForTask(projectId: string, taskId: string): CiRun | null {
     const row = this.db.prepare(`SELECT id FROM ci_runs WHERE project_id=? AND task_id=? ORDER BY created_at DESC LIMIT 1`).get(projectId, taskId) as { id:string } | undefined
     return row ? this.getCiRunRaw(row.id) : null
@@ -4346,6 +4973,32 @@ export class VoiceChatDb {
   }
 
   /**
+   * Последний актуальный процесс среди всех workflow-ранов задачи. Новый старт
+   * сразу вытесняет прежнюю ошибку. cancelled нейтрален, stale считается skipped.
+   */
+  latestTaskRunResult(taskId: string): TaskRunResult | null {
+    const row = this.db.prepare(`
+      SELECT id, kind, status, created_at, finished_at FROM (
+        SELECT id, 'preparation' kind, status, created_at, finished_at, rowid seq, 1 rank FROM task_preparation_runs WHERE task_id = ?
+        UNION ALL SELECT id, 'development', status, created_at, finished_at, rowid, 2 FROM ci_runs WHERE task_id = ?
+        UNION ALL SELECT id, stage, status, created_at, finished_at, rowid, 3 FROM qa_stage_runs WHERE task_id = ?
+        UNION ALL SELECT id, 'component_qa', status, created_at, finished_at, rowid, 4 FROM component_qa_runs WHERE task_id = ?
+        UNION ALL SELECT id, 'integration_tests', status, created_at, finished_at, rowid, 5 FROM integration_test_runs WHERE task_id = ?
+        UNION ALL SELECT id, 'qa_preparation', status, created_at, finished_at, rowid, 6 FROM qa_preparation_runs WHERE task_id = ?
+        UNION ALL SELECT id, 'manual_qa', status, started_at, finished_at, rowid, 7 FROM qa_sessions WHERE task_id = ?
+        UNION ALL SELECT id, 'merge', status, created_at, finished_at, rowid, 8 FROM merge_runs WHERE task_id = ?
+      ) ORDER BY created_at DESC,
+        CASE WHEN status IN ('queued','running','awaiting_input','waiting_for_answer','validating','active','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing','deploying','production_checks','rolling_back') THEN 1 ELSE 0 END DESC,
+        seq DESC, rank DESC LIMIT 1
+    `).get(taskId, taskId, taskId, taskId, taskId, taskId, taskId, taskId) as
+      | { id: string; kind: TaskRunResult['kind']; status: string; created_at: number; finished_at: number | null }
+      | undefined
+    if (!row) return null
+
+    return { id: row.id, kind: row.kind, status: row.status, outcome: normalizeTaskRunOutcome(row.status), createdAt: row.created_at, finishedAt: row.finished_at }
+  }
+
+  /**
    * Единый серверный селектор состояния задачи. Активный ран всегда главный.
    * Отмена/skip остаются последней попыткой, но не вытесняют предыдущий успех.
    * Терминальные ошибки и отмены актуальны лишь в колонке, зафиксированной при
@@ -4412,6 +5065,7 @@ export class VoiceChatDb {
       modelActive,
       awaitingInput: run.status === 'awaiting_input',
       progress: buildCiAutomationProgress(run, steps, history),
+      executionLlm: this.ciExecutionLlm(run, this.listCiStageRuns(run.id)),
       terminalColumnId: run.terminalColumnId
     }
   }
@@ -4880,12 +5534,299 @@ export class VoiceChatDb {
     return !!row && (row.role === 'owner' || !!row.qa_permission)
   }
 
+  private mapComponentQaRun(row: Record<string, unknown>): ComponentQaRun {
+    const status = row.status as ComponentQaRun['status']
+    return {
+      id:String(row.id), projectId:String(row.project_id), taskId:String(row.task_id),
+      developmentRunId:String(row.development_run_id), linkedFixRunId:row.linked_fix_run_id as string|null,
+      branch:String(row.branch), commitSha:String(row.commit_sha), attempt:Number(row.attempt), status,
+      uiImpact:row.ui_impact as ComponentQaRun['uiImpact'], readinessRunId:String(row.readiness_run_id),
+      readinessVersion:String(row.readiness_version),
+      scenarios:parseJsonValue<ComponentQaScenarioSnapshot[]>(String(row.scenarios_json ?? '[]'), []),
+      components:parseJsonValue(String(row.components_json ?? '[]'), []),
+      commands:parseJsonValue<ComponentQaCommandResult[]>(String(row.commands_json ?? '[]'), []),
+      artifacts:parseJsonValue<ComponentQaArtifact[]>(String(row.artifacts_json ?? '[]'), []),
+      failureClassification:row.failure_classification as ComponentQaRun['failureClassification'],
+      blockerReasons:parseStringArray(String(row.blocker_reasons_json ?? '[]')), summary:String(row.summary ?? ''),
+      log:String(row.log ?? ''), storybookUrl:row.storybook_url as string|null, createdAt:Number(row.created_at),
+      startedAt:row.started_at == null ? null : Number(row.started_at), finishedAt:row.finished_at == null ? null : Number(row.finished_at),
+      staleReason:row.stale_reason as string|null, canCancel:status === 'queued' || status === 'running',
+      canRetry:['failed','blocked','cancelled','stale'].includes(status)
+    }
+  }
+
+  getComponentQaRun(userId: string, runId: string): ComponentQaRun | null {
+    const row = this.db.prepare(`SELECT r.* FROM component_qa_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`).get(runId,userId) as Record<string,unknown>|undefined
+    return row ? this.mapComponentQaRun(row) : null
+  }
+
+  getComponentQaTaskState(userId: string, projectId: string, taskId: string): ComponentQaTaskState | null {
+    if (!this.isProjectMember(userId,projectId)) return null
+    const task = this.db.prepare(`SELECT t.id,c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {id:string;semantic_type:string}|undefined
+    if (!task) return null
+    const runs=(this.db.prepare(`SELECT * FROM component_qa_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`).all(taskId) as Record<string,unknown>[]).map((row)=>this.mapComponentQaRun(row))
+    const activeRun=runs.find((run)=>run.status==='queued'||run.status==='running') ?? null
+    const latestRun=runs[0] ?? null
+    const prep=this.db.prepare(`SELECT readiness_json FROM task_preparation_runs WHERE task_id=? AND status='success' AND readiness_json IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId) as {readiness_json:string}|undefined
+    const readiness=prep ? parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null) : null
+    const workspace=this.findLatestPushedCiWorkspace(projectId,taskId)
+    const launchReasons:string[]=[]
+    if (task.semantic_type!=='component_qa') launchReasons.push('task_not_in_component_qa')
+    if (!workspace?.branch || !workspace.commitSha) launchReasons.push('missing_development_workspace')
+    if (!readiness) launchReasons.push('missing_readiness_snapshot')
+    else launchReasons.push(...componentQaLaunchReasons(readiness))
+    let gateReasons:string[]=[]
+    if (latestRun && workspace && readiness) gateReasons=canCompleteComponentQa({
+      run:latestRun,currentCommitSha:workspace.commitSha ?? '',currentReadinessVersion:componentQaSemanticVersion(readiness),
+      acceptanceCriteriaConflict:readiness.acceptanceCriteriaConflict
+    }).reasons
+    return {activeRun,latestRun,runs,launchReasons,canStart:!activeRun&&launchReasons.length===0,canComplete:gateReasons.length===0&&!!latestRun,gateReasons}
+  }
+
+  startComponentQaRun(userId: string, projectId: string, taskId: string): ComponentQaRun {
+    if (!this.canQa(userId,projectId)) throw new Error('QA permission required')
+    return this.db.transaction(()=>{
+      const task=this.db.prepare(`SELECT c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {semantic_type:string}|undefined
+      if (!task) throw new Error('task not found')
+      if (task.semantic_type!=='component_qa') throw new Error('task must be in component_qa')
+      const workspace=this.findLatestPushedCiWorkspace(projectId,taskId)
+      if (!workspace?.branch || !workspace.commitSha || !workspace.agentId || !workspace.path) throw new Error('missing current development workspace')
+      const dev=this.db.prepare(`SELECT id FROM ci_runs WHERE project_id=? AND task_id=? AND workspace_id=? AND status='success' ORDER BY created_at DESC LIMIT 1`).get(projectId,taskId,workspace.id) as {id:string}|undefined
+      if (!dev) throw new Error('successful development run not found')
+      const prep=this.db.prepare(`SELECT id,readiness_json FROM task_preparation_runs WHERE task_id=? AND status='success' AND readiness_json IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId) as {id:string;readiness_json:string}|undefined
+      if (!prep) throw new Error('missing readiness snapshot')
+      const readiness=parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null)
+      if (!readiness || !readiness.uiImpact) throw new Error('missing readiness snapshot')
+      this.db.prepare(`UPDATE component_qa_runs SET status='stale',stale_reason='development_sha_changed',finished_at=? WHERE task_id=? AND commit_sha<>? AND status IN ('queued','running')`).run(this.now(),taskId,workspace.commitSha)
+      const version=componentQaSemanticVersion(readiness)
+      this.db.prepare(`UPDATE component_qa_runs SET status='stale',stale_reason='scenario_version_changed',finished_at=? WHERE task_id=? AND readiness_version<>? AND status IN ('queued','running')`).run(this.now(),taskId,version)
+      const active=this.db.prepare(`SELECT * FROM component_qa_runs WHERE task_id=? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string,unknown>|undefined
+      if (active) return this.mapComponentQaRun(active)
+      const reasons=componentQaLaunchReasons(readiness)
+      const attempt=Number((this.db.prepare(`SELECT COALESCE(MAX(attempt),0)+1 AS n FROM component_qa_runs WHERE task_id=?`).get(taskId) as {n:number}).n)
+      const id=this.newId(), now=this.now()
+      const componentCases=readiness.testCases.filter((item)=>item.testType==='ui'||item.testType==='automated'||item.testType==='mixed')
+      const scenarios:ComponentQaScenarioSnapshot[]=componentCases.map((testCase)=>({testCase,version:1,semanticHash:version,status:'pending',actualResult:'',diagnostic:''}))
+      const status:ComponentQaRun['status']=readiness.uiImpact==='none'?'skipped':reasons.length?'blocked':'queued'
+      this.db.prepare(`INSERT INTO component_qa_runs (id,project_id,task_id,development_run_id,branch,commit_sha,attempt,status,ui_impact,readiness_run_id,readiness_version,scenarios_json,components_json,blocker_reasons_json,summary,created_at,finished_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,projectId,taskId,dev.id,workspace.branch,workspace.commitSha,attempt,status,readiness.uiImpact,prep.id,version,JSON.stringify(scenarios),JSON.stringify(readiness.affectedComponents),JSON.stringify(reasons),readiness.uiImpact==='none'?'Component QA не применим: uiImpact=none':reasons.length?'Component QA заблокирован обязательными входными данными':'',now,status==='queued'?null:now)
+      if (status==='skipped') {
+        const target=this.getColumnIdBySemantic(projectId,'integration_tests')
+        if (!target || !canTransitionWorkflow('component_qa','integration_tests','automation')) throw new Error('integration_tests transition unavailable')
+        this.moveTask(userId,projectId,taskId,{columnId:target})
+      }
+      return this.getComponentQaRun(userId,id)!
+    })()
+  }
+
+  componentQaExecutionContext(runId:string):{agentId:string;workdir:string;commands:string[]}|null {
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,p.test_command FROM component_qa_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;test_command:string|null}|undefined
+    if (!row?.agent_id||!row.path) return null
+    return {agentId:row.agent_id,workdir:row.path,commands:testStages(row.test_command??'',['npm run test:storybook'])}
+  }
+
+  markComponentQaRunning(id:string):void {
+    this.db.prepare(`UPDATE component_qa_runs SET status='running',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(),id)
+  }
+
+  appendComponentQaLog(id:string,stream:'stdout'|'stderr',chunk:string):void {
+    const prefix=stream==='stderr'?'[stderr] ':''
+    this.db.prepare(`UPDATE component_qa_runs SET log=substr(log || ?, -500000) WHERE id=? AND status='running'`).run(prefix+chunk,id)
+  }
+
+  finishComponentQaRun(userId:string,runId:string,input:{status:'passed'|'failed'|'blocked';scenarios:ComponentQaScenarioSnapshot[];commands:ComponentQaCommandResult[];artifacts?:ComponentQaArtifact[];summary:string;storybookUrl?:string|null;failureClassification?:ComponentQaRun['failureClassification'];blockerReasons?:string[]}):ComponentQaRun {
+    const run=this.getComponentQaRun(userId,runId)
+    if (!run || run.status!=='running') throw new Error('component QA run is not running')
+    this.db.prepare(`UPDATE component_qa_runs SET status=?,scenarios_json=?,commands_json=?,artifacts_json=?,summary=?,storybook_url=?,failure_classification=?,blocker_reasons_json=?,finished_at=? WHERE id=? AND status='running'`).run(input.status,JSON.stringify(input.scenarios),JSON.stringify(input.commands),JSON.stringify(input.artifacts??[]),input.summary,input.storybookUrl??null,input.failureClassification??null,JSON.stringify(input.blockerReasons??[]),this.now(),runId)
+    return this.getComponentQaRun(userId,runId)!
+  }
+
+  completeComponentQaRun(userId:string,projectId:string,taskId:string,runId:string):ComponentQaRun {
+    if (!this.canQa(userId,projectId)) throw new Error('QA permission required')
+    const run=this.getComponentQaRun(userId,runId)
+    const workspace=this.findLatestPushedCiWorkspace(projectId,taskId)
+    const prep=this.db.prepare(`SELECT readiness_json FROM task_preparation_runs WHERE task_id=? AND status='success' AND readiness_json IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId) as {readiness_json:string}|undefined
+    if (!run||run.taskId!==taskId||!workspace?.commitSha||!prep) throw new Error('component QA state incomplete')
+    const readiness=parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null)
+    if (!readiness) throw new Error('component QA state incomplete')
+    const gate=canCompleteComponentQa({run,currentCommitSha:workspace.commitSha,currentReadinessVersion:componentQaSemanticVersion(readiness),acceptanceCriteriaConflict:readiness.acceptanceCriteriaConflict})
+    if (!gate.allowed) throw new Error(`component QA gate incomplete: ${gate.reasons.join(', ')}`)
+    const task=this.db.prepare(`SELECT c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {semantic_type:string}|undefined
+    if (task?.semantic_type!=='component_qa'||!canTransitionWorkflow('component_qa','integration_tests','automation')) throw new Error('workflow transition conflict')
+    const target=this.getColumnIdBySemantic(projectId,'integration_tests')
+    if (!target) throw new Error('integration_tests column not found')
+    this.moveTask(userId,projectId,taskId,{columnId:target})
+    return run
+  }
+
+  cancelComponentQaRun(userId:string,runId:string):ComponentQaRun {
+    const run=this.getComponentQaRun(userId,runId)
+    if (!run) throw new Error('component QA run not found')
+    if (!this.canQa(userId,run.projectId)) throw new Error('QA permission required')
+    this.db.prepare(`UPDATE component_qa_runs SET status='cancelled',summary='Component QA отменён пользователем',finished_at=? WHERE id=? AND status IN ('queued','running')`).run(this.now(),runId)
+    return this.getComponentQaRun(userId,runId)!
+  }
+
+  linkComponentQaFixRun(userId:string,runId:string,fixRunId:string):ComponentQaRun {
+    const run=this.getComponentQaRun(userId,runId)
+    if (!run||!this.canQa(userId,run.projectId)) throw new Error('QA permission required')
+    this.db.prepare(`UPDATE component_qa_runs SET status='failed',linked_fix_run_id=?,failure_classification='implementation_defect',finished_at=COALESCE(finished_at,?) WHERE id=?`).run(fixRunId,this.now(),runId)
+    return this.getComponentQaRun(userId,runId)!
+  }
+
+  failInterruptedComponentQaRuns():string[] {
+    const rows=this.db.prepare(`SELECT id FROM component_qa_runs WHERE status IN ('queued','running')`).all() as Array<{id:string}>
+    this.db.prepare(`UPDATE component_qa_runs SET status='blocked',failure_classification='infrastructure',blocker_reasons_json='["server_restarted"]',summary='Component QA прерван перезапуском сервера',finished_at=? WHERE status IN ('queued','running')`).run(this.now())
+    return rows.map((row)=>row.id)
+  }
+
+  // ============== Создание интеграционных автотестов =================
+  private mapIntegrationTestRun(row:Record<string,unknown>):IntegrationTestRun {
+    const status=row.status as IntegrationTestRun['status']
+    return {
+      id:String(row.id),projectId:String(row.project_id),taskId:String(row.task_id),
+      developmentRunId:row.development_run_id==null?'':String(row.development_run_id),linkedFixRunId:row.linked_fix_run_id as string|null,
+      branch:String(row.branch),commitSha:String(row.commit_sha),attempt:Number(row.attempt),status,
+      readinessRunId:String(row.readiness_run_id),snapshotVersion:String(row.snapshot_version),
+      testCases:parseJsonValue(String(row.test_cases_json??'[]'),[]),automationLinks:parseJsonValue(String(row.automation_links_json??'[]'),[]),
+      commands:parseJsonValue<IntegrationTestCommandResult[]>(String(row.commands_json??'[]'),[]),
+      log:String(row.log??''),failureClassification:row.failure_classification as IntegrationTestRun['failureClassification'],
+      failureReason:row.failure_reason as string|null,blockerReasons:parseStringArray(String(row.blocker_reasons_json??'[]')),
+      summary:String(row.summary??''),createdAt:Number(row.created_at),startedAt:row.started_at==null?null:Number(row.started_at),
+      finishedAt:row.finished_at==null?null:Number(row.finished_at),staleReason:row.stale_reason as IntegrationTestRun['staleReason'],
+      canCancel:status==='queued'||status==='running',canRetry:['failed','blocked','cancelled','stale'].includes(status)
+    }
+  }
+
+  getIntegrationTestRun(userId:string,runId:string):IntegrationTestRun|null {
+    const row=this.db.prepare(`SELECT r.* FROM integration_test_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`).get(runId,userId) as Record<string,unknown>|undefined
+    return row?this.mapIntegrationTestRun(row):null
+  }
+
+  private currentIntegrationInputs(projectId:string,taskId:string) {
+    const task=this.db.prepare(`SELECT c.semantic_type FROM tasks t JOIN kanban_columns c ON c.id=t.column_id WHERE t.id=? AND t.project_id=?`).get(taskId,projectId) as {semantic_type:string}|undefined
+    const workspace=this.findLatestPushedCiWorkspace(projectId,taskId)
+    const prep=this.db.prepare(`SELECT id,readiness_json FROM task_preparation_runs WHERE task_id=? AND status='success' AND readiness_json IS NOT NULL ORDER BY created_at DESC LIMIT 1`).get(taskId) as {id:string;readiness_json:string}|undefined
+    const readiness=prep?parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null):null
+    const dev=workspace?this.db.prepare(`SELECT id FROM ci_runs WHERE project_id=? AND task_id=? AND workspace_id=? AND status='success' ORDER BY created_at DESC LIMIT 1`).get(projectId,taskId,workspace.id) as {id:string}|undefined:undefined
+    return {task,workspace,prep,readiness,dev}
+  }
+
+  getIntegrationTestTaskState(userId:string,projectId:string,taskId:string):IntegrationTestTaskState|null {
+    if(!this.isProjectMember(userId,projectId)) return null
+    const input=this.currentIntegrationInputs(projectId,taskId)
+    if(!input.task) return null
+    const runs=(this.db.prepare(`SELECT * FROM integration_test_runs WHERE task_id=? ORDER BY attempt DESC,created_at DESC`).all(taskId) as Record<string,unknown>[]).map((row)=>this.mapIntegrationTestRun(row))
+    const activeRun=runs.find((run)=>run.status==='queued'||run.status==='running')??null
+    const latestRun=runs[0]??null
+    const reasons:string[]=[]
+    if(input.task.semantic_type!=='integration_tests') reasons.push('task_not_in_integration_tests')
+    if(!input.workspace?.branch||!input.workspace.commitSha||!input.workspace.agentId||!input.workspace.path||!input.workspace.pushed) reasons.push('missing_pushed_development_workspace')
+    if(!input.dev) reasons.push('successful_development_run_not_found')
+    if(!input.prep||!input.readiness) reasons.push('missing_readiness_snapshot')
+    const cases=input.readiness?.testCases??[]
+    const gate=latestRun&&input.workspace?.commitSha&&input.readiness?integrationTestGate(latestRun,input.workspace.commitSha,cases):{allowed:false,reasons:['integration_test_run_missing']}
+    return {activeRun,latestRun,runs,testCases:cases,launchReasons:reasons,canStart:!activeRun&&reasons.length===0,canComplete:gate.allowed,gateReasons:gate.reasons}
+  }
+
+  startIntegrationTestRun(userId:string,projectId:string,taskId:string):IntegrationTestRun {
+    if(!this.canQa(userId,projectId)) throw new Error('QA permission required')
+    return this.db.transaction(()=>{
+      const input=this.currentIntegrationInputs(projectId,taskId)
+      const reasons:string[]=[]
+      if(!input.task) throw new Error('task not found')
+      if(input.task.semantic_type!=='integration_tests') reasons.push('task_not_in_integration_tests')
+      if(!input.workspace?.branch||!input.workspace.commitSha||!input.workspace.agentId||!input.workspace.path||!input.workspace.pushed) reasons.push('missing_pushed_development_workspace')
+      if(!input.dev) reasons.push('successful_development_run_not_found')
+      if(!input.prep||!input.readiness) reasons.push('missing_readiness_snapshot')
+      const currentSha=input.workspace?.commitSha??''
+      const cases=input.readiness?.testCases??[]
+      const version=integrationTestSemanticVersion(cases)
+      const ts=this.now()
+      this.db.prepare(`UPDATE integration_test_runs SET status='stale',stale_reason='sha_changed',finished_at=? WHERE task_id=? AND commit_sha<>? AND status IN ('queued','running','passed','failed','blocked','cancelled','skipped')`).run(ts,taskId,currentSha)
+      this.db.prepare(`UPDATE integration_test_runs SET status='stale',stale_reason='snapshot_changed',finished_at=? WHERE task_id=? AND snapshot_version<>? AND status IN ('queued','running','passed','failed','blocked','cancelled','skipped')`).run(ts,taskId,version)
+      const active=this.db.prepare(`SELECT * FROM integration_test_runs WHERE task_id=? AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string,unknown>|undefined
+      if(active) return this.mapIntegrationTestRun(active)
+      const requiredAutomatable=cases.filter((item)=>item.required&&item.automatable)
+      const invalidExcluded=cases.filter((item)=>item.required&&!item.automatable&&(!item.notAutomatedReason.trim()||!item.alternativeManualVerification.trim()))
+      const skipped=reasons.length===0&&requiredAutomatable.length===0&&invalidExcluded.length===0
+      const status:IntegrationTestRun['status']=skipped?'skipped':reasons.length?'blocked':'queued'
+      const attempt=Number((this.db.prepare(`SELECT COALESCE(MAX(attempt),0)+1 n FROM integration_test_runs WHERE task_id=?`).get(taskId) as {n:number}).n)
+      const id=this.newId()
+      this.db.prepare(`INSERT INTO integration_test_runs (id,project_id,task_id,development_run_id,branch,commit_sha,attempt,status,readiness_run_id,snapshot_version,test_cases_json,blocker_reasons_json,summary,created_at,finished_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,projectId,taskId,input.dev?.id??null,input.workspace?.branch??'',currentSha,attempt,status,input.prep?.id??'',version,JSON.stringify(cases),JSON.stringify(reasons),skipped?'Нет обязательных automatable-кейсов':reasons.length?'Запуск заблокирован предусловиями':'',ts,status==='queued'?null:ts)
+      if(skipped){
+        const target=this.getColumnIdBySemantic(projectId,'automated_qa')
+        if(!target||!canTransitionWorkflow('integration_tests','automated_qa','automation')) throw new Error('automated_qa transition unavailable')
+        this.moveTask(userId,projectId,taskId,{columnId:target})
+      }
+      return this.getIntegrationTestRun(userId,id)!
+    })()
+  }
+
+  integrationTestExecutionContext(runId:string):{agentId:string;workdir:string;commands:string[]}|null {
+    const row=this.db.prepare(`SELECT w.agent_id,w.path,p.test_command FROM integration_test_runs r JOIN ci_runs d ON d.id=r.development_run_id JOIN ci_workspaces w ON w.id=d.workspace_id JOIN projects p ON p.id=r.project_id WHERE r.id=? AND r.status='queued' AND w.commit_sha=r.commit_sha AND w.pushed=1`).get(runId) as {agent_id:string|null;path:string;test_command:string|null}|undefined
+    return row?.agent_id&&row.path?{agentId:row.agent_id,workdir:row.path,commands:testStages(row.test_command??'',['npm run affected-check'])}:null
+  }
+  markIntegrationTestRunning(id:string):void { this.db.prepare(`UPDATE integration_test_runs SET status='running',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(),id) }
+  appendIntegrationTestLog(id:string,chunk:string):void { this.db.prepare(`UPDATE integration_test_runs SET log=substr(log||?,-500000) WHERE id=? AND status='running'`).run(chunk,id) }
+  finishIntegrationTestRun(userId:string,runId:string,input:{status:'passed'|'failed'|'blocked';commands:IntegrationTestCommandResult[];summary:string;failureClassification?:IntegrationTestRun['failureClassification'];failureReason?:string|null;blockerReasons?:string[]}):IntegrationTestRun {
+    const run=this.getIntegrationTestRun(userId,runId)
+    if(!run||run.status!=='running') throw new Error('integration test run is not running')
+    this.db.prepare(`UPDATE integration_test_runs SET status=?,commands_json=?,summary=?,failure_classification=?,failure_reason=?,blocker_reasons_json=?,finished_at=? WHERE id=? AND status='running'`).run(input.status,JSON.stringify(input.commands),input.summary,input.failureClassification??null,input.failureReason??null,JSON.stringify(input.blockerReasons??[]),this.now(),runId)
+    return this.getIntegrationTestRun(userId,runId)!
+  }
+  recordIntegrationAutomationLinks(userId:string,runId:string,links:Array<{testId:string;path:string}>,commitSha:string):IntegrationTestRun {
+    const run=this.getIntegrationTestRun(userId,runId)
+    if(!run||run.status!=='running') throw new Error('integration test run is not running')
+    const prep=this.db.prepare(`SELECT readiness_json FROM task_preparation_runs WHERE id=? AND status='success'`).get(run.readinessRunId) as {readiness_json:string}|undefined
+    const readiness=prep?parseJsonValue<DevelopmentReadiness|null>(prep.readiness_json,null):null
+    if(!readiness) throw new Error('readiness snapshot missing')
+    const now=this.now(), created=links.map((item)=>({testId:item.testId,path:item.path,updatedAt:now,commitSha}))
+    readiness.testCases=readiness.testCases.map((testCase)=>({...testCase,automationLinks:[...testCase.automationLinks.filter((link)=>link.commitSha!==commitSha),...created.filter((link)=>link.testId===testCase.id)]}))
+    this.db.prepare(`UPDATE task_preparation_runs SET readiness_json=? WHERE id=?`).run(JSON.stringify(readiness),run.readinessRunId)
+    this.db.prepare(`UPDATE integration_test_runs SET commit_sha=?,test_cases_json=?,automation_links_json=? WHERE id=?`).run(commitSha,JSON.stringify(readiness.testCases),JSON.stringify(created),runId)
+    this.db.prepare(`UPDATE ci_workspaces SET commit_sha=? WHERE id=(SELECT workspace_id FROM ci_runs WHERE id=?)`).run(commitSha,run.developmentRunId)
+    return this.getIntegrationTestRun(userId,runId)!
+  }
+  completeIntegrationTestRun(userId:string,projectId:string,taskId:string,runId:string):IntegrationTestRun {
+    if(!this.canQa(userId,projectId)) throw new Error('QA permission required')
+    return this.db.transaction(()=>{
+      const run=this.getIntegrationTestRun(userId,runId),input=this.currentIntegrationInputs(projectId,taskId)
+      if(!run||run.taskId!==taskId||!input.workspace?.commitSha||!input.readiness) throw new Error('integration test state incomplete')
+      const gate=integrationTestGate(run,input.workspace.commitSha,input.readiness.testCases)
+      if(!gate.allowed) throw new Error(`integration test gate incomplete: ${gate.reasons.join(', ')}`)
+      if(input.task?.semantic_type!=='integration_tests'||!canTransitionWorkflow('integration_tests','automated_qa','automation')) throw new Error('workflow transition conflict')
+      const target=this.getColumnIdBySemantic(projectId,'automated_qa')
+      if(!target) throw new Error('automated_qa column not found')
+      this.moveTask(userId,projectId,taskId,{columnId:target})
+      return run
+    })()
+  }
+  cancelIntegrationTestRun(userId:string,runId:string):IntegrationTestRun {
+    const run=this.getIntegrationTestRun(userId,runId)
+    if(!run||!this.canQa(userId,run.projectId)) throw new Error('QA permission required')
+    this.db.prepare(`UPDATE integration_test_runs SET status='cancelled',summary='Ран отменён пользователем',finished_at=? WHERE id=? AND status IN ('queued','running')`).run(this.now(),runId)
+    return this.getIntegrationTestRun(userId,runId)!
+  }
+  linkIntegrationTestFixRun(userId:string,runId:string,fixRunId:string):IntegrationTestRun {
+    const run=this.getIntegrationTestRun(userId,runId)
+    if(!run||!this.canQa(userId,run.projectId)) throw new Error('QA permission required')
+    this.db.prepare(`UPDATE integration_test_runs SET linked_fix_run_id=? WHERE id=? AND linked_fix_run_id IS NULL`).run(fixRunId,runId)
+    return this.getIntegrationTestRun(userId,runId)!
+  }
+  failInterruptedIntegrationTestRuns():string[] {
+    const rows=this.db.prepare(`SELECT id FROM integration_test_runs WHERE status IN ('queued','running')`).all() as Array<{id:string}>
+    this.db.prepare(`UPDATE integration_test_runs SET status='blocked',failure_classification='infrastructure',failure_reason='server_restarted',blocker_reasons_json='["server_restarted"]',summary='Ран прерван перезапуском сервера',finished_at=? WHERE status IN ('queued','running')`).run(this.now())
+    return rows.map((row)=>row.id)
+  }
+
   /**
    * Идемпотентно создаёт отдельный merge-ран и в той же SQLite-транзакции
    * переводит карточку в системную колонку merge. Все значения ветки/машины
    * берутся из серверных записей, а не из тела HTTP-запроса.
    */
-  startMergeRun(userId: string, projectId: string, taskId: string, agentIdOverride?: string | null): MergeRun {
+  startMergeRun(userId: string, projectId: string, taskId: string, agentIdOverride?: string | null, llmOverride?: { provider?: LlmProvider; model?: string }): MergeRun {
     return this.db.transaction(() => {
       const existing = this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY created_at DESC LIMIT 1`).get(taskId) as Record<string, unknown> | undefined
       if (existing) return this.mapMergeRun(existing)
@@ -4905,9 +5846,30 @@ export class VoiceChatDb {
       if (agentId !== workspace.agent_id && !this.getProjectMachine(projectId, agentId)) throw new Error('selected merge machine has no project repository settings')
       if (!this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'`).get(projectId)) throw new Error('merge column not found')
 
+      const settings = this.getSettings(userId)
+      const globalLlm = this.ciLlmDefaultsForUser(userId)
+      const development = this.findLatestCiRunForTask(projectId, taskId)
+      const stageLlm = this.resolveTaskStageLlmConfig(projectId, taskId, 'kb_update', development
+        ? { llmEngineId: development.llmEngineId ?? null, provider: development.llmProvider, model: development.llmModel }
+        : { llmEngineId: globalLlm.llmEngineId ?? null, provider: globalLlm.provider, model: globalLlm.model })
+      const requestedProvider = llmOverride?.provider ?? stageLlm.provider
+      const requestedModel = (llmOverride?.model ?? stageLlm.model ?? '').trim()
+      const access = this.getUserLlmAccess(userId)
+      const provider = isProviderAllowed(access, requestedProvider) ? requestedProvider : firstAllowedProvider(access)
+      if (!provider) throw new Error('Нет доступных движков и моделей для merge-рана')
+      const providerDefaultModel = provider === 'codex'
+        ? (settings.codexModel.trim() || DEFAULT_CODEX_MODEL)
+        : (settings.model.trim() && settings.model !== 'default' ? settings.model.trim() : DEFAULT_CI_CLAUDE_MODEL)
+      const modelCandidate = provider === requestedProvider && requestedModel && requestedModel !== 'default' ? requestedModel : providerDefaultModel
+      const model = clampModel(access, provider, modelCandidate)
+      if (!model) throw new Error('Нет доступных моделей для merge-рана')
+      const fallbackReason = provider !== requestedProvider ? 'provider_unavailable' : model !== modelCandidate ? 'model_unavailable' : null
+      const role = this.getUser(userId)?.role ?? 'developer'
+      const engine = this.resolveLlmEngine(stageLlm.llmEngineId ?? settings.llmEngineId, provider, role)
+
       const id = this.newId(), now = this.now()
-      this.db.prepare(`INSERT INTO merge_runs (id,project_id,task_id,status,triggered_by,source_branch,target_branch,source_sha,agent_id,llm_provider,llm_model,stage,started_at,created_at,log)
-        VALUES (?,?,?,'queued',?,?,'main',?,?,'claude','','queued',?,?,?)`).run(id, projectId, taskId, userId, workspace.branch, workspace.commit_sha, agentId, now, now, `[${new Date(now).toISOString()}] merge requested by ${userId}\\n`)
+      this.db.prepare(`INSERT INTO merge_runs (id,project_id,task_id,status,triggered_by,source_branch,target_branch,source_sha,agent_id,llm_engine_id,llm_provider,llm_model,requested_llm_provider,requested_llm_model,llm_fallback_reason,stage,started_at,created_at,log)
+        VALUES (?,?,?,'queued',?,?,'main',?,?,?,?,?,?,?,?,'queued',?,?,?)`).run(id, projectId, taskId, userId, workspace.branch, workspace.commit_sha, agentId, engine.engine?.id ?? null, provider, model, requestedProvider, requestedModel || null, fallbackReason, now, now, `[${new Date(now).toISOString()}] merge requested by ${userId}\\n`)
       this.db.prepare(`UPDATE tasks SET column_id=(SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='merge'), updated_at=? WHERE id=?`).run(projectId, now, taskId)
       return this.mapMergeRun(this.db.prepare(`SELECT * FROM merge_runs WHERE id=?`).get(id) as Record<string, unknown>)
     })()
@@ -4957,7 +5919,10 @@ export class VoiceChatDb {
     // Retry is an explicit user decision: failed/cancelled runs already stay in
     // merge, while decision_required returns there before creating the next run.
     this.moveMergeTask(previous.projectId, previous.taskId, 'merge')
-    const next = this.startMergeRun(userId, previous.projectId, previous.taskId, agentIdOverride ?? previous.agentId)
+    const next = this.startMergeRun(userId, previous.projectId, previous.taskId, agentIdOverride ?? previous.agentId, {
+      provider: previous.requestedLlmProvider ?? previous.llmProvider,
+      model: previous.requestedLlmModel ?? previous.llmModel
+    })
     if (unpin || previous.conflicts.length > 0 || /stale source/i.test(previous.error ?? '')) return this.updateMergeRun(next.id, { sourceSha: null }) ?? next
     return next
   }
@@ -4996,7 +5961,11 @@ export class VoiceChatDb {
       triggeredBy: String(r.triggered_by), sourceBranch: String(r.source_branch), targetBranch: 'main',
       sourceSha: r.source_sha as string | null, targetSha: r.target_sha as string | null, mergeSha: r.merge_sha as string | null,
       revertSha: r.revert_sha as string | null, agentId: String(r.agent_id), llmEngineId: r.llm_engine_id as string | null,
-      llmProvider: r.llm_provider as MergeRun['llmProvider'], llmModel: String(r.llm_model ?? ''), stage: String(r.stage) as MergeRun['stage'],
+      llmProvider: r.llm_provider as MergeRun['llmProvider'], llmModel: String(r.llm_model ?? ''),
+      requestedLlmProvider: r.requested_llm_provider == null ? null : r.requested_llm_provider as MergeRun['llmProvider'],
+      requestedLlmModel: r.requested_llm_model == null ? null : String(r.requested_llm_model),
+      llmFallbackReason: r.llm_fallback_reason == null ? null : r.llm_fallback_reason as MergeRun['llmFallbackReason'],
+      stage: String(r.stage) as MergeRun['stage'],
       stages: parseJsonValue(r.stages_json as string, []), conflicts: parseStringArray(r.conflicts_json as string),
       conflictDetails: parseStringArray(r.conflicts_json as string).map((path) => ({ path })), checks: parseJsonValue(r.checks_json as string, []),
       deployId: r.deploy_id as string | null, deployVersion: r.deploy_version as string | null,
@@ -5007,16 +5976,45 @@ export class VoiceChatDb {
     }
   }
 
+  private preparationEvents(attemptId: string): PreparationEvent[] {
+    const rows = this.db.prepare(`SELECT * FROM task_preparation_events WHERE attempt_id=? ORDER BY sequence`).all(attemptId) as Record<string, unknown>[]
+    return rows.map((row) => ({
+      eventId: String(row.event_id), attemptId: String(row.attempt_id), sequence: Number(row.sequence),
+      timestamp: Number(row.timestamp), type: String(row.type), phase: row.phase as TaskPreparationPhase,
+      text: String(row.text), ...(row.data_json ? { data: parseJsonValue<Record<string, unknown>>(String(row.data_json), {}) } : {})
+    }))
+  }
+
+  private preparationQuestions(attemptId: string): PreparationQuestion[] {
+    const rows = this.db.prepare(`SELECT * FROM task_preparation_questions WHERE attempt_id=? ORDER BY asked_at,question_id`).all(attemptId) as Record<string, unknown>[]
+    return rows.map((row) => ({
+      questionId: String(row.question_id), attemptId: String(row.attempt_id), text: String(row.text),
+      material: Boolean(row.material), status: row.answered_at == null ? 'open' : 'answered',
+      answer: row.answer as string | null, askedAt: Number(row.asked_at),
+      answeredAt: row.answered_at == null ? null : Number(row.answered_at), answeredBy: row.answered_by as string | null
+    }))
+  }
+
   private mapTaskPreparationRun(row: Record<string, unknown>): TaskPreparationRun {
     const status = row.status as TaskPreparationRun['status']
+    const createdAt = Number(row.created_at)
+    const startedAt = row.started_at == null ? createdAt : Number(row.started_at)
+    const finishedAt = row.finished_at == null ? null : Number(row.finished_at)
     return {
-      id: String(row.id), projectId: String(row.project_id), taskId: String(row.task_id), status,
-      attempt: Number(row.attempt), maxAttempts: 2, log: String(row.log ?? ''),
+      id: String(row.id), attemptId: String(row.id), projectId: String(row.project_id), taskId: String(row.task_id),
+      taskKey: String(row.task_key || row.task_id), status, phase: (row.phase || (status === 'success' ? 'completed' : 'initialization')) as TaskPreparationPhase,
+      attempt: Number(row.attempt), attemptNumber: Number(row.attempt), maxAttempts: 2,
+      llmEngineId: row.llm_engine_id as string | null, provider: (row.provider ?? 'claude') as LlmProvider,
+      model: String(row.model ?? ''), profileId: String(row.profile_id ?? ''),
+      log: String(row.log ?? ''), events: this.preparationEvents(String(row.id)), questions: this.preparationQuestions(String(row.id)),
       error: row.error as string | null,
       readiness: row.readiness_json ? parseJsonValue<DevelopmentReadiness>(String(row.readiness_json), null as unknown as DevelopmentReadiness) : null,
       gateReasons: parseStringArray(String(row.gate_reasons_json ?? '[]')),
-      createdAt: Number(row.created_at), finishedAt: row.finished_at == null ? null : Number(row.finished_at),
-      canRetry: status === 'failed' || status === 'cancelled', canCancel: status === 'running'
+      gateResults: parseJsonValue<PreparationGateResult[]>(String(row.gate_results_json ?? '[]'), []),
+      createdAt, startedAt, finishedAt, durationMs: Math.max(0, (finishedAt ?? this.now()) - startedAt),
+      canRetry: status === 'failed' || status === 'cancelled' || status === 'blocked',
+      canCancel: status === 'queued' || status === 'running' || status === 'waiting_for_answer' || status === 'validating',
+      canAnswer: status === 'waiting_for_answer'
     }
   }
 
@@ -5027,7 +6025,134 @@ export class VoiceChatDb {
 
   listTaskPreparationRuns(userId: string, projectId: string, taskId: string): TaskPreparationRun[] {
     if (!this.isProjectMember(userId, projectId)) return []
-    return (this.db.prepare(`SELECT * FROM task_preparation_runs WHERE project_id=? AND task_id=? ORDER BY created_at DESC`).all(projectId, taskId) as Record<string, unknown>[]).map((row) => this.mapTaskPreparationRun(row))
+    return (this.db.prepare(`SELECT * FROM task_preparation_runs WHERE project_id=? AND task_id=? ORDER BY attempt DESC`).all(projectId, taskId) as Record<string, unknown>[]).map((row) => this.mapTaskPreparationRun(row))
+  }
+
+  appendTaskPreparationEvent(attemptId: string, type: string, phase: TaskPreparationPhase, text: string, data?: Record<string, unknown>): PreparationEvent | null {
+    return this.db.transaction(() => {
+      const run = this.db.prepare(`SELECT id FROM task_preparation_runs WHERE id=?`).get(attemptId)
+      if (!run) return null
+      const sequence = Number((this.db.prepare(`SELECT COALESCE(MAX(sequence),0)+1 AS sequence FROM task_preparation_events WHERE attempt_id=?`).get(attemptId) as { sequence: number }).sequence)
+      const eventId = this.newId(), timestamp = this.now(), safeText = redactPreparationText(text)
+      this.db.prepare(`INSERT INTO task_preparation_events (event_id,attempt_id,sequence,timestamp,type,phase,text,data_json) VALUES (?,?,?,?,?,?,?,?)`).run(
+        eventId, attemptId, sequence, timestamp, type, phase, safeText, data ? JSON.stringify(data) : null
+      )
+      return { eventId, attemptId, sequence, timestamp, type, phase, text: safeText, ...(data ? { data } : {}) }
+    })()
+  }
+
+  transitionTaskPreparationRun(id: string, status: TaskPreparationRun['status'], phase: TaskPreparationPhase, text: string): void {
+    const terminal = ['success', 'completed', 'failed', 'cancelled', 'blocked']
+    this.db.transaction(() => {
+      const row = this.db.prepare(`SELECT status FROM task_preparation_runs WHERE id=?`).get(id) as { status: string } | undefined
+      if (!row || terminal.includes(row.status)) return
+      this.db.prepare(`UPDATE task_preparation_runs SET status=?,phase=? WHERE id=?`).run(status, phase, id)
+      this.appendTaskPreparationEvent(id, 'state_changed', phase, text, { status, phase })
+    })()
+  }
+
+  createTaskPreparationQuestion(id: string, text: string, material = true): PreparationQuestion | null {
+    const questionId = this.newId(), askedAt = this.now(), safeText = redactPreparationText(text)
+    const changed = this.db.prepare(`INSERT INTO task_preparation_questions (question_id,attempt_id,text,material,asked_at) SELECT ?,?,?,?,? WHERE EXISTS (SELECT 1 FROM task_preparation_runs WHERE id=? AND status IN ('running','validating'))`).run(questionId, id, safeText, material ? 1 : 0, askedAt, id)
+    if (!changed.changes) return null
+    this.transitionTaskPreparationRun(id, 'waiting_for_answer', 'clarification', 'Требуется ответ на существенный вопрос')
+    this.appendTaskPreparationEvent(id, 'question_asked', 'clarification', safeText, { questionId, material })
+    return this.preparationQuestions(id).find((question) => question.questionId === questionId) ?? null
+  }
+
+  answerTaskPreparationQuestion(userId: string, questionId: string, answer: string): PreparationAnswerResult | null {
+    return this.db.transaction(() => {
+      const row = this.db.prepare(`SELECT q.attempt_id FROM task_preparation_questions q JOIN task_preparation_runs r ON r.id=q.attempt_id JOIN project_members m ON m.project_id=r.project_id WHERE q.question_id=? AND m.username=?`).get(questionId, userId) as { attempt_id: string } | undefined
+      if (!row) return null
+      const safeAnswer = redactPreparationText(answer).trim()
+      if (!safeAnswer) throw new Error('Ответ не может быть пустым')
+      const answeredAt = this.now()
+      const result = this.db.prepare(`UPDATE task_preparation_questions SET answer=?,answered_at=?,answered_by=? WHERE question_id=? AND answered_at IS NULL`).run(safeAnswer, answeredAt, userId, questionId)
+      const question = this.preparationQuestions(row.attempt_id).find((item) => item.questionId === questionId)!
+      if (!result.changes) return { accepted: false, alreadyAnswered: true, question }
+      this.db.prepare(`UPDATE task_preparation_runs SET status='queued',phase='clarification' WHERE id=? AND status='waiting_for_answer'`).run(row.attempt_id)
+      this.appendTaskPreparationEvent(row.attempt_id, 'answer_accepted', 'clarification', 'Ответ принят', { questionId })
+      return { accepted: true, alreadyAnswered: false, question }
+    })()
+  }
+
+  listTaskPreparationNotifications(userId: string): PreparationClarificationNotification[] {
+    const rows = this.db.prepare(`
+      SELECT q.question_id,q.attempt_id,q.text,q.asked_at,
+             r.project_id,r.task_id,p.name AS project_name,t.title AS task_title,
+             d.dismissed_at
+      FROM task_preparation_questions q
+      JOIN task_preparation_runs r ON r.id=q.attempt_id
+      JOIN projects p ON p.id=r.project_id
+      JOIN tasks t ON t.id=r.task_id
+      JOIN project_members m ON m.project_id=r.project_id AND m.username=?
+      LEFT JOIN task_preparation_notification_dismissals d
+        ON d.question_id=q.question_id AND d.user_id=?
+      WHERE q.material=1 AND q.answered_at IS NULL AND r.status='waiting_for_answer'
+      ORDER BY q.asked_at,q.question_id
+    `).all(userId, userId) as Record<string, unknown>[]
+    return rows.map((row) => ({
+      questionId: String(row.question_id), attemptId: String(row.attempt_id),
+      projectId: String(row.project_id), projectName: String(row.project_name),
+      taskId: String(row.task_id), taskTitle: String(row.task_title),
+      text: String(row.text), askedAt: Number(row.asked_at),
+      dismissedAt: row.dismissed_at == null ? null : Number(row.dismissed_at)
+    }))
+  }
+
+  dismissTaskPreparationNotification(userId: string, questionId: string): boolean {
+    const now = this.now()
+    const result = this.db.prepare(`
+      INSERT OR IGNORE INTO task_preparation_notification_dismissals (question_id,user_id,dismissed_at)
+      SELECT q.question_id,?,?
+      FROM task_preparation_questions q
+      JOIN task_preparation_runs r ON r.id=q.attempt_id
+      JOIN project_members m ON m.project_id=r.project_id AND m.username=?
+      WHERE q.question_id=? AND q.material=1 AND q.answered_at IS NULL AND r.status='waiting_for_answer'
+    `).run(userId, now, userId, questionId)
+    if (result.changes) return true
+    return Boolean(this.db.prepare(`SELECT 1 FROM task_preparation_notification_dismissals WHERE question_id=? AND user_id=?`).get(questionId, userId))
+  }
+
+  confirmedDevelopmentReadiness(taskId: string): DevelopmentReadiness | null {
+    const row = this.db.prepare(`SELECT id,readiness_json,gate_results_json FROM task_preparation_runs WHERE task_id=? AND status IN ('success','completed') AND readiness_json IS NOT NULL ORDER BY attempt DESC LIMIT 1`).get(taskId) as { id: string; readiness_json: string; gate_results_json: string } | undefined
+    if (!row) return null
+    const readiness = parseJsonValue<DevelopmentReadiness | null>(row.readiness_json, null)
+    if (!readiness) return null
+    if (readiness.schemaVersion !== 2) return readiness
+    const gates = parseJsonValue<PreparationGateResult[]>(row.gate_results_json, [])
+    if (!readiness.confirmation?.confirmed || readiness.confirmation.attemptId !== row.id || !gates.length || gates.some((gate) => gate.status !== 'pass')) return null
+    return readiness
+  }
+
+  getTaskLaunchPreparationResult(userId: string, projectId: string, proposalId: string): TaskLaunchResult | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const row = this.db.prepare(`SELECT task_id,run_id,error FROM task_launch_results WHERE project_id=? AND proposal_id=? AND action='preparation'`).get(projectId, proposalId) as { task_id: string; run_id: string | null; error: string | null } | undefined
+    if (!row) return null
+    if (row.error) return { type: 'preparation', status: 'partial', taskId: row.task_id, runId: row.run_id ?? undefined, error: row.error, canRetry: true }
+    if (!row.run_id) return { type: 'preparation', status: 'partial', taskId: row.task_id, error: 'Подготовка ещё не запущена', canRetry: true }
+    return { type: 'preparation', status: 'success', taskId: row.task_id, runId: row.run_id }
+  }
+
+  createTaskFromProposalInPreparation(userId: string, projectId: string, proposalId: string, args: Omit<Parameters<VoiceChatDb['createTask']>[2], 'columnId'>): TaskLaunchResult {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
+    const previous = this.getTaskLaunchPreparationResult(userId, projectId, proposalId)
+    if (previous) return previous
+    const columns = this.db.prepare(`SELECT id FROM kanban_columns WHERE project_id=? AND semantic_type='preparation'`).all(projectId) as Array<{ id: string }>
+    if (columns.length !== 1) throw new Error(columns.length === 0 ? 'Не настроена колонка с semantic type preparation' : 'Найдено несколько колонок с semantic type preparation')
+    return this.db.transaction(() => {
+      const repeated = this.getTaskLaunchPreparationResult(userId, projectId, proposalId)
+      if (repeated) return repeated
+      const task = this.createTask(userId, projectId, { ...args, columnId: columns[0].id })
+      if (!task) throw new Error('Не удалось создать задачу')
+      const now = this.now()
+      this.db.prepare(`INSERT INTO task_launch_results (project_id,proposal_id,action,task_id,created_by,created_at,updated_at) VALUES (?,?,'preparation',?,?,?,?)`).run(projectId, proposalId, task.id, userId, now, now)
+      return { type: 'preparation', status: 'partial', taskId: task.id, error: 'Подготовка ещё не запущена', canRetry: true } as TaskLaunchResult
+    })()
+  }
+
+  saveTaskLaunchPreparationRun(projectId: string, proposalId: string, runId: string | null, error: string | null): void {
+    this.db.prepare(`UPDATE task_launch_results SET run_id=?,error=?,updated_at=? WHERE project_id=? AND proposal_id=? AND action='preparation'`).run(runId, error, this.now(), projectId, proposalId)
   }
 
   startTaskPreparationRun(userId: string, projectId: string, taskId: string): TaskPreparationRun {
@@ -5037,56 +6162,210 @@ export class VoiceChatDb {
     const board = this.getBoard(userId, projectId)
     const current = board?.columns.find((column) => column.id === task.columnId)
     if (current?.semanticType !== 'backlog' && current?.semanticType !== 'preparation') throw new Error('Подготовку можно запускать только из TODO или Подготовки к разработке')
-    const active = this.db.prepare(`SELECT * FROM task_preparation_runs WHERE task_id=? AND status='running'`).get(taskId) as Record<string, unknown> | undefined
+    const active = this.db.prepare(`SELECT * FROM task_preparation_runs WHERE task_id=? AND status IN ('queued','running','waiting_for_answer','validating')`).get(taskId) as Record<string, unknown> | undefined
     if (active) return this.mapTaskPreparationRun(active)
-    const target = this.getColumnIdBySemantic(projectId, 'preparation')
-    if (!target) throw new Error('Колонка Подготовка к разработке не найдена')
+    const preparationColumns = board?.columns.filter((column) => column.semanticType === 'preparation') ?? []
+    if (preparationColumns.length !== 1) throw new Error(preparationColumns.length === 0 ? 'Не настроена колонка с semantic type preparation' : 'Найдено несколько колонок с semantic type preparation')
+    const target = preparationColumns[0].id
     const id = this.newId(), now = this.now()
+    const attempt = Number((this.db.prepare(`SELECT COALESCE(MAX(attempt), 0) + 1 AS attempt FROM task_preparation_runs WHERE task_id=?`).get(taskId) as { attempt: number }).attempt)
+    const profileId = createHash('sha256').update(userId).digest('hex').slice(0, 16)
     this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,status,created_at) VALUES (?,?,?,'running',?)`).run(id, projectId, taskId, now)
+      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,task_key,status,phase,attempt,profile_id,created_at,started_at) VALUES (?,?,?,?, 'running','initialization',?,?,?,?)`).run(id, projectId, taskId, taskId, attempt, profileId, now, now)
+      this.appendTaskPreparationEvent(id, 'attempt_created', 'initialization', 'Попытка подготовки создана')
+      this.appendTaskPreparationEvent(id, 'attempt_started', 'initialization', 'Подготовка запущена')
       if (task.columnId !== target) this.moveTask(userId, projectId, taskId, { columnId: target })
     })()
     return this.getTaskPreparationRun(userId, id)!
   }
 
   appendTaskPreparationLog(id: string, chunk: string): void {
-    this.db.prepare(`UPDATE task_preparation_runs SET log=substr(log || ?, -500000) WHERE id=? AND status='running'`).run(chunk, id)
+    const safe = redactPreparationText(chunk)
+    this.db.prepare(`UPDATE task_preparation_runs SET log=substr(log || ?, -500000) WHERE id=? AND status IN ('queued','running','validating')`).run(safe, id)
+    if (safe.trim()) {
+      const phase = (this.db.prepare(`SELECT phase FROM task_preparation_runs WHERE id=?`).get(id) as { phase: TaskPreparationPhase } | undefined)?.phase ?? 'brief_generation'
+      this.appendTaskPreparationEvent(id, 'model_output', phase, safe)
+    }
+  }
+
+  setTaskPreparationExecution(id: string, execution: { llmEngineId?: string | null; provider: LlmProvider; model: string }, phase: TaskPreparationPhase = 'knowledge_research'): void {
+    this.db.prepare(`UPDATE task_preparation_runs SET llm_engine_id=?,provider=?,model=?,status='running',phase=? WHERE id=? AND status IN ('queued','running')`).run(execution.llmEngineId ?? null, execution.provider, redactPreparationText(execution.model), phase, id)
+    this.appendTaskPreparationEvent(id, 'research_started', phase, 'Исследование источников начато')
   }
 
   completeTaskPreparationRun(userId: string, id: string, readiness: DevelopmentReadiness): TaskPreparationRun | null {
     const run = this.getTaskPreparationRun(userId, id)
-    if (!run || run.status !== 'running') return run
+    if (!run || (run.status !== 'running' && run.status !== 'validating')) return run
     const target = this.getColumnIdBySemantic(run.projectId, 'ready')
     if (!target) throw new Error('Колонка Ready for Development не найдена')
+    const gateResults = developmentReadinessGateResults(readiness)
+    const reasons = gateResults.filter((result) => result.status === 'fail').flatMap((result) => result.refs)
+    if (reasons.length) {
+      this.blockTaskPreparationRun(id, 'Гейт готовности не пройден', reasons, gateResults)
+      return this.getTaskPreparationRun(userId, id)
+    }
+    const sanitized = JSON.parse(JSON.stringify(readiness, (_key, value) => typeof value === 'string' ? redactPreparationText(value) : value)) as DevelopmentReadiness
+    const now = this.now()
+    if (sanitized.schemaVersion === 2) sanitized.confirmation = { confirmed: true, confirmedAt: now, confirmedBy: run.profileId ?? '', attemptId: id }
     this.db.transaction(() => {
-      this.db.prepare(`UPDATE tasks SET description=?,acceptance_criteria=?,updated_at=? WHERE id=?`).run(readiness.functionalRequirements.trim(), readiness.acceptanceCriteria.trim(), this.now(), run.taskId)
-      for (const testCase of readiness.testCases) {
+      this.db.prepare(`UPDATE tasks SET description=?,acceptance_criteria=?,updated_at=? WHERE id=?`).run(sanitized.functionalRequirements.trim(), sanitized.acceptanceCriteria.trim(), now, run.taskId)
+      for (const testCase of sanitized.testCases) {
         this.createAcceptanceCriterion(userId, run.projectId, run.taskId, {
           title: testCase.title, description: testCase.description, preconditions: testCase.preconditions,
           steps: testCase.steps, testData: testCase.testData, expectedResult: testCase.expectedResult,
           required: testCase.required, testType: testCase.testType
         })
       }
+      this.appendTaskPreparationEvent(id, 'gate_completed', 'readiness_validation', 'Все проверки готовности пройдены', { gateResults })
+      this.appendTaskPreparationEvent(id, 'brief_persisted', 'persistence', 'Development Brief сохранён')
       this.moveTask(userId, run.projectId, run.taskId, { columnId: target })
-      this.db.prepare(`UPDATE task_preparation_runs SET status='success',readiness_json=?,gate_reasons_json='[]',finished_at=? WHERE id=? AND status='running'`).run(JSON.stringify(readiness), this.now(), id)
+      this.db.prepare(`UPDATE task_preparation_runs SET status='success',phase='completed',readiness_json=?,gate_reasons_json='[]',gate_results_json=?,finished_at=? WHERE id=? AND status IN ('running','validating')`).run(JSON.stringify(sanitized), JSON.stringify(gateResults), now, id)
+      this.appendTaskPreparationEvent(id, 'attempt_completed', 'completed', 'Подготовка успешно завершена')
     })()
     return this.getTaskPreparationRun(userId, id)
   }
 
-  failTaskPreparationRun(id: string, error: string, reasons: string[] = []): void {
-    this.db.prepare(`UPDATE task_preparation_runs SET status='failed',error=?,gate_reasons_json=?,finished_at=? WHERE id=? AND status='running'`).run(error, JSON.stringify(reasons), this.now(), id)
+  blockTaskPreparationRun(id: string, error: string, reasons: string[], gateResults: PreparationGateResult[] = []): void {
+    const now = this.now(), safeError = redactPreparationText(error)
+    this.db.prepare(`UPDATE task_preparation_runs SET status='blocked',phase='readiness_validation',error=?,gate_reasons_json=?,gate_results_json=?,finished_at=? WHERE id=? AND status IN ('queued','running','waiting_for_answer','validating')`).run(safeError, JSON.stringify(reasons), JSON.stringify(gateResults), now, id)
+    this.appendTaskPreparationEvent(id, 'attempt_blocked', 'readiness_validation', safeError, { reasons })
   }
 
-  cancelTaskPreparationRun(userId: string, id: string): TaskPreparationRun | null {
+  failTaskPreparationRun(id: string, error: string, reasons: string[] = []): void {
+    const safeError = redactPreparationText(error)
+    this.db.prepare(`UPDATE task_preparation_runs SET status='failed',error=?,gate_reasons_json=?,finished_at=? WHERE id=? AND status IN ('queued','running','validating')`).run(safeError, JSON.stringify(reasons), this.now(), id)
+    this.appendTaskPreparationEvent(id, 'attempt_failed', 'completed', safeError, { reasons })
+  }
+
+  cancelTaskPreparationRun(userId: string, id: string, reason = 'Подготовка отменена пользователем'): TaskPreparationRun | null {
     const run = this.getTaskPreparationRun(userId, id)
     if (!run) return null
-    this.db.prepare(`UPDATE task_preparation_runs SET status='cancelled',error='Подготовка отменена пользователем',finished_at=? WHERE id=? AND status='running'`).run(this.now(), id)
+    const safeReason = redactPreparationText(reason)
+    const changed = this.db.prepare(`UPDATE task_preparation_runs SET status='cancelled',error=?,finished_at=? WHERE id=? AND status IN ('queued','running','waiting_for_answer','validating')`).run(safeReason, this.now(), id)
+    if (changed.changes) this.appendTaskPreparationEvent(id, 'attempt_cancelled', 'completed', safeReason, { initiatedBy: run.profileId })
     return this.getTaskPreparationRun(userId, id)
   }
 
   failInterruptedTaskPreparationRuns(): string[] {
-    const rows = this.db.prepare(`SELECT id FROM task_preparation_runs WHERE status='running'`).all() as Array<{ id: string }>
-    this.db.prepare(`UPDATE task_preparation_runs SET status='failed',error='Подготовка прервана перезапуском сервера',finished_at=? WHERE status='running'`).run(this.now())
+    const rows = this.db.prepare(`SELECT id FROM task_preparation_runs WHERE status IN ('queued','running','validating')`).all() as Array<{ id: string }>
+    for (const row of rows) this.failTaskPreparationRun(row.id, 'Подготовка прервана перезапуском сервера')
+    return rows.map((row) => row.id)
+  }
+
+  private mapQaStageRun(row: Record<string, unknown>): AnyQaStageRun {
+    const stage = row.stage as QaRunStage
+    const status = row.status as QaStageRunStatus
+    return {
+      id: String(row.id), projectId: String(row.project_id), taskId: String(row.task_id),
+      kind: QA_RUN_KIND[stage], stage, status, attempt: Number(row.attempt),
+      triggeredBy: String(row.triggered_by), branch: String(row.branch ?? ''), commitSha: String(row.commit_sha ?? ''),
+      llmEngineId: row.llm_engine_id as string | null, llmProvider: (row.llm_provider ?? 'claude') as LlmProvider,
+      llmModel: String(row.llm_model ?? ''), currentStep: String(row.current_step ?? ''),
+      progress: parseJsonValue(String(row.progress_json ?? '{}'), { current: 0, total: 0, label: '' }),
+      log: parseJsonValue(String(row.log_json ?? '[]'), []), result: row.result_json ? parseJsonValue(String(row.result_json), {}) : null,
+      gateReasons: parseStringArray(String(row.gate_reasons_json ?? '[]')), error: row.error as string | null,
+      createdAt: Number(row.created_at), startedAt: row.started_at == null ? null : Number(row.started_at),
+      finishedAt: row.finished_at == null ? null : Number(row.finished_at),
+      canCancel: ['queued','running','awaiting_input'].includes(status),
+      canRetry: ['gate_failed','failed','cancelled','interrupted'].includes(status)
+    } as AnyQaStageRun
+  }
+
+  getQaStageRun(userId: string, runId: string): AnyQaStageRun | null {
+    const row = this.db.prepare(`SELECT r.* FROM qa_stage_runs r JOIN project_members m ON m.project_id=r.project_id WHERE r.id=? AND m.username=?`).get(runId, userId) as Record<string, unknown> | undefined
+    return row ? this.mapQaStageRun(row) : null
+  }
+
+  listQaStageRuns(userId: string, projectId: string, taskId: string, stage: QaRunStage): AnyQaStageRun[] {
+    if (!this.isProjectMember(userId, projectId)) return []
+    return (this.db.prepare(`SELECT * FROM qa_stage_runs WHERE project_id=? AND task_id=? AND stage=? ORDER BY attempt DESC`).all(projectId, taskId, stage) as Record<string, unknown>[]).map((row) => this.mapQaStageRun(row))
+  }
+
+  startQaStageRun(userId: string, projectId: string, taskId: string, stage: QaRunStage): AnyQaStageRun {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
+    const task = this.getTask(projectId, taskId)
+    if (!task || task.type !== 'task') throw new Error('Задача не найдена')
+    const current = this.getBoard(userId, projectId)?.columns.find((column) => column.id === task.columnId)
+    if (current?.semanticType !== stage) throw new Error(`Этап ${stage} нельзя запустить из колонки ${current?.semanticType ?? 'unknown'}`)
+    const active = this.db.prepare(`SELECT * FROM qa_stage_runs WHERE task_id=? AND stage=? AND status IN ('queued','running','awaiting_input')`).get(taskId, stage) as Record<string, unknown> | undefined
+    if (active) return this.mapQaStageRun(active)
+    const attempt = Number((this.db.prepare(`SELECT COALESCE(MAX(attempt),0)+1 AS n FROM qa_stage_runs WHERE task_id=? AND stage=?`).get(taskId, stage) as { n: number }).n)
+    const id = this.newId(), now = this.now()
+    this.db.prepare(`INSERT INTO qa_stage_runs
+      (id,project_id,task_id,stage,status,attempt,triggered_by,branch,commit_sha,current_step,created_at,started_at)
+      VALUES (?,?,?,?,'running',?,?,?,?, 'starting',?,?)`).run(
+        id, projectId, taskId, stage, attempt, userId, task.mergeSourceBranch ?? '', task.mergeSourceSha ?? '', now, now
+      )
+    return this.getQaStageRun(userId, id)!
+  }
+
+  updateQaStageRun(runId: string, patch: {
+    status?: QaStageRunStatus; currentStep?: string; progress?: { current: number; total: number; label: string }
+    log?: Array<{ seq: number; at: number; stream: 'out'|'err'|'system'; text: string }>
+    result?: Record<string, unknown> | null; gateReasons?: string[]; error?: string | null
+  }): void {
+    const current = this.db.prepare(`SELECT * FROM qa_stage_runs WHERE id=?`).get(runId) as Record<string, unknown> | undefined
+    if (!current) return
+    const status = patch.status ?? current.status as QaStageRunStatus
+    const terminal = ['success','gate_failed','failed','cancelled','interrupted'].includes(status)
+    this.db.prepare(`UPDATE qa_stage_runs SET status=?,current_step=?,progress_json=?,log_json=?,result_json=?,gate_reasons_json=?,error=?,finished_at=? WHERE id=?`).run(
+      status, patch.currentStep ?? current.current_step, JSON.stringify(patch.progress ?? parseJsonValue(String(current.progress_json), {})),
+      JSON.stringify(patch.log ?? parseJsonValue(String(current.log_json), [])),
+      patch.result === undefined ? current.result_json : patch.result == null ? null : JSON.stringify(patch.result),
+      JSON.stringify(patch.gateReasons ?? parseStringArray(String(current.gate_reasons_json))),
+      patch.error === undefined ? current.error : patch.error, terminal ? this.now() : current.finished_at, runId
+    )
+  }
+
+  completeQaStageRun(userId: string, runId: string, result: Record<string, unknown>): AnyQaStageRun | null {
+    const run = this.getQaStageRun(userId, runId)
+    if (!run || !['running','awaiting_input'].includes(run.status)) return run
+    let reasons: string[] = []
+    if (run.stage === 'integration_tests') {
+      const testCases = Array.isArray(result.testCases) ? result.testCases as import('@voicechat/shared').TestCaseDefinition[] : []
+      reasons = testCases.some((testCase) => testCase.required) ? canCompleteAutomation(testCases, run.commitSha).reasons : ['missing_required_test_cases']
+    } else if (result.gatePassed !== true) {
+      reasons = Array.isArray(result.gateReasons) ? result.gateReasons.filter((item): item is string => typeof item === 'string') : ['quality_gate_failed']
+    }
+    if (reasons.length) {
+      this.updateQaStageRun(runId, { status: 'gate_failed', result, gateReasons: reasons, currentStep: 'gate' })
+      return this.getQaStageRun(userId, runId)
+    }
+    const next: Record<QaRunStage, KanbanColumnSemanticType> = { component_qa: 'integration_tests', integration_tests: 'automated_qa', automated_qa: 'manual_qa' }
+    const target = this.getColumnIdBySemantic(run.projectId, next[run.stage])
+    if (!target) throw new Error(`Следующая колонка ${next[run.stage]} не найдена`)
+    this.db.transaction(() => {
+      this.updateQaStageRun(runId, { status: 'success', result, gateReasons: [], currentStep: 'complete' })
+      this.moveTask(userId, run.projectId, run.taskId, { columnId: target })
+    })()
+    return this.getQaStageRun(userId, runId)
+  }
+
+  cancelQaStageRun(userId: string, runId: string): AnyQaStageRun | null {
+    const run = this.getQaStageRun(userId, runId)
+    if (!run) return null
+    if (run.canCancel) this.updateQaStageRun(runId, { status: 'cancelled', error: 'Ран отменён пользователем' })
+    return this.getQaStageRun(userId, runId)
+  }
+
+  retryQaStageRun(userId: string, runId: string): AnyQaStageRun | null {
+    const run = this.getQaStageRun(userId, runId)
+    if (!run) return null
+    if (!run.canRetry) throw new Error('Повтор этого рана недоступен')
+    return this.startQaStageRun(userId, run.projectId, run.taskId, run.stage)
+  }
+
+  answerQaStageRun(userId: string, runId: string, answer: string): AnyQaStageRun | null {
+    const run = this.getQaStageRun(userId, runId)
+    if (!run || run.stage !== 'integration_tests' || run.status !== 'awaiting_input') throw new Error('Ран не ожидает ответа')
+    if (!answer.trim()) throw new Error('Ответ не может быть пустым')
+    this.updateQaStageRun(runId, { status: 'running', currentStep: 'model_answered' })
+    return this.getQaStageRun(userId, runId)
+  }
+
+  failInterruptedQaStageRuns(): string[] {
+    const rows = this.db.prepare(`SELECT id FROM qa_stage_runs WHERE status IN ('queued','running','awaiting_input')`).all() as Array<{ id: string }>
+    this.db.prepare(`UPDATE qa_stage_runs SET status='interrupted',error='Ран прерван перезапуском сервера',finished_at=? WHERE status IN ('queued','running','awaiting_input')`).run(this.now())
     return rows.map((row) => row.id)
   }
 
@@ -5237,8 +6516,10 @@ export class VoiceChatDb {
     if (!current) throw new Error('QA result not found')
     if (current.revision !== expectedRevision) throw new Error('QA result revision conflict')
     if (current.session_status !== 'active' || current.stale_reason) throw new Error('QA session is stale or closed')
-    const next = { ...mapQaResult(current, [], null), ...patch }
+    const previous = mapQaResult(current, [], null)
+    const next = { ...previous, ...patch }
     const status = patch.status ?? next.status
+    if (!QA_RESULT_STATUSES.includes(status)) throw new Error('invalid QA result status')
     if (!patch.draft) {
       const missing = validateQaResult(status, next)
       if (missing.length) throw new Error(`missing QA fields: ${missing.join(', ')}`)
@@ -5256,7 +6537,11 @@ export class VoiceChatDb {
         this.db.prepare(`INSERT INTO qa_issues (id,result_id,classification,severity,frequency,reproduction,proposed_route,requirement_proposal,created_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(result_id) DO UPDATE SET classification=excluded.classification,severity=excluded.severity,frequency=excluded.frequency,reproduction=excluded.reproduction,proposed_route=excluded.proposed_route,requirement_proposal=excluded.requirement_proposal`)
           .run(this.newId(),resultId,patch.classification,patch.severity,patch.frequency,patch.reproduction,route,patch.requirementProposal??'',now)
       }
-      this.addQaAudit(projectId,taskId,userId,patch.draft?'result.draft_saved':'result.updated',{resultId,status,revision:expectedRevision+1})
+      this.addQaAudit(projectId,taskId,userId,patch.draft?'result.draft_saved':'result.updated',{
+        resultId, sessionId: current.session_id, criterionId: current.criterion_id, actor: userId, serverTime: now,
+        previous: { status: previous.status, comment: previous.comment, revision: previous.revision },
+        next: { status, comment: next.comment, revision: expectedRevision + 1 }
+      })
     })()
     return this.qaResultById(resultId) as QaCriterionResult
   }
@@ -5368,21 +6653,16 @@ export class VoiceChatDb {
     return this.getProjectRelease(userId,projectId,id) as ProjectRelease
   }
 
-  listProjectReleases(userId:string,projectId:string):ProjectReleaseSummary[] {
+  listProjectReleases(userId:string,projectId:string):ProjectRelease[] {
     if (!this.isProjectMember(userId,projectId)) return []
+    return (this.db.prepare(`SELECT id FROM project_releases WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at DESC`).all(projectId) as Array<{id:string}>).map(({id})=>this.mapProjectRelease(this.releaseRow(id)!))
+  }
+
+  listProjectReleaseSummaries(userId:string,projectId:string):ProjectReleaseSummary[] {
+    if (!this.isProjectMember(userId,projectId)) return []
+    const rows=this.db.prepare(`SELECT r.id,r.branch,r.commit_sha,r.status,r.previous_release_id,r.created_at,MIN(s.started_at) AS started_at,MAX(s.finished_at) AS finished_at,MAX(CASE WHEN s.started_at IS NOT NULL AND s.finished_at IS NULL THEN 1 ELSE 0 END) AS running FROM project_releases r LEFT JOIN project_release_steps s ON s.release_id=r.id WHERE r.project_id=? AND r.deleted_at IS NULL GROUP BY r.id ORDER BY r.created_at DESC`).all(projectId) as ReleaseSummaryRow[]
     const now=this.now()
-    const rows=this.db.prepare(`
-      SELECT r.id,r.branch,r.commit_sha,r.status,r.previous_release_id,r.created_at,
-        CASE WHEN MIN(s.started_at) IS NULL THEN NULL
-          ELSE MAX(CASE WHEN s.started_at IS NOT NULL THEN COALESCE(s.finished_at, ?) END)-MIN(s.started_at)
-        END AS duration_ms
-      FROM project_releases r
-      LEFT JOIN project_release_steps s ON s.release_id=r.id
-      WHERE r.project_id=? AND r.deleted_at IS NULL
-      GROUP BY r.id
-      ORDER BY r.created_at DESC
-    `).all(now,projectId) as ReleaseSummaryRow[]
-    return rows.map(row=>({id:row.id,branch:row.branch,sha:row.commit_sha,status:row.status as ProjectRelease['status'],previousReleaseId:row.previous_release_id,createdAt:row.created_at,durationMs:row.duration_ms}))
+    return rows.map(row=>({id:row.id,branch:row.branch,sha:row.commit_sha,status:row.status as ProjectRelease['status'],previousReleaseId:row.previous_release_id,createdAt:row.created_at,durationMs:row.started_at==null?null:(row.running?now:row.finished_at??now)-row.started_at}))
   }
 
   listActiveProjectReleases():ProjectRelease[] {
@@ -5444,7 +6724,7 @@ export class VoiceChatDb {
 
 // ============== Релизы: строки БД ==================
 interface ReleaseRow { id:string;project_id:string;version:string;branch:string;commit_sha:string;status:string;triggered_by:string;attempt:number;previous_release_id:string|null;created_at:number;released_at:number|null;agent_id:string|null;checkout_path:string|null;deleted_at:number|null }
-interface ReleaseSummaryRow { id:string;branch:string;commit_sha:string;status:string;previous_release_id:string|null;created_at:number;duration_ms:number|null }
+interface ReleaseSummaryRow { id:string;branch:string;commit_sha:string;status:string;previous_release_id:string|null;created_at:number;started_at:number|null;finished_at:number|null;running:number }
 interface ReleaseStepRow { id:string;release_id:string;kind:string;position:number;status:string;model:string|null;attempt:number;log:string;started_at:number|null;finished_at:number|null;limit_ms:number|null }
 
 // ============== Ручное QA: строки БД и мапперы ==================
@@ -5678,7 +6958,7 @@ function parseSlotProgress(j: string): CiSlotProgress {
 }
 
 interface CiRunRow {
-  id: string; project_id: string; task_id: string; agent_id: string | null; status: string
+  id: string; project_id: string; task_id: string; agent_id: string | null; agent_owner_id: string | null; agent_owner_name: string | null; agent_selection_source: string | null; status: string
   workspace_id: string | null; triggered_by: string; prev_column_id: string | null; run_column_id: string | null; terminal_column_id: string | null
   llm_engine_id: string | null; llm_provider: string; llm_model: string
   mode: string | null; clarify_level: string | null; clarify_max: number | null
@@ -5689,6 +6969,8 @@ interface CiRunRow {
 function mapCiRun(r: CiRunRow): CiRun {
   return {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
+    agentOwnerId: r.agent_owner_id ?? null, agentOwnerName: r.agent_owner_name ?? 'неизвестно',
+    agentSelectionSource: r.agent_selection_source === 'explicit' || r.agent_selection_source === 'task_pinned' || r.agent_selection_source === 'project_default' || r.agent_selection_source === 'user_project_default' || r.agent_selection_source === 'fallback' ? r.agent_selection_source : 'unknown',
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
     prevColumnId: r.prev_column_id, runColumnId: r.run_column_id ?? null, terminalColumnId: r.terminal_column_id ?? null, llmEngineId: r.llm_engine_id ?? null, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
     mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),
