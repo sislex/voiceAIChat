@@ -140,6 +140,11 @@ describe('KanbanBoard (изолированный)', () => {
     surface.scrollTop = 120
     fireEvent.scroll(surface)
 
+    view.rerender(<KanbanBoardHarness scrollScopeId="p1" board={{ ...dndBoard, tasks: [...dndBoard.tasks] }} />)
+    expect(screen.getByTestId('kanban-board')).toBe(surface)
+    expect(surface.scrollLeft).toBe(180)
+    expect(surface.scrollTop).toBe(120)
+
     view.rerender(<KanbanBoardHarness scrollScopeId="p1" board={null} loading />)
     expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
 
