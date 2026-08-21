@@ -256,6 +256,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   const turns = new Map<string, TurnState>()
   // Закрывает async-окно подготовки prompt/вложений до появления TurnState.
   const starting = new Set<string>()
+  // Короткое окно атомарной замены хода через «Отправить сейчас»: повторная
+  // команда не должна успеть продвинуть другой элемент очереди.
+  const restarting = new Set<string>()
   // Завершённые ходы, чьё сохранение в БД ещё в полёте (перекладка картинок —
   // сетевой шаг). Держим их отдельно от активных `turns`, чтобы flushInterrupted
   // при остановке сервера успел сохранить готовый ответ, если async-запись не
@@ -915,10 +918,56 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
   }
 
   function sendQueuedNow(userId: string, conversationId: string, id: string): void {
-    // Это приоритизация, а не параллельный запуск: активный ответ не прерывается.
-    // Повтор команды для первого элемента — безопасный no-op.
-    deps.db.prioritizeQueuedTurn(userId, conversationId, id)
-    emitQueue(userId, conversationId)
+    const turn = turns.get(conversationId)
+    if (restarting.has(conversationId)) {
+      emitQueue(userId, conversationId)
+      return
+    }
+    if (!turn || turn.userId !== userId || !turn.source.messageId) {
+      // Без активного хода выбранный элемент становится первым и запускается
+      // сразу, если очередь не удерживает ошибка.
+      deps.db.prioritizeQueuedTurn(userId, conversationId, id)
+      deps.db.setTurnQueuePaused(userId, conversationId, false)
+      dispatchNext(userId, conversationId)
+      return
+    }
+
+    const merged = deps.db.mergeQueuedTurnIntoMessage(
+      userId,
+      conversationId,
+      id,
+      turn.source.messageId,
+      {
+        segments: turn.source.segments,
+        attachments: turn.source.attachments,
+        verbose: turn.source.verbose,
+        execTarget: turn.source.execTarget,
+        assistantContext: turn.source.assistantContext
+      }
+    )
+    if (!merged) {
+      emitQueue(userId, conversationId)
+      return
+    }
+
+    // Замена текущего запроса: partial намеренно не сохраняем как ответ. Старые
+    // callbacks обезвреживает done, а новый ход стартует с объединённым payload.
+    turns.delete(conversationId)
+    turn.done = true
+    releaseTurnTools(turn)
+    turn.handle.cancel()
+    deps.db.setTurnQueuePaused(userId, conversationId, false)
+    restarting.add(conversationId)
+    emitQueue(userId, conversationId, merged.message)
+    queueMicrotask(() => {
+      restarting.delete(conversationId)
+      void start({
+        userId,
+        conversationId,
+        messageId: merged.message.id,
+        ...merged.payload
+      })
+    })
   }
 
   function resumeQueues(userId: string): void {

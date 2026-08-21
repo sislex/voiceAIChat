@@ -1640,6 +1640,67 @@ export class VoiceChatDb {
     return this.listQueuedTurns(userId, conversationId)
   }
 
+  /**
+   * Атомарно присоединяет выбранную ожидающую реплику к активной пользовательской
+   * реплике. Скрытое сообщение и строка очереди удаляются, активное сохраняет id
+   * и позицию истории, а CLI-сессия сбрасывается для чистого перезапуска.
+   */
+  mergeQueuedTurnIntoMessage(
+    userId: string,
+    conversationId: string,
+    id: string,
+    activeMessageId: string,
+    activePayload: QueueTurnPayload
+  ): { message: Message; payload: QueueTurnPayload } | null {
+    return this.db.transaction(() => {
+      if (!this.ownsConversation(userId, conversationId)) return null
+      const queued = this.db.prepare(
+        `SELECT q.message_id, q.payload, m.text, m.attachments
+           FROM conversation_turn_queue q
+           JOIN messages m ON m.id = q.message_id AND m.conversation_id = q.conversation_id
+          WHERE q.id = ? AND q.conversation_id = ? AND q.user_id = ?
+            AND q.status IN ('queued','failed')`
+      ).get(id, conversationId, userId) as { message_id: string; payload: string; text: string; attachments: string | null } | undefined
+      const active = this.db.prepare(
+        `SELECT text, attachments FROM messages
+          WHERE id = ? AND conversation_id = ? AND state = 'published' AND role <> 'ai'`
+      ).get(activeMessageId, conversationId) as { text: string; attachments: string | null } | undefined
+      if (!queued || !active || queued.message_id === activeMessageId) return null
+
+      let queuedPayload: QueueTurnPayload
+      try { queuedPayload = JSON.parse(queued.payload) as QueueTurnPayload } catch { return null }
+      const parseDetails = (value: string | null): MessageAttachment[] => {
+        try { return value ? JSON.parse(value) as MessageAttachment[] : [] } catch { return [] }
+      }
+      const details = [...parseDetails(active.attachments), ...parseDetails(queued.attachments)]
+      const uniqueDetails = details.filter((item, index) => {
+        const key = item.uploadId ?? item.path
+        return details.findIndex((candidate) => (candidate.uploadId ?? candidate.path) === key) === index
+      })
+      const attachmentIds = [...(activePayload.attachments ?? []), ...(queuedPayload.attachments ?? [])]
+        .filter((value, index, all) => all.indexOf(value) === index)
+      const payload: QueueTurnPayload = {
+        ...activePayload,
+        ...queuedPayload,
+        segments: [...activePayload.segments, ...queuedPayload.segments],
+        attachments: attachmentIds
+      }
+      const text = [active.text.trim(), queued.text.trim()].filter(Boolean).join('\n\n')
+
+      this.db.prepare(
+        `UPDATE messages SET text = ?, attachments = ? WHERE id = ? AND conversation_id = ?`
+      ).run(text, uniqueDetails.length ? JSON.stringify(uniqueDetails) : null, activeMessageId, conversationId)
+      this.db.prepare(`DELETE FROM conversation_turn_queue WHERE id = ?`).run(id)
+      this.db.prepare(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`).run(queued.message_id, conversationId)
+      this.db.prepare(`UPDATE conversations SET claude_session_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?`)
+        .run(this.now(), conversationId, userId)
+
+      const message = this.listMessages(userId, conversationId).find((item) => item.id === activeMessageId)
+      if (!message) throw new Error('active message not found')
+      return { message, payload }
+    })()
+  }
+
   takeQueuedTurn(userId: string, conversationId: string, id?: string, publish = true): { id: string; messageId: string; payload: QueueTurnPayload; message: Message } | null {
     return this.db.transaction(() => {
       const row = this.db.prepare(
