@@ -94,7 +94,7 @@ export type AgentToServer =
   | { t: 'pty.exit'; ptyId: string; exitCode: number | null; signal?: number }
   | { t: 'pty.error'; ptyId: string; message: string }
   | { t: 'fs.result'; opId: string; result: FsResult }
-  | { t: 'fs.error'; opId: string; message: string }
+  | { t: 'fs.error'; opId: string; message: string; code?: string }
   | { t: 'agent.setPolicy'; policy: AgentPolicy }
   | { t: 'agent.telemetry'; telemetry: AgentTelemetry }
   | { t: 'tunnel.listening'; tunnelId: string; port: number }
