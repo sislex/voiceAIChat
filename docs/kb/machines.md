@@ -1,17 +1,19 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-08-19
-checked: 507a85e0
+updated: 2026-08-21
+checked: 09f5d105
 areas:
   - apps/agent/src
   - apps/agent-tray/src
   - apps/server/src/agents
   - apps/server/src/db/database.ts
+  - apps/server/src/db/schema.ts
   - apps/server/src/mcp
   - apps/server/src/routes/agents.ts
   - apps/server/src/routes/rest.ts
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/ipc.ts
+  - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/version.ts
   - packages/ui/src/components/ConversationSettings.tsx
@@ -638,5 +640,14 @@ PTY-процесс принадлежит `AgentRegistry`, а не WebSocket б�
 `chat_storage_bindings`: `conversationId + machineId + storageId + relativePath`.
 Контракт доступен через `GET/PUT /api/conversations/:id/storage`; при пустом
 `relativePath` сервер выбирает изолированный путь обычного, проектного или task-чата.
-Абсолютные пути и `..` в относительной части отклоняются. Поэтому перенос корня не
-требует обновлять каждую привязку чата, а рабочий Git-cwd остаётся независимым.
+Абсолютные пути, пустые/небезопасные сегменты и `..` в относительной части отклоняются. Поэтому перенос корня не
+требует обновлять каждую привязку чата, а рабочий Git-cwd остаётся независимым. Типы,
+валидация и построители рекомендуемых путей находятся в `packages/shared/src/projects.ts`;
+там же зафиксированы пути `projects/<projectId>/environments/{production|staging}` и
+`projects/<projectId>/tasks/<taskId>/environments/test`.
+
+Текущая реализация создаёт только корень и минимальную `.voicechat`: каталоги чатов,
+проектов и окружений, а также `chat.json`, `project.json`, `task.json`, `run.json`,
+`report.json`, `environment.json` и `temporary/repository` этим контрактом пока не
+создаются. В БД реализованы только реестр корней и привязка файловой директории чата;
+production/task-preview lifecycle и перенос постоянных данных в этот срез не входят.
