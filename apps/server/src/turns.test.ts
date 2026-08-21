@@ -927,4 +927,26 @@ describe('turns: управляемая персистентная очеред�
     expect(db.getConversation(U, conversation.id)?.claudeSessionId).toBeNull()
     db.close()
   })
+
+  it('Отправить сейчас запускает выбранный элемент, если активного хода уже нет', async () => {
+    const db = freshDb()
+    const conversation = db.createConversation(U, 'queue')
+    const queued = db.addMessage(U, conversation.id, 'u1', 'Ожидающий вопрос', '10:00')
+    db.enqueueTurn(U, conversation.id, queued.id, {
+      segments: [{ speakerId: 1, text: queued.text }]
+    })
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client })
+    const item = db.listQueuedTurns(U, conversation.id)[0]
+
+    turns.sendQueuedNow(U, conversation.id, item.id)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    expect(llm.handlers).toHaveLength(1)
+    expect(db.listQueuedTurns(U, conversation.id)).toEqual([])
+    expect(db.listMessages(U, conversation.id)).toEqual([
+      expect.objectContaining({ id: queued.id, text: 'Ожидающий вопрос' })
+    ])
+    db.close()
+  })
 })
