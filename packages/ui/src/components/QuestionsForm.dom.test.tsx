@@ -40,6 +40,24 @@ describe('QuestionsForm', () => {
     expect(onSubmit).toHaveBeenCalledWith('Postgres')
   })
 
+  it('повторный клик снимает одиночный выбор и позволяет оставить свой вариант', () => {
+    const onSubmit = vi.fn()
+    render(<QuestionsForm questions={[QUESTIONS[0]]} onSubmit={onSubmit} />)
+
+    const sqlite = screen.getByLabelText('SQLite') as HTMLInputElement
+    fireEvent.click(sqlite)
+    expect(sqlite.checked).toBe(true)
+    fireEvent.click(sqlite)
+    expect(sqlite.checked).toBe(false)
+    expect((screen.getByRole('button', { name: 'Отправить ответы' }) as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.change(screen.getByLabelText('Свой вариант: Какую БД использовать?'), {
+      target: { value: 'MySQL' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Отправить ответы' }))
+    expect(onSubmit).toHaveBeenCalledWith('MySQL')
+  })
+
   it('свой вариант считается ответом и попадает в текст', () => {
     const onSubmit = vi.fn()
     render(<QuestionsForm questions={[QUESTIONS[0]]} onSubmit={onSubmit} />)

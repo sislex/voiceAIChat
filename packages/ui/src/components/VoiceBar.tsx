@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type 
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import type { PreviewElementPayload } from '@shared/previewInspector'
-import type { QueuedTurn } from '@shared/protocol'
+import type { QueuedTurn, ServerFileInfo } from '@shared/protocol'
 import { useAutoGrow } from '../lib/autoGrow'
 import { chipClass, composerPeek, speakerName, voiceAnnouncement } from '../lib/view'
 import { WaveBars, Dots } from './animations'
@@ -19,6 +19,47 @@ import { applyNativeInputValue, useAiAssist } from './prompt-builder/useAiAssist
 
 const DRAFT_MIN_ROWS = 2
 const DRAFT_MAX_ROWS = 4
+
+function AttachmentChip({
+  attachment,
+  onRemove,
+  readServerFile
+}: {
+  attachment: UploadInfo
+  onRemove: () => void
+  readServerFile?: (path: string) => Promise<ServerFileInfo | null>
+}): JSX.Element {
+  const image = attachment.mimeType?.startsWith('image/') ?? false
+  const [src, setSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!image || !readServerFile) return
+    let alive = true
+    void readServerFile(attachment.path).then((file) => {
+      if (alive && file) setSrc(`data:${attachment.mimeType};base64,${file.dataBase64}`)
+    }).catch(() => undefined)
+    return () => { alive = false }
+  }, [attachment.mimeType, attachment.path, image, readServerFile])
+
+  if (!image) {
+    return (
+      <span className="attchip">
+        📎 {attachment.name}
+        <button className="attx" aria-label={`Убрать вложение ${attachment.name}`} title={`Убрать вложение ${attachment.name}`} onClick={onRemove}>✕</button>
+      </span>
+    )
+  }
+
+  return (
+    <figure className="attpreview" data-testid="attachment-image-preview">
+      <div className="attpreview-image">
+        {src ? <img src={src} alt="" /> : <span aria-hidden="true">🖼</span>}
+      </div>
+      <figcaption title={attachment.name}>{attachment.name}</figcaption>
+      <button className="attx attpreview-remove" aria-label={`Убрать вложение ${attachment.name}`} title={`Убрать вложение ${attachment.name}`} onClick={onRemove}>✕</button>
+    </figure>
+  )
+}
 
 export interface VoiceBarProps {
   state: VoiceState
@@ -46,6 +87,8 @@ export interface VoiceBarProps {
   onAddFiles: (files: File[]) => void
   /** Убрать вложение по id. */
   onRemoveAttachment: (id: string) => void
+  /** Прочитать загруженное изображение для миниатюры композера. */
+  readServerFile?: (path: string) => Promise<ServerFileInfo | null>
   /** Убрать выбранную DOM-область. */
   onRemovePreviewElement?: () => void
   /** Имя движка ответа (Claude / Codex) — для подписей статуса. */
@@ -98,6 +141,7 @@ export function VoiceBar({
   onCancelRequest,
   onAddFiles,
   onRemoveAttachment,
+  readServerFile,
   onRemovePreviewElement,
   aiLabel = 'Claude',
   replyStarted = false,
@@ -218,7 +262,7 @@ export function VoiceBar({
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
     // Enter — отправить, Shift+Enter — перенос строки (многострочный ввод).
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !e.repeat) {
       e.preventDefault()
       if (canSubmit) submitRequest()
     }
@@ -246,6 +290,72 @@ export function VoiceBar({
     e.target.value = '' // позволяет выбрать тот же файл повторно
   }
 
+  // Очередь остаётся самостоятельной поверхностью возле композера даже когда
+  // само поле свёрнуто (это дефолт на телефоне). Иначе ожидающие сообщения и все
+  // действия над ними пропадали до ручного раскрытия поля ввода.
+  const renderTurnQueue = (): JSX.Element | null => queuedTurns.length > 0 ? (
+    <section className="turn-queue" aria-label="В очереди" data-testid="turn-queue">
+      <div className="turn-queue__header">
+        <strong>В очереди · {queuedTurns.length}</strong>
+        {queuePaused && <span className="turn-queue__paused" role="status">Очередь остановлена после ошибки</span>}
+      </div>
+      <ol className={queueExpanded ? 'turn-queue__list turn-queue__list--expanded' : 'turn-queue__list'}>
+        {(queueExpanded ? queuedTurns : queuedTurns.slice(0, 3)).map((item) => (
+          <li key={item.id} data-testid="turn-queue-item">
+            {editingQueueId === item.id ? (
+              <form className="turn-queue__edit" onSubmit={(event) => {
+                event.preventDefault()
+                if (!queueEditText.trim()) return
+                onEditQueued?.(item.id, queueEditText)
+                setEditingQueueId(null)
+              }}>
+                <label>
+                  <span className="sr-only">Текст ожидающего сообщения</span>
+                  <textarea autoFocus value={queueEditText} onChange={(event) => setQueueEditText(event.target.value)} />
+                </label>
+                <div className="turn-queue__edit-actions">
+                  <button type="submit">Сохранить</button>
+                  <button type="button" onClick={() => setEditingQueueId(null)}>Отмена</button>
+                </div>
+              </form>
+            ) : (
+              <div className="turn-queue__row">
+                <span className="turn-queue__text" title={item.text}>{item.text}</span>
+                {item.status === 'failed' && <span className="turn-queue__failed">Ошибка</span>}
+                {item.attachments.length > 0 && (
+                  <span
+                    className="turn-queue__attachment-count"
+                    title={(item.attachmentDetails ?? []).map((attachment) => attachment.name).join(', ') || `${item.attachments.length} вложений`}
+                  >
+                    📎 {item.attachments.length}
+                  </span>
+                )}
+                <div className="turn-queue__actions">
+                  <IconButton size="sm" aria-label={`Редактировать сообщение № ${item.position}`} title="Редактировать" onClick={() => {
+                    setEditingQueueId(item.id)
+                    setQueueEditText(item.text)
+                  }}>✎</IconButton>
+                  <IconButton size="sm" aria-label={`Отправить сейчас сообщение № ${item.position}`} title="Отправить сейчас" onClick={() => onSendQueuedNow?.(item.id)}>↑</IconButton>
+                  <IconButton size="sm" aria-label={`Удалить сообщение № ${item.position}`} title="Удалить" onClick={() => onDeleteQueued?.(item.id)}>×</IconButton>
+                </div>
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+      {queuedTurns.length > 3 && (
+        <button
+          className="turn-queue__toggle"
+          type="button"
+          aria-expanded={queueExpanded}
+          onClick={() => setQueueExpanded((value) => !value)}
+        >
+          {queueExpanded ? 'Свернуть очередь' : `Показать ещё ${queuedTurns.length - 3}`}
+        </button>
+      )}
+    </section>
+  ) : null
+
   // Свёрнутая панель: строка-заглушка с тем, что в композере осталось, и — если
   // ход не в простое — красная кнопка остановки. Прятать её за разворот нельзя:
   // ход модели и запись должны обрываться одним нажатием откуда угодно.
@@ -261,6 +371,7 @@ export function VoiceBar({
     return (
       <div className="voicebar voicebar--collapsed">
         <div className="vinner">
+          {renderTurnQueue()}
           <div className="vcollapsed">
             <button
               className="vcollapsed-peek"
@@ -270,7 +381,7 @@ export function VoiceBar({
               onClick={expand}
             >
               <span className="vcollapsed-chevron" aria-hidden>⌃</span>
-              <span className="vcollapsed-text">{requestStatus ?? composerPeek(draft, attachments.length, state, aiLabel)}</span>
+              <span className="vcollapsed-text">{composerPeek(draft, attachments.length, state, aiLabel)}</span>
             </button>
             {collapsedStop && (
               <IconButton
@@ -377,88 +488,18 @@ export function VoiceBar({
                 <button className="attx" aria-label="Убрать выбранную область" title="Убрать выбранную область" onClick={onRemovePreviewElement}>✕</button>
               </span>
             )}
-            {attachments.map((a) => (
-              <span className="attchip" key={a.id}>
-                📎 {a.name}
-                <button
-                  className="attx"
-                  aria-label={`Убрать вложение ${a.name}`} title={`Убрать вложение ${a.name}`}
-                  onClick={() => onRemoveAttachment(a.id)}
-                >
-                  ✕
-                </button>
-              </span>
+            {attachments.map((attachment) => (
+              <AttachmentChip
+                key={attachment.id}
+                attachment={attachment}
+                onRemove={() => onRemoveAttachment(attachment.id)}
+                {...(readServerFile ? { readServerFile } : {})}
+              />
             ))}
           </div>
         )}
 
-        {queuedTurns.length > 0 && (
-          <section className="turn-queue" aria-label="В очереди" data-testid="turn-queue">
-            <div className="turn-queue__header">
-              <strong>В очереди · {queuedTurns.length}</strong>
-              {queuePaused && <span className="turn-queue__paused" role="status">Очередь остановлена после ошибки</span>}
-            </div>
-            <ol className={queueExpanded ? 'turn-queue__list turn-queue__list--expanded' : 'turn-queue__list'}>
-              {(queueExpanded ? queuedTurns : queuedTurns.slice(0, 3)).map((item) => (
-                <li key={item.id} data-testid="turn-queue-item">
-                  <div className="turn-queue__meta">№ {item.position} · {item.status === 'failed' ? 'Ошибка отправки' : 'Ожидает'}</div>
-                  {editingQueueId === item.id ? (
-                    <form className="turn-queue__edit" onSubmit={(event) => {
-                      event.preventDefault()
-                      if (!queueEditText.trim()) return
-                      onEditQueued?.(item.id, queueEditText)
-                      setEditingQueueId(null)
-                    }}>
-                      <label>
-                        <span className="sr-only">Текст ожидающего сообщения</span>
-                        <textarea autoFocus value={queueEditText} onChange={(event) => setQueueEditText(event.target.value)} />
-                      </label>
-                      <div className="turn-queue__actions">
-                        <button type="submit">Сохранить</button>
-                        <button type="button" onClick={() => setEditingQueueId(null)}>Отмена</button>
-                      </div>
-                    </form>
-                  ) : <p>{item.text}</p>}
-                  {item.attachments.length > 0 && (
-                    <ul className="turn-queue__attachments" aria-label="Вложения">
-                      {item.attachments.map((attachment, index) => {
-                        const detail = item.attachmentDetails?.find((candidate) => candidate.uploadId === attachment) ?? item.attachmentDetails?.[index]
-                        const name = detail?.name ?? `Вложение ${index + 1}`
-                        const image = detail?.mimeType.startsWith('image/') ?? false
-                        return (
-                          <li key={attachment}>
-                            {image ? <span className="turn-queue__image-preview" aria-hidden="true">🖼</span> : <span aria-hidden="true">📎</span>}
-                            <span title={name}>{name}</span>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
-                  {editingQueueId !== item.id && (
-                    <div className="turn-queue__actions">
-                      <button type="button" aria-label={`Редактировать сообщение № ${item.position}`} onClick={() => {
-                        setEditingQueueId(item.id)
-                        setQueueEditText(item.text)
-                      }}>Редактировать</button>
-                      <button type="button" aria-label={`Удалить сообщение № ${item.position}`} onClick={() => onDeleteQueued?.(item.id)}>Удалить</button>
-                      <button type="button" aria-label={`Отправить сейчас сообщение № ${item.position}`} onClick={() => onSendQueuedNow?.(item.id)}>Отправить сейчас</button>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ol>
-            {queuedTurns.length > 3 && (
-              <button
-                className="turn-queue__toggle"
-                type="button"
-                aria-expanded={queueExpanded}
-                onClick={() => setQueueExpanded((value) => !value)}
-              >
-                {queueExpanded ? 'Свернуть очередь' : `Показать ещё ${queuedTurns.length - 3}`}
-              </button>
-            )}
-          </section>
-        )}
+        {renderTurnQueue()}
 
         <div className="vrow" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
           {composerMode && (
@@ -537,6 +578,20 @@ export function VoiceBar({
                     <MicIcon />
                   </IconButton>
                 ) : null}
+              {requestActive && (
+                <IconButton
+                  className="vc-btn--circle composer-stop"
+                  size="sm"
+                  variant="danger"
+                  onClick={stopRequest}
+                  disabled={requestPhase === 'stopping'}
+                  aria-busy={requestPhase === 'stopping' || undefined}
+                  title="Остановить ответ"
+                  aria-label="Остановить ответ"
+                >
+                  <StopIcon />
+                </IconButton>
+              )}
               {isSpeaking && (
                 <IconButton
                   className="vc-btn--circle"
@@ -571,24 +626,9 @@ export function VoiceBar({
         </div>
 
         {requestStatus && (
-          <div className="request-status" data-testid="request-status" role="status" aria-live="polite">
-            {requestActive && <Dots />}
-            <span className="request-status__text">{requestStatus}</span>
-            {requestActive && (
-              <IconButton
-                className="vc-btn--circle request-status__stop"
-                size="sm"
-                variant="danger"
-                onClick={stopRequest}
-                disabled={requestPhase === 'stopping'}
-                aria-busy={requestPhase === 'stopping' || undefined}
-                title="Остановить ответ"
-                aria-label="Остановить ответ"
-              >
-                <StopIcon />
-              </IconButton>
-            )}
-          </div>
+          <span className="vc-sr-only" data-testid="request-status" role="status" aria-live="polite">
+            {requestStatus}
+          </span>
         )}
 
         <div className="vbottom">

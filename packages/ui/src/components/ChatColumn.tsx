@@ -426,6 +426,7 @@ export function ChatColumn({
 
   const isListening = state === 'listening'
   const hasStream = streamingReply.length > 0
+  const preparingReply = state === 'thinking' && !hasStream
   // Картинки в ещё не завершённом ответе: блок вырезаем сразу, чтобы вместо
   // сырого JSON пользователь видел саму картинку, как только файл готов.
   const liveImages = parseImages(streamingReply)
@@ -851,6 +852,13 @@ export function ChatColumn({
               </div>
             )
           })}
+
+          {preparingReply && (
+            <div className="reply-preparing" data-testid="reply-preparing" role="status" aria-live="polite">
+              <Dots />
+              <span>Готовим ответ…</span>
+            </div>
+          )}
 
           {turnMeta && !hasStream && messages.length > 0 && messages[messages.length - 1].role === 'ai' && (
             <p className="turnmeta" data-testid="turn-meta">

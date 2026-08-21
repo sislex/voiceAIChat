@@ -847,14 +847,16 @@ describe('turns: чередование действий (смещение at)',
 describe('turns: управляемая персистентная очередь', () => {
   function controlled() {
     const handlers: LlmStreamHandlers[] = []
+    const requests: Parameters<LlmClient['send']>[0][] = []
     let cancels = 0
     const client: LlmClient = {
-      send(_req, next) {
+      send(req, next) {
+        requests.push(req)
         handlers.push(next)
         return { cancel: () => { cancels += 1 } }
       }
     }
-    return { client, handlers, cancels: () => cancels }
+    return { client, handlers, requests, cancels: () => cancels }
   }
 
   it('Stop завершает CLI, сохраняет partial и однократно продвигает очередь', async () => {
@@ -905,30 +907,59 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
-  it('Отправить сейчас повышает приоритет, не прерывая активный ход', async () => {
+  it('Отправить сейчас отменяет partial и перезапускает один объединённый запрос', async () => {
     const db = freshDb()
     const conversation = db.createConversation(U, 'queue')
     const active = db.addMessage(U, conversation.id, 'u1', 'Базовый вопрос', '10:00')
     const first = db.addMessage(U, conversation.id, 'u1', 'Первый ожидающий', '10:01')
     const priority = db.addMessage(U, conversation.id, 'u1', 'Приоритетный', '10:02')
     const llm = controlled()
-    const turns = createTurnManager({ db, claude: llm.client })
-    await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: active.text }] })
+    const turns = createTurnManager({
+      db,
+      claude: llm.client,
+      resolveUpload: (id) => ({ serverPath: `/uploads/${id}`, runnerName: id, dataBase64: 'eA==' })
+    })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: active.text }], attachments: ['base-file'] })
     await turns.start({ userId: U, conversationId: conversation.id, messageId: first.id, segments: [{ speakerId: 1, text: first.text }] })
     await turns.start({ userId: U, conversationId: conversation.id, messageId: priority.id, segments: [{ speakerId: 1, text: priority.text }], attachments: ['image-1'] })
+    llm.handlers[0].onDelta('Старый partial')
     const selected = db.listQueuedTurns(U, conversation.id)[1]
     turns.sendQueuedNow(U, conversation.id, selected.id)
     turns.sendQueuedNow(U, conversation.id, selected.id)
-
-    expect(llm.cancels()).toBe(0)
-    expect(llm.handlers).toHaveLength(1)
-    expect(db.listQueuedTurns(U, conversation.id).map((item) => item.messageId)).toEqual([priority.id, first.id])
-    expect(db.listQueuedTurns(U, conversation.id)[0]?.attachments).toEqual(['image-1'])
-
-    llm.handlers[0].onDone('Ответ')
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    expect(llm.cancels()).toBe(1)
     expect(llm.handlers).toHaveLength(2)
-    expect(db.listMessages(U, conversation.id).at(-1)?.id).toBe(priority.id)
+    expect(db.listQueuedTurns(U, conversation.id).map((item) => item.messageId)).toEqual([first.id])
+    expect(db.listMessages(U, conversation.id).map((message) => [message.id, message.text])).toEqual([
+      [active.id, 'Базовый вопрос\n\nПриоритетный']
+    ])
+    expect(llm.requests[1]?.prompt).toContain('Базовый вопрос')
+    expect(llm.requests[1]?.prompt).toContain('Приоритетный')
+    expect(llm.requests[1]?.attachments?.map((item) => item.runnerName)).toEqual(['base-file', 'image-1'])
+    expect(db.getConversation(U, conversation.id)?.claudeSessionId).toBeNull()
+    db.close()
+  })
+
+  it('Отправить сейчас запускает выбранный элемент, если активного хода уже нет', async () => {
+    const db = freshDb()
+    const conversation = db.createConversation(U, 'queue')
+    const queued = db.addMessage(U, conversation.id, 'u1', 'Ожидающий вопрос', '10:00')
+    db.enqueueTurn(U, conversation.id, queued.id, {
+      segments: [{ speakerId: 1, text: queued.text }]
+    })
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client })
+    const item = db.listQueuedTurns(U, conversation.id)[0]
+
+    turns.sendQueuedNow(U, conversation.id, item.id)
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    expect(llm.handlers).toHaveLength(1)
+    expect(db.listQueuedTurns(U, conversation.id)).toEqual([])
+    expect(db.listMessages(U, conversation.id)).toEqual([
+      expect.objectContaining({ id: queued.id, text: 'Ожидающий вопрос' })
+    ])
     db.close()
   })
 })
