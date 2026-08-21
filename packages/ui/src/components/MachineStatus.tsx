@@ -9,6 +9,7 @@ import { Fragment, useState } from 'react'
 import type { AgentCreated, AgentInfo, AgentPolicy, AgentTelemetry, DiskUsage } from '@shared/agentProtocol'
 import { AGENT_VERSION, compareVersions } from '@shared/version'
 import { agentOsFromPlatform, installCommand, UPDATE_HINT } from '@shared/agentInstall'
+import { recommendedMachineStoragePath, type MachineStorage } from '@shared/projects'
 import { copyText } from '../lib/clipboard'
 import { AgentCard } from './AgentCard'
 import { AgentCommands } from './AgentCommands'
@@ -32,6 +33,10 @@ export interface MachineStatusProps {
   onRetry?: () => void
   /** Быстрое изменение разрешений (сервер сразу применит онлайн-агенту). */
   onSetPolicy: (id: string, policy: AgentPolicy) => void
+  /** Фактически проверенные постоянные хранилища по машине. */
+  storages?: Record<string, MachineStorage[]>
+  onRefreshStorages?: (id: string) => void
+  onRegisterStorage?: (id: string, rootPath: string) => Promise<string | null>
   /** Добавить машину; вернёт токен один раз. Нет — блок добавления скрыт. */
   onCreateAgent?: (name: string) => Promise<AgentCreated | null>
   /** Перевыпустить токен машины (старый перестаёт работать). */
@@ -269,6 +274,9 @@ export function MachineStatus({
   error = null,
   onRetry,
   onSetPolicy,
+  storages = {},
+  onRefreshStorages,
+  onRegisterStorage,
   onCreateAgent,
   onRegenerateToken,
   onGetConnectionString,
@@ -288,10 +296,14 @@ export function MachineStatus({
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null)
   /** Машина с раскрытым редактором политики (одна на таблицу). */
   const [policyId, setPolicyId] = useState<string | null>(null)
+  const [storageId, setStorageId] = useState<string | null>(null)
+  const [storageDraft, setStorageDraft] = useState<Record<string, string>>({})
+  const [storageBusy, setStorageBusy] = useState<string | null>(null)
+  const [storageError, setStorageError] = useState<Record<string, string>>({})
   const view = loadView(status, agents.length > 0)
   // Ширина раскрывающихся строк (подтверждение удаления, редактор политики) —
   // столько же столбцов, сколько в шапке, иначе таблица разъезжается.
-  const cols = onSetDefault ? 10 : 9
+  const cols = onSetDefault ? 11 : 10
 
   const add = async (): Promise<void> => {
     const n = name.trim()
@@ -359,6 +371,18 @@ export function MachineStatus({
     }
   }
 
+  const configureStorage = async (agent: AgentInfo): Promise<void> => {
+    if (!onRegisterStorage) return
+    const rootPath = (storageDraft[agent.id] ?? '').trim()
+    if (!rootPath) return
+    setStorageBusy(agent.id)
+    setStorageError((current) => ({ ...current, [agent.id]: '' }))
+    const error = await onRegisterStorage(agent.id, rootPath)
+    setStorageBusy(null)
+    if (error) setStorageError((current) => ({ ...current, [agent.id]: error }))
+    else setStorageId(null)
+  }
+
   return (
     <ToolFrame title="Машины" variant={variant} onClose={onClose} testId="machines-overlay">
       <div className="mst-body">
@@ -400,6 +424,7 @@ export function MachineStatus({
                 <th>Диск</th>
                 <th>Батарея</th>
                 <th>Разрешения</th>
+                <th>Хранилище файлов</th>
                 {onSetDefault && <th>По умолчанию</th>}
                 <th>Агент</th>
               </tr>
@@ -443,6 +468,26 @@ export function MachineStatus({
                         onToggle={() => onSetPolicy(a.id, { ...a.policy, allowWrite: !a.policy.allowWrite })}
                       />
                     </td>
+                    <td className="mst-storage">
+                      {storages[a.id]?.length ? (
+                        <>
+                          <span className={`mst-status ${storages[a.id][0].status === 'ready' ? 'on' : 'off'}`}>
+                            {storages[a.id][0].status === 'ready' ? 'готово' : storages[a.id][0].status === 'offline' ? 'офлайн' : 'недоступно'}
+                          </span>
+                          <span className="mst-dim ac-mono">{storages[a.id][0].rootPath}</span>
+                        </>
+                      ) : <span className="mst-dim">не настроено</span>}
+                      {onRegisterStorage && (
+                        <Button size="sm" onClick={() => {
+                          setStorageId((current) => current === a.id ? null : a.id)
+                          if (!storageDraft[a.id] && a.telemetry?.os.homePath) {
+                            setStorageDraft((current) => ({ ...current, [a.id]: recommendedMachineStoragePath(a.telemetry!.os.platform, a.telemetry!.os.homePath!) }))
+                          }
+                        }}>
+                          {storages[a.id]?.length ? 'Настроить' : 'Настроить'}
+                        </Button>
+                      )}
+                    </td>
                     {onSetDefault && (
                       <td className="mst-default">
                         <input
@@ -468,6 +513,47 @@ export function MachineStatus({
                       }
                     />
                   </tr>
+                  {storageId === a.id && (
+                    <tr className="mst-policyrow" data-testid={`machine-storage-${a.id}`}>
+                      <td colSpan={cols}>
+                        <div className="ac-section">
+                          <p className="flab">Постоянное файловое хранилище ChatAI</p>
+                          <p className="fsub">
+                            Здесь будут храниться вложения, файлы чатов и окружения. Рабочая директория проектов
+                            настраивается отдельно и не меняется. Можно отложить: терминал и команды продолжат
+                            работать, но постоянное хранение файлов не будет настроено.
+                          </p>
+                          {(storages[a.id] ?? []).map((storage) => (
+                            <div className="vrow2" key={storage.id}>
+                              <span className="ac-mono">{storage.primary ? 'Основное: ' : ''}{storage.rootPath}</span>
+                              <span>формат v{storage.formatVersion} · {storage.status === 'ready' ? 'готово' : storage.status === 'offline' ? 'машина офлайн' : storage.error ?? 'каталог недоступен'}</span>
+                            </div>
+                          ))}
+                          <div className="vrow2">
+                            <input
+                              className="sel"
+                              aria-label={`Путь хранилища для ${a.name}`}
+                              placeholder={a.telemetry?.os.platform === 'win32' ? 'C:\\Users\\me\\ChatAI' : '/Users/me/ChatAI'}
+                              value={storageDraft[a.id] ?? ''}
+                              onChange={(event) => setStorageDraft((current) => ({ ...current, [a.id]: event.target.value }))}
+                            />
+                            {a.telemetry?.os.homePath && (
+                              <Button size="sm" onClick={() => setStorageDraft((current) => ({
+                                ...current,
+                                [a.id]: recommendedMachineStoragePath(a.telemetry!.os.platform, a.telemetry!.os.homePath!)
+                              }))}>Рекомендуемый путь</Button>
+                            )}
+                            <Button variant="primary" size="sm" loading={storageBusy === a.id} disabled={!a.online || !(storageDraft[a.id] ?? '').trim()} onClick={() => void configureStorage(a)}>
+                              Проверить и подключить
+                            </Button>
+                            {onRefreshStorages && <Button size="sm" disabled={!a.online} onClick={() => onRefreshStorages(a.id)}>Повторить проверку</Button>}
+                            <Button size="sm" onClick={() => setStorageId(null)}>Отложить</Button>
+                          </div>
+                          {storageError[a.id] && <ErrorState compact message={storageError[a.id]} />}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {onDeleteAgent && confirmDelId === a.id && (
                     <tr className="mst-confirmrow" data-testid={`machine-delete-confirm-${a.id}`}>
                       <td colSpan={cols}>

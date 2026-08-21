@@ -8,6 +8,74 @@ export interface MachineStorage {
   rootPath: string
   status: MachineStorageStatus
   formatVersion: number
+  primary?: boolean
+  error?: string
+}
+
+export type MachineStorageMarkerState =
+  | 'empty'
+  | 'current'
+  | 'existing'
+  | 'conflict'
+  | 'corrupt'
+
+export interface MachineStorageInspection {
+  rootPath: string
+  markerState: MachineStorageMarkerState
+  storageId?: string
+  formatVersion?: number
+}
+
+export function recommendedMachineStoragePath(platform: string, homePath: string): string {
+  const separator = platform === 'win32' ? '\\' : '/'
+  return homePath.replace(/[\\/]+$/, '') + separator + 'ChatAI'
+}
+
+/**
+ * Канонический абсолютный путь в синтаксисе целевой ОС. На Windows принимаются
+ * drive, UNC и MSYS /c/...; неоднозначные, ненормализованные и корневые пути
+ * отклоняются до обращения к агенту.
+ */
+export function normalizeMachineStoragePath(input: string, platform: string): string {
+  const raw = input.trim()
+  if (!raw || raw === '~' || raw.startsWith('~/')) throw new Error('Укажите абсолютный путь')
+  if (platform === 'win32') {
+    let value = raw.replace(/^\/([A-Za-z])(?=\/)/, (_m, drive: string) => `${drive.toUpperCase()}:`).replace(/\//g, '\\')
+    if (/^[A-Za-z]:\\/.test(value)) value = value[0].toUpperCase() + value.slice(1)
+    const drive = /^[A-Za-z]:\\/.test(value)
+    const unc = /^\\\\[^\\]+\\[^\\]+(?:\\|$)/.test(value)
+    if (!drive && !unc) throw new Error('Укажите абсолютный Windows-, UNC- или MSYS-путь')
+    value = value.replace(/\\+/g, '\\')
+    if (unc) value = '\\\\' + value.replace(/^\\+/, '')
+    value = value.replace(/\\+$/, '')
+    if (/^[A-Za-z]:$/.test(value) || /^\\\\[^\\]+\\[^\\]+$/.test(value)) {
+      throw new Error('Корень диска или сетевого ресурса нельзя использовать как хранилище')
+    }
+    if (value.split('\\').some((part) => part === '.' || part === '..')) throw new Error('Путь должен быть нормализован')
+    return value
+  }
+  if (!raw.startsWith('/')) throw new Error('Укажите абсолютный POSIX-путь')
+  const value = raw.replace(/\/+$/, '')
+  if (!value) throw new Error('Корень файловой системы нельзя использовать как хранилище')
+  if (value.includes('\\') || value.slice(1).split('/').some((part) => part === '.' || part === '..' || part === '')) {
+    throw new Error('Путь должен быть нормализован')
+  }
+  return value
+}
+
+export function isMachineStoragePathAllowed(path: string, allowedDirs: string[], platform: string): boolean {
+  if (allowedDirs.length === 0) return true
+  const fold = (value: string): string => platform === 'win32' ? value.toLowerCase() : value
+  const separator = platform === 'win32' ? '\\' : '/'
+  const candidate = fold(path)
+  return allowedDirs.some((dir) => {
+    try {
+      const allowed = fold(normalizeMachineStoragePath(dir, platform))
+      return candidate === allowed || candidate.startsWith(allowed + separator)
+    } catch {
+      return false
+    }
+  })
 }
 
 export interface ChatStorageBinding {

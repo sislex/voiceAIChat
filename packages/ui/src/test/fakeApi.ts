@@ -471,6 +471,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       codex: { provider: 'codex', loggedIn: false, detail: 'вход не выполнен — выполните `codex login`' }
     }),
     'agents:list': async () => agents.map((a) => ({ ...a })),
+    'agents:listStorages': async () => [],
+    'agents:registerStorage': async ({ id, rootPath }) => ({
+      id: `storage-${id}`, machineId: id, rootPath, status: 'ready', formatVersion: 1
+    }),
     'agents:create': async ({ name }) => {
       const agent: AgentInfo = {
         id: nextId(),

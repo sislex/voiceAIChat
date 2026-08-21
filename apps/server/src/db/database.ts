@@ -2087,7 +2087,7 @@ export class VoiceChatDb {
     }))
   }
 
-  saveMachineStorage(userId: string, machineId: string, rootPath: string, formatVersion: number): MachineStorage {
+  saveMachineStorage(userId: string, machineId: string, rootPath: string, formatVersion: number, preferredId?: string): MachineStorage {
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(machineId, userId)) {
       throw new Error('Машина не найдена')
     }
@@ -2096,7 +2096,7 @@ export class VoiceChatDb {
     const existing = this.db.prepare(
       `SELECT id FROM machine_storages WHERE machine_id = ? AND root_path = ?`
     ).get(machineId, normalized) as { id: string } | undefined
-    const id = existing?.id ?? this.newId()
+    const id = existing?.id ?? preferredId ?? this.newId()
     const now = this.now()
     this.db.prepare(
       `INSERT INTO machine_storages (id,machine_id,root_path,format_version,created_at,updated_at)

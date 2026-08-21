@@ -269,6 +269,18 @@ describe('MachineStatus — редактор политики строки (Agen
     expect(onSetPolicy).toHaveBeenCalledWith('a1', expect.objectContaining({ allowedDirs: [] }))
   })
 
+  it('показывает состояние хранилища и позволяет подключить рекомендуемый путь', async () => {
+    const onRegisterStorage = vi.fn().mockResolvedValue(null)
+    const a = agent({ telemetry: telemetry({ os: { platform: 'darwin', release: '1', arch: 'arm64', isAndroid: false, homePath: '/Users/me' } }) })
+    render(<MachineStatus agents={[a]} storages={{ a1: [] }} onSetPolicy={vi.fn()} onRegisterStorage={onRegisterStorage} onClose={vi.fn()} />)
+    expect(screen.getByText('не настроено')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Настроить'))
+    expect(screen.getByText(/терминал и команды продолжат работать/)).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Рекомендуемый путь'))
+    fireEvent.click(screen.getByText('Проверить и подключить'))
+    await waitFor(() => expect(onRegisterStorage).toHaveBeenCalledWith('a1', '/Users/me/ChatAI'))
+  })
+
   it('добавленный навык уходит в политику машины', () => {
     const onSetPolicy = vi.fn()
     render(<MachineStatus agents={[agent({ policy: policy({ skills: [] }) })]} onSetPolicy={onSetPolicy} onClose={vi.fn()} />)

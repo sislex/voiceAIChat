@@ -52,6 +52,8 @@ export interface AgentTelemetry {
     arch: string
     /** Работает ли агент в Termux (Android). */
     isAndroid: boolean
+    /** Домашний каталог пользователя, нужен для рекомендуемого корня ChatAI. */
+    homePath?: string
     /** Выбранный shell для exec/PTY (см. `platform.ts:resolveShellInfo`). Нет — старый агент. */
     shell?: string
     /** true — на Windows не нашли bash.exe и агент упал в cmd.exe (ограниченная функциональность). */
