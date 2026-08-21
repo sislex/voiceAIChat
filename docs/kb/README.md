@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 53 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 49 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 17 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 502 коммит(ов) в areas после сверки: 6f69a20c Merge branch 'CHAT-296' of https://github.com/sislex/voiceAIChat into CHAT-296 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 503 коммит(ов) в areas после сверки: 33d57bbe docs(kb): update after merge a87e72f1-514f-46e5-9ee8-8679100836b4 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 23 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-21 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ⚠ 17 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
