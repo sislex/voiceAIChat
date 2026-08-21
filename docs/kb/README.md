@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 41 коммит(ов) в areas после сверки: b10f9ec7 fix remote chat image attachments … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 37 коммит(ов) в areas после сверки: b10f9ec7 fix remote chat image attachments … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 6 коммит(ов) в areas после сверки: ba1be0d3 feat(ui): add green interface theme … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 485 коммит(ов) в areas после сверки: 2c65e4ff docs(kb): update after merge dd4289e6-9e90-481d-80f0-9e6103b14121 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 486 коммит(ов) в areas после сверки: 9ae52b04 docs(kb): update after merge 1dad183d-4058-4b57-98eb-4ff6100b8d14 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 8 коммит(ов) в areas после сверки: b10f9ec7 fix remote chat image attachments … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ⚠ код изменён 2026-08-21, сверка 2026-08-18 (по датам: правки того же дня не видны — поставь checked) |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ⚠ 4 коммит(ов) в areas после сверки: b10f9ec7 fix remote chat image attachments … |
