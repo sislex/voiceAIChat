@@ -1471,6 +1471,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             detectedSpeakers={detectedSpeakers}
             aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
             attachments={chat.attachments}
+            readServerFile={operationsActions.readServerFile}
             previewElement={previewElement}
             queuedTurns={chat.activeId ? chat.queuedTurns[chat.activeId] ?? [] : []}
             queuePaused={chat.activeId ? chat.queuePaused[chat.activeId] ?? false : false}

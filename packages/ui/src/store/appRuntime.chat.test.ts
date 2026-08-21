@@ -98,6 +98,28 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(api._state.messages.filter((message) => message.role === 'u1')).toHaveLength(1)
   })
 
+  it('submitText не сохраняет один черновик дважды при параллельных вызовах', async () => {
+    const { store, api } = makeStore()
+    await store.actions.init()
+    const original = api['conversations:createDraft']
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const createDraft = vi.spyOn(api, 'conversations:createDraft').mockImplementation(async (args) => {
+      await gate
+      return original(args)
+    })
+
+    store.actions.setDraft('Один раз')
+    const first = store.actions.submitText()
+    const duplicate = store.actions.submitText()
+
+    await expect(duplicate).resolves.toBe(false)
+    expect(createDraft).toHaveBeenCalledOnce()
+    release()
+    await expect(first).resolves.toBe(true)
+    expect(api._state.messages.filter((message) => message.role === 'u1' && message.text === 'Один раз')).toHaveLength(1)
+  })
+
   it('submitText: создаёт разговор, персистит реплику и проходит thinking → speaking → idle', async () => {
     const { store, api } = makeStore()
     const spyAdd = vi.spyOn(api, 'conversations:createDraft')
@@ -1497,6 +1519,27 @@ describe('voiceStore — ходы, переживающие обновление
     expect(store.getState().voice).toBe('speaking')
     await vi.advanceTimersByTimeAsync(STEP)
     expect(store.getState().voice).toBe('idle')
+  })
+
+  it('замена активного сообщения очищает partial и начинает объединённый ход заново', async () => {
+    const { store } = makeClaudeStore()
+    await store.actions.init()
+    store.actions.setDraft('первый вопрос')
+    await store.actions.submitText()
+    const id = store.getState().activeId!
+    const active = store.getState().messages.at(-1)!
+    store.actions.applyClaudeToken('Старый partial', id)
+
+    store.actions.applyClaudeQueue(id, [], false, {
+      ...active,
+      text: 'первый вопрос\n\nдополнение'
+    })
+    expect(store.getState().messages.find((message) => message.id === active.id)?.text)
+      .toBe('первый вопрос\n\nдополнение')
+    expect(store.getState().streamingReply).toBe('')
+
+    store.actions.applyClaudeToken('Новый ответ', id)
+    expect(store.getState().streamingReply).toBe('Новый ответ')
   })
 
   it('события чужого разговора копятся в activeTurns, но не трогают текущую ленту', async () => {

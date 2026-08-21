@@ -43,6 +43,8 @@ export function QuestionsForm({ questions, onSubmit, disabled = false }: Questio
       if (multi) {
         if (selected.has(oi)) selected.delete(oi)
         else selected.add(oi)
+      } else if (selected.has(oi)) {
+        selected.delete(oi)
       } else {
         selected.clear()
         selected.add(oi)
@@ -76,7 +78,9 @@ export function QuestionsForm({ questions, onSubmit, disabled = false }: Questio
                   type={q.multi ? 'checkbox' : 'radio'}
                   name={`q${qi}`}
                   checked={drafts[qi].selected.has(oi)}
-                  onChange={() => toggle(qi, oi, q.multi === true)}
+                  onChange={q.multi ? () => toggle(qi, oi, true) : undefined}
+                  onClick={q.multi ? undefined : () => toggle(qi, oi, false)}
+                  readOnly={!q.multi}
                 />
                 <span>{opt}</span>
               </label>

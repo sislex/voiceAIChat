@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { VoiceBar } from './VoiceBar'
@@ -113,12 +113,12 @@ describe('VoiceBar — состояния', () => {
     expect(screen.getAllByLabelText('Остановить ответ')).toHaveLength(1)
   })
 
-  it('на мобильной ширине текст сжимается, а кнопка остаётся видимой', () => {
+  it('на мобильной ширине кнопка остановки остаётся в строке поля ввода', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 320 })
     setup('thinking', { aiLabel: 'Очень длинное имя движка' })
-    const status = screen.getByTestId('request-status')
-    expect(status.querySelector('.request-status__text')).toBeInTheDocument()
-    expect(status.querySelector('.request-status__stop')).toBeVisible()
+    const inputRow = screen.getByLabelText('Поле ввода сообщения').closest('.vrow')
+    expect(inputRow).not.toBeNull()
+    expect(within(inputRow as HTMLElement).getByLabelText('Остановить ответ')).toBeVisible()
     expect(screen.getAllByTestId('request-status')).toHaveLength(1)
   })
 
@@ -191,12 +191,31 @@ describe('VoiceBar — состояния', () => {
     expect(screen.getByLabelText('Отправить сообщение')).toBeInTheDocument()
   })
 
+  it('изображение показывает миниатюру с именем снизу', async () => {
+    const readServerFile = vi.fn().mockResolvedValue({ name: 'screen.png', dataBase64: 'AA==' })
+    setup('idle', {
+      attachments: [{ id: 'image-1', name: 'screen.png', path: '/uploads/screen.png', mimeType: 'image/png', size: 1 }],
+      readServerFile
+    })
+    const preview = screen.getByTestId('attachment-image-preview')
+    expect(within(preview).getByText('screen.png')).toBeInTheDocument()
+    await waitFor(() => expect(preview.querySelector('img')).toHaveAttribute('src', 'data:image/png;base64,AA=='))
+    expect(readServerFile).toHaveBeenCalledWith('/uploads/screen.png')
+  })
+
   it('Enter в непустом инпуте вызывает onSubmitText', async () => {
     const props = setup('idle', { draft: 'привет' })
     const input = screen.getByLabelText('Поле ввода сообщения')
     input.focus()
     await userEvent.keyboard('{Enter}')
     expect(props.onSubmitText).toHaveBeenCalledOnce()
+  })
+
+  it('повторный keydown Enter не отправляет сообщение второй раз', () => {
+    const props = setup('idle', { draft: 'привет' })
+    const input = screen.getByLabelText('Поле ввода сообщения')
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', repeat: true })
+    expect(props.onSubmitText).not.toHaveBeenCalled()
   })
 
   it('Enter в пустом инпуте ничего не отправляет', async () => {
@@ -370,6 +389,26 @@ describe('VoiceBar — сворачивание композера', () => {
     expect(listening.onStopVoice).toHaveBeenCalledOnce()
   })
 
+  it('оставляет очередь и её действия доступными при свёрнутом композере', async () => {
+    const onSendQueuedNow = vi.fn()
+    const queued = {
+      id: 'q-mobile',
+      conversationId: 'c1',
+      messageId: 'm-mobile',
+      text: 'Сообщение с телефона',
+      attachments: [],
+      position: 1,
+      status: 'queued' as const,
+      createdAt: 1
+    }
+    render(<VoiceBar {...makeProps('thinking', { defaultCollapsed: true, queuedTurns: [queued], onSendQueuedNow })} />)
+
+    expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
+    expect(screen.getByTestId('turn-queue')).toHaveTextContent('Сообщение с телефона')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить сейчас сообщение № 1' }))
+    expect(onSendQueuedNow).toHaveBeenCalledWith('q-mobile')
+  })
+
   it('изменение defaultCollapsed после ручного выбора не перезаписывает состояние', async () => {
     const { rerender } = render(<VoiceBar {...makeProps('idle', { defaultCollapsed: false })} />)
     await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
@@ -416,9 +455,9 @@ describe('VoiceBar — серверная очередь', () => {
   it('показывает текст, позицию, вложения и паузу только после ошибки', () => {
     setup('thinking', { queuedTurns: [item], queuePaused: true })
     expect(screen.getByTestId('turn-queue')).toHaveTextContent('В очереди · 1')
-    expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('№ 1 · Ожидает')
     expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('Следующий вопрос')
-    expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('Вложение 1')
+    expect(screen.getByTestId('turn-queue-item')).toHaveTextContent('📎 1')
+    expect(screen.getByTitle('1 вложений')).toBeInTheDocument()
     expect(screen.getByText('Очередь остановлена после ошибки')).toHaveAttribute('role', 'status')
   })
 
