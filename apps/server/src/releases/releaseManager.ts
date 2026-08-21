@@ -140,7 +140,8 @@ export class ReleaseManager {
     const branchVersion=assertReleaseBranch(branch)
     if(this.deploying.has(ciTarget.projectId))throw new Error('Другой production deploy уже выполняется')
     if(this.runtime.isOnline?.(production.agentId)===false)throw new Error('Production-машина offline')
-    const prepared=this.db.listProjectReleases(userId,ciTarget.projectId).find(item=>item.branch===branch&&item.status==='ready')
+    const preparedSummary=this.db.listProjectReleases(userId,ciTarget.projectId).find(item=>item.branch===branch&&item.status==='ready')
+    const prepared=preparedSummary?this.db.getProjectRelease(userId,ciTarget.projectId,preparedSummary.id):null
     if(!prepared)throw new Error('Release-ветка не прошла подготовку')
     if(prepared.version!==branchVersion)throw new Error(`Версия подготовки ${prepared.version} не соответствует ветке ${branch} (${branchVersion})`)
     const remote=(await this.listBranches(ciTarget)).find(item=>item.branch===branch)

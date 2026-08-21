@@ -216,7 +216,11 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     db.createProjectRelease('owner',projectId,{branch:'release/0.1.35',version:'0.1.0',sha:'fixed-sha',status:'ready'})
     await expect(new ReleaseManager(db,runtime).start('owner',ci(),prod(),'release/0.1.35')).rejects.toThrow('Версия подготовки 0.1.0 не соответствует ветке release/0.1.35 (0.1.35)')
     expect(commands).toEqual([])
-    expect(db.listProjectReleases('owner',projectId)).toHaveLength(1)
+    const list=db.listProjectReleases('owner',projectId)
+    expect(list).toHaveLength(1)
+    expect(list[0]).toEqual(expect.objectContaining({id:expect.any(String),branch:'release/0.1.35',sha:'fixed-sha',status:'ready',previousReleaseId:null,durationMs:null}))
+    expect(list[0]).not.toHaveProperty('steps')
+    expect(list[0]).not.toHaveProperty('triggeredBy')
   })
 
   it('blocks changed SHA, offline production and concurrent deploy',async()=>{

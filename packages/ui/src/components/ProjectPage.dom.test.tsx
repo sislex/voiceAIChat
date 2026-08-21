@@ -111,52 +111,55 @@ describe('ReleaseCenter — список, деплой и лента', () => {
       { id: 'health', kind: 'health_check', status: 'passed', model: null, attempt: 2, log: 'healthy', startedAt: 6000, finishedAt: 7000 }
     ]
   }
+  const preparedSummary: ProjectReleaseSummary = { id:prepared.id,branch:prepared.branch,sha:prepared.sha,status:prepared.status,previousReleaseId:null,createdAt:prepared.createdAt,durationMs:4000 }
+  const deploymentSummary: ProjectReleaseSummary = { id:deployment.id,branch:deployment.branch,sha:deployment.sha,status:deployment.status,previousReleaseId:prepared.id,createdAt:deployment.createdAt,durationMs:6000 }
   const api = () => {
     const value = createFakeApi()
     value['releases:branches'] = vi.fn(async () => [{ branch: prepared.branch, version: prepared.version, sha: prepared.sha }])
-    value['releases:list'] = vi.fn(async () => [{ ...deployment, durationMs: 6_000 }, { ...prepared, durationMs: 4_000 }])
+    value['releases:list'] = vi.fn(async () => [deploymentSummary, preparedSummary])
     value['releases:get'] = vi.fn(async ({ releaseId }) => releaseId === deployment.id ? deployment : prepared)
     return value
   }
 
-  it('показывает таблицу релизов и открывает подробную ленту', async () => {
-    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={api()} />)
+  it('показывает таблицу релизов, загружает список один раз и открывает подробную ленту отдельным запросом', async () => {
+    const value=api()
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
     expect(await screen.findByRole('columnheader', { name: 'Время сборки' })).toBeInTheDocument()
+    expect(value['releases:list']).toHaveBeenCalledTimes(1)
     await userEvent.click(screen.getByText('release/1.2.3'))
-    expect(screen.getByText('База знаний')).toBeInTheDocument()
+    expect(value['releases:get']).toHaveBeenCalledWith({projectId:'p1',releaseId:prepared.id})
+    expect(await screen.findByText('База знаний')).toBeInTheDocument()
     expect(screen.getByText('Regression')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Скачать лог' })).toBeInTheDocument()
   })
 
-  it('при открытии заново загружает detail, не показывает прошлый релиз и обрабатывает повторный выбор', async () => {
-    const value = api()
-    const resolvers: Array<(release: ProjectRelease) => void> = []
-    value['releases:get'] = vi.fn(() => new Promise<ProjectRelease>(resolve => { resolvers.push(resolve) }))
-    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
-    await screen.findByRole('columnheader', { name: 'Время сборки' })
-
-    await userEvent.click(screen.getByText('release/1.2.3'))
-    expect(screen.getByRole('heading', { name: 'Загрузка релиза…' })).toBeInTheDocument()
-    expect(screen.queryByText('База знаний')).not.toBeInTheDocument()
-    resolvers.shift()?.(prepared)
-    expect(await screen.findByText('База знаний')).toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('button', { name: '← К списку' }))
-    await userEvent.click(await screen.findByText('release/1.2.3'))
-    expect(value['releases:get']).toHaveBeenCalledTimes(2)
-    expect(screen.getByRole('heading', { name: 'Загрузка релиза…' })).toBeInTheDocument()
-    expect(screen.queryByText('База знаний')).not.toBeInTheDocument()
+  it('показывает ожидание подробностей и игнорирует поздний ответ после повторного выбора', async () => {
+    const second:ProjectRelease={...prepared,id:'prepare-2',version:'2.0.0',branch:'release/2.0.0',sha:'b'.repeat(40)}
+    const secondSummary:ProjectReleaseSummary={id:second.id,branch:second.branch,sha:second.sha,status:second.status,previousReleaseId:null,createdAt:second.createdAt+1,durationMs:4000}
+    let resolveFirst!:(release:ProjectRelease)=>void
+    const firstRequest=new Promise<ProjectRelease>(resolve=>{resolveFirst=resolve})
+    const value=api()
+    value['releases:list']=vi.fn(async()=>[secondSummary,preparedSummary])
+    value['releases:get']=vi.fn(({releaseId})=>releaseId===prepared.id?firstRequest:Promise.resolve(second))
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value}/>)
+    await userEvent.click(await screen.findByText(prepared.branch))
+    expect(screen.getByText('Загружаем подробности релиза…')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button',{name:'← К списку'}))
+    await userEvent.click(await screen.findByText(second.branch))
+    expect(await screen.findByRole('heading',{name:second.branch})).toBeInTheDocument()
+    resolveFirst(prepared)
+    expect(screen.getByRole('heading',{name:second.branch})).toBeInTheDocument()
   })
 
-  it('показывает ошибку загрузки detail и позволяет повторить запрос', async () => {
-    const value = api()
-    value['releases:get'] = vi.fn().mockRejectedValueOnce(new Error('detail down')).mockResolvedValueOnce(prepared)
-    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value} />)
-    await userEvent.click(await screen.findByText('release/1.2.3'))
+  it('показывает ошибку загрузки подробностей и позволяет повторить запрос', async () => {
+    const value=api()
+    value['releases:get']=vi.fn().mockRejectedValueOnce(new Error('detail down')).mockResolvedValue(prepared)
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={value}/>)
+    await userEvent.click(await screen.findByText(prepared.branch))
     expect(await screen.findByText('Не удалось загрузить подробности релиза')).toBeInTheDocument()
     expect(screen.getByText('detail down')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
-    expect(await screen.findByText('База знаний')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button',{name:'Повторить'}))
+    expect(await screen.findByRole('button',{name:'Скачать лог'})).toBeInTheDocument()
   })
 
   it('в деплое скрывает подготовительные skipped-шаги', async () => {
@@ -189,7 +192,13 @@ describe('ReleaseCenter — список, деплой и лента', () => {
     expect(screen.getByRole('button', { name: 'Собрать новый релиз' })).toBeEnabled()
   })
 
-  it('показывает независимые загрузки и ошибки релизов и деплоев', async () => {
+  it('показывает пустое состояние после успешной загрузки списка', async () => {
+    render(<ReleaseCenter projectId="p1" baseBranch="main" owner api={createFakeApi()}/>)
+    expect(await screen.findByText('Релизов пока нет')).toBeInTheDocument()
+    expect(screen.queryByTestId('skeleton-list')).not.toBeInTheDocument()
+  })
+
+  it('показывает загрузку и ошибки релизов и деплоев', async () => {
     const value = createFakeApi()
     const rejectReleases: Array<(reason: Error) => void> = []
     value['releases:list'] = vi.fn(() => new Promise<ProjectReleaseSummary[]>((_resolve, reject) => { rejectReleases.push(reject) }))
