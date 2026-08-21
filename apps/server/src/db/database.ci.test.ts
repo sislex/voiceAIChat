@@ -137,6 +137,15 @@ describe('ci: слот-конфиг и наследование', () => {
   })
 })
 
+describe('ci: выбор этапов процесса', () => {
+  it('по умолчанию включает всё и сохраняет выбранные этапы в каноническом порядке', () => {
+    const { task } = project()
+    expect(db.getTaskProcessStages(task.id)).toEqual(['before_model', 'model_work', 'after_model', 'summary'])
+    expect(db.setTaskProcessStages(task.id, ['summary', 'before_model'])).toEqual(['before_model', 'summary'])
+    expect(db.getTaskProcessStages(task.id)).toEqual(['before_model', 'summary'])
+  })
+})
+
 describe('ci: движок и модель', () => {
   it('задача наследует настройку проекта и может переопределить её', () => {
     const { p, task } = project()

@@ -79,6 +79,9 @@ import {
   type CiCommandScope,
   type CiSlot,
   type CiSlotConfig,
+  type CiProcessStage,
+  CI_PROCESS_STAGES,
+  normalizeCiProcessStages,
   type CiLlmConfig,
   DEFAULT_CI_CLAUDE_MODEL,
   CI_KB_UPDATE_COMMAND_ID,
@@ -3934,6 +3937,18 @@ export class VoiceChatDb {
   resolveTaskSlots(projectId: string, taskId: string): CiSlotConfig {
     if (this.hasCiSlotConfig('task', taskId)) return this.getCiSlotConfig('task', taskId)
     return this.getCiSlotConfig('project', projectId)
+  }
+
+  getTaskProcessStages(taskId: string): CiProcessStage[] {
+    const row = this.db.prepare(`SELECT stages_json FROM ci_task_process_stages WHERE task_id = ?`).get(taskId) as { stages_json: string } | undefined
+    if (!row) return [...CI_PROCESS_STAGES]
+    try { return normalizeCiProcessStages(JSON.parse(row.stages_json)) } catch { return [...CI_PROCESS_STAGES] }
+  }
+
+  setTaskProcessStages(taskId: string, stages: unknown): CiProcessStage[] {
+    const normalized = normalizeCiProcessStages(stages)
+    this.db.prepare(`INSERT INTO ci_task_process_stages (task_id, stages_json) VALUES (?, ?) ON CONFLICT(task_id) DO UPDATE SET stages_json=excluded.stages_json`).run(taskId, JSON.stringify(normalized))
+    return normalized
   }
 
   getCiLlmConfig(ownerType: 'project' | 'task', ownerId: string): CiLlmConfig | null {

@@ -7,6 +7,37 @@ import { createFakeCi } from '../../test/fakeApi'
 describe('CiTaskSettings', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
+  it('показывает все этапы отмеченными, сохраняет независимый выбор и восстанавливает его', async () => {
+    const { unmount } = render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
+    const model = await screen.findByRole('checkbox', { name: 'Работа модели' })
+    const preparation = screen.getByRole('checkbox', { name: 'Подготовка' })
+    const after = screen.getByRole('checkbox', { name: 'Финальные команды' })
+    const summary = screen.getByRole('checkbox', { name: 'Резюме модели' })
+    expect(preparation).toBeChecked(); expect(model).toBeChecked(); expect(after).toBeChecked(); expect(summary).toBeChecked()
+
+    fireEvent.click(model)
+    expect(model).not.toBeChecked(); expect(preparation).toBeChecked(); expect(after).toBeChecked(); expect(summary).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить этапы' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Сохранить этапы' })).not.toBeInTheDocument())
+
+    const saved = await window.ci!.getTaskCi('p1', 't1')
+    expect(saved.enabledStages).toEqual(['before_model', 'after_model', 'summary'])
+
+    unmount()
+    render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
+    expect(await screen.findByRole('checkbox', { name: 'Работа модели' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Подготовка' })).toBeChecked()
+  })
+
+  it('показывает ошибку сохранения этапов и оставляет возможность повторить', async () => {
+    window.ci!.putTaskCi = vi.fn(async () => { throw new Error('network down') })
+    render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Резюме модели' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить этапы' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('network down')
+    expect(screen.getByRole('button', { name: 'Сохранить этапы' })).toBeInTheDocument()
+  })
+
   it('принудительный запуск: кнопка видна только у явно выбранной машины и зовёт forceStartRun', async () => {
     const force = vi.spyOn(window.ci!, 'forceStartRun')
     window.ci!.getTaskMachines = vi.fn(async () => ({
