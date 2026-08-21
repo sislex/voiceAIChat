@@ -448,18 +448,23 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // только принимает байты запроса и пересылает агенту; без машины сохраняется
   // совместимый локальный режим.
   const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'))
-  app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string; mimeType?: string } }>(
+  app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string; conversationId?: string; mimeType?: string } }>(
     REST.uploads,
     { bodyLimit: 64 * 1024 * 1024 }, // до 64 МБ на вложение (base64 раздувает ~на треть)
     async (req, reply): Promise<UploadInfo> => {
-      const { name, dataBase64, agentId, mimeType } = req.body ?? {}
+      const { name, dataBase64, agentId: requestedAgentId, conversationId, mimeType } = req.body ?? {}
+      const userId = uid(req)
+      if (conversationId && !db.getConversation(userId, conversationId)) return reply.code(404).send({ error: 'conversation not found' }) as never
+      const resolvedMachine = !requestedAgentId && conversationId
+        ? db.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
+        : null
+      const agentId = requestedAgentId ?? (resolvedMachine?.source === 'disabled' ? undefined : resolvedMachine?.agentId ?? undefined)
       if (!dataBase64 || !/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64) || dataBase64.length % 4 !== 0) return reply.code(400).send({ error: 'invalid data' }) as never
       const bytes = Buffer.from(dataBase64, 'base64')
       if (bytes.byteLength > 32 * 1024 * 1024) return reply.code(413).send({ error: 'too large' }) as never
       const uploadName = name ?? 'file'
       const safeMime = typeof mimeType === 'string' && /^[a-z]+\/[a-z0-9.+-]+$/i.test(mimeType) ? mimeType : 'application/octet-stream'
       if (agentId) {
-        const userId = uid(req)
         if (!db.listAgents(userId).some((agent) => agent.id === agentId)) {
           return reply.code(404).send({ error: 'machine not found' }) as never
         }
@@ -590,7 +595,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       try {
         const file = await agentRegistry.fsRead(upload.agentId, upload.path)
         if (!file.dataBase64) return null
-        return { serverPath: upload.path, runnerName: upload.name, dataBase64: file.dataBase64 }
+        return { serverPath: upload.path, runnerName: upload.name, dataBase64: file.dataBase64, preserveServerPath: true }
       } catch {
         return null
       }
