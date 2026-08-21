@@ -286,6 +286,21 @@ describe('ci run manager', () => {
     expect(log.length).toBeGreaterThan(0)
   })
 
+  it('выполняет только выбранные этапы, сохраняя их относительный порядок', async () => {
+    const { project, task } = setup()
+    db.setTaskProcessStages(task.id, ['summary', 'model_work'])
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+
+    expect(detail.run.status).toBe('success')
+    expect(detail.steps.map((step) => step.kind)).toEqual(['model_work', 'command', 'model_summary'])
+    expect(detail.steps.some((step) => step.kind === 'model_summary')).toBe(true)
+    expect(modelRequests).toHaveLength(2)
+    expect(scripts.some((script) => script.includes('mkdir -p'))).toBe(false)
+    expect(scripts.some((script) => script === 'git rev-parse --show-toplevel >/dev/null')).toBe(false)
+    expect(scripts.some((script) => script.includes('git push'))).toBe(false)
+  })
+
   it('не запускает модель и валит ран, если клон отсутствует в ожидаемой папке', async () => {
     const { project, task, readyColId } = setup()
     repoMissing = true
