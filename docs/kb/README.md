@@ -22,8 +22,8 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 46 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 42 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 10 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 494 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 14 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 495 коммит(ов) в areas после сверки: fd2a9d74 docs(kb): update after merge 7e44acb7-588c-4d36-b090-39d29f2d2ca4 … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 15 коммит(ов) в areas после сверки: 9226b1f5 test(kanban): cover scroll preservation on data refresh … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-18 | ⚠ код изменён 2026-08-21, сверка 2026-08-18 (по датам: правки того же дня не видны — поставь checked) |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ⚠ 10 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-21 | ⚠ 3 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
@@ -31,7 +31,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-17 | ⚠ 13 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-21 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 7 коммит(ов) в areas после сверки: 21d6abe8 fix(kanban): preserve board scroll on refresh … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-20 | ⚠ 6 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-21 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-19 | ⚠ 12 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-21 | ⚠ 6 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-15 | ⚠ код изменён 2026-08-21, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
@@ -39,7 +39,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-20 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-19 | ⚠ 6 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-20 | ⚠ 3 коммит(ов) в areas после сверки: ec94780d Revert "fix preparation source enums in prompt" … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-21 | ⚠ 2 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-21 | ⚠ 3 коммит(ов) в areas после сверки: 9226b1f5 test(kanban): cover scroll preservation on data refresh … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-21, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -57,9 +57,10 @@
 
 ## Журнал сессий
 
-Всего записей: 290. Последние:
+Всего записей: 291. Последние:
 
 - [2026-08-21-macbook-air-user-sequential-queue-send-now.md](log/2026-08-21-macbook-air-user-sequential-queue-send-now.md) — sequential-queue-send-now
+- [2026-08-21-macbook-air-user-kanban-scroll-preservation.md](log/2026-08-21-macbook-air-user-kanban-scroll-preservation.md) — kanban-scroll-preservation
 - [2026-08-21-alexeys-macbook-air-2-remote-image-attachments.md](log/2026-08-21-alexeys-macbook-air-2-remote-image-attachments.md) — remote-image-attachments
 - [2026-08-21-alexeys-macbook-air-2-machine-storage.md](log/2026-08-21-alexeys-macbook-air-2-machine-storage.md) — machine-storage
 - [2026-08-20-macbook-air-user-sequential-queue-collapsed-composer.md](log/2026-08-20-macbook-air-user-sequential-queue-collapsed-composer.md) — sequential-queue-collapsed-composer
@@ -68,7 +69,6 @@
 - [2026-08-20-mac-stt-runner.md](log/2026-08-20-mac-stt-runner.md) — stt-runner
 - [2026-08-20-mac-kanban-automation-help.md](log/2026-08-20-mac-kanban-automation-help.md) — kanban-automation-help
 - [2026-08-20-mac-context-inspector-routing.md](log/2026-08-20-mac-context-inspector-routing.md) — context-inspector-routing
-- [2026-08-20-mac-cancelled-sidebar-history.md](log/2026-08-20-mac-cancelled-sidebar-history.md) — cancelled-sidebar-history
 
 ## Исторические планы
 
