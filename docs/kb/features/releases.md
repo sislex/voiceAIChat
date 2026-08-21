@@ -1,7 +1,7 @@
 ---
 title: Версионные release-ветки и публикация в production
-updated: 2026-08-18
-checked: 1c15e74
+updated: 2026-08-21
+checked: 90467e84
 areas:
   - packages/shared/src/release.ts
   - packages/shared/src/protocol.ts

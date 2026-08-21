@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-21
-checked: cf3a83e0
+checked: 90467e84
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -844,8 +844,20 @@ Node/npm установлены в `/usr/local/bin`, поэтому путь з�
    `add -A`, коммит `«$TASK_KEY: работа CI-рана»`. Чистое дерево допустимо:
    модель могла закоммитить работу сама.
 4. **Системно отправить ветку задачи в origin** — единственный обязательный push
-   development-рана. Он использует `--force-with-lease` при расхождении и только
-   после подтверждения сохраняет branch, SHA, машину и `pushed=1`.
+   development-рана. `pushTaskBranch` отправляет `HEAD:refs/heads/$BRANCH` обычным
+   push, затем через `git ls-remote` проверяет точное совпадение удалённого SHA и
+   только после подтверждения сохраняет branch, SHA, машину и `pushed=1`.
+
+Клон создаётся с `--single-branch` для базовой ветки, поэтому его fetch-refspec не
+обязан создавать `refs/remotes/origin/<task-branch>`. Fetch конкретной task-ветки
+может обновить только `FETCH_HEAD`; это не даёт локальной tracking-ссылки для
+`--force-with-lease`. Если одноимённая ветка независимо появилась в origin,
+системный обычный push отклоняется как non-fast-forward (`fetch first`), а ручная
+попытка force-with-lease без актуального tracking-ref — как `stale info`. Безопасное
+разрешение — получить удалённый commit, объединить истории и повторить обычный
+push, который после merge становится fast-forward. Источники фактического
+системного push — `apps/server/src/ci/runManager.ts`; команда клонирования хранится
+в настройках CI проекта.
 
 До слота выполняются работа модели и системная проверка результата модели.
 Affected-check и актуализация БЗ перенесены в merge-workflow; merge и production
