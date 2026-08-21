@@ -12,6 +12,7 @@ import type { ConversationWithMessages, ServerFileInfo } from '@shared/protocol'
 import type { CcItem, CcProject, CcSession } from '@shared/cc'
 import type { CxItem, CxProject, CxSession } from '@shared/codexSessions'
 import type { SessionUsage } from '@shared/types'
+import type { MachineStorage } from '@shared/projects'
 import type { LoadStatus } from '../../lib/loadState'
 import type { DownloadPort, OperationsClient } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
@@ -34,6 +35,7 @@ export interface OperationsState {
   agents: AgentInfo[]
   agentsStatus: LoadStatus
   agentsError: string | null
+  machineStorages: Record<string, MachineStorage[]>
   /** Открыто ли меню «Машины». */
   machinesOpen: boolean
   /** Открытая утилита (консоль/проводник) + машина; null — закрыта. */
@@ -64,6 +66,8 @@ export interface OperationsActions {
   createAgent(name: string): Promise<AgentCreated | null>
   deleteAgent(id: string): Promise<void>
   setAgentPolicy(id: string, policy: AgentPolicy): Promise<void>
+  refreshMachineStorages(id: string): Promise<void>
+  registerMachineStorage(id: string, rootPath: string): Promise<string | null>
   regenerateAgentToken(id: string): Promise<string | null>
   updateAgent(id: string): Promise<string | null>
   getAgentConnectionString(token: string): Promise<string | null>
@@ -120,6 +124,7 @@ function initialState(): OperationsState {
     agents: [],
     agentsStatus: 'loading',
     agentsError: null,
+    machineStorages: {},
     machinesOpen: false,
     utility: null,
     consoleHistory: {},
@@ -168,7 +173,9 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
     if (!client['agents:list']) return
     setState({ agentsStatus: 'loading', agentsError: null })
     try {
-      setState({ agents: await client['agents:list'](), agentsStatus: 'ready', agentsError: null })
+      const agents = await client['agents:list']()
+      setState({ agents, agentsStatus: 'ready', agentsError: null })
+      await Promise.all(agents.map((agent) => refreshMachineStorages(agent.id)))
     } catch (err) {
       // Промах в console.warn выглядел как «машин нет» — теперь состояние видно.
       console.warn('[agents] не удалось получить список машин', err)
@@ -198,6 +205,15 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
       setState({ agents: getState().agents.map((a) => (a.id === id ? { ...a, policy } : a)) })
     } catch (err) {
       fail(err, () => void setAgentPolicy(id, policy))
+    }
+  }
+
+  async function refreshMachineStorages(id: string): Promise<void> {
+    try {
+      const storages = await client['agents:listStorages']({ id })
+      setState({ machineStorages: { ...getState().machineStorages, [id]: storages } })
+    } catch (err) {
+      fail(err, () => void refreshMachineStorages(id))
     }
   }
 
@@ -239,6 +255,16 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
         await refreshAgents()
       },
       setAgentPolicy,
+      refreshMachineStorages,
+      async registerMachineStorage(id, rootPath) {
+        try {
+          await client['agents:registerStorage']({ id, rootPath })
+          await refreshMachineStorages(id)
+          return null
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err)
+        }
+      },
       async regenerateAgentToken(id) {
         try {
           const { token } = await client['agents:regenerateToken']({ id })

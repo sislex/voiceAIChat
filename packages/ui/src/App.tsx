@@ -1701,6 +1701,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           error={operations.agentsError}
           onRetry={() => void operationsActions.refreshAgents()}
           onSetPolicy={(id, policy) => void operationsActions.setAgentPolicy(id, policy)}
+          storages={operations.machineStorages}
+          onRefreshStorages={(id) => void operationsActions.refreshMachineStorages(id)}
+          onRegisterStorage={operationsActions.registerMachineStorage}
           onCreateAgent={operationsActions.createAgent}
           onRegenerateToken={operationsActions.regenerateAgentToken}
           onGetConnectionString={operationsActions.getAgentConnectionString}

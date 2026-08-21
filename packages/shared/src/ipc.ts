@@ -48,7 +48,8 @@ import type {
   TaskChatBadge,
   TaskChatContext,
   TaskPriority,
-  WorkItemDefaultSkills
+  WorkItemDefaultSkills,
+  MachineStorage
 } from './projects'
 
 import type { KbContextBundle, KbDocument, KbDocumentDraft, KbDocumentSummary, KbResearchRun, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
@@ -219,6 +220,10 @@ export interface IpcInvokeMap {
   'auth:status': { arg: void; result: LoginStatusMap }
   /** Машины-агенты для удалённого выполнения команд (только web-режим). */
   'agents:list': { arg: void; result: AgentInfo[] }
+  /** Постоянные файловые хранилища выбранной машины с фактическим состоянием. */
+  'agents:listStorages': { arg: { id: string }; result: MachineStorage[] }
+  /** Проверить и атомарно зарегистрировать корень ChatAI на машине. */
+  'agents:registerStorage': { arg: { id: string; rootPath: string }; result: MachineStorage }
   /** Создать машину-агента; токен возвращается один раз. */
   'agents:create': { arg: { name: string }; result: AgentCreated }
   /** Удалить машину-агента (отзывает токен, рвёт соединение). */
