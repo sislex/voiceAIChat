@@ -51,6 +51,17 @@ export function releaseFailureSummary(kind: string, log: string): string {
   return (explicit ?? fallback).replace(/^error:\s*/i, '').slice(0, 240)
 }
 
+/** Облегчённая строка списка: без шагов, логов и служебных снимков рана. */
+export interface ProjectReleaseSummary {
+  id: string
+  branch: string
+  sha: string
+  status: ReleaseStatus
+  previousReleaseId: string | null
+  createdAt: number
+  durationMs: number | null
+}
+
 export interface ProjectRelease {
   id: string
   projectId: string
