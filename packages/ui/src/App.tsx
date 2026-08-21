@@ -1574,6 +1574,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               initialOpenTaskTab={segments[4] === 'preparation' ? 'preparation' : undefined}
               onOpenTaskRouteChange={(taskId, tab) => navigate(taskId ? `/projects/${routeProjectId}/task/${taskId}${tab ? `/${tab}` : ''}` : `/projects/${routeProjectId}`)}
               projectName={routeProjectName}
+              scrollScopeId={routeProjectId!}
               board={projects.board}
               loading={projects.boardLoading || projects.activeProjectId !== routeProjectId}
               error={projects.boardError}

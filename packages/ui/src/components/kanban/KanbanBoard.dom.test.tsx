@@ -133,21 +133,29 @@ describe('KanbanBoard (изолированный)', () => {
     expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('обычное обновление данных сохраняет горизонтальную и вертикальные позиции', () => {
-    const view = render(<KanbanBoardHarness board={dndBoard} />)
+  it('восстанавливает обе оси после замены scroll-контейнера и не переносит их на другой проект', () => {
+    const view = render(<KanbanBoardHarness scrollScopeId="p1" board={dndBoard} />)
     const surface = screen.getByTestId('kanban-board')
-    const bodies = document.querySelectorAll<HTMLElement>('[data-drop-body]')
     surface.scrollLeft = 180
-    bodies[0]!.scrollTop = 120
-    bodies[1]!.scrollTop = 55
+    surface.scrollTop = 120
+    fireEvent.scroll(surface)
 
-    view.rerender(<KanbanBoardHarness board={{ ...dndBoard, tasks: [...dndBoard.tasks] }} />)
+    view.rerender(<KanbanBoardHarness scrollScopeId="p1" board={null} loading />)
+    expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument()
 
-    expect(screen.getByTestId('kanban-board')).toBe(surface)
-    expect(surface.scrollLeft).toBe(180)
-    expect(document.querySelectorAll<HTMLElement>('[data-drop-body]')[0]).toBe(bodies[0])
-    expect(bodies[0]!.scrollTop).toBe(120)
-    expect(bodies[1]!.scrollTop).toBe(55)
+    view.rerender(<KanbanBoardHarness scrollScopeId="p1" board={{ ...dndBoard, tasks: [...dndBoard.tasks] }} />)
+    const restored = screen.getByTestId('kanban-board')
+    expect(restored).not.toBe(surface)
+    expect(restored.scrollLeft).toBe(180)
+    expect(restored.scrollTop).toBe(120)
+
+    view.rerender(<KanbanBoardHarness scrollScopeId="p2" board={{
+      columns: dndBoard.columns.map((column) => ({ ...column, projectId: 'p2' })),
+      tasks: dndBoard.tasks.map((item) => ({ ...item, projectId: 'p2' }))
+    }} />)
+    const otherProject = screen.getByTestId('kanban-board')
+    expect(otherProject.scrollLeft).toBe(0)
+    expect(otherProject.scrollTop).toBe(0)
   })
 
   it('чекбокс «скрытые» в панели фильтров показывает скрытые колонки', async () => {

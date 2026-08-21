@@ -155,6 +155,8 @@ function bodyKey(laneId: string | null, columnId: string): string {
 
 export interface KanbanBoardProps {
   projectName: string
+  /** Область сохранения прокрутки: не даёт применить позицию другой доски при навигации. */
+  scrollScopeId?: string
   board: Board | null
   loading: boolean
   /** Текст ошибки загрузки/операции: экран ошибки вместо доски (board=null) или баннер над ней. */
@@ -296,6 +298,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   }
   const composerRef = useRef<HTMLInputElement | null>(null)
   const boardRef = useRef<HTMLDivElement | null>(null)
+  const boardScrollRef = useRef(new Map<string, { left: number; top: number }>())
   const colMenuRef = useRef<HTMLSpanElement | null>(null)
   const assigneeFilterRef = useRef<HTMLDivElement | null>(null)
   const drag = usePointerDrag()
@@ -367,6 +370,26 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const board = useMemo(() => normalizeBoard(props.board), [props.board])
   const allTasks = useMemo(() => board?.tasks ?? [], [board])
+  const scrollScopeId = props.scrollScopeId ?? board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? null
+
+  // Блокирующие обновления (например, переключение завершённых задач) временно
+  // заменяют доску скелетоном. Запоминаем обе оси до удаления scroll-контейнера
+  // и возвращаем их только для той же проектной области после нового mount.
+  useLayoutEffect(() => {
+    const surface = boardRef.current
+    if (!surface || !scrollScopeId) return
+    const saved = boardScrollRef.current.get(scrollScopeId)
+    surface.scrollLeft = saved?.left ?? 0
+    surface.scrollTop = saved?.top ?? 0
+    const remember = (): void => {
+      boardScrollRef.current.set(scrollScopeId, { left: surface.scrollLeft, top: surface.scrollTop })
+    }
+    surface.addEventListener('scroll', remember, { passive: true })
+    return () => {
+      remember()
+      surface.removeEventListener('scroll', remember)
+    }
+  }, [scrollScopeId, board != null, swimlane])
   const currentUserId = props.currentUserId ?? props.currentUser ?? null
   const filterStorageKey = useMemo(() => {
     const projectId = board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? props.projectName
