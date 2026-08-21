@@ -165,6 +165,37 @@ describe('RunManager', () => {
     expect(existsSync(dirname(match![0]))).toBe(false)
   })
 
+  it('сохраняет путь удалённой машины и даёт CLI отдельную визуальную копию', async () => {
+    const { child, stdout, stderr } = fakeChild()
+    const spawn = vi.fn(() => child) as unknown as SpawnFn
+    const machinePath = 'C:\\repos\\task\\.voicechat_uploads\\photo.png'
+    new RunManager({ spawn }).start(
+      request({
+        prompt: `Открой ${machinePath} через remote:image`,
+        attachments: [{
+          serverPath: machinePath,
+          runnerName: 'photo.png',
+          dataBase64: Buffer.from('png').toString('base64'),
+          preserveServerPath: true
+        }]
+      }),
+      fakeSink()
+    )
+
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    const prompt = args[args.indexOf('-p') + 1]
+    expect(prompt).toContain(`Открой ${machinePath} через remote:image`)
+    const match = prompt.match(attachmentRe('photo.png'))
+    expect(match?.[0]).toBeTruthy()
+    expect(readFileSync(match![0], 'utf8')).toBe('png')
+
+    stdout.end()
+    stderr.end()
+    child.emit('close', 0)
+    await tick()
+    expect(existsSync(dirname(match![0]))).toBe(false)
+  })
+
   it('несуществующий cwd не уходит в spawn и не роняет запуск', () => {
     const { child } = fakeChild()
     const spawn = vi.fn(() => child) as unknown as SpawnFn

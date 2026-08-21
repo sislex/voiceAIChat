@@ -85,15 +85,28 @@ function prepareRun(body: LlmRunBody): PreparedRun {
   if (!attachments.length) return { body, cleanup: () => {} }
 
   const dir = mkdtempSync(join(tmpdir(), 'voicechat-llm-run-'))
-  const pairs: Array<{ serverPath: string; runnerPath: string }> = []
+  const pairs: Array<{ serverPath: string; runnerPath: string; preserveServerPath: boolean }> = []
   for (const [index, att] of attachments.entries()) {
     const runnerPath = join(dir, safeRunnerName(att, index))
     writeFileSync(runnerPath, Buffer.from(att.dataBase64, 'base64'))
-    pairs.push({ serverPath: att.serverPath, runnerPath })
+    pairs.push({ serverPath: att.serverPath, runnerPath, preserveServerPath: att.preserveServerPath === true })
   }
 
+  const replaceable = pairs.filter((pair) => !pair.preserveServerPath)
+  const preserved = pairs.filter((pair) => pair.preserveServerPath)
+  const prompt = replacePromptPaths(body.prompt, replaceable)
+  const visualCopies = preserved.length
+    ? [
+        '',
+        '## Визуальные копии вложений',
+        'Авторитетные пути ниже существуют на выбранной удалённой машине и должны передаваться remote-инструментам без изменений.',
+        'Для непосредственного визуального анализа в этом LLM-ране доступны временные копии:',
+        ...preserved.map((pair) => `- ${pair.serverPath} → ${pair.runnerPath}`)
+      ].join('\n')
+    : ''
+
   return {
-    body: { ...body, prompt: replacePromptPaths(body.prompt, pairs) },
+    body: { ...body, prompt: `${prompt}${visualCopies}` },
     cleanup: () => rmSync(dir, { recursive: true, force: true })
   }
 }

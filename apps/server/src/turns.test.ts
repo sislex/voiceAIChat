@@ -366,15 +366,28 @@ describe('turns: вложения для удалённого исполните
     const remote = {
       serverPath: '/home/user/.voicechat_uploads/photo.png',
       runnerName: 'photo.png',
-      dataBase64: Buffer.from('remote-image').toString('base64')
+      dataBase64: Buffer.from('remote-image').toString('base64'),
+      preserveServerPath: true
     }
+    const agent = db.createAgent(U, 'Windows test')
+    db.setConversationExecTarget(U, conv.id, agent.id, 'C:\\repos\\task')
+    const registered: Array<{ path: string; name: string; dataBase64: string }> = []
     const rec = recorder()
-    const turns = createTurnManager({ db, claude: rec.client, resolveUpload: async () => remote })
+    const turns = createTurnManager({
+      db,
+      claude: rec.client,
+      resolveUpload: async () => remote,
+      agents: onlineAgents,
+      mcpBaseUrl: 'http://127.0.0.1/mcp?k=test',
+      remoteFileTool: { register: (_token, files) => registered.push(...files), unregister: () => {} }
+    })
 
     await turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'измени фото' }], attachments: ['a1'] })
 
     expect(rec.last()?.prompt).toContain(remote.serverPath)
     expect(rec.last()?.attachments).toEqual([remote])
+    expect(rec.last()?.remote?.mcpUrl).toMatch(/agent=.*&files=/)
+    expect(registered).toEqual([{ path: remote.serverPath, name: remote.runnerName, dataBase64: remote.dataBase64 }])
     db.close()
   })
 })

@@ -1460,7 +1460,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
             name: file.name,
             dataBase64,
             ...(file.type ? { mimeType: file.type } : {}),
-            ...(agentId ? { agentId } : {})
+            ...(agentId ? { agentId } : {}),
+            ...(conversation?.id ? { conversationId: conversation.id } : {})
           })
           setState({ attachments: [...getState().attachments, info] })
         } catch (err) {
