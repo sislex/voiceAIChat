@@ -49,7 +49,8 @@ import type {
   TaskChatContext,
   TaskPriority,
   WorkItemDefaultSkills,
-  MachineStorage
+  MachineStorage,
+  ChatStorageBinding
 } from './projects'
 
 import type { KbContextBundle, KbDocument, KbDocumentDraft, KbDocumentSummary, KbResearchRun, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
@@ -193,6 +194,8 @@ export interface IpcInvokeMap {
     }
     result: Conversation
   }
+  'conversations:getStorage': { arg: { id: string }; result: ChatStorageBinding | null }
+  'conversations:setStorage': { arg: { id: string; machineId: string; storageId: string; relativePath?: string }; result: ChatStorageBinding }
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
   'messages:updateMeta': { arg: { conversationId: string; messageId: string; meta: TurnMeta }; result: Message }

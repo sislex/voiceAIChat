@@ -3,7 +3,7 @@ import { normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { LlmEngineOption } from '@shared/admin'
-import type { ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
+import type { MachineStorage, ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
@@ -93,6 +93,9 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const [projectMachines, setProjectMachines] = useState<ProjectMachine[]>([])
   const [availableAgents, setAvailableAgents] = useState<AgentInfo[]>(agents)
   const [machineAccessLost, setMachineAccessLost] = useState(false)
+  const [storages, setStorages] = useState<MachineStorage[]>([])
+  const [storageId, setStorageId] = useState('')
+  const [storagePath, setStoragePath] = useState('')
   useEffect(() => {
     const syncContextRoute = (): void => {
       if (window.location.hash.startsWith(contextRoutePrefix)) setActiveTab('context')
@@ -180,6 +183,26 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const skills = selectedAgent?.policy.skills ?? []
 
   useEffect(() => {
+    let alive = true
+    if (!selectedAgent || !window.api) { setStorages([]); setStorageId(''); return }
+    void Promise.all([
+      window.api['agents:listStorages']({ id: selectedAgent.id }),
+      window.api['conversations:getStorage']({ id: conversation.id })
+    ]).then(([nextStorages, binding]) => {
+      if (!alive) return
+      setStorages(nextStorages)
+      if (binding?.machineId === selectedAgent.id) {
+        setStorageId(binding.storageId)
+        setStoragePath(binding.relativePath)
+      } else {
+        setStorageId(nextStorages.find((item) => item.primary)?.id ?? nextStorages[0]?.id ?? '')
+        setStoragePath('')
+      }
+    }).catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)) })
+    return () => { alive = false }
+  }, [conversation.id, selectedAgent?.id])
+
+  useEffect(() => {
     setSkillNames((current) => current.filter((name) => skills.some((skill) => skill.name === name)))
   }, [execTarget]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -251,6 +274,9 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
         kbContextMode,
         projectId
       })
+      if (selectedAgent && storageId) {
+        await window.api['conversations:setStorage']({ id: conversation.id, machineId: selectedAgent.id, storageId, ...(storagePath.trim() ? { relativePath: storagePath.trim() } : {}) })
+      }
       toast.success('Настройки сохранены')
       onClose()
     } catch (err) {
@@ -314,6 +340,18 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
             </select>
           </label>
           {machineAccessLost && <p className="convsettings-muted" role="status">Ранее выбранная машина больше недоступна. Выберите другую машину.</p>}
+          {selectedAgent && <>
+            <label className="convsettings-field"><span>Файловое хранилище</span>
+              <select aria-label="Файловое хранилище разговора" value={storageId} onChange={(event) => { setStorageId(event.target.value); setStoragePath('') }}>
+                <option value="">Не настроено (legacy)</option>
+                {storages.map((storage) => <option key={storage.id} value={storage.id}>{storage.rootPath}{storage.primary ? ' — основное' : ''}{storage.status === 'ready' ? '' : ` (${storage.status === 'offline' ? 'офлайн' : 'недоступно'})`}</option>)}
+              </select>
+            </label>
+            <label className="convsettings-field"><span>Файловый каталог</span>
+              <input aria-label="Файловый каталог разговора" value={storagePath} disabled={!storageId} placeholder="Автоматический изолированный путь" onChange={(event) => setStoragePath(event.target.value)} />
+            </label>
+            <p className="convsettings-muted">Вложения и закреплённые файлы хранятся здесь. Рабочий Git-каталог настраивается отдельно ниже.</p>
+          </>}
           {projectId && <p className="convsettings-muted">Доступны ваши личные машины и машины проекта; смена проекта перезапишет папку и навыки.</p>}
         </section>
 

@@ -22,14 +22,14 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 53 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 49 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 17 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 502 коммит(ов) в areas после сверки: 6f69a20c Merge branch 'CHAT-296' of https://github.com/sislex/voiceAIChat into CHAT-296 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 503 коммит(ов) в areas после сверки: 33d57bbe docs(kb): update after merge a87e72f1-514f-46e5-9ee8-8679100836b4 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 23 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-21 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-20 | ⚠ 17 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-21 | ⚠ 5 коммит(ов) в areas после сверки: 81afe5eb perf: загружать детали релиза отдельно … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 4 коммит(ов) в areas после сверки: e047ac1b Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-17 | ⚠ 13 коммит(ов) в areas после сверки: f7f132e5 feat: add portable machine storage bindings … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-21 | ⚠ 4 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-21 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 8 коммит(ов) в areas после сверки: 7f104056 feat: configure machine storage roots … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-21 | ⚠ 8 коммит(ов) в areas после сверки: bfe01606 fix(merge): restore current database implementation … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-19 | ⚠ 16 коммит(ов) в areas после сверки: 81afe5eb perf: загружать детали релиза отдельно … |
@@ -57,7 +57,7 @@
 
 ## Журнал сессий
 
-Всего записей: 294. Последние:
+Всего записей: 295. Последние:
 
 - [2026-08-21-macbook-air-user-sequential-queue-send-now.md](log/2026-08-21-macbook-air-user-sequential-queue-send-now.md) — sequential-queue-send-now
 - [2026-08-21-macbook-air-user-kanban-scroll-preservation.md](log/2026-08-21-macbook-air-user-kanban-scroll-preservation.md) — kanban-scroll-preservation
@@ -66,9 +66,9 @@
 - [2026-08-21-alexeys-macbook-air-2-release-list-two-stage-and-ci-push.md](log/2026-08-21-alexeys-macbook-air-2-release-list-two-stage-and-ci-push.md) — release-list-two-stage-and-ci-push
 - [2026-08-21-alexeys-macbook-air-2-machine-storage.md](log/2026-08-21-alexeys-macbook-air-2-machine-storage.md) — machine-storage
 - [2026-08-21-alexeys-macbook-air-2-machine-storage-setup.md](log/2026-08-21-alexeys-macbook-air-2-machine-storage-setup.md) — machine-storage-setup
+- [2026-08-21-alexeys-macbook-air-2-chat-305-managed-storage.md](log/2026-08-21-alexeys-macbook-air-2-chat-305-managed-storage.md) — chat-305-managed-storage
 - [2026-08-20-macbook-air-user-sequential-queue-collapsed-composer.md](log/2026-08-20-macbook-air-user-sequential-queue-collapsed-composer.md) — sequential-queue-collapsed-composer
 - [2026-08-20-macbook-air-user-completed-board-loader.md](log/2026-08-20-macbook-air-user-completed-board-loader.md) — completed-board-loader
-- [2026-08-20-macbook-air-user-clarification-notifications.md](log/2026-08-20-macbook-air-user-clarification-notifications.md) — clarification-notifications
 
 ## Исторические планы
 
