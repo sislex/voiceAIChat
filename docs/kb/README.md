@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 61 коммит(ов) в areas после сверки: 2907d4fd CHAT-311: complete managed machine directory setup … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 57 коммит(ов) в areas после сверки: 2907d4fd CHAT-311: complete managed machine directory setup … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 20 коммит(ов) в areas после сверки: 2907d4fd CHAT-311: complete managed machine directory setup … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 514 коммит(ов) в areas после сверки: 0446850d docs(kb): update after merge 3aa54cb2-dc41-4bef-a6b9-d77be3ef5091 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 515 коммит(ов) в areas после сверки: de230823 docs(kb): update after merge adefe31c-c4e3-48a2-be79-d09e5b36e4f2 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 30 коммит(ов) в areas после сверки: 2907d4fd CHAT-311: complete managed machine directory setup … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-21 | ⚠ 10 коммит(ов) в areas после сверки: 2907d4fd CHAT-311: complete managed machine directory setup … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ⚠ 5 коммит(ов) в areas после сверки: 2907d4fd CHAT-311: complete managed machine directory setup … |
