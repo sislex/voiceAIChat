@@ -17,6 +17,8 @@ const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
 let scripts: string[] = []
 let workdirs: string[] = []
+let executorEnvs: Array<Record<string, string>> = []
+let failManagedBootstrap = false
 let failClaude = false
 let failPush = false
 /** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
@@ -70,6 +72,7 @@ const ciExecutor: CommandExecutor = {
   run: async (req, onChunk) => {
     scripts.push(req.script)
     workdirs.push(req.workdir)
+    executorEnvs.push(req.env)
     onExec?.(req.script)
     const n = (counts.get(req.script) ?? 0) + 1
     counts.set(req.script, n)
@@ -79,8 +82,8 @@ const ciExecutor: CommandExecutor = {
     if (req.script === 'git rev-parse --show-toplevel >/dev/null') return { exitCode: repoMissing ? 128 : 0, timedOut: false }
     if (req.script.includes('commits=$(git log')) return { exitCode: emptyModelWork ? 70 : 0, timedOut: false }
     if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
-    // Подготовка директории приводит копию прошлого рана в чистое состояние.
-    if (req.script.includes('stash push') && req.script.includes('reset --hard')) dirtyWorkspace = false
+    if (req.script.includes('MachineStorage недоступен') && failManagedBootstrap) return { exitCode: 73, timedOut: false }
+    if (req.script.includes('Рабочая копия содержит локальные изменения') && dirtyWorkspace) return { exitCode: 66, timedOut: false }
     // Боевой шаг клонирования: существующая копия с правками → exit 66.
     if (req.script === 'CLONE') return { exitCode: dirtyWorkspace ? 66 : 0, timedOut: false }
     // Падение шага «оставляет» в копии правки модели — как в реальном ране.
@@ -98,6 +101,8 @@ beforeEach(async () => {
   let id = 0
   scripts = []
   workdirs = []
+  executorEnvs = []
+  failManagedBootstrap = false
   failClaude = false
   failPush = false
   failStep = false
@@ -201,8 +206,76 @@ describe('ci run manager', () => {
     const runId = await run(project.id, task.id)
     await waitRun(runId)
 
-    expect(scripts[0]).toContain("mkdir -p '/existing/.npm-cache/p-1'")
+    expect(scripts[0]).toContain("'/existing/.npm-cache/p-1'")
     expect(workdirs[0]).toBe('/existing/project')
+  })
+
+  it('bootstrap managed workspace стартует из storage root и согласует env', async () => {
+    const { project, task, agent } = setup()
+    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+
+    expect(detail.run.status).toBe('success')
+    const expectedRepository = `/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/repository`
+    expect(workdirs[0]).toBe('/storage')
+    expect(scripts[0]).toContain(`mkdir -p '${expectedRepository}'`)
+    expect(executorEnvs[0]).toMatchObject({
+      REPO_ROOT: `/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary`,
+      WORKSPACE: `${expectedRepository}/P-1`,
+      NPM_CACHE_DIR: `/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/.npm-cache/P-1`,
+      npm_config_cache: `/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/.npm-cache/P-1`
+    })
+  })
+
+  it('managed retry переиспользует стабильный чистый checkout, а частичная структура не считается Git checkout', async () => {
+    const { project, task, agent } = setup()
+    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    const clone = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
+    db.setCiSlotCommands('task', task.id, 'before_model', [clone.id])
+
+    const first = await run(project.id, task.id)
+    expect((await waitRun(first)).run.status).toBe('success')
+    const firstWorkspace = executorEnvs[0].WORKSPACE
+    scripts = []
+    workdirs = []
+    executorEnvs = []
+
+    const second = await run(project.id, task.id)
+    expect((await waitRun(second)).run.status).toBe('success')
+    expect(executorEnvs[0].WORKSPACE).toBe(firstWorkspace)
+    expect(scripts[0]).toContain('git -C')
+    expect(scripts[0]).toContain('rev-parse --is-inside-work-tree')
+    expect(scripts[0]).toContain('Рабочая директория не является Git-репозиторием')
+    expect(scripts).toContain('CLONE')
+  })
+
+  it('dirty managed checkout останавливает ран до clone с предметной ошибкой', async () => {
+    const { project, task, agent } = setup()
+    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    dirtyWorkspace = true
+
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+
+    expect(detail.run.status).toBe('failed')
+    expect(scripts[0]).toContain('Рабочая копия содержит локальные изменения')
+    expect(scripts).not.toContain('CLONE')
+  })
+
+  it('ошибка записи managed storage обнаруживается до clone', async () => {
+    const { project, task, agent } = setup()
+    db.saveMachineStorage('admin', agent.id, '/read-only', 1)
+    failManagedBootstrap = true
+
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+
+    expect(detail.run.status).toBe('failed')
+    expect(workdirs[0]).toBe('/read-only')
+    expect(scripts[0]).toContain('MachineStorage недоступен для записи: /read-only')
+    expect(scripts).not.toContain('CLONE')
   })
 
   it('при запуске переносит карточку в development и наследует модель проекта', async () => {
@@ -1018,6 +1091,7 @@ describe('карточка после падения, отмены и повто
     expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
 
     failStep = false
+    dirtyWorkspace = false // пользователь устранил локальные изменения
     const second = await run(project.id, task.id)
     expect((await waitRun(second)).run.status).toBe('success')
     const board = db.getBoard('admin', project.id)!
@@ -1029,7 +1103,7 @@ describe('карточка после падения, отмены и повто
     expect(db.latestCiRunSummaries(project.id).find((x) => x.taskId === task.id)!.id).toBe(second)
   })
 
-  it('повторный ран после падения не требует ручной чистки рабочей копии', async () => {
+  it('повторный ран после падения останавливается на dirty checkout до clone', async () => {
     const { project, task } = setup()
     db.updateCiSettings({ maxFixAttempts: 1 })
     const clone = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
@@ -1046,11 +1120,9 @@ describe('карточка после падения, отмены и повто
     failStep = false
     const second = await run(project.id, task.id)
     const d = await waitRun(second)
-    expect(d.run.status).toBe('success')
-    // Шаг клонирования прошёл сам: подготовка привела копию в чистое состояние.
-    const cloneStep = db.getCiRun('admin', second)!.steps.find((s) => s.title === 'Клонировать репозиторий задачи')!
-    expect(cloneStep.status).toBe('success')
-    expect(scripts.some((x) => x.includes('stash push') && x.includes('reset --hard'))).toBe(true)
+    expect(d.run.status).toBe('failed')
+    expect(scripts.some((x) => x.includes('Рабочая копия содержит локальные изменения'))).toBe(true)
+    expect(scripts.filter((x) => x === 'CLONE')).toHaveLength(1)
   })
 
   it('повтор с упавшего шага: карточка уходит в разработку и после успеха доезжает до «Готово»', async () => {
