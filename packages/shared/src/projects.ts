@@ -112,6 +112,90 @@ export function recommendedChatStoragePath(context: StorageContext): string {
 
 export type ManagedEnvironmentKind = 'production' | 'staging' | 'test' | 'preview'
 
+export const PROJECT_MACHINE_DIRECTORY_KINDS = [
+  'projectWorkdir', 'reposRoot', 'mergeClones', 'production', 'staging',
+  'featurePreview', 'taskWorkspace'
+] as const
+export type ProjectMachineDirectoryKind = typeof PROJECT_MACHINE_DIRECTORY_KINDS[number]
+
+export interface ProjectMachineDirectoryAssignment {
+  path: string
+  override: boolean
+}
+
+export type ProjectMachineDirectoryAssignments = Record<ProjectMachineDirectoryKind, ProjectMachineDirectoryAssignment>
+
+const PROJECT_MACHINE_DIRECTORY_SEGMENTS: Record<ProjectMachineDirectoryKind, readonly string[]> = {
+  projectWorkdir: ['worktree'],
+  reposRoot: ['repositories'],
+  mergeClones: ['merge-clones'],
+  production: ['environments', 'production'],
+  staging: ['environments', 'staging'],
+  featurePreview: ['environments', 'previews'],
+  taskWorkspace: ['tasks']
+}
+
+function machinePathSeparator(platform: string): '/' | '\\' {
+  return platform === 'win32' ? '\\' : '/'
+}
+
+/** Absolute canonical recommendation rooted in one registered MachineStorage. */
+export function recommendedProjectMachineDirectory(
+  storageRoot: string,
+  projectId: string,
+  kind: ProjectMachineDirectoryKind,
+  platform: string
+): string {
+  const root = normalizeMachineStoragePath(storageRoot, platform)
+  const separator = machinePathSeparator(platform)
+  return [root, 'projects', validateStorageRelativePath(projectId), ...PROJECT_MACHINE_DIRECTORY_SEGMENTS[kind]].join(separator)
+}
+
+export function recommendedProjectMachineDirectories(
+  storageRoot: string,
+  projectId: string,
+  platform: string
+): Record<ProjectMachineDirectoryKind, string> {
+  return Object.fromEntries(PROJECT_MACHINE_DIRECTORY_KINDS.map((kind) => [
+    kind, recommendedProjectMachineDirectory(storageRoot, projectId, kind, platform)
+  ])) as Record<ProjectMachineDirectoryKind, string>
+}
+
+export function normalizeProjectMachineDirectory(path: string, platform: string): string {
+  return normalizeMachineStoragePath(path, platform)
+}
+
+export function isPathInsideMachineStorage(path: string, storageRoot: string, platform: string): boolean {
+  const candidate = normalizeProjectMachineDirectory(path, platform)
+  const root = normalizeMachineStoragePath(storageRoot, platform)
+  const fold = (value: string): string => platform === 'win32' ? value.toLowerCase() : value
+  return fold(candidate).startsWith(fold(root) + machinePathSeparator(platform))
+}
+
+export function validateProjectMachineDirectories(
+  assignments: ProjectMachineDirectoryAssignments,
+  storageRoot: string,
+  projectId: string,
+  platform: string
+): ProjectMachineDirectoryAssignments {
+  const recommendations = recommendedProjectMachineDirectories(storageRoot, projectId, platform)
+  const normalized = {} as ProjectMachineDirectoryAssignments
+  const occupied = new Map<string, ProjectMachineDirectoryKind>()
+  for (const kind of PROJECT_MACHINE_DIRECTORY_KINDS) {
+    const assignment = assignments[kind]
+    if (!assignment) throw new Error(`Не задан каталог «${kind}»`)
+    const path = normalizeProjectMachineDirectory(assignment.path, platform)
+    if (!assignment.override && path !== recommendations[kind]) throw new Error(`Managed-каталог «${kind}» не совпадает с рекомендацией`)
+    if (!assignment.override && !isPathInsideMachineStorage(path, storageRoot, platform)) throw new Error(`Managed-каталог «${kind}» выходит за границы storage`)
+    const key = platform === 'win32' ? path.toLowerCase() : path
+    const conflict = occupied.get(key)
+    if (conflict) throw new Error(`Каталоги «${conflict}» и «${kind}» совпадают`)
+    occupied.set(key, kind)
+    normalized[kind] = { path, override: assignment.override }
+  }
+  return normalized
+}
+
 export function recommendedEnvironmentPath(projectId: string, kind: 'production' | 'staging'): string {
   return `projects/${validateStorageRelativePath(projectId)}/environments/${kind}`
 }
@@ -339,6 +423,12 @@ export interface ProjectMachine {
   path: string
   /** Корень пула рабочих копий CI на этой машине. */
   reposRoot: string
+  /** Выбранное зарегистрированное хранилище и единая схема каталогов. */
+  storageId?: string | null
+  storage?: MachineStorage | null
+  directories?: ProjectMachineDirectoryAssignments
+  recommendations?: Record<ProjectMachineDirectoryKind, string>
+  readiness?: { ready: boolean; reasons: string[] }
   /** Явно настроенный SSH hostname/IP для ручного preview-туннеля. */
   sshHost?: string
   /** Явно настроенный SSH-пользователь для ручного preview-туннеля. */

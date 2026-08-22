@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -189,6 +189,29 @@ describe('machine storage root paths', () => {
   it('builds the platform recommendation from the reported home directory', () => {
     expect(recommendedMachineStoragePath('darwin', '/Users/me')).toBe('/Users/me/ChatAI')
     expect(recommendedMachineStoragePath('win32', 'C:\\Users\\me')).toBe('C:\\Users\\me\\ChatAI')
+  })
+
+  it.each([
+    ['linux', '/home/u/ChatAI', '/home/u/ChatAI/projects/p-1/worktree'],
+    ['android', '/data/data/com.termux/files/home/ChatAI', '/data/data/com.termux/files/home/ChatAI/projects/p-1/worktree'],
+    ['darwin', '/Users/u/ChatAI', '/Users/u/ChatAI/projects/p-1/worktree'],
+    ['win32', 'C:\\Users\\u\\ChatAI', 'C:\\Users\\u\\ChatAI\\projects\\p-1\\worktree']
+  ])('builds all project assignments for %s', (platform, root, expected) => {
+    const paths = recommendedProjectMachineDirectories(root, 'p-1', platform)
+    expect(paths.projectWorkdir).toBe(expected)
+    expect(new Set(Object.values(paths)).size).toBe(7)
+  })
+
+  it('preserves explicit overrides and rejects managed tampering and conflicts', () => {
+    const paths = recommendedProjectMachineDirectories('/srv/ChatAI', 'p-1', 'linux')
+    const assignments = Object.fromEntries(Object.entries(paths).map(([kind, path]) => [kind, { path, override: false }])) as Parameters<typeof validateProjectMachineDirectories>[0]
+    assignments.projectWorkdir = { path: '/legacy/project', override: true }
+    expect(validateProjectMachineDirectories(assignments, '/srv/ChatAI', 'p-1', 'linux').projectWorkdir).toEqual({ path: '/legacy/project', override: true })
+    assignments.production = { path: '/srv/ChatAI/projects/p-1/other', override: false }
+    expect(() => validateProjectMachineDirectories(assignments, '/srv/ChatAI', 'p-1', 'linux')).toThrow(/не совпадает/)
+    assignments.production = { path: assignments.staging.path, override: true }
+    assignments.staging = { ...assignments.staging, override: true }
+    expect(() => validateProjectMachineDirectories(assignments, '/srv/ChatAI', 'p-1', 'linux')).toThrow(/совпадают/)
   })
 })
 
