@@ -1089,6 +1089,29 @@ export interface CiWorkspaceReportItem extends CiWorkspace {
 
 export type CiSuggestionStatus = 'new' | 'accepted' | 'rejected'
 
+export type ImprovementStatus = 'new' | 'accepted' | 'rejected' | 'implemented'
+export type ImprovementSource = 'development' | 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'merge' | 'system'
+export type ImprovementAction = 'create_chatai_task' | 'reconfigure_commands' | 'support_ticket'
+
+export interface TaskImprovement {
+  id: string
+  taskId: string
+  projectId: string
+  runId: string | null
+  stepId: string | null
+  source: ImprovementSource
+  status: ImprovementStatus
+  title: string
+  description: string
+  fingerprint: string
+  evidence: string[]
+  occurrences: number
+  suggestedAction: ImprovementAction
+  isNew: boolean
+  createdAt: number
+  updatedAt: number
+}
+
 export interface CiCommandSuggestion {
   id: string
   commandId: string
