@@ -20,6 +20,7 @@ import { registerCiRoutes } from './routes/ci.js'
 import { registerFeaturePreviewRoutes } from './routes/featurePreview.js'
 import { registerReleaseRoutes } from './routes/releases.js'
 import { ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseManager.js'
+import { ManagedEnvironmentResolver } from './releases/managedEnvironmentResolver.js'
 import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
@@ -1260,14 +1261,17 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
     }
   })
+  const managedEnvironments = new ManagedEnvironmentResolver(db, releaseManager, (agentId) => agentRegistry.policyOf(agentId)?.allowedDirs ?? [])
   releaseManager.reconcile((release) => {
     const project = db.getProject(release.triggeredBy, release.projectId)
     const agentId = project?.productionAgentId
     const linked = agentId ? project?.machines.some(machine => machine.agentId === agentId) : false
-    if (!project || !agentId || !linked || !project.productionCheckoutPath || !project.productionDeployCommand || !project.productionHealthCheckCommand || !project.gitUrl) return null
-    return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl }
+    if (!project || !agentId || !linked || !project.productionDeployCommand || !project.productionHealthCheckCommand || !project.gitUrl) return null
+    if(project.productionEnvironmentMode==='managed'){try{return managedEnvironments.resolve(release.triggeredBy,release.projectId,'production').target}catch{return null}}
+    if(!project.productionCheckoutPath)return null
+    return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl, mode:'legacy' }
   })
-  registerReleaseRoutes(app, db, releaseManager)
+  registerReleaseRoutes(app, db, releaseManager, managedEnvironments)
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection))
   mergeRunManager.reconcile()
