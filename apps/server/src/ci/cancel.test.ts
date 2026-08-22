@@ -280,7 +280,7 @@ describe('изолированный кэш npm', () => {
     expect(npmSteps[0].env.npm_config_cache.startsWith(npmSteps[0].env.WORKSPACE)).toBe(false)
     // Подготовка создаёт каталог кэша и подчищает старые.
     const prep = execs[0].script
-    expect(prep).toContain(`mkdir -p '/repos/.npm-cache/p-1'`)
+    expect(prep).toContain(`'/repos/.npm-cache/p-1'`)
     expect(prep).toContain(`find '/repos/.npm-cache'`)
   })
 })

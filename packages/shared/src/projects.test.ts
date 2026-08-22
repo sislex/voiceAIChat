@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -159,6 +159,23 @@ describe('machine storage root paths', () => {
     expect(normalizeMachineStoragePath('c:/Users/me/ChatAI/', 'win32')).toBe('C:\\Users\\me\\ChatAI')
     expect(normalizeMachineStoragePath('/c/Users/me/ChatAI', 'win32')).toBe('C:\\Users\\me\\ChatAI')
     expect(normalizeMachineStoragePath('\\\\server\\share\\ChatAI', 'win32')).toBe('\\\\server\\share\\ChatAI')
+  })
+
+  it('builds managed CI paths without mixing platform separators', () => {
+    const cases = [
+      ['/data/ChatAI', '/data/ChatAI/projects/p1/tasks/t1/environments/test/temporary/repository/P-1'],
+      ['/data/data/com.termux/files/home/ChatAI', '/data/data/com.termux/files/home/ChatAI/projects/p1/tasks/t1/environments/test/temporary/repository/P-1'],
+      ['/Users/me/ChatAI', '/Users/me/ChatAI/projects/p1/tasks/t1/environments/test/temporary/repository/P-1'],
+      ['C:\\Users\\me\\ChatAI', 'C:\\Users\\me\\ChatAI\\projects\\p1\\tasks\\t1\\environments\\test\\temporary\\repository\\P-1'],
+      ['\\\\server\\share\\ChatAI', '\\\\server\\share\\ChatAI\\projects\\p1\\tasks\\t1\\environments\\test\\temporary\\repository\\P-1'],
+      ['/c/Users/me/ChatAI', '/c/Users/me/ChatAI/projects/p1/tasks/t1/environments/test/temporary/repository/P-1']
+    ] as const
+    for (const [root, expectedWorkspace] of cases) {
+      const paths = managedCiWorkspacePaths(root, 'p1', 't1', 'P-1')
+      expect(paths.workspace).toBe(expectedWorkspace)
+      expect(paths.repository).toBe(expectedWorkspace.replace(/[\\\\/]P-1$/, ''))
+      expect(paths.npmCacheDir).toContain('.npm-cache')
+    }
   })
 
   it('rejects roots, relative and non-normalized paths and enforces allowedDirs boundaries', () => {

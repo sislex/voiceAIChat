@@ -825,6 +825,24 @@ Development-run нельзя запустить из `backlog` или `preparati
    (dirty workspace, дальше решает пользователь).
 2. **Установить зависимости (npm ci)**.
 
+Перед командами слота раннер выполняет системный bootstrap workspace. Если у машины
+зарегистрирован `MachineStorage`, его существующий корень используется как `workdir`,
+а скрипт идемпотентно создаёт
+`projects/<project-id>/tasks/<task-id>/environments/test/temporary/repository` и
+задачный npm-кэш. Checkout задачи стабилен и находится в дочернем каталоге
+`repository/<task-key>`; `REPO_ROOT`, `WORKSPACE`, `NPM_CACHE_DIR` и
+`npm_config_cache` строятся одной portable-функцией shared для POSIX, Termux,
+macOS, Windows drive, UNC и MSYS-путей. Bootstrap не зависит от чата задачи.
+
+Существующий каталог считается checkout только после успешного
+`git rev-parse --is-inside-work-tree`. Чистый Git checkout переиспользуется;
+tracked или untracked изменения останавливают подготовку с exit `66`. Пустой
+checkout-каталог и отсутствующие родительские каталоги допустимы, а непустой
+не-Git каталог отклоняется с exit `65`. Ошибка создания managed-каталогов
+сообщает корень MachineStorage и возникает до clone. Если MachineStorage не
+зарегистрирован, сохраняется legacy layout от `project_machines.reposRoot` (или
+родителя `machine.path`).
+
 На MacBook, где SSH-ключ не авторизован в GitHub, сама команда клонирования не
 меняется: глобальный Git rewrite `url.https://github.com/.insteadOf git@github.com:`
 преобразует GitHub SSH URL в HTTPS. Конфигурация проверена клонированием ветки
