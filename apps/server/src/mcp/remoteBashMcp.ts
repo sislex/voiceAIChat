@@ -11,7 +11,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { DEFAULT_TOOL_OUTPUT_LIMITS, TOOL_OUTPUT_TRIM_MARK, imageMime, imageName, trimToolOutput } from '@voicechat/shared'
 import type { ToolOutputLimits } from '@voicechat/shared'
-import type { AgentRegistry } from '../agents/registry.js'
+import { AgentFsError, type AgentRegistry } from '../agents/registry.js'
 import { evaluatePlanModeCommand } from './planMode.js'
 import { bashFileReadRejection, evaluateBashFileRead } from './bashFileRead.js'
 
@@ -93,12 +93,25 @@ function fileText(dataBase64: string | undefined): string {
 
 /** MIME по сигнатуре, а не расширению: существующий TIFF с именем .jpg не картинка для MCP. */
 function detectedImageMime(dataBase64: string): string | null {
-  const data = Buffer.from(dataBase64, 'base64')
+  // Для сигнатуры достаточно первых 12 байт. Не декодируем второй полный Buffer:
+  // сам base64 всё равно нужен MCP image-блоку, но лишняя копия крупного JPEG — нет.
+  const data = Buffer.from(dataBase64.slice(0, 16), 'base64')
   if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return 'image/jpeg'
   if (data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png'
   if (data.length >= 6 && (data.subarray(0, 6).toString('ascii') === 'GIF87a' || data.subarray(0, 6).toString('ascii') === 'GIF89a')) return 'image/gif'
   if (data.length >= 12 && data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp'
   return null
+}
+
+/** Только настоящий ENOENT разрешает пробовать следующий путь поиска изображения. */
+function isFileNotFound(err: unknown): boolean {
+  if (err instanceof AgentFsError && err.code) return err.code === 'ENOENT'
+  // Совместимость с агентами до появления поля fs.error.code.
+  return err instanceof Error && /(?:^|\W)ENOENT(?:\W|$)|no such file/i.test(err.message)
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 /**
@@ -443,11 +456,17 @@ export function registerRemoteBashMcp(
                     resolvedPath = candidate
                     break
                   } catch (err) {
+                    if (!isFileNotFound(err)) {
+                      throw new Error(`Не удалось прочитать файл «${candidate}» с машины: ${errorMessage(err)}`)
+                    }
                     lastError = err
                   }
                 }
-                if (!found?.dataBase64) {
+                if (!found) {
                   throw new Error(`Файл «${requested}» не найден в доступных вложениях и директориях${lastError instanceof Error ? `: ${lastError.message}` : ''}`)
+                }
+                if (found.dataBase64 === undefined) {
+                  throw new Error(`Агент вернул неполный ответ при чтении файла «${resolvedPath!}»: содержимое отсутствует`)
                 }
                 dataBase64 = found.dataBase64
                 resolvedPath = resolvedPath!
