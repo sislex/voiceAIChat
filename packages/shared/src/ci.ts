@@ -27,6 +27,8 @@ export interface CiTaskMachine {
   canUse?: boolean
   unavailableReason?: MachineUnavailableReason | null
   load?: number
+  /** Готовность именно постоянного merge-клона; CI readiness остаётся независимой. */
+  mergeReadiness?: import('./merge').MergeMachineReadiness
   /** Compatibility fields for older clients. */
   personal: boolean
   project: boolean

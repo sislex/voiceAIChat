@@ -679,6 +679,21 @@ export function registerProjectRoutes(
     }
   )
 
+  app.get<{ Params: { id: string; taskId: string } }>(
+    '/api/projects/:id/tasks/:taskId/merge/machines',
+    async (req, reply) => {
+      const project = member(req, req.params.id)
+      if (!project || !merge) return nf(reply)
+      const workspace = db.findLatestPushedCiWorkspace(req.params.id, req.params.taskId)
+      const machines = await Promise.all(project.machines.map(async (machine) => ({
+        agentId: machine.agentId,
+        name: machine.name ?? machine.agentId,
+        readiness: await merge.checkReadiness(uid(req), req.params.id, req.params.taskId, machine.agentId)
+      })))
+      return { machines, defaultAgentId: workspace?.agentId ?? null }
+    }
+  )
+
   // Отдельный merge-ран: сервер сам берёт подготовленную ветку и main; машина —
   // по умолчанию машина workspace, agentId в теле выбирает другую машину проекта.
   app.post<{ Params: { id: string; taskId: string }; Body: { agentId?: string; provider?: 'claude' | 'codex'; model?: string } }>(
@@ -688,6 +703,12 @@ export function registerProjectRoutes(
       const project = member(req, req.params.id)
       if (!project) return nf(reply)
       try {
+        const workspace = db.findLatestPushedCiWorkspace(req.params.id, req.params.taskId)
+        const targetAgentId = req.body?.agentId ?? workspace?.agentId
+        if (merge && targetAgentId) {
+          const readiness = await merge.checkReadiness(uid(req), req.params.id, req.params.taskId, targetAgentId)
+          if (!readiness.ready) throw new Error(readiness.message)
+        }
         const run = db.startMergeRun(uid(req), req.params.id, req.params.taskId, req.body?.agentId ?? null, {
           ...(req.body?.provider ? { provider: req.body.provider } : {}),
           ...(typeof req.body?.model === 'string' ? { model: req.body.model } : {})
@@ -720,6 +741,13 @@ export function registerProjectRoutes(
 
   app.post<{ Params: { runId: string }; Body: { agentId?: string; unpin?: boolean } }>('/api/merge/runs/:runId/retry', mergeGuard, async (req, reply) => {
     try {
+      const previous = db.getMergeRun(uid(req), req.params.runId)
+      if (!previous) return nf(reply)
+      const targetAgentId = req.body?.agentId ?? previous.agentId
+      if (merge) {
+        const readiness = await merge.checkReadiness(uid(req), previous.projectId, previous.taskId, targetAgentId)
+        if (!readiness.ready) throw new Error(readiness.message)
+      }
       const run = db.retryMergeRun(uid(req), req.params.runId, req.body?.agentId ?? null, req.body?.unpin === true)
       merge?.start(run)
       boardHub.emit(run.projectId)

@@ -6061,9 +6061,14 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND project_id=? ORDER BY created_at DESC LIMIT ?`).all(taskId, projectId, limit) as Record<string, unknown>[]).map((row) => this.mapMergeRun(row))
   }
 
-  getProjectMachine(projectId: string, agentId: string): { agentId: string; path: string; reposRoot: string | null } | null {
-    const row = this.db.prepare(`SELECT agent_id, path, repos_root FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId) as { agent_id: string; path: string; repos_root: string | null } | undefined
-    return row ? { agentId: row.agent_id, path: row.path, reposRoot: row.repos_root } : null
+  getProjectMachine(projectId: string, agentId: string): { agentId: string; path: string; reposRoot: string | null; storageId: string | null; storageRoot: string | null; storageFormatVersion: number | null; directories: ProjectMachineDirectoryAssignments | null } | null {
+    const row = this.db.prepare(`SELECT pm.agent_id,pm.path,pm.repos_root,pm.storage_id,pm.directories_json,s.root_path AS storage_root,s.format_version AS storage_format_version
+      FROM project_machines pm LEFT JOIN machine_storages s ON s.id=pm.storage_id AND s.machine_id=pm.agent_id
+      WHERE pm.project_id=? AND pm.agent_id=?`).get(projectId, agentId) as { agent_id: string; path: string; repos_root: string | null; storage_id: string | null; directories_json: string | null; storage_root: string | null; storage_format_version: number | null } | undefined
+    if (!row) return null
+    let directories: ProjectMachineDirectoryAssignments | null = null
+    try { directories = row.directories_json ? JSON.parse(row.directories_json) as ProjectMachineDirectoryAssignments : null } catch { directories = null }
+    return { agentId: row.agent_id, path: row.path, reposRoot: row.repos_root, storageId: row.storage_id, storageRoot: row.storage_root, storageFormatVersion: row.storage_format_version, directories }
   }
 
   upsertTaskRepository(projectId: string, taskId: string, agentId: string, path: string, kind: TaskRepository['kind']): void {

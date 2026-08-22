@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { MergeRun, TaskRepository } from '@shared/merge'
+import type { MergeMachineReadiness, MergeRun, TaskRepository } from '@shared/merge'
 import type { CiTaskMachine } from '@shared/ci'
 import { Button } from '@voicechat/ui-kit'
 import { MERGE_STATUS_LABEL, MergeRunFeed, mergeStatusTone } from './MergeRunFeed'
@@ -15,15 +15,24 @@ export function MergePanel(props: {
 }): JSX.Element {
   const [machines, setMachines] = useState<CiTaskMachine[]>([])
   const [agentId, setAgentId] = useState('')
+  const [mergeReadiness, setMergeReadiness] = useState<Record<string, MergeMachineReadiness>>({})
+  const [readinessLoading, setReadinessLoading] = useState(true)
   const [repos, setRepos] = useState<TaskRepository[]>([])
   const [showDeleted, setShowDeleted] = useState(false)
   const [runs, setRuns] = useState<MergeRun[]>([])
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
-    void window.ci?.getTaskMachines(props.projectId, props.taskId).then((result) => {
-      if (!cancelled) setMachines(result.machines)
-    }).catch(() => {})
+    setReadinessLoading(true)
+    void Promise.all([
+      window.ci?.getTaskMachines(props.projectId, props.taskId),
+      window.ci?.getMergeMachines(props.projectId, props.taskId)
+    ]).then(([taskResult, mergeResult]) => {
+      if (cancelled) return
+      setMachines(taskResult?.machines ?? [])
+      setMergeReadiness(Object.fromEntries((mergeResult?.machines ?? []).map((machine) => [machine.agentId, machine.readiness])))
+      setAgentId(mergeResult?.defaultAgentId ?? '')
+    }).catch(() => { if (!cancelled) setMergeReadiness({}) }).finally(() => { if (!cancelled) setReadinessLoading(false) })
     return () => { cancelled = true }
   }, [props.projectId, props.taskId])
   const reload = useCallback((): void => {
@@ -39,11 +48,13 @@ export function MergePanel(props: {
   const visibleRepos = showDeleted ? repos : repos.filter((repo) => repo.state === 'active')
   const personalMachines = machines.filter((machine) => machine.personal)
   const projectMachines = machines.filter((machine) => machine.project && !machine.personal)
-  const machineOption = (machine: CiTaskMachine): JSX.Element => (
-    <option key={machine.agentId} value={machine.agentId} disabled={!machine.online}>
-      {machine.name}{!machine.online ? ' (офлайн)' : ''}
-    </option>
-  )
+  const selectedReadiness = agentId ? mergeReadiness[agentId] : undefined
+  const machineOption = (machine: CiTaskMachine): JSX.Element => {
+    const readiness = mergeReadiness[machine.agentId]
+    const disabled = readinessLoading || !readiness?.selectable
+    const suffix = readiness ? ` — ${readiness.message}${readiness.mode === 'legacy' && readiness.ready ? ' (legacy)' : ''}` : ' — готовность не проверена'
+    return <option key={machine.agentId} value={machine.agentId} disabled={disabled}>{machine.name}{suffix}</option>
+  }
   return (
     <div className="merge-panel" data-testid="task-merge-panel">
       {props.canStart && props.onStartMerge && (
@@ -51,12 +62,13 @@ export function MergePanel(props: {
           <label className="merge-start-machine">
             Машина рана{' '}
             <select aria-label="Машина merge-рана" value={agentId} onChange={(event) => setAgentId(event.target.value)}>
-              <option value="">Машина workspace (по умолчанию)</option>
+              <option value="" disabled>Выберите готовую машину</option>
               {personalMachines.length > 0 && <optgroup label="Мои машины">{personalMachines.map(machineOption)}</optgroup>}
               {projectMachines.length > 0 && <optgroup label="Машины проекта">{projectMachines.map(machineOption)}</optgroup>}
             </select>
           </label>
-          <Button variant="primary" onClick={() => props.onStartMerge?.(agentId || null)}>Мерж в main</Button>
+          <Button variant="primary" disabled={readinessLoading || !selectedReadiness?.selectable} onClick={() => props.onStartMerge?.(agentId)}>Мерж в main</Button>
+          {selectedReadiness && !selectedReadiness.ready && <span className="merge-start-error" role="alert">{selectedReadiness.message}</span>}
           <span className="merge-start-hint">Ран сольёт подготовленную ветку задачи в main: изолированный клон, обязательные проверки, безопасный push.</span>
         </div>
       )}

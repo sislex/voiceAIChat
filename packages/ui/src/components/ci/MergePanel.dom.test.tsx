@@ -24,21 +24,22 @@ describe('MergePanel', () => {
       selectedAgentId: null,
       unavailableSelection: null
     }))
+    window.ci.getMergeMachines = vi.fn(async () => ({ machines: [
+      { agentId: 'm1', name: 'MacBook', readiness: { ready: true, selectable: true, mode: 'managed' as const, code: 'ready' as const, message: 'Managed MachineStorage готово' } },
+      { agentId: 'm2', name: 'Server', readiness: { ready: false, selectable: false, mode: 'managed' as const, code: 'machine_offline' as const, message: 'Машина не в сети' } }
+    ], defaultAgentId: 'm1' }))
   })
 
-  it('запускает merge на машине workspace по умолчанию и на явно выбранной машине', async () => {
+  it('запускает merge только на проверенной сервером машине', async () => {
     const started: (string | null)[] = []
     render(<MergePanel projectId="p1" taskId="t1" runId={null} canStart onStartMerge={(agentId) => started.push(agentId)} />)
+    const select = await screen.findByLabelText('Машина merge-рана') as HTMLSelectElement
+    await waitFor(() => expect(select.value).toBe('m1'))
     fireEvent.click(screen.getByRole('button', { name: 'Мерж в main' }))
-    expect(started).toEqual([null])
-    const select = await screen.findByLabelText('Машина merge-рана')
-    await waitFor(() => expect(screen.getAllByRole('option').length).toBe(3))
-    fireEvent.change(select, { target: { value: 'm1' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Мерж в main' }))
-    expect(started).toEqual([null, 'm1'])
+    expect(started).toEqual(['m1'])
     expect(screen.getByRole('group', { name: 'Мои машины' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Машины проекта' })).toBeInTheDocument()
-    expect((screen.getByRole('option', { name: /офлайн/ }) as HTMLOptionElement).disabled).toBe(true)
+    expect((screen.getByRole('option', { name: /Машина не в сети/ }) as HTMLOptionElement).disabled).toBe(true)
   })
 
   it('наследует машину завершённой попытки и передаёт её в retry', async () => {
