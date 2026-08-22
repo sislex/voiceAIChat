@@ -4,7 +4,6 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import { DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import { Button } from '@voicechat/ui-kit'
-import { LlmSettingsEditor } from '../LlmSettingsEditor'
 
 export interface TaskPreparationTabProps {
   projectId: string
@@ -113,13 +112,14 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
 
   return (
     <div className="task-preparation-tab" data-testid="task-preparation-tab">
-      <LlmSettingsEditor value={{ engineId: selection.llmEngineId, provider: selection.provider, model: selection.model }} engines={props.llmEngines} llmAccess={props.llmAccess} labels={{ engine: 'Исполнитель подготовки', provider: 'Движок подготовки', model: 'Модель подготовки' }} onChange={(next) => setSelection({ llmEngineId: next.engineId ?? null, provider: next.provider, model: next.model })} />
+      <p className="task-tab-empty">Подготовка использует модель проекта: {selection.provider} · {selection.model || 'по умолчанию'}.</p>
       {!selected && <div data-testid="task-preparation-empty"><p className="task-tab-empty">Подготовка к разработке ещё не запускалась.</p>{props.onStart && <Button variant="primary" size="sm" loading={pending === 'start'} onClick={() => void start()}>Запустить подготовку</Button>}</div>}
       {selected && <>
       <div className="jmodal-ci-head">
         <span className="ci-task-title">Подготовка к разработке</span>
         <span className="ci-lozenge">Статус: {STATUS_LABEL[selected.status]}</span>
         <span className="ci-lozenge">Фаза: {selected.phase ?? 'initialization'}</span>
+        <span className="ci-lozenge">LLM: {selected.provider ?? 'claude'} · {selected.model || 'по умолчанию'}</span>
         <span className="ci-lozenge">Длительность: {Math.round((selected.durationMs ?? 0) / 1000)} с</span>
       </div>
       {(selected.status === 'failed' || selected.status === 'blocked') && selected.error && <p role="alert">Причина остановки: {selected.error}</p>}
