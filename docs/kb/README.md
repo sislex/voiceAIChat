@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-22 | ✓ |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-22 | ⚠ 9 коммит(ов) в areas после сверки: c08b50f0 Merge task c2175b78-b529-4604-9515-8e45a97741db … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 26 коммит(ов) в areas после сверки: 0c1262d6 feat: add automatic run improvement suggestions … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 523 коммит(ов) в areas после сверки: c1f6a7d3 docs(kb): update after merge 92b7559e-136e-45c4-b0a2-3e486e2106af … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 524 коммит(ов) в areas после сверки: f4e12596 docs(kb): update after merge c2175b78-b529-4604-9515-8e45a97741db … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 38 коммит(ов) в areas после сверки: c08b50f0 Merge task c2175b78-b529-4604-9515-8e45a97741db … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-21 | ⚠ 20 коммит(ов) в areas после сверки: c08b50f0 Merge task c2175b78-b529-4604-9515-8e45a97741db … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ✓ |
