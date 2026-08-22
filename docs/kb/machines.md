@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-22
-checked: 713dfaae
+checked: a7b8544b
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -687,6 +687,25 @@ managed-режим с текущей рекомендацией. Эти опер
 Готовность в `ProjectMachine.readiness` требует выбранного storage, полной схемы,
 `path` и `reposRoot`; UI добавляет фактические причины offline, read-only и
 unavailable и показывает их в индикаторе готовности.
+
+Merge использует отдельную readiness поверх общей готовности проектной машины
+(`MergeRunManager.checkReadiness` в `apps/server/src/merge/runManager.ts`). При
+наличии `storage_id` постоянный клон и npm-кэш вычисляются общим кроссплатформенным
+helper `managedMergeClonePaths` как `projects/<projectId>/merge-clones/repository`
+и соседний `npm-cache`. Назначение `mergeClones` обязано быть полным каноническим
+managed-путём без override: сервер проверяет нормализацию и traversal, принадлежность
+storage выбранной машине через DB join, marker, `allowedDirs`, отсутствие симлинков
+во всех компонентах пути и запись временного probe. Существующий каталог можно
+переиспользовать только как Git-репозиторий с канонически совпадающим origin;
+обязательные `main` и feature refs также проверяются до создания каталога или clone.
+
+Этот preflight не создаёт клон и используется одинаково endpoint готовности машин,
+POST старта, retry и самим исполнителем перед файловыми/Git-мутациями. Поэтому UI
+заранее отключает неподготовленную машину и показывает точный readiness message, но
+сервер не доверяет устаревшему результату клиента. Если `storage_id` присутствует,
+ошибка storage блокирует merge без fallback; `reposRoot` используется только когда
+MachineStorage полностью отсутствует. Legacy- и неожиданные каталоги автоматически
+не переносятся и не удаляются.
 
 Настройка встроена в таблицу «Машины» (`packages/ui/src/components/MachineStatus.tsx`).
 Она показывает основной путь, фактический статус и версию формата, позволяет взять
