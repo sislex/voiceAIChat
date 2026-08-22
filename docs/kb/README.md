@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 59 коммит(ов) в areas после сверки: 4036aa64 CHAT-310: use MachineStorage for managed chat images … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 55 коммит(ов) в areas после сверки: 4036aa64 CHAT-310: use MachineStorage for managed chat images … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 18 коммит(ов) в areas после сверки: 6ab15a37 CHAT-307 auto-bind chat file storage … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 513 коммит(ов) в areas после сверки: 946642dd docs(kb): update after merge 53912435-cdd3-45fa-b557-0a9d446523bc … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 514 коммит(ов) в areas после сверки: 0446850d docs(kb): update after merge 3aa54cb2-dc41-4bef-a6b9-d77be3ef5091 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 28 коммит(ов) в areas после сверки: 4036aa64 CHAT-310: use MachineStorage for managed chat images … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-21 | ⚠ 8 коммит(ов) в areas после сверки: 4036aa64 CHAT-310: use MachineStorage for managed chat images … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ⚠ 3 коммит(ов) в areas после сверки: 4036aa64 CHAT-310: use MachineStorage for managed chat images … |
