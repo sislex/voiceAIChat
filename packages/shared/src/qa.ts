@@ -24,7 +24,7 @@ export interface AffectedUiComponent {
   name: string
   storybookStoryId: string | null
   reusable: boolean
-  coverage: StorybookCoverage | null
+  coverage: StorybookCoverage | Record<string, unknown> | null
   exclusionReason: string
   alternativeVerification: string
 }
@@ -124,7 +124,7 @@ export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): Rea
   if (input.uiImpact && input.uiImpact !== 'none') {
     if (input.affectedComponents.length === 0) reasons.push('missing_affected_components')
     for (const component of input.affectedComponents) {
-      if (!component.storybookStoryId && (!component.exclusionReason.trim() || !component.alternativeVerification.trim())) reasons.push(`missing_storybook_coverage:${component.id}`)
+      if (!component.storybookStoryId && (!component.exclusionReason.trim() || !component.alternativeVerification.trim() || !component.coverage || Object.keys(component.coverage).length === 0)) reasons.push(`missing_storybook_coverage:${component.id}`)
       if (component.reusable && input.uiImpact === 'new_components' && !component.storybookStoryId && !component.exclusionReason.trim()) reasons.push(`new_reusable_component_without_story:${component.id}`)
     }
   }
@@ -330,6 +330,7 @@ export function componentQaLaunchReasons(readiness: DevelopmentReadiness): strin
     if (!component.storybookStoryId) {
       if (!component.exclusionReason.trim()) reasons.push(`missing_exclusion_reason:${component.id}`)
       if (!component.alternativeVerification.trim()) reasons.push(`missing_alternative_verification:${component.id}`)
+      if (!component.coverage || Object.keys(component.coverage).length === 0) reasons.push(`missing_storybook_coverage:${component.id}`)
       continue
     }
     if (!component.coverage) { reasons.push(`missing_storybook_coverage:${component.id}`); continue }
@@ -356,7 +357,7 @@ export function canCompleteComponentQa(input: ComponentQaGateInput): ReadinessCh
   }
   for (const component of run.components) {
     if (!component.storybookStoryId) {
-      if (!component.exclusionReason.trim() || !component.alternativeVerification.trim()) reasons.push(`component_unverified:${component.id}`)
+      if (!component.exclusionReason.trim() || !component.alternativeVerification.trim() || !component.coverage || Object.keys(component.coverage).length === 0) reasons.push(`component_unverified:${component.id}`)
     } else if (!component.coverage || Object.values(component.coverage).some((covered) => !covered)) {
       reasons.push(`storybook_incomplete:${component.id}`)
     }
