@@ -128,6 +128,8 @@ import {
   type CiWorkspace,
   type CiWorkspaceReportItem,
   type CiCommandSuggestion,
+  type TaskImprovement,
+  type ImprovementStatus,
   type CiRunSummary,
   type CiCommandMetric,
   type CiModelWorkMetric,
@@ -403,6 +405,7 @@ interface ProjectRow {
   test_command: string
   production_deploy_command: string
   production_agent_id: string | null
+  production_environment_mode: string
   production_checkout_path: string
   production_health_check_command: string
   release_timeouts_json: string
@@ -995,6 +998,7 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_agent_id')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_agent_id TEXT`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_environment_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_environment_mode TEXT NOT NULL DEFAULT 'legacy'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_checkout_path')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_checkout_path TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_health_check_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_health_check_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'release_timeouts_json')) this.db.exec(`ALTER TABLE projects ADD COLUMN release_timeouts_json TEXT NOT NULL DEFAULT '{}'`)
@@ -2749,6 +2753,7 @@ export class VoiceChatDb {
       testCommand: r.test_command || undefined,
       productionDeployCommand: r.production_deploy_command || undefined,
       productionAgentId: r.production_agent_id,
+      productionEnvironmentMode: r.production_environment_mode === 'managed' ? 'managed' : 'legacy',
       productionCheckoutPath: r.production_checkout_path || undefined,
       productionHealthCheckCommand: r.production_health_check_command || undefined,
       releaseTimeouts: {...DEFAULT_RELEASE_TIMEOUTS,...parseJsonValue<Partial<ReleaseTimeouts>>(r.release_timeouts_json,{})},
@@ -2968,6 +2973,7 @@ export class VoiceChatDb {
       testCommand?: string
       productionDeployCommand?: string
       productionAgentId?: string | null
+      productionEnvironmentMode?: 'legacy' | 'managed'
       productionCheckoutPath?: string
       productionHealthCheckCommand?: string
       releaseTimeouts?: ReleaseTimeouts
@@ -3023,6 +3029,7 @@ export class VoiceChatDb {
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
     if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
     if (fields.productionAgentId !== undefined) { set.push('production_agent_id = ?'); vals.push(fields.productionAgentId) }
+    if (fields.productionEnvironmentMode !== undefined) { set.push('production_environment_mode = ?'); vals.push(fields.productionEnvironmentMode) }
     if (fields.productionCheckoutPath !== undefined) { set.push('production_checkout_path = ?'); vals.push(fields.productionCheckoutPath) }
     if (fields.productionHealthCheckCommand !== undefined) { set.push('production_health_check_command = ?'); vals.push(fields.productionHealthCheckCommand) }
     if (fields.releaseTimeouts !== undefined) { set.push('release_timeouts_json = ?'); vals.push(JSON.stringify(validateReleaseTimeouts(fields.releaseTimeouts))) }
@@ -5026,6 +5033,61 @@ export class VoiceChatDb {
     return out
   }
 
+  // --- Предложения улучшений авторанов ---
+
+  upsertTaskImprovement(args: Omit<TaskImprovement, 'id' | 'status' | 'isNew' | 'occurrences' | 'createdAt' | 'updatedAt'>): TaskImprovement {
+    const redact = (value: string): string => value
+      .replace(/\b(?:sk|ghp|github_pat|xox[baprs])[-_A-Za-z0-9]{12,}\b/gi, '[REDACTED]')
+      .replace(/((?:token|password|secret|authorization|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]')
+      .slice(0, 20_000)
+    const evidence = [...new Set(args.evidence.map(redact).filter(Boolean))].slice(-30)
+    const existing = this.db.prepare('SELECT * FROM task_improvements WHERE task_id=? AND fingerprint=?').get(args.taskId, args.fingerprint) as any
+    const at = this.now()
+    if (existing) {
+      const merged = [...new Set([...(JSON.parse(existing.evidence_json || '[]') as string[]), ...evidence])].slice(-30)
+      this.db.prepare(`UPDATE task_improvements SET run_id=?, step_id=?, source=?, description=?, evidence_json=?, occurrences=occurrences+1, updated_at=? WHERE id=?`)
+        .run(args.runId, args.stepId, args.source, redact(args.description), JSON.stringify(merged), at, existing.id)
+      return this.mapTaskImprovement(this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(existing.id) as any)
+    }
+    const id = this.newId()
+    this.db.prepare(`INSERT INTO task_improvements
+      (id,project_id,task_id,run_id,step_id,source,status,title,description,fingerprint,evidence_json,occurrences,suggested_action,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,'new',?,?,?,?,1,?,?,?)`)
+      .run(id,args.projectId,args.taskId,args.runId,args.stepId,args.source,redact(args.title),redact(args.description),args.fingerprint,JSON.stringify(evidence),args.suggestedAction,at,at)
+    return this.mapTaskImprovement(this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(id) as any)
+  }
+
+  listTaskImprovements(userId: string, projectId: string, taskId: string): TaskImprovement[] {
+    if (!this.getCiTask(userId, projectId, taskId)) return []
+    return (this.db.prepare('SELECT * FROM task_improvements WHERE project_id=? AND task_id=? ORDER BY updated_at DESC').all(projectId, taskId) as any[])
+      .map((row) => this.mapTaskImprovement(row))
+  }
+
+  listProjectImprovementTaskIds(userId: string, projectId: string): Array<{ taskId: string; count: number; improvementId: string }> {
+    if (!this.isProjectMember(userId, projectId)) return []
+    return (this.db.prepare(`SELECT task_id, COUNT(*) count,
+      (SELECT id FROM task_improvements i2 WHERE i2.task_id=i.task_id AND i2.status IN ('new','accepted') ORDER BY i2.updated_at DESC LIMIT 1) improvement_id
+      FROM task_improvements i WHERE project_id=? AND status IN ('new','accepted') GROUP BY task_id`).all(projectId) as any[])
+      .map((row) => ({ taskId: row.task_id, count: Number(row.count), improvementId: row.improvement_id }))
+  }
+
+  updateTaskImprovementStatus(userId: string, id: string, status: ImprovementStatus): TaskImprovement | null {
+    const row = this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(id) as any
+    if (!row || !this.isProjectMember(userId, row.project_id)) return null
+    this.db.prepare('UPDATE task_improvements SET status=?, resolved_by=?, resolved_at=?, updated_at=? WHERE id=?')
+      .run(status, userId, this.now(), this.now(), id)
+    return this.mapTaskImprovement(this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(id) as any)
+  }
+
+  private mapTaskImprovement(row: any): TaskImprovement {
+    return {
+      id: row.id, projectId: row.project_id, taskId: row.task_id, runId: row.run_id, stepId: row.step_id,
+      source: row.source, status: row.status, title: row.title, description: row.description,
+      fingerprint: row.fingerprint, evidence: JSON.parse(row.evidence_json || '[]'), occurrences: row.occurrences,
+      suggestedAction: row.suggested_action, isNew: row.status === 'new', createdAt: row.created_at, updatedAt: row.updated_at
+    }
+  }
+
   // --- Предложения модели ---
 
   addCiSuggestion(args: { commandId: string; runStepId: string | null; reason: string; proposedScript: string }): CiCommandSuggestion {
@@ -6061,9 +6123,14 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM merge_runs WHERE task_id=? AND project_id=? ORDER BY created_at DESC LIMIT ?`).all(taskId, projectId, limit) as Record<string, unknown>[]).map((row) => this.mapMergeRun(row))
   }
 
-  getProjectMachine(projectId: string, agentId: string): { agentId: string; path: string; reposRoot: string | null } | null {
-    const row = this.db.prepare(`SELECT agent_id, path, repos_root FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId) as { agent_id: string; path: string; repos_root: string | null } | undefined
-    return row ? { agentId: row.agent_id, path: row.path, reposRoot: row.repos_root } : null
+  getProjectMachine(projectId: string, agentId: string): { agentId: string; path: string; reposRoot: string | null; storageId: string | null; storageRoot: string | null; storageFormatVersion: number | null; directories: ProjectMachineDirectoryAssignments | null } | null {
+    const row = this.db.prepare(`SELECT pm.agent_id,pm.path,pm.repos_root,pm.storage_id,pm.directories_json,s.root_path AS storage_root,s.format_version AS storage_format_version
+      FROM project_machines pm LEFT JOIN machine_storages s ON s.id=pm.storage_id AND s.machine_id=pm.agent_id
+      WHERE pm.project_id=? AND pm.agent_id=?`).get(projectId, agentId) as { agent_id: string; path: string; repos_root: string | null; storage_id: string | null; directories_json: string | null; storage_root: string | null; storage_format_version: number | null } | undefined
+    if (!row) return null
+    let directories: ProjectMachineDirectoryAssignments | null = null
+    try { directories = row.directories_json ? JSON.parse(row.directories_json) as ProjectMachineDirectoryAssignments : null } catch { directories = null }
+    return { agentId: row.agent_id, path: row.path, reposRoot: row.repos_root, storageId: row.storage_id, storageRoot: row.storage_root, storageFormatVersion: row.storage_format_version, directories }
   }
 
   upsertTaskRepository(projectId: string, taskId: string, agentId: string, path: string, kind: TaskRepository['kind']): void {
@@ -6284,7 +6351,13 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE task_launch_results SET run_id=?,error=?,updated_at=? WHERE project_id=? AND proposal_id=? AND action='preparation'`).run(runId, error, this.now(), projectId, proposalId)
   }
 
-  startTaskPreparationRun(userId: string, projectId: string, taskId: string): TaskPreparationRun {
+  activeTaskPreparationRun(userId: string, projectId: string, taskId: string): TaskPreparationRun | null {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
+    const row = this.db.prepare(`SELECT * FROM task_preparation_runs WHERE project_id=? AND task_id=? AND status IN ('queued','running','waiting_for_answer','validating')`).get(projectId, taskId) as Record<string, unknown> | undefined
+    return row ? this.mapTaskPreparationRun(row) : null
+  }
+
+  startTaskPreparationRun(userId: string, projectId: string, taskId: string, execution: { llmEngineId?: string | null; provider: LlmProvider; model: string } = { provider: 'claude', model: '' }): TaskPreparationRun {
     if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
     const task = this.getTask(projectId, taskId)
     if (!task || task.type !== 'task') throw new Error('Задача не найдена')
@@ -6300,7 +6373,7 @@ export class VoiceChatDb {
     const attempt = Number((this.db.prepare(`SELECT COALESCE(MAX(attempt), 0) + 1 AS attempt FROM task_preparation_runs WHERE task_id=?`).get(taskId) as { attempt: number }).attempt)
     const profileId = createHash('sha256').update(userId).digest('hex').slice(0, 16)
     this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,task_key,status,phase,attempt,profile_id,created_at,started_at) VALUES (?,?,?,?, 'running','initialization',?,?,?,?)`).run(id, projectId, taskId, taskId, attempt, profileId, now, now)
+      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,task_key,status,phase,attempt,llm_engine_id,provider,model,profile_id,created_at,started_at) VALUES (?,?,?,?, 'running','initialization',?,?,?,?,?,?,?)`).run(id, projectId, taskId, taskId, attempt, execution.llmEngineId ?? null, execution.provider, redactPreparationText(execution.model), profileId, now, now)
       this.appendTaskPreparationEvent(id, 'attempt_created', 'initialization', 'Попытка подготовки создана')
       this.appendTaskPreparationEvent(id, 'attempt_started', 'initialization', 'Подготовка запущена')
       if (task.columnId !== target) this.moveTask(userId, projectId, taskId, { columnId: target })

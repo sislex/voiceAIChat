@@ -292,7 +292,28 @@ describe('ci run manager', () => {
     const development = db.getBoard('admin', project.id)!.columns.find((c) => c.semanticType === 'development')!
     expect(columnAtModel).toBe(development.id)
     expect(detail.run.status).toBe('success')
+    expect(detail.run).toMatchObject({ llmProvider: 'claude', llmModel: 'opus' })
+    expect(db.getCiRun('admin', runId)!.executionLlm?.base).toMatchObject({ provider: 'claude', model: 'opus' })
     expect(modelRequests[0]?.model).toBe('opus')
+  })
+
+  it('задачная модель имеет приоритет над проектной в базовом снимке', async () => {
+    const { project, task } = setup()
+    db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.setCiLlmConfig('task', task.id, { provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    expect(detail.run).toMatchObject({ llmProvider: 'claude', llmModel: 'sonnet' })
+    expect(db.getCiRun('admin', runId)!.executionLlm?.base).toMatchObject({ provider: 'claude', model: 'sonnet' })
+  })
+
+  it('сохраняет literal Claude default в базовом снимке', async () => {
+    const { project, task } = setup()
+    db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'default', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    expect(detail.run).toMatchObject({ llmProvider: 'claude', llmModel: 'default' })
+    expect(db.getCiRun('admin', runId)!.executionLlm?.base).toMatchObject({ provider: 'claude', model: 'default' })
   })
 
   it('разовый выбор окна запуска фиксирует пару модели только в новом ране', async () => {

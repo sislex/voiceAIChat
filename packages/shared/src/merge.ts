@@ -66,6 +66,39 @@ export interface MergeRun {
   createdAt: number
 }
 
+export type MergeMachineReadinessCode =
+  | 'ready'
+  | 'machine_offline'
+  | 'storage_missing'
+  | 'storage_not_found'
+  | 'storage_marker_invalid'
+  | 'storage_path_invalid'
+  | 'storage_policy_denied'
+  | 'storage_symlink'
+  | 'storage_read_only'
+  | 'clone_invalid'
+  | 'git_unavailable'
+
+export interface MergeMachineReadiness {
+  ready: boolean
+  selectable: boolean
+  mode: 'managed' | 'legacy' | null
+  code: MergeMachineReadinessCode
+  message: string
+  clonePath?: string
+}
+
+export interface MergeMachineOption {
+  agentId: string
+  name: string
+  readiness: MergeMachineReadiness
+}
+
+export interface MergeMachinesResponse {
+  machines: MergeMachineOption[]
+  defaultAgentId: string | null
+}
+
 export interface MergeAvailability {
   semanticType: KanbanColumnSemanticType
   sourceBranch?: string | null

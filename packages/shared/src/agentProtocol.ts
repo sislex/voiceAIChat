@@ -95,6 +95,7 @@ export type AgentToServer =
   | { t: 'pty.error'; ptyId: string; message: string }
   | { t: 'fs.result'; opId: string; result: FsResult }
   | { t: 'fs.error'; opId: string; message: string; code?: string }
+  | { t: 'git.access.result'; requestId: string; result: import('./gitAccess').GitAccessResult }
   | { t: 'agent.setPolicy'; policy: AgentPolicy }
   | { t: 'agent.telemetry'; telemetry: AgentTelemetry }
   | { t: 'tunnel.listening'; tunnelId: string; port: number }
@@ -205,6 +206,7 @@ export type ServerToAgent =
   | { t: 'agent.updateAvailable'; version: string }
   | { t: 'exec.start'; execId: string; command: string; timeoutMs: number }
   | { t: 'exec.cancel'; execId: string }
+  | { t: 'git.access'; requestId: string; request: import('./gitAccess').GitAccessRequest }
   | { t: 'pty.start'; ptyId: string; cols: number; rows: number; cwd?: string }
   | { t: 'pty.input'; ptyId: string; data: string }
   | { t: 'pty.resize'; ptyId: string; cols: number; rows: number }

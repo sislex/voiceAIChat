@@ -2,7 +2,7 @@ import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, type ProjectRelease, typ
 import type { VoiceChatDb } from '../db/database.js'
 
 export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string; gitUrl:string; prepareCheckout:boolean; limits?:ReleaseTimeouts }
-export interface ProductionTarget extends ReleaseProjectTarget { deployCommand:string; healthCheckCommand:string; expectedRepository:string }
+export interface ProductionTarget extends ReleaseProjectTarget { deployCommand:string; healthCheckCommand:string; expectedRepository:string; mode?:'legacy'|'managed'; managedRoot?:string; managedDirectories?:string[]; managedManifestPath?:string; managedManifest?:Record<string,unknown> }
 export const RELEASE_TEST_TIMEOUT_MS=600_000
 export interface ReleaseCommandResult { exitCode:number|null; output:string; timedOut?:boolean }
 export interface ReleaseRuntime {
@@ -100,6 +100,7 @@ export class ReleaseManager {
   constructor(private readonly db:VoiceChatDb,private readonly runtime:ReleaseRuntime){}
 
   isOnline(agentId:string):boolean{return this.runtime.isOnline?.(agentId)!==false}
+  runPreflight(target:ReleaseProjectTarget,command:string):Promise<ReleaseCommandResult>{return this.runtime.exec(target,command,30_000)}
 
   async listBranches(target:ReleaseProjectTarget):Promise<ReleaseBranch[]> {
     const result=await this.runtime.exec(target,`git ls-remote --heads ${quote(target.gitUrl)} ${quote('refs/heads/release/*')}`,120_000)
@@ -262,6 +263,11 @@ export class ReleaseManager {
     try{
       this.db.setProjectReleaseStatus(release.id,'switching',actor)
       this.db.setProjectReleaseStep(release.id,'switching','running','',actor)
+      if(target.mode==='managed'){
+        if(!target.managedRoot||!target.managedManifest||!target.managedManifestPath||!target.managedDirectories)throw new Error('Managed production identity отсутствует')
+        const prepared=await this.runtime.exec(target,`mkdir -p ${target.managedDirectories.map(quote).join(' ')} && if [ ! -e ${quote(target.managedManifestPath)} ]; then printf %s ${quote(JSON.stringify(target.managedManifest))} > ${quote(target.managedManifestPath)}; fi && ${releaseCheckoutCommand(target)}`,target.limits?.checkoutMs??DEFAULT_RELEASE_TIMEOUTS.checkoutMs)
+        if(prepared.timedOut||prepared.exitCode!==0)throw new Error(prepared.output||'Не удалось подготовить managed production')
+      }
       const switchCommand=releaseSwitchCommand(target,release)
       const switchLimit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='switching')?.limitMs??120_000
       const switched=await this.runtime.exec(target,switchCommand,switchLimit)

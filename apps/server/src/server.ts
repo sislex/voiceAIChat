@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, allowedModels, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -20,6 +20,7 @@ import { registerCiRoutes } from './routes/ci.js'
 import { registerFeaturePreviewRoutes } from './routes/featurePreview.js'
 import { registerReleaseRoutes } from './routes/releases.js'
 import { ReleaseManager, releaseKnowledgeBaseCommand } from './releases/releaseManager.js'
+import { ManagedEnvironmentResolver } from './releases/managedEnvironmentResolver.js'
 import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
@@ -155,7 +156,6 @@ export function parseQaPreparationResponse(text: string): AcceptanceCriterionSna
  * Отдельного вида расхода у неё нет, а по смыслу это планирование задачи, поэтому
  * движок и модель она наследует из настроек стадии `planning`.
  */
-const TASK_PREPARATION_STAGE: CiUsageKind = 'planning'
 
 /** Модель Claude по умолчанию для подготовки — прежняя константа этапа. */
 const TASK_PREPARATION_CLAUDE_MODEL = 'sonnet'
@@ -838,6 +838,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       const component = record(item)
       const path = `affectedComponents[${index}]`
       if (!component) { issues.push(`${path} должен быть объектом`); continue }
+      // Однозначный список проверок сохраняем без потерь в каноническом объекте.
+      if (Array.isArray(component.coverage) && component.coverage.length > 0 && component.coverage.every((entry) => typeof entry === 'string' && entry.trim())) {
+        component.coverage = { required: [...component.coverage] }
+      }
       for (const key of ['id', 'name', 'exclusionReason', 'alternativeVerification']) requireString(component, key, `${path}.${key}`)
       requireBoolean(component, 'reusable', `${path}.reusable`)
       if (component.storybookStoryId !== null && typeof component.storybookStoryId !== 'string') issues.push(`${path}.storybookStoryId должен быть строкой или null`)
@@ -913,51 +917,32 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     for (const handle of taskPreparationHandles.values()) handle.cancel()
     taskPreparationHandles.clear()
   })
-  const launchTaskPreparation = (userId: string, projectId: string, taskId: string, selection?: import('@voicechat/shared').TaskPreparationLlmSelection): import('@voicechat/shared').TaskPreparationRun => {
-    const run = db.startTaskPreparationRun(userId, projectId, taskId)
+  const launchTaskPreparation = (userId: string, projectId: string, taskId: string, _selection?: import('@voicechat/shared').TaskPreparationLlmSelection): import('@voicechat/shared').TaskPreparationRun => {
+    let run = db.activeTaskPreparationRun(userId, projectId, taskId)
+    if (!run) {
+      // Подготовка использует effective-настройку модели проекта. Проверяем
+      // персональный deny-list до создания попытки и никогда не подменяем пару.
+      const projectLlm = db.getCiLlmConfig('project', projectId) ?? db.ciLlmDefaultsForUser(userId)
+      const provider = projectLlm.provider
+      const model = taskPreparationModel(provider, projectLlm.model)
+      const access = db.getUserLlmAccess(userId)
+      if (!isProviderAllowed(access, provider)) throw new Error(`Проектный движок ${provider === 'codex' ? 'Codex' : 'Claude'} недоступен пользователю`)
+      if (!isModelAllowedForUser(access, provider, model)) throw new Error(`Проектная модель ${provider}:${model} недоступна пользователю`)
+      run = db.startTaskPreparationRun(userId, projectId, taskId, {
+        llmEngineId: projectLlm.llmEngineId ?? null,
+        provider,
+        model
+      })
+    }
     if (run.status === 'waiting_for_answer' || taskPreparationHandles.has(run.id)) return run
     if (run.status !== 'running' && run.status !== 'queued') return run
     if (run.status === 'running' && run.log) return run
     const task = db.getCiTask(userId, projectId, taskId)
-    // Движок и модель — как у остальных автоматических этапов: этап задачи →
-    // этап проекта → модель проекта → настройки запустившего пользователя. CLI
-    // работает в ЕГО профиле, поэтому зашитый Claude просто не был авторизован у
-    // того, кто работает на Codex.
-    const userLlm = db.ciLlmDefaultsForUser(userId)
-    const stageLlm = db.resolveTaskStageLlmConfig(projectId, taskId, TASK_PREPARATION_STAGE, {
-      llmEngineId: userLlm.llmEngineId ?? null,
-      provider: userLlm.provider,
-      model: userLlm.model
-    })
-    const requestedProvider = selection?.provider ?? stageLlm.provider
-    const requestedModel = selection?.model ?? stageLlm.model
-    const access = db.getUserLlmAccess(userId)
-    if (selection && !isProviderAllowed(access, requestedProvider)) throw new Error('Выбранный движок недоступен пользователю')
-    const provider = isProviderAllowed(access, requestedProvider) ? requestedProvider : firstAllowedProvider(access)
-    if (!provider) throw new Error('Нет доступных движков и моделей')
-    const allowedModel = clampModel(access, provider, requestedModel)
-    if (!allowedModel || (selection && allowedModel !== requestedModel)) throw new Error('Выбранная модель недоступна пользователю')
-    const model = taskPreparationModel(provider, allowedModel)
-    const llmEngineId = selection?.llmEngineId ?? stageLlm.llmEngineId ?? null
+    // Любое продолжение использует снимок попытки, а не текущие настройки проекта.
+    const provider: LlmProvider = run.provider ?? 'claude'
+    const model = taskPreparationModel(provider, run.model ?? '')
+    const llmEngineId = run.llmEngineId ?? null
     const client = provider === 'codex' ? codex : claude
-    const recoverySelection = (): { provider: LlmProvider; model: string; client: LlmClient } | null => {
-      const configuredProvider = opts.config.taskPreparationRecoveryProvider
-      const configuredModel = opts.config.taskPreparationRecoveryModel
-      if (configuredProvider && configuredModel) {
-        if ((configuredProvider !== provider || taskPreparationModel(configuredProvider, configuredModel) !== model) && isModelAllowedForUser(access, configuredProvider, configuredModel)) {
-          return { provider: configuredProvider, model: taskPreparationModel(configuredProvider, configuredModel), client: configuredProvider === 'codex' ? codex : claude }
-        }
-        return null
-      }
-      const providers: LlmProvider[] = provider === 'claude' ? ['codex', 'claude'] : ['claude', 'codex']
-      for (const candidateProvider of providers) {
-        for (const candidate of allowedModels(access, candidateProvider)) {
-          const candidateModel = taskPreparationModel(candidateProvider, candidate.id)
-          if (candidateProvider !== provider || candidateModel !== model) return { provider: candidateProvider, model: candidateModel, client: candidateProvider === 'codex' ? codex : claude }
-        }
-      }
-      return null
-    }
     const project = db.getProject(userId, projectId)
     const configuredMachines = (project?.machines ?? []).filter((machine) => machine.canUse !== false && machine.path.trim())
     const preferredAgentId = db.getUserProjectDefaultMachine(userId, projectId) ?? project?.defaultAgentId ?? null
@@ -1017,7 +1002,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 ${machineDiagnostic}`
     const basePrompt = `${researchDirective}
 
-Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
     const ordinaryResponses: string[] = []
     const terminalValidationFailure = (message: string, text: string, recoveryDetail?: string): void => {
       const terminalMessage = recoveryDetail ? `Recovery Development Brief завершился ошибкой: ${recoveryDetail}; исходная диагностика: ${message}` : message
@@ -1028,16 +1013,11 @@ ${machineDiagnostic}`
       boardHub.emit(projectId)
     }
     const sendRecovery = (reason: string): void => {
-      const recovery = recoverySelection()
-      if (!recovery) {
-        terminalValidationFailure(reason, ordinaryResponses[1] ?? '', 'не найдена другая разрешённая модель согласно recovery-политике')
-        return
-      }
       const sourceName = `${provider}:${model}`
-      const recoveryName = `${recovery.provider}:${recovery.model}`
+      const recoveryName = sourceName
       db.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Аварийное восстановление Development Brief')
-      db.appendTaskPreparationEvent(run.id, 'recovery_started', 'brief_generation', `Переключение ${sourceName} → ${recoveryName}: ${reason}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: recovery.provider, recoveryModel: recovery.model, reason })
-      db.appendTaskPreparationLog(run.id, `[система] Recovery-модель: ${recoveryName}; исходная модель: ${sourceName}; причина: ${reason}\\n`)
+      db.appendTaskPreparationEvent(run.id, 'recovery_started', 'brief_generation', `Recovery через зафиксированную проектную пару ${recoveryName}: ${reason}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, reason })
+      db.appendTaskPreparationLog(run.id, `[система] Recovery через зафиксированную проектную пару: ${recoveryName}; причина: ${reason}\\n`)
       const recoveryPrompt = `Исправь ТОЛЬКО структуру уже подготовленного Development Brief без повторного исследования и без изменения смысла требований. Верни только один JSON-объект schemaVersion=2.\\n
 Диагностика валидатора (точные пути/гейты): ${reason}\\n
 Исходный ответ: ${ordinaryResponses[0] ?? ''}\\n
@@ -1046,11 +1026,11 @@ ${machineDiagnostic}`
 schemaVersion: 2; goal, functionalRequirements, acceptanceCriteria — string; scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints, contradictions — string[]; uiImpact — none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean.
 acceptanceCriteriaItems: {id,title,precondition,action,observableResult:string}[].
 testCases: {id,title,description,preconditions,testData,steps,expectedResult,testType,notAutomatedReason,alternativeManualVerification,comments:string,required:boolean,automatable:boolean,automationLinks:array}[].
-affectedComponents: {id,name,exclusionReason,alternativeVerification:string,reusable:boolean,storybookStoryId:string|null,coverage:object|null}[].
+affectedComponents: {id,name,exclusionReason,alternativeVerification:string,reusable:boolean,storybookStoryId:string|null,coverage:object}[]. Для каждого компонента coverage непустой; при storybookStoryId=null обязательны непустые exclusionReason и alternativeVerification.
 openQuestions: {questionId:string,text:string,material:boolean,answer:string|null}[]; decisions: {id,text,rationale:string,questionId?:string}[]; assumptions: {id,text,rationale:string,material:boolean}[].
 sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,status:available|absent|unavailable,summary:string,refs:string[],critical:boolean}[].
 Сохрани исходные требования. Если диагностика выявляет дефект подготовки, добавь в scope, acceptanceCriteria/acceptanceCriteriaItems и testCases отдельные проверяемые работы: усиление prompt/schema, безопасная нормализация однозначных совместимых значений, регрессионные тесты и актуализация существующего раздела БЗ. Не добавляй новые исследования и не выдумывай источники.`
-      const handle = recovery.client.send({ userId, prompt: recoveryPrompt, sessionId: null, model: recovery.model, executionDisabled: true }, {
+      const handle = client.send({ userId, prompt: recoveryPrompt, sessionId: null, model, executionDisabled: true }, {
         onDelta: () => {},
         onSession: () => {},
         onDone: (text) => {
@@ -1061,20 +1041,20 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
             const readiness = parseTaskPreparation(text)
             const gate = canConfirmDevelopmentReadiness(readiness)
             if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
-            db.appendTaskPreparationEvent(run.id, 'recovery_completed', 'readiness_validation', `Recovery ${recoveryName} успешно прошёл runtime-валидацию и readiness-гейт`, { sourceProvider: provider, sourceModel: model, recoveryProvider: recovery.provider, recoveryModel: recovery.model, result: 'success' })
+            db.appendTaskPreparationEvent(run.id, 'recovery_completed', 'readiness_validation', `Recovery ${recoveryName} успешно прошёл runtime-валидацию и readiness-гейт`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, result: 'success' })
             db.completeTaskPreparationRun(userId, run.id, readiness)
             closePreparationTools()
             boardHub.emit(projectId)
           } catch (error) {
             const recoveryError = redactPreparationText(error instanceof Error ? error.message : String(error))
-            db.appendTaskPreparationEvent(run.id, 'recovery_failed', 'readiness_validation', `Recovery ${recoveryName} отклонён: ${recoveryError}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: recovery.provider, recoveryModel: recovery.model, result: 'failed', error: recoveryError })
+            db.appendTaskPreparationEvent(run.id, 'recovery_failed', 'readiness_validation', `Recovery ${recoveryName} отклонён: ${recoveryError}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, result: 'failed', error: recoveryError })
             terminalValidationFailure(reason, text, recoveryError)
           }
         },
         onError: (message) => {
           taskPreparationHandles.delete(run.id)
           if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
-          const recoveryError = taskPreparationFailure(recovery.provider, userId, message)
+          const recoveryError = taskPreparationFailure(provider, userId, message)
           db.appendTaskPreparationEvent(run.id, 'recovery_failed', 'brief_generation', `Recovery ${recoveryName} не выполнен: ${recoveryError}`, { result: 'failed', error: recoveryError })
           terminalValidationFailure(reason, ordinaryResponses[1] ?? '', recoveryError)
         }
@@ -1256,6 +1236,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     executor: ciExecutor,
     storePath: join(opts.config.dataDir, 'feature-previews.json'),
     isOnline: (agentId) => agentRegistry.isOnline(agentId),
+    platformOf: (agentId) => agentRegistry.platformOf(agentId),
+    allowedDirsOf: (agentId) => agentRegistry.policyOf(agentId)?.allowedDirs ?? [],
+    fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
+    fsWrite: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
+    fsMkdir: (agentId, path) => agentRegistry.fsMkdir(agentId, path),
+    fsDelete: (agentId, path) => agentRegistry.fsDelete(agentId, path),
     closeTunnelsForAgent: (agentId) => agentRegistry.closeTunnelsForTarget(agentId)
   })
   registerFeaturePreviewRoutes(app, featurePreviews, db, agentRegistry)
@@ -1275,15 +1261,18 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       if (result.exitCode !== 0) throw new Error(result.output || 'Release-preflight базы знаний завершился с ошибкой')
     }
   })
+  const managedEnvironments = new ManagedEnvironmentResolver(db, releaseManager, (agentId) => agentRegistry.policyOf(agentId)?.allowedDirs ?? [])
   releaseManager.reconcile((release) => {
     const project = db.getProject(release.triggeredBy, release.projectId)
     const agentId = project?.productionAgentId
     const linked = agentId ? project?.machines.some(machine => machine.agentId === agentId) : false
-    if (!project || !agentId || !linked || !project.productionCheckoutPath || !project.productionDeployCommand || !project.productionHealthCheckCommand || !project.gitUrl) return null
-    return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl }
+    if (!project || !agentId || !linked || !project.productionDeployCommand || !project.productionHealthCheckCommand || !project.gitUrl) return null
+    if(project.productionEnvironmentMode==='managed'){try{return managedEnvironments.resolve(release.triggeredBy,release.projectId,'production').target}catch{return null}}
+    if(!project.productionCheckoutPath)return null
+    return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl, mode:'legacy' }
   })
-  registerReleaseRoutes(app, db, releaseManager)
-  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
+  registerReleaseRoutes(app, db, releaseManager, managedEnvironments)
+  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection))
   mergeRunManager.reconcile()
   const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:(id)=>boardHub.emit(id)})

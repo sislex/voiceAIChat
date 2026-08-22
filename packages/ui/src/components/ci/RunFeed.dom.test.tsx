@@ -57,6 +57,15 @@ describe('RunFeed', () => {
     expect(screen.getByTestId('ci-execution-llm')).toHaveTextContent('Базовая модель рана: Codex · gpt-5.6-luna')
   })
 
+  it('показывает literal Claude default только из сохранённого базового снимка', () => {
+    const run = mkRun({ llmProvider: 'claude', llmModel: 'default' })
+    render(<RunFeed {...baseProps({ detail: { run, executionLlm: {
+      source: 'run', stage: null, llmEngineId: null, provider: 'claude', model: 'default',
+      base: { llmEngineId: null, provider: 'claude', model: 'default' }
+    }, steps: [], fixAttempts: [], interactions: [] }, log: [], conclusion: null })} />)
+    expect(screen.getByTestId('ci-execution-llm')).toHaveTextContent('Базовая модель рана: Claude · default')
+  })
+
   it('до старта стадии подписывает базовую модель и нейтрально показывает отсутствие модели', () => {
     const run = mkRun({ llmModel: '' })
     render(<RunFeed {...baseProps({ detail: { run, executionLlm: {

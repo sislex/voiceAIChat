@@ -413,7 +413,7 @@ describe('TaskModal — вкладки и merge', () => {
     render(<TaskModal {...props()} />)
 
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Ручное QA', 'Merge', 'Лента рана'
+      'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Merge', 'Лента рана'
     ])
   })
 
@@ -433,21 +433,21 @@ describe('TaskModal — вкладки и merge', () => {
     const preparationBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Подготовка', semanticType: 'preparation' }] }
     const { unmount } = render(<TaskModal {...props({ board: preparationBoard, task: mkTask({ taskPreparationRunId: 'prep-1' }) })} />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Подготовка к разработке', 'Настройки', 'Ход выполнения', 'Ручное QA', 'Merge', 'Лента рана'
+      'Общее', 'Временная шкала', 'Подготовка к разработке', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Merge', 'Лента рана'
     ])
     unmount()
 
     const manualQaBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Ручное QA', semanticType: 'manual_qa' }] }
     render(<TaskModal {...props({ board: manualQaBoard })} />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Component QA', 'Интеграционные тесты', 'Automated QA', 'Ручное QA', 'Merge', 'Лента рана'
+      'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Улучшения', 'Component QA', 'Интеграционные тесты', 'Automated QA', 'Ручное QA', 'Merge', 'Лента рана'
     ])
   })
 
-  it('переключает семь вкладок без закрытия и сохраняет черновик', async () => {
+  it('переключает восемь вкладок без закрытия и сохраняет черновик', async () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
-    expect(screen.getAllByRole('tab')).toHaveLength(7)
+    expect(screen.getAllByRole('tab')).toHaveLength(8)
     fireEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
     fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'черновик' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))
@@ -898,21 +898,23 @@ describe('TaskModal — подготовка к разработке', () => {
     finishedAt: status === 'running' ? null : 2, canRetry: status !== 'running', canCancel: status === 'running', ...over
   })
 
-  it('показывает выбор LLM до первого запуска, а активный ран открывает вкладку автоматически', async () => {
+  it('показывает проектную LLM без отдельного выбора, а активный ран открывает вкладку с фактической парой', async () => {
     const onStartPreparation = vi.fn().mockResolvedValue(run('running'))
     const { unmount } = render(<TaskModal {...props({ board: preparationBoard, initialTab: 'preparation', onStartPreparation })} />)
     expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toBeInTheDocument()
-    await userEvent.selectOptions(screen.getByLabelText('Движок подготовки'), 'codex')
+    expect(await screen.findByText(/Подготовка использует модель проекта:/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Движок подготовки')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Запустить подготовку' }))
-    await waitFor(() => expect(onStartPreparation).toHaveBeenCalledWith('t1', expect.objectContaining({ provider: 'codex' })))
+    await waitFor(() => expect(onStartPreparation).toHaveBeenCalledWith('t1', expect.any(Object)))
     unmount()
 
     render(<TaskModal {...props({
       board: preparationBoard,
       task: mkTask({ taskPreparationRunId: 'prep-running', taskPreparationStatus: 'running' }),
-      loadPreparationRuns: async () => [run('running')]
+      loadPreparationRuns: async () => [run('running', { provider: 'codex', model: 'gpt-5.6-sol' })]
     })} />)
     expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('LLM: codex · gpt-5.6-sol')).toBeInTheDocument()
     expect(await screen.findByTestId('task-preparation-feed')).toHaveTextContent('Уточняю критерии')
   })
 

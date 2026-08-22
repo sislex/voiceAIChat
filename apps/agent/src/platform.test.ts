@@ -26,9 +26,17 @@ describe('isTermux', () => {
 })
 
 describe('commandEnv', () => {
-  it('добавляет android_ndk_path для Termux', () => {
-    expect(commandEnv({ TERMUX_VERSION: '1', PREFIX: TERMUX_PREFIX } as NodeJS.ProcessEnv).GYP_DEFINES)
-      .toBe(`android_ndk_path=${TERMUX_PREFIX}`)
+  it('добавляет android_ndk_path для Termux, не изменяя исходное окружение', () => {
+    const source = {
+      TERMUX_VERSION: '0.118',
+      PREFIX: TERMUX_PREFIX,
+      PATH: '/custom/bin'
+    } as NodeJS.ProcessEnv
+    expect(commandEnv(source)).toEqual({
+      ...source,
+      GYP_DEFINES: `android_ndk_path=${TERMUX_PREFIX}`
+    })
+    expect(source.GYP_DEFINES).toBeUndefined()
   })
 
   it('сохраняет существующие GYP_DEFINES', () => {
@@ -41,8 +49,10 @@ describe('commandEnv', () => {
     expect(commandEnv({ TERMUX_VERSION: '1', GYP_DEFINES: value } as NodeJS.ProcessEnv).GYP_DEFINES).toBe(value)
   })
 
-  it('не меняет окружение вне Termux', () => {
-    expect(commandEnv({ PATH: '/usr/bin' } as NodeJS.ProcessEnv).GYP_DEFINES).toBeUndefined()
+  it('не меняет окружение Linux, macOS и Windows', () => {
+    const source = { PATH: '/usr/bin', GYP_DEFINES: 'custom=1' } as NodeJS.ProcessEnv
+    expect(commandEnv(source)).toEqual(source)
+    expect(commandEnv(source)).not.toBe(source)
   })
 })
 

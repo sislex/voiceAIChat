@@ -204,6 +204,7 @@ export function registerProjectRoutes(
       testCommand?: string
       productionDeployCommand?: string
       productionAgentId?: string | null
+      productionEnvironmentMode?: 'legacy' | 'managed'
       productionCheckoutPath?: string
       productionHealthCheckCommand?: string
       releaseTimeouts?: import('@voicechat/shared').ReleaseTimeouts
@@ -221,6 +222,7 @@ export function registerProjectRoutes(
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
     const body = { ...(req.body ?? {}) }
+    if (body.productionEnvironmentMode === 'managed') return badReq(reply, 'Managed mode requires successful preflight and explicit confirmation')
     if (body.previewUrl !== undefined) {
       const previewUrl = normalizePreviewUrl(body.previewUrl)
       if (previewUrl === undefined) return badReq(reply, 'previewUrl must be an http/https URL')
@@ -413,6 +415,74 @@ export function registerProjectRoutes(
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
+    }
+  )
+
+  // --- Git-доступ конкретной связки project + machine -------------------
+  const gitMachine = (req: FastifyRequest, reply: FastifyReply, projectId: string, agentId: string, write: boolean): ProjectDetail | FastifyReply => {
+    const project = member(req, projectId)
+    if (!project || !project.machines.some((machine) => machine.agentId === agentId && (machine.ownership === 'mine' || machine.sharedWithProject))) return nf(reply)
+    if (write && project.role !== 'owner') return forbidden(reply)
+    if (!agents?.isOnline(agentId)) return reply.code(409).send({ error: 'machine_offline', code: 'machine_offline' })
+    return project
+  }
+  const gitError = (reply: FastifyReply, error: unknown): FastifyReply => {
+    const code = errMessage(error) === 'machine_offline' ? 'machine_offline' : 'repository_unavailable'
+    return reply.code(409).send({ error: code, code })
+  }
+  app.get<{ Params: { id: string; agentId: string }; Querystring: { repositoryUrl?: string } }>(
+    '/api/projects/:id/machines/:agentId/git-access',
+    async (req, reply) => {
+      if (!req.query.repositoryUrl) return badReq(reply, 'repositoryUrl required')
+      const gate = gitMachine(req, reply, req.params.id, req.params.agentId, false)
+      if ('statusCode' in gate) return gate
+      try { return await agents!.gitAccess(req.params.agentId, { operation: 'status', repositoryUrl: req.query.repositoryUrl }) }
+      catch (error) { return gitError(reply, error) }
+    }
+  )
+  app.post<{ Params: { id: string; agentId: string }; Body: { repositoryUrl?: string; token?: string } }>(
+    '/api/projects/:id/machines/:agentId/git-access/configure',
+    async (req, reply) => {
+      const repositoryUrl = req.body?.repositoryUrl?.trim(), token = req.body?.token
+      if (!token) return reply.code(400).send({ error: 'token_missing', code: 'token_missing' })
+      if (!repositoryUrl) return badReq(reply, 'repositoryUrl required')
+      const gate = gitMachine(req, reply, req.params.id, req.params.agentId, true)
+      if ('statusCode' in gate) return gate
+      try { return await agents!.gitAccess(req.params.agentId, { operation: 'configure', repositoryUrl, token }) }
+      catch (error) { return gitError(reply, error) }
+    }
+  )
+  app.post<{ Params: { id: string; agentId: string }; Body: { repositoryUrl?: string; refspec?: string } }>(
+    '/api/projects/:id/machines/:agentId/git-access/verify',
+    async (req, reply) => {
+      const repositoryUrl = req.body?.repositoryUrl?.trim(), refspec = req.body?.refspec?.trim()
+      if (!repositoryUrl) return badReq(reply, 'repositoryUrl required')
+      if (!refspec || !/^refs\/heads\/[A-Za-z0-9._/-]+:refs\/heads\/[A-Za-z0-9._/-]+$/.test(refspec) || refspec.includes('..')) return badReq(reply, 'invalid refspec')
+      const gate = gitMachine(req, reply, req.params.id, req.params.agentId, true)
+      if ('statusCode' in gate) return gate
+      try { return await agents!.gitAccess(req.params.agentId, { operation: 'verify', repositoryUrl, refspec }) }
+      catch (error) { return gitError(reply, error) }
+    }
+  )
+  app.delete<{ Params: { id: string; agentId: string }; Body: { repositoryUrl?: string } }>(
+    '/api/projects/:id/machines/:agentId/git-access',
+    async (req, reply) => {
+      const repositoryUrl = req.body?.repositoryUrl?.trim()
+      if (!repositoryUrl) return badReq(reply, 'repositoryUrl required')
+      const gate = gitMachine(req, reply, req.params.id, req.params.agentId, true)
+      if ('statusCode' in gate) return gate
+      try { return await agents!.gitAccess(req.params.agentId, { operation: 'delete', repositoryUrl }) }
+      catch (error) { return gitError(reply, error) }
+    }
+  )
+  app.get<{ Params: { id: string; agentId: string }; Querystring: { repositoryUrl?: string } }>(
+    '/api/projects/:id/machines/:agentId/git-access/diagnostics',
+    async (req, reply) => {
+      if (!req.query.repositoryUrl) return badReq(reply, 'repositoryUrl required')
+      const gate = gitMachine(req, reply, req.params.id, req.params.agentId, false)
+      if ('statusCode' in gate) return gate
+      try { return await agents!.gitAccess(req.params.agentId, { operation: 'diagnostics', repositoryUrl: req.query.repositoryUrl }) }
+      catch (error) { return gitError(reply, error) }
     }
   )
 
@@ -679,6 +749,21 @@ export function registerProjectRoutes(
     }
   )
 
+  app.get<{ Params: { id: string; taskId: string } }>(
+    '/api/projects/:id/tasks/:taskId/merge/machines',
+    async (req, reply) => {
+      const project = member(req, req.params.id)
+      if (!project || !merge) return nf(reply)
+      const workspace = db.findLatestPushedCiWorkspace(req.params.id, req.params.taskId)
+      const machines = await Promise.all(project.machines.map(async (machine) => ({
+        agentId: machine.agentId,
+        name: machine.name ?? machine.agentId,
+        readiness: await merge.checkReadiness(uid(req), req.params.id, req.params.taskId, machine.agentId)
+      })))
+      return { machines, defaultAgentId: workspace?.agentId ?? null }
+    }
+  )
+
   // Отдельный merge-ран: сервер сам берёт подготовленную ветку и main; машина —
   // по умолчанию машина workspace, agentId в теле выбирает другую машину проекта.
   app.post<{ Params: { id: string; taskId: string }; Body: { agentId?: string; provider?: 'claude' | 'codex'; model?: string } }>(
@@ -688,6 +773,12 @@ export function registerProjectRoutes(
       const project = member(req, req.params.id)
       if (!project) return nf(reply)
       try {
+        const workspace = db.findLatestPushedCiWorkspace(req.params.id, req.params.taskId)
+        const targetAgentId = req.body?.agentId ?? workspace?.agentId
+        if (merge && targetAgentId) {
+          const readiness = await merge.checkReadiness(uid(req), req.params.id, req.params.taskId, targetAgentId)
+          if (!readiness.ready) throw new Error(readiness.message)
+        }
         const run = db.startMergeRun(uid(req), req.params.id, req.params.taskId, req.body?.agentId ?? null, {
           ...(req.body?.provider ? { provider: req.body.provider } : {}),
           ...(typeof req.body?.model === 'string' ? { model: req.body.model } : {})
@@ -720,6 +811,13 @@ export function registerProjectRoutes(
 
   app.post<{ Params: { runId: string }; Body: { agentId?: string; unpin?: boolean } }>('/api/merge/runs/:runId/retry', mergeGuard, async (req, reply) => {
     try {
+      const previous = db.getMergeRun(uid(req), req.params.runId)
+      if (!previous) return nf(reply)
+      const targetAgentId = req.body?.agentId ?? previous.agentId
+      if (merge) {
+        const readiness = await merge.checkReadiness(uid(req), previous.projectId, previous.taskId, targetAgentId)
+        if (!readiness.ready) throw new Error(readiness.message)
+      }
       const run = db.retryMergeRun(uid(req), req.params.runId, req.body?.agentId ?? null, req.body?.unpin === true)
       merge?.start(run)
       boardHub.emit(run.projectId)
