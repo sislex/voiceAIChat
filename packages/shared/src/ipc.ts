@@ -322,6 +322,7 @@ export interface IpcInvokeMap {
       testCommand?: string
       productionDeployCommand?: string
       productionAgentId?: string | null
+      productionEnvironmentMode?: 'legacy' | 'managed'
       productionCheckoutPath?: string
       productionHealthCheckCommand?: string
       releaseTimeouts?: import('./release').ReleaseTimeouts
