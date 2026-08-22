@@ -157,6 +157,8 @@ export const REST = {
   uploads: '/api/uploads',
   /** Локальная AI-ретушь: crop+маска обрабатываются отдельно, результат публикуется сообщением. */
   imageRetouch: '/api/images/retouch',
+  /** Явная публикация временного managed-результата в artifacts разговора. */
+  artifactPublish: '/api/artifacts/publish',
   /** Чтение файла с диска сервера (только «своя» область) — картинки от CLI. */
   serverFile: '/api/files/read',
   /** Same-origin прокси внешнего сайта для iframe-превью. */

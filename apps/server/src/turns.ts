@@ -20,6 +20,7 @@ import {
   isProviderAllowed,
   claudeModelAlias,
   normalizeClaudeModel,
+  parseImages,
   type ActiveTurn,
   type AgentPolicy,
   type ClaudeInitInfo,
@@ -36,6 +37,7 @@ import {
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
+import { resolveManagedChatStorage } from './uploads.js'
 import type { LlmClient, LlmHandle } from './claude/types.js'
 import type { KnowledgeBaseService } from './kb/types.js'
 import { kbViewOf } from './kb/access.js'
@@ -100,6 +102,7 @@ export interface TurnManagerDeps {
     policyOf(id: string): AgentPolicy | undefined
     /** Файловые операции машины — нужны, чтобы переложить туда картинки хода. */
     fsList?(id: string, path: string): Promise<{ root: string }>
+    fsRead?(id: string, path: string): Promise<{ dataBase64?: string }>
     fsMkdir?(id: string, path: string): Promise<unknown>
     fsWrite?(id: string, path: string, dataBase64: string): Promise<unknown>
   }
@@ -782,18 +785,38 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
           const prepared = (async (): Promise<string> => {
             const a = deps.agents
-            if (!target || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.readServerFile) {
+            const binding = deps.db.getChatStorageBinding(userId, conversationId)
+            const destinationAgentId = binding?.machineId ?? target
+            if (!destinationAgentId || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.readServerFile) {
+              if (binding) return `${parseImages(taskLaunch.text).body}\n\nНе удалось сохранить изображение: файловый доступ к MachineStorage недоступен.`
               return taskLaunch.text
             }
             try {
-              return await relocateImagesToMachine(taskLaunch.text, target, {
+              const managed = await resolveManagedChatStorage(userId, conversationId, {
+                getBinding: (uid, id) => deps.db.getChatStorageBinding(uid, id),
+                listStorages: (uid, machineId) => deps.db.listMachineStorages(uid, machineId),
+                ownsMachine: (uid, machineId) => deps.db.listAgents(uid).some((agent) => agent.id === machineId),
+                isOnline: (machineId) => a.isOnline(machineId),
+                verifyRoot: async (machineId, rootPath) => {
+                  await a.fsList!(machineId, rootPath)
+                  if (!a.fsRead) throw new Error('Проверка marker MachineStorage недоступна')
+                  const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
+                  const marker = await a.fsRead(machineId, `${rootPath.replace(/[/\\]$/, '')}${separator}.voicechat${separator}storage.json`)
+                  const parsed = JSON.parse(Buffer.from(marker.dataBase64 ?? '', 'base64').toString('utf8')) as { id?: string }
+                  if (parsed.id !== binding?.storageId) throw new Error('Marker привязанного хранилища отсутствует или конфликтует')
+                }
+              })
+              return await relocateImagesToMachine(taskLaunch.text, destinationAgentId, {
                 readFile: (path) => deps.readServerFile!(userId, path),
                 fsList: (id, path) => a.fsList!(id, path),
+                ...(managed ? { destinationDir: managed.generated } : {}),
                 fsMkdir: (id, path) => a.fsMkdir!(id, path),
                 fsWrite: (id, path, data) => a.fsWrite!(id, path, data)
               })
-            } catch {
-              return taskLaunch.text
+            } catch (error) {
+              if (!binding) return taskLaunch.text
+              const detail = error instanceof Error ? error.message : String(error)
+              return `${parseImages(taskLaunch.text).body}\n\nНе удалось сохранить изображение в MachineStorage: ${detail}`
             }
           })()
 

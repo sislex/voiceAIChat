@@ -28,6 +28,19 @@ export interface ImageRetouchResult {
   image: MessageAttachment
 }
 
+export interface ArtifactPublishRequest {
+  conversationId: string
+  source: MessageAttachment
+  name?: string
+  /** Явное разрешение заменить существующий artifact; по умолчанию имя уникализируется. */
+  overwrite?: boolean
+}
+
+export interface ArtifactPublishResult {
+  artifact: MessageAttachment
+  message: Message
+}
+
 export interface ImageRect { x: number; y: number; width: number; height: number }
 
 export function validateImageRetouchSelection(selection: ImageRetouchSelection, size: ImageSize): string | null {

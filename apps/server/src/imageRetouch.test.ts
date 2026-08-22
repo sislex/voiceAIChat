@@ -14,11 +14,12 @@ describe('saveRetouchedImage', () => {
       image: Buffer.from('png'),
       name: 'retouch.png',
       localRoot: '/unused',
+      targetDir: '/storage/chats/c1/.generated',
       agentId: 'machine-1',
       remote: { root: async () => '/work/project', mkdir, write }
     })
-    expect(path).toBe('/work/project/.generated_images/retouch.png')
-    expect(mkdir).toHaveBeenCalledWith('/work/project/.generated_images')
+    expect(path).toBe('/storage/chats/c1/.generated/retouch.png')
+    expect(mkdir).toHaveBeenCalledWith('/storage/chats/c1/.generated')
     expect(write).toHaveBeenCalledWith(path, Buffer.from('png').toString('base64'))
   })
 })

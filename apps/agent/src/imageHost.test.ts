@@ -57,11 +57,9 @@ describe('startImageHost — раздача картинок с машины', (
 
   it('симлинк наружу не отдаётся: имя есть в каталоге, но файл чужой', async () => {
     host = await startImageHost(root, 0)
-    // Симлинк лежит В каталоге, поэтому имя пройдёт проверку по readdir —
-    // фиксируем текущее поведение, чтобы регресс был заметен.
     writeFileSync(join(root, 'outside.png'), 'OUT')
     symlinkSync(join(root, 'outside.png'), join(host!.dir, 'link.png'))
-    expect((await get('/link.png')).status).toBe(200)
+    expect((await get('/link.png')).status).toBe(404)
   })
 
   it('метод не GET/HEAD — 405', async () => {

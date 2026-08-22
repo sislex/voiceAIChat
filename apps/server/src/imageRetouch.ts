@@ -72,6 +72,8 @@ export async function saveRetouchedImage(input: {
   image: Buffer
   name: string
   localRoot: string
+  /** Явный managed chatRoot/.generated; если задан, root машины не используется. */
+  targetDir?: string
   agentId?: string
   remote?: {
     root(): Promise<string>
@@ -81,9 +83,9 @@ export async function saveRetouchedImage(input: {
 }): Promise<string> {
   if (input.agentId) {
     if (!input.remote) throw new Error('Машина-источник недоступна для записи результата')
-    const root = await input.remote.root()
+    const root = input.targetDir ?? await input.remote.root()
     const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
-    const dir = `${root.replace(/[/\\]$/, '')}${sep}${IMAGE_HOST_DIR}`
+    const dir = input.targetDir ? root.replace(/[/\\]$/, '') : `${root.replace(/[/\\]$/, '')}${sep}${IMAGE_HOST_DIR}`
     const path = `${dir}${sep}${input.name}`
     await input.remote.mkdir(dir)
     await input.remote.write(path, input.image.toString('base64'))
