@@ -11,10 +11,12 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 
 import type { AgentInfo } from '@shared/agentProtocol'
+import type { RendererApi } from '@shared/ipc'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { SettingsPage } from './SettingsPage'
 import { ProjectMachinesSettings } from './ProjectMachinesSettings'
+import { ProjectMachineGitAccess } from './ProjectMachineGitAccess'
 
 export interface ProjectSettingsProps {
   detail: ProjectDetail
@@ -36,6 +38,7 @@ export interface ProjectSettingsProps {
   onSetReposRoot: (id: string, agentId: string, reposRoot: string) => void | Promise<void>
   onSetMachineSsh: (id: string, agentId: string, sshHost: string, sshUser: string) => void | Promise<void>
   onSetDefaultMachine: (id: string, agentId: string) => void | Promise<void>
+  gitAccessApi?: Pick<RendererApi, 'projects:gitAccessStatus' | 'projects:configureGitAccess' | 'projects:verifyGitAccess' | 'projects:deleteGitAccess' | 'projects:gitAccessDiagnostics'>
 }
 
 /** Редактор списка тегов (технологии/навыки). */
@@ -96,6 +99,8 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   const [newMember, setNewMember] = useState('')
   const [confirmDel, setConfirmDel] = useState(false)
   const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'>('general')
+  const [selectedGitMachineId, setSelectedGitMachineId] = useState('')
+  const [machineTab, setMachineTab] = useState<'settings' | 'git'>('settings')
   // Порог скрытия завершённых: черновик строкой — пустое поле это «не скрывать»
   // (null), а не 0. Синхронизируем с ответом сервера.
   const retentionOf = (v: number | null | undefined): string => (v == null ? '' : String(v))
@@ -324,7 +329,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         )}
       </div>}
 
-      {activeTab === 'machines' && <ProjectMachinesSettings
+      {activeTab === 'machines' && <><div className="proj-section"><label>Связка проекта и машины<select className="sel" aria-label="Машина для Git-доступа" value={selectedGitMachineId} onChange={(event) => { setSelectedGitMachineId(event.target.value); setMachineTab('settings') }}><option value="">Выберите машину</option>{detail.machines.filter((machine) => machine.sharedWithProject || machine.ownership === 'mine').map((machine) => <option key={machine.agentId} value={machine.agentId}>{machine.name ?? machine.agentId}</option>)}</select></label>{selectedGitMachineId && <div role="tablist" aria-label="Настройки связки"><Button size="sm" onClick={() => setMachineTab('settings')}>Настройки</Button><Button size="sm" onClick={() => setMachineTab('git')}>Git-доступ</Button></div>}</div>{machineTab === 'settings' && <ProjectMachinesSettings
         projectId={detail.id}
         machines={detail.machines}
         agents={agents}
@@ -340,7 +345,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         onSetDefault={props.onSetDefaultMachine}
         onConfigureStorage={props.onConfigureMachineStorage}
         onResetDirectory={props.onResetMachineDirectory}
-      />}
+      />}{machineTab === 'git' && selectedGitMachineId && props.gitAccessApi && <ProjectMachineGitAccess projectId={detail.id} machine={detail.machines.find((machine) => machine.agentId === selectedGitMachineId)!} repositoryUrl={detail.gitUrl ?? ''} owner={isOwner} api={props.gitAccessApi} />}</>}
 
       {activeTab === 'general' && isOwner && (
         <div className="proj-danger">
