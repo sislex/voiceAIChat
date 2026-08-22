@@ -116,8 +116,8 @@ export function recommendedEnvironmentPath(projectId: string, kind: 'production'
   return `projects/${validateStorageRelativePath(projectId)}/environments/${kind}`
 }
 
-export function recommendedPreviewEnvironmentPath(projectId: string, previewId: string): string {
-  return `projects/${validateStorageRelativePath(projectId)}/environments/previews/${validateStorageRelativePath(previewId)}`
+export function recommendedPreviewEnvironmentPath(projectId: string, taskId: string, previewId: string): string {
+  return `projects/${validateStorageRelativePath(projectId)}/tasks/${validateStorageRelativePath(taskId)}/environments/preview/${validateStorageRelativePath(previewId)}`
 }
 
 export function recommendedTaskTestEnvironmentPath(projectId: string, taskId: string): string {

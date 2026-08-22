@@ -11,7 +11,7 @@
 // не сработают. Метод — только GET/HEAD.
 
 import { createServer } from 'node:http'
-import { createReadStream, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { networkInterfaces } from 'node:os'
 
@@ -102,7 +102,11 @@ export async function startImageHost(
     const file = join(dir, name)
     let size: number
     try {
-      const st = statSync(file)
+      const realDir = realpathSync(dir)
+      const realFile = realpathSync(file)
+      const separator = realDir.endsWith('/') || realDir.endsWith('\\') ? '' : realDir.includes('\\') && !realDir.includes('/') ? '\\' : '/'
+      if (!realFile.startsWith(realDir + separator)) throw new Error('выход за каталог картинок')
+      const st = statSync(realFile)
       if (!st.isFile()) throw new Error('не файл')
       size = st.size
     } catch {
