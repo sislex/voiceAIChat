@@ -2,7 +2,16 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { isTermux, isWindows, which, resolveShell, resolveShellInfo, defaultRootDir } from './platform'
+import {
+  TERMUX_PREFIX,
+  commandEnv,
+  isTermux,
+  isWindows,
+  which,
+  resolveShell,
+  resolveShellInfo,
+  defaultRootDir
+} from './platform'
 
 describe('isTermux', () => {
   it('true по TERMUX_VERSION', () => {
@@ -13,6 +22,27 @@ describe('isTermux', () => {
   })
   it('false в обычном окружении', () => {
     expect(isTermux({ PATH: '/usr/bin' } as NodeJS.ProcessEnv)).toBe(false)
+  })
+})
+
+describe('commandEnv', () => {
+  it('добавляет android_ndk_path для Termux', () => {
+    expect(commandEnv({ TERMUX_VERSION: '1', PREFIX: TERMUX_PREFIX } as NodeJS.ProcessEnv).GYP_DEFINES)
+      .toBe(`android_ndk_path=${TERMUX_PREFIX}`)
+  })
+
+  it('сохраняет существующие GYP_DEFINES', () => {
+    expect(commandEnv({ TERMUX_VERSION: '1', PREFIX: TERMUX_PREFIX, GYP_DEFINES: 'foo=bar' } as NodeJS.ProcessEnv).GYP_DEFINES)
+      .toBe(`foo=bar android_ndk_path=${TERMUX_PREFIX}`)
+  })
+
+  it('не дублирует пользовательский android_ndk_path', () => {
+    const value = 'foo=bar android_ndk_path=/custom/ndk'
+    expect(commandEnv({ TERMUX_VERSION: '1', GYP_DEFINES: value } as NodeJS.ProcessEnv).GYP_DEFINES).toBe(value)
+  })
+
+  it('не меняет окружение вне Termux', () => {
+    expect(commandEnv({ PATH: '/usr/bin' } as NodeJS.ProcessEnv).GYP_DEFINES).toBeUndefined()
   })
 })
 
