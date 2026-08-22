@@ -24,6 +24,7 @@ import type {
   WhisperModelInfo
 } from './types'
 import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities } from './protocol'
+import type { GitAccessDiagnostics, GitAccessResult } from './gitAccess'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
 import type {
   AdminLlmEngine,
@@ -347,6 +348,11 @@ export interface IpcInvokeMap {
   'projects:setReposRoot': { arg: { id: string; agentId: string; reposRoot: string }; result: ProjectDetail }
   'projects:setMachineSsh': { arg: { id: string; agentId: string; sshHost: string; sshUser: string }; result: ProjectDetail }
   'projects:setMachinePath': { arg: { id: string; agentId: string; path: string }; result: ProjectDetail }
+  'projects:gitAccessStatus': { arg: { id: string; agentId: string; repositoryUrl: string }; result: GitAccessResult }
+  'projects:configureGitAccess': { arg: { id: string; agentId: string; repositoryUrl: string; token: string }; result: GitAccessResult }
+  'projects:verifyGitAccess': { arg: { id: string; agentId: string; repositoryUrl: string; refspec: string }; result: GitAccessResult }
+  'projects:deleteGitAccess': { arg: { id: string; agentId: string; repositoryUrl: string }; result: GitAccessResult }
+  'projects:gitAccessDiagnostics': { arg: { id: string; agentId: string; repositoryUrl: string }; result: GitAccessResult & { diagnostics?: GitAccessDiagnostics } }
   /** Назначить legacy/production-машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Назначить персональную машину пользователя по умолчанию для проекта. */
@@ -871,6 +877,11 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:configureMachineStorage',
   'projects:resetMachineDirectory',
   'projects:setMachinePath',
+  'projects:gitAccessStatus',
+  'projects:configureGitAccess',
+  'projects:verifyGitAccess',
+  'projects:deleteGitAccess',
+  'projects:gitAccessDiagnostics',
   'projects:setReposRoot',
   'projects:setMachineSsh',
   'projects:setDefaultMachine',

@@ -20,6 +20,7 @@ import { fsDelete, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.
 import { createTelemetryCollector } from './telemetry.js'
 import { resolveShellInfo } from './platform.js'
 import { ensureImageDir, localAddresses, startImageHost, type ImageHost } from './imageHost.js'
+import { handleGitAccess } from './gitAccess.js'
 
 const BACKOFF_START_MS = 1_000
 const BACKOFF_MAX_MS = 30_000
@@ -228,6 +229,10 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
         case 'exec.cancel':
           handlers.onLog?.('отмена команды')
           cancelCommand(msg.execId)
+          break
+        case 'git.access':
+          // Секретная специализированная операция: не логируем request и не строим shell-команду.
+          send({ t: 'git.access.result', requestId: msg.requestId, result: handleGitAccess(msg.request) })
           break
         case 'pty.start':
           // Живой терминал: доверенный shell без per-command гейта (см. docs/plans/PTY_CONSOLE.md).

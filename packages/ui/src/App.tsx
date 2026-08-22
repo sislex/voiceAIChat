@@ -1630,6 +1630,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 onSetReposRoot={(id, agentId, root) => projectsActions.setProjectReposRoot(id, agentId, root)}
                 onSetMachineSsh={(id, agentId, host, user) => projectsActions.setProjectMachineSsh(id, agentId, host, user)}
                 onSetDefaultMachine={(id, agentId) => void projectsActions.setProjectDefaultMachine(id, agentId)}
+                gitAccessApi={{
+                  'projects:gitAccessStatus': api['projects:gitAccessStatus'],
+                  'projects:configureGitAccess': api['projects:configureGitAccess'],
+                  'projects:verifyGitAccess': api['projects:verifyGitAccess'],
+                  'projects:deleteGitAccess': api['projects:deleteGitAccess'],
+                  'projects:gitAccessDiagnostics': api['projects:gitAccessDiagnostics']
+                }}
               />
             ) : (
               <div className="proj-page-state" aria-busy="true">

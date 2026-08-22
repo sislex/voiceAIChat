@@ -416,6 +416,74 @@ export function registerProjectRoutes(
     }
   )
 
+  // --- Git-доступ конкретной связки project + machine -------------------
+  const gitMachine = (req: FastifyRequest, reply: FastifyReply, projectId: string, agentId: string, write: boolean): ProjectDetail | FastifyReply => {
+    const project = member(req, projectId)
+    if (!project || !project.machines.some((machine) => machine.agentId === agentId && (machine.ownership === 'mine' || machine.sharedWithProject))) return nf(reply)
+    if (write && project.role !== 'owner') return forbidden(reply)
+    if (!agents?.isOnline(agentId)) return reply.code(409).send({ error: 'machine_offline', code: 'machine_offline' })
+    return project
+  }
+  const gitError = (reply: FastifyReply, error: unknown): FastifyReply => {
+    const code = errMessage(error) === 'machine_offline' ? 'machine_offline' : 'repository_unavailable'
+    return reply.code(409).send({ error: code, code })
+  }
+  app.get<{ Params: { id: string; agentId: string }; Querystring: { repositoryUrl?: string } }>(
+    '/api/projects/:id/machines/:agentId/git-access',
+    async (req, reply) => {
+      if (!req.query.repositoryUrl) return badReq(reply, 'repositoryUrl required')
+      const gate = gitMachine(req, reply, req.params.id, req.params.agentId, false)
+      if ('statusCode' in gate) return gate
+      try { return await agents!.gitAccess(req.params.agentId, { operation: 'status', repositoryUrl: req.query.repositoryUrl }) }
+      catch (error) { return gitError(reply, error) }
+    }
+  )
+  app.post<{ Params: { id: string; agentId: string }; Body: { repositoryUrl?: string; token?: string } }>(
+    '/api/projects/:id/machines/:agentId/git-access/configure',
+    async (req, reply) => {
+      const repositoryUrl = req.body?.repositoryUrl?.trim(), token = req.body?.token
+      if (!token) return reply.code(400).send({ error: 'token_missing', code: 'token_missing' })
+      if (!repositoryUrl) return badReq(reply, 'repositoryUrl required')
+      const gate = gitMachine(req, reply, req.params.id, req.params.agentId, true)
+      if ('statusCode' in gate) return gate
+      try { return await agents!.gitAccess(req.params.agentId, { operation: 'configure', repositoryUrl, token }) }
+      catch (error) { return gitError(reply, error) }
+    }
+  )
+  app.post<{ Params: { id: string; agentId: string }; Body: { repositoryUrl?: string; refspec?: string } }>(
+    '/api/projects/:id/machines/:agentId/git-access/verify',
+    async (req, reply) => {
+      const repositoryUrl = req.body?.repositoryUrl?.trim(), refspec = req.body?.refspec?.trim()
+      if (!repositoryUrl) return badReq(reply, 'repositoryUrl required')
+      if (!refspec || !/^refs\/heads\/[A-Za-z0-9._/-]+:refs\/heads\/[A-Za-z0-9._/-]+$/.test(refspec) || refspec.includes('..')) return badReq(reply, 'invalid refspec')
+      const gate = gitMachine(req, reply, req.params.id, req.params.agentId, true)
+      if ('statusCode' in gate) return gate
+      try { return await agents!.gitAccess(req.params.agentId, { operation: 'verify', repositoryUrl, refspec }) }
+      catch (error) { return gitError(reply, error) }
+    }
+  )
+  app.delete<{ Params: { id: string; agentId: string }; Body: { repositoryUrl?: string } }>(
+    '/api/projects/:id/machines/:agentId/git-access',
+    async (req, reply) => {
+      const repositoryUrl = req.body?.repositoryUrl?.trim()
+      if (!repositoryUrl) return badReq(reply, 'repositoryUrl required')
+      const gate = gitMachine(req, reply, req.params.id, req.params.agentId, true)
+      if ('statusCode' in gate) return gate
+      try { return await agents!.gitAccess(req.params.agentId, { operation: 'delete', repositoryUrl }) }
+      catch (error) { return gitError(reply, error) }
+    }
+  )
+  app.get<{ Params: { id: string; agentId: string }; Querystring: { repositoryUrl?: string } }>(
+    '/api/projects/:id/machines/:agentId/git-access/diagnostics',
+    async (req, reply) => {
+      if (!req.query.repositoryUrl) return badReq(reply, 'repositoryUrl required')
+      const gate = gitMachine(req, reply, req.params.id, req.params.agentId, false)
+      if ('statusCode' in gate) return gate
+      try { return await agents!.gitAccess(req.params.agentId, { operation: 'diagnostics', repositoryUrl: req.query.repositoryUrl }) }
+      catch (error) { return gitError(reply, error) }
+    }
+  )
+
   // --- Доска -----------------------------------------------------------
 
   // includeCompleted=1 — вместе с давно завершёнными задачами (по умолчанию их
