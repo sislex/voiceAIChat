@@ -129,9 +129,9 @@ function useCodex(userId: string): void {
 }
 
 describe('подготовка к разработке: движок из настроек', () => {
-  it('пользователь на Codex: запрос уходит в Codex-клиент и подготовка проходит', async () => {
+  it('проект на Codex: запрос уходит в Codex-клиент и подготовка проходит', async () => {
     const { project, task } = await taskInBacklog()
-    useCodex('bob')
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: DEFAULT_CODEX_MODEL, mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
 
     const run = await settled(bobTok, (await launch(bobTok, project.id, task.id)).id)
 
@@ -178,14 +178,29 @@ describe('подготовка к разработке: движок из нас
     expect(claudeCalls[0].prompt).toContain('Не спрашивай доступ к машине или репозиторию')
   })
 
-  it('явный выбор при запуске перебивает наследование и сохраняется снимком попытки', async () => {
+  it('разовый выбор при запуске не перебивает модель проекта', async () => {
     const { project, task } = await taskInBacklog()
-    const launched = await launch(adminTok, project.id, task.id, { provider: 'codex', model: 'gpt-5.4-mini', llmEngineId: null })
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    const launched = await launch(adminTok, project.id, task.id, { provider: 'claude', model: 'haiku', llmEngineId: null })
     const run = await settled(adminTok, launched.id)
 
     expect(claudeCalls).toHaveLength(0)
-    expect(codexCalls.map((call) => call.model)).toEqual(['gpt-5.4-mini'])
-    expect(run).toMatchObject({ provider: 'codex', model: 'gpt-5.4-mini', llmEngineId: null })
+    expect(codexCalls.map((call) => call.model)).toEqual(['gpt-5.6-sol'])
+    expect(run).toMatchObject({ provider: 'codex', model: 'gpt-5.6-sol', llmEngineId: null })
+  })
+
+  it('отклоняет недоступную проектную модель до создания попытки без скрытой подмены', async () => {
+    const { project, task } = await taskInBacklog()
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.setUserLlmAccess('bob', [{ provider: 'codex', modelId: 'gpt-5.6-sol' }])
+
+    const response = await inj(bobTok, { method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/preparation/run`, payload: {} })
+
+    expect(response.statusCode).toBe(409)
+    expect(response.json().error).toContain('Проектная модель codex:gpt-5.6-sol недоступна пользователю')
+    expect(db.listTaskPreparationRuns('bob', project.id, task.id)).toHaveLength(0)
+    expect(claudeCalls).toHaveLength(0)
+    expect(codexCalls).toHaveLength(0)
   })
 
   it('Claude без явной модели: прежний sonnet', async () => {
@@ -209,7 +224,7 @@ describe('подготовка к разработке: движок из нас
     expect(planning.json()).toMatchObject({ effective: { provider: 'codex', model: DEFAULT_CODEX_MODEL } })
   })
 
-  it('наследование: этап задачи → этап проекта → модель проекта → настройки пользователя', async () => {
+  it('игнорирует настройки planning и использует модель проекта для каждой новой попытки', async () => {
     const { project, task, backlogId } = await taskInBacklog()
     useCodex('bob')
     // Успешная подготовка увозит задачу в Ready for Development, а запускать её
@@ -219,30 +234,23 @@ describe('подготовка к разработке: движок из нас
       await settled(bobTok, (await launch(bobTok, project.id, task.id)).id)
     }
 
-    // Модель проекта перебивает настройки пользователя.
     db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    db.setCiStageLlmConfig('project', project.id, 'planning', { provider: 'claude', model: 'fable' })
+    db.setCiStageLlmConfig('task', task.id, 'planning', { provider: 'codex', model: 'gpt-5.4-mini' })
     await prepare()
     expect(codexCalls).toHaveLength(0)
     expect(claudeCalls.map((call) => call.model)).toEqual(['haiku'])
 
-    // Этап проекта перебивает модель проекта.
-    db.setCiStageLlmConfig('project', project.id, 'planning', { provider: 'claude', model: 'fable' })
-    // Этап задачи перебивает всё остальное.
-    db.setCiStageLlmConfig('task', task.id, 'planning', { provider: 'codex', model: 'gpt-5.4-mini' })
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     await prepare()
-    expect(claudeCalls).toHaveLength(1)
-    expect(codexCalls.map((call) => call.model)).toEqual(['gpt-5.4-mini'])
-
-    db.clearCiStageLlmConfig('task', task.id, 'planning')
-    await prepare()
-    expect(claudeCalls.map((call) => call.model)).toEqual(['haiku', 'fable'])
+    expect(codexCalls.map((call) => call.model)).toEqual(['gpt-5.6-sol'])
   })
 })
 
 describe('подготовка к разработке: диагностика и контракт', () => {
   it('ошибка авторизации CLI называет движок и профиль пользователя', async () => {
     const { project, task } = await taskInBacklog()
-    useCodex('bob')
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: DEFAULT_CODEX_MODEL, mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     codexAnswer = () => ({ error: 'Failed to authenticate: OAuth session expired and could not be refreshed' })
 
     const run = await settled(bobTok, (await launch(bobTok, project.id, task.id)).id)
@@ -376,7 +384,7 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls).toHaveLength(1)
   })
 
-  it('после двух невалидных ответов переключается на другую модель и сохраняет восстановленный brief', async () => {
+  it('после двух невалидных ответов выполняет recovery той же проектной моделью', async () => {
     const { project, task } = await taskInBacklog()
     const broken = JSON.stringify({ ...JSON.parse(compatibleReadiness()), functionalRequirements: ['сломанный тип'] })
     const recovered = JSON.parse(compatibleReadiness())
@@ -384,21 +392,21 @@ describe('подготовка к разработке: диагностика �
     recovered.acceptanceCriteria += '\\n2. Дефект подготовки предотвращён проверяемыми инфраструктурными изменениями'
     recovered.acceptanceCriteriaItems.push({ id: 'AC-INFRA', title: 'Защита подготовки', precondition: 'Модель вернула совместимый вариант', action: 'Выполнена нормализация и валидация', observableResult: 'Brief проходит без повторения класса ошибки' })
     recovered.testCases.push({ ...recovered.testCases[0], id: 'TC-INFRA', title: 'Регрессия recovery' })
-    claudeAnswer = () => ({ text: broken })
-    codexAnswer = () => ({ text: JSON.stringify(recovered) })
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    codexAnswer = (attempt) => ({ text: attempt < 3 ? broken : JSON.stringify(recovered) })
 
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
     expect(run.status).toBe('success')
-    expect(claudeCalls).toHaveLength(2)
-    expect(codexCalls).toHaveLength(1)
-    expect(codexCalls[0].model).not.toBe(claudeCalls[0].model)
-    expect(codexCalls[0].prompt).toContain('Исходный ответ:')
-    expect(codexCalls[0].prompt).toContain('Повторный ответ:')
-    expect(codexCalls[0].prompt).toContain('functionalRequirements должен быть строкой')
-    expect(codexCalls[0].prompt).toContain('kind:knowledge|hierarchy|related_tasks|code|tests|storybook')
+    expect(claudeCalls).toHaveLength(0)
+    expect(codexCalls).toHaveLength(3)
+    expect(codexCalls.map((call) => call.model)).toEqual(['gpt-5.6-sol', 'gpt-5.6-sol', 'gpt-5.6-sol'])
+    expect(codexCalls[2].prompt).toContain('Исходный ответ:')
+    expect(codexCalls[2].prompt).toContain('Повторный ответ:')
+    expect(codexCalls[2].prompt).toContain('functionalRequirements должен быть строкой')
+    expect(codexCalls[2].prompt).toContain('kind:knowledge|hierarchy|related_tasks|code|tests|storybook')
     expect(run.readiness?.scope).toEqual(expect.arrayContaining(['Усилить prompt/schema', 'Актуализировать БЗ']))
-    expect(run.events?.some((event) => event.type === 'recovery_started' && event.text.includes('claude:sonnet'))).toBe(true)
+    expect(run.events?.some((event) => event.type === 'recovery_started' && event.text.includes('codex:gpt-5.6-sol'))).toBe(true)
     expect(run.events?.some((event) => event.type === 'recovery_completed')).toBe(true)
   })
 
@@ -406,13 +414,12 @@ describe('подготовка к разработке: диагностика �
     const { project, task } = await taskInBacklog()
     const broken = JSON.stringify({ ...JSON.parse(compatibleReadiness()), functionalRequirements: ['сломанный тип'] })
     claudeAnswer = () => ({ text: broken })
-    codexAnswer = () => ({ text: broken })
 
     const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
 
     expect(run.status).toBe('blocked')
-    expect(claudeCalls).toHaveLength(2)
-    expect(codexCalls).toHaveLength(1)
+    expect(claudeCalls).toHaveLength(3)
+    expect(codexCalls).toHaveLength(0)
     expect(run.readiness).toBeNull()
     expect(run.error).toContain('Recovery Development Brief завершился ошибкой')
     expect(run.error).toContain('functionalRequirements должен быть строкой')
@@ -449,17 +456,6 @@ describe('подготовка к разработке: диагностика �
 })
 
 describe('подготовка к разработке: выбор модели и текст ошибки', () => {
-  it('читает явную recovery-политику из конфигурации', () => {
-    const config = loadConfig({
-      PORT: '0',
-      VC_DATA_DIR: join(tmpdir(), 'vc-prep-config'),
-      VC_TASK_PREPARATION_RECOVERY_PROVIDER: 'codex',
-      VC_TASK_PREPARATION_RECOVERY_MODEL: 'gpt-5.5'
-    })
-    expect(config.taskPreparationRecoveryProvider).toBe('codex')
-    expect(config.taskPreparationRecoveryModel).toBe('gpt-5.5')
-  })
-
   it('модель по умолчанию зависит от движка, явная — сохраняется', () => {
     expect(taskPreparationModel('claude', '')).toBe('sonnet')
     expect(taskPreparationModel('claude', 'default')).toBe('sonnet')
@@ -478,9 +474,10 @@ describe('подготовка к разработке: выбор модели 
 })
 
 describe('интерактивная попытка, события и экспорт', () => {
-  it('сохраняет монотонную ленту, атомарно принимает первый ответ и продолжает ту же попытку', async () => {
+  it('сохраняет монотонную ленту и продолжает попытку через её LLM-снимок после смены проекта', async () => {
     const { project, task } = await taskInBacklog()
-    claudeAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify({ question: 'Какой публичный контракт обязателен?', material: true }) : READINESS })
+    db.setCiLlmConfig('project', project.id, { provider: 'codex', model: 'gpt-5.6-sol', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
+    codexAnswer = (attempt) => ({ text: attempt === 1 ? JSON.stringify({ question: 'Какой публичный контракт обязателен?', material: true }) : READINESS })
     const started = await launch(adminTok, project.id, task.id)
     let waiting: TaskPreparationRun | null = null
     for (let i = 0; i < 100; i++) {
@@ -489,6 +486,8 @@ describe('интерактивная попытка, события и эксп�
       await new Promise((resolve) => setTimeout(resolve, 5))
     }
     expect(waiting?.questions).toHaveLength(1)
+    expect(waiting).toMatchObject({ provider: 'codex', model: 'gpt-5.6-sol' })
+    db.setCiLlmConfig('project', project.id, { provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
     const questionId = waiting!.questions![0].questionId
     const first = await inj(adminTok, { method: 'POST', url: `/api/task-preparation/questions/${questionId}/answer`, payload: { answer: 'REST v2' } })
     const duplicate = await inj(adminTok, { method: 'POST', url: `/api/task-preparation/questions/${questionId}/answer`, payload: { answer: 'Другое решение' } })
@@ -498,6 +497,8 @@ describe('интерактивная попытка, события и эксп�
     expect(done.id).toBe(started.id)
     expect(done.events!.map((event) => event.sequence)).toEqual(done.events!.map((_event, index) => index + 1))
     expect(done.events!.some((event) => event.type === 'answer_accepted')).toBe(true)
+    expect(claudeCalls).toHaveLength(0)
+    expect(codexCalls.map((call) => call.model)).toEqual(['gpt-5.6-sol', 'gpt-5.6-sol'])
   })
 
   it('восстанавливает и дедуплицирует уведомление, хранит закрытие и убирает его после ответа', async () => {
