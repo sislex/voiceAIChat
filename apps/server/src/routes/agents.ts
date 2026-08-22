@@ -178,6 +178,15 @@ export async function registerAgentRoutes(
         if (!marker || marker.id !== storage.id || marker.formatVersion !== storage.formatVersion) {
           return { ...storage, primary: index === 0, status: 'unavailable' as const, error: 'Marker хранилища отсутствует или конфликтует' }
         }
+        const probe = storagePath(storage.rootPath, platform, `.voicechat/temporary/write-probe-${randomUUID()}`)
+        try {
+          await registry.fsWrite(storage.machineId, probe, Buffer.from('ok').toString('base64'))
+          await registry.fsDelete(storage.machineId, probe)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          if (/EACCES|EPERM|read.only|permission|denied|доступ/i.test(message)) return { ...storage, primary: index === 0, status: 'read-only' as const, error: 'Хранилище доступно только для чтения' }
+          throw error
+        }
         return { ...storage, primary: index === 0, status: 'ready' as const }
       } catch (error) {
         return { ...storage, primary: index === 0, status: 'unavailable' as const, error: storageError(error) }

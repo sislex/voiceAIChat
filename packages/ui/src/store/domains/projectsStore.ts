@@ -6,7 +6,7 @@
 // правило то же, что у прочих доменов: другие хранилища он не импортирует, а с
 // Chat разговаривает только через порт, который выдаёт AppRuntime.
 
-import type { Board, ProjectDetail, ProjectSummary, Task, TaskChatBadge, WorkItemType, TaskPriority } from '@shared/projects'
+import type { Board, ProjectDetail, ProjectSummary, Task, TaskChatBadge, WorkItemType, TaskPriority, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
 import type {
   CiCommand,
   CiCommandInput,
@@ -104,6 +104,8 @@ export interface ProjectsActions {
   removeProjectMember(id: string, username: string): Promise<void>
   linkProjectMachine(id: string, agentId: string): Promise<void>
   unlinkProjectMachine(id: string, agentId: string): Promise<void>
+  configureProjectMachineStorage(id: string, agentId: string, storageId: string, directories?: ProjectMachineDirectoryAssignments): Promise<void>
+  resetProjectMachineDirectory(id: string, agentId: string, kind: ProjectMachineDirectoryKind): Promise<void>
   setProjectMachinePath(id: string, agentId: string, path: string): Promise<void>
   setProjectReposRoot(id: string, agentId: string, reposRoot: string): Promise<void>
   setProjectMachineSsh(id: string, agentId: string, sshHost: string, sshUser: string): Promise<void>
@@ -551,6 +553,22 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           setState({ projectDetail: await client['projects:unlinkMachine']({ id, agentId }) })
         } catch (err) {
           fail(err)
+        }
+      },
+      async configureProjectMachineStorage(id, agentId, storageId, directories) {
+        try {
+          setState({ projectDetail: await client['projects:configureMachineStorage']({ id, agentId, storageId, directories }) })
+        } catch (err) {
+          fail(err)
+          throw err
+        }
+      },
+      async resetProjectMachineDirectory(id, agentId, kind) {
+        try {
+          setState({ projectDetail: await client['projects:resetMachineDirectory']({ id, agentId, kind }) })
+        } catch (err) {
+          fail(err)
+          throw err
         }
       },
       async setProjectMachinePath(id, agentId, path) {

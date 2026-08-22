@@ -66,8 +66,9 @@ afterEach(async () => {
 })
 
 describe('REST: хранилище машины', () => {
-  function connectFs(machineId: string, failMkdir = false) {
+  function connectFs(machineId: string, failMkdir = false, failWrite = false) {
     const directories = new Set<string>()
+    let writeBlocked = failWrite
     const files = new Map<string, string>()
     const socket = {
       close: vi.fn(),
@@ -80,7 +81,12 @@ describe('REST: хранилище машины', () => {
           return agentRegistry.handleMessage(machineId, { t: 'fs.result', opId: message.opId, result: { root: '/', cwd: message.path } })
         }
         if (message.t === 'fs.write') {
+          if (writeBlocked) return agentRegistry.handleMessage(machineId, { t: 'fs.error', opId: message.opId, message: 'EROFS read-only file system' })
           files.set(message.path, message.dataBase64 ?? '')
+          return agentRegistry.handleMessage(machineId, { t: 'fs.result', opId: message.opId, result: { root: '/', cwd: message.path } })
+        }
+        if (message.t === 'fs.delete') {
+          files.delete(message.path)
           return agentRegistry.handleMessage(machineId, { t: 'fs.result', opId: message.opId, result: { root: '/', cwd: message.path } })
         }
         if (message.t === 'fs.read') {
@@ -97,7 +103,7 @@ describe('REST: хранилище машины', () => {
       }
     }
     agentRegistry.register(machineId, 'Мак', socket, db.listAgents(U).find((item) => item.id === machineId)!.policy, '0.11.0')
-    return { directories, files }
+    return { directories, files, setFailWrite: (value: boolean) => { writeBlocked = value } }
   }
 
   it('готовит marker до записи в БД, сохраняет id и проверяет фактический status', async () => {
@@ -111,6 +117,33 @@ describe('REST: хранилище машины', () => {
     expect(second.json().id).toBe(first.json().id)
     const listed = await inj({ method: 'GET', url: `/api/agents/${machine.id}/storages` })
     expect(listed.json()[0]).toMatchObject({ id: first.json().id, status: 'ready', primary: true })
+  })
+
+  it('материализует каталоги и project marker до сохранения машины проекта', async () => {
+    const machine = db.createAgent(U, 'Project machine')
+    const fs = connectFs(machine.id)
+    const storageResponse = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })
+    const projectResponse = await inj({ method: 'POST', url: '/api/projects', payload: { name: 'Managed project' } })
+    const projectId = projectResponse.json().id as string
+    const linked = await inj({ method: 'POST', url: `/api/projects/${projectId}/machines`, payload: { agentId: machine.id, storageId: storageResponse.json().id } })
+    expect(linked.statusCode).toBe(200)
+    const configured = linked.json().machines.find((item: { agentId: string }) => item.agentId === machine.id)
+    expect(configured.path).toContain(`/projects/${projectId}/worktree`)
+    expect(configured.reposRoot).toContain(`/projects/${projectId}/repositories`)
+    expect(fs.directories).toContain(`/Users/me/ChatAI/projects/${projectId}/environments/production`)
+    const marker = Buffer.from(fs.files.get(`/Users/me/ChatAI/projects/${projectId}/project.json`) ?? '', 'base64').toString('utf8')
+    expect(JSON.parse(marker)).toMatchObject({ formatVersion: 1, projectId })
+  })
+
+  it('показывает зарегистрированное хранилище только для чтения', async () => {
+    const machine = db.createAgent(U, 'Read only')
+    const fs = connectFs(machine.id)
+    const created = await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Volumes/ReadOnly/ChatAI' } })
+    expect(created.statusCode).toBe(200)
+    fs.setFailWrite(true)
+    const listed = await inj({ method: 'GET', url: `/api/agents/${machine.id}/storages` })
+    expect(listed.json()[0]).toMatchObject({ status: 'read-only', error: expect.stringContaining('только для чтения') })
+    expect(fs.files.size).toBeGreaterThan(0)
   })
 
   it('не оставляет ready-запись при ошибке прав', async () => {

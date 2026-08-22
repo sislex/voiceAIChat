@@ -310,10 +310,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectMember(id, username), { method: 'PATCH', body: JSON.stringify({ role }) }),
     'projects:removeMember': ({ id, username }) =>
       req(REST.projectMember(id, username), { method: 'DELETE' }),
-    'projects:linkMachine': ({ id, agentId }) =>
-      req(REST.projectMachines(id), { method: 'POST', body: JSON.stringify({ agentId }) }),
+    'projects:linkMachine': ({ id, agentId, storageId }) =>
+      req(REST.projectMachines(id), { method: 'POST', body: JSON.stringify({ agentId, storageId }) }),
     'projects:unlinkMachine': ({ id, agentId }) =>
       req(REST.projectMachine(id, agentId), { method: 'DELETE' }),
+    'projects:configureMachineStorage': ({ id, agentId, storageId, directories }) =>
+      req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ storageId, directories }) }),
+    'projects:resetMachineDirectory': ({ id, agentId, kind }) =>
+      req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ resetDirectory: kind }) }),
     'projects:setMachinePath': ({ id, agentId, path }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ path }) }),
     'projects:setReposRoot': ({ id, agentId, reposRoot }) =>

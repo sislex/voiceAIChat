@@ -1624,6 +1624,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 onRemoveMember={(id, username) => void projectsActions.removeProjectMember(id, username)}
                 onLinkMachine={(id, agentId) => void projectsActions.linkProjectMachine(id, agentId)}
                 onUnlinkMachine={(id, agentId) => void projectsActions.unlinkProjectMachine(id, agentId)}
+                onConfigureMachineStorage={(id, agentId, storageId, directories) => projectsActions.configureProjectMachineStorage(id, agentId, storageId, directories)}
+                onResetMachineDirectory={(id, agentId, kind) => projectsActions.resetProjectMachineDirectory(id, agentId, kind)}
                 onSetMachinePath={(id, agentId, path) => projectsActions.setProjectMachinePath(id, agentId, path)}
                 onSetReposRoot={(id, agentId, root) => projectsActions.setProjectReposRoot(id, agentId, root)}
                 onSetMachineSsh={(id, agentId, host, user) => projectsActions.setProjectMachineSsh(id, agentId, host, user)}

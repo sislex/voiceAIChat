@@ -8,7 +8,7 @@ import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo, ModelPrice } 
 import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
-import type { Board, KanbanColumn, ProjectDetail, ProjectMember, ProjectSummary, Task, WorkItemDefaultSkills } from '@shared/projects'
+import type { Board, KanbanColumn, ProjectDetail, ProjectMachine, ProjectMember, ProjectSummary, Task, WorkItemDefaultSkills } from '@shared/projects'
 import { compareTasksInColumn, issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS } from '@shared/projects'
 
 
@@ -713,6 +713,18 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const p = projects.find((x) => x.id === id)!
       p.machines = p.machines.filter((m) => m.agentId !== agentId)
       if (p.defaultAgentId === agentId) p.defaultAgentId = null
+      return detail(p)
+    },
+    'projects:configureMachineStorage': async ({ id, agentId, storageId, directories }) => {
+      const p = projects.find((x) => x.id === id)!
+      const m = p.machines.find((x) => x.agentId === agentId)
+      if (m) Object.assign(m, { storageId, directories, path: directories?.projectWorkdir.path ?? m.path, reposRoot: directories?.reposRoot.path ?? m.reposRoot })
+      return detail(p)
+    },
+    'projects:resetMachineDirectory': async ({ id, agentId, kind }) => {
+      const p = projects.find((x) => x.id === id)!
+      const m = p.machines.find((x) => x.agentId === agentId) as ProjectMachine | undefined
+      if (m?.directories && m.recommendations) m.directories[kind] = { path: m.recommendations[kind], override: false }
       return detail(p)
     },
     'projects:setMachinePath': async ({ id, agentId, path }) => {
