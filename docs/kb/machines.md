@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-21
-checked: a460971a
+checked: 33d57bbe
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -673,8 +673,23 @@ id и версией marker, `unavailable` — недоступный катал
 там же зафиксированы пути `projects/<projectId>/environments/{production|staging}` и
 `projects/<projectId>/tasks/<taskId>/environments/test`.
 
-Текущая реализация создаёт только корень и минимальную `.voicechat`: каталоги чатов,
-проектов и окружений, а также `chat.json`, `project.json`, `task.json`, `run.json`,
-`report.json`, `environment.json` и `temporary/repository` этим контрактом пока не
-создаются. В БД реализованы только реестр корней и привязка файловой директории чата;
-production/task-preview lifecycle и перенос постоянных данных в этот срез не входят.
+При сохранении привязки сервер лениво создаёт `global`, `chats`, `projects`,
+изолированный каталог разговора с `attachments`, `artifacts`, `.generated` и
+`chat.json`, а для проектного/task-чата — `shared`, `project.json`, `task.json`,
+`runs` и окружения. Production, staging и task-test получают собственные `app`,
+`config`, `logs`, `artifacts`, `temporary/repository` и `environment.json`; корень
+`previews` создаётся заранее, но конкретный preview по-прежнему появляется только
+после явной операции. Существующие manifest-файлы не перезаписываются.
+
+Новые вложения разговора с такой привязкой записываются в его `attachments` внутри
+выбранного storage. Без привязки сохраняется совместимый `.voicechat_uploads` в корне
+проводника; старые файлы не перемещаются и не удаляются. Настройки разговора независимо
+показывают машину, storage/относительный файловый каталог и рабочий Git-cwd; offline и
+unavailable storage остаются в списке с отметкой состояния.
+
+Новый CI-workspace при наличии storage машины живёт в стабильном
+`projects/<projectId>/tasks/<taskId>/environments/test/temporary/repository/<taskKey>`;
+повторный ран той же задачи переиспользует этот путь. Если storage ещё не настроен,
+раннер продолжает использовать legacy `project_machines.reposRoot`. Полный lifecycle
+production-переноса, manifest-файлы `run.json`/`report.json`, TTL-очистка `.generated`
+и явный мастер миграции старых данных пока не реализованы.

@@ -1346,7 +1346,13 @@ fi`
     }
     const machine = project.machines.find((m) => m.agentId === agentId)
     const machinePath = machine?.path?.trim().replace(/\/$/, '') || ''
-    const repoRoot = machine?.reposRoot?.trim().replace(/\/$/, '') || machinePath.replace(/\/[^/]+$/, '')
+    const legacyRepoRoot = machine?.reposRoot?.trim().replace(/\/$/, '') || machinePath.replace(/\/[^/]+$/, '')
+    // Новые workspace живут в выбранном MachineStorage. Старый reposRoot остаётся
+    // безопасным fallback: существующие абсолютные пути не мигрируют автоматически.
+    const managedStorage = deps.db.listMachineStorages(userId, agentId)[0]
+    const repoRoot = managedStorage
+      ? `${managedStorage.rootPath.replace(/[/\\]$/, '')}/projects/${runRow.projectId}/tasks/${runRow.taskId}/environments/test/temporary`
+      : legacyRepoRoot
     const projectSlug = slugify(project.name)
     const taskNumber = issueKey(project.name, task)
     // The issue key (for example CHAT-172) is the stable, human-readable task
@@ -1354,7 +1360,7 @@ fi`
     // checkout directories never depend on the mutable task title.
     const slug = taskNumber
     const branch = (project.ciBranchTemplate || '{task_number}').replace('{task_number}', taskNumber).replace('{slug}', slugify(task.title))
-    const commandWorkspacePath = `${repoRoot}/${projectSlug}`
+    const commandWorkspacePath = managedStorage ? `${repoRoot}/repository` : `${repoRoot}/${projectSlug}`
     const workspacePath = `${commandWorkspacePath}/${taskNumber}`
     const taskKey = `${projectSlug}-${task.seq ?? 0}`
     // Изолированный кэш npm на задачу. Общий `~/.npm` ломался, когда два `npm ci`

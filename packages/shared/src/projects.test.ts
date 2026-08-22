@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedTaskTestEnvironmentPath, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -140,6 +140,11 @@ describe('portable storage paths', () => {
     expect(recommendedChatStoragePath({ kind: 'task', projectId: 'p-1', taskId: 't-1', conversationId: 'c-1' })).toBe('projects/p-1/tasks/t-1/chats/c-1')
     expect(recommendedEnvironmentPath('p-1', 'production')).toBe('projects/p-1/environments/production')
     expect(recommendedTaskTestEnvironmentPath('p-1', 't-1')).toBe('projects/p-1/tasks/t-1/environments/test')
+    expect(recommendedPreviewEnvironmentPath('p-1', 'pr-1')).toBe('projects/p-1/environments/previews/pr-1')
+    expect(managedChatAttachmentsPath('chats/c-1')).toBe('chats/c-1/attachments')
+    expect(managedChatArtifactsPath('chats/c-1')).toBe('chats/c-1/artifacts')
+    expect(managedChatTemporaryPath('chats/c-1')).toBe('chats/c-1/.generated')
+    expect(MANAGED_ENVIRONMENT_DIRECTORIES).toEqual(['app', 'config', 'logs', 'artifacts', 'temporary/repository'])
   })
 
   it('rejects absolute paths and traversal', () => {
