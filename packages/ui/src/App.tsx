@@ -5,7 +5,7 @@ import { parseProjectsRoute } from '@voicechat/projects-app'
 import type { RendererApi } from '@shared/ipc'
 import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import type { Board, ProjectMember, Task } from '@shared/projects'
+import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
 import type { PreparationClarificationNotification } from '@shared/qa'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
@@ -38,6 +38,7 @@ import { RunFeed } from './components/ci/RunFeed'
 import { ToolFrame } from './components/ToolFrame'
 import type { ConsoleHistoryStore, MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
+import { PopupFrame } from './components/PopupFrame'
 import { UiProviders } from '@voicechat/ui-kit'
 import { Button } from '@voicechat/ui-kit'
 import { Skeleton } from '@voicechat/ui-kit'
@@ -685,6 +686,53 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   useEffect(() => {
     if (chatRoute?.kind === 'context-item') setConversationSettingsOpen(true)
   }, [chatRoute?.kind])
+  const [createChatOpen, setCreateChatOpen] = useState(false)
+  const [createChatTitle, setCreateChatTitle] = useState('Новый разговор')
+  const [createChatMachineId, setCreateChatMachineId] = useState('')
+  const [createChatStorages, setCreateChatStorages] = useState<MachineStorage[]>([])
+  const [createChatStorageId, setCreateChatStorageId] = useState('')
+  const [createChatPath, setCreateChatPath] = useState('')
+  const [createChatError, setCreateChatError] = useState<string | null>(null)
+  const [createChatSaving, setCreateChatSaving] = useState(false)
+  useEffect(() => {
+    if (!createChatOpen) return
+    const effective = operations.agents.find((agent) => agent.isEffective && agent.online)
+      ?? operations.agents.find((agent) => agent.id === settingsState.settings.defaultAgentId && agent.online)
+      ?? operations.agents.find((agent) => agent.online)
+    setCreateChatMachineId(effective?.id ?? '')
+  }, [createChatOpen, operations.agents, settingsState.settings.defaultAgentId])
+  useEffect(() => {
+    let alive = true
+    if (!createChatOpen || !createChatMachineId) { setCreateChatStorages([]); setCreateChatStorageId(''); return }
+    void api['agents:listStorages']({ id: createChatMachineId }).then((items) => {
+      if (!alive) return
+      setCreateChatStorages(items)
+      const primaryReady = items.find((item) => item.primary && item.status === 'ready') ?? items.find((item) => item.status === 'ready')
+      setCreateChatStorageId(primaryReady?.id ?? '')
+    }).catch((error) => { if (alive) setCreateChatError(error instanceof Error ? error.message : String(error)) })
+    return () => { alive = false }
+  }, [api, createChatOpen, createChatMachineId])
+  const submitCreateChat = async (): Promise<void> => {
+    if (!createChatTitle.trim()) { setCreateChatError('Введите название разговора.'); return }
+    if (createChatPath.trim()) {
+      try { validateStorageRelativePath(createChatPath.trim()) } catch { setCreateChatError('Укажите безопасный относительный каталог без абсолютного пути, пустых сегментов и ..'); return }
+    }
+    setCreateChatSaving(true); setCreateChatError(null)
+    try {
+      const id = await chatActions.createConversation({ title: createChatTitle.trim(), projectId: chat.sidebarProjectId })
+      if (createChatMachineId && createChatStorageId) {
+        const relativePath = createChatPath.trim() || recommendedChatStoragePath(
+          chat.sidebarProjectId
+            ? { kind: 'project', projectId: chat.sidebarProjectId, conversationId: id }
+            : { kind: 'chat', conversationId: id }
+        )
+        await api['conversations:setStorage']({ id, machineId: createChatMachineId, storageId: createChatStorageId, relativePath })
+      }
+      setCreateChatOpen(false); setCreateChatPath(''); setSidebarOpen(false); navigate(`/chat/${id}`)
+    } catch (error) {
+      setCreateChatError(error instanceof Error ? error.message : String(error))
+    } finally { setCreateChatSaving(false) }
+  }
   const [taskProposal, setTaskProposal] = useState<{
     projectId: string
     messageId: string
@@ -1257,6 +1305,33 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         )
       })()}
       {!inReader && !inPlaywrightReader && <>
+      {createChatOpen && <PopupFrame title="Создание разговора" onClose={() => setCreateChatOpen(false)} testId="create-conversation-overlay" panelClassName="convsettings">
+        <header className="convsettings-head"><div><h1>Новый разговор</h1><p>Настройте разговор и его файловое хранилище</p></div></header>
+        <main className="convsettings-body">
+          <section className="convsettings-card">
+            <label className="convsettings-field"><span>Название разговора</span><input autoFocus value={createChatTitle} onChange={(event) => setCreateChatTitle(event.target.value)} /></label>
+          </section>
+          <section className="convsettings-card" aria-labelledby="create-chat-files-title">
+            <div className="convsettings-sectionhead"><div><h2 id="create-chat-files-title">Файлы чата</h2><p>Вложения будут храниться на выбранной машине независимо от рабочего Git-каталога.</p></div></div>
+            <label className="convsettings-field"><span>Машина</span><select aria-label="Машина файлов чата" value={createChatMachineId} onChange={(event) => { setCreateChatMachineId(event.target.value); setCreateChatPath('') }}>
+              <option value="">Нет доступной машины</option>
+              {operations.agents.map((agent) => <option key={agent.id} value={agent.id} disabled={!agent.online}>{agent.name}{agent.isEffective ? ' — эффективная' : ''}{agent.online ? '' : ' (офлайн)'}</option>)}
+            </select></label>
+            <label className="convsettings-field"><span>Хранилище</span><select aria-label="Хранилище файлов чата" value={createChatStorageId} onChange={(event) => { setCreateChatStorageId(event.target.value); setCreateChatPath('') }}>
+              <option value="">Временный legacy-режим</option>
+              {createChatStorages.map((storage) => <option key={storage.id} value={storage.id} disabled={storage.status !== 'ready'}>{storage.rootPath}{storage.primary ? ' — основное' : ''}{storage.status === 'ready' ? '' : ` (${storage.status === 'offline' ? 'офлайн' : 'недоступно'})`}</option>)}
+            </select></label>
+            {createChatStorageId ? <>
+              <p className="convsettings-muted">Основное хранилище: {createChatStorages.find((item) => item.primary)?.rootPath ?? 'не назначено'}</p>
+              <label className="convsettings-field"><span>Относительный каталог</span><input aria-label="Относительный каталог файлов чата" value={createChatPath} placeholder={chat.sidebarProjectId ? `projects/${chat.sidebarProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>'} onChange={(event) => setCreateChatPath(event.target.value)} /></label>
+              <p className="convsettings-muted">Итоговый каталог: {(createChatStorages.find((item) => item.id === createChatStorageId)?.rootPath ?? '')}/{createChatPath.trim() || (chat.sidebarProjectId ? `projects/${chat.sidebarProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>')}</p>
+            </> : <p className="convsettings-muted" role="alert">Временный режим хранит вложения в <b>.voicechat_uploads</b>. Он предназначен для совместимости; старые файлы автоматически не переносятся. <button type="button" className="vc-btn vc-btn--secondary" onClick={() => { setCreateChatOpen(false); navigate('/machines') }}>Настроить хранилище машины</button></p>}
+            {createChatStorages.length > 0 && !createChatStorages.some((item) => item.status === 'ready') && <p className="convsettings-muted" role="status">У машины нет готового хранилища. Проверьте его в разделе машины.</p>}
+          </section>
+          {createChatError && <p className="convsettings-error" role="alert">{createChatError}</p>}
+          <div className="convsettings-actions"><Button onClick={() => void submitCreateChat()} loading={createChatSaving}>Создать разговор</Button><Button variant="secondary" onClick={() => setCreateChatOpen(false)}>Отмена</Button></div>
+        </main>
+      </PopupFrame>}
       <NotificationContainer
         notifications={clarificationNotifications}
         navigatingId={clarificationNavigatingId}
@@ -1282,8 +1357,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         ]}
         now={now ? now() : Date.now()}
         onNew={() => {
-          setSidebarOpen(false)
-          void chatActions.newConversation().then((id) => navigate(id ? `/chat/${id}` : '/'))
+          setCreateChatError(null)
+          setCreateChatTitle('Новый разговор')
+          setCreateChatPath('')
+          setCreateChatOpen(true)
         }}
         onPick={(id) => {
           setSidebarOpen(false)

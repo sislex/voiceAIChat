@@ -179,7 +179,9 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const [skillDescription, setSkillDescription] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const selectedAgent = availableAgents.find((agent) => agent.id === execTarget)
+  const selectedAgent = execTarget
+    ? availableAgents.find((agent) => agent.id === execTarget)
+    : availableAgents.find((agent) => agent.isEffective)
   const skills = selectedAgent?.policy.skills ?? []
 
   useEffect(() => {
@@ -195,7 +197,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
         setStorageId(binding.storageId)
         setStoragePath(binding.relativePath)
       } else {
-        setStorageId(nextStorages.find((item) => item.primary)?.id ?? nextStorages[0]?.id ?? '')
+        setStorageId(nextStorages.find((item) => item.primary && item.status === 'ready')?.id ?? nextStorages.find((item) => item.status === 'ready')?.id ?? '')
         setStoragePath('')
       }
     }).catch((err) => { if (alive) setError(err instanceof Error ? err.message : String(err)) })
@@ -340,19 +342,26 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
             </select>
           </label>
           {machineAccessLost && <p className="convsettings-muted" role="status">Ранее выбранная машина больше недоступна. Выберите другую машину.</p>}
-          {selectedAgent && <>
+          <section aria-labelledby="chat-files-title">
+            <div className="convsettings-sectionhead"><div><h2 id="chat-files-title">Файлы чата</h2><p>Выбранная машина, зарегистрированное хранилище и относительный каталог разговора.</p></div></div>
+          {selectedAgent ? <>
+            <p className="convsettings-muted">Машина хранения: <b>{selectedAgent.name}</b></p>
             <label className="convsettings-field"><span>Файловое хранилище</span>
               <select aria-label="Файловое хранилище разговора" value={storageId} onChange={(event) => { setStorageId(event.target.value); setStoragePath('') }}>
-                <option value="">Не настроено (legacy)</option>
-                {storages.map((storage) => <option key={storage.id} value={storage.id}>{storage.rootPath}{storage.primary ? ' — основное' : ''}{storage.status === 'ready' ? '' : ` (${storage.status === 'offline' ? 'офлайн' : 'недоступно'})`}</option>)}
+                <option value="">Временный legacy-режим</option>
+                {storages.map((storage) => <option key={storage.id} value={storage.id} disabled={storage.status !== 'ready'}>{storage.rootPath}{storage.primary ? ' — основное' : ''}{storage.status === 'ready' ? '' : ` (${storage.status === 'offline' ? 'офлайн' : 'недоступно'})`}</option>)}
               </select>
             </label>
             <label className="convsettings-field"><span>Файловый каталог</span>
               <input aria-label="Файловый каталог разговора" value={storagePath} disabled={!storageId} placeholder="Автоматический изолированный путь" onChange={(event) => setStoragePath(event.target.value)} />
             </label>
+            <p className="convsettings-muted">Основное хранилище: {storages.find((storage) => storage.primary)?.rootPath ?? 'не назначено'}</p>
+            {storageId && <p className="convsettings-muted">Итоговый каталог: {storages.find((storage) => storage.id === storageId)?.rootPath}/{storagePath || 'автоматический путь разговора'}</p>}
+            {!storageId && <p className="convsettings-muted" role="alert">Временный legacy-режим использует <b>.voicechat_uploads</b>. Старые файлы автоматически не переносятся.</p>}
             <p className="convsettings-muted">Вложения и закреплённые файлы хранятся здесь. Рабочий Git-каталог настраивается отдельно ниже.</p>
-          </>}
-          {projectId && <p className="convsettings-muted">Доступны ваши личные машины и машины проекта; смена проекта перезапишет папку и навыки.</p>}
+          </> : <p className="convsettings-muted">Нет доступной машины или хранилища. Настройте хранилище в разделе машины.</p>}
+          </section>
+          {projectId && <p className="convsettings-muted">Доступны ваши личные машины и машины проекта; смена проекта предложит хранилище эффективной машины, но сохранённая привязка изменится только после сохранения.</p>}
         </section>
 
         <section className="convsettings-card convsettings-llm-card">
