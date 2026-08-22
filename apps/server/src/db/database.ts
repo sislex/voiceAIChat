@@ -6289,7 +6289,13 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE task_launch_results SET run_id=?,error=?,updated_at=? WHERE project_id=? AND proposal_id=? AND action='preparation'`).run(runId, error, this.now(), projectId, proposalId)
   }
 
-  startTaskPreparationRun(userId: string, projectId: string, taskId: string): TaskPreparationRun {
+  activeTaskPreparationRun(userId: string, projectId: string, taskId: string): TaskPreparationRun | null {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
+    const row = this.db.prepare(`SELECT * FROM task_preparation_runs WHERE project_id=? AND task_id=? AND status IN ('queued','running','waiting_for_answer','validating')`).get(projectId, taskId) as Record<string, unknown> | undefined
+    return row ? this.mapTaskPreparationRun(row) : null
+  }
+
+  startTaskPreparationRun(userId: string, projectId: string, taskId: string, execution: { llmEngineId?: string | null; provider: LlmProvider; model: string } = { provider: 'claude', model: '' }): TaskPreparationRun {
     if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
     const task = this.getTask(projectId, taskId)
     if (!task || task.type !== 'task') throw new Error('Задача не найдена')
@@ -6305,7 +6311,7 @@ export class VoiceChatDb {
     const attempt = Number((this.db.prepare(`SELECT COALESCE(MAX(attempt), 0) + 1 AS attempt FROM task_preparation_runs WHERE task_id=?`).get(taskId) as { attempt: number }).attempt)
     const profileId = createHash('sha256').update(userId).digest('hex').slice(0, 16)
     this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,task_key,status,phase,attempt,profile_id,created_at,started_at) VALUES (?,?,?,?, 'running','initialization',?,?,?,?)`).run(id, projectId, taskId, taskId, attempt, profileId, now, now)
+      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,task_key,status,phase,attempt,llm_engine_id,provider,model,profile_id,created_at,started_at) VALUES (?,?,?,?, 'running','initialization',?,?,?,?,?,?,?)`).run(id, projectId, taskId, taskId, attempt, execution.llmEngineId ?? null, execution.provider, redactPreparationText(execution.model), profileId, now, now)
       this.appendTaskPreparationEvent(id, 'attempt_created', 'initialization', 'Попытка подготовки создана')
       this.appendTaskPreparationEvent(id, 'attempt_started', 'initialization', 'Подготовка запущена')
       if (task.columnId !== target) this.moveTask(userId, projectId, taskId, { columnId: target })

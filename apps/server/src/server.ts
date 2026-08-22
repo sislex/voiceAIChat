@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, allowedModels, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -155,7 +155,6 @@ export function parseQaPreparationResponse(text: string): AcceptanceCriterionSna
  * Отдельного вида расхода у неё нет, а по смыслу это планирование задачи, поэтому
  * движок и модель она наследует из настроек стадии `planning`.
  */
-const TASK_PREPARATION_STAGE: CiUsageKind = 'planning'
 
 /** Модель Claude по умолчанию для подготовки — прежняя константа этапа. */
 const TASK_PREPARATION_CLAUDE_MODEL = 'sonnet'
@@ -913,51 +912,32 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     for (const handle of taskPreparationHandles.values()) handle.cancel()
     taskPreparationHandles.clear()
   })
-  const launchTaskPreparation = (userId: string, projectId: string, taskId: string, selection?: import('@voicechat/shared').TaskPreparationLlmSelection): import('@voicechat/shared').TaskPreparationRun => {
-    const run = db.startTaskPreparationRun(userId, projectId, taskId)
+  const launchTaskPreparation = (userId: string, projectId: string, taskId: string, _selection?: import('@voicechat/shared').TaskPreparationLlmSelection): import('@voicechat/shared').TaskPreparationRun => {
+    let run = db.activeTaskPreparationRun(userId, projectId, taskId)
+    if (!run) {
+      // Подготовка использует effective-настройку модели проекта. Проверяем
+      // персональный deny-list до создания попытки и никогда не подменяем пару.
+      const projectLlm = db.getCiLlmConfig('project', projectId) ?? db.ciLlmDefaultsForUser(userId)
+      const provider = projectLlm.provider
+      const model = taskPreparationModel(provider, projectLlm.model)
+      const access = db.getUserLlmAccess(userId)
+      if (!isProviderAllowed(access, provider)) throw new Error(`Проектный движок ${provider === 'codex' ? 'Codex' : 'Claude'} недоступен пользователю`)
+      if (!isModelAllowedForUser(access, provider, model)) throw new Error(`Проектная модель ${provider}:${model} недоступна пользователю`)
+      run = db.startTaskPreparationRun(userId, projectId, taskId, {
+        llmEngineId: projectLlm.llmEngineId ?? null,
+        provider,
+        model
+      })
+    }
     if (run.status === 'waiting_for_answer' || taskPreparationHandles.has(run.id)) return run
     if (run.status !== 'running' && run.status !== 'queued') return run
     if (run.status === 'running' && run.log) return run
     const task = db.getCiTask(userId, projectId, taskId)
-    // Движок и модель — как у остальных автоматических этапов: этап задачи →
-    // этап проекта → модель проекта → настройки запустившего пользователя. CLI
-    // работает в ЕГО профиле, поэтому зашитый Claude просто не был авторизован у
-    // того, кто работает на Codex.
-    const userLlm = db.ciLlmDefaultsForUser(userId)
-    const stageLlm = db.resolveTaskStageLlmConfig(projectId, taskId, TASK_PREPARATION_STAGE, {
-      llmEngineId: userLlm.llmEngineId ?? null,
-      provider: userLlm.provider,
-      model: userLlm.model
-    })
-    const requestedProvider = selection?.provider ?? stageLlm.provider
-    const requestedModel = selection?.model ?? stageLlm.model
-    const access = db.getUserLlmAccess(userId)
-    if (selection && !isProviderAllowed(access, requestedProvider)) throw new Error('Выбранный движок недоступен пользователю')
-    const provider = isProviderAllowed(access, requestedProvider) ? requestedProvider : firstAllowedProvider(access)
-    if (!provider) throw new Error('Нет доступных движков и моделей')
-    const allowedModel = clampModel(access, provider, requestedModel)
-    if (!allowedModel || (selection && allowedModel !== requestedModel)) throw new Error('Выбранная модель недоступна пользователю')
-    const model = taskPreparationModel(provider, allowedModel)
-    const llmEngineId = selection?.llmEngineId ?? stageLlm.llmEngineId ?? null
+    // Любое продолжение использует снимок попытки, а не текущие настройки проекта.
+    const provider: LlmProvider = run.provider ?? 'claude'
+    const model = taskPreparationModel(provider, run.model ?? '')
+    const llmEngineId = run.llmEngineId ?? null
     const client = provider === 'codex' ? codex : claude
-    const recoverySelection = (): { provider: LlmProvider; model: string; client: LlmClient } | null => {
-      const configuredProvider = opts.config.taskPreparationRecoveryProvider
-      const configuredModel = opts.config.taskPreparationRecoveryModel
-      if (configuredProvider && configuredModel) {
-        if ((configuredProvider !== provider || taskPreparationModel(configuredProvider, configuredModel) !== model) && isModelAllowedForUser(access, configuredProvider, configuredModel)) {
-          return { provider: configuredProvider, model: taskPreparationModel(configuredProvider, configuredModel), client: configuredProvider === 'codex' ? codex : claude }
-        }
-        return null
-      }
-      const providers: LlmProvider[] = provider === 'claude' ? ['codex', 'claude'] : ['claude', 'codex']
-      for (const candidateProvider of providers) {
-        for (const candidate of allowedModels(access, candidateProvider)) {
-          const candidateModel = taskPreparationModel(candidateProvider, candidate.id)
-          if (candidateProvider !== provider || candidateModel !== model) return { provider: candidateProvider, model: candidateModel, client: candidateProvider === 'codex' ? codex : claude }
-        }
-      }
-      return null
-    }
     const project = db.getProject(userId, projectId)
     const configuredMachines = (project?.machines ?? []).filter((machine) => machine.canUse !== false && machine.path.trim())
     const preferredAgentId = db.getUserProjectDefaultMachine(userId, projectId) ?? project?.defaultAgentId ?? null
@@ -1028,16 +1008,11 @@ ${machineDiagnostic}`
       boardHub.emit(projectId)
     }
     const sendRecovery = (reason: string): void => {
-      const recovery = recoverySelection()
-      if (!recovery) {
-        terminalValidationFailure(reason, ordinaryResponses[1] ?? '', 'не найдена другая разрешённая модель согласно recovery-политике')
-        return
-      }
       const sourceName = `${provider}:${model}`
-      const recoveryName = `${recovery.provider}:${recovery.model}`
+      const recoveryName = sourceName
       db.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Аварийное восстановление Development Brief')
-      db.appendTaskPreparationEvent(run.id, 'recovery_started', 'brief_generation', `Переключение ${sourceName} → ${recoveryName}: ${reason}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: recovery.provider, recoveryModel: recovery.model, reason })
-      db.appendTaskPreparationLog(run.id, `[система] Recovery-модель: ${recoveryName}; исходная модель: ${sourceName}; причина: ${reason}\\n`)
+      db.appendTaskPreparationEvent(run.id, 'recovery_started', 'brief_generation', `Recovery через зафиксированную проектную пару ${recoveryName}: ${reason}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, reason })
+      db.appendTaskPreparationLog(run.id, `[система] Recovery через зафиксированную проектную пару: ${recoveryName}; причина: ${reason}\\n`)
       const recoveryPrompt = `Исправь ТОЛЬКО структуру уже подготовленного Development Brief без повторного исследования и без изменения смысла требований. Верни только один JSON-объект schemaVersion=2.\\n
 Диагностика валидатора (точные пути/гейты): ${reason}\\n
 Исходный ответ: ${ordinaryResponses[0] ?? ''}\\n
@@ -1050,7 +1025,7 @@ affectedComponents: {id,name,exclusionReason,alternativeVerification:string,reus
 openQuestions: {questionId:string,text:string,material:boolean,answer:string|null}[]; decisions: {id,text,rationale:string,questionId?:string}[]; assumptions: {id,text,rationale:string,material:boolean}[].
 sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,status:available|absent|unavailable,summary:string,refs:string[],critical:boolean}[].
 Сохрани исходные требования. Если диагностика выявляет дефект подготовки, добавь в scope, acceptanceCriteria/acceptanceCriteriaItems и testCases отдельные проверяемые работы: усиление prompt/schema, безопасная нормализация однозначных совместимых значений, регрессионные тесты и актуализация существующего раздела БЗ. Не добавляй новые исследования и не выдумывай источники.`
-      const handle = recovery.client.send({ userId, prompt: recoveryPrompt, sessionId: null, model: recovery.model, executionDisabled: true }, {
+      const handle = client.send({ userId, prompt: recoveryPrompt, sessionId: null, model, executionDisabled: true }, {
         onDelta: () => {},
         onSession: () => {},
         onDone: (text) => {
@@ -1061,20 +1036,20 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
             const readiness = parseTaskPreparation(text)
             const gate = canConfirmDevelopmentReadiness(readiness)
             if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
-            db.appendTaskPreparationEvent(run.id, 'recovery_completed', 'readiness_validation', `Recovery ${recoveryName} успешно прошёл runtime-валидацию и readiness-гейт`, { sourceProvider: provider, sourceModel: model, recoveryProvider: recovery.provider, recoveryModel: recovery.model, result: 'success' })
+            db.appendTaskPreparationEvent(run.id, 'recovery_completed', 'readiness_validation', `Recovery ${recoveryName} успешно прошёл runtime-валидацию и readiness-гейт`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, result: 'success' })
             db.completeTaskPreparationRun(userId, run.id, readiness)
             closePreparationTools()
             boardHub.emit(projectId)
           } catch (error) {
             const recoveryError = redactPreparationText(error instanceof Error ? error.message : String(error))
-            db.appendTaskPreparationEvent(run.id, 'recovery_failed', 'readiness_validation', `Recovery ${recoveryName} отклонён: ${recoveryError}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: recovery.provider, recoveryModel: recovery.model, result: 'failed', error: recoveryError })
+            db.appendTaskPreparationEvent(run.id, 'recovery_failed', 'readiness_validation', `Recovery ${recoveryName} отклонён: ${recoveryError}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, result: 'failed', error: recoveryError })
             terminalValidationFailure(reason, text, recoveryError)
           }
         },
         onError: (message) => {
           taskPreparationHandles.delete(run.id)
           if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
-          const recoveryError = taskPreparationFailure(recovery.provider, userId, message)
+          const recoveryError = taskPreparationFailure(provider, userId, message)
           db.appendTaskPreparationEvent(run.id, 'recovery_failed', 'brief_generation', `Recovery ${recoveryName} не выполнен: ${recoveryError}`, { result: 'failed', error: recoveryError })
           terminalValidationFailure(reason, ordinaryResponses[1] ?? '', recoveryError)
         }

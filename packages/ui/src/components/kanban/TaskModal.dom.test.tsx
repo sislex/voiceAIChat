@@ -898,21 +898,23 @@ describe('TaskModal — подготовка к разработке', () => {
     finishedAt: status === 'running' ? null : 2, canRetry: status !== 'running', canCancel: status === 'running', ...over
   })
 
-  it('показывает выбор LLM до первого запуска, а активный ран открывает вкладку автоматически', async () => {
+  it('показывает проектную LLM без отдельного выбора, а активный ран открывает вкладку с фактической парой', async () => {
     const onStartPreparation = vi.fn().mockResolvedValue(run('running'))
     const { unmount } = render(<TaskModal {...props({ board: preparationBoard, initialTab: 'preparation', onStartPreparation })} />)
     expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toBeInTheDocument()
-    await userEvent.selectOptions(screen.getByLabelText('Движок подготовки'), 'codex')
+    expect(await screen.findByText(/Подготовка использует модель проекта:/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Движок подготовки')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Запустить подготовку' }))
-    await waitFor(() => expect(onStartPreparation).toHaveBeenCalledWith('t1', expect.objectContaining({ provider: 'codex' })))
+    await waitFor(() => expect(onStartPreparation).toHaveBeenCalledWith('t1', expect.any(Object)))
     unmount()
 
     render(<TaskModal {...props({
       board: preparationBoard,
       task: mkTask({ taskPreparationRunId: 'prep-running', taskPreparationStatus: 'running' }),
-      loadPreparationRuns: async () => [run('running')]
+      loadPreparationRuns: async () => [run('running', { provider: 'codex', model: 'gpt-5.6-sol' })]
     })} />)
     expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('LLM: codex · gpt-5.6-sol')).toBeInTheDocument()
     expect(await screen.findByTestId('task-preparation-feed')).toHaveTextContent('Уточняю критерии')
   })
 
