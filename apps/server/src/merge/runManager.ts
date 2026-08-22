@@ -1,4 +1,16 @@
-import type { MergeCheck, MergeRun, MergeStage, MergeStageRecord, ServerMessage } from '@voicechat/shared'
+import {
+  isMachineStoragePathAllowed,
+  managedMergeClonePaths,
+  normalizeProjectMachineDirectory,
+  validateProjectMachineDirectories,
+  type MergeCheck,
+  type MergeMachineReadiness,
+  type MergeRun,
+  type MergeStage,
+  type MergeStageRecord,
+  type ServerMessage
+} from '@voicechat/shared'
+import { randomUUID } from 'node:crypto'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
 import { shellQuote } from '../ci/executor.js'
@@ -12,7 +24,7 @@ export interface MergeKbUpdateContext {
   signal: AbortSignal
   log(chunk: string): void
 }
-export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; now?:()=>number }
+export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; now?:()=>number }
 const terminal = new Set(['success','failed','cancelled','decision_required'])
 const validSha = /^[0-9a-f]{40}$/i
 const validBranch = /^(?!-)(?!.*\.\.)(?!.*[~^:?*\[\]\\])[A-Za-z0-9._/-]+$/
@@ -127,22 +139,78 @@ git add -- ${q}`,repo,30000)
     if(split<=0)throw new Error('Некорректный путь подготовленного CI-workspace')
     return normalized.slice(0,split)
   }
-  /** Постоянный merge-клон проекта на машине рана: {repos_root}/{project}/.merge.
-   *  На машине workspace каталог проекта берётся из пути workspace, на другой
-   *  машине — из её repos_root; клон переживает раны, дерево вычищается перед
-   *  каждым merge, node_modules сохраняется между ранами. */
-  private mergeBase(run:MergeRun,ws:{path:string;agentId:string|null}):{repo:string;parent:string;workdir:string;cacheDir:string} {
-    const parent=(():string=>{
-      if(!ws.agentId||ws.agentId===run.agentId)return this.workspaceParent(ws.path)
-      const machine=this.deps.db.getProjectMachine(run.projectId,run.agentId)
-      const root=machine?.reposRoot?.replace(/[\\/]+$/,'')
-      if(!root)throw new Error('У выбранной машины нет каталога репозиториев (repos_root)')
-      const segments=ws.path.replace(/[\\/]+$/,'').split(/[\\/]+/); segments.pop(); const projectDir=segments.pop()
-      if(!projectDir)throw new Error('Некорректный путь подготовленного CI-workspace')
-      return `${root}/${projectDir}`
-    })()
-    const workdir=(!ws.agentId||ws.agentId===run.agentId)?parent:this.workspaceParent(parent)
-    return {repo:`${parent}/.merge`,parent,workdir,cacheDir:`${parent}/.merge-npm-cache`}
+  private blocked(code:MergeMachineReadiness['code'],message:string,mode:MergeMachineReadiness['mode']=null):MergeMachineReadiness {
+    return {ready:false,selectable:false,mode,code,message}
+  }
+  /** Общий preflight для селектора и POST. Не создаёт merge-клон. */
+  async checkReadiness(userId:string,projectId:string,taskId:string,agentId:string):Promise<MergeMachineReadiness> {
+    if(!this.deps.isOnline(agentId))return this.blocked('machine_offline','Машина не в сети')
+    const project=this.deps.db.getProject(userId,projectId)
+    const ws=this.deps.db.findLatestPushedCiWorkspace(projectId,taskId)
+    if(!project?.gitUrl||!ws?.path||!ws.pushed)return this.blocked('git_unavailable','Подготовленный workspace или Git origin недоступен')
+    const machine=this.deps.db.getProjectMachine(projectId,agentId)
+    if(!machine)return this.blocked('storage_missing','У машины не настроены каталоги проекта')
+    let repo:string,parent:string,workdir:string,cacheDir:string,mode:'managed'|'legacy'
+    const platform=this.deps.platformOf?.(agentId)??(/^(?:[A-Za-z]:[\\/]|\\\\)/.test(machine.storageRoot??'')?'win32':'linux')
+    if(machine.storageId){
+      mode='managed'
+      if(!machine.storageRoot)return this.blocked('storage_not_found','MachineStorage не найдено у выбранной машины',mode)
+      if(!machine.directories)return this.blocked('storage_path_invalid','Не настроена полная схема каталогов MachineStorage',mode)
+      try {
+        const directories=validateProjectMachineDirectories(machine.directories,machine.storageRoot,projectId,platform)
+        const paths=managedMergeClonePaths(machine.storageRoot,projectId,platform)
+        if(normalizeProjectMachineDirectory(directories.mergeClones.path,platform)!==paths.root||directories.mergeClones.override) {
+          return this.blocked('storage_path_invalid','Каталог mergeClones должен быть каноническим managed-путём',mode)
+        }
+        const allowed=this.deps.policyOf?.(agentId)?.allowedDirs??[]
+        if(!isMachineStoragePathAllowed(paths.root,allowed,platform))return this.blocked('storage_policy_denied','Каталог mergeClones находится вне разрешённых директорий машины',mode)
+        repo=paths.repository; parent=paths.root; cacheDir=paths.npmCache; workdir=machine.storageRoot
+      } catch(error){ return this.blocked('storage_path_invalid',error instanceof Error?error.message:String(error),mode) }
+      if(!this.deps.fsRead||!this.deps.fsWrite||!this.deps.fsDelete)return this.blocked('storage_not_found','Файловая проверка MachineStorage недоступна',mode)
+      const separator=platform==='win32'?'\\':'/'
+      try {
+        const marker=await this.deps.fsRead(agentId,`${machine.storageRoot}${separator}.voicechat${separator}storage.json`)
+        const parsed=JSON.parse(Buffer.from(marker.dataBase64??'','base64').toString('utf8')) as {id?:unknown;formatVersion?:unknown}
+        if(parsed.id!==machine.storageId||parsed.formatVersion!==(machine.storageFormatVersion??1))return this.blocked('storage_marker_invalid','Marker хранилища отсутствует, повреждён или принадлежит другому storage',mode)
+      } catch { return this.blocked('storage_marker_invalid','Marker хранилища отсутствует, повреждён или принадлежит другому storage',mode) }
+      const probe=`${machine.storageRoot}${separator}.voicechat${separator}temporary${separator}merge-probe-${randomUUID()}`
+      try { await this.deps.fsWrite(agentId,probe,Buffer.from('ok').toString('base64')); await this.deps.fsDelete(agentId,probe) }
+      catch { return this.blocked('storage_read_only','MachineStorage недоступно для записи',mode) }
+    } else {
+      mode='legacy'
+      const root=machine.reposRoot?.replace(/[\\/]+$/,'')
+      if(!root)return this.blocked('storage_missing','MachineStorage отсутствует и legacy reposRoot не настроен',mode)
+      if(ws.agentId===agentId){
+        parent=this.workspaceParent(ws.path); workdir=parent
+      } else {
+        const segments=ws.path.replace(/[\\/]+$/,'').split(/[\\/]+/); segments.pop(); const projectDir=segments.pop()
+        if(!projectDir)return this.blocked('storage_path_invalid','Некорректный путь подготовленного CI-workspace',mode)
+        parent=`${root}/${projectDir}`; workdir=this.workspaceParent(parent)
+      }
+      repo=`${parent}/.merge`; cacheDir=`${parent}/.merge-npm-cache`
+    }
+    let inspectionOutput=''
+    const inspected=await this.deps.executor.run({agentId,script:`set -e
+p=${shellQuote(parent)}
+while [ "$p" != "/" ] && [ "$p" != "." ]; do [ ! -L "$p" ] || exit 73; p="$(dirname "$p")"; done
+if [ -e ${shellQuote(repo)} ] && [ ! -d ${shellQuote(`${repo}/.git`)} ]; then exit 74; fi
+if [ -d ${shellQuote(`${repo}/.git`)} ]; then git -C ${shellQuote(repo)} remote get-url origin; fi
+git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/heads/${shellQuote(ws.branch??'')}`,workdir,env:{},timeoutMs:30000,secrets:[]},chunk=>{inspectionOutput+=chunk})
+    if(inspected.exitCode===73)return this.blocked('storage_symlink','Компонент пути merge-клона является симлинком',mode)
+    if(inspected.exitCode===74)return this.blocked('clone_invalid','Каталог merge-клона существует, но не является Git-репозиторием',mode)
+    if(inspected.exitCode||inspected.timedOut)return this.blocked('git_unavailable','Git origin или обязательные ветки недоступны',mode)
+    const actual=inspectionOutput.split(/\r?\n/).map(v=>v.trim()).find(v=>v&&!/^[0-9a-f]{40}\s/.test(v))
+    if(actual&&canonicalGitUrl(actual)!==canonicalGitUrl(project.gitUrl))return this.blocked('clone_invalid','Origin существующего merge-клона не соответствует проекту',mode)
+    return {ready:true,selectable:true,mode,code:'ready',message:mode==='managed'?'Managed MachineStorage готово':'Готово через legacy reposRoot',clonePath:repo}
+  }
+  private async mergeBase(run:MergeRun,ws:{path:string;agentId:string|null}):Promise<{repo:string;parent:string;workdir:string;cacheDir:string}> {
+    const readiness=await this.checkReadiness(run.triggeredBy,run.projectId,run.taskId,run.agentId)
+    if(!readiness.ready||!readiness.clonePath)throw new Error(readiness.message)
+    const repo=readiness.clonePath
+    const parent=this.workspaceParent(repo)
+    const machine=this.deps.db.getProjectMachine(run.projectId,run.agentId)
+    const managed=readiness.mode==='managed'
+    return {repo,parent,workdir:managed?(machine?.storageRoot??parent):(ws.agentId===run.agentId?parent:this.workspaceParent(parent)),cacheDir:managed?`${parent}/npm-cache`:`${parent}/.merge-npm-cache`}
   }
   private async execute(id:string,ctl:AbortController):Promise<void> {
     let run=this.deps.db.getMergeRunRaw(id); if(!run)return
@@ -163,7 +231,7 @@ git add -- ${q}`,repo,30000)
       if(run.pushStartedAt&&run.mergeSha){
         const project=this.deps.db.getProject(run.triggeredBy,run.projectId), ws=this.deps.db.findLatestPushedCiWorkspace(run.projectId,run.taskId)
         if(!project?.gitUrl||!ws?.path)throw new Error('Push начат, но данные проекта недоступны; требуется reconcile')
-        const remote=await this.cmd(run,`git ls-remote ${shellQuote(project.gitUrl)} refs/heads/main`,this.mergeBase(run,ws).workdir,30000)
+        const remote=await this.cmd(run,`git ls-remote ${shellQuote(project.gitUrl)} refs/heads/main`,(await this.mergeBase(run,ws)).workdir,30000)
         if(remote.output.toLowerCase().startsWith(run.mergeSha.toLowerCase())){
           this.finish(id,'success',null,null,'done')
           await this.releaseTaskRepositories(run)
@@ -177,7 +245,7 @@ git add -- ${q}`,repo,30000)
       if(ws.agentId!==run.agentId&&!this.deps.db.getProjectMachine(run.projectId,run.agentId))throw new Error('У выбранной машины не настроены каталоги проекта')
       if(!this.deps.isOnline(run.agentId))throw new Error('Выбранная машина не в сети')
       if(run.targetBranch!=='main'||!validBranch.test(run.sourceBranch)||(run.sourceSha!==null&&!validSha.test(run.sourceSha)))throw new Error('Некорректный серверный снимок ветки')
-      const {repo,parent,workdir,cacheDir}=this.mergeBase(run,ws)
+      const {repo,parent,workdir,cacheDir}=await this.mergeBase(run,ws)
       // Read-only preflight идёт до mkdir/clone/checkout: обе ветки и доступ к
       // origin должны быть подтверждены прежде любой мутации репозитория.
       const preflight=await this.cmd(run,`git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/heads/${run.sourceBranch}`,workdir,30000)

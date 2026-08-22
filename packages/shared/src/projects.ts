@@ -165,6 +165,23 @@ export function normalizeProjectMachineDirectory(path: string, platform: string)
   return normalizeMachineStoragePath(path, platform)
 }
 
+export interface ManagedMergeClonePaths {
+  root: string
+  repository: string
+  npmCache: string
+}
+
+/** Постоянный merge-клон проекта, изолированный от taskWorkspace и остальных назначений. */
+export function managedMergeClonePaths(storageRoot: string, projectId: string, platform: string): ManagedMergeClonePaths {
+  const root = recommendedProjectMachineDirectory(storageRoot, projectId, 'mergeClones', platform)
+  const separator = machinePathSeparator(platform)
+  return {
+    root,
+    repository: `${root}${separator}repository`,
+    npmCache: `${root}${separator}npm-cache`
+  }
+}
+
 export function isPathInsideMachineStorage(path: string, storageRoot: string, platform: string): boolean {
   const candidate = normalizeProjectMachineDirectory(path, platform)
   const root = normalizeMachineStoragePath(storageRoot, platform)
