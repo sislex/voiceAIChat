@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { PreviewConfig, PreviewEnvironment, PreviewErrorType, PreviewOperation, PreviewRun, PreviewRunStep } from '@voicechat/shared'
-import { isMachineStoragePathAllowed, isPreviewBusy, managedPreviewEnvironmentPaths, safePreviewResourceName } from '@voicechat/shared'
+import { isMachineStoragePathAllowed, isPreviewBusy, managedPreviewEnvironmentPaths, managedRunManifestPaths, parseEnvironmentManifest, parseRunManifest, parseRunReportManifest, safePreviewResourceName, type EnvironmentManifest, type RunManifest, type RunReportManifest } from '@voicechat/shared'
+import { publishRemoteManifest } from '../manifests.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
 
@@ -34,6 +35,7 @@ interface Deps {
   fsRead?: (agentId: string, path: string) => Promise<{ dataBase64?: string }>
   fsWrite?: (agentId: string, path: string, dataBase64: string) => Promise<unknown>
   fsMkdir?: (agentId: string, path: string) => Promise<unknown>
+  fsRename?: (agentId: string, from: string, to: string) => Promise<unknown>
   fsDelete?: (agentId: string, path: string) => Promise<unknown>
   closeTunnelsForAgent?: (agentId: string) => void
   now?: () => number
@@ -139,7 +141,7 @@ export class FeaturePreviewManager {
     const machine = this.deps.db.getProjectMachine(projectId, agentId)
     if (!machine?.storageId) throw new Error('Для нового preview не настроено MachineStorage выбранной машины')
     if (!machine.storageRoot) throw new Error('MachineStorage выбранной машины недоступно')
-    if (!this.deps.fsRead || !this.deps.fsWrite || !this.deps.fsMkdir || !this.deps.fsDelete) throw new Error('Файловая проверка MachineStorage недоступна')
+    if (!this.deps.fsRead || !this.deps.fsWrite || !this.deps.fsMkdir || !this.deps.fsRename || !this.deps.fsDelete) throw new Error('Файловая проверка MachineStorage недоступна')
     const platform = this.platform(agentId, machine.storageRoot)
     const paths = managedPreviewEnvironmentPaths(machine.storageRoot, projectId, taskId, previewId, platform)
     if (!isMachineStoragePathAllowed(paths.previewRoot, this.deps.allowedDirsOf?.(agentId) ?? [], platform)) throw new Error('Managed preview находится вне разрешённых директорий машины')
@@ -161,22 +163,13 @@ export class FeaturePreviewManager {
     catch (error) { throw new Error(`MachineStorage недоступно для записи: ${error instanceof Error ? error.message : String(error)}`) }
     return { machine, paths, platform }
   }
-  private async materializeManaged(userId: string, projectId: string, taskId: string, previewId: string, agentId: string) {
+  private async materializeManaged(userId: string, projectId: string, taskId: string, previewId: string, agentId: string, createdAt?: number) {
     const resolved = await this.managedPaths(userId, projectId, taskId, previewId, agentId)
     const { machine, paths } = resolved
-    const manifest = { formatVersion: 1, kind: 'preview', projectId, taskId, previewId, storageId: machine.storageId!, machineId: agentId }
-    let existing: unknown = null
-    try {
-      const result = await this.deps.fsRead!(agentId, paths.manifest)
-      existing = JSON.parse(Buffer.from(result.dataBase64 ?? '', 'base64').toString('utf8'))
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (!/ENOENT|not found|no such|не найден/i.test(message)) throw new Error(`Не удалось прочитать environment.json: ${message}`)
-    }
-    if (existing && JSON.stringify(existing) !== JSON.stringify(manifest)) throw new Error('Конфликт environment.json managed preview')
+    const manifest: EnvironmentManifest = { formatVersion: 1, kind: 'preview', projectId, taskId, storageId: machine.storageId!, machineId: agentId, createdAt: new Date(createdAt ?? this.now()).toISOString() }
     try {
       for (const path of [paths.previewRoot, paths.app, paths.config, paths.logs, paths.artifacts, paths.temporary, paths.repository]) await this.deps.fsMkdir!(agentId, path)
-      if (!existing) await this.deps.fsWrite!(agentId, paths.manifest, Buffer.from(JSON.stringify(manifest, null, 2) + '\n').toString('base64'))
+      await publishRemoteManifest({ read: this.deps.fsRead!, write: this.deps.fsWrite!, mkdir: this.deps.fsMkdir!, rename: this.deps.fsRename!, delete: this.deps.fsDelete! }, agentId, paths.manifest, manifest, parseEnvironmentManifest)
     } catch (error) { throw new Error(`MachineStorage недоступно для записи: ${error instanceof Error ? error.message : String(error)}`) }
     return { ...resolved, manifest }
   }
@@ -187,13 +180,12 @@ export class FeaturePreviewManager {
     if (env.managed.formatVersion !== 1 || env.managed.storageId !== machine.storageId || env.managed.machineId !== env.agentId || env.managed.previewRoot !== paths.previewRoot || env.workspacePath !== paths.repository) {
       throw new Error('Managed cleanup отклонён: persisted path не подтверждён')
     }
-    let manifest: unknown
+    let manifest: EnvironmentManifest
     try {
       const result = await this.deps.fsRead!(env.agentId, paths.manifest)
-      manifest = JSON.parse(Buffer.from(result.dataBase64 ?? '', 'base64').toString('utf8'))
+      manifest = parseEnvironmentManifest(JSON.parse(Buffer.from(result.dataBase64 ?? '', 'base64').toString('utf8')), paths.manifest)
     } catch { throw new Error('Managed cleanup отклонён: environment.json отсутствует или повреждён') }
-    const expected = { formatVersion: 1, kind: 'preview', projectId: env.projectId, taskId: env.taskId, previewId: env.id, storageId: machine.storageId!, machineId: env.agentId }
-    if (JSON.stringify(manifest) !== JSON.stringify(expected)) throw new Error('Managed cleanup отклонён: environment.json конфликтует')
+    if (manifest.projectId !== env.projectId || manifest.taskId !== env.taskId || manifest.kind !== 'preview' || manifest.storageId !== machine.storageId || manifest.machineId !== env.agentId) throw new Error('Managed cleanup отклонён: environment.json конфликтует')
     await this.deps.fsDelete!(env.agentId, paths.previewRoot)
   }
   async operate(userId: string, projectId: string, taskId: string, operation: PreviewOperation, args: { idempotencyKey?: string; scenario?: string; agentId?: string } = {}): Promise<PreviewEnvironment> {
@@ -228,7 +220,7 @@ export class FeaturePreviewManager {
     if (!legacy) {
       managed = operation === 'remove' && env?.managed
         ? await this.managedPaths(userId, projectId, taskId, previewId, targetAgentId)
-        : await this.materializeManaged(userId, projectId, taskId, previewId, targetAgentId)
+        : await this.materializeManaged(userId, projectId, taskId, previewId, targetAgentId, env?.createdAt)
       workspacePath = managed.paths.repository
       if (env?.managed && (env.managed.storageId !== managed.machine.storageId || env.managed.machineId !== targetAgentId || env.managed.previewRoot !== managed.paths.previewRoot || env.workspacePath !== workspacePath)) {
         throw new Error('Persisted managed preview path не совпадает с каноническим helper path')
@@ -341,6 +333,30 @@ export class FeaturePreviewManager {
     if (!Number.isInteger(port)) throw new Error('port allocation failed')
     return port
   }
+  private manifestFs() {
+    return { read: this.deps.fsRead!, write: this.deps.fsWrite!, mkdir: this.deps.fsMkdir!, rename: this.deps.fsRename!, delete: this.deps.fsDelete! }
+  }
+  private async publishRunManifest(env: PreviewEnvironment, run: PreviewRun, sourceCommit: string): Promise<void> {
+    if (!env.managed) return
+    const paths = managedRunManifestPaths(env.managed.previewRoot, run.id, this.platform(env.agentId, env.managed.previewRoot))
+    const value: RunManifest = { formatVersion: 1, runId: run.id, runType: 'preview', initiator: run.initiator, machineId: env.agentId, workspace: env.workspacePath, branch: env.branch, sourceCommit, createdAt: new Date(run.createdAt).toISOString(), startedAt: new Date(run.startedAt ?? run.createdAt).toISOString() }
+    await publishRemoteManifest(this.manifestFs(), env.agentId, paths.run, value, parseRunManifest)
+  }
+  private async publishReportManifest(env: PreviewEnvironment, run: PreviewRun, status: RunReportManifest['status']): Promise<void> {
+    if (!env.managed || !run.commitSha || !run.finishedAt) return
+    const paths = managedRunManifestPaths(env.managed.previewRoot, run.id, this.platform(env.agentId, env.managed.previewRoot))
+    const at = new Date(run.finishedAt).toISOString()
+    const value: RunReportManifest = {
+      formatVersion: 1, runId: run.id, status, sourceCommit: run.commitSha,
+      finalCommit: status === 'success' ? (env.currentCommitSha ?? run.commitSha) : null,
+      checks: run.steps.map(step => ({ name: step.id, status: step.status === 'succeeded' ? 'passed' : step.status === 'failed' || step.status === 'cancelled' ? 'failed' : 'skipped', ...(step.message ? { message: redact(step.message) } : {}) })),
+      errors: run.errorMessage ? [{ code: run.errorType ?? 'preview_error', message: redact(run.errorMessage) }] : [],
+      artifacts: [], finishedAt: at,
+      ...(status === 'cancelled' ? { cancelledAt: at } : {}),
+      ...(status === 'interrupted' ? { interruptedAt: at } : {})
+    }
+    await publishRemoteManifest(this.manifestFs(), env.agentId, paths.report, value, parseRunReportManifest)
+  }
   private async execute(env: PreviewEnvironment, run: PreviewRun, operation: PreviewOperation, scenario: string | undefined, signal: AbortSignal): Promise<void> {
     try {
       if (operation === 'start' || operation === 'rebuild') {
@@ -370,6 +386,7 @@ export class FeaturePreviewManager {
         throw new Error(`Workspace ${env.workspacePath} на машине ${env.agentId} не совпадает с зафиксированным результатом разработки`)
       }
       env.gitStatus = 'verified'
+      await this.publishRunManifest(env, run, sha)
       if (operation === 'start' || operation === 'rebuild') {
         await this.command(env, run, 'if ! command -v docker >/dev/null 2>&1; then echo "Docker не установлен"; exit 69; fi; if ! docker info >/dev/null 2>&1; then echo "Docker установлен, но не запущен"; exit 70; fi', 30_000, signal)
         this.step(run, 'configuration', 'succeeded', 'Конфигурация и Docker проверены')
@@ -428,7 +445,7 @@ export class FeaturePreviewManager {
       }
       if (operation !== 'start' && operation !== 'rebuild') this.step(run, operation, 'succeeded', 'Операция завершена')
       this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
-      run.status = 'succeeded'; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', 'Операция успешно завершена'); env.updatedAt = this.now(); this.save()
+      run.status = 'succeeded'; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', 'Операция успешно завершена'); env.updatedAt = this.now(); this.save(); await this.publishReportManifest(env, run, 'success')
     } catch (error) {
       const message = redact(error instanceof Error ? error.message : String(error))
       const cancelled = signal.aborted
@@ -448,20 +465,22 @@ export class FeaturePreviewManager {
       }
       this.event(run, 'status', cancelled ? 'Операция отменена' : `Операция завершилась ошибкой: ${message}`)
       env.state = 'failed'; env.healthStatus = 'unhealthy'; env.lastError = { type: run.errorType, message }; env.updatedAt = this.now()
-      this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, false); this.save()
+      this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, false); this.save(); await this.publishReportManifest(env, run, cancelled ? 'cancelled' : 'failed')
     } finally { this.active.delete(env.id) }
   }
   async reconcile(): Promise<void> {
+    const interrupted: Array<{ env: PreviewEnvironment; run: PreviewRun }> = []
     for (const env of this.data.environments) {
       if (env.state === 'removed' || env.state === 'not_created') continue
       if (isPreviewBusy(env.state)) {
         env.state = 'failed'; env.lastError = { type: 'connection_lost', message: 'Операция прервана рестартом сервера' }
         const run = [...env.runs].reverse().find((item) => ['queued','running','cancelling'].includes(item.status))
-        if (run) { const current = run.currentStepId; if (current) this.step(run, current, 'failed', 'Сервер перезапущен во время операции', env.lastError.message); this.skipPending(run, 'Не выполнено после перезапуска сервера'); run.status = 'failed'; run.errorType = 'connection_lost'; run.errorMessage = env.lastError.message; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', env.lastError.message) }
+        if (run) { const current = run.currentStepId; if (current) this.step(run, current, 'failed', 'Сервер перезапущен во время операции', env.lastError.message); this.skipPending(run, 'Не выполнено после перезапуска сервера'); run.status = 'failed'; run.errorType = 'connection_lost'; run.errorMessage = env.lastError.message; run.finishedAt = this.now(); run.currentStepId = null; this.event(run, 'status', env.lastError.message); interrupted.push({ env, run }) }
       }
       if (!this.deps.isOnline(env.agentId)) { env.state = 'failed'; env.lastError = { type: 'machine_unavailable', message: 'Машина недоступна при reconciliation' } }
       this.deps.db.setTaskPreviewReady(env.projectId, env.taskId, env.state === 'running' && env.healthStatus === 'healthy')
     }
     this.save()
+    for (const item of interrupted) await this.publishReportManifest(item.env, item.run, 'interrupted')
   }
 }
