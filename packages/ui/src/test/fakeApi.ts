@@ -1090,6 +1090,9 @@ export function createFakeCi(): FakeCi {
       const at = new Date(now()).toISOString()
       return { version: 1 as const, taskId, generatedAt: at, summary: { createdAt: at, firstStartedAt: null, finishedAt: null, calendarDuration: null, activeDuration: 0, queueDuration: 0, awaitingInputDuration: 0, lastChangedAt: at }, stages: [] }
     },
+    listTaskImprovements: async () => [],
+    listProjectImprovementTasks: async () => [],
+    updateImprovementStatus: async () => { throw new Error('improvement not found') },
     cancelRun: async () => ({ ok: true }),
     dequeueRun: async (rid): Promise<CiQueueRemovalResult> => {
       const d = runs.get(rid)

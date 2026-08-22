@@ -41,7 +41,7 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciLlmLabel, ciStageLabel, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import { canStartCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport } from '@shared/ci'
+import { canStartCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport, type TaskImprovement, type ImprovementStatus } from '@shared/ci'
 import { AutomationProgressView } from './AutomationProgressView'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
@@ -63,7 +63,7 @@ export interface TaskUpdateFields {
 }
 
 
-export type TaskModalTab = 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'merge' | 'feed'
+export type TaskModalTab = 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'merge' | 'feed' | 'improvements'
 
 export interface TaskModalProps {
   task: Task
@@ -238,6 +238,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     return (props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || task.activeMergeRunId ? 'feed' : 'general'
   }
   const [activeTab, setActiveTab] = useState<TaskTab>(defaultTab)
+  const [improvements, setImprovements] = useState<TaskImprovement[]>([])
+  const loadImprovements = (): void => {
+    if (props.draft || !window.ci?.listTaskImprovements) return
+    void window.ci.listTaskImprovements(task.projectId, task.id).then(setImprovements).catch(() => {})
+  }
+  useEffect(loadImprovements, [task.id, props.ciSummary?.status])
+  const setImprovementStatus = (id: string, status: ImprovementStatus): void => {
+    void window.ci!.updateImprovementStatus(id, status).then((next) => setImprovements((all) => all.map((item) => item.id === id ? next : item))).catch(() => {})
+  }
   const [qaStageRuns, setQaStageRuns] = useState<Partial<Record<QaRunStage, AnyQaStageRun[]>>>({})
   useEffect(() => {
     if (props.draft || task.type !== 'task' || !window.qa?.listStageRuns) return
@@ -565,7 +574,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         {([
           ['general','Общее'],['timeline','Временная шкала'],
           ...(preparationVisible ? [['preparation','Подготовка к разработке'] as const] : []),
-          ['settings','Настройки'],['progress','Ход выполнения'],
+          ['settings','Настройки'],['progress','Ход выполнения'],['improvements', `Улучшения${improvements.filter((item) => item.status === 'new').length ? ` (${improvements.filter((item) => item.status === 'new').length})` : ''}`],
           ...qaStageOrder.filter(qaStageVisible).map((stage) => [stage, stage === 'component_qa' ? 'Component QA' : stage === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA'] as const),
           ['qa','Ручное QA'],['merge','Merge'],['feed','Лента рана']
         ] as Array<readonly [TaskTab, string]>).map(([id, label]) => (
@@ -954,6 +963,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </section>}
         {!props.draft && <>
         <section className="task-tab-panel" data-testid="task-timeline-panel" hidden={activeTab !== 'timeline'}>{activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}</section>
+        <section className="task-tab-panel" data-testid="task-improvements-panel" hidden={activeTab !== 'improvements'}>
+          {!improvements.length ? <div className="task-improvements-empty"><h3>Улучшений пока нет</h3><p>После авто-рана здесь появятся найденные возможности сделать процесс надёжнее.</p></div> : <div className="task-improvements">
+            {improvements.map((item) => <details key={item.id} className="task-improvement"><summary><strong>{item.title}</strong> · {item.status} · {item.source} · {item.stepId ? `автошаг ${item.stepId}` : item.runId ? `ран ${item.runId}` : 'системный сбой'} {item.isNew && <span>Новое</span>}</summary><Markdown>{item.description}</Markdown><div className="task-improvement-actions"><Button size="sm" variant="primary" onClick={() => setImprovementStatus(item.id, 'accepted')}>Принять</Button><Button size="sm" onClick={() => setImprovementStatus(item.id, 'rejected')}>Отклонить</Button>{item.suggestedAction === 'create_chatai_task' && <Button size="sm" onClick={() => setImprovementStatus(item.id, 'accepted')}>Создать задачу ChatAI</Button>}{item.suggestedAction === 'reconfigure_commands' && <Button size="sm" onClick={() => setImprovementStatus(item.id, 'accepted')}>Предложить перенастройку команд</Button>}{item.suggestedAction === 'support_ticket' && <Button size="sm" onClick={() => setImprovementStatus(item.id, 'accepted')}>Подготовить тикет техподдержки</Button>}{item.status === 'accepted' && <Button size="sm" onClick={() => setImprovementStatus(item.id, 'implemented')}>Реализовано</Button>}</div></details>)}
+          </div>}
+        </section>
         <section className="task-tab-panel" data-testid="task-preparation-panel" hidden={activeTab !== 'preparation'}>{preparationVisible && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} onStart={props.onStartPreparation} onRetry={props.onRetryPreparation} llmAccess={props.llmAccess} llmEngines={props.llmEngines} onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation} />}</section>
         {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" hidden={activeTab !== stage}>{stage === 'component_qa'
           ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />

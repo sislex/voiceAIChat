@@ -298,6 +298,17 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/timeline', async (req, reply) =>
     db.taskTimeline(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
   )
+  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId/improvements', async (req) =>
+    db.listTaskImprovements(uid(req), req.params.id, req.params.taskId)
+  )
+  app.get<{ Params: { id: string } }>('/api/projects/:id/improvements/tasks', async (req) =>
+    db.listProjectImprovementTaskIds(uid(req), req.params.id)
+  )
+  app.patch<{ Params: { id: string }; Body: { status?: string } }>('/api/improvements/:id', async (req, reply) => {
+    const status = req.body?.status
+    if (status !== 'new' && status !== 'accepted' && status !== 'rejected' && status !== 'implemented') return reply.code(400).send({ error: 'Некорректный статус предложения' })
+    return db.updateTaskImprovementStatus(uid(req), req.params.id, status) ?? nf(reply)
+  })
 
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/cancel', async (req, reply) => ({ ok: ci.cancel(uid(req), req.params.runId) }))
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/dequeue', async (req, reply) => {
