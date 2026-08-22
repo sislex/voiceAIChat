@@ -17,6 +17,21 @@ describe('buildAndroidInstallScript', () => {
     expect(s).toContain('termux-wake-lock')
     expect(s).toContain('--connection')
   })
+  it('готовит Termux для нативных npm-модулей и проверяет better-sqlite3', () => {
+    const s = buildAndroidInstallScript('http://h')
+    expect(s).toContain('pkg install -y clang make python pkg-config')
+    expect(s).toContain('export GYP_DEFINES="android_ndk_path=$PREFIX"')
+    expect(s).toContain('npm install --no-save --no-package-lock --silent better-sqlite3@11.10.0')
+    expect(s).toContain("require('better-sqlite3')")
+  })
+
+  it('проверяет новый bundle до замены и сохраняет connection до перезапуска', () => {
+    const s = buildAndroidInstallScript('http://h')
+    expect(s.indexOf('node --check')).toBeLessThan(s.indexOf('mv "$AGENT_DIR/voicechat-agent.new.cjs"'))
+    expect(s.indexOf("printf '%s' \"$CONN\"")).toBeLessThan(s.indexOf('mv "$AGENT_DIR/voicechat-agent.new.cjs"'))
+    expect(s.indexOf('mv "$AGENT_DIR/voicechat-agent.new.cjs"')).toBeLessThan(s.indexOf('setsid nohup'))
+  })
+
   it('учитывает самоподписанный TLS: curl -k и VC_AGENT_INSECURE_TLS', () => {
     const s = buildAndroidInstallScript('https://self-signed')
     expect(s).toContain('curl -fsSLk')

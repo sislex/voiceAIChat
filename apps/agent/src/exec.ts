@@ -3,7 +3,7 @@
 
 import { spawn } from 'node:child_process'
 import type { AgentToServer } from '@voicechat/shared'
-import { isWindows, resolveShell } from './platform.js'
+import { commandEnv, isWindows, resolveShell } from './platform.js'
 
 /** Активные команды: execId → процесс (для exec.cancel). */
 const running = new Map<string, ReturnType<typeof spawn>>()
@@ -57,7 +57,7 @@ export function runCommand(
   try {
     // Shell определяем динамически: на Termux /bin/bash нет (см. platform.resolveShell).
     // detached — своя группа процессов, чтобы отмена/таймаут снимали всё дерево.
-    child = spawn(command, { shell: resolveShell(), detached: !isWindows() })
+    child = spawn(command, { shell: resolveShell(), detached: !isWindows(), env: commandEnv() })
   } catch (err) {
     emit({ t: 'exec.error', execId, message: err instanceof Error ? err.message : String(err) })
     return

@@ -13,8 +13,10 @@ Android он запускается в [Termux](https://f-droid.org/packages/com
 2. В веб-клиенте: Настройки → Агент → «Добавить машину».
 3. Нажмите **«📱 Команда для Termux (Android)»** — команда скопируется в буфер.
 4. Вставьте её в Termux и выполните. Она сама:
-   - установит Node.js (`pkg install nodejs-lts`);
-   - скачает `voicechat-agent.cjs`;
+   - установит Node.js и инструменты сборки нативных npm-модулей
+     (`clang`, `make`, `python`, `pkg-config`);
+   - проверит окружение тестовой установкой и загрузкой `better-sqlite3`;
+   - скачает и синтаксически проверит актуальный `voicechat-agent.cjs`;
    - сохранит строку подключения;
    - настроит автозапуск (Termux:Boot) и `termux-wake-lock`;
    - запустит агента.
@@ -24,6 +26,23 @@ Android он запускается в [Termux](https://f-droid.org/packages/com
 ```bash
 curl -fsSL https://<сервер>/api/agents/install-android.sh | bash -s -- 'vcagent:…'
 ```
+
+## Проверка установки и обновления
+
+Повторно выполните ту же команду быстрого старта: это идемпотентное обновление,
+которое сохраняет строку подключения, скачивает свежий bundle и перезапускает
+агент. В выводе должны появиться сообщения
+`better-sqlite3 успешно установлен и загружен` и
+`Агент перезапускается`; через несколько секунд машина снова станет online.
+После подключения можно проверить окружение обычной командой проекта:
+
+```bash
+npm ci
+node -e "console.log(process.env.GYP_DEFINES)"
+```
+
+Вторая команда, выполненная через агента, должна вывести
+`android_ndk_path=/data/data/com.termux/files/usr`.
 
 ## Вручную
 
@@ -37,7 +56,11 @@ node voicechat-agent.cjs --connection 'vcagent:…'
 
 - **Выполнение команд (exec)** и **файловый проводник** — работают. Shell
   определяется автоматически (`platform.resolveShell`): на Termux это
-  `/data/data/com.termux/files/usr/bin/bash`, а не `/bin/bash`.
+  `/data/data/com.termux/files/usr/bin/bash`, а не `/bin/bash`. Агент
+  добавляет к окружению каждой команды
+  `GYP_DEFINES=android_ndk_path=$PREFIX`, поэтому обычный проектный `npm ci`
+  собирает нативные модули (в том числе `better-sqlite3`) без ручных
+  `export` и проектного `.npmrc`.
 - **Консоль (PTY).** Нативный модуль `@lydell/node-pty` на Android обычно не
   собирается. Тогда агент автоматически переходит в **упрощённый режим**
   (интерактивный shell через pipe): ввод-вывод работает, но нет настоящего TTY и

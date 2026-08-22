@@ -18,7 +18,7 @@ CONN="\${1:-\$VC_AGENT_CONNECTION}"
 AGENT_DIR="\$HOME/voicechat-agent"
 mkdir -p "\$AGENT_DIR"
 
-echo "[1/6] Проверяю Node.js (нужна 22+)…"
+echo "[1/7] Проверяю Node.js (нужна 22+)…"
 # Мажорная версия node (0 — нет или не запускается).
 node_major() {
   local out
@@ -39,14 +39,32 @@ if [ "\$(node_major)" -lt 22 ]; then
 fi
 echo "  Node.js \$(node -v)"
 
-echo "[2/6] Скачиваю агента…"
+echo "[2/7] Готовлю сборку нативных npm-модулей…"
+pkg install -y clang make python pkg-config >/dev/null 2>&1 || {
+  echo "Не удалось установить clang/make/python/pkg-config. Запустите pkg update и повторите установку."
+  exit 1
+}
+for tool in npm clang make python; do
+  command -v "\$tool" >/dev/null 2>&1 || { echo "После подготовки не найден \$tool"; exit 1; }
+done
+export GYP_DEFINES="android_ndk_path=\$PREFIX"
+SMOKE_DIR="\$(mktemp -d "\$AGENT_DIR/native-smoke.XXXXXX")"
+(
+  trap 'rm -rf "\$SMOKE_DIR"' EXIT
+  cd "\$SMOKE_DIR"
+  npm install --no-save --no-package-lock --silent better-sqlite3@11.10.0
+  node -e "const Database=require('better-sqlite3'); const db=new Database(':memory:'); db.prepare('select 1').get(); db.close()"
+) || { echo "Тестовая сборка better-sqlite3 не удалась"; exit 1; }
+echo "  better-sqlite3 успешно установлен и загружен"
+
+echo "[3/7] Скачиваю агента…"
 curl -fsSLk "\$SERVER/api/agents/script" -o "\$AGENT_DIR/voicechat-agent.new.cjs"
 test -s "\$AGENT_DIR/voicechat-agent.new.cjs"
 node --check "\$AGENT_DIR/voicechat-agent.new.cjs" 2>/dev/null || {
   echo "скачанный скрипт битый — обновление отменено"; rm -f "\$AGENT_DIR/voicechat-agent.new.cjs"; exit 1
 }
 
-echo "[3/6] Ищу строку подключения…"
+echo "[4/7] Ищу строку подключения…"
 if [ -n "\$CONN" ]; then
   echo "  из аргумента"
 elif [ -f "\$AGENT_DIR/connection" ] && [ -s "\$AGENT_DIR/connection" ]; then
@@ -60,17 +78,17 @@ else
   done
 fi
 
-mv "\$AGENT_DIR/voicechat-agent.new.cjs" "\$AGENT_DIR/voicechat-agent.cjs"
-
 [ -n "\$CONN" ] || {
   echo "Не нашёл строку подключения. Скопируйте команду установки из списка машин — в ней она есть."
+  rm -f "\$AGENT_DIR/voicechat-agent.new.cjs"
   exit 1
 }
-echo "[4/6] Сохраняю строку подключения…"
+echo "[5/7] Сохраняю строку подключения и новый агент…"
 printf '%s' "\$CONN" > "\$AGENT_DIR/connection"
+mv "\$AGENT_DIR/voicechat-agent.new.cjs" "\$AGENT_DIR/voicechat-agent.cjs"
 chmod 600 "\$AGENT_DIR/connection"
 
-echo "[5/6] Готовлю запуск и автозапуск (Termux:Boot)…"
+echo "[6/7] Готовлю запуск и автозапуск (Termux:Boot)…"
 cat > "\$AGENT_DIR/run.sh" <<'RUN'
 #!/data/data/com.termux/files/usr/bin/bash
 # Держим CPU включённым, чтобы Android не усыпил агента.
@@ -86,7 +104,7 @@ chmod +x "\$AGENT_DIR/run.sh"
 mkdir -p "\$HOME/.termux/boot"
 ln -sf "\$AGENT_DIR/run.sh" "\$HOME/.termux/boot/voicechat-agent"
 
-echo "[6/6] Перезапускаю агента…"
+echo "[7/7] Перезапускаю агента…"
 # Гасить старый агент нужно ПОСЛЕДНИМ действием: он мог запустить нас сам (кнопка
 # «обновить»), и его смерть уносит нас с собой. Поэтому переключение делает отдельный
 # отвязанный скрипт — его имя намеренно не совпадает с шаблоном pkill, иначе он

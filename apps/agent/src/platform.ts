@@ -24,6 +24,19 @@ export function isTermux(env: NodeJS.ProcessEnv = process.env): boolean {
   return existsSync(TERMUX_BIN)
 }
 
+/**
+ * Окружение для команд пользователя. В Termux node-gyp ошибочно ищет обычный
+ * Linux NDK, если явно не указать Android prefix; для остальных ОС возвращаем
+ * неизменённую копию окружения.
+ */
+export function commandEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const result = { ...env }
+  if (isTermux(env)) {
+    result.GYP_DEFINES = `android_ndk_path=${env.PREFIX || TERMUX_PREFIX}`
+  }
+  return result
+}
+
 /** Каталоги поиска бинарников: PATH + Termux bin (на случай урезанного PATH). */
 function searchDirs(env: NodeJS.ProcessEnv): string[] {
   const dirs = (env.PATH ?? '').split(delimiter).filter(Boolean)
