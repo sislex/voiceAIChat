@@ -101,8 +101,27 @@ function describeTransportError(kind: RunnerKind, url: string, err: unknown): st
   }
 }
 
+const CODEX_THREAD_IN_USE_MESSAGE =
+  'Этот Codex thread уже выполняется. Дождитесь завершения или остановите текущий ход либо сбросьте сессию.'
+
+function isCodexThreadInUse(status: number, body: string): boolean {
+  if (status !== 409) return false
+  try {
+    const value: unknown = JSON.parse(body)
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      'error' in value &&
+      (value as { error?: unknown }).error === 'codex_thread_in_use'
+    )
+  } catch {
+    return false
+  }
+}
+
 /** Ненулевой HTTP-статус: чаще всего это токен или адрес, а не модель. */
 function describeHttpError(kind: RunnerKind, url: string, status: number, body: string): string {
+  if (kind === 'codex' && isCodexThreadInUse(status, body)) return CODEX_THREAD_IN_USE_MESSAGE
   const snippet = body.trim().slice(0, 300)
   if (status === 401 || status === 403) {
     return (

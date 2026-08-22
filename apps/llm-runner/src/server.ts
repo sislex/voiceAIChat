@@ -137,6 +137,13 @@ export async function buildRunner(opts: BuildRunnerOptions): Promise<FastifyInst
 
     const body: LlmRunBody = { ...req.body, sessionId: req.body.sessionId ?? null }
     const id = body.runId || randomUUID()
+    const runBody = { ...body, runId: id }
+    if (!runs.reserveCodexThread(runBody)) {
+      return reply.code(409).send({
+        error: 'codex_thread_in_use',
+        message: 'Codex thread уже выполняется'
+      })
+    }
     const res = reply.raw
     res.socket?.setNoDelay(true)
     reply.hijack()
@@ -147,7 +154,7 @@ export async function buildRunner(opts: BuildRunnerOptions): Promise<FastifyInst
       [LLM_RUN_ID_HEADER]: id
     })
     res.flushHeaders()
-    runs.start({ ...body, runId: id }, responseSink(res))
+    runs.start(runBody, responseSink(res))
   })
 
   app.delete<{ Params: { id: string } }>(`${LLM_RUNNER.run}/:id`, async (req) => ({
