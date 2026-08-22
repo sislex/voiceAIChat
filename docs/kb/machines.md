@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-22
-checked: 78d15712
+checked: cb20616e
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -16,6 +16,7 @@ areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/version.ts
+  - packages/ui/src/App.tsx
   - packages/ui/src/components/ConversationSettings.tsx
   - packages/ui/src/components/Machine*.tsx
   - packages/ui/src/components/FileExplorer.tsx
@@ -683,9 +684,27 @@ id и версией marker, `unavailable` — недоступный катал
 
 Новые вложения разговора с такой привязкой записываются в его `attachments` внутри
 выбранного storage. Без привязки сохраняется совместимый `.voicechat_uploads` в корне
-проводника; старые файлы не перемещаются и не удаляются. Настройки разговора независимо
-показывают машину, storage/относительный файловый каталог и рабочий Git-cwd; offline и
-unavailable storage остаются в списке с отметкой состояния.
+проводника; старые файлы не перемещаются и не удаляются.
+
+Кнопка «+ Новый» теперь открывает явную форму создания с разделом «Файлы чата»
+(`packages/ui/src/App.tsx`). При открытии форма выбирает эффективную online-машину;
+если её нет — online-машину из `settings.defaultAgentId`, затем первую online-машину.
+Для неё выбирается основное хранилище со статусом `ready`, а при его отсутствии —
+первое `ready`. Неготовые хранилища видны, но недоступны для выбора. После создания
+сохранённого разговора форма вычисляет рекомендуемый относительный путь через
+`recommendedChatStoragePath`: `chats/<conversationId>` для обычного чата или
+`projects/<projectId>/chats/<conversationId>` для проектного, и сохраняет
+`chat_storage_bindings` до перехода на `/chat/<id>`. Пользователь может заранее
+задать только безопасный относительный путь; абсолютный корень берётся из
+зарегистрированного storage и не редактируется. Если ready-хранилища нет, форма явно
+остаётся во временном legacy-режиме `.voicechat_uploads` и ведёт в настройки машины.
+
+В настройках существующего разговора отдельный раздел «Файлы чата»
+(`packages/ui/src/components/ConversationSettings.tsx`) показывает машину хранения,
+основной storage и итоговый каталог. Можно выбрать другое ready-хранилище и изменить
+относительный каталог; offline/unavailable варианты остаются видны, но отключены.
+Рабочий Git-cwd настраивается независимо. Смена проекта только предлагает storage
+эффективной машины, а сохранённая привязка меняется после сохранения настроек.
 
 Новый CI-workspace при наличии storage машины живёт в стабильном
 `projects/<projectId>/tasks/<taskId>/environments/test/temporary/repository/<taskKey>`;
