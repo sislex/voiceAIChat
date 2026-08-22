@@ -176,6 +176,8 @@ export interface ChatActions {
   scheduleConversationsRefresh(): void
   retryConversations(): Promise<void>
   newConversation(assistantKind?: 'web-recorder' | 'playwright-reader'): Promise<string | null>
+  /** Создаёт сохранённый чат из явной формы создания и сразу открывает его. */
+  createConversation(input: { title: string; projectId?: string | null }): Promise<string>
   selectConversation(id: string): Promise<boolean>
   deleteConversation(id: string): Promise<void>
   renameConversation(id: string, title: string): Promise<void>
@@ -775,6 +777,22 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     return conversation.id
   }
 
+  async function createConversation(input: { title: string; projectId?: string | null }): Promise<string> {
+    await newConversation()
+    let conversation = await client['conversations:create']({ title: input.title.trim() || 'Новый разговор' })
+    if (input.projectId) {
+      conversation = await client['conversations:setProject']({ id: conversation.id, projectId: input.projectId })
+    }
+    setState({
+      activeId: conversation.id,
+      conversations: withConversation(getState().conversations, conversation),
+      loadingMessages: false,
+      messages: []
+    })
+    await refreshConversations({ keepActiveListed: true })
+    return conversation.id
+  }
+
   async function selectConversation(id: string): Promise<boolean> {
     const token = ++selectToken
     core.clearTimers()
@@ -1207,6 +1225,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         }
       },
       newConversation,
+      createConversation,
       selectConversation,
       async deleteConversation(id) {
         try {
