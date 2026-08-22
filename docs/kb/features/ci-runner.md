@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-22
-checked: 8bad7cb3
+checked: 0dd9300a
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -28,7 +28,11 @@ areas:
   - apps/server/src/db/database.ts
   - apps/server/src/agents/registry.ts
   - apps/agent/src/exec.ts
+  - apps/agent/src/gitAccess.ts
+  - packages/shared/src/gitAccess.ts
+  - packages/shared/src/agentProtocol.ts
   - packages/ui/src/App.tsx
+  - packages/ui/src/components/ProjectMachineGitAccess.tsx
   - packages/ui/src/components/ci
   - packages/ui/src/components/kanban/KanbanBoard.tsx
   - packages/ui/src/components/kanban/TaskCard.tsx
@@ -233,6 +237,43 @@ DOM-контейнер, фокус и пользовательское раск�
 `ssh://git@github.com/sislex/voiceAIChat.git`. Это операционная привязка машины,
 а не общий контракт раннера; при повторной диагностике важно проверять явный URL,
 поскольку глобальный `url.*.insteadof` может переписать scp-подобный SSH URL.
+
+## HTTPS Git credential связки проекта и машины
+
+Git-доступ настраивается отдельно для связки `projectId + agentId` во вкладке
+«Машины → Git-доступ». Репозиторий берётся из общего HTTPS GitHub URL проекта;
+интерфейс принимает fine-grained PAT в password-поле, рекомендует ограничить его
+этим репозиторием, минимальными Contents permissions и коротким сроком действия,
+а после попытки настройки очищает значение поля. Настройка, замена, проверка
+чтения и записи, удаление и диагностика `insteadOf` доступны только при online-
+машине; изменяющие credential операции разрешены владельцу проекта. Источники UI
+и HTTP-маршрутов — `packages/ui/src/components/ProjectMachineGitAccess.tsx` и
+`apps/server/src/routes/projects.ts`.
+
+Сервер проверяет членство пользователя, связь машины с проектом и право владельца,
+после чего пересылает запрос онлайн-агенту отдельными сообщениями `git.access` /
+`git.access.result`, коррелированными по `requestId`. PAT существует только в
+операции `configure`: он не сохраняется сервером и не попадает в
+`exec.start.command`. Ожидание ответа и очистка pending-запроса при disconnect
+реализованы в `apps/server/src/agents/registry.ts`; контракт безопасного результата
+и коды ошибок — в `packages/shared/src/gitAccess.ts` и
+`packages/shared/src/agentProtocol.ts`.
+
+Агент принимает только чистый `https://github.com/<owner>/<repo>[.git]` без
+userinfo, query, fragment и постороннего хвоста. Git запускается напрямую через
+argv и stdin без shell, с отключёнными terminal prompt и интерактивным credential
+manager. На macOS, Windows и Linux выбирается доступный системный helper; в Termux
+используется отдельный файл `~/.voicechat/git-credentials`, каталог создаётся с
+режимом 0700, а файл после записи обязан иметь 0600, иначе credential удаляется и
+операция завершается ошибкой. Реализация — `apps/agent/src/gitAccess.ts`.
+
+Проверка сначала выполняет `git ls-remote --exit-code <url> HEAD`, затем
+`git push --dry-run <url> <refspec>` и возвращает раздельные `readAccess` и
+`writeAccess`, время проверки, аккаунт и безопасный код ошибки. Статус никогда не
+содержит PAT или пароль. Диагностика читает `url.*.insteadOf`, применяет самое
+длинное совпавшее правило и сообщает исходный и эффективный URL предупреждением;
+это объясняет случаи, когда проверяемый HTTPS URL фактически уходит по другому
+транспорту.
 
 ## Движок и модель: наследование
 
