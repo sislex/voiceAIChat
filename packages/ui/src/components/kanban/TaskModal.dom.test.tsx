@@ -413,7 +413,7 @@ describe('TaskModal — вкладки и merge', () => {
     render(<TaskModal {...props()} />)
 
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Ручное QA', 'Merge', 'Лента рана'
+      'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Merge', 'Лента рана'
     ])
   })
 
@@ -433,21 +433,21 @@ describe('TaskModal — вкладки и merge', () => {
     const preparationBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Подготовка', semanticType: 'preparation' }] }
     const { unmount } = render(<TaskModal {...props({ board: preparationBoard, task: mkTask({ taskPreparationRunId: 'prep-1' }) })} />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Подготовка к разработке', 'Настройки', 'Ход выполнения', 'Ручное QA', 'Merge', 'Лента рана'
+      'Общее', 'Временная шкала', 'Подготовка к разработке', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Merge', 'Лента рана'
     ])
     unmount()
 
     const manualQaBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Ручное QA', semanticType: 'manual_qa' }] }
     render(<TaskModal {...props({ board: manualQaBoard })} />)
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
-      'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Component QA', 'Интеграционные тесты', 'Automated QA', 'Ручное QA', 'Merge', 'Лента рана'
+      'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Улучшения', 'Component QA', 'Интеграционные тесты', 'Automated QA', 'Ручное QA', 'Merge', 'Лента рана'
     ])
   })
 
-  it('переключает семь вкладок без закрытия и сохраняет черновик', async () => {
+  it('переключает восемь вкладок без закрытия и сохраняет черновик', async () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
-    expect(screen.getAllByRole('tab')).toHaveLength(7)
+    expect(screen.getAllByRole('tab')).toHaveLength(8)
     fireEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
     fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'черновик' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))

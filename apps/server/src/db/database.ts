@@ -128,6 +128,8 @@ import {
   type CiWorkspace,
   type CiWorkspaceReportItem,
   type CiCommandSuggestion,
+  type TaskImprovement,
+  type ImprovementStatus,
   type CiRunSummary,
   type CiCommandMetric,
   type CiModelWorkMetric,
@@ -5024,6 +5026,61 @@ export class VoiceChatDb {
       out.push({ ...mapCiWorkspace(r), taskTitle: task?.title ?? null, orphaned: r.state === 'active' && taskClosed })
     }
     return out
+  }
+
+  // --- Предложения улучшений авторанов ---
+
+  upsertTaskImprovement(args: Omit<TaskImprovement, 'id' | 'status' | 'isNew' | 'occurrences' | 'createdAt' | 'updatedAt'>): TaskImprovement {
+    const redact = (value: string): string => value
+      .replace(/\b(?:sk|ghp|github_pat|xox[baprs])[-_A-Za-z0-9]{12,}\b/gi, '[REDACTED]')
+      .replace(/((?:token|password|secret|authorization|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[REDACTED]')
+      .slice(0, 20_000)
+    const evidence = [...new Set(args.evidence.map(redact).filter(Boolean))].slice(-30)
+    const existing = this.db.prepare('SELECT * FROM task_improvements WHERE task_id=? AND fingerprint=?').get(args.taskId, args.fingerprint) as any
+    const at = this.now()
+    if (existing) {
+      const merged = [...new Set([...(JSON.parse(existing.evidence_json || '[]') as string[]), ...evidence])].slice(-30)
+      this.db.prepare(`UPDATE task_improvements SET run_id=?, step_id=?, source=?, description=?, evidence_json=?, occurrences=occurrences+1, updated_at=? WHERE id=?`)
+        .run(args.runId, args.stepId, args.source, redact(args.description), JSON.stringify(merged), at, existing.id)
+      return this.mapTaskImprovement(this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(existing.id) as any)
+    }
+    const id = this.newId()
+    this.db.prepare(`INSERT INTO task_improvements
+      (id,project_id,task_id,run_id,step_id,source,status,title,description,fingerprint,evidence_json,occurrences,suggested_action,created_at,updated_at)
+      VALUES (?,?,?,?,?,?,'new',?,?,?,?,1,?,?,?)`)
+      .run(id,args.projectId,args.taskId,args.runId,args.stepId,args.source,redact(args.title),redact(args.description),args.fingerprint,JSON.stringify(evidence),args.suggestedAction,at,at)
+    return this.mapTaskImprovement(this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(id) as any)
+  }
+
+  listTaskImprovements(userId: string, projectId: string, taskId: string): TaskImprovement[] {
+    if (!this.getCiTask(userId, projectId, taskId)) return []
+    return (this.db.prepare('SELECT * FROM task_improvements WHERE project_id=? AND task_id=? ORDER BY updated_at DESC').all(projectId, taskId) as any[])
+      .map((row) => this.mapTaskImprovement(row))
+  }
+
+  listProjectImprovementTaskIds(userId: string, projectId: string): Array<{ taskId: string; count: number; improvementId: string }> {
+    if (!this.isProjectMember(userId, projectId)) return []
+    return (this.db.prepare(`SELECT task_id, COUNT(*) count,
+      (SELECT id FROM task_improvements i2 WHERE i2.task_id=i.task_id AND i2.status IN ('new','accepted') ORDER BY i2.updated_at DESC LIMIT 1) improvement_id
+      FROM task_improvements i WHERE project_id=? AND status IN ('new','accepted') GROUP BY task_id`).all(projectId) as any[])
+      .map((row) => ({ taskId: row.task_id, count: Number(row.count), improvementId: row.improvement_id }))
+  }
+
+  updateTaskImprovementStatus(userId: string, id: string, status: ImprovementStatus): TaskImprovement | null {
+    const row = this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(id) as any
+    if (!row || !this.isProjectMember(userId, row.project_id)) return null
+    this.db.prepare('UPDATE task_improvements SET status=?, resolved_by=?, resolved_at=?, updated_at=? WHERE id=?')
+      .run(status, userId, this.now(), this.now(), id)
+    return this.mapTaskImprovement(this.db.prepare('SELECT * FROM task_improvements WHERE id=?').get(id) as any)
+  }
+
+  private mapTaskImprovement(row: any): TaskImprovement {
+    return {
+      id: row.id, projectId: row.project_id, taskId: row.task_id, runId: row.run_id, stepId: row.step_id,
+      source: row.source, status: row.status, title: row.title, description: row.description,
+      fingerprint: row.fingerprint, evidence: JSON.parse(row.evidence_json || '[]'), occurrences: row.occurrences,
+      suggestedAction: row.suggested_action, isNew: row.status === 'new', createdAt: row.created_at, updatedAt: row.updated_at
+    }
   }
 
   // --- Предложения модели ---
