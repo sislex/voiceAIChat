@@ -14,6 +14,8 @@ import {
   type AgentToServer,
   type FsOp,
   type FsResult,
+  type GitAccessRequest,
+  type GitAccessResult,
   type ServerToAgent
 } from '@voicechat/shared'
 
@@ -84,6 +86,13 @@ interface PendingExec {
   onChunk?: (data: string) => void
 }
 
+interface PendingGitAccess {
+  agentId: string
+  timer: NodeJS.Timeout
+  resolve(result: GitAccessResult): void
+  reject(error: Error): void
+}
+
 interface PendingFs {
   agentId: string
   timer: NodeJS.Timeout
@@ -120,6 +129,7 @@ export class AgentRegistry {
   private readonly online = new Map<string, OnlineAgent>()
   private readonly pending = new Map<string, PendingExec>()
   private readonly pendingFs = new Map<string, PendingFs>()
+  private readonly pendingGitAccess = new Map<string, PendingGitAccess>()
   private readonly ptys = new Map<string, PtySession>()
   private readonly telemetry = new Map<string, AgentTelemetry>()
   private readonly tunnels = new Map<string, TunnelSession>()
@@ -217,6 +227,12 @@ export class AgentRegistry {
       this.pending.delete(execId)
       clearTimeout(p.timer)
       p.reject(new Error('Машина отключилась во время выполнения команды'))
+    }
+    for (const [requestId, p] of this.pendingGitAccess) {
+      if (p.agentId !== agentId) continue
+      this.pendingGitAccess.delete(requestId)
+      clearTimeout(p.timer)
+      p.reject(new Error('Машина отключилась'))
     }
     for (const [opId, p] of this.pendingFs) {
       if (p.agentId !== agentId) continue
@@ -403,6 +419,19 @@ export class AgentRegistry {
       this.pending.set(execId, entryRef)
       signal?.addEventListener('abort', onAbort, { once: true })
       this.send(agentId, { t: 'exec.start', execId, command, timeoutMs })
+    })
+  }
+
+  gitAccess(agentId: string, request: GitAccessRequest): Promise<GitAccessResult> {
+    if (!this.online.has(agentId)) return Promise.reject(new Error('machine_offline'))
+    const requestId = this.newId()
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingGitAccess.delete(requestId)
+        reject(new Error('machine_offline'))
+      }, 45_000)
+      this.pendingGitAccess.set(requestId, { agentId, timer, resolve, reject })
+      this.send(agentId, { t: 'git.access', requestId, request })
     })
   }
 
@@ -601,6 +630,14 @@ export class AgentRegistry {
       } else if (msg.t === 'tunnel.error') {
         tunnel.reject?.(new Error(msg.message)); this.closeTunnel(tunnel.id)
       }
+      return
+    }
+    if (msg.t === 'git.access.result') {
+      const pending = this.pendingGitAccess.get(msg.requestId)
+      if (!pending || pending.agentId !== agentId) return
+      this.pendingGitAccess.delete(msg.requestId)
+      clearTimeout(pending.timer)
+      pending.resolve(msg.result)
       return
     }
     if (msg.t === 'fs.result' || msg.t === 'fs.error') {

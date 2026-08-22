@@ -733,6 +733,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (m) m.path = path
       return detail(p)
     },
+    'projects:gitAccessStatus': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] } }),
+    'projects:configureGitAccess': async ({ repositoryUrl }) => ({ ok: true, status: { configured: true, repositoryUrl, account: 'octocat', readAccess: 'unknown', writeAccess: 'unknown', warnings: [] } }),
+    'projects:verifyGitAccess': async ({ repositoryUrl }) => ({ ok: true, status: { configured: true, repositoryUrl, account: 'octocat', checkedAt: Date.now(), readAccess: 'ok', writeAccess: 'ok', warnings: [] } }),
+    'projects:deleteGitAccess': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] } }),
+    'projects:gitAccessDiagnostics': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] }, diagnostics: { originalUrl: repositoryUrl, effectiveUrl: repositoryUrl, matchingRules: [], warnings: [] } }),
     'projects:setReposRoot': async ({ id, agentId, reposRoot }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) m.reposRoot = reposRoot; return detail(p) },
     'projects:setMachineSsh': async ({ id, agentId, sshHost, sshUser }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) Object.assign(m, { sshHost, sshUser }); return detail(p) },
     'projects:setDefaultMachine': async ({ id, agentId }) => {
