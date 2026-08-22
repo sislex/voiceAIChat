@@ -363,6 +363,24 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('businessRules[0] должен быть непустой строкой')
   })
 
+  it('нормализует однозначный список coverage без потери проверок', async () => {
+    const { project, task } = await taskInBacklog()
+    const normalized = JSON.parse(compatibleReadiness())
+    normalized.uiImpact = 'existing_components'
+    normalized.affectedComponents = [{
+      id: 'server', name: 'Server', storybookStoryId: null, reusable: true,
+      coverage: ['server.test.ts', 'snapshot regression'],
+      exclusionReason: 'Серверный компонент не визуальный', alternativeVerification: 'Vitest'
+    }]
+    claudeAnswer = () => ({ text: JSON.stringify(normalized) })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('success')
+    expect(run.readiness?.affectedComponents[0].coverage).toEqual({ required: ['server.test.ts', 'snapshot regression'] })
+    expect(claudeCalls).toHaveLength(1)
+  })
+
   it('нормализует совместимые kind и одиночный refs до общего контракта', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())

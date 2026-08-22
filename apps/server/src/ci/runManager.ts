@@ -418,19 +418,18 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
     const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId, userId)
-    const settings = deps.db.getSettings(userId)
-    const userLlm = deps.db.ciLlmDefaultsForUser(userId)
     const role = deps.db.getUser(userId)?.role ?? 'developer'
     // Обычный запуск наследует пару задачи → проекта → пользователя. Окно создания
     // задачи передаёт разовый выбор, который фиксируется только в этом ране.
-    const requestedProvider = launchOptions?.provider ?? userLlm.provider
-    const requestedModel = launchOptions?.model ?? userLlm.model
+    const requestedProvider = launchOptions?.provider ?? taskCi.provider
+    const requestedModel = launchOptions?.model ?? taskCi.model
     const access = deps.db.getUserLlmAccess(userId)
     const provider = isProviderAllowed(access, requestedProvider) ? requestedProvider : firstAllowedProvider(access)
     if (!provider) return { error: 'Нет доступных движков и моделей' }
     const model = clampModel(access, provider, requestedModel)
     if (!model) return { error: 'Нет доступных моделей для движка' }
-    const engineResolution = deps.db.resolveLlmEngine(settings.llmEngineId, provider, role)
+    const requestedEngineId = taskCi.llmEngineId
+    const engineResolution = deps.db.resolveLlmEngine(requestedEngineId, provider, role)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:
     // если пользователь уже открывал карточку, вернётся существующий чат.
@@ -467,7 +466,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (developmentColumnId && developmentColumnId !== task.columnId) {
       deps.db.moveTask(userId, projectId, taskId, { columnId: developmentColumnId })
     }
-    if (engineResolution.substituted) deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.llm_engine_substituted', actorType: 'system', payload: { requestedEngineId: settings.llmEngineId, resolvedEngineId: engineResolution.engine?.id ?? null, message: `Исполнитель ${settings.llmEngineId} недоступен; выбран ${engineResolution.engine?.name ?? 'default'}` } })
+    if (engineResolution.substituted) deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.llm_engine_substituted', actorType: 'system', payload: { requestedEngineId, resolvedEngineId: engineResolution.engine?.id ?? null, message: `Исполнитель ${requestedEngineId} недоступен; выбран ${engineResolution.engine?.name ?? 'default'}` } })
     deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.started', actorType: 'user', actorId: userId, payload: { taskId, launch, agentId } })
     emitRun(run, userId)
 
