@@ -6,7 +6,7 @@ import { dirname } from 'node:path'
 import { PassThrough } from 'node:stream'
 import type { LlmRunBody, LlmRunFrame } from '@voicechat/shared'
 import { parseLlmRunFrame } from '@voicechat/shared'
-import { RunManager, type RunSink } from './rawRun.js'
+import { CodexThreadInUseError, RunManager, type RunSink } from './rawRun.js'
 import type { SpawnFn } from '../cli/claudeCli.js'
 
 /** Фейковый процесс CLI: реальные claude/codex в тестах не запускаются. */
@@ -346,5 +346,102 @@ describe('RunManager', () => {
     await vi.waitFor(() => expect(sink.frames.at(-1)).toEqual({ t: 'exit', code: 66 }), {
       timeout: 3_000
     })
+  })
+})
+
+describe('RunManager: аренда Codex thread', () => {
+  const resume = (runId: string, over: Partial<LlmRunBody> = {}): LlmRunBody =>
+    request({ kind: 'codex', userId: 'u1', sessionId: 's1', model: '', runId, ...over })
+
+  it('не запускает второй resume того же пользователя и thread, но изолирует ключи', () => {
+    const children = [fakeChild(), fakeChild(), fakeChild(), fakeChild(), fakeChild()]
+    const spawn = vi.fn(() => children.shift()!.child) as unknown as SpawnFn
+    const runs = new RunManager({ spawn })
+
+    runs.start(resume('r1'), fakeSink())
+    expect(() => runs.start(resume('r2'), fakeSink())).toThrowError(CodexThreadInUseError)
+    runs.start(resume('r3', { userId: 'u2' }), fakeSink())
+    runs.start(resume('r4', { sessionId: 's2' }), fakeSink())
+    runs.start(resume('r5', { sessionId: null }), fakeSink())
+    runs.start(resume('r6', { sessionId: null }), fakeSink())
+
+    expect(spawn).toHaveBeenCalledTimes(5)
+  })
+
+  it.each([0, 66])('освобождает аренду после close(%s)', async (code) => {
+    const first = fakeChild()
+    const second = fakeChild()
+    const spawn = vi.fn().mockReturnValueOnce(first.child).mockReturnValueOnce(second.child) as unknown as SpawnFn
+    const runs = new RunManager({ spawn })
+    runs.start(resume('r1'), fakeSink())
+
+    first.stdout.end()
+    first.stderr.end()
+    await tick()
+    first.child.emit('close', code)
+    await tick()
+
+    runs.start(resume('r2'), fakeSink())
+    expect(spawn).toHaveBeenCalledTimes(2)
+  })
+
+  it('освобождает аренду после синхронной и асинхронной ошибки spawn', () => {
+    const errored = fakeChild()
+    const recovered = fakeChild()
+    const spawn = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('spawn ENOENT')
+      })
+      .mockReturnValueOnce(errored.child)
+      .mockReturnValueOnce(recovered.child) as unknown as SpawnFn
+    const runs = new RunManager({ spawn })
+
+    runs.start(resume('r1'), fakeSink())
+    runs.start(resume('r2'), fakeSink())
+    errored.child.emit('error', new Error('child failed'))
+    runs.start(resume('r3'), fakeSink())
+
+    expect(spawn).toHaveBeenCalledTimes(3)
+  })
+
+  it('удерживает аренду после cancel до смерти процесса', async () => {
+    const first = fakeChild()
+    const second = fakeChild()
+    const spawn = vi.fn().mockReturnValueOnce(first.child).mockReturnValueOnce(second.child) as unknown as SpawnFn
+    const runs = new RunManager({ spawn })
+    runs.start(resume('r1'), fakeSink())
+
+    expect(runs.cancel('r1')).toBe(true)
+    expect(() => runs.start(resume('r2'), fakeSink())).toThrowError(CodexThreadInUseError)
+    first.stdout.end()
+    first.stderr.end()
+    await tick()
+    first.child.emit('close', null)
+    await tick()
+    runs.start(resume('r3'), fakeSink())
+
+    expect(spawn).toHaveBeenCalledTimes(2)
+  })
+
+  it('освобождает аренду при disconnect и orphan-timeout', async () => {
+    vi.useFakeTimers()
+    const first = fakeChild()
+    const orphan = fakeChild()
+    const recovered = fakeChild()
+    const children = [first, orphan, recovered]
+    const spawn = vi.fn(() => children.shift()!.child) as unknown as SpawnFn
+    const runs = new RunManager({ spawn, orphanMs: 10 })
+    const disconnected = fakeSink()
+    runs.start(resume('r1'), disconnected)
+    disconnected.close()
+    runs.start(resume('r2'), fakeSink({ flushed: false }))
+
+    orphan.stdout.write('backpressure\n')
+    await vi.advanceTimersByTimeAsync(1)
+    await vi.advanceTimersByTimeAsync(10)
+    runs.start(resume('r3'), fakeSink())
+
+    expect(spawn).toHaveBeenCalledTimes(3)
   })
 })

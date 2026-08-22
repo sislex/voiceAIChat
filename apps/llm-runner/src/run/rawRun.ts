@@ -115,9 +115,20 @@ function usableCwd(cwd: string | undefined): string | undefined {
   return cwd && existsSync(cwd) ? cwd : undefined
 }
 
+export class CodexThreadInUseError extends Error {
+  readonly code = 'codex_thread_in_use'
+
+  constructor() {
+    super('Codex thread уже выполняется')
+    this.name = 'CodexThreadInUseError'
+  }
+}
+
 /** Реестр живых ранов: запуск, отмена по id, счётчик для health. */
 export class RunManager {
   private readonly runs = new Map<string, ActiveRun>()
+  /** Codex resume lease key → owning runId. */
+  private readonly codexThreadLeases = new Map<string, string>()
 
   constructor(private readonly opts: RunManagerOptions = {}) {}
 
@@ -131,6 +142,31 @@ export class RunManager {
     return this.runs.has(id)
   }
 
+  /**
+   * Atomically reserves a resumed Codex thread before attachments or spawn are prepared.
+   * Repeating the reservation for its owner is safe, which lets the HTTP route reserve
+   * before opening the NDJSON response and `start` enforce the same invariant directly.
+   */
+  reserveCodexThread(body: LlmRunBody): boolean {
+    const key = this.codexThreadKey(body)
+    if (!key) return true
+    const id = body.runId || ''
+    const owner = this.codexThreadLeases.get(key)
+    if (owner !== undefined) return owner === id
+    this.codexThreadLeases.set(key, id)
+    return true
+  }
+
+  private codexThreadKey(body: LlmRunBody): string | undefined {
+    if (body.kind !== 'codex' || !body.sessionId) return undefined
+    return JSON.stringify([body.userId || '', body.sessionId])
+  }
+
+  private releaseCodexThread(body: LlmRunBody, id: string): void {
+    const key = this.codexThreadKey(body)
+    if (key && this.codexThreadLeases.get(key) === id) this.codexThreadLeases.delete(key)
+  }
+
   private log(message: string): void {
     ;(this.opts.log ?? ((m: string) => console.warn(`[llm-runner] ${m}`)))(message)
   }
@@ -141,13 +177,24 @@ export class RunManager {
    */
   start(body: LlmRunBody, sink: RunSink): string {
     const id = body.runId || randomUUID()
+    const reservedBody = body.runId ? body : { ...body, runId: id }
+    if (!this.reserveCodexThread(reservedBody)) {
+      throw new CodexThreadInUseError()
+    }
     const kind: LlmRunKind = body.kind === 'codex' ? 'codex' : 'claude'
-    const prepared = prepareRun(body)
+    let prepared: PreparedRun
+    try {
+      prepared = prepareRun(reservedBody)
+    } catch (err) {
+      this.releaseCodexThread(reservedBody, id)
+      throw err
+    }
     let cleaned = false
     const cleanup = (): void => {
       if (cleaned) return
       cleaned = true
       prepared.cleanup()
+      this.releaseCodexThread(reservedBody, id)
     }
     const cwd = usableCwd(prepared.body.cwd)
     const runBody: LlmRunBody = {

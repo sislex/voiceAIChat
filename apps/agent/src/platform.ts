@@ -25,15 +25,17 @@ export function isTermux(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /**
- * Окружение для команд пользователя. В Termux node-gyp ошибочно ищет обычный
- * Linux NDK, если явно не указать Android prefix; для остальных ОС возвращаем
- * неизменённую копию окружения.
+ * Окружение дочерних команд агента. Node-gyp на Android ожидает gyp-переменную
+ * android_ndk_path, но npm/Termux не задают её автоматически даже при наличии
+ * системного ndk-sysroot. Без неё сборка любого нативного addon падает ещё на
+ * configure. Сохраняем пользовательские GYP_DEFINES и добавляем только
+ * отсутствующее определение. Для остальных ОС возвращаем неизменённую копию.
  */
 export function commandEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const result = { ...env }
-  if (isTermux(env)) {
-    result.GYP_DEFINES = `android_ndk_path=${env.PREFIX || TERMUX_PREFIX}`
-  }
+  if (!isTermux(env) || /(?:^|\s)android_ndk_path=/.test(env.GYP_DEFINES ?? '')) return result
+  const prefix = env.PREFIX || TERMUX_PREFIX
+  result.GYP_DEFINES = [env.GYP_DEFINES, `android_ndk_path=${prefix}`].filter(Boolean).join(' ')
   return result
 }
 
