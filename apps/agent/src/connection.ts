@@ -317,7 +317,10 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
             }
             send({ t: 'fs.result', opId: msg.opId, result })
           } catch (err) {
-            send({ t: 'fs.error', opId: msg.opId, message: err instanceof Error ? err.message : String(err) })
+            const code = typeof err === 'object' && err !== null && 'code' in err && typeof err.code === 'string'
+              ? err.code
+              : undefined
+            send({ t: 'fs.error', opId: msg.opId, message: err instanceof Error ? err.message : String(err), ...(code ? { code } : {}) })
           }
           break
         }

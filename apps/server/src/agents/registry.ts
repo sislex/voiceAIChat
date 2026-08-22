@@ -56,10 +56,21 @@ const PTY_IDLE_TTL_MS = 30 * 60_000
 const OUTPUT_CAP_BYTES = 200 * 1024
 /** Запас серверного страховочного таймаута сверх таймаута агента. */
 const GUARD_EXTRA_MS = 10_000
-/** Таймаут файловой операции проводника. */
-const FS_TIMEOUT_MS = 10_000
+/**
+ * Таймаут файловой операции проводника. 30 секунд оставляют запас на чтение и
+ * base64-передачу файла максимального разрешённого размера (32 MiB) по WS.
+ */
+export const FS_TIMEOUT_MS = 30_000
 /** Сообщение, когда агент не ответил на fs-операцию (частая причина — устаревший агент). */
-const FS_NO_REPLY = 'Машина не ответила. Возможно, агент устарел — обновите его на машине.'
+const FS_NO_REPLY = `Машина не ответила на файловую операцию за ${FS_TIMEOUT_MS / 1000} с. Возможно, агент устарел — обновите его на машине.`
+
+/** Ошибка fs.error агента с машиночитаемым кодом Node.js (ENOENT, EACCES и т. п.). */
+export class AgentFsError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message)
+    this.name = 'AgentFsError'
+  }
+}
 
 interface PendingExec {
   agentId: string
@@ -598,7 +609,7 @@ export class AgentRegistry {
       this.pendingFs.delete(msg.opId)
       clearTimeout(pf.timer)
       if (msg.t === 'fs.result') pf.resolve(msg.result)
-      else pf.reject(new Error(msg.message))
+      else pf.reject(new AgentFsError(msg.message, msg.code))
       return
     }
     if (msg.t === 'pty.output' || msg.t === 'pty.exit' || msg.t === 'pty.error') {

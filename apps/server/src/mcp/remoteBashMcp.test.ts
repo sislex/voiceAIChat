@@ -982,6 +982,70 @@ describe('remoteBashMcp: машины проекта (query project)', () => {
     expect(missing.result.content[0].text).not.toContain('формат')
   })
 
+  it('image: JPEG около 5 MiB проходит MCP целиком', async () => {
+    const jpeg = Buffer.alloc(5 * 1024 * 1024, 0x5a)
+    jpeg.set([0xff, 0xd8, 0xff, 0xe0])
+    const bytes = jpeg.toString('base64')
+    const registry = {
+      fsRead: async () => ({ root: '/', cwd: '/repos/task', dataBase64: bytes }),
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'image', arguments: { path: 'large.jpg' } }
+    }, Q)
+    const content = (call.json() as {
+      result: { content: Array<{ type: string; data?: string; mimeType?: string; text?: string }> }
+    }).result.content
+    expect(content[0]).toMatchObject({ type: 'image', mimeType: 'image/jpeg' })
+    expect(content[0].data).toHaveLength(bytes.length)
+    expect(content[0].data).toBe(bytes)
+    expect(content.filter((item) => item.type === 'text').map((item) => item.text).join('')).not.toContain(bytes.slice(0, 100))
+  })
+
+  it.each([
+    ['таймаут', 'Машина не ответила на файловую операцию за 30 с'],
+    ['обрыв соединения', 'Машина отключилась'],
+    ['ошибка агента', 'EACCES: permission denied']
+  ])('image: %s агента не маскируется как отсутствие файла', async (_case, message) => {
+    const registry = {
+      fsRead: async () => { throw new Error(message) },
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'image', arguments: { path: 'existing.jpg' } }
+    }, Q)
+    const result = (call.json() as { result: { content: Array<{ text: string }>; isError: boolean } }).result
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain(message)
+    expect(result.content[0].text).not.toContain('не найден')
+  })
+
+  it('image: неполный fs.result агента диагностируется отдельно', async () => {
+    const registry = {
+      fsRead: async () => ({ root: '/', cwd: '/repos/task' }),
+      cancelAll: () => {}
+    } as unknown as AgentRegistry
+    app = await makeProjectApp(registry)
+    await rpc(app, INIT_BODY, Q)
+
+    const call = await rpc(app, {
+      jsonrpc: '2.0', id: 2, method: 'tools/call',
+      params: { name: 'image', arguments: { path: 'broken.jpg' } }
+    }, Q)
+    const result = (call.json() as { result: { content: Array<{ text: string }>; isError: boolean } }).result
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('неполный ответ')
+    expect(result.content[0].text).not.toContain('не найден')
+  })
+
   it('сломанный резолвер машин не роняет ход: мост работает по-старому', async () => {
     const { registry, lastExec } = spy()
     const server = Fastify({ logger: false })

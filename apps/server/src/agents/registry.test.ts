@@ -123,6 +123,14 @@ describe('AgentRegistry', () => {
       expect(sock.sent.some((m) => m.t === 'exec.cancel')).toBe(true)
     })
 
+    it('fsRead: таймаут сообщает отдельную причину и заданный предел', async () => {
+      const reg = makeRegistry()
+      reg.register('a1', 'Мак', fakeSocket(), DEFAULT_AGENT_POLICY, '0.6.0')
+      const pending = reg.fsRead('a1', '/large.jpg')
+      vi.advanceTimersByTime(30_000 + 1)
+      await expect(pending).rejects.toThrow('файловую операцию за 30 с')
+    })
+
     it('pty: отписанный сеанс живёт полчаса, а потом убивается по простою', () => {
       const reg = makeRegistry()
       const sock = fakeSocket()
@@ -206,10 +214,18 @@ describe('AgentRegistry', () => {
     reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.2.0')
 
     const p = reg.fsDelete('a1', '/x')
-    reg.handleMessage('a1', { t: 'fs.error', opId: 'exec-1', message: 'запрещено' })
-    await expect(p).rejects.toThrow('запрещено')
+    reg.handleMessage('a1', { t: 'fs.error', opId: 'exec-1', message: 'ENOENT: no such file', code: 'ENOENT' })
+    await expect(p).rejects.toMatchObject({ message: 'ENOENT: no such file', code: 'ENOENT' })
 
     await expect(reg.fsList('offline', '')).rejects.toThrow('не в сети')
+  })
+
+  it('fsRead: обрыв соединения отклоняется как отключение машины', async () => {
+    const reg = makeRegistry()
+    reg.register('a1', 'Мак', fakeSocket(), DEFAULT_AGENT_POLICY, '0.6.0')
+    const pending = reg.fsRead('a1', '/large.jpg')
+    reg.unregister('a1')
+    await expect(pending).rejects.toThrow('Машина отключилась')
   })
 
   it('гейтинг версии: старый агент (0.1.0) → fs запрещён + сигнал обновления; exec разрешён', async () => {
