@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-22
-checked: a7b8544b
+checked: 7953d1e0
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -91,6 +91,18 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 новый и стартуют с автозапуском (systemd --user / launchd / реестр HKCU /
 Termux:Boot). Поэтому **отдельной «команды обновления» нет** — это та же команда,
 и UI показывает её же, когда агент устарел.
+
+**Android/Termux дополнительно готовит нативную сборку npm-модулей.**
+Установщик `apps/server/src/agents/androidInstall.ts` ставит `clang`, `make`,
+`python` и `pkg-config`, экспортирует Android prefix для `node-gyp`, затем в
+одноразовом каталоге устанавливает `better-sqlite3@11.10.0` и проверяет его
+реальной операцией с in-memory БД; при неуспехе установка останавливается до
+замены агента. Сам агент централизованно формирует окружение в
+`apps/agent/src/platform.ts`: на Termux команды `exec`, нативный PTY и
+pipe-фолбэк PTY получают `GYP_DEFINES=android_ndk_path=$PREFIX` (при
+отсутствующем `PREFIX` используется стандартный Termux prefix). Поэтому
+универсальный проектный `npm ci` не имеет Android-ветки, а проектный
+`.npmrc` для платформы не нужен.
 
 **Два агента с одним токеном — самый неприятный отказ**, и с 0.8.0 от него защищает
 сам агент: `apps/agent/src/singleInstance.ts` берёт pid-блокировку (файл в
