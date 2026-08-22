@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedMergeClonePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -215,6 +215,25 @@ describe('machine storage root paths', () => {
     assignments.production = { path: '/custom', override: true }
     assignments.staging = { path: '/custom/nested', override: true }
     expect(() => validateProjectMachineDirectories(assignments, '/srv/ChatAI', 'p-1', 'linux')).toThrow(/пересекаются/)
+  })
+})
+
+describe('managed merge clone paths', () => {
+  it.each([
+    ['/home/u/ChatAI', 'linux', '/home/u/ChatAI/projects/p-1/merge-clones/repository'],
+    ['/data/data/com.termux/files/home/ChatAI', 'linux', '/data/data/com.termux/files/home/ChatAI/projects/p-1/merge-clones/repository'],
+    ['/Users/u/ChatAI', 'darwin', '/Users/u/ChatAI/projects/p-1/merge-clones/repository'],
+    ['C:\\Users\\u\\ChatAI', 'win32', 'C:\\Users\\u\\ChatAI\\projects\\p-1\\merge-clones\\repository'],
+    ['\\\\server\\share\\ChatAI', 'win32', '\\\\server\\share\\ChatAI\\projects\\p-1\\merge-clones\\repository'],
+    ['/c/Users/u/ChatAI', 'win32', 'C:\\Users\\u\\ChatAI\\projects\\p-1\\merge-clones\\repository']
+  ])('строит изолированный путь для %s', (root, platform, expected) => {
+    const paths = managedMergeClonePaths(root, 'p-1', platform)
+    expect(paths.repository).toBe(expected)
+    expect(paths.repository).not.toContain('/tasks/')
+    expect(paths.repository).not.toContain('\\tasks\\')
+  })
+  it('отклоняет traversal в projectId', () => {
+    expect(() => managedMergeClonePaths('/safe/ChatAI', '../escape', 'linux')).toThrow(/safe relative path/)
   })
 })
 

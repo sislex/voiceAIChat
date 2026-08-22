@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { MergeRun } from '@voicechat/shared'
+import { recommendedProjectMachineDirectories, type MergeRun, type ProjectMachineDirectoryAssignments } from '@voicechat/shared'
 import { MergeRunManager, type MergeKbUpdateContext } from './runManager.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
@@ -22,7 +22,7 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
     moveMergeTask:(_p:string,_t:string,column:string)=>moves.push(column),
     getProject:()=>({gitUrl,testCommand}),
     findLatestPushedCiWorkspace:()=>({path:'/repo/task',pushed:true,agentId:'a1'}),
-    getProjectMachine:(_p:string,agentId:string)=>agentId==='a2'?{agentId,path:'/other/project',reposRoot:'/other-repos'}:agentId==='a3'?{agentId,path:'/missing-root/project',reposRoot:null}:null,
+    getProjectMachine:(_p:string,agentId:string)=>agentId==='a1'?{agentId,path:'/repo',reposRoot:'/legacy-repos',storageId:null,storageRoot:null,storageFormatVersion:null,directories:null}:agentId==='a2'?{agentId,path:'/other/project',reposRoot:'/other-repos',storageId:null,storageRoot:null,storageFormatVersion:null,directories:null}:agentId==='a3'?{agentId,path:'/missing-root/project',reposRoot:null,storageId:null,storageRoot:null,storageFormatVersion:null,directories:null}:null,
     upsertTaskRepository:(_p:string,_t:string,agentId:string,path:string,kind:string)=>{repositories.push({agentId,path,kind,state:'active'})},
     markTaskRepositoryDeleted:(_t:string,agentId:string,path:string)=>{const item=repositories.find(r=>r.agentId===agentId&&r.path===path);if(item)item.state='deleted'},
     listActiveTaskRepositories:()=>repositories.filter(r=>r.state==='active').map(r=>({taskId:'t1',agentId:r.agentId,path:r.path}))
@@ -43,6 +43,24 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
 }
 
 describe('MergeRunManager',()=>{
+  it('computes and repeatedly validates one managed merge clone without reposRoot',async()=>{
+    const paths=recommendedProjectMachineDirectories('/srv/ChatAI','p1','linux')
+    const directories=Object.fromEntries(Object.entries(paths).map(([kind,path])=>[kind,{path,override:false}])) as ProjectMachineDirectoryAssignments
+    const executor:CommandExecutor={run:vi.fn(async (_req,onChunk)=>{onChunk(`git@example/repo.git\n${target}\trefs/heads/main\n${source}\trefs/heads/CHAT-178\n`);return{exitCode:0,timedOut:false}})}
+    const db={getProject:()=>({gitUrl:'git@example/repo.git'}),findLatestPushedCiWorkspace:()=>({path:'/tasks/t1',pushed:true,agentId:'a1',branch:'CHAT-178'}),getProjectMachine:()=>({agentId:'a1',path:'',reposRoot:null,storageId:'s1',storageRoot:'/srv/ChatAI',storageFormatVersion:1,directories})}
+    const marker=Buffer.from(JSON.stringify({id:'s1',formatVersion:1})).toString('base64')
+    const manager=new MergeRunManager({db:db as unknown as VoiceChatDb,executor,isOnline:()=>true,platformOf:()=> 'linux',policyOf:()=>({allowedDirs:['/srv']}),fsRead:async()=>({dataBase64:marker}),fsWrite:async()=>({}),fsDelete:async()=>({}),broadcast:()=>{},boardChanged:()=>{}})
+    const first=await manager.checkReadiness('admin','p1','t1','a1')
+    const second=await manager.checkReadiness('admin','p1','t1','a1')
+    expect(first).toMatchObject({ready:true,mode:'managed',clonePath:'/srv/ChatAI/projects/p1/merge-clones/repository'})
+    expect(second.clonePath).toBe(first.clonePath)
+  })
+  it('blocks offline storage before filesystem and Git operations',async()=>{
+    const executor:CommandExecutor={run:vi.fn()}
+    const manager=new MergeRunManager({db:{} as VoiceChatDb,executor,isOnline:()=>false,broadcast:()=>{},boardChanged:()=>{}})
+    expect(await manager.checkReadiness('admin','p1','t1','a1')).toMatchObject({ready:false,code:'machine_offline'})
+    expect(executor.run).not.toHaveBeenCalled()
+  })
   it('keeps the task in merge when an active run is cancelled',()=>{
     const s=setup([])
     s.manager.start(s.run)
@@ -195,7 +213,7 @@ describe('MergeRunManager',()=>{
     const s=setup([],{...base(),agentId:'a3'})
     s.manager.start(s.run)
     await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
-    expect(s.run.error).toBe('У выбранной машины нет каталога репозиториев (repos_root)')
+    expect(s.run.error).toBe('MachineStorage отсутствует и legacy reposRoot не настроен')
     expect(s.executor.run).not.toHaveBeenCalled()
   })
   it('keeps repositories on unavailable machines pending after successful cleanup',async()=>{

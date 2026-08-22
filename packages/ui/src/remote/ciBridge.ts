@@ -93,6 +93,7 @@ export interface RendererCiRest {
   getTaskMachines(projectId: string, taskId: string): Promise<CiTaskMachines>
   putTaskCi(projectId: string, taskId: string, config: Partial<CiSlotConfig> & { enabledStages?: import('@shared/ci').CiProcessStage[] }): Promise<CiSlotConfig & { enabledStages: import('@shared/ci').CiProcessStage[] }>
   startRun(projectId: string, taskId: string, options?: { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel' }): Promise<CiRun>
+  getMergeMachines(projectId: string, taskId: string): Promise<import('@shared/merge').MergeMachinesResponse>
   /** agentId выбирает машину проекта для рана; без него — машина workspace. */
   startMerge(projectId: string, taskId: string, agentId?: string | null): Promise<MergeRun>
   getMerge(runId: string): Promise<MergeRun>
