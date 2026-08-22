@@ -76,6 +76,10 @@ export interface ServerConfig {
   sttRunnerConnectTimeoutMs?: number
   /** Unix-сокет host-side API, запускающего voicechat-deploy. */
   deployApiSocket?: string
+  /** Явный движок аварийного исправления Development Brief; без пары включён автовыбор. */
+  taskPreparationRecoveryProvider?: 'claude' | 'codex'
+  /** Явная модель аварийного исправления Development Brief. */
+  taskPreparationRecoveryModel?: string
 }
 
 const DEFAULT_DATA_DIR = join(homedir(), '.voicechat-server')
@@ -181,6 +185,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     sttRunnerUrl: env.VC_STT_RUNNER_URL,
     sttRunnerToken: env.VC_STT_RUNNER_TOKEN,
     sttRunnerConnectTimeoutMs: parsePositiveInt(env.VC_STT_RUNNER_TIMEOUT_MS),
-    deployApiSocket: env.VC_DEPLOY_API_SOCKET
+    deployApiSocket: env.VC_DEPLOY_API_SOCKET,
+    taskPreparationRecoveryProvider: env.VC_TASK_PREPARATION_RECOVERY_PROVIDER === 'claude' || env.VC_TASK_PREPARATION_RECOVERY_PROVIDER === 'codex'
+      ? env.VC_TASK_PREPARATION_RECOVERY_PROVIDER
+      : undefined,
+    taskPreparationRecoveryModel: env.VC_TASK_PREPARATION_RECOVERY_MODEL?.trim() || undefined
   }
 }

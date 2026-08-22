@@ -355,6 +355,86 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('businessRules[0] должен быть непустой строкой')
   })
 
+  it('нормализует совместимые kind и одиночный refs до общего контракта', async () => {
+    const { project, task } = await taskInBacklog()
+    const normalized = JSON.parse(compatibleReadiness())
+    normalized.sources = [
+      { id: 'kb-1', kind: 'knowledge_base', status: 'available', summary: 'БЗ', refs: 'docs/kb/features/task-preparation.md', critical: true },
+      { id: 'kb-2', kind: 'knowledge-base', status: 'available', summary: 'БЗ', refs: ['kb'], critical: false },
+      { id: 'kb-3', kind: 'knowledge-base-gap', status: 'absent', summary: 'Пробел', refs: 'gap', critical: false },
+      { id: 'code', kind: 'code-search', status: 'available', summary: 'Код', refs: 'apps/server/src/server.ts', critical: true }
+    ]
+    claudeAnswer = () => ({ text: JSON.stringify(normalized) })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('success')
+    expect(run.readiness?.sources?.map((source) => source.kind)).toEqual(['knowledge', 'knowledge', 'knowledge', 'code'])
+    expect(run.readiness?.sources?.map((source) => source.refs)).toEqual([
+      ['docs/kb/features/task-preparation.md'], ['kb'], ['gap'], ['apps/server/src/server.ts']
+    ])
+    expect(claudeCalls).toHaveLength(1)
+  })
+
+  it('после двух невалидных ответов переключается на другую модель и сохраняет восстановленный brief', async () => {
+    const { project, task } = await taskInBacklog()
+    const broken = JSON.stringify({ ...JSON.parse(compatibleReadiness()), functionalRequirements: ['сломанный тип'] })
+    const recovered = JSON.parse(compatibleReadiness())
+    recovered.scope.push('Усилить prompt/schema', 'Нормализовать совместимые значения', 'Добавить регрессионные тесты', 'Актуализировать БЗ')
+    recovered.acceptanceCriteria += '\\n2. Дефект подготовки предотвращён проверяемыми инфраструктурными изменениями'
+    recovered.acceptanceCriteriaItems.push({ id: 'AC-INFRA', title: 'Защита подготовки', precondition: 'Модель вернула совместимый вариант', action: 'Выполнена нормализация и валидация', observableResult: 'Brief проходит без повторения класса ошибки' })
+    recovered.testCases.push({ ...recovered.testCases[0], id: 'TC-INFRA', title: 'Регрессия recovery' })
+    claudeAnswer = () => ({ text: broken })
+    codexAnswer = () => ({ text: JSON.stringify(recovered) })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('success')
+    expect(claudeCalls).toHaveLength(2)
+    expect(codexCalls).toHaveLength(1)
+    expect(codexCalls[0].model).not.toBe(claudeCalls[0].model)
+    expect(codexCalls[0].prompt).toContain('Исходный ответ:')
+    expect(codexCalls[0].prompt).toContain('Повторный ответ:')
+    expect(codexCalls[0].prompt).toContain('functionalRequirements должен быть строкой')
+    expect(codexCalls[0].prompt).toContain('kind:knowledge|hierarchy|related_tasks|code|tests|storybook')
+    expect(run.readiness?.scope).toEqual(expect.arrayContaining(['Усилить prompt/schema', 'Актуализировать БЗ']))
+    expect(run.events?.some((event) => event.type === 'recovery_started' && event.text.includes('claude:sonnet'))).toBe(true)
+    expect(run.events?.some((event) => event.type === 'recovery_completed')).toBe(true)
+  })
+
+  it('ограничивает recovery одной попыткой и завершает диагностируемо без brief', async () => {
+    const { project, task } = await taskInBacklog()
+    const broken = JSON.stringify({ ...JSON.parse(compatibleReadiness()), functionalRequirements: ['сломанный тип'] })
+    claudeAnswer = () => ({ text: broken })
+    codexAnswer = () => ({ text: broken })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('blocked')
+    expect(claudeCalls).toHaveLength(2)
+    expect(codexCalls).toHaveLength(1)
+    expect(run.readiness).toBeNull()
+    expect(run.error).toContain('Recovery Development Brief завершился ошибкой')
+    expect(run.error).toContain('functionalRequirements должен быть строкой')
+    expect(run.events?.filter((event) => event.type === 'recovery_started')).toHaveLength(1)
+    expect(run.events?.filter((event) => event.type === 'recovery_failed')).toHaveLength(1)
+  })
+
+  it('не отправляет неизвестный kind в recovery и завершает с точным путём', async () => {
+    const { project, task } = await taskInBacklog()
+    const unknown = JSON.parse(compatibleReadiness())
+    unknown.sources[0].kind = 'internet'
+    claudeAnswer = () => ({ text: JSON.stringify(unknown) })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('blocked')
+    expect(claudeCalls).toHaveLength(2)
+    expect(codexCalls).toHaveLength(0)
+    expect(run.error).toContain('sources[0].kind имеет недопустимое значение: internet')
+    expect(run.readiness).toBeNull()
+  })
+
   it('отмена гасит CLI и закрывает попытку', async () => {
     const { project, task } = await taskInBacklog()
     claudeAnswer = () => ({ silent: true })
@@ -369,6 +449,17 @@ describe('подготовка к разработке: диагностика �
 })
 
 describe('подготовка к разработке: выбор модели и текст ошибки', () => {
+  it('читает явную recovery-политику из конфигурации', () => {
+    const config = loadConfig({
+      PORT: '0',
+      VC_DATA_DIR: join(tmpdir(), 'vc-prep-config'),
+      VC_TASK_PREPARATION_RECOVERY_PROVIDER: 'codex',
+      VC_TASK_PREPARATION_RECOVERY_MODEL: 'gpt-5.5'
+    })
+    expect(config.taskPreparationRecoveryProvider).toBe('codex')
+    expect(config.taskPreparationRecoveryModel).toBe('gpt-5.5')
+  })
+
   it('модель по умолчанию зависит от движка, явная — сохраняется', () => {
     expect(taskPreparationModel('claude', '')).toBe('sonnet')
     expect(taskPreparationModel('claude', 'default')).toBe('sonnet')
