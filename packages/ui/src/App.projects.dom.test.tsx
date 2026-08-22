@@ -535,6 +535,7 @@ describe('App — виджет задачи только в своём чате'
     expect(await screen.findByTestId('task-chat-header')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '+ Новый' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Создать разговор' }))
     await waitFor(() => expect(screen.queryByTestId('task-chat-header')).not.toBeInTheDocument())
     expect(screen.getByTestId('scroll')).toBeInTheDocument()
   })
