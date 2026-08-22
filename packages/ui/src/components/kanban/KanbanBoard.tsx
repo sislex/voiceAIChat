@@ -245,6 +245,12 @@ function FilterDropdown({ label, active, children }: { label: string; active: nu
 export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const { loading, members } = props
   const confirm = useConfirm()
+  const [improvementTasks, setImprovementTasks] = useState<Array<{ taskId: string; count: number; improvementId: string }>>([])
+  useEffect(() => {
+    const projectId = props.board?.tasks[0]?.projectId
+    if (!projectId || !window.ci?.listProjectImprovementTasks) { setImprovementTasks([]); return }
+    void window.ci.listProjectImprovementTasks(projectId).then(setImprovementTasks).catch(() => {})
+  }, [props.board, props.ciSummaries])
   const [showHidden, setShowHidden] = useState(false)
   const [internalShowCompleted, setInternalShowCompleted] = useState(false)
   const showCompleted = props.showCompleted ?? internalShowCompleted
@@ -1474,6 +1480,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                   {composer(col)}
                 </section>
               ))}
+              {improvementTasks.length > 0 && <section className="jcol jcol--improvements" data-testid="kanban-improvements-column" aria-label={`Колонка «Улучшения», ${improvementTasks.length} задач`}>
+                <header className="jcol-head"><h2>Улучшения</h2><span className="jcol-count">{improvementTasks.length}</span></header>
+                <div className="jcol-body">{improvementTasks.map((entry) => { const task = allTasks.find((item) => item.id === entry.taskId); return task ? <button key={task.id} className="jcard" onClick={() => setOpenTaskId(task.id, 'improvements')}><strong>{issueKey(props.projectName, task)} · {task.title}</strong><span>{entry.count} актуальных предложений · исходный статус: {columnName(task.columnId)}</span></button> : null })}</div>
+              </section>}
               {addColumnBox}
             </div>
           ) : (

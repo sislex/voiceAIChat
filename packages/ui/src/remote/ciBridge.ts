@@ -27,7 +27,9 @@ import type {
   CiRunReport,
   CiTaskReport,
   CiTaskMachines,
-  CiStageLlmSnapshot
+  CiStageLlmSnapshot,
+  TaskImprovement,
+  ImprovementStatus
 } from '@shared/ci'
 import type { Message } from '@shared/types'
 import type { MergeRun, TaskRepository } from '@shared/merge'
@@ -119,6 +121,9 @@ export interface RendererCiRest {
   /** Отчёт по всем ранам задачи с итогом (раздел «Отчёт» карточки). */
   getTaskReport(projectId: string, taskId: string): Promise<CiTaskReport>
   getTaskTimeline(projectId: string, taskId: string): Promise<TaskTimeline>
+  listTaskImprovements(projectId: string, taskId: string): Promise<TaskImprovement[]>
+  listProjectImprovementTasks(projectId: string): Promise<Array<{ taskId: string; count: number; improvementId: string }>>
+  updateImprovementStatus(id: string, status: ImprovementStatus): Promise<TaskImprovement>
   cancelRun(runId: string): Promise<{ ok: boolean }>
   /** Убрать только ожидающий ран; результат сообщает о гонке с его стартом. */
   dequeueRun(runId: string): Promise<CiQueueRemovalResult>

@@ -769,6 +769,33 @@ CREATE TABLE IF NOT EXISTS ci_run_kb_metrics (
   FOREIGN KEY (run_id) REFERENCES ci_runs(id) ON DELETE CASCADE
 );
 
+-- Предложения улучшений отделены от технических логов. fingerprint стабилен
+-- внутри задачи; повторный ран дополняет evidence_json существующей записи.
+CREATE TABLE IF NOT EXISTS task_improvements (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  run_id TEXT,
+  step_id TEXT,
+  source TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'new',
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  evidence_json TEXT NOT NULL DEFAULT '[]',
+  occurrences INTEGER NOT NULL DEFAULT 1,
+  suggested_action TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  resolved_by TEXT,
+  resolved_at INTEGER,
+  UNIQUE(task_id, fingerprint),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_improvements_task ON task_improvements(task_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_improvements_project ON task_improvements(project_id, status, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS ci_command_suggestions (
   id             TEXT PRIMARY KEY,
   command_id     TEXT NOT NULL,
