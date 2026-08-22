@@ -14,8 +14,10 @@ export const MACHINE_IMAGE_DIR = '.generated_images'
 export interface RelocateDeps {
   /** Чтение файла-картинки из сервера или исполнителя; null — не наш или не найден. */
   readFile(path: string): Promise<{ name: string; dataBase64: string } | null>
-  /** Листинг машины: нужен только ради `root` (корня проводника). */
+  /** Листинг машины используется только в совместимом legacy-режиме. */
   fsList(agentId: string, path: string): Promise<{ root: string }>
+  /** Явный managed-каталог chatRoot/.generated; запрещает вычисление от explorer root. */
+  destinationDir?: string
   fsMkdir(agentId: string, path: string): Promise<unknown>
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<unknown>
 }
@@ -42,26 +44,28 @@ export async function relocateImagesToMachine(
   }
   if (local.length === 0) return text
 
-  let root: string
-  try {
-    root = (await deps.fsList(agentId, '')).root
-  } catch {
-    return text
-  }
-
-  try {
-    await deps.fsMkdir(agentId, machineImagePath(root, '').replace(/[/\\]$/, ''))
-  } catch {
-    /* already exists or write denied */
+  let directory: string
+  if (deps.destinationDir) {
+    directory = deps.destinationDir.replace(/[/\\]$/, '')
+    await deps.fsMkdir(agentId, directory)
+  } else {
+    try {
+      directory = machineImagePath((await deps.fsList(agentId, '')).root, '').replace(/[/\\]$/, '')
+      await deps.fsMkdir(agentId, directory)
+    } catch {
+      return text
+    }
   }
 
   let out = text
   for (const { img, file } of local) {
     const name = basename(img.path || file.name)
-    const target = machineImagePath(root, name)
+    const sep = directory.includes('\\') && !directory.includes('/') ? '\\' : '/'
+    const target = `${directory}${sep}${name}`
     try {
       await deps.fsWrite(agentId, target, file.dataBase64)
-    } catch {
+    } catch (error) {
+      if (deps.destinationDir) throw error
       continue
     }
     const moved: ImageRef = {

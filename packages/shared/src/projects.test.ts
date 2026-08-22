@@ -140,7 +140,7 @@ describe('portable storage paths', () => {
     expect(recommendedChatStoragePath({ kind: 'task', projectId: 'p-1', taskId: 't-1', conversationId: 'c-1' })).toBe('projects/p-1/tasks/t-1/chats/c-1')
     expect(recommendedEnvironmentPath('p-1', 'production')).toBe('projects/p-1/environments/production')
     expect(recommendedTaskTestEnvironmentPath('p-1', 't-1')).toBe('projects/p-1/tasks/t-1/environments/test')
-    expect(recommendedPreviewEnvironmentPath('p-1', 'pr-1')).toBe('projects/p-1/environments/previews/pr-1')
+    expect(recommendedPreviewEnvironmentPath('p-1', 't-1', 'pr-1')).toBe('projects/p-1/tasks/t-1/environments/preview/pr-1')
     expect(managedChatAttachmentsPath('chats/c-1')).toBe('chats/c-1/attachments')
     expect(managedChatArtifactsPath('chats/c-1')).toBe('chats/c-1/artifacts')
     expect(managedChatTemporaryPath('chats/c-1')).toBe('chats/c-1/.generated')

@@ -3,10 +3,10 @@
 
 import { mkdirSync, existsSync, statSync, readdirSync, rmSync } from 'node:fs'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, managedChatAttachmentsPath, REST, allowedModels, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, type ImageRetouchRequest, type ImageRetouchResult, type MessageAttachment, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, allowedModels, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -52,7 +52,7 @@ import type { SttClient } from './stt/client.js'
 import { RemoteSttClient } from './stt/remoteClient.js'
 import { ModelDownloadManager } from './stt/downloadManager.js'
 import { StubDiarizationEngine } from './diarization/stubDiarization.js'
-import { UploadStore, machineManagedFilePath, machineUploadDir, machineUploadPath } from './uploads.js'
+import { UploadStore, machineManagedFilePath, machineUploadDir, machineUploadPath, resolveManagedChatStorage } from './uploads.js'
 import type { UploadInfo } from '@voicechat/shared'
 import { RemoteTtsClient } from './tts/client/remoteTtsClient.js'
 import type { TtsClient } from './tts/client/types.js'
@@ -452,6 +452,19 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // только принимает байты запроса и пересылает агенту; без машины сохраняется
   // совместимый локальный режим.
   const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'))
+  const managedChatStorage = (userId: string, conversationId: string) => resolveManagedChatStorage(userId, conversationId, {
+    getBinding: (uid, id) => db.getChatStorageBinding(uid, id),
+    listStorages: (uid, machineId) => db.listMachineStorages(uid, machineId),
+    ownsMachine: (uid, machineId) => db.listAgents(uid).some((agent) => agent.id === machineId),
+    isOnline: (machineId) => agentRegistry.isOnline(machineId),
+    verifyRoot: async (machineId, rootPath) => {
+      const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
+      const marker = await agentRegistry.fsRead(machineId, `${rootPath.replace(/[/\\]$/, '')}${separator}.voicechat${separator}storage.json`)
+      const parsed = JSON.parse(Buffer.from(marker.dataBase64 ?? '', 'base64').toString('utf8')) as { id?: string }
+      const binding = db.getChatStorageBinding(userId, conversationId)
+      if (!binding || parsed.id !== binding.storageId) throw new Error('Marker привязанного хранилища отсутствует или конфликтует')
+    }
+  })
   app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string; conversationId?: string; mimeType?: string } }>(
     REST.uploads,
     { bodyLimit: 64 * 1024 * 1024 }, // до 64 МБ на вложение (base64 раздувает ~на треть)
@@ -468,26 +481,31 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (bytes.byteLength > 32 * 1024 * 1024) return reply.code(413).send({ error: 'too large' }) as never
       const uploadName = name ?? 'file'
       const safeMime = typeof mimeType === 'string' && /^[a-z]+\/[a-z0-9.+-]+$/i.test(mimeType) ? mimeType : 'application/octet-stream'
-      if (agentId) {
-        if (!db.listAgents(userId).some((agent) => agent.id === agentId)) {
+      let managed: Awaited<ReturnType<typeof managedChatStorage>> = null
+      if (conversationId) {
+        try {
+          managed = await managedChatStorage(userId, conversationId)
+        } catch (error) {
+          return reply.code(503).send({ error: error instanceof Error ? error.message : String(error) }) as never
+        }
+      }
+      if (managed && requestedAgentId && requestedAgentId !== managed.binding.machineId) {
+        return reply.code(409).send({ error: 'Разговор привязан к другой машине хранения' }) as never
+      }
+      const writeAgentId = managed?.binding.machineId ?? agentId
+      if (writeAgentId) {
+        if (!db.listAgents(userId).some((agent) => agent.id === writeAgentId)) {
           return reply.code(404).send({ error: 'machine not found' }) as never
         }
         try {
-          const root = (await agentRegistry.fsList(agentId, '')).root
-          const binding = conversationId ? db.getChatStorageBinding(userId, conversationId) : undefined
-          const storage = binding?.machineId === agentId
-            ? db.listMachineStorages(userId, agentId).find((item) => item.id === binding.storageId)
-            : undefined
-          const separator = (storage?.rootPath ?? root).includes('\\') && !(storage?.rootPath ?? root).includes('/') ? '\\' : '/'
-          const directory = storage && binding
-            ? `${storage.rootPath.replace(/[/\\]$/, '')}${separator}${managedChatAttachmentsPath(binding.relativePath).replace(/[\\/]/g, separator)}`
-            : machineUploadDir(root)
-          const target = storage
+          const root = managed ? managed.storage.rootPath : (await agentRegistry.fsList(writeAgentId, '')).root
+          const directory = managed?.attachments ?? machineUploadDir(root)
+          const target = managed
             ? machineManagedFilePath(directory, randomBytes(16).toString('hex'), uploadName)
             : machineUploadPath(root, randomBytes(16).toString('hex'), uploadName)
-          await agentRegistry.fsMkdir(agentId, directory)
-          await agentRegistry.fsWrite(agentId, target, dataBase64)
-          const rec = uploads.saveRemote(uploadName, target, agentId, bytes.byteLength, safeMime)
+          await agentRegistry.fsMkdir(writeAgentId, directory)
+          await agentRegistry.fsWrite(writeAgentId, target, dataBase64)
+          const rec = uploads.saveRemote(uploadName, target, writeAgentId, bytes.byteLength, safeMime)
           return { id: rec.id, name: rec.name, path: rec.path, mimeType: rec.mimeType, size: rec.size, agentId: rec.agentId }
         } catch (err) {
           return reply.code(503).send({ error: err instanceof Error ? err.message : String(err) }) as never
@@ -532,6 +550,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       }
 
       try {
+        const managed = await managedChatStorage(userId, body.conversationId)
         const original = await readAttachment(body.source)
         const references = await Promise.all((body.references ?? []).map(readAttachment))
         const generator = opts.imageRetouchGenerator ?? llmRetouchGenerator({
@@ -546,16 +565,18 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         })
         const processed = await processImageRetouch({ original, selection: body.selection, prompt: body.prompt, references, generate: generator })
         const name = `retouch-${randomBytes(12).toString('hex')}.png`
+        const outputAgentId = managed?.binding.machineId ?? body.source.agentId
         const path = await saveRetouchedImage({
           image: processed.image,
           name,
           localRoot: profileHome(userId),
-          ...(body.source.agentId ? {
-            agentId: body.source.agentId,
+          ...(managed ? { targetDir: managed.generated } : {}),
+          ...(outputAgentId ? {
+            agentId: outputAgentId,
             remote: {
-              root: async () => (await agentRegistry.fsList(body.source.agentId!, '')).root,
-              mkdir: (dir) => agentRegistry.fsMkdir(body.source.agentId!, dir),
-              write: (target, data) => agentRegistry.fsWrite(body.source.agentId!, target, data)
+              root: async () => (await agentRegistry.fsList(outputAgentId, '')).root,
+              mkdir: (dir) => agentRegistry.fsMkdir(outputAgentId, dir),
+              write: (target, data) => agentRegistry.fsWrite(outputAgentId, target, data)
             }
           } : {})
         })
@@ -564,7 +585,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           name,
           mimeType: 'image/png',
           size: processed.image.byteLength,
-          ...(body.source.agentId ? { agentId: body.source.agentId } : {}),
+          ...(outputAgentId ? { agentId: outputAgentId } : {}),
           retouch: { source: body.source, selection: body.selection, prompt: body.prompt.trim(), ...(body.references?.length ? { references: body.references } : {}) }
         }
         const text = imageBlock({ path, ...(image.agentId ? { agentId: image.agentId } : {}), caption: `Локальная ретушь: ${body.prompt.trim()}` })
@@ -574,6 +595,59 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         return reply.code(422).send({ error: message }) as never
+      }
+    }
+  )
+
+  app.post<{ Body: ArtifactPublishRequest }>(
+    REST.artifactPublish,
+    async (req, reply): Promise<ArtifactPublishResult> => {
+      const userId = uid(req)
+      const body = req.body
+      if (!body || !db.getConversation(userId, body.conversationId)) return reply.code(404).send({ error: 'Разговор не найден' }) as never
+      try {
+        const managed = await managedChatStorage(userId, body.conversationId)
+        if (!managed) return reply.code(409).send({ error: 'Публикация доступна только для разговора с MachineStorage' }) as never
+        if (body.source.agentId !== managed.binding.machineId) return reply.code(403).send({ error: 'Файл относится к другой машине' }) as never
+        const separator = managed.generated.includes('\\') && !managed.generated.includes('/') ? '\\' : '/'
+        const sourceParent = body.source.path.slice(0, Math.max(body.source.path.lastIndexOf('/'), body.source.path.lastIndexOf('\\')))
+        if (sourceParent !== managed.generated) return reply.code(403).send({ error: 'Публиковать можно только непосредственный файл из .generated этого разговора' }) as never
+        const known = db.listMessages(userId, body.conversationId).some((message) =>
+          (message.attachments ?? []).some((file) => file.path === body.source.path && file.agentId === body.source.agentId)
+          || parseImages(message.text).images.some((image) => image.path === body.source.path && image.agentId === body.source.agentId)
+        )
+        if (!known) return reply.code(403).send({ error: 'Файл не принадлежит этому разговору' }) as never
+        const source = await agentRegistry.fsRead(managed.binding.machineId, body.source.path)
+        if (!source.dataBase64) throw new Error('Временный файл не найден')
+        await agentRegistry.fsMkdir(managed.binding.machineId, managed.artifacts)
+        const rawName = (body.name || body.source.name || 'artifact').split(/[/\\]/).at(-1) || 'artifact'
+        const safeName = rawName.replace(/[^\p{L}\p{N}._ -]+/gu, '_').replace(/^\.+/, '') || `artifact${extname(body.source.name)}`
+        const listing = await agentRegistry.fsList(managed.binding.machineId, managed.artifacts)
+        const occupied = new Set((listing.entries ?? []).map((entry) => entry.name))
+        let finalName = safeName
+        if (!body.overwrite && occupied.has(finalName)) {
+          const dot = finalName.lastIndexOf('.')
+          const stem = dot > 0 ? finalName.slice(0, dot) : finalName
+          const extension = dot > 0 ? finalName.slice(dot) : ''
+          let suffix = 2
+          while (occupied.has(`${stem}-${suffix}${extension}`)) suffix++
+          finalName = `${stem}-${suffix}${extension}`
+        }
+        const target = `${managed.artifacts}${separator}${finalName}`
+        await agentRegistry.fsWrite(managed.binding.machineId, target, source.dataBase64)
+        const artifact: MessageAttachment = {
+          path: target,
+          name: finalName,
+          mimeType: body.source.mimeType,
+          size: body.source.size,
+          agentId: managed.binding.machineId
+        }
+        const text = imageBlock({ path: target, agentId: managed.binding.machineId, caption: `Опубликованный результат: ${finalName}` })
+        const now = new Date()
+        const message = db.addMessage(userId, body.conversationId, 'ai', text, now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), 'codex', undefined, managed.binding.machineId, [artifact])
+        return { artifact, message }
+      } catch (error) {
+        return reply.code(422).send({ error: error instanceof Error ? error.message : String(error) }) as never
       }
     }
   )
@@ -619,6 +693,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       nameOf: (id) => agentRegistry.nameOf(id),
       policyOf: (id) => agentRegistry.policyOf(id),
       fsList: (id, path) => agentRegistry.fsList(id, path),
+      fsRead: (id, path) => agentRegistry.fsRead(id, path),
       fsMkdir: (id, path) => agentRegistry.fsMkdir(id, path),
       fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data)
     },

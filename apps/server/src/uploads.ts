@@ -6,6 +6,53 @@
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join, extname, basename } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { managedChatArtifactsPath, managedChatAttachmentsPath, managedChatTemporaryPath, validateStorageRelativePath, type ChatStorageBinding, type MachineStorage } from '@voicechat/shared'
+
+export interface ManagedChatStorageDeps {
+  getBinding(userId: string, conversationId: string): ChatStorageBinding | null
+  listStorages(userId: string, machineId: string): MachineStorage[]
+  ownsMachine(userId: string, machineId: string): boolean
+  isOnline(machineId: string): boolean
+  verifyRoot(machineId: string, rootPath: string): Promise<unknown>
+}
+
+export interface ResolvedManagedChatStorage {
+  binding: ChatStorageBinding
+  storage: MachineStorage
+  chatRoot: string
+  attachments: string
+  generated: string
+  artifacts: string
+}
+
+export function machineStoragePath(root: string, relativePath: string): string {
+  const normalizedRoot = root.trim().replace(/[/\\]+$/, '')
+  if (!normalizedRoot) throw new Error('Корень MachineStorage не задан')
+  if (/^(?:[\\/]|[A-Za-z]:[\\/])/.test(relativePath)) throw new Error('Путь MachineStorage должен быть относительным')
+  const relative = relativePath.replace(/\\/g, '/').replace(/\/+$/, '')
+  if (!relative || relative.split('/').some((part) => !/^[A-Za-z0-9._-]+$/.test(part) || part === '.' || part === '..')) throw new Error('Небезопасный путь внутри MachineStorage')
+  const separator = normalizedRoot.includes('\\') && !normalizedRoot.includes('/') ? '\\' : '/'
+  return `${normalizedRoot}${separator}${relative.replace(/[/\\]/g, separator)}`
+}
+
+export async function resolveManagedChatStorage(userId: string, conversationId: string, deps: ManagedChatStorageDeps): Promise<ResolvedManagedChatStorage | null> {
+  const binding = deps.getBinding(userId, conversationId)
+  if (!binding) return null
+  if (!deps.ownsMachine(userId, binding.machineId)) throw new Error('Машина хранилища больше не принадлежит пользователю')
+  if (!deps.isOnline(binding.machineId)) throw new Error('Машина хранилища не в сети')
+  const storage = deps.listStorages(userId, binding.machineId).find((item) => item.id === binding.storageId)
+  if (!storage) throw new Error('Привязанное хранилище больше недоступно')
+  await deps.verifyRoot(binding.machineId, storage.rootPath)
+  const relativePath = validateStorageRelativePath(binding.relativePath)
+  return {
+    binding: { ...binding, relativePath },
+    storage,
+    chatRoot: machineStoragePath(storage.rootPath, relativePath),
+    attachments: machineStoragePath(storage.rootPath, managedChatAttachmentsPath(relativePath)),
+    generated: machineStoragePath(storage.rootPath, managedChatTemporaryPath(relativePath)),
+    artifacts: machineStoragePath(storage.rootPath, managedChatArtifactsPath(relativePath))
+  }
+}
 
 export const MACHINE_UPLOAD_DIR = '.voicechat_uploads'
 
