@@ -200,6 +200,42 @@ describe('POST /v1/run', () => {
     child.emit('close', 0)
     await res.text()
   })
+
+  it('возвращает 409 codex_thread_in_use до второго spawn', async () => {
+    const first = fakeChild()
+    const spawn = vi.fn(() => first.child) as unknown as SpawnFn
+    const runs = new RunManager({ spawn })
+    app = await buildRunner({ config: config(), runs, health: async () => health })
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const port = boundPort(app)
+    const body = { kind: 'codex', userId: 'u1', prompt: 'продолжай', sessionId: 'thread-1', model: '' }
+
+    const active = await fetch(`http://127.0.0.1:${port}/v1/run`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ ...body, runId: 'r-first' })
+    })
+    expect(active.status).toBe(200)
+    const conflict = await app.inject({
+      method: 'POST',
+      url: '/v1/run',
+      headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { ...body, runId: 'r-second' }
+    })
+
+    expect(conflict.statusCode).toBe(409)
+    expect(conflict.json()).toEqual({
+      error: 'codex_thread_in_use',
+      message: 'Codex thread уже выполняется'
+    })
+    expect(spawn).toHaveBeenCalledTimes(1)
+
+    first.stdout.end()
+    first.stderr.end()
+    await tick()
+    first.child.emit('close', 0)
+    await active.text()
+  })
 })
 
 describe('DELETE /v1/run/:id', () => {

@@ -402,6 +402,50 @@ describe('RemoteLlmClient: ход через исполнителя по HTTP', 
     }
   })
 
+  it('безопасно объясняет занятый Codex thread и не раскрывает детали ответа', async () => {
+    const runner = await startRunner((res) => {
+      res.writeHead(409, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: 'codex_thread_in_use', detail: 'internal thread-store conflict SECRET' }))
+    })
+    try {
+      const c = collect()
+      new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url }).send(
+        { prompt: 'продолжай', sessionId: 'thread-1', model: '' },
+        c.handlers
+      )
+      await c.finished
+      const message = (c.events.at(-1) as { message: string }).message
+      expect(message).toContain('уже выполняется')
+      expect(message).toContain('Дождитесь завершения')
+      expect(message).toContain('остановите текущий ход')
+      expect(message).toContain('сбросьте сессию')
+      expect(message).not.toContain('SECRET')
+      expect(message).not.toContain('thread-store')
+    } finally {
+      await runner.close()
+    }
+  })
+
+  it('не маскирует неизвестный 409 под конфликт Codex thread', async () => {
+    const runner = await startRunner((res) => {
+      res.writeHead(409, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: 'run_exists' }))
+    })
+    try {
+      const c = collect()
+      new RemoteLlmClient({ kind: 'codex', baseUrl: runner.url }).send(
+        { prompt: 'продолжай', sessionId: 'thread-1', model: '' },
+        c.handlers
+      )
+      await c.finished
+      const message = (c.events.at(-1) as { message: string }).message
+      expect(message).toContain('вернул ошибку 409')
+      expect(message).not.toContain('сбросьте сессию')
+    } finally {
+      await runner.close()
+    }
+  })
+
   it('Bearer-токен уходит и в запуск, и в отмену', async () => {
     const auth: Array<string | undefined> = []
     const runner = await startRunner((res, _body, req) => {

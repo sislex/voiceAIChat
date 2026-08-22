@@ -46,6 +46,10 @@ class FakeRuns {
     return false
   }
 
+  reserveCodexThread(): boolean {
+    return true
+  }
+
   start(body: LlmRunBody, sink: { write(chunk: string): boolean; end(): void }): string {
     this.bodies.push(body)
     for (const line of body.kind === 'codex' ? CODEX_LINES : [RESULT_LINE]) {

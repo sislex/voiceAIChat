@@ -2,7 +2,16 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { commandEnv, isTermux, isWindows, which, resolveShell, resolveShellInfo, defaultRootDir } from './platform'
+import {
+  TERMUX_PREFIX,
+  commandEnv,
+  isTermux,
+  isWindows,
+  which,
+  resolveShell,
+  resolveShellInfo,
+  defaultRootDir
+} from './platform'
 
 describe('isTermux', () => {
   it('true по TERMUX_VERSION', () => {
@@ -17,17 +26,27 @@ describe('isTermux', () => {
 })
 
 describe('commandEnv', () => {
-  it('добавляет android_ndk_path для Termux', () => {
+  it('добавляет android_ndk_path для Termux, не изменяя исходное окружение', () => {
     const source = {
       TERMUX_VERSION: '0.118',
-      PREFIX: '/data/data/com.termux/files/usr',
+      PREFIX: TERMUX_PREFIX,
       PATH: '/custom/bin'
     } as NodeJS.ProcessEnv
     expect(commandEnv(source)).toEqual({
       ...source,
-      GYP_DEFINES: 'android_ndk_path=/data/data/com.termux/files/usr'
+      GYP_DEFINES: `android_ndk_path=${TERMUX_PREFIX}`
     })
     expect(source.GYP_DEFINES).toBeUndefined()
+  })
+
+  it('сохраняет существующие GYP_DEFINES', () => {
+    expect(commandEnv({ TERMUX_VERSION: '1', PREFIX: TERMUX_PREFIX, GYP_DEFINES: 'foo=bar' } as NodeJS.ProcessEnv).GYP_DEFINES)
+      .toBe(`foo=bar android_ndk_path=${TERMUX_PREFIX}`)
+  })
+
+  it('не дублирует пользовательский android_ndk_path', () => {
+    const value = 'foo=bar android_ndk_path=/custom/ndk'
+    expect(commandEnv({ TERMUX_VERSION: '1', GYP_DEFINES: value } as NodeJS.ProcessEnv).GYP_DEFINES).toBe(value)
   })
 
   it('не меняет окружение Linux, macOS и Windows', () => {
