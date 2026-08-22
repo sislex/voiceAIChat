@@ -25,10 +25,14 @@ export function machineUploadDir(root: string): string {
 }
 
 /** Путь постоянного исходника внутри корня проводника пользовательской машины. */
-export function machineUploadPath(root: string, id: string, name: string): string {
-  const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+export function machineManagedFilePath(directory: string, id: string, name: string): string {
+  const sep = directory.includes('\\') && !directory.includes('/') ? '\\' : '/'
   const ext = extname(basename(name)).replace(/[^.a-zA-Z0-9]/g, '')
-  return `${machineUploadDir(root)}${sep}${id}${ext}`
+  return `${directory.replace(/[/\\]$/, '')}${sep}${id}${ext}`
+}
+
+export function machineUploadPath(root: string, id: string, name: string): string {
+  return machineManagedFilePath(machineUploadDir(root), id, name)
 }
 
 export class UploadStore {

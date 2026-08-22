@@ -110,12 +110,33 @@ export function recommendedChatStoragePath(context: StorageContext): string {
   return `projects/${projectId}/tasks/${taskId}/chats/${conversationId}`
 }
 
+export type ManagedEnvironmentKind = 'production' | 'staging' | 'test' | 'preview'
+
 export function recommendedEnvironmentPath(projectId: string, kind: 'production' | 'staging'): string {
   return `projects/${validateStorageRelativePath(projectId)}/environments/${kind}`
 }
 
+export function recommendedPreviewEnvironmentPath(projectId: string, previewId: string): string {
+  return `projects/${validateStorageRelativePath(projectId)}/environments/previews/${validateStorageRelativePath(previewId)}`
+}
+
 export function recommendedTaskTestEnvironmentPath(projectId: string, taskId: string): string {
   return `projects/${validateStorageRelativePath(projectId)}/tasks/${validateStorageRelativePath(taskId)}/environments/test`
+}
+
+/** Постоянные каталоги окружения не пересекаются с восстанавливаемым checkout. */
+export const MANAGED_ENVIRONMENT_DIRECTORIES = ['app', 'config', 'logs', 'artifacts', 'temporary/repository'] as const
+
+export function managedChatAttachmentsPath(relativePath: string): string {
+  return `${validateStorageRelativePath(relativePath)}/attachments`
+}
+
+export function managedChatArtifactsPath(relativePath: string): string {
+  return `${validateStorageRelativePath(relativePath)}/artifacts`
+}
+
+export function managedChatTemporaryPath(relativePath: string): string {
+  return `${validateStorageRelativePath(relativePath)}/.generated`
 }
 
 import type { CiRunSummary, CiReuseStrategy, CiStatus, CiRunMode } from './ci'
