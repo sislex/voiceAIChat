@@ -1044,6 +1044,7 @@ export function createFakeCi(): FakeCi {
       return { beforeModel: config.beforeModel ?? [], afterModel: config.afterModel ?? [], enabledStages: [...taskProcessStages] }
     },
     startRun: async (projectId, taskId, options) => { const run = { ...mkRun(projectId, taskId), mode: options?.mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
+    getMergeMachines: async () => ({ machines: [], defaultAgentId: null }),
     startMerge: async (projectId, taskId) => ({ id: `merge-${taskId}`, projectId, taskId, status: 'queued', triggeredBy: 'admin', sourceBranch: `feature/${taskId}`, targetBranch: 'main', sourceSha: null, targetSha: null, mergeSha: null, revertSha: null, agentId: 'a1', llmEngineId: null, llmProvider: 'claude', llmModel: '', stage: 'queued', stages: [], conflicts: [], conflictDetails: [], checks: [], deployId: null, deployVersion: null, productionStatus: null, error: null, recommendedAction: null, log: '', canCancel: true, canRetry: false, pushStartedAt: null, startedAt: now(), finishedAt: null, createdAt: now() }),
     getMerge: async () => { throw new Error('merge run not found') },
     getTaskRepositories: async () => [],
