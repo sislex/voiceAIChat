@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { isTermux, isWindows, which, resolveShell, resolveShellInfo, defaultRootDir } from './platform'
+import { commandEnv, isTermux, isWindows, which, resolveShell, resolveShellInfo, defaultRootDir } from './platform'
 
 describe('isTermux', () => {
   it('true по TERMUX_VERSION', () => {
@@ -13,6 +13,27 @@ describe('isTermux', () => {
   })
   it('false в обычном окружении', () => {
     expect(isTermux({ PATH: '/usr/bin' } as NodeJS.ProcessEnv)).toBe(false)
+  })
+})
+
+describe('commandEnv', () => {
+  it('добавляет android_ndk_path для Termux', () => {
+    const source = {
+      TERMUX_VERSION: '0.118',
+      PREFIX: '/data/data/com.termux/files/usr',
+      PATH: '/custom/bin'
+    } as NodeJS.ProcessEnv
+    expect(commandEnv(source)).toEqual({
+      ...source,
+      GYP_DEFINES: 'android_ndk_path=/data/data/com.termux/files/usr'
+    })
+    expect(source.GYP_DEFINES).toBeUndefined()
+  })
+
+  it('не меняет окружение Linux, macOS и Windows', () => {
+    const source = { PATH: '/usr/bin', GYP_DEFINES: 'custom=1' } as NodeJS.ProcessEnv
+    expect(commandEnv(source)).toEqual(source)
+    expect(commandEnv(source)).not.toBe(source)
   })
 })
 
