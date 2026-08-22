@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, managedChatAttachmentsPath, REST, clampModel, firstAllowedProvider, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, type ImageRetouchRequest, type ImageRetouchResult, type MessageAttachment, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, managedChatAttachmentsPath, REST, allowedModels, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, type ImageRetouchRequest, type ImageRetouchResult, type MessageAttachment, type CiUsageKind, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -818,8 +818,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const source = record(item)
         const path = `sources[${index}]`
         if (!source) { issues.push(`${path} должен быть объектом`); continue }
+        const kindAliases: Record<string, string> = { knowledge_base: 'knowledge', 'knowledge-base': 'knowledge', 'knowledge-base-gap': 'knowledge', 'code-search': 'code' }
+        if (typeof source.kind === 'string' && kindAliases[source.kind]) source.kind = kindAliases[source.kind]
+        if (typeof source.refs === 'string') source.refs = [source.refs]
         for (const key of ['id', 'kind', 'status', 'summary']) requireString(source, key, `${path}.${key}`)
-        if (typeof source.kind === 'string' && !['knowledge', 'hierarchy', 'related_tasks', 'code', 'tests', 'storybook'].includes(source.kind)) issues.push(`${path}.kind имеет недопустимое значение`)
+        if (typeof source.kind === 'string' && !['knowledge', 'hierarchy', 'related_tasks', 'code', 'tests', 'storybook'].includes(source.kind)) issues.push(`${path}.kind имеет недопустимое значение: ${String(source.kind)}`)
         if (typeof source.status === 'string' && !['available', 'absent', 'unavailable'].includes(source.status)) issues.push(`${path}.status имеет недопустимое значение`)
         for (const [refIndex, ref] of requireArray(source, 'refs', `${path}.refs`).entries()) if (typeof ref !== 'string') issues.push(`${path}.refs[${refIndex}] должен быть строкой`)
         requireBoolean(source, 'critical', `${path}.critical`)
@@ -862,6 +865,24 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const model = taskPreparationModel(provider, allowedModel)
     const llmEngineId = selection?.llmEngineId ?? stageLlm.llmEngineId ?? null
     const client = provider === 'codex' ? codex : claude
+    const recoverySelection = (): { provider: LlmProvider; model: string; client: LlmClient } | null => {
+      const configuredProvider = opts.config.taskPreparationRecoveryProvider
+      const configuredModel = opts.config.taskPreparationRecoveryModel
+      if (configuredProvider && configuredModel) {
+        if ((configuredProvider !== provider || taskPreparationModel(configuredProvider, configuredModel) !== model) && isModelAllowedForUser(access, configuredProvider, configuredModel)) {
+          return { provider: configuredProvider, model: taskPreparationModel(configuredProvider, configuredModel), client: configuredProvider === 'codex' ? codex : claude }
+        }
+        return null
+      }
+      const providers: LlmProvider[] = provider === 'claude' ? ['codex', 'claude'] : ['claude', 'codex']
+      for (const candidateProvider of providers) {
+        for (const candidate of allowedModels(access, candidateProvider)) {
+          const candidateModel = taskPreparationModel(candidateProvider, candidate.id)
+          if (candidateProvider !== provider || candidateModel !== model) return { provider: candidateProvider, model: candidateModel, client: candidateProvider === 'codex' ? codex : claude }
+        }
+      }
+      return null
+    }
     const project = db.getProject(userId, projectId)
     const configuredMachines = (project?.machines ?? []).filter((machine) => machine.canUse !== false && machine.path.trim())
     const preferredAgentId = db.getUserProjectDefaultMachine(userId, projectId) ?? project?.defaultAgentId ?? null
@@ -921,7 +942,70 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 ${machineDiagnostic}`
     const basePrompt = `${researchDirective}
 
-Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. Не заменяй строки массивами или объектами. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для UI-компонента укажи storybookStoryId либо exclusionReason и alternativeVerification. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+    const ordinaryResponses: string[] = []
+    const terminalValidationFailure = (message: string, text: string, recoveryDetail?: string): void => {
+      const terminalMessage = recoveryDetail ? `Recovery Development Brief завершился ошибкой: ${recoveryDetail}; исходная диагностика: ${message}` : message
+      const readiness = (() => { try { return parseTaskPreparation(text) } catch { return null } })()
+      const results = readiness ? developmentReadinessGateResults(readiness) : []
+      db.blockTaskPreparationRun(run.id, terminalMessage, results.flatMap((item) => item.status === 'fail' ? item.refs : []), results)
+      closePreparationTools()
+      boardHub.emit(projectId)
+    }
+    const sendRecovery = (reason: string): void => {
+      const recovery = recoverySelection()
+      if (!recovery) {
+        terminalValidationFailure(reason, ordinaryResponses[1] ?? '', 'не найдена другая разрешённая модель согласно recovery-политике')
+        return
+      }
+      const sourceName = `${provider}:${model}`
+      const recoveryName = `${recovery.provider}:${recovery.model}`
+      db.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Аварийное восстановление Development Brief')
+      db.appendTaskPreparationEvent(run.id, 'recovery_started', 'brief_generation', `Переключение ${sourceName} → ${recoveryName}: ${reason}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: recovery.provider, recoveryModel: recovery.model, reason })
+      db.appendTaskPreparationLog(run.id, `[система] Recovery-модель: ${recoveryName}; исходная модель: ${sourceName}; причина: ${reason}\\n`)
+      const recoveryPrompt = `Исправь ТОЛЬКО структуру уже подготовленного Development Brief без повторного исследования и без изменения смысла требований. Верни только один JSON-объект schemaVersion=2.\\n
+Диагностика валидатора (точные пути/гейты): ${reason}\\n
+Исходный ответ: ${ordinaryResponses[0] ?? ''}\\n
+Повторный ответ: ${ordinaryResponses[1] ?? ''}\\n
+Строгий контракт DevelopmentReadiness:
+schemaVersion: 2; goal, functionalRequirements, acceptanceCriteria — string; scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints, contradictions — string[]; uiImpact — none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean.
+acceptanceCriteriaItems: {id,title,precondition,action,observableResult:string}[].
+testCases: {id,title,description,preconditions,testData,steps,expectedResult,testType,notAutomatedReason,alternativeManualVerification,comments:string,required:boolean,automatable:boolean,automationLinks:array}[].
+affectedComponents: {id,name,exclusionReason,alternativeVerification:string,reusable:boolean,storybookStoryId:string|null,coverage:object|null}[].
+openQuestions: {questionId:string,text:string,material:boolean,answer:string|null}[]; decisions: {id,text,rationale:string,questionId?:string}[]; assumptions: {id,text,rationale:string,material:boolean}[].
+sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,status:available|absent|unavailable,summary:string,refs:string[],critical:boolean}[].
+Сохрани исходные требования. Если диагностика выявляет дефект подготовки, добавь в scope, acceptanceCriteria/acceptanceCriteriaItems и testCases отдельные проверяемые работы: усиление prompt/schema, безопасная нормализация однозначных совместимых значений, регрессионные тесты и актуализация существующего раздела БЗ. Не добавляй новые исследования и не выдумывай источники.`
+      const handle = recovery.client.send({ userId, prompt: recoveryPrompt, sessionId: null, model: recovery.model, executionDisabled: true }, {
+        onDelta: () => {},
+        onSession: () => {},
+        onDone: (text) => {
+          taskPreparationHandles.delete(run.id)
+          if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
+          try {
+            db.transitionTaskPreparationRun(run.id, 'validating', 'readiness_validation', 'Проверка восстановленного Development Brief')
+            const readiness = parseTaskPreparation(text)
+            const gate = canConfirmDevelopmentReadiness(readiness)
+            if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
+            db.appendTaskPreparationEvent(run.id, 'recovery_completed', 'readiness_validation', `Recovery ${recoveryName} успешно прошёл runtime-валидацию и readiness-гейт`, { sourceProvider: provider, sourceModel: model, recoveryProvider: recovery.provider, recoveryModel: recovery.model, result: 'success' })
+            db.completeTaskPreparationRun(userId, run.id, readiness)
+            closePreparationTools()
+            boardHub.emit(projectId)
+          } catch (error) {
+            const recoveryError = redactPreparationText(error instanceof Error ? error.message : String(error))
+            db.appendTaskPreparationEvent(run.id, 'recovery_failed', 'readiness_validation', `Recovery ${recoveryName} отклонён: ${recoveryError}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: recovery.provider, recoveryModel: recovery.model, result: 'failed', error: recoveryError })
+            terminalValidationFailure(reason, text, recoveryError)
+          }
+        },
+        onError: (message) => {
+          taskPreparationHandles.delete(run.id)
+          if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
+          const recoveryError = taskPreparationFailure(recovery.provider, userId, message)
+          db.appendTaskPreparationEvent(run.id, 'recovery_failed', 'brief_generation', `Recovery ${recoveryName} не выполнен: ${recoveryError}`, { result: 'failed', error: recoveryError })
+          terminalValidationFailure(reason, ordinaryResponses[1] ?? '', recoveryError)
+        }
+      })
+      if (handle) taskPreparationHandles.set(run.id, { cancel: () => { closePreparationTools(); handle.cancel() } })
+    }
     const sendAttempt = (attempt: number, correction?: string): void => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
       const handle = client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, ...remote, ...kbFields }, {
@@ -930,6 +1014,7 @@ ${machineDiagnostic}`
         onDone: (text) => {
           taskPreparationHandles.delete(run.id)
           if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
+          ordinaryResponses[attempt - 1] = text
           try {
             const candidate = JSON.parse(text.trim().replace(/^\`\`\`(?:json)?\\s*/i, '').replace(/\\s*\`\`\`$/, '')) as { question?: unknown; material?: unknown }
             if (typeof candidate.question === 'string' && candidate.question.trim()) {
@@ -955,15 +1040,10 @@ ${machineDiagnostic}`
             if (attempt < 2) {
               db.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Исправление Development Brief после проверки')
               sendAttempt(attempt + 1, message)
+            } else if (message.includes('.kind имеет недопустимое значение')) {
+              terminalValidationFailure(message, text)
             } else {
-              const current = db.getTaskPreparationRun(userId, run.id)
-              if (current?.status === 'validating' || message.startsWith('Гейт готовности')) {
-                const readiness = (() => { try { return parseTaskPreparation(text) } catch { return null } })()
-                const results = readiness ? developmentReadinessGateResults(readiness) : []
-                db.blockTaskPreparationRun(run.id, message, results.flatMap((item) => item.status === 'fail' ? item.refs : []), results)
-              } else db.failTaskPreparationRun(run.id, message)
-              closePreparationTools()
-              boardHub.emit(projectId)
+              sendRecovery(message)
             }
           }
         },
