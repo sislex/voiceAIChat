@@ -320,6 +320,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ resetDirectory: kind }) }),
     'projects:setMachinePath': ({ id, agentId, path }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ path }) }),
+    'projects:gitAccessStatus': ({ id, agentId, repositoryUrl }) =>
+      req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access?repositoryUrl=${encodeURIComponent(repositoryUrl)}`),
+    'projects:configureGitAccess': ({ id, agentId, repositoryUrl, token }) =>
+      req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access/configure`, { method: 'POST', body: JSON.stringify({ repositoryUrl, token }) }),
+    'projects:verifyGitAccess': ({ id, agentId, repositoryUrl, refspec }) =>
+      req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access/verify`, { method: 'POST', body: JSON.stringify({ repositoryUrl, refspec }) }),
+    'projects:deleteGitAccess': ({ id, agentId, repositoryUrl }) =>
+      req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access`, { method: 'DELETE', body: JSON.stringify({ repositoryUrl }) }),
+    'projects:gitAccessDiagnostics': ({ id, agentId, repositoryUrl }) =>
+      req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access/diagnostics?repositoryUrl=${encodeURIComponent(repositoryUrl)}`),
     'projects:setReposRoot': ({ id, agentId, reposRoot }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ reposRoot }) }),
     'projects:setMachineSsh': ({ id, agentId, sshHost, sshUser }) =>
