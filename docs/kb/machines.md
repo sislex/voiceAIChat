@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-22
-checked: 7953d1e0
+checked: 065144cf
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -12,6 +12,7 @@ areas:
   - apps/server/src/routes/agents.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/routes/rest.ts
+  - apps/server/src/preview
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/projects.ts
@@ -741,8 +742,17 @@ MachineStorage полностью отсутствует. Legacy- и неожи�
 `chat.json`, а для проектного/task-чата — `shared`, `project.json`, `task.json`,
 `runs` и окружения. Production, staging и task-test получают собственные `app`,
 `config`, `logs`, `artifacts`, `temporary/repository` и `environment.json`; корень
-`previews` создаётся заранее, но конкретный preview по-прежнему появляется только
-после явной операции. Существующие manifest-файлы не перезаписываются.
+`previews` создаётся заранее, но конкретный preview появляется только после явной
+операции. Новый feature-preview использует `PreviewEnvironment.id` как стабильный
+preview id и размещает checkout в
+`projects/<projectId>/tasks/<taskId>/environments/preview/<previewId>/temporary/repository`.
+Перед каждым lifecycle-действием manager заново подтверждает машину, storage marker,
+политику путей, запись и отсутствие симлинков; persisted metadata связывает storage,
+машину и preview root. `environment.json` дополнительно фиксирует identity окружения.
+Remove удаляет этот root только после Docker cleanup и точной сверки metadata с
+manifest; legacy-записи без managed metadata не мигрируются и не подвергаются
+файловому cleanup. Источники lifecycle — `apps/server/src/preview/manager.ts`,
+контракт и общий path helper — `packages/shared/src/preview.ts` и `projects.ts`.
 
 Новые вложения разговора с такой привязкой записываются в его `attachments` внутри
 выбранного storage. Без привязки сохраняется совместимый `.voicechat_uploads` в корне
