@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 64 коммит(ов) в areas после сверки: 8bad7cb3 Merge task e07adedf-e130-44b1-84dc-aaa7fc5d0935 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-22 | ⚠ 4 коммит(ов) в areas после сверки: 0dd9300a Merge task d523edcc-4f06-4838-a420-3acee00fe122 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 25 коммит(ов) в areas после сверки: 0dd9300a Merge task d523edcc-4f06-4838-a420-3acee00fe122 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 520 коммит(ов) в areas после сверки: a06ad1dc docs(kb): update after merge e07adedf-e130-44b1-84dc-aaa7fc5d0935 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 521 коммит(ов) в areas после сверки: 4ad30295 docs(kb): update after merge d523edcc-4f06-4838-a420-3acee00fe122 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 33 коммит(ов) в areas после сверки: 8bad7cb3 Merge task e07adedf-e130-44b1-84dc-aaa7fc5d0935 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-21 | ⚠ 15 коммит(ов) в areas после сверки: 0dd9300a Merge task d523edcc-4f06-4838-a420-3acee00fe122 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ⚠ 2 коммит(ов) в areas после сверки: 0dd9300a Merge task d523edcc-4f06-4838-a420-3acee00fe122 … |
