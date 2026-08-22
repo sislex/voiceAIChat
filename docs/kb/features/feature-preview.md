@@ -1,9 +1,10 @@
 ---
 title: Feature-preview окружения задач
-updated: 2026-08-17
-checked: 9c191cd
+updated: 2026-08-22
+checked: 55ff3f21
 areas:
   - packages/shared/src/preview.ts
+  - packages/shared/src/projects.ts
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/version.ts
   - apps/agent/src/connection.ts
@@ -27,6 +28,8 @@ areas:
 Feature-preview — отдельное управляемое окружение для workspace конкретной задачи. Оно не использует production deploy и не запускается при создании задачи, development-run, открытии карточки или завершении работы модели. Первый build начинается только после явной операции `start` из секции «Тестовое окружение» в карточке. Пользователь может выбрать любую машину проекта: на машине последнего CI используется её активный workspace, а на другой машине manager клонирует зафиксированную feature-ветку в стабильный каталог `<repos_root>/<project-key>/<issue_key>`, не переключая обычный checkout проекта.
 
 Общий контракт состояний, операций и данных окружения находится в `packages/shared/src/preview.ts`. Там же сосредоточены правила доступных действий, признак занятого состояния и проверка готовности цели Playwright; сервер и UI не восстанавливают эти правила из Docker-лога.
+
+Канонический managed-путь task preview задаёт `recommendedPreviewEnvironmentPath` из `packages/shared/src/projects.ts`: `projects/<projectId>/tasks/<taskId>/environments/preview/<previewId>`. Preview тем самым task-scoped и не лежит в общем проектном `environments/previews`.
 
 ## Серверное состояние и операции
 
