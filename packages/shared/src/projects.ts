@@ -165,6 +165,23 @@ export function normalizeProjectMachineDirectory(path: string, platform: string)
   return normalizeMachineStoragePath(path, platform)
 }
 
+export interface ManagedMergeClonePaths {
+  root: string
+  repository: string
+  npmCache: string
+}
+
+/** Постоянный merge-клон проекта, изолированный от taskWorkspace и остальных назначений. */
+export function managedMergeClonePaths(storageRoot: string, projectId: string, platform: string): ManagedMergeClonePaths {
+  const root = recommendedProjectMachineDirectory(storageRoot, projectId, 'mergeClones', platform)
+  const separator = machinePathSeparator(platform)
+  return {
+    root,
+    repository: `${root}${separator}repository`,
+    npmCache: `${root}${separator}npm-cache`
+  }
+}
+
 export function isPathInsideMachineStorage(path: string, storageRoot: string, platform: string): boolean {
   const candidate = normalizeProjectMachineDirectory(path, platform)
   const root = normalizeMachineStoragePath(storageRoot, platform)
@@ -201,8 +218,66 @@ export function recommendedEnvironmentPath(projectId: string, kind: 'production'
   return `projects/${validateStorageRelativePath(projectId)}/environments/${kind}`
 }
 
+export interface ManagedEnvironmentPaths {
+  root: string
+  app: string
+  config: string
+  logs: string
+  artifacts: string
+  temporary: string
+  repository: string
+  manifest: string
+}
+
+/** Canonical production/staging layout; callers never append repository paths themselves. */
+export function managedEnvironmentPaths(
+  storageRoot: string,
+  projectId: string,
+  kind: 'production' | 'staging',
+  platform: string
+): ManagedEnvironmentPaths {
+  const root = recommendedProjectMachineDirectory(storageRoot, projectId, kind, platform)
+  if (!isPathInsideMachineStorage(root, storageRoot, platform)) throw new Error('Managed environment path выходит за границы storage')
+  const separator = machinePathSeparator(platform)
+  const child = (name: string): string => `${root}${separator}${name}`
+  const temporary = child('temporary')
+  return { root, app: child('app'), config: child('config'), logs: child('logs'), artifacts: child('artifacts'), temporary, repository: `${temporary}${separator}repository`, manifest: child('environment.json') }
+}
+
 export function recommendedPreviewEnvironmentPath(projectId: string, taskId: string, previewId: string): string {
   return `projects/${validateStorageRelativePath(projectId)}/tasks/${validateStorageRelativePath(taskId)}/environments/preview/${validateStorageRelativePath(previewId)}`
+}
+
+export interface ManagedPreviewEnvironmentPaths {
+  previewRoot: string
+  app: string
+  config: string
+  logs: string
+  artifacts: string
+  temporary: string
+  repository: string
+  manifest: string
+}
+
+/** Absolute canonical preview layout in the target machine path syntax. */
+export function managedPreviewEnvironmentPaths(storageRoot: string, projectId: string, taskId: string, previewId: string, platform: string): ManagedPreviewEnvironmentPaths {
+  const root = normalizeMachineStoragePath(storageRoot, platform)
+  const separator = machinePathSeparator(platform)
+  const relative = recommendedPreviewEnvironmentPath(projectId, taskId, previewId).split('/')
+  const previewRoot = [root, ...relative].join(separator)
+  if (!isPathInsideMachineStorage(previewRoot, root, platform)) throw new Error('Managed preview path выходит за границы storage')
+  const child = (name: string): string => `${previewRoot}${separator}${name}`
+  const temporary = child('temporary')
+  return {
+    previewRoot,
+    app: child('app'),
+    config: child('config'),
+    logs: child('logs'),
+    artifacts: child('artifacts'),
+    temporary,
+    repository: `${temporary}${separator}repository`,
+    manifest: child('environment.json')
+  }
 }
 
 export function recommendedTaskTestEnvironmentPath(projectId: string, taskId: string): string {
@@ -377,6 +452,8 @@ export interface ProjectSummary {
   productionDeployCommand?: string
   /** Отдельная машина, с которой разрешён только production deploy. */
   productionAgentId?: string | null
+  /** Existing records default to explicit legacy compatibility. */
+  productionEnvironmentMode?: 'legacy' | 'managed'
   productionCheckoutPath?: string
   productionHealthCheckCommand?: string
   /** Настраиваемые owner-only лимиты; новый ран копирует их в шаги. */

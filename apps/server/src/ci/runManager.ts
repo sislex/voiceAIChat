@@ -418,19 +418,18 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     }
     const slots = deps.db.resolveTaskSlots(projectId, taskId)
     const taskCi = deps.db.resolveTaskLlmConfig(projectId, taskId, userId)
-    const settings = deps.db.getSettings(userId)
-    const userLlm = deps.db.ciLlmDefaultsForUser(userId)
     const role = deps.db.getUser(userId)?.role ?? 'developer'
     // Обычный запуск наследует пару задачи → проекта → пользователя. Окно создания
     // задачи передаёт разовый выбор, который фиксируется только в этом ране.
-    const requestedProvider = launchOptions?.provider ?? userLlm.provider
-    const requestedModel = launchOptions?.model ?? userLlm.model
+    const requestedProvider = launchOptions?.provider ?? taskCi.provider
+    const requestedModel = launchOptions?.model ?? taskCi.model
     const access = deps.db.getUserLlmAccess(userId)
     const provider = isProviderAllowed(access, requestedProvider) ? requestedProvider : firstAllowedProvider(access)
     if (!provider) return { error: 'Нет доступных движков и моделей' }
     const model = clampModel(access, provider, requestedModel)
     if (!model) return { error: 'Нет доступных моделей для движка' }
-    const engineResolution = deps.db.resolveLlmEngine(settings.llmEngineId, provider, role)
+    const requestedEngineId = taskCi.llmEngineId
+    const engineResolution = deps.db.resolveLlmEngine(requestedEngineId, provider, role)
     const total = slots.beforeModel.length + slots.afterModel.length + 2
     // Связанный чат нужен, чтобы дублировать туда вопросы модели. Идемпотентно:
     // если пользователь уже открывал карточку, вернётся существующий чат.
@@ -467,7 +466,7 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (developmentColumnId && developmentColumnId !== task.columnId) {
       deps.db.moveTask(userId, projectId, taskId, { columnId: developmentColumnId })
     }
-    if (engineResolution.substituted) deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.llm_engine_substituted', actorType: 'system', payload: { requestedEngineId: settings.llmEngineId, resolvedEngineId: engineResolution.engine?.id ?? null, message: `Исполнитель ${settings.llmEngineId} недоступен; выбран ${engineResolution.engine?.name ?? 'default'}` } })
+    if (engineResolution.substituted) deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.llm_engine_substituted', actorType: 'system', payload: { requestedEngineId, resolvedEngineId: engineResolution.engine?.id ?? null, message: `Исполнитель ${requestedEngineId} недоступен; выбран ${engineResolution.engine?.name ?? 'default'}` } })
     deps.db.addCiEvent({ projectId, runId: run.id, type: 'run.started', actorType: 'user', actorId: userId, payload: { taskId, launch, agentId } })
     emitRun(run, userId)
 
@@ -2118,6 +2117,57 @@ fi`
     if (message) broadcast({ t: 'chat.message', conversationId, message }, userId)
   }
 
+  function analyzeFinishedRun(runId: string, userId: string): void {
+    const detail = deps.db.getCiRun(userId, runId)
+    if (!detail || !isTerminalCiStatus(detail.run.status)) return
+    const project = deps.db.getProject(userId, detail.run.projectId)
+    const task = deps.db.getCiTask(userId, detail.run.projectId, detail.run.taskId)
+    if (!project || !task) return
+    const anomalous = detail.steps.filter((step) =>
+      ['failed','timeout','cancelled'].includes(step.status) || step.fixedByModel || step.attempt > 1
+    )
+    const candidates = anomalous.length ? anomalous : detail.run.status === 'success' ? [] : [null]
+    for (const step of candidates) {
+      const problem = step
+        ? step.fixedByModel
+          ? `Шаг «${step.title}» потребовал автоматического исправления моделью.`
+          : `Шаг «${step.title}» завершился со статусом ${step.status}.`
+        : `Автоматический ран завершился со статусом ${detail.run.status} без диагностического шага.`
+      const fact = step
+        ? `Статус шага: ${step.status}; попытка: ${step.attempt}; код выхода: ${step.exitCode ?? 'не получен'}; fixedByModel: ${step.fixedByModel ? 'да' : 'нет'}.`
+        : `Статус рана: ${detail.run.status}; runId: ${runId}.`
+      const workaround = step?.fixedByModel
+        ? 'Модель диагностировала проблему, изменила окружение или код и успешно продолжила ран.'
+        : step && step.attempt > 1
+          ? 'Ран продолжился после повторной попытки шага.'
+          : 'Обходное решение не подтверждено.'
+      const commandLike = Boolean(step?.commandId || step?.kind === 'command' || step?.kind === 'model_command')
+      const chatAi = /chat\s*ai|voicechat/i.test(project.name)
+      const suggestedAction = chatAi ? 'create_chatai_task' : commandLike ? 'reconfigure_commands' : 'support_ticket'
+      const change = suggestedAction === 'create_chatai_task'
+        ? 'Создать предварительно заполненную задачу ChatAI и устранить первопричину после подтверждения пользователем.'
+        : suggestedAction === 'reconfigure_commands'
+          ? 'Перенастроить команды автошага после подтверждения пользователем; код проекта менять не требуется.'
+          : 'Подготовить тикет технической поддержки на изменение кода стороннего проекта после подтверждения пользователем.'
+      const cause = step?.fixedByModel
+        ? 'Вероятная причина: исходная конфигурация шага или окружения оказалась недостаточной. Это предположение; подтверждён только факт автоматического исправления.'
+        : 'Вероятная причина требует проверки по технической ленте. Подтверждённые данные перечислены отдельно ниже.'
+      const description = [
+        '## Проблема', problem, '## Причина', cause, '## Подтверждающие данные', `- ${fact}`,
+        '## Применённое обходное решение', workaround, '## Предлагаемое изменение', change,
+        '## Ожидаемый эффект', 'Автошаг выполняется предсказуемо без повторов, таймаутов или ручного преодоления той же проблемы.',
+        '## Способ проверки', 'Повторить штатный авторан на чистом окружении и убедиться, что шаг проходит с первой попытки без fix-loop.'
+      ].join('\n\n')
+      const key = (step?.commandId ?? step?.title ?? `run-${detail.run.status}`).toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '-').slice(0, 120)
+      deps.db.upsertTaskImprovement({
+        projectId: detail.run.projectId, taskId: detail.run.taskId, runId, stepId: step?.id ?? null,
+        source: 'development', title: step?.fixedByModel ? `Устранить обходное исправление: ${step.title}` : `Стабилизировать: ${step?.title ?? 'автоматический ран'}`,
+        description, fingerprint: `development:${key}:${step?.fixedByModel ? 'workaround' : step?.status ?? detail.run.status}`,
+        evidence: [fact], suggestedAction
+      })
+    }
+  }
+
   function finalize(runId: string, userId: string, status: CiStatus): void {
     const run0 = deps.db.getCiRunRaw(runId)
     // Ран, закрытый отменой (в т.ч. сторожевым таймаутом), финальный: подвисший
@@ -2132,6 +2182,8 @@ fi`
       notifyProdDrainFinished(runId)
       deps.db.addCiEvent({ projectId: run.projectId, runId, type: 'run.finished', actorType: 'system', payload: { status } })
       broadcast({ t: 'ci.done', runId, run }, userId)
+      // Анализ best-effort: его сбой не меняет и не маскирует результат рана.
+      try { analyzeFinishedRun(runId, userId) } catch { /* предложения не блокируют workflow */ }
       deps.boardChanged(run.projectId)
     }
   }

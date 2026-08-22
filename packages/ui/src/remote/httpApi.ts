@@ -320,6 +320,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ resetDirectory: kind }) }),
     'projects:setMachinePath': ({ id, agentId, path }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ path }) }),
+    'projects:gitAccessStatus': ({ id, agentId, repositoryUrl }) =>
+      req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access?repositoryUrl=${encodeURIComponent(repositoryUrl)}`),
+    'projects:configureGitAccess': ({ id, agentId, repositoryUrl, token }) =>
+      req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access/configure`, { method: 'POST', body: JSON.stringify({ repositoryUrl, token }) }),
+    'projects:verifyGitAccess': ({ id, agentId, repositoryUrl, refspec }) =>
+      req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access/verify`, { method: 'POST', body: JSON.stringify({ repositoryUrl, refspec }) }),
+    'projects:deleteGitAccess': ({ id, agentId, repositoryUrl }) =>
+      req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access`, { method: 'DELETE', body: JSON.stringify({ repositoryUrl }) }),
+    'projects:gitAccessDiagnostics': ({ id, agentId, repositoryUrl }) =>
+      req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access/diagnostics?repositoryUrl=${encodeURIComponent(repositoryUrl)}`),
     'projects:setReposRoot': ({ id, agentId, reposRoot }) =>
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ reposRoot }) }),
     'projects:setMachineSsh': ({ id, agentId, sshHost, sshUser }) =>
@@ -447,6 +457,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     getTaskMachines: (projectId, taskId) => req<import('@shared/ci').CiTaskMachines>(REST.taskCiMachines(projectId, taskId)),
     putTaskCi: (projectId, taskId, config) => req<CiSlotConfig & { enabledStages: import('@shared/ci').CiProcessStage[] }>(REST.taskCi(projectId, taskId), { method: 'PUT', body: JSON.stringify(config) }),
     startRun: (projectId, taskId, options) => req<CiRun>(REST.ciRunStart(projectId, taskId), { method: 'POST', body: JSON.stringify(options ?? {}) }),
+    getMergeMachines: (projectId, taskId) => req<import('@shared/merge').MergeMachinesResponse>(REST.taskMergeMachines(projectId, taskId)),
     startMerge: (projectId, taskId, agentId) => req<import('@shared/merge').MergeRun>(REST.taskMergeStart(projectId, taskId), { method: 'POST', body: JSON.stringify(agentId ? { agentId } : {}) }),
     getTaskRepositories: (projectId, taskId) => req<import('@shared/merge').TaskRepository[]>(REST.taskRepositories(projectId, taskId)),
     getMerge: (runId) => req<import('@shared/merge').MergeRun>(`/api/merge/runs/${encodeURIComponent(runId)}`),
@@ -462,6 +473,9 @@ export function createCiRest(httpBase: string): RendererCiRest {
     getRunReport: (runId) => req<CiRunReport>(REST.ciRunReport(runId)),
     getTaskReport: (projectId, taskId) => req<CiTaskReport>(REST.taskCiReport(projectId, taskId)),
     getTaskTimeline: (projectId, taskId) => req<import('@shared/timeline').TaskTimeline>(REST.taskTimeline(projectId, taskId)),
+    listTaskImprovements: (projectId, taskId) => req<import('@shared/ci').TaskImprovement[]>(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/improvements`),
+    listProjectImprovementTasks: (projectId) => req<Array<{ taskId: string; count: number; improvementId: string }>>(`/api/projects/${encodeURIComponent(projectId)}/improvements/tasks`),
+    updateImprovementStatus: (id, status) => req<import('@shared/ci').TaskImprovement>(`/api/improvements/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
     cancelRun: (runId) => req<{ ok: boolean }>(REST.ciRunCancel(runId), { method: 'POST' }),
     dequeueRun: (runId) => req<CiQueueRemovalResult>(REST.ciRunDequeue(runId), { method: 'POST' }),
     retryRun: (runId) => req<CiRun>(REST.ciRunRetry(runId), { method: 'POST' }),

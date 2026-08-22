@@ -111,8 +111,17 @@ export interface PreviewRun {
   result: PreviewRunResult | null
 }
 
+export interface ManagedPreviewMetadata {
+  formatVersion: 1
+  storageId: string
+  machineId: string
+  previewRoot: string
+}
+
 export interface PreviewEnvironment {
   id: string
+  /** Absent on persisted legacy previews; those are never automatically migrated or directory-cleaned. */
+  managed?: ManagedPreviewMetadata
   projectId: string
   taskId: string
   agentId: string

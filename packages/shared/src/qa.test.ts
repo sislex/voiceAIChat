@@ -74,6 +74,24 @@ describe('development readiness gate', () => {
     }]
     expect(canConfirmDevelopmentReadiness(input).allowed).toBe(false)
   })
+  it('requires non-empty coverage for explicit Storybook exclusions in schema v2', () => {
+    const input = ready()
+    input.schemaVersion = 2
+    input.goal = 'Goal'
+    input.scope = ['Scope']
+    input.outOfScope = ['Out']
+    input.acceptanceCriteriaItems = [{ id: 'AC-1', title: 'Criterion', precondition: 'Given', action: 'When', observableResult: 'Then' }]
+    input.sources = [
+      { id: 'kb', kind: 'knowledge', status: 'available', summary: 'Read', refs: ['kb'], critical: true },
+      { id: 'code', kind: 'code', status: 'available', summary: 'Read', refs: ['qa.ts'], critical: true }
+    ]
+    input.uiImpact = 'existing_components'
+    input.affectedComponents = [{ id: 'server', name: 'Server', storybookStoryId: null, reusable: true, coverage: {}, exclusionReason: 'Not visual', alternativeVerification: 'Vitest' }]
+    expect(canConfirmDevelopmentReadiness(input).reasons).toContain('missing_storybook_coverage:server')
+    input.affectedComponents[0].coverage = { existing: ['server.test.ts'], required: ['snapshot'] }
+    expect(canConfirmDevelopmentReadiness(input).allowed).toBe(true)
+  })
+
   it('requires a current-SHA Playwright link or a documented manual alternative', () => {
     expect(canCompleteAutomation([testCase()], 'sha-1').reasons).toEqual(['missing_automation:TC-1'])
     expect(canCompleteAutomation([testCase({
@@ -108,7 +126,7 @@ describe('component QA gate', () => {
   })
   it('accepts explicit Storybook exclusion with alternative verification', () => {
     const value = readiness()
-    value.affectedComponents[0] = { ...value.affectedComponents[0], storybookStoryId:null, coverage:null, exclusionReason:'Canvas only', alternativeVerification:'DOM fixture test' }
+    value.affectedComponents[0] = { ...value.affectedComponents[0], storybookStoryId:null, coverage:{ domTests: true }, exclusionReason:'Canvas only', alternativeVerification:'DOM fixture test' }
     expect(componentQaLaunchReasons(value)).toEqual([])
   })
   it('pins SHA and semantic scenario version and requires every command/scenario', () => {

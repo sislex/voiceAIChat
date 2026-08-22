@@ -1,7 +1,7 @@
 ---
 title: Структурированное ручное QA
-updated: 2026-08-17
-checked: 0722654
+updated: 2026-08-22
+checked: c08b50f0
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/projects.ts
@@ -72,7 +72,8 @@ FNV-1a-хеш стабильно сериализованных сценарие
 `componentQaLaunchReasons` для UI-задачи требует непустой список компонентов и
 хотя бы один обязательный component-сценарий; компонент со story обязан
 заявить все семь признаков `StorybookCoverage`, компонент без story проходит
-только с непустыми `exclusionReason` и `alternativeVerification`; конфликт
+только с непустыми `exclusionReason`, `alternativeVerification` и непустым
+объектом `coverage`, который фиксирует альтернативные проверки; конфликт
 критериев приёмки тоже блокирует. `uiImpact=none` даёт пустой список причин,
 сохраняется аудируемым `skipped`-раном и в той же транзакции переводит карточку
 в `integration_tests` (через `canTransitionWorkflow('component_qa',
@@ -119,7 +120,7 @@ trim-нутых стадий, некорректный JSON с ведущей `[
 при статусе `passed`/`skipped` без `staleReason`, совпадении SHA и версии
 снимка с текущими, отсутствии конфликта критериев, `passed` у каждого
 обязательного сценария, полном Storybook coverage либо явном исключении с
-альтернативой у каждого компонента, `passed` и exit 0 у каждой команды и
+альтернативой и непустым coverage у каждого компонента, `passed` и exit 0 у каждой команды и
 пустом списке блокеров; для `uiImpact=none` проверяется только сам факт
 `skipped`. `completeComponentQaRun` повторяет gate на сервере, ещё раз сверяет
 колонку и `canTransitionWorkflow` и только затем двигает карточку в

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,7 +12,8 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 function setup(result: { exitCode: number | null; timedOut: boolean } = { exitCode: 0, timedOut: false }) {
   const dir = mkdtempSync(join(tmpdir(), 'preview-test-')); dirs.push(dir)
   const db = {
-    getProject: () => ({ id: 'p1', name: 'Project', gitUrl: 'https://example.test/repo.git', ciBranchTemplate: '{task_number}', defaultAgentId: 'a1', machines: [{ agentId: 'a1', reposRoot: '/repos', path: '/repos/project' }, { agentId: 'a2', reposRoot: '/other', path: '/other/project' }] }),
+    getProject: () => ({ id: 'p1', name: 'Project', gitUrl: 'https://example.test/repo.git', ciBranchTemplate: '{task_number}', defaultAgentId: 'a1', machines: [{ agentId: 'a1', reposRoot: '/repos', path: '/repos/project', storageId: 's1' }, { agentId: 'a2', reposRoot: '/other', path: '/other/project', storageId: 's2' }] }),
+    getProjectMachine: (_projectId: string, agentId: string) => ({ agentId, path: agentId === 'a1' ? '/repos/project' : '/other/project', reposRoot: agentId === 'a1' ? '/repos' : '/other', storageId: agentId === 'a1' ? 's1' : 's2', storageRoot: agentId === 'a1' ? '/storage' : '/storage-2', storageFormatVersion: 1, directories: null }),
     getBoard: () => ({ tasks: [{ id: 't1', type: 'task', seq: 1, title: 'Task one', agentId: 'a1' }, { id: 't2', type: 'task', seq: 2, title: 'Task two', agentId: 'a1' }] }),
     findActiveCiWorkspace: (_projectId: string, taskId: string) => ({ id: `ws-${taskId}`, agentId: 'a1', path: `/repos/project/${taskId}`, branch: `feature/${taskId === 't1' ? 1 : 2}`, commitSha: taskId === 't1' ? 'aaaaaaaa' : 'bbbbbbbb', pushed: true }),
     findLatestCiWorkspace: (_projectId: string, taskId: string) => ({ id: `ws-${taskId}`, agentId: 'a1', path: `/repos/project/${taskId}`, branch: `feature/${taskId === 't1' ? 1 : 2}`, commitSha: taskId === 't1' ? 'aaaaaaaa' : 'bbbbbbbb', pushed: true }),
@@ -23,15 +24,29 @@ function setup(result: { exitCode: number | null; timedOut: boolean } = { exitCo
     run: vi.fn(async (req, onChunk, signal) => {
       if (signal?.aborted) throw new Error('Команда отменена')
       n++
-      if (req.script.includes('git branch --show-current')) onChunk(`VC_BRANCH=feature/${req.workdir.endsWith('t1') ? '1' : '2'}\nVC_SHA=${req.workdir.endsWith('t1') ? 'aaaaaaaa' : 'bbbbbbbb'}\n`)
+      if (req.script.includes('git branch --show-current')) onChunk(`VC_BRANCH=feature/${req.workdir.includes('/tasks/t1/') ? '1' : '2'}\nVC_SHA=${req.workdir.includes('/tasks/t1/') ? 'aaaaaaaa' : 'bbbbbbbb'}\n`)
       if (req.script.includes('command -v docker') && result.exitCode !== 0) onChunk('Docker установлен, но не запущен\n')
       if (req.script.includes('VC_ALLOCATED_PORT')) onChunk(`VC_ALLOCATED_PORT=${18000 + n}\n`)
       return req.script.includes('command -v docker') ? result : { exitCode: 0, timedOut: false }
     })
   }
   let id = 0
-  const manager = new FeaturePreviewManager({ db, executor, storePath: join(dir, 'previews.json'), isOnline: () => true, newId: () => `id-${++id}`, now: () => id * 100 })
-  return { manager, executor, db, storePath: join(dir, 'previews.json') }
+  const files = new Map<string, string>()
+  const fsDelete = vi.fn(async (_agentId: string, path: string) => { files.delete(path) })
+  const manager = new FeaturePreviewManager({
+    db, executor, storePath: join(dir, 'previews.json'), isOnline: () => true,
+    platformOf: () => 'linux', allowedDirsOf: () => ['/storage', '/storage-2'],
+    fsRead: async (_agentId, path) => {
+      if (path.endsWith('/.voicechat/storage.json')) return { dataBase64: Buffer.from(JSON.stringify({ id: path.startsWith('/storage-2') ? 's2' : 's1', formatVersion: 1 })).toString('base64') }
+      const value = files.get(path); if (!value) throw new Error('ENOENT: not found')
+      return { dataBase64: value }
+    },
+    fsWrite: async (_agentId, path, dataBase64) => { files.set(path, dataBase64) },
+    fsMkdir: async () => undefined,
+    fsDelete,
+    newId: () => `id-${++id}`, now: () => id * 100
+  })
+  return { manager, executor, db, files, fsDelete, storePath: join(dir, 'previews.json') }
 }
 const wait = async (): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, 30)) }
 
@@ -79,11 +94,64 @@ describe('FeaturePreviewManager', () => {
     const { manager, executor } = setup()
     const env = await manager.operate('u1', 'p1', 't1', 'start', { agentId: 'a2' })
     expect(env.agentId).toBe('a2')
-    expect(env.workspacePath).toBe('/other/project/PROJ-1')
+    expect(env.workspacePath).toBe('/storage-2/projects/p1/tasks/t1/environments/preview/id-1/temporary/repository')
     expect(executor.run).toHaveBeenCalledWith(expect.objectContaining({
-      agentId: 'a2', workdir: '/other/project', env: expect.objectContaining({ VC_PREVIEW_BRANCH: 'feature/1', VC_PREVIEW_SHA: 'aaaaaaaa' })
+      agentId: 'a2', workdir: '/storage-2/projects/p1/tasks/t1/environments/preview/id-1', env: expect.objectContaining({ VC_PREVIEW_BRANCH: 'feature/1', VC_PREVIEW_SHA: 'aaaaaaaa' })
     }), expect.any(Function))
     await wait()
+  })
+
+  it('materializes and reuses the canonical managed preview layout', async () => {
+    const { manager, files } = setup()
+    const first = await manager.operate('u1', 'p1', 't1', 'start')
+    await wait()
+    const root = '/storage/projects/p1/tasks/t1/environments/preview/id-1'
+    expect(first.workspacePath).toBe(`${root}/temporary/repository`)
+    const manifest = JSON.parse(Buffer.from(files.get(`${root}/environment.json`)!, 'base64').toString('utf8'))
+    expect(manifest).toEqual({ formatVersion: 1, kind: 'preview', projectId: 'p1', taskId: 't1', previewId: 'id-1', storageId: 's1', machineId: 'a1' })
+    const restarted = await manager.operate('u1', 'p1', 't1', 'start')
+    expect(restarted.id).toBe(first.id)
+    expect(restarted.workspacePath).toBe(first.workspacePath)
+    await wait()
+  })
+
+  it('removes only the confirmed managed preview root after Docker cleanup', async () => {
+    const { manager, fsDelete } = setup()
+    const env = await manager.operate('u1', 'p1', 't1', 'start')
+    await wait()
+    await manager.operate('u1', 'p1', 't1', 'remove')
+    await wait()
+    expect(fsDelete).toHaveBeenLastCalledWith('a1', env.managed!.previewRoot)
+    expect(manager.get('u1', 'p1', 't1')?.state).toBe('removed')
+  })
+
+  it('rejects cleanup when environment.json identity conflicts', async () => {
+    const { manager, files, fsDelete } = setup()
+    const env = await manager.operate('u1', 'p1', 't1', 'start')
+    await wait()
+    files.set(`${env.managed!.previewRoot}/environment.json`, Buffer.from(JSON.stringify({ formatVersion: 1, kind: 'preview', projectId: 'p1', taskId: 'other', previewId: env.id, storageId: 's1', machineId: 'a1' })).toString('base64'))
+    const deletesBefore = fsDelete.mock.calls.length
+    await manager.operate('u1', 'p1', 't1', 'remove')
+    await wait()
+    expect(fsDelete.mock.calls.slice(deletesBefore)).not.toContainEqual(['a1', env.managed!.previewRoot])
+    expect(manager.get('u1', 'p1', 't1')?.lastError?.message).toMatch(/environment.json конфликтует/)
+  })
+
+  it('keeps persisted legacy workspace and never applies managed directory cleanup', async () => {
+    const { manager, db, executor, storePath, fsDelete } = setup()
+    await manager.operate('u1', 'p1', 't1', 'start')
+    await wait()
+    const legacy = manager.get('u1', 'p1', 't1')!
+    delete legacy.managed
+    legacy.workspacePath = '/repos/project/t1'
+    legacy.state = 'stopped'
+    writeFileSync(storePath, JSON.stringify({ environments: [legacy], idempotency: {} }))
+    const restored = new FeaturePreviewManager({ db, executor, storePath, isOnline: () => true })
+    const deletesBefore = fsDelete.mock.calls.length
+    await restored.operate('u1', 'p1', 't1', 'remove')
+    await wait()
+    expect(restored.get('u1', 'p1', 't1')?.workspacePath).toBe('/repos/project/t1')
+    expect(fsDelete.mock.calls).toHaveLength(deletesBefore)
   })
 
   it('starts Docker through an explicit operation and waits for the Engine', async () => {

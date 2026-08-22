@@ -11,10 +11,12 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 
 import type { AgentInfo } from '@shared/agentProtocol'
+import type { RendererApi } from '@shared/ipc'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { SettingsPage } from './SettingsPage'
 import { ProjectMachinesSettings } from './ProjectMachinesSettings'
+import { ProjectMachineGitAccess } from './ProjectMachineGitAccess'
 
 export interface ProjectSettingsProps {
   detail: ProjectDetail
@@ -36,6 +38,7 @@ export interface ProjectSettingsProps {
   onSetReposRoot: (id: string, agentId: string, reposRoot: string) => void | Promise<void>
   onSetMachineSsh: (id: string, agentId: string, sshHost: string, sshUser: string) => void | Promise<void>
   onSetDefaultMachine: (id: string, agentId: string) => void | Promise<void>
+  gitAccessApi?: Pick<RendererApi, 'projects:gitAccessStatus' | 'projects:configureGitAccess' | 'projects:verifyGitAccess' | 'projects:deleteGitAccess' | 'projects:gitAccessDiagnostics'>
 }
 
 /** Редактор списка тегов (технологии/навыки). */
@@ -96,6 +99,8 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   const [newMember, setNewMember] = useState('')
   const [confirmDel, setConfirmDel] = useState(false)
   const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'>('general')
+  const [selectedGitMachineId, setSelectedGitMachineId] = useState('')
+  const [machineTab, setMachineTab] = useState<'settings' | 'git'>('settings')
   // Порог скрытия завершённых: черновик строкой — пустое поле это «не скрывать»
   // (null), а не 0. Синхронизируем с ответом сервера.
   const retentionOf = (v: number | null | undefined): string => (v == null ? '' : String(v))
@@ -233,8 +238,10 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         <label>Merge<select className="sel" disabled={!isOwner} value={detail.mergeTransport} onChange={(e) => props.onUpdate(detail.id, { mergeTransport: e.target.value as ProjectSummary['mergeTransport'] })}><option value="local">Локальный merge commit</option><option value="github_pull_request">GitHub Pull Request</option></select></label>
         <label>План агента<select className="sel" disabled={!isOwner} value={detail.agentPlanApprovalMode} onChange={(e) => props.onUpdate(detail.id, { agentPlanApprovalMode: e.target.value as ProjectSummary['agentPlanApprovalMode'] })}><option value="manual">Подтверждать</option><option value="automatic">Запускать автоматически</option></select></label>
         <label>Команда тестирования<input className="login-input" disabled={!isOwner} value={detail.testCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { testCommand: e.target.value })} placeholder="npm test" /></label>
+        <p className="proj-field-label" data-testid="production-environment-mode">Режим production: {detail.productionEnvironmentMode==='managed'?'Managed MachineStorage':'Legacy compatibility'}</p>
+        {detail.productionEnvironmentMode!=='managed'&&<p className="proj-muted">Legacy checkout не управляется MachineStorage и сохраняется неизменным при переходе.</p>}
         <label>Production-машина<select className="sel" disabled={!isOwner} value={detail.productionAgentId ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionAgentId: e.target.value || null })}><option value="">Не настроена</option>{detail.machines.map(machine=><option key={machine.agentId} value={machine.agentId}>{machine.name ?? machine.agentId}{machine.online===false?' · offline':''}</option>)}</select></label>
-        <label>Production checkout<input className="login-input" disabled={!isOwner} value={detail.productionCheckoutPath ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionCheckoutPath: e.target.value })} placeholder="/root/voiceAIChat" /></label>
+        <label>Production checkout<input className="login-input" disabled={!isOwner||detail.productionEnvironmentMode==='managed'} value={detail.productionCheckoutPath ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionCheckoutPath: e.target.value })} placeholder="/root/voiceAIChat" /></label>
         <label>Штатная команда production-деплоя<input className="login-input" disabled={!isOwner} value={detail.productionDeployCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionDeployCommand: e.target.value })} placeholder="voicechat-deploy" /></label>
         <label>Команда health-check<input className="login-input" disabled={!isOwner} value={detail.productionHealthCheckCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionHealthCheckCommand: e.target.value })} placeholder="curl -fsS http://127.0.0.1:8787/api/health" /></label>
         <label>CI: базовая ветка<input className="login-input" disabled={!isOwner} value={detail.ciBaseBranch ?? ''} onChange={(e) => props.onUpdate(detail.id, { ciBaseBranch: e.target.value })} placeholder="main" /></label>
@@ -324,7 +331,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         )}
       </div>}
 
-      {activeTab === 'machines' && <ProjectMachinesSettings
+      {activeTab === 'machines' && <><div className="proj-section"><label>Связка проекта и машины<select className="sel" aria-label="Машина для Git-доступа" value={selectedGitMachineId} onChange={(event) => { setSelectedGitMachineId(event.target.value); setMachineTab('settings') }}><option value="">Выберите машину</option>{detail.machines.filter((machine) => machine.sharedWithProject || machine.ownership === 'mine').map((machine) => <option key={machine.agentId} value={machine.agentId}>{machine.name ?? machine.agentId}</option>)}</select></label>{selectedGitMachineId && <div role="tablist" aria-label="Настройки связки"><Button size="sm" onClick={() => setMachineTab('settings')}>Настройки</Button><Button size="sm" onClick={() => setMachineTab('git')}>Git-доступ</Button></div>}</div>{machineTab === 'settings' && <ProjectMachinesSettings
         projectId={detail.id}
         machines={detail.machines}
         agents={agents}
@@ -340,7 +347,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         onSetDefault={props.onSetDefaultMachine}
         onConfigureStorage={props.onConfigureMachineStorage}
         onResetDirectory={props.onResetMachineDirectory}
-      />}
+      />}{machineTab === 'git' && selectedGitMachineId && props.gitAccessApi && <ProjectMachineGitAccess projectId={detail.id} machine={detail.machines.find((machine) => machine.agentId === selectedGitMachineId)!} repositoryUrl={detail.gitUrl ?? ''} owner={isOwner} api={props.gitAccessApi} />}</>}
 
       {activeTab === 'general' && isOwner && (
         <div className="proj-danger">

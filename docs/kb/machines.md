@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-22
-checked: 713dfaae
+checked: 065144cf
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -12,6 +12,7 @@ areas:
   - apps/server/src/routes/agents.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/routes/rest.ts
+  - apps/server/src/preview
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/ipc.ts
   - packages/shared/src/projects.ts
@@ -91,6 +92,18 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 новый и стартуют с автозапуском (systemd --user / launchd / реестр HKCU /
 Termux:Boot). Поэтому **отдельной «команды обновления» нет** — это та же команда,
 и UI показывает её же, когда агент устарел.
+
+**Android/Termux дополнительно готовит нативную сборку npm-модулей.**
+Установщик `apps/server/src/agents/androidInstall.ts` ставит `clang`, `make`,
+`python` и `pkg-config`, экспортирует Android prefix для `node-gyp`, затем в
+одноразовом каталоге устанавливает `better-sqlite3@11.10.0` и проверяет его
+реальной операцией с in-memory БД; при неуспехе установка останавливается до
+замены агента. Сам агент централизованно формирует окружение в
+`apps/agent/src/platform.ts`: на Termux команды `exec`, нативный PTY и
+pipe-фолбэк PTY получают `GYP_DEFINES=android_ndk_path=$PREFIX` (при
+отсутствующем `PREFIX` используется стандартный Termux prefix). Поэтому
+универсальный проектный `npm ci` не имеет Android-ветки, а проектный
+`.npmrc` для платформы не нужен.
 
 **Два агента с одним токеном — самый неприятный отказ**, и с 0.8.0 от него защищает
 сам агент: `apps/agent/src/singleInstance.ts` берёт pid-блокировку (файл в
@@ -688,6 +701,25 @@ managed-режим с текущей рекомендацией. Эти опер
 `path` и `reposRoot`; UI добавляет фактические причины offline, read-only и
 unavailable и показывает их в индикаторе готовности.
 
+Merge использует отдельную readiness поверх общей готовности проектной машины
+(`MergeRunManager.checkReadiness` в `apps/server/src/merge/runManager.ts`). При
+наличии `storage_id` постоянный клон и npm-кэш вычисляются общим кроссплатформенным
+helper `managedMergeClonePaths` как `projects/<projectId>/merge-clones/repository`
+и соседний `npm-cache`. Назначение `mergeClones` обязано быть полным каноническим
+managed-путём без override: сервер проверяет нормализацию и traversal, принадлежность
+storage выбранной машине через DB join, marker, `allowedDirs`, отсутствие симлинков
+во всех компонентах пути и запись временного probe. Существующий каталог можно
+переиспользовать только как Git-репозиторий с канонически совпадающим origin;
+обязательные `main` и feature refs также проверяются до создания каталога или clone.
+
+Этот preflight не создаёт клон и используется одинаково endpoint готовности машин,
+POST старта, retry и самим исполнителем перед файловыми/Git-мутациями. Поэтому UI
+заранее отключает неподготовленную машину и показывает точный readiness message, но
+сервер не доверяет устаревшему результату клиента. Если `storage_id` присутствует,
+ошибка storage блокирует merge без fallback; `reposRoot` используется только когда
+MachineStorage полностью отсутствует. Legacy- и неожиданные каталоги автоматически
+не переносятся и не удаляются.
+
 Настройка встроена в таблицу «Машины» (`packages/ui/src/components/MachineStatus.tsx`).
 Она показывает основной путь, фактический статус и версию формата, позволяет взять
 рекомендуемый путь или ввести существующий абсолютный каталог и проверить его перед
@@ -710,8 +742,17 @@ unavailable и показывает их в индикаторе готовно�
 `chat.json`, а для проектного/task-чата — `shared`, `project.json`, `task.json`,
 `runs` и окружения. Production, staging и task-test получают собственные `app`,
 `config`, `logs`, `artifacts`, `temporary/repository` и `environment.json`; корень
-`previews` создаётся заранее, но конкретный preview по-прежнему появляется только
-после явной операции. Существующие manifest-файлы не перезаписываются.
+`previews` создаётся заранее, но конкретный preview появляется только после явной
+операции. Новый feature-preview использует `PreviewEnvironment.id` как стабильный
+preview id и размещает checkout в
+`projects/<projectId>/tasks/<taskId>/environments/preview/<previewId>/temporary/repository`.
+Перед каждым lifecycle-действием manager заново подтверждает машину, storage marker,
+политику путей, запись и отсутствие симлинков; persisted metadata связывает storage,
+машину и preview root. `environment.json` дополнительно фиксирует identity окружения.
+Remove удаляет этот root только после Docker cleanup и точной сверки metadata с
+manifest; legacy-записи без managed metadata не мигрируются и не подвергаются
+файловому cleanup. Источники lifecycle — `apps/server/src/preview/manager.ts`,
+контракт и общий path helper — `packages/shared/src/preview.ts` и `projects.ts`.
 
 Новые вложения разговора с такой привязкой записываются в его `attachments` внутри
 выбранного storage. Без привязки сохраняется совместимый `.voicechat_uploads` в корне

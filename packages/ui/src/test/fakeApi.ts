@@ -733,6 +733,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (m) m.path = path
       return detail(p)
     },
+    'projects:gitAccessStatus': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] } }),
+    'projects:configureGitAccess': async ({ repositoryUrl }) => ({ ok: true, status: { configured: true, repositoryUrl, account: 'octocat', readAccess: 'unknown', writeAccess: 'unknown', warnings: [] } }),
+    'projects:verifyGitAccess': async ({ repositoryUrl }) => ({ ok: true, status: { configured: true, repositoryUrl, account: 'octocat', checkedAt: Date.now(), readAccess: 'ok', writeAccess: 'ok', warnings: [] } }),
+    'projects:deleteGitAccess': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] } }),
+    'projects:gitAccessDiagnostics': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] }, diagnostics: { originalUrl: repositoryUrl, effectiveUrl: repositoryUrl, matchingRules: [], warnings: [] } }),
     'projects:setReposRoot': async ({ id, agentId, reposRoot }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) m.reposRoot = reposRoot; return detail(p) },
     'projects:setMachineSsh': async ({ id, agentId, sshHost, sshUser }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) Object.assign(m, { sshHost, sshUser }); return detail(p) },
     'projects:setDefaultMachine': async ({ id, agentId }) => {
@@ -1044,6 +1049,7 @@ export function createFakeCi(): FakeCi {
       return { beforeModel: config.beforeModel ?? [], afterModel: config.afterModel ?? [], enabledStages: [...taskProcessStages] }
     },
     startRun: async (projectId, taskId, options) => { const run = { ...mkRun(projectId, taskId), mode: options?.mode ?? projectLlm.mode }; runs.set(run.id, { run, steps: [], fixAttempts: [], interactions: [] }); logs.set(run.id, []); return { ...run } },
+    getMergeMachines: async () => ({ machines: [], defaultAgentId: null }),
     startMerge: async (projectId, taskId) => ({ id: `merge-${taskId}`, projectId, taskId, status: 'queued', triggeredBy: 'admin', sourceBranch: `feature/${taskId}`, targetBranch: 'main', sourceSha: null, targetSha: null, mergeSha: null, revertSha: null, agentId: 'a1', llmEngineId: null, llmProvider: 'claude', llmModel: '', stage: 'queued', stages: [], conflicts: [], conflictDetails: [], checks: [], deployId: null, deployVersion: null, productionStatus: null, error: null, recommendedAction: null, log: '', canCancel: true, canRetry: false, pushStartedAt: null, startedAt: now(), finishedAt: null, createdAt: now() }),
     getMerge: async () => { throw new Error('merge run not found') },
     getTaskRepositories: async () => [],
@@ -1084,6 +1090,9 @@ export function createFakeCi(): FakeCi {
       const at = new Date(now()).toISOString()
       return { version: 1 as const, taskId, generatedAt: at, summary: { createdAt: at, firstStartedAt: null, finishedAt: null, calendarDuration: null, activeDuration: 0, queueDuration: 0, awaitingInputDuration: 0, lastChangedAt: at }, stages: [] }
     },
+    listTaskImprovements: async () => [],
+    listProjectImprovementTasks: async () => [],
+    updateImprovementStatus: async () => { throw new Error('improvement not found') },
     cancelRun: async () => ({ ok: true }),
     dequeueRun: async (rid): Promise<CiQueueRemovalResult> => {
       const d = runs.get(rid)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -147,6 +147,21 @@ describe('portable storage paths', () => {
     expect(MANAGED_ENVIRONMENT_DIRECTORIES).toEqual(['app', 'config', 'logs', 'artifacts', 'temporary/repository'])
   })
 
+  it('builds canonical absolute managed preview paths for POSIX and Windows', () => {
+    expect(managedPreviewEnvironmentPaths('/storage', 'p1', 't1', 'pr1', 'linux')).toEqual({
+      previewRoot: '/storage/projects/p1/tasks/t1/environments/preview/pr1',
+      app: '/storage/projects/p1/tasks/t1/environments/preview/pr1/app',
+      config: '/storage/projects/p1/tasks/t1/environments/preview/pr1/config',
+      logs: '/storage/projects/p1/tasks/t1/environments/preview/pr1/logs',
+      artifacts: '/storage/projects/p1/tasks/t1/environments/preview/pr1/artifacts',
+      temporary: '/storage/projects/p1/tasks/t1/environments/preview/pr1/temporary',
+      repository: '/storage/projects/p1/tasks/t1/environments/preview/pr1/temporary/repository',
+      manifest: '/storage/projects/p1/tasks/t1/environments/preview/pr1/environment.json'
+    })
+    expect(managedPreviewEnvironmentPaths('C:\\VoiceChat', 'p1', 't1', 'pr1', 'win32').repository)
+      .toBe('C:\\VoiceChat\\projects\\p1\\tasks\\t1\\environments\\preview\\pr1\\temporary\\repository')
+  })
+
   it('rejects absolute paths and traversal', () => {
     expect(() => validateStorageRelativePath('/etc/passwd')).toThrow()
     expect(() => validateStorageRelativePath('chats/../secret')).toThrow()
@@ -215,6 +230,43 @@ describe('machine storage root paths', () => {
     assignments.production = { path: '/custom', override: true }
     assignments.staging = { path: '/custom/nested', override: true }
     expect(() => validateProjectMachineDirectories(assignments, '/srv/ChatAI', 'p-1', 'linux')).toThrow(/пересекаются/)
+  })
+})
+
+describe('managed production and staging paths', () => {
+  it.each([
+    ['/data/ChatAI', 'linux', '/'],
+    ['C:\\ChatAI', 'win32', '\\']
+  ])('builds complete isolated layouts for %s', (storageRoot, platform, separator) => {
+    const production = managedEnvironmentPaths(storageRoot, 'p-1', 'production', platform)
+    const staging = managedEnvironmentPaths(storageRoot, 'p-1', 'staging', platform)
+    expect(production.repository).toBe(`${production.root}${separator}temporary${separator}repository`)
+    expect(production.manifest).toBe(`${production.root}${separator}environment.json`)
+    expect(Object.values(production)).not.toContain(staging.root)
+    expect(production.root.startsWith(staging.root + separator)).toBe(false)
+    expect(staging.root.startsWith(production.root + separator)).toBe(false)
+  })
+  it('rejects traversal project ids', () => {
+    expect(() => managedEnvironmentPaths('/safe/ChatAI', '../escape', 'production', 'linux')).toThrow(/safe relative path/)
+  })
+})
+
+describe('managed merge clone paths', () => {
+  it.each([
+    ['/home/u/ChatAI', 'linux', '/home/u/ChatAI/projects/p-1/merge-clones/repository'],
+    ['/data/data/com.termux/files/home/ChatAI', 'linux', '/data/data/com.termux/files/home/ChatAI/projects/p-1/merge-clones/repository'],
+    ['/Users/u/ChatAI', 'darwin', '/Users/u/ChatAI/projects/p-1/merge-clones/repository'],
+    ['C:\\Users\\u\\ChatAI', 'win32', 'C:\\Users\\u\\ChatAI\\projects\\p-1\\merge-clones\\repository'],
+    ['\\\\server\\share\\ChatAI', 'win32', '\\\\server\\share\\ChatAI\\projects\\p-1\\merge-clones\\repository'],
+    ['/c/Users/u/ChatAI', 'win32', 'C:\\Users\\u\\ChatAI\\projects\\p-1\\merge-clones\\repository']
+  ])('строит изолированный путь для %s', (root, platform, expected) => {
+    const paths = managedMergeClonePaths(root, 'p-1', platform)
+    expect(paths.repository).toBe(expected)
+    expect(paths.repository).not.toContain('/tasks/')
+    expect(paths.repository).not.toContain('\\tasks\\')
+  })
+  it('отклоняет traversal в projectId', () => {
+    expect(() => managedMergeClonePaths('/safe/ChatAI', '../escape', 'linux')).toThrow(/safe relative path/)
   })
 })
 

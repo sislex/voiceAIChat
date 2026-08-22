@@ -29,7 +29,7 @@ export function isTermux(env: NodeJS.ProcessEnv = process.env): boolean {
  * android_ndk_path, но npm/Termux не задают её автоматически даже при наличии
  * системного ndk-sysroot. Без неё сборка любого нативного addon падает ещё на
  * configure. Сохраняем пользовательские GYP_DEFINES и добавляем только
- * отсутствующее определение.
+ * отсутствующее определение. Для остальных ОС возвращаем неизменённую копию.
  */
 export function commandEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const result = { ...env }
