@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-22 | ⚠ 1 коммит(ов) в areas после сверки: 22b413d4 feat(releases): add managed production environments |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-22 | ⚠ 10 коммит(ов) в areas после сверки: 22b413d4 feat(releases): add managed production environments … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 27 коммит(ов) в areas после сверки: 22b413d4 feat(releases): add managed production environments … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 527 коммит(ов) в areas после сверки: f6a59e5f merge(main): resolve CHAT-312 platform conflicts … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 528 коммит(ов) в areas после сверки: de83332c docs(kb): update after merge 7290fb34-9cc7-41c5-bb8b-50a3f63f6920 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 39 коммит(ов) в areas после сверки: 22b413d4 feat(releases): add managed production environments … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ⚠ 1 коммит(ов) в areas после сверки: 22b413d4 feat(releases): add managed production environments |
