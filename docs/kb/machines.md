@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-22
-checked: 55ff3f21
+checked: 713dfaae
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -10,6 +10,7 @@ areas:
   - apps/server/src/db/schema.ts
   - apps/server/src/mcp
   - apps/server/src/routes/agents.ts
+  - apps/server/src/routes/projects.ts
   - apps/server/src/routes/rest.ts
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/ipc.ts
@@ -19,6 +20,7 @@ areas:
   - packages/ui/src/App.tsx
   - packages/ui/src/components/ConversationSettings.tsx
   - packages/ui/src/components/Machine*.tsx
+  - packages/ui/src/components/ProjectMachinesSettings.tsx
   - packages/ui/src/components/FileExplorer.tsx
   - packages/ui/src/remote/httpApi.ts
   - packages/ui/src/store/domains/operationsStore.ts
@@ -646,9 +648,45 @@ Windows drive, UNC или MSYS `/c/...`. Корни дисков и сетевы
 
 Список хранилищ отражает файловую систему, а не только соединение с агентом:
 `offline` означает отключённую машину, `ready` — доступный каталог с совпадающими
-id и версией marker, `unavailable` — недоступный каталог либо отсутствующий или
-конфликтующий marker. Первое хранилище помечается основным. Проверка выполняется при
-загрузке списка машин и вручную действием «Повторить проверку».
+id и версией marker, `read-only` — marker читается, но контрольную запись создать
+нельзя, `unavailable` — недоступный каталог либо отсутствующий или конфликтующий
+marker. Первое хранилище помечается основным. Проверка выполняется при загрузке списка
+машин и вручную действием «Повторить проверку»; write-probe сервер удаляет после
+успешной проверки.
+
+### Каталоги проектной машины
+
+Проектная машина хранит выбранный `storage_id` и единую схему из семи назначений:
+рабочий checkout проекта, корень репозиториев Feature Run, merge-клоны, production,
+staging, feature-preview и task/CI workspace. Канонические имена назначений и
+платформенно корректные абсолютные рекомендации определяет
+`packages/shared/src/projects.ts`; все рекомендации находятся под
+`<storageRoot>/projects/<projectId>`. Совместимые колонки
+`project_machines.path` и `repos_root` не являются отдельной конфигурацией:
+сервер проецирует в них соответственно `projectWorkdir` и `reposRoot` из
+`directories_json` (`apps/server/src/db/database.ts`).
+
+Каждое назначение содержит путь и признак `override`. Значение без override обязано
+точно совпадать с заново вычисленной рекомендацией и оставаться внутри storage;
+override допускает другой абсолютный нормализованный путь. Валидатор отклоняет
+отсутствующие назначения, traversal и ненормализованные пути, совпадение или
+вложенность любых двух каталогов. Сервер дополнительно проверяет принадлежность
+storage машине, границы `policy.allowedDirs`, online-состояние и marker, а до
+сохранения создаёт все каталоги и проверяет/создаёт
+`projects/<projectId>/project.json` (`apps/server/src/routes/projects.ts`).
+
+При добавлении машины проекта используется явно переданный storage либо первый
+зарегистрированный (основной); без storage остаётся неготовая legacy-связка. При
+первом добровольном выборе storage прежние непустые `path` и `repos_root`
+переносятся как overrides. При смене storage overrides сохраняются, а только
+managed-назначения пересчитываются относительно нового корня. Любое назначение можно
+переопределить отдельно и сохранить; «Сбросить» переводит только его обратно в
+managed-режим с текущей рекомендацией. Эти операции и рекомендации показывает
+`packages/ui/src/components/ProjectMachinesSettings.tsx`.
+
+Готовность в `ProjectMachine.readiness` требует выбранного storage, полной схемы,
+`path` и `reposRoot`; UI добавляет фактические причины offline, read-only и
+unavailable и показывает их в индикаторе готовности.
 
 Настройка встроена в таблицу «Машины» (`packages/ui/src/components/MachineStatus.tsx`).
 Она показывает основной путь, фактический статус и версию формата, позволяет взять
