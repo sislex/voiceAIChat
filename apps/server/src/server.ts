@@ -1231,6 +1231,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     executor: ciExecutor,
     storePath: join(opts.config.dataDir, 'feature-previews.json'),
     isOnline: (agentId) => agentRegistry.isOnline(agentId),
+    platformOf: (agentId) => agentRegistry.platformOf(agentId),
+    allowedDirsOf: (agentId) => agentRegistry.policyOf(agentId)?.allowedDirs ?? [],
+    fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
+    fsWrite: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
+    fsMkdir: (agentId, path) => agentRegistry.fsMkdir(agentId, path),
+    fsDelete: (agentId, path) => agentRegistry.fsDelete(agentId, path),
     closeTunnelsForAgent: (agentId) => agentRegistry.closeTunnelsForTarget(agentId)
   })
   registerFeaturePreviewRoutes(app, featurePreviews, db, agentRegistry)

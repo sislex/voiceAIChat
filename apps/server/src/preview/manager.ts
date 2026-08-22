@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { PreviewConfig, PreviewEnvironment, PreviewErrorType, PreviewOperation, PreviewRun, PreviewRunStep } from '@voicechat/shared'
-import { isPreviewBusy, issueKey, safePreviewResourceName } from '@voicechat/shared'
+import { isMachineStoragePathAllowed, isPreviewBusy, managedPreviewEnvironmentPaths, safePreviewResourceName } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
 
@@ -29,6 +29,12 @@ interface Deps {
   executor: CommandExecutor
   storePath: string
   isOnline: (agentId: string) => boolean
+  platformOf?: (agentId: string) => string | undefined
+  allowedDirsOf?: (agentId: string) => string[]
+  fsRead?: (agentId: string, path: string) => Promise<{ dataBase64?: string }>
+  fsWrite?: (agentId: string, path: string, dataBase64: string) => Promise<unknown>
+  fsMkdir?: (agentId: string, path: string) => Promise<unknown>
+  fsDelete?: (agentId: string, path: string) => Promise<unknown>
   closeTunnelsForAgent?: (agentId: string) => void
   now?: () => number
   newId?: () => string
@@ -125,6 +131,71 @@ export class FeaturePreviewManager {
     }
   }
   list(): PreviewEnvironment[] { return structuredClone(this.data.environments) }
+  private platform(agentId: string, root: string): string {
+    return this.deps.platformOf?.(agentId) ?? (/^(?:[A-Za-z]:[\\/]|\\\\)/.test(root) ? 'win32' : 'linux')
+  }
+  private async managedPaths(userId: string, projectId: string, taskId: string, previewId: string, agentId: string) {
+    if (!this.deps.isOnline(agentId)) throw new Error('Машина не в сети')
+    const machine = this.deps.db.getProjectMachine(projectId, agentId)
+    if (!machine?.storageId) throw new Error('Для нового preview не настроено MachineStorage выбранной машины')
+    if (!machine.storageRoot) throw new Error('MachineStorage выбранной машины недоступно')
+    if (!this.deps.fsRead || !this.deps.fsWrite || !this.deps.fsMkdir || !this.deps.fsDelete) throw new Error('Файловая проверка MachineStorage недоступна')
+    const platform = this.platform(agentId, machine.storageRoot)
+    const paths = managedPreviewEnvironmentPaths(machine.storageRoot, projectId, taskId, previewId, platform)
+    if (!isMachineStoragePathAllowed(paths.previewRoot, this.deps.allowedDirsOf?.(agentId) ?? [], platform)) throw new Error('Managed preview находится вне разрешённых директорий машины')
+    const separator = platform === 'win32' ? '\\' : '/'
+    try {
+      const marker = await this.deps.fsRead(agentId, `${machine.storageRoot}${separator}.voicechat${separator}storage.json`)
+      const parsed = JSON.parse(Buffer.from(marker.dataBase64 ?? '', 'base64').toString('utf8')) as { id?: unknown; formatVersion?: unknown }
+      if (parsed.id !== machine.storageId || parsed.formatVersion !== (machine.storageFormatVersion ?? 1)) throw new Error('marker conflict')
+    } catch { throw new Error('Marker MachineStorage отсутствует, повреждён или конфликтует') }
+    const inspected = await this.deps.executor.run({
+      agentId, workdir: machine.storageRoot, timeoutMs: 30_000,
+      script: 'p="$VC_PREVIEW_ROOT"; root="$VC_STORAGE_ROOT"; while [ "$p" != "$root" ]; do [ ! -L "$p" ] || exit 73; next=$(dirname "$p"); [ "$next" != "$p" ] || exit 74; p="$next"; done; [ ! -L "$root" ] || exit 73',
+      env: { VC_PREVIEW_ROOT: paths.previewRoot, VC_STORAGE_ROOT: machine.storageRoot }
+    }, () => undefined)
+    if (inspected.exitCode === 73) throw new Error('Компонент managed preview path является неподтверждённым симлинком')
+    if (inspected.exitCode !== 0 || inspected.timedOut) throw new Error('Не удалось безопасно проверить managed preview path')
+    const probe = `${machine.storageRoot}${separator}.voicechat${separator}temporary${separator}preview-probe-${randomUUID()}`
+    try { await this.deps.fsWrite(agentId, probe, Buffer.from('ok').toString('base64')); await this.deps.fsDelete(agentId, probe) }
+    catch (error) { throw new Error(`MachineStorage недоступно для записи: ${error instanceof Error ? error.message : String(error)}`) }
+    return { machine, paths, platform }
+  }
+  private async materializeManaged(userId: string, projectId: string, taskId: string, previewId: string, agentId: string) {
+    const resolved = await this.managedPaths(userId, projectId, taskId, previewId, agentId)
+    const { machine, paths } = resolved
+    const manifest = { formatVersion: 1, kind: 'preview', projectId, taskId, previewId, storageId: machine.storageId!, machineId: agentId }
+    let existing: unknown = null
+    try {
+      const result = await this.deps.fsRead!(agentId, paths.manifest)
+      existing = JSON.parse(Buffer.from(result.dataBase64 ?? '', 'base64').toString('utf8'))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/ENOENT|not found|no such|не найден/i.test(message)) throw new Error(`Не удалось прочитать environment.json: ${message}`)
+    }
+    if (existing && JSON.stringify(existing) !== JSON.stringify(manifest)) throw new Error('Конфликт environment.json managed preview')
+    try {
+      for (const path of [paths.previewRoot, paths.app, paths.config, paths.logs, paths.artifacts, paths.temporary, paths.repository]) await this.deps.fsMkdir!(agentId, path)
+      if (!existing) await this.deps.fsWrite!(agentId, paths.manifest, Buffer.from(JSON.stringify(manifest, null, 2) + '\n').toString('base64'))
+    } catch (error) { throw new Error(`MachineStorage недоступно для записи: ${error instanceof Error ? error.message : String(error)}`) }
+    return { ...resolved, manifest }
+  }
+  private async cleanupManaged(userId: string, env: PreviewEnvironment): Promise<void> {
+    if (!env.managed) return
+    const resolved = await this.managedPaths(userId, env.projectId, env.taskId, env.id, env.agentId)
+    const { paths, machine } = resolved
+    if (env.managed.formatVersion !== 1 || env.managed.storageId !== machine.storageId || env.managed.machineId !== env.agentId || env.managed.previewRoot !== paths.previewRoot || env.workspacePath !== paths.repository) {
+      throw new Error('Managed cleanup отклонён: persisted path не подтверждён')
+    }
+    let manifest: unknown
+    try {
+      const result = await this.deps.fsRead!(env.agentId, paths.manifest)
+      manifest = JSON.parse(Buffer.from(result.dataBase64 ?? '', 'base64').toString('utf8'))
+    } catch { throw new Error('Managed cleanup отклонён: environment.json отсутствует или повреждён') }
+    const expected = { formatVersion: 1, kind: 'preview', projectId: env.projectId, taskId: env.taskId, previewId: env.id, storageId: machine.storageId!, machineId: env.agentId }
+    if (JSON.stringify(manifest) !== JSON.stringify(expected)) throw new Error('Managed cleanup отклонён: environment.json конфликтует')
+    await this.deps.fsDelete!(env.agentId, paths.previewRoot)
+  }
   async operate(userId: string, projectId: string, taskId: string, operation: PreviewOperation, args: { idempotencyKey?: string; scenario?: string; agentId?: string } = {}): Promise<PreviewEnvironment> {
     const project = this.deps.db.getProject(userId, projectId)
     if (!project) throw new Error('Проект не найден или нет доступа')
@@ -144,15 +215,26 @@ export class FeaturePreviewManager {
     }
     const activeWorkspace = this.deps.db.findActiveCiWorkspace(projectId, taskId)
     const sourceWorkspace = activeWorkspace ?? this.deps.db.findLatestCiWorkspace(projectId, taskId)
-    const targetAgentId = args.agentId ?? activeWorkspace?.agentId ?? task.agentId ?? project.defaultAgentId
+    const targetAgentId = args.agentId ?? env?.agentId ?? activeWorkspace?.agentId ?? task.agentId ?? project.defaultAgentId
     if (!targetAgentId) throw new Error('Выберите машину для тестового окружения')
-    const machine = project.machines.find((item) => item.agentId === targetAgentId)
-    if (!machine?.reposRoot) throw new Error('Для выбранной машины не настроен repos_root')
     if (!this.deps.isOnline(targetAgentId)) throw new Error('Машина не в сети')
-    let workspacePath = activeWorkspace?.agentId === targetAgentId ? activeWorkspace.path : ''
+    const machine = project.machines.find((item) => item.agentId === targetAgentId)
     const expectedBranch = sourceWorkspace?.branch ?? null
     const expectedSha = sourceWorkspace?.commitSha ?? null
-    if (workspacePath && (operation === 'start' || operation === 'rebuild') && expectedBranch && expectedSha) {
+    const legacy = !!env && !env.managed
+    const previewId = env?.id ?? this.newId()
+    let workspacePath = legacy ? env!.workspacePath : ''
+    let managed: Awaited<ReturnType<FeaturePreviewManager['managedPaths']>> | null = null
+    if (!legacy) {
+      managed = operation === 'remove' && env?.managed
+        ? await this.managedPaths(userId, projectId, taskId, previewId, targetAgentId)
+        : await this.materializeManaged(userId, projectId, taskId, previewId, targetAgentId)
+      workspacePath = managed.paths.repository
+      if (env?.managed && (env.managed.storageId !== managed.machine.storageId || env.managed.machineId !== targetAgentId || env.managed.previewRoot !== managed.paths.previewRoot || env.workspacePath !== workspacePath)) {
+        throw new Error('Persisted managed preview path не совпадает с каноническим helper path')
+      }
+    }
+    if (legacy && workspacePath && (operation === 'start' || operation === 'rebuild') && expectedBranch && expectedSha) {
       let verificationOutput = ''
       const verified = await this.deps.executor.run({
         agentId: targetAgentId, workdir: workspacePath,
@@ -161,27 +243,22 @@ export class FeaturePreviewManager {
       }, (chunk) => { verificationOutput += chunk })
       if (verified.exitCode !== 0 || verified.timedOut) throw new Error(verificationOutput.trim().split(/\r?\n/).filter(Boolean).at(-1) || `Не удалось проверить workspace ${workspacePath} на машине ${targetAgentId}`)
     }
-    if (!workspacePath) {
+    if (!legacy) {
       if (!project.gitUrl) throw new Error('Для проекта не настроен Git-репозиторий')
-      const slug = (value: string): string => value.toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '-').replace(/^-|-$/g, '').slice(0, 48)
-      const taskNumber = issueKey(project.name, task)
-      const branch = expectedBranch ?? (project.ciBranchTemplate || '{task_number}')
-        .replace('{task_number}', taskNumber).replace('{slug}', slug(task.title))
-      if (!expectedSha || !sourceWorkspace?.pushed) throw new Error(`Нельзя подготовить preview на машине ${targetAgentId}: результат разработки не зафиксирован и не подтверждён в origin`)
-      const projectKey = slug(project.name || project.id) || project.id.replace(/[^a-z0-9]/gi, '').slice(0, 24)
-      workspacePath = `${machine.reposRoot.replace(/\/$/, '')}/${projectKey}/${taskNumber}`
+      const branch = expectedBranch
+      if (!branch || !expectedSha || !sourceWorkspace?.pushed) throw new Error(`Нельзя подготовить preview на машине ${targetAgentId}: результат разработки не зафиксирован и не подтверждён в origin`)
       let output = ''
       const prepared = await this.deps.executor.run({
         agentId: targetAgentId,
-        workdir: machine.path || machine.reposRoot,
+        workdir: managed!.paths.previewRoot,
         script: 'mkdir -p "$(dirname "$VC_PREVIEW_WORKSPACE")"; remote=$(git ls-remote --heads "$VC_PREVIEW_REPO_URL" "refs/heads/$VC_PREVIEW_BRANCH" | awk "{print \\$1}"); [ -n "$remote" ] || { echo "Ветка $VC_PREVIEW_BRANCH отсутствует в origin"; exit 74; }; [ "$remote" = "$VC_PREVIEW_SHA" ] || { echo "SHA origin/$VC_PREVIEW_BRANCH ($remote) не совпадает с ожидаемым $VC_PREVIEW_SHA"; exit 75; }; if [ ! -d "$VC_PREVIEW_WORKSPACE/.git" ]; then git clone --single-branch --branch "$VC_PREVIEW_BRANCH" "$VC_PREVIEW_REPO_URL" "$VC_PREVIEW_WORKSPACE"; else [ -z "$(git -C "$VC_PREVIEW_WORKSPACE" status --porcelain --untracked-files=all)" ] || { echo "Preview workspace содержит незакоммиченные изменения"; exit 76; }; git -C "$VC_PREVIEW_WORKSPACE" fetch origin "$VC_PREVIEW_BRANCH" && git -C "$VC_PREVIEW_WORKSPACE" checkout "$VC_PREVIEW_BRANCH" && git -C "$VC_PREVIEW_WORKSPACE" reset --hard "$VC_PREVIEW_SHA"; fi; [ "$(git -C "$VC_PREVIEW_WORKSPACE" rev-parse HEAD)" = "$VC_PREVIEW_SHA" ] || exit 75',
         timeoutMs: DEFAULT_PREVIEW_CONFIG.buildTimeoutMs,
-        env: { VC_PREVIEW_ROOT: machine.reposRoot, VC_PREVIEW_WORKSPACE: workspacePath, VC_PREVIEW_BRANCH: branch, VC_PREVIEW_SHA: expectedSha, VC_PREVIEW_REPO_URL: project.gitUrl }
+        env: { VC_PREVIEW_ROOT: managed!.paths.previewRoot, VC_PREVIEW_WORKSPACE: workspacePath, VC_PREVIEW_BRANCH: branch, VC_PREVIEW_SHA: expectedSha, VC_PREVIEW_REPO_URL: project.gitUrl }
       }, (chunk) => { output += chunk })
       if (prepared.timedOut) throw new Error('Подготовка рабочей копии на выбранной машине превысила таймаут')
       if (prepared.exitCode !== 0) throw new Error(output.trim().split(/\r?\n/).filter(Boolean).at(-1) || 'Не удалось подготовить рабочую копию на выбранной машине')
     }
-    if (!workspacePath.startsWith(machine.reposRoot.replace(/\/$/, '') + '/')) throw new Error('Workspace находится вне разрешённого repos_root')
+    if (!legacy && workspacePath !== managed!.paths.repository) throw new Error('Workspace managed preview не совпадает с каноническим repository path')
     if (env && env.agentId !== targetAgentId) {
       if (env.state === 'running') throw new Error('Сначала остановите окружение перед сменой машины')
       env.agentId = targetAgentId; env.workspacePath = workspacePath; env.services = []; env.appUrl = null; env.storybookUrl = null
@@ -192,9 +269,10 @@ export class FeaturePreviewManager {
     if (env && (operation === 'stop' || operation === 'remove' || operation === 'rebuild')) this.deps.closeTunnelsForAgent?.(env.agentId)
     if (!env || env.state === 'removed') {
       env = {
-        id: this.newId(), projectId, taskId, agentId: targetAgentId, workspacePath,
+        id: previewId, managed: managed ? { formatVersion: 1, storageId: managed.machine.storageId!, machineId: targetAgentId, previewRoot: managed.paths.previewRoot } : undefined,
+        projectId, taskId, agentId: targetAgentId, workspacePath,
         branch: expectedBranch ?? '', expectedCommitSha: expectedSha, builtCommitSha: null, currentCommitSha: null, gitStatus: expectedSha ? 'verified' : 'unknown', state: 'not_created', staleReason: null,
-        composeProject: safePreviewResourceName(projectId, taskId), appUrl: null, storybookUrl: null,
+        composeProject: `${safePreviewResourceName(projectId, taskId)}-${previewId.replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 8)}`, appUrl: null, storybookUrl: null,
         storybookStatus: 'pending', storybookCommitSha: null, selectedSeedScenario: null, seedVersion: null,
         dataReady: false, healthStatus: 'unknown', services: [], runs: [], createdBy: userId,
         createdAt: now, updatedAt: now, startedAt: null, stoppedAt: null, lastError: null
@@ -338,6 +416,7 @@ export class FeaturePreviewManager {
         env.state = 'stopped'; env.stoppedAt = this.now(); env.healthStatus = 'unknown'
       } else if (operation === 'remove') {
         await this.command(env, run, 'docker compose -p "$VC_PREVIEW_PROJECT" -f compose.preview.yml down --volumes --remove-orphans', DEFAULT_PREVIEW_CONFIG.startTimeoutMs, signal)
+        await this.cleanupManaged(run.initiator, env)
         env.state = 'removed'; env.appUrl = null; env.storybookUrl = null; env.services = []; env.healthStatus = 'unknown'
       } else if (operation === 'seed' || operation === 'reset') {
         if (!scenario || !/^[a-zA-Z0-9_-]{1,64}$/.test(scenario)) throw new Error('Некорректный сценарий тестовых данных')
