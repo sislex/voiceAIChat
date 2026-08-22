@@ -56,6 +56,10 @@ import {
   type KanbanColumnSemanticType,
   type MachineStorage,
   type ChatStorageBinding,
+  type ProjectMachineDirectoryAssignments,
+  type ProjectMachineDirectoryKind,
+  recommendedProjectMachineDirectories,
+  validateProjectMachineDirectories,
   validateStorageRelativePath,
 
   estimateKbTokens,
@@ -797,6 +801,12 @@ export class VoiceChatDb {
     }
     if (pmCols.length && !pmCols.some((c) => c.name === 'ssh_user')) {
       this.db.exec(`ALTER TABLE project_machines ADD COLUMN ssh_user TEXT NOT NULL DEFAULT ''`)
+    }
+    if (pmCols.length && !pmCols.some((c) => c.name === 'storage_id')) {
+      this.db.exec(`ALTER TABLE project_machines ADD COLUMN storage_id TEXT`)
+    }
+    if (pmCols.length && !pmCols.some((c) => c.name === 'directories_json')) {
+      this.db.exec(`ALTER TABLE project_machines ADD COLUMN directories_json TEXT NOT NULL DEFAULT ''`)
     }
     if (pmCols.length && !pmCols.some((c) => c.name === 'added_at')) {
       this.db.exec(`ALTER TABLE project_machines ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0`)
@@ -2855,11 +2865,14 @@ export class VoiceChatDb {
                 COALESCE(pm.repos_root,'') AS repos_root,
                 COALESCE(pm.ssh_host,'') AS ssh_host,
                 COALESCE(pm.ssh_user,'') AS ssh_user,
+                pm.storage_id, COALESCE(pm.directories_json,'') AS directories_json,
+                s.root_path AS storage_root_path, s.format_version AS storage_format_version,
                 COALESCE(pm.added_at, share.created_at, a.created_at) AS added_at,
                 a.name, a.user_id,
                 CASE WHEN share.shared = 1 THEN 1 ELSE 0 END AS shared
          FROM agents a
          LEFT JOIN project_machines pm ON pm.agent_id=a.id AND pm.project_id=?
+         LEFT JOIN machine_storages s ON s.id=pm.storage_id AND s.machine_id=a.id
          LEFT JOIN machine_project_shares share ON share.agent_id=a.id AND share.project_id=?
          WHERE a.user_id=? OR (share.shared=1 AND a.user_id<>?)
          ORDER BY CASE WHEN a.user_id=? THEN 0 ELSE 1 END, a.name ASC`
@@ -2869,28 +2882,50 @@ export class VoiceChatDb {
         repos_root: string | null
         ssh_host: string | null
         ssh_user: string | null
+        storage_id: string | null
+        directories_json: string | null
+        storage_root_path: string | null
+        storage_format_version: number | null
         added_at: number
         name: string
         user_id: string
         shared: number
       }>
-    ).map((x) => ({
-      agentId: x.agent_id,
-      name: x.name,
-      owner: x.user_id,
-      ownership: x.user_id === userId ? 'mine' as const : 'other' as const,
-      sharedWithProject: !!x.shared,
-      isMyDefault: this.getUserProjectDefaultMachine(userId, id) === x.agent_id,
-      canUse: x.user_id === userId || !!x.shared,
-      unavailableReason: null,
-      load: this.countActiveCiRunsByAgent()[x.agent_id] ?? 0,
-      online: false,
-      addedAt: x.added_at,
-      path: x.path ?? '',
-      reposRoot: x.repos_root ?? '',
-      sshHost: x.ssh_host ?? '',
-      sshUser: x.ssh_user ?? ''
-    }))
+    ).map((x) => {
+      let directories: ProjectMachineDirectoryAssignments | undefined
+      try { directories = x.directories_json ? JSON.parse(x.directories_json) as ProjectMachineDirectoryAssignments : undefined } catch { directories = undefined }
+      const storage = x.storage_id && x.storage_root_path ? {
+        id: x.storage_id, machineId: x.agent_id, rootPath: x.storage_root_path,
+        formatVersion: x.storage_format_version ?? 1, status: 'ready' as const
+      } : null
+      const recommendations = storage
+        ? recommendedProjectMachineDirectories(storage.rootPath, id, this.projectStoragePlatform(storage.rootPath))
+        : undefined
+      const readinessReasons: string[] = []
+      if (!storage) readinessReasons.push('не выбрано хранилище MachineStorage')
+      if (!directories) readinessReasons.push('не настроены каталоги проекта')
+      if (!(x.path ?? '').trim()) readinessReasons.push('не заполнена «Папка проекта»')
+      if (!(x.repos_root ?? '').trim()) readinessReasons.push('не заполнен «Корень Feature Run»')
+      return {
+        agentId: x.agent_id,
+        name: x.name,
+        owner: x.user_id,
+        ownership: x.user_id === userId ? 'mine' as const : 'other' as const,
+        sharedWithProject: !!x.shared,
+        isMyDefault: this.getUserProjectDefaultMachine(userId, id) === x.agent_id,
+        canUse: x.user_id === userId || !!x.shared,
+        unavailableReason: null,
+        load: this.countActiveCiRunsByAgent()[x.agent_id] ?? 0,
+        online: false,
+        addedAt: x.added_at,
+        path: x.path ?? '', reposRoot: x.repos_root ?? '',
+        storageId: x.storage_id, storage,
+        availableStorages: x.user_id === userId ? this.listMachineStorages(userId, x.agent_id).map((item, index) => ({ ...item, primary: index === 0 })) : undefined,
+        directories, recommendations,
+        readiness: { ready: readinessReasons.length === 0, reasons: readinessReasons },
+        sshHost: x.ssh_host ?? '', sshUser: x.ssh_user ?? ''
+      }
+    })
     return {
       ...this.mapProjectSummary(row, row.my_role),
       members,
@@ -3130,12 +3165,76 @@ export class VoiceChatDb {
     }))
   }
 
-  linkMachine(userId: string, id: string, agentId: string): ProjectDetail | null {
+  private projectStoragePlatform(rootPath: string): string {
+    return /^(?:[A-Za-z]:[\\\\/]|\\\\\\\\)/.test(rootPath) ? 'win32' : 'linux'
+  }
+
+  private recommendedProjectAssignments(storage: MachineStorage, projectId: string): ProjectMachineDirectoryAssignments {
+    const paths = recommendedProjectMachineDirectories(storage.rootPath, projectId, this.projectStoragePlatform(storage.rootPath))
+    return Object.fromEntries(Object.entries(paths).map(([kind, path]) => [kind, { path, override: false }])) as ProjectMachineDirectoryAssignments
+  }
+
+  configureProjectMachineStorage(
+    userId: string,
+    projectId: string,
+    agentId: string,
+    storageId: string,
+    directories?: ProjectMachineDirectoryAssignments,
+    platform?: string
+  ): ProjectDetail | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
+    const storage = this.listMachineStorages(userId, agentId).find((item) => item.id === storageId)
+    if (!storage) throw new Error('Хранилище не принадлежит выбранной машине')
+    const targetPlatform = platform ?? this.projectStoragePlatform(storage.rootPath)
+    const recommendationPaths = recommendedProjectMachineDirectories(storage.rootPath, projectId, targetPlatform)
+    const recommended = Object.fromEntries(Object.entries(recommendationPaths).map(([kind, path]) => [kind, { path, override: false }])) as ProjectMachineDirectoryAssignments
+    const current = this.db.prepare(`SELECT storage_id, path, repos_root FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId) as { storage_id: string | null; path: string; repos_root: string } | undefined
+    const changingStorage = !!current?.storage_id && current.storage_id !== storageId
+    let candidate = directories && changingStorage ? Object.fromEntries(Object.entries(recommended).map(([kind, value]) => {
+      const saved = directories[kind as keyof ProjectMachineDirectoryAssignments]
+      return [kind, saved?.override ? saved : value]
+    })) as ProjectMachineDirectoryAssignments : directories ?? recommended
+    if (!directories && current && !current.storage_id) {
+      candidate = structuredClone(recommended)
+      if (current.path.trim()) candidate.projectWorkdir = { path: current.path, override: true }
+      if (current.repos_root.trim()) candidate.reposRoot = { path: current.repos_root, override: true }
+    }
+    const assignments = validateProjectMachineDirectories(
+      candidate,
+      storage.rootPath,
+      projectId,
+      targetPlatform
+    )
+    this.db.transaction(() => {
+      this.db.prepare(
+        `INSERT INTO project_machines (project_id,agent_id,path,repos_root,storage_id,directories_json,added_at,added_by)
+         VALUES (?,?,?,?,?,?,?,?)
+         ON CONFLICT(project_id,agent_id) DO UPDATE SET path=excluded.path,repos_root=excluded.repos_root,storage_id=excluded.storage_id,directories_json=excluded.directories_json`
+      ).run(projectId, agentId, assignments.projectWorkdir.path, assignments.reposRoot.path, storageId, JSON.stringify(assignments), this.now(), userId)
+      this.touchProject(projectId)
+    })()
+    return this.getProject(userId, projectId)
+  }
+
+  resetProjectMachineDirectory(userId: string, projectId: string, agentId: string, kind: ProjectMachineDirectoryKind): ProjectDetail | null {
+    const machine = this.getProject(userId, projectId)?.machines.find((item) => item.agentId === agentId)
+    if (!machine?.storage || !machine.directories || !machine.recommendations) throw new Error('MachineStorage не настроено')
+    const directories = structuredClone(machine.directories)
+    directories[kind] = { path: machine.recommendations[kind], override: false }
+    return this.configureProjectMachineStorage(userId, projectId, agentId, machine.storage.id, directories)
+  }
+
+  linkMachine(userId: string, id: string, agentId: string, storageId?: string): ProjectDetail | null {
     if (!this.isProjectMember(userId, id)) return null
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) {
       throw new Error(`Машина ${agentId} не найдена`)
     }
-    this.db.prepare(
+    const storages = this.listMachineStorages(userId, agentId)
+    const selected = storageId ? storages.find((item) => item.id === storageId) : storages[0]
+    if (storageId && !selected) throw new Error('Хранилище не принадлежит выбранной машине')
+    if (selected) this.configureProjectMachineStorage(userId, id, agentId, selected.id)
+    else this.db.prepare(
       `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
     ).run(id, agentId, this.now(), userId)
     this.setMachineSharedWithProject(userId, id, agentId, true)
@@ -3153,12 +3252,27 @@ export class VoiceChatDb {
   setProjectMachinePath(userId: string, id: string, agentId: string, path: string): ProjectDetail | null {
     if (!this.isProjectMember(userId, id)) return null
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
+    const managed = this.getProject(userId, id)?.machines.find((item) => item.agentId === agentId)
+    if (managed?.storageId && managed.directories) {
+      const directories = structuredClone(managed.directories)
+      directories.projectWorkdir = { path, override: true }
+      return this.configureProjectMachineStorage(userId, id, agentId, managed.storageId, directories)
+    }
     this.db.prepare(
       `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
     ).run(id, agentId, this.now(), userId)
+    const row = this.db.prepare(`SELECT directories_json FROM project_machines WHERE project_id=? AND agent_id=?`).get(id, agentId) as { directories_json: string } | undefined
+    let directoriesJson = row?.directories_json ?? ''
+    if (directoriesJson) {
+      try {
+        const directories = JSON.parse(directoriesJson) as ProjectMachineDirectoryAssignments
+        directories.projectWorkdir = { path: path.trim(), override: true }
+        directoriesJson = JSON.stringify(directories)
+      } catch { directoriesJson = '' }
+    }
     this.db
-      .prepare(`UPDATE project_machines SET path = ? WHERE project_id = ? AND agent_id = ?`)
-      .run(path, id, agentId)
+      .prepare(`UPDATE project_machines SET path = ?, directories_json = ? WHERE project_id = ? AND agent_id = ?`)
+      .run(path.trim(), directoriesJson, id, agentId)
     this.touchProject(id)
     return this.getProject(userId, id)
   }
@@ -3167,10 +3281,25 @@ export class VoiceChatDb {
   setProjectMachineReposRoot(userId: string, id: string, agentId: string, root: string): ProjectDetail | null {
     if (!this.isProjectMember(userId, id)) return null
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
+    const managed = this.getProject(userId, id)?.machines.find((item) => item.agentId === agentId)
+    if (managed?.storageId && managed.directories) {
+      const directories = structuredClone(managed.directories)
+      directories.reposRoot = { path: root, override: true }
+      return this.configureProjectMachineStorage(userId, id, agentId, managed.storageId, directories)
+    }
     this.db.prepare(
       `INSERT OR IGNORE INTO project_machines (project_id,agent_id,path,added_at,added_by) VALUES (?,?,'',?,?)`
     ).run(id, agentId, this.now(), userId)
-    this.db.prepare(`UPDATE project_machines SET repos_root = ? WHERE project_id = ? AND agent_id = ?`).run(root, id, agentId)
+    const row = this.db.prepare(`SELECT directories_json FROM project_machines WHERE project_id=? AND agent_id=?`).get(id, agentId) as { directories_json: string } | undefined
+    let directoriesJson = row?.directories_json ?? ''
+    if (directoriesJson) {
+      try {
+        const directories = JSON.parse(directoriesJson) as ProjectMachineDirectoryAssignments
+        directories.reposRoot = { path: root.trim(), override: true }
+        directoriesJson = JSON.stringify(directories)
+      } catch { directoriesJson = '' }
+    }
+    this.db.prepare(`UPDATE project_machines SET repos_root = ?, directories_json = ? WHERE project_id = ? AND agent_id = ?`).run(root.trim(), directoriesJson, id, agentId)
     return this.getProject(userId, id)
   }
 

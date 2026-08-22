@@ -293,6 +293,54 @@ describe('projects: машины', () => {
     db.deleteAgent('alice', agent.id) // CASCADE снимает связь
     expect(db.getProject('alice', p.id)!.machines).toEqual([])
   })
+
+  it('автоматически выбирает единственный storage и сохраняет managed defaults', () => {
+    const p = db.createProject('alice', { name: 'P1' })
+    const agent = db.createAgent('alice', 'M1')
+    const storage = db.saveMachineStorage('alice', agent.id, '/home/alice/ChatAI', 1)
+    const machine = db.linkMachine('alice', p.id, agent.id)!.machines[0]
+    expect(machine.storageId).toBe(storage.id)
+    expect(machine.path).toBe(`/home/alice/ChatAI/projects/${p.id}/worktree`)
+    expect(machine.reposRoot).toBe(`/home/alice/ChatAI/projects/${p.id}/repositories`)
+    expect(machine.directories?.production.override).toBe(false)
+    expect(machine.readiness?.ready).toBe(true)
+    expect(db.getProject('alice', p.id)!.machines[0].directories).toEqual(machine.directories)
+  })
+
+  it('сохраняет overrides при смене storage и отклоняет чужой storage', () => {
+    const p = db.createProject('alice', { name: 'P1' })
+    const agent = db.createAgent('alice', 'M1')
+    const other = db.createAgent('bob', 'M2')
+    const first = db.saveMachineStorage('alice', agent.id, '/mnt/a', 1)
+    const second = db.saveMachineStorage('alice', agent.id, '/mnt/b', 1)
+    const foreign = db.saveMachineStorage('bob', other.id, '/mnt/foreign', 1)
+    const initial = db.linkMachine('alice', p.id, agent.id, first.id)!.machines[0]
+    const directories = structuredClone(initial.directories!)
+    directories.projectWorkdir = { path: '/legacy/project', override: true }
+    const updated = db.configureProjectMachineStorage('alice', p.id, agent.id, second.id, directories)!.machines[0]
+    expect(updated.path).toBe('/legacy/project')
+    expect(updated.recommendations?.projectWorkdir).toContain('/mnt/b/')
+    const reset = db.resetProjectMachineDirectory('alice', p.id, agent.id, 'projectWorkdir')!.machines[0]
+    expect(reset.path).toBe(reset.recommendations?.projectWorkdir)
+    expect(reset.directories?.projectWorkdir.override).toBe(false)
+    expect(() => db.setProjectMachinePath('alice', p.id, agent.id, '../escape')).toThrow()
+    expect(() => db.configureProjectMachineStorage('alice', p.id, agent.id, foreign.id)).toThrow(/не принадлежит/)
+  })
+
+  it('сохраняет legacy path и reposRoot как overrides при добровольном выборе storage', () => {
+    const p = db.createProject('alice', { name: 'Legacy' })
+    const agent = db.createAgent('alice', 'M1')
+    db.linkMachine('alice', p.id, agent.id)
+    db.setProjectMachinePath('alice', p.id, agent.id, '/legacy/project')
+    db.setProjectMachineReposRoot('alice', p.id, agent.id, '/legacy/repos')
+    const storage = db.saveMachineStorage('alice', agent.id, '/managed/root', 1)
+    const machine = db.configureProjectMachineStorage('alice', p.id, agent.id, storage.id)!.machines[0]
+    expect(machine.path).toBe('/legacy/project')
+    expect(machine.reposRoot).toBe('/legacy/repos')
+    expect(machine.directories?.projectWorkdir.override).toBe(true)
+    expect(machine.directories?.reposRoot.override).toBe(true)
+    expect(machine.recommendations?.projectWorkdir).toContain('/managed/root/projects/')
+  })
 })
 
 describe('board: колонки и порядок', () => {

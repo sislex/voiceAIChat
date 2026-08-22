@@ -275,11 +275,14 @@ CREATE TABLE IF NOT EXISTS project_machines (
   repos_root TEXT NOT NULL DEFAULT '',
   ssh_host   TEXT NOT NULL DEFAULT '',
   ssh_user   TEXT NOT NULL DEFAULT '',
+  storage_id TEXT,
+  directories_json TEXT NOT NULL DEFAULT '',
   added_at  INTEGER NOT NULL,
   added_by  TEXT NOT NULL,
   PRIMARY KEY (project_id, agent_id),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-  FOREIGN KEY (agent_id)   REFERENCES agents(id)   ON DELETE CASCADE
+  FOREIGN KEY (agent_id)   REFERENCES agents(id)   ON DELETE CASCADE,
+  FOREIGN KEY (storage_id) REFERENCES machine_storages(id) ON DELETE SET NULL
 );
 
 -- Explicit access grant. Existing project_machines rows are deliberately not

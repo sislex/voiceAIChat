@@ -9,6 +9,12 @@ import {
   type KanbanColumn,
   type ProjectDetail,
   type ProjectSummary,
+  type ProjectMachineDirectoryAssignments,
+  type ProjectMachineDirectoryKind,
+  PROJECT_MACHINE_DIRECTORY_KINDS,
+  recommendedProjectMachineDirectories,
+  validateProjectMachineDirectories,
+  isMachineStoragePathAllowed,
   type Task,
   type TaskPriority,
   type TaskLaunchResult,
@@ -79,7 +85,15 @@ export function registerProjectRoutes(
   const withMachineStatus = (project: ProjectDetail | null, userId: string): ProjectDetail | null => {
     if (!project) return null
     if (agents) {
-      project.machines = project.machines.map((machine) => ({ ...machine, online: agents.isOnline(machine.agentId) }))
+      project.machines = project.machines.map((machine) => {
+        const online = agents.isOnline(machine.agentId)
+        return {
+          ...machine,
+          online,
+          storage: machine.storage ? { ...machine.storage, status: online ? machine.storage.status : 'offline' } : machine.storage,
+          availableStorages: machine.availableStorages?.map((storage) => ({ ...storage, status: online ? storage.status : 'offline' }))
+        }
+      })
       const eligible = project.machines
         .filter((machine) => (machine.ownership === 'mine' || machine.sharedWithProject) && machine.canUse !== false && machine.online === true)
         .map((machine) => machine.agentId)
@@ -93,6 +107,52 @@ export function registerProjectRoutes(
   }
   const member = (req: FastifyRequest, id: string): ProjectDetail | null =>
     withMachineStatus(db.getProject(uid(req), id), uid(req))
+
+  const materializeProjectMachine = async (userId: string, projectId: string, agentId: string, storageId: string, directories?: ProjectMachineDirectoryAssignments): Promise<void> => {
+    if (!agents) return
+    if (!agents.isOnline(agentId)) throw new Error('Машина не в сети: каталоги нельзя подготовить')
+    const storage = db.listMachineStorages(userId, agentId).find((item) => item.id === storageId)
+    if (!storage) throw new Error('Хранилище не принадлежит выбранной машине')
+    const platform = agents.platformOf(agentId) ?? 'linux'
+    const separator = platform === 'win32' ? '\\' : '/'
+    const storageMarkerPath = storage.rootPath + separator + ['.voicechat', 'storage.json'].join(separator)
+    const storageMarkerResult = await agents.fsRead(agentId, storageMarkerPath)
+    let storageMarker: { id?: unknown; formatVersion?: unknown }
+    try { storageMarker = JSON.parse(Buffer.from(storageMarkerResult.dataBase64 ?? '', 'base64').toString('utf8')) as { id?: unknown; formatVersion?: unknown } }
+    catch { throw new Error('Повреждён marker .voicechat/storage.json') }
+    if (storageMarker.id !== storage.id || storageMarker.formatVersion !== storage.formatVersion) throw new Error('Marker хранилища отсутствует или конфликтует')
+    const recommendations = recommendedProjectMachineDirectories(storage.rootPath, projectId, platform)
+    const defaults = Object.fromEntries(Object.entries(recommendations).map(([kind, path]) => [kind, { path, override: false }])) as ProjectMachineDirectoryAssignments
+    const current = db.getProject(userId, projectId)?.machines.find((item) => item.agentId === agentId)
+    const changingStorage = !!current?.storageId && current.storageId !== storageId
+    let candidate = directories && changingStorage
+      ? Object.fromEntries(Object.entries(defaults).map(([kind, value]) => [kind, directories[kind as ProjectMachineDirectoryKind]?.override ? directories[kind as ProjectMachineDirectoryKind] : value])) as ProjectMachineDirectoryAssignments
+      : directories ?? defaults
+    if (!directories && current && !current.storageId) {
+      candidate = structuredClone(defaults)
+      if (current.path.trim()) candidate.projectWorkdir = { path: current.path, override: true }
+      if (current.reposRoot.trim()) candidate.reposRoot = { path: current.reposRoot, override: true }
+    }
+    const assignments = validateProjectMachineDirectories(candidate, storage.rootPath, projectId, platform)
+    const allowedDirs = agents.policyOf(agentId)?.allowedDirs ?? []
+    for (const assignment of Object.values(assignments)) {
+      if (!isMachineStoragePathAllowed(assignment.path, allowedDirs, platform)) throw new Error('Каталог находится вне разрешённых директорий машины')
+    }
+    for (const assignment of Object.values(assignments)) await agents.fsMkdir(agentId, assignment.path)
+    const projectRoot = storage.rootPath + separator + ['projects', projectId].join(separator)
+    await agents.fsMkdir(agentId, projectRoot)
+    const markerPath = projectRoot + separator + 'project.json'
+    try {
+      const result = await agents.fsRead(agentId, markerPath)
+      const marker = JSON.parse(Buffer.from(result.dataBase64 ?? '', 'base64').toString('utf8')) as { projectId?: unknown; formatVersion?: unknown }
+      if (marker.projectId !== projectId || marker.formatVersion !== 1) throw new Error('Конфликт marker project.json')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/ENOENT|not found|no such|не найден/i.test(message)) throw error
+      const marker = JSON.stringify({ formatVersion: 1, projectId }, null, 2) + '\n'
+      await agents.fsWrite(agentId, markerPath, Buffer.from(marker).toString('base64'))
+    }
+  }
 
   const taskCreateGuard = { preHandler: requireProjectPermission('task:create') }
   const taskUpdateGuard = { preHandler: requireProjectPermission('task:update') }
@@ -276,7 +336,7 @@ export function registerProjectRoutes(
       .map((agent) => ({ id: agent.id, name: agent.name }))
   })
 
-  app.post<{ Params: { id: string }; Body: { agentId?: string } }>(
+  app.post<{ Params: { id: string }; Body: { agentId?: string; storageId?: string } }>(
     '/api/projects/:id/machines',
     async (req, reply) => {
       const p = member(req, req.params.id)
@@ -287,7 +347,9 @@ export function registerProjectRoutes(
         return reply.code(409).send({ error: 'machine already shared' })
       }
       try {
-        return withMachineStatus(db.linkMachine(uid(req), req.params.id, agentId), uid(req)) ?? nf(reply)
+        const storageId = req.body?.storageId ?? db.listMachineStorages(uid(req), agentId)[0]?.id
+        if (storageId) await materializeProjectMachine(uid(req), req.params.id, agentId, storageId)
+        return withMachineStatus(db.linkMachine(uid(req), req.params.id, agentId, storageId), uid(req)) ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
@@ -304,17 +366,37 @@ export function registerProjectRoutes(
   )
 
   // Папка проекта на конкретной машине.
-  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; reposRoot?: string; sshHost?: string; sshUser?: string } }>(
+  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; reposRoot?: string; sshHost?: string; sshUser?: string; storageId?: string; directories?: ProjectMachineDirectoryAssignments; resetDirectory?: ProjectMachineDirectoryKind } }>(
     '/api/projects/:id/machines/:agentId',
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
+      if (req.body?.resetDirectory !== undefined) {
+        if (!PROJECT_MACHINE_DIRECTORY_KINDS.includes(req.body.resetDirectory)) return badReq(reply, 'unknown directory assignment')
+        try {
+          const machine = db.getProject(uid(req), req.params.id)?.machines.find((item) => item.agentId === req.params.agentId)
+          if (!machine?.storageId || !machine.directories || !machine.recommendations) throw new Error('MachineStorage не настроено')
+          const directories = structuredClone(machine.directories)
+          directories[req.body.resetDirectory] = { path: machine.recommendations[req.body.resetDirectory], override: false }
+          await materializeProjectMachine(uid(req), req.params.id, req.params.agentId, machine.storageId, directories)
+          return withMachineStatus(db.resetProjectMachineDirectory(uid(req), req.params.id, req.params.agentId, req.body.resetDirectory), uid(req)) ?? nf(reply)
+        } catch (err) { return badReq(reply, errMessage(err)) }
+      }
+      if (req.body?.storageId !== undefined) {
+        try {
+          await materializeProjectMachine(uid(req), req.params.id, req.params.agentId, req.body.storageId, req.body.directories)
+          const platform = agents?.platformOf(req.params.agentId)
+          return withMachineStatus(db.configureProjectMachineStorage(uid(req), req.params.id, req.params.agentId, req.body.storageId, req.body.directories, platform), uid(req)) ?? nf(reply)
+        } catch (err) { return badReq(reply, errMessage(err)) }
+      }
       if (req.body?.sshHost !== undefined || req.body?.sshUser !== undefined) {
         return withMachineStatus(db.setProjectMachineSsh(uid(req), req.params.id, req.params.agentId, req.body?.sshHost ?? '', req.body?.sshUser ?? ''), uid(req)) ?? nf(reply)
       }
-      return req.body?.reposRoot !== undefined
-        ? withMachineStatus(db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot), uid(req)) ?? nf(reply)
-        : withMachineStatus(db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? ''), uid(req)) ?? nf(reply)
+      try {
+        return req.body?.reposRoot !== undefined
+          ? withMachineStatus(db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot), uid(req)) ?? nf(reply)
+          : withMachineStatus(db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? ''), uid(req)) ?? nf(reply)
+      } catch (err) { return badReq(reply, errMessage(err)) }
     }
   )
 
