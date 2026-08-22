@@ -218,6 +218,32 @@ export function recommendedEnvironmentPath(projectId: string, kind: 'production'
   return `projects/${validateStorageRelativePath(projectId)}/environments/${kind}`
 }
 
+export interface ManagedEnvironmentPaths {
+  root: string
+  app: string
+  config: string
+  logs: string
+  artifacts: string
+  temporary: string
+  repository: string
+  manifest: string
+}
+
+/** Canonical production/staging layout; callers never append repository paths themselves. */
+export function managedEnvironmentPaths(
+  storageRoot: string,
+  projectId: string,
+  kind: 'production' | 'staging',
+  platform: string
+): ManagedEnvironmentPaths {
+  const root = recommendedProjectMachineDirectory(storageRoot, projectId, kind, platform)
+  if (!isPathInsideMachineStorage(root, storageRoot, platform)) throw new Error('Managed environment path выходит за границы storage')
+  const separator = machinePathSeparator(platform)
+  const child = (name: string): string => `${root}${separator}${name}`
+  const temporary = child('temporary')
+  return { root, app: child('app'), config: child('config'), logs: child('logs'), artifacts: child('artifacts'), temporary, repository: `${temporary}${separator}repository`, manifest: child('environment.json') }
+}
+
 export function recommendedPreviewEnvironmentPath(projectId: string, taskId: string, previewId: string): string {
   return `projects/${validateStorageRelativePath(projectId)}/tasks/${validateStorageRelativePath(taskId)}/environments/preview/${validateStorageRelativePath(previewId)}`
 }
@@ -426,6 +452,8 @@ export interface ProjectSummary {
   productionDeployCommand?: string
   /** Отдельная машина, с которой разрешён только production deploy. */
   productionAgentId?: string | null
+  /** Existing records default to explicit legacy compatibility. */
+  productionEnvironmentMode?: 'legacy' | 'managed'
   productionCheckoutPath?: string
   productionHealthCheckCommand?: string
   /** Настраиваемые owner-only лимиты; новый ран копирует их в шаги. */

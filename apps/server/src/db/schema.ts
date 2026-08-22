@@ -226,6 +226,7 @@ CREATE TABLE IF NOT EXISTS projects (
   test_command TEXT NOT NULL DEFAULT '',
   production_deploy_command TEXT NOT NULL DEFAULT '',
   production_agent_id TEXT,
+  production_environment_mode TEXT NOT NULL DEFAULT 'legacy',
   production_checkout_path TEXT NOT NULL DEFAULT '',
   production_health_check_command TEXT NOT NULL DEFAULT '',
   release_timeouts_json TEXT NOT NULL DEFAULT '{}',
