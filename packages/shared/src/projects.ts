@@ -124,6 +124,29 @@ export function recommendedTaskTestEnvironmentPath(projectId: string, taskId: st
   return `projects/${validateStorageRelativePath(projectId)}/tasks/${validateStorageRelativePath(taskId)}/environments/test`
 }
 
+export interface ManagedCiWorkspacePaths {
+  environment: string
+  repoRoot: string
+  repository: string
+  workspace: string
+  npmCacheRoot: string
+  npmCacheDir: string
+}
+
+/** Строит managed CI layout в синтаксисе пути самой машины. */
+export function managedCiWorkspacePaths(storageRoot: string, projectId: string, taskId: string, taskKey: string): ManagedCiWorkspacePaths {
+  const root = storageRoot.trim().replace(/[\\/]+$/, '')
+  if (!root) throw new Error('MachineStorage rootPath required')
+  const separator = /^(?:[A-Za-z]:\\|\\\\)/.test(root) || (root.includes('\\') && !root.includes('/')) ? '\\' : '/'
+  const join = (...segments: string[]): string => [root, ...segments.map(validateStorageRelativePath)].join(separator)
+  const environment = join('projects', projectId, 'tasks', taskId, 'environments', 'test')
+  const repoRoot = `${environment}${separator}temporary`
+  const repository = `${repoRoot}${separator}repository`
+  const workspace = `${repository}${separator}${validateStorageRelativePath(taskKey)}`
+  const npmCacheRoot = `${repoRoot}${separator}.npm-cache`
+  return { environment, repoRoot, repository, workspace, npmCacheRoot, npmCacheDir: `${npmCacheRoot}${separator}${validateStorageRelativePath(taskKey)}` }
+}
+
 /** Постоянные каталоги окружения не пересекаются с восстанавливаемым checkout. */
 export const MANAGED_ENVIRONMENT_DIRECTORIES = ['app', 'config', 'logs', 'artifacts', 'temporary/repository'] as const
 

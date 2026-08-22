@@ -9,7 +9,7 @@ import type {
   ServerMessage, CiRun, CiRunStep, CiStatus, CiSlot, CiSlotProgress, CiCommand,
   CiRunMode, CiInteraction, CiInteractionAnswer, CiPlanDecision, QuestionSpec, Message, Task, CiUsageKind, CiStageLlmSnapshot
 } from '@voicechat/shared'
-import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand } from '@voicechat/shared'
+import { formatKbUsageSummaryLine, formatQuestionsBlock, issueKey, isVerificationCommand, managedCiWorkspacePaths } from '@voicechat/shared'
 import { isActiveCiStatus, isTerminalCiStatus, clampModel, firstAllowedProvider, isProviderAllowed, resolveCiStageModel } from '@voicechat/shared'
 import type { CiRunLaunch } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
@@ -1345,31 +1345,32 @@ fi`
       return
     }
     const machine = project.machines.find((m) => m.agentId === agentId)
-    const machinePath = machine?.path?.trim().replace(/\/$/, '') || ''
-    const legacyRepoRoot = machine?.reposRoot?.trim().replace(/\/$/, '') || machinePath.replace(/\/[^/]+$/, '')
+    const machinePath = machine?.path?.trim().replace(/[\\/]+$/, '') || ''
+    const legacyRepoRoot = machine?.reposRoot?.trim().replace(/[\\/]+$/, '') || machinePath.replace(/[\\/][^\\/]+$/, '')
     // Новые workspace живут в выбранном MachineStorage. Старый reposRoot остаётся
     // безопасным fallback: существующие абсолютные пути не мигрируют автоматически.
     const managedStorage = deps.db.listMachineStorages(userId, agentId)[0]
-    const repoRoot = managedStorage
-      ? `${managedStorage.rootPath.replace(/[/\\]$/, '')}/projects/${runRow.projectId}/tasks/${runRow.taskId}/environments/test/temporary`
-      : legacyRepoRoot
     const projectSlug = slugify(project.name)
     const taskNumber = issueKey(project.name, task)
+    const taskKey = `${projectSlug}-${task.seq ?? 0}`
+    const managedPaths = managedStorage
+      ? managedCiWorkspacePaths(managedStorage.rootPath, runRow.projectId, runRow.taskId, taskNumber)
+      : null
+    const repoRoot = managedPaths?.repoRoot ?? legacyRepoRoot
     // The issue key (for example CHAT-172) is the stable, human-readable task
     // identity. Explicit custom templates remain supported, while defaults and
     // checkout directories never depend on the mutable task title.
     const slug = taskNumber
     const branch = (project.ciBranchTemplate || '{task_number}').replace('{task_number}', taskNumber).replace('{slug}', slugify(task.title))
-    const commandWorkspacePath = managedStorage ? `${repoRoot}/repository` : `${repoRoot}/${projectSlug}`
-    const workspacePath = `${commandWorkspacePath}/${taskNumber}`
-    const taskKey = `${projectSlug}-${task.seq ?? 0}`
+    const commandWorkspacePath = managedPaths?.repository ?? `${repoRoot}/${projectSlug}`
+    const workspacePath = managedPaths?.workspace ?? `${commandWorkspacePath}/${taskNumber}`
     // Изолированный кэш npm на задачу. Общий `~/.npm` ломался, когда два `npm ci`
     // на машине шли одновременно: EEXIST/ENOENT в `_cacache`, шаг падал с 254 и
     // ретраи не помогали, пока кэш не чистили руками. Кэш лежит РЯДОМ с рабочими
     // копиями, а не внутри рабочей директории: cleanup сносит её в конце рана и
     // каждый повтор качал бы пакеты заново.
-    const npmCacheRoot = `${repoRoot || workspacePath}/.npm-cache`
-    const npmCacheDir = `${npmCacheRoot}/${taskKey}`
+    const npmCacheRoot = managedPaths?.npmCacheRoot ?? `${repoRoot || workspacePath}/.npm-cache`
+    const npmCacheDir = managedPaths?.npmCacheDir ?? `${npmCacheRoot}/${taskKey}`
     const env: Record<string, string> = {
       TASK_NUMBER: taskNumber,
       TASK_KEY: taskKey,
@@ -1433,34 +1434,30 @@ fi`
     // Кэши старых задач копятся на диске — чистим те, к которым две недели не
     // ходили. `touch` отмечает «использован сейчас»: без него давно живущая
     // задача теряла бы кэш на своём же ране (mtime каталога не растёт сам).
-    const cachePrep = `mkdir -p ${shq(npmCacheDir)}; touch ${shq(npmCacheDir)} 2>/dev/null || true; find ${shq(npmCacheRoot)} -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} + 2>/dev/null || true`
-    // Рабочая копия, оставшаяся от упавшего или отменённого рана ЭТОЙ задачи:
-    // новый полный ран всё равно начинает с чистой базовой ветки, поэтому
-    // приводим копию в порядок сами. Без этого шаг клонирования падал с exit 66
-    // («в репозитории есть локальные изменения»), и повторный запуск после
-    // падения требовал ручного «Откатить изменения и повторить». Незакоммиченное
-    // не пропадает: сначала `git stash`, и его всегда можно достать из копии.
+    const ensureManaged = managedStorage
+      ? `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)} || { echo "MachineStorage недоступен для записи: ${managedStorage.rootPath}" >&2; exit 73; }`
+      : `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)}`
+    const cachePrep = `${ensureManaged}; touch ${shq(npmCacheDir)} 2>/dev/null || true; find ${shq(npmCacheRoot)} -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} + 2>/dev/null || true`
     const repoPath = workspacePath
     // Связанный чат задачи должен выполнять команды там же, где модель CI: внутри
     // клонированного репозитория, а не в каталоге-контейнере workspace.
     if (runRow.conversationId) {
       deps.db.setConversationExecTarget(userId, runRow.conversationId, agentId, repoPath, task.skills)
     }
-    const reclaim = [
-      `  echo "Рабочая копия прошлого рана найдена — привожу её в чистое состояние"`,
-      `  git -C ${shq(repoPath)} stash push --include-untracked --message ${shq(`ci-run ${runId}`)} >/dev/null 2>&1 || true`,
-      `  git -C ${shq(repoPath)} reset --hard >/dev/null 2>&1 || true`,
-      `  git -C ${shq(repoPath)} clean -fd >/dev/null 2>&1 || true`
+    const guardExisting = [
+      `if git -C ${shq(repoPath)} rev-parse --is-inside-work-tree >/dev/null 2>&1; then`,
+      `  if [ -n "$(git -C ${shq(repoPath)} status --porcelain --untracked-files=all 2>/dev/null)" ]; then`,
+      `    echo "Рабочая копия содержит локальные изменения: ${repoPath}" >&2; exit 66`,
+      `  fi`,
+      `elif [ -d ${shq(workspacePath)} ] && [ -n "$(ls -A ${shq(workspacePath)} 2>/dev/null)" ]; then`,
+      `  echo "Рабочая директория не является Git-репозиторием и содержит файлы: ${workspacePath}" >&2; exit 65`,
+      `fi`
     ].join('\n')
-    const guardExisting = strategy === 'fail'
-      ? `if [ -d ${shq(workspacePath)} ] && [ -n "$(ls -A ${shq(workspacePath)} 2>/dev/null)" ]; then echo "Рабочая директория уже существует (стратегия fail)" >&2; exit 65; fi; mkdir -p ${shq(commandWorkspacePath)}`
-      : `mkdir -p ${shq(commandWorkspacePath)}`
-    // Стратегия `clean` сносит папку целиком — чистить там нечего; `fail`
-    // защищает от ЧУЖОГО содержимого, но своя копия задачи под запрет не
-    // попадает, иначе повтор после падения был бы невозможен в принципе.
+    // clean явно пересоздаёт checkout; fail/reuse переиспользуют только настоящий
+    // чистый Git-репозиторий. Пустая либо только родительская структура допустима.
     const workspacePrep = strategy === 'clean'
       ? `rm -rf ${shq(workspacePath)}; mkdir -p ${shq(commandWorkspacePath)}`
-      : `if [ -d ${shq(`${repoPath}/.git`)} ]; then\n${reclaim}\nelse\n${guardExisting}\nfi`
+      : guardExisting
     const prep = `${cachePrep}\n${workspacePrep}`
     if (!resume) {
       // Новый ран: создаём запись рабочей директории. При повторе — переиспользуем.
@@ -1499,7 +1496,9 @@ fi`
       emitStep(prepStep, userId)
       const ps = now()
       try {
-        const prepWorkdir = machinePath || repoRoot.replace(/\/[^/]+$/, '') || '/'
+        // Зарегистрированный storage root уже создан и проверен при регистрации;
+        // вложенный managed environment до первого bootstrap ещё не существует.
+        const prepWorkdir = managedStorage?.rootPath ?? (machinePath || repoRoot.replace(/[\\/][^\\/]+$/, '') || '/')
         const r = await deps.executor.run({ agentId, script: prep, workdir: prepWorkdir, env, timeoutMs: 60_000, secrets: [] }, (d) => {
           const line = deps.db.appendCiLog(runId, prepStep.id, 'stdout', d)
           broadcast({ t: 'ci.log', runId, line }, userId)
