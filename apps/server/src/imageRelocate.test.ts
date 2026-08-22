@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseImages } from '@voicechat/shared'
 import { machineImagePath, relocateImagesToMachine } from './imageRelocate.js'
-import { machineUploadDir, machineUploadPath } from './uploads.js'
+import { machineStoragePath, machineUploadDir, machineUploadPath, resolveManagedChatStorage } from './uploads.js'
 
 let home: string
 let pic: string
@@ -57,20 +57,54 @@ describe('machineUploadPath', () => {
   })
 })
 
+describe('resolveManagedChatStorage', () => {
+  const binding = { conversationId: 'c-1', machineId: 'm-1', storageId: 's-1', relativePath: 'projects/p-1/chats/c-1' }
+  const storage = { id: 's-1', machineId: 'm-1', rootPath: '/Volumes/Chat AI', status: 'ready' as const, formatVersion: 1 }
+
+  it('строит все каталоги только от актуальной привязки', async () => {
+    const resolved = await resolveManagedChatStorage('u-1', 'c-1', {
+      getBinding: () => binding,
+      listStorages: () => [storage],
+      ownsMachine: () => true,
+      isOnline: () => true,
+      verifyRoot: vi.fn(async () => undefined)
+    })
+    expect(resolved).toMatchObject({
+      chatRoot: '/Volumes/Chat AI/projects/p-1/chats/c-1',
+      attachments: '/Volumes/Chat AI/projects/p-1/chats/c-1/attachments',
+      generated: '/Volumes/Chat AI/projects/p-1/chats/c-1/.generated',
+      artifacts: '/Volumes/Chat AI/projects/p-1/chats/c-1/artifacts'
+    })
+    expect(machineStoragePath('C:\\Chat AI', 'chats/c-1/.generated')).toBe('C:\\Chat AI\\chats\\c-1\\.generated')
+  })
+
+  it('не откатывается в legacy при offline или отозванном storage', async () => {
+    const base = {
+      getBinding: () => binding,
+      listStorages: () => [storage],
+      ownsMachine: () => true,
+      isOnline: () => false,
+      verifyRoot: vi.fn(async () => undefined)
+    }
+    await expect(resolveManagedChatStorage('u-1', 'c-1', base)).rejects.toThrow('не в сети')
+    await expect(resolveManagedChatStorage('u-1', 'c-1', { ...base, isOnline: () => true, listStorages: () => [] })).rejects.toThrow('недоступно')
+  })
+})
+
 describe('relocateImagesToMachine', () => {
   it('пишет файл на машину и переписывает блок на путь машины', async () => {
     const d = deps()
     const text = `Готово\n\n\`\`\`image\n{"path":"${pic}"}\n\`\`\``
-    const out = await relocateImagesToMachine(text, 'm1', d)
+    const out = await relocateImagesToMachine(text, 'm1', { ...d, destinationDir: '/storage/chats/c1/.generated' })
 
-    expect(d.fsMkdir).toHaveBeenCalledWith('m1', '/home/user/.generated_images')
+    expect(d.fsMkdir).toHaveBeenCalledWith('m1', '/storage/chats/c1/.generated')
     expect(d.fsWrite).toHaveBeenCalledWith(
       'm1',
-      '/home/user/.generated_images/call_x.png',
+      '/storage/chats/c1/.generated/call_x.png',
       Buffer.from('PNGDATA').toString('base64')
     )
     expect(parseImages(out).images).toEqual([
-      { path: '/home/user/.generated_images/call_x.png', agentId: 'm1' }
+      { path: '/storage/chats/c1/.generated/call_x.png', agentId: 'm1' }
     ])
   })
 
