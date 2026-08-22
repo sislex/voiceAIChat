@@ -5,7 +5,7 @@ import { CiProjectDefaults } from './ci/CiProjectDefaults'
 // Управляющие контролы (правка, участники, машины, удаление) — только владельцу.
 
 import { useEffect, useState } from 'react'
-import type { ProjectDetail, ProjectSummary, WorkItemDefaultSkills } from '@shared/projects'
+import type { ProjectDetail, ProjectSummary, WorkItemDefaultSkills, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
 import type { KbContextMode } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
@@ -30,6 +30,8 @@ export interface ProjectSettingsProps {
   onRemoveMember: (id: string, username: string) => void
   onLinkMachine: (id: string, agentId: string) => void | Promise<void>
   onUnlinkMachine: (id: string, agentId: string) => void | Promise<void>
+  onConfigureMachineStorage?: (id: string, agentId: string, storageId: string, directories?: ProjectMachineDirectoryAssignments) => void | Promise<void>
+  onResetMachineDirectory?: (id: string, agentId: string, kind: ProjectMachineDirectoryKind) => void | Promise<void>
   onSetMachinePath: (id: string, agentId: string, path: string) => void | Promise<void>
   onSetReposRoot: (id: string, agentId: string, reposRoot: string) => void | Promise<void>
   onSetMachineSsh: (id: string, agentId: string, sshHost: string, sshUser: string) => void | Promise<void>
@@ -328,11 +330,16 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         agents={agents}
         onShare={(id, agentId, shared) => shared ? props.onLinkMachine(id, agentId) : props.onUnlinkMachine(id, agentId)}
         onSave={(id, agentId, field, value, machine) => {
-          if (field === 'path') return props.onSetMachinePath(id, agentId, value)
-          if (field === 'reposRoot') return props.onSetReposRoot(id, agentId, value)
-          return props.onSetMachineSsh(id, agentId, field === 'sshHost' ? value : machine.sshHost ?? '', field === 'sshUser' ? value : machine.sshUser ?? '')
+          if (field === 'sshHost' || field === 'sshUser') return props.onSetMachineSsh(id, agentId, field === 'sshHost' ? value : machine.sshHost ?? '', field === 'sshUser' ? value : machine.sshUser ?? '')
+          const directoryKind = field === 'path' ? 'projectWorkdir' : field
+          if (!machine.storageId || !machine.directories) return directoryKind === 'projectWorkdir' ? props.onSetMachinePath(id, agentId, value) : directoryKind === 'reposRoot' ? props.onSetReposRoot(id, agentId, value) : undefined
+          const directories = structuredClone(machine.directories)
+          directories[directoryKind] = { path: value, override: true }
+          return props.onConfigureMachineStorage?.(id, agentId, machine.storageId, directories)
         }}
         onSetDefault={props.onSetDefaultMachine}
+        onConfigureStorage={props.onConfigureMachineStorage}
+        onResetDirectory={props.onResetMachineDirectory}
       />}
 
       {activeTab === 'general' && isOwner && (

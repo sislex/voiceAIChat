@@ -50,7 +50,9 @@ import type {
   TaskPriority,
   WorkItemDefaultSkills,
   MachineStorage,
-  ChatStorageBinding
+  ChatStorageBinding,
+  ProjectMachineDirectoryAssignments,
+  ProjectMachineDirectoryKind
 } from './projects'
 
 import type { KbContextBundle, KbDocument, KbDocumentDraft, KbDocumentSummary, KbResearchRun, KbScope, KbSearchRequest, KbSearchResult, KbStatus } from './kb'
@@ -337,8 +339,10 @@ export interface IpcInvokeMap {
   'projects:updateMemberRole': { arg: { id: string; username: string; role: 'owner' | 'member' }; result: ProjectDetail }
   'projects:removeMember': { arg: { id: string; username: string }; result: ProjectDetail }
   /** Привязать/отвязать машину-агента к проекту (только владелец). */
-  'projects:linkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
+  'projects:linkMachine': { arg: { id: string; agentId: string; storageId?: string }; result: ProjectDetail }
   'projects:unlinkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
+  'projects:configureMachineStorage': { arg: { id: string; agentId: string; storageId: string; directories?: ProjectMachineDirectoryAssignments }; result: ProjectDetail }
+  'projects:resetMachineDirectory': { arg: { id: string; agentId: string; kind: ProjectMachineDirectoryKind }; result: ProjectDetail }
   /** Задать папку проекта на конкретной машине (только владелец). */
   'projects:setReposRoot': { arg: { id: string; agentId: string; reposRoot: string }; result: ProjectDetail }
   'projects:setMachineSsh': { arg: { id: string; agentId: string; sshHost: string; sshUser: string }; result: ProjectDetail }
@@ -864,6 +868,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:removeMember',
   'projects:linkMachine',
   'projects:unlinkMachine',
+  'projects:configureMachineStorage',
+  'projects:resetMachineDirectory',
   'projects:setMachinePath',
   'projects:setReposRoot',
   'projects:setMachineSsh',

@@ -212,6 +212,9 @@ describe('machine storage root paths', () => {
     assignments.production = { path: assignments.staging.path, override: true }
     assignments.staging = { ...assignments.staging, override: true }
     expect(() => validateProjectMachineDirectories(assignments, '/srv/ChatAI', 'p-1', 'linux')).toThrow(/совпадают/)
+    assignments.production = { path: '/custom', override: true }
+    assignments.staging = { path: '/custom/nested', override: true }
+    expect(() => validateProjectMachineDirectories(assignments, '/srv/ChatAI', 'p-1', 'linux')).toThrow(/пересекаются/)
   })
 })
 
