@@ -204,6 +204,7 @@ export function registerProjectRoutes(
       testCommand?: string
       productionDeployCommand?: string
       productionAgentId?: string | null
+      productionEnvironmentMode?: 'legacy' | 'managed'
       productionCheckoutPath?: string
       productionHealthCheckCommand?: string
       releaseTimeouts?: import('@voicechat/shared').ReleaseTimeouts
@@ -221,6 +222,7 @@ export function registerProjectRoutes(
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
     const body = { ...(req.body ?? {}) }
+    if (body.productionEnvironmentMode === 'managed') return badReq(reply, 'Managed mode requires successful preflight and explicit confirmation')
     if (body.previewUrl !== undefined) {
       const previewUrl = normalizePreviewUrl(body.previewUrl)
       if (previewUrl === undefined) return badReq(reply, 'previewUrl must be an http/https URL')

@@ -405,6 +405,7 @@ interface ProjectRow {
   test_command: string
   production_deploy_command: string
   production_agent_id: string | null
+  production_environment_mode: string
   production_checkout_path: string
   production_health_check_command: string
   release_timeouts_json: string
@@ -997,6 +998,7 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_agent_id')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_agent_id TEXT`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_environment_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_environment_mode TEXT NOT NULL DEFAULT 'legacy'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_checkout_path')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_checkout_path TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_health_check_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_health_check_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'release_timeouts_json')) this.db.exec(`ALTER TABLE projects ADD COLUMN release_timeouts_json TEXT NOT NULL DEFAULT '{}'`)
@@ -2751,6 +2753,7 @@ export class VoiceChatDb {
       testCommand: r.test_command || undefined,
       productionDeployCommand: r.production_deploy_command || undefined,
       productionAgentId: r.production_agent_id,
+      productionEnvironmentMode: r.production_environment_mode === 'managed' ? 'managed' : 'legacy',
       productionCheckoutPath: r.production_checkout_path || undefined,
       productionHealthCheckCommand: r.production_health_check_command || undefined,
       releaseTimeouts: {...DEFAULT_RELEASE_TIMEOUTS,...parseJsonValue<Partial<ReleaseTimeouts>>(r.release_timeouts_json,{})},
@@ -2970,6 +2973,7 @@ export class VoiceChatDb {
       testCommand?: string
       productionDeployCommand?: string
       productionAgentId?: string | null
+      productionEnvironmentMode?: 'legacy' | 'managed'
       productionCheckoutPath?: string
       productionHealthCheckCommand?: string
       releaseTimeouts?: ReleaseTimeouts
@@ -3025,6 +3029,7 @@ export class VoiceChatDb {
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
     if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
     if (fields.productionAgentId !== undefined) { set.push('production_agent_id = ?'); vals.push(fields.productionAgentId) }
+    if (fields.productionEnvironmentMode !== undefined) { set.push('production_environment_mode = ?'); vals.push(fields.productionEnvironmentMode) }
     if (fields.productionCheckoutPath !== undefined) { set.push('production_checkout_path = ?'); vals.push(fields.productionCheckoutPath) }
     if (fields.productionHealthCheckCommand !== undefined) { set.push('production_health_check_command = ?'); vals.push(fields.productionHealthCheckCommand) }
     if (fields.releaseTimeouts !== undefined) { set.push('release_timeouts_json = ?'); vals.push(JSON.stringify(validateReleaseTimeouts(fields.releaseTimeouts))) }
