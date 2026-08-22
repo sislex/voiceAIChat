@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedMergeClonePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedMergeClonePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -145,6 +145,21 @@ describe('portable storage paths', () => {
     expect(managedChatArtifactsPath('chats/c-1')).toBe('chats/c-1/artifacts')
     expect(managedChatTemporaryPath('chats/c-1')).toBe('chats/c-1/.generated')
     expect(MANAGED_ENVIRONMENT_DIRECTORIES).toEqual(['app', 'config', 'logs', 'artifacts', 'temporary/repository'])
+  })
+
+  it('builds canonical absolute managed preview paths for POSIX and Windows', () => {
+    expect(managedPreviewEnvironmentPaths('/storage', 'p1', 't1', 'pr1', 'linux')).toEqual({
+      previewRoot: '/storage/projects/p1/tasks/t1/environments/preview/pr1',
+      app: '/storage/projects/p1/tasks/t1/environments/preview/pr1/app',
+      config: '/storage/projects/p1/tasks/t1/environments/preview/pr1/config',
+      logs: '/storage/projects/p1/tasks/t1/environments/preview/pr1/logs',
+      artifacts: '/storage/projects/p1/tasks/t1/environments/preview/pr1/artifacts',
+      temporary: '/storage/projects/p1/tasks/t1/environments/preview/pr1/temporary',
+      repository: '/storage/projects/p1/tasks/t1/environments/preview/pr1/temporary/repository',
+      manifest: '/storage/projects/p1/tasks/t1/environments/preview/pr1/environment.json'
+    })
+    expect(managedPreviewEnvironmentPaths('C:\\VoiceChat', 'p1', 't1', 'pr1', 'win32').repository)
+      .toBe('C:\\VoiceChat\\projects\\p1\\tasks\\t1\\environments\\preview\\pr1\\temporary\\repository')
   })
 
   it('rejects absolute paths and traversal', () => {

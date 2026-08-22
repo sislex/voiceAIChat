@@ -222,6 +222,38 @@ export function recommendedPreviewEnvironmentPath(projectId: string, taskId: str
   return `projects/${validateStorageRelativePath(projectId)}/tasks/${validateStorageRelativePath(taskId)}/environments/preview/${validateStorageRelativePath(previewId)}`
 }
 
+export interface ManagedPreviewEnvironmentPaths {
+  previewRoot: string
+  app: string
+  config: string
+  logs: string
+  artifacts: string
+  temporary: string
+  repository: string
+  manifest: string
+}
+
+/** Absolute canonical preview layout in the target machine path syntax. */
+export function managedPreviewEnvironmentPaths(storageRoot: string, projectId: string, taskId: string, previewId: string, platform: string): ManagedPreviewEnvironmentPaths {
+  const root = normalizeMachineStoragePath(storageRoot, platform)
+  const separator = machinePathSeparator(platform)
+  const relative = recommendedPreviewEnvironmentPath(projectId, taskId, previewId).split('/')
+  const previewRoot = [root, ...relative].join(separator)
+  if (!isPathInsideMachineStorage(previewRoot, root, platform)) throw new Error('Managed preview path выходит за границы storage')
+  const child = (name: string): string => `${previewRoot}${separator}${name}`
+  const temporary = child('temporary')
+  return {
+    previewRoot,
+    app: child('app'),
+    config: child('config'),
+    logs: child('logs'),
+    artifacts: child('artifacts'),
+    temporary,
+    repository: `${temporary}${separator}repository`,
+    manifest: child('environment.json')
+  }
+}
+
 export function recommendedTaskTestEnvironmentPath(projectId: string, taskId: string): string {
   return `projects/${validateStorageRelativePath(projectId)}/tasks/${validateStorageRelativePath(taskId)}/environments/test`
 }
