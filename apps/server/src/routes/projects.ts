@@ -9,6 +9,9 @@ import {
   type KanbanColumn,
   type ProjectDetail,
   type ProjectSummary,
+  type ProjectMachineDirectoryAssignments,
+  type ProjectMachineDirectoryKind,
+  PROJECT_MACHINE_DIRECTORY_KINDS,
   type Task,
   type TaskPriority,
   type TaskLaunchResult,
@@ -276,7 +279,7 @@ export function registerProjectRoutes(
       .map((agent) => ({ id: agent.id, name: agent.name }))
   })
 
-  app.post<{ Params: { id: string }; Body: { agentId?: string } }>(
+  app.post<{ Params: { id: string }; Body: { agentId?: string; storageId?: string } }>(
     '/api/projects/:id/machines',
     async (req, reply) => {
       const p = member(req, req.params.id)
@@ -287,7 +290,7 @@ export function registerProjectRoutes(
         return reply.code(409).send({ error: 'machine already shared' })
       }
       try {
-        return withMachineStatus(db.linkMachine(uid(req), req.params.id, agentId), uid(req)) ?? nf(reply)
+        return withMachineStatus(db.linkMachine(uid(req), req.params.id, agentId, req.body?.storageId), uid(req)) ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
@@ -304,17 +307,29 @@ export function registerProjectRoutes(
   )
 
   // Папка проекта на конкретной машине.
-  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; reposRoot?: string; sshHost?: string; sshUser?: string } }>(
+  app.patch<{ Params: { id: string; agentId: string }; Body: { path?: string; reposRoot?: string; sshHost?: string; sshUser?: string; storageId?: string; directories?: ProjectMachineDirectoryAssignments; resetDirectory?: ProjectMachineDirectoryKind } }>(
     '/api/projects/:id/machines/:agentId',
     async (req, reply) => {
       const p = member(req, req.params.id)
       if (!p) return nf(reply)
+      if (req.body?.resetDirectory !== undefined) {
+        if (!PROJECT_MACHINE_DIRECTORY_KINDS.includes(req.body.resetDirectory)) return badReq(reply, 'unknown directory assignment')
+        try { return withMachineStatus(db.resetProjectMachineDirectory(uid(req), req.params.id, req.params.agentId, req.body.resetDirectory), uid(req)) ?? nf(reply) }
+        catch (err) { return badReq(reply, errMessage(err)) }
+      }
+      if (req.body?.storageId !== undefined) {
+        try {
+          return withMachineStatus(db.configureProjectMachineStorage(uid(req), req.params.id, req.params.agentId, req.body.storageId, req.body.directories), uid(req)) ?? nf(reply)
+        } catch (err) { return badReq(reply, errMessage(err)) }
+      }
       if (req.body?.sshHost !== undefined || req.body?.sshUser !== undefined) {
         return withMachineStatus(db.setProjectMachineSsh(uid(req), req.params.id, req.params.agentId, req.body?.sshHost ?? '', req.body?.sshUser ?? ''), uid(req)) ?? nf(reply)
       }
-      return req.body?.reposRoot !== undefined
-        ? withMachineStatus(db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot), uid(req)) ?? nf(reply)
-        : withMachineStatus(db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? ''), uid(req)) ?? nf(reply)
+      try {
+        return req.body?.reposRoot !== undefined
+          ? withMachineStatus(db.setProjectMachineReposRoot(uid(req), req.params.id, req.params.agentId, req.body.reposRoot), uid(req)) ?? nf(reply)
+          : withMachineStatus(db.setProjectMachinePath(uid(req), req.params.id, req.params.agentId, req.body?.path ?? ''), uid(req)) ?? nf(reply)
+      } catch (err) { return badReq(reply, errMessage(err)) }
     }
   )
 

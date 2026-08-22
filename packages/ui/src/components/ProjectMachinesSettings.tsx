@@ -47,11 +47,14 @@ function Tooltip({ text, ariaLabel = text, className, children }: { text: string
   </>
 }
 
-export function machineReadiness(machine: Pick<ProjectMachine, 'online' | 'path' | 'reposRoot'>): { ready: boolean; reasons: string[]; tooltip: string } {
+export function machineReadiness(machine: Pick<ProjectMachine, 'online' | 'path' | 'reposRoot' | 'readiness' | 'storage'>): { ready: boolean; reasons: string[]; tooltip: string } {
   const reasons: string[] = []
   if (machine.online !== true) reasons.push('Offline')
-  if (!machine.path.trim()) reasons.push('не заполнена «Папка проекта»')
-  if (!machine.reposRoot.trim()) reasons.push('не заполнен «Корень Feature Run»')
+  if (machine.storage?.status === 'offline') reasons.push('MachineStorage offline')
+  if (machine.storage?.status === 'unavailable') reasons.push(machine.storage.error ?? 'MachineStorage недоступно')
+  for (const reason of machine.readiness?.reasons ?? []) if (!reasons.includes(reason)) reasons.push(reason)
+  if (!machine.path.trim() && !reasons.some((reason) => reason.includes('Папка проекта'))) reasons.push('не заполнена «Папка проекта»')
+  if (!machine.reposRoot.trim() && !reasons.some((reason) => reason.includes('Корень Feature Run'))) reasons.push('не заполнен «Корень Feature Run»')
   return { ready: reasons.length === 0, reasons, tooltip: reasons.length === 0 ? 'Готова' : `Не готова: ${reasons.join('; ')}` }
 }
 
@@ -108,6 +111,8 @@ function ConfigCells({ projectId, machine, readonly, onSave }: { projectId: stri
       <input id={inputId} className="login-input" style={{ ...inputStyle, opacity: readonly ? 0.72 : 1 }} aria-label={`${label}: ${machine.name ?? machine.agentId}`} readOnly={readonly} value={draft[key]}
         onChange={(e) => setDraft((v) => ({ ...v, [key]: e.target.value }))} onBlur={() => void commit(key)}
         onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void commit(key) } }} />
+      {(key === 'path' || key === 'reposRoot') && machine.directories?.[key === 'path' ? 'projectWorkdir' : 'reposRoot']?.override && <span className="proj-muted" style={{ display: 'block', marginTop: 4 }}>Переопределено</span>}
+      {(key === 'path' || key === 'reposRoot') && machine.recommendations?.[key === 'path' ? 'projectWorkdir' : 'reposRoot'] && <span className="proj-muted" style={{ display: 'block', marginTop: 4, overflowWrap: 'anywhere' }}>Рекомендация: {machine.recommendations[key === 'path' ? 'projectWorkdir' : 'reposRoot']}</span>}
       {status[key] === 'saving' && <span role="status">Сохранение…</span>}
       {status[key] === 'saved' && <span role="status">Сохранено</span>}
       {status[key] === 'error' && <span role="alert">Не удалось сохранить</span>}
@@ -138,6 +143,7 @@ function Table(p: { title: string; empty: string; projectId: string; machines: P
             <strong style={{ overflowWrap: 'anywhere' }}>{m.name ?? m.agentId}</strong>
           </span>
           <span className="proj-muted" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11, fontWeight: 400, overflowWrap: 'anywhere' }}>{m.owner ?? '—'}</span>
+          <span className="proj-muted" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11, overflowWrap: 'anywhere' }}>{m.storage ? `Storage: ${m.storage.rootPath}` : 'Storage не выбрано · Настройки проекта → Машины'}</span>
           <Tooltip className="proj-muted proj-machine-load" text="Количество активных CI-запусков, назначенных этой машине" ariaLabel={`Загрузка: ${m.load ?? 0}. Количество активных CI-запусков, назначенных этой машине`}>Загрузка: {m.load ?? 0} <span aria-hidden="true">ⓘ</span></Tooltip>
           {m.canUse === false && <span className="proj-offline" style={{ display: 'block', marginTop: 4, paddingLeft: 20, fontSize: 11 }}>{m.unavailableReason ?? 'недоступна'}</span>}
         </td>
