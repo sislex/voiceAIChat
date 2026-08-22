@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-17 | ⚠ 57 коммит(ов) в areas после сверки: e7c92f10 CHAT-308 add Development Brief recovery model … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-17 | ⚠ 53 коммит(ов) в areas после сверки: e7c92f10 CHAT-308 add Development Brief recovery model … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 18 коммит(ов) в areas после сверки: 6ab15a37 CHAT-307 auto-bind chat file storage … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 510 коммит(ов) в areas после сверки: 455dd643 docs(kb): update after merge 66f4817b-8b43-457c-a93b-c8545146bc3a … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 511 коммит(ов) в areas после сверки: 6c40538e docs(kb): update after merge 2059c337-52c9-4da3-b4f6-442c7d91abae … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 27 коммит(ов) в areas после сверки: e7c92f10 CHAT-308 add Development Brief recovery model … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-21 | ⚠ 6 коммит(ов) в areas после сверки: cb20616e Merge task 2059c337-52c9-4da3-b4f6-442c7d91abae … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ⚠ 2 коммит(ов) в areas после сверки: cb20616e Merge task 2059c337-52c9-4da3-b4f6-442c7d91abae … |
