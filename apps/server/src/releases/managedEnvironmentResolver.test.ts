@@ -4,7 +4,7 @@ import type { ReleaseManager } from './releaseManager.js'
 import { ManagedEnvironmentResolver } from './managedEnvironmentResolver.js'
 
 const project = {
-  id:'p1', productionAgentId:'a1', productionEnvironmentMode:'managed' as const,
+  id:'p1', createdAt:1_700_000_000_000, productionAgentId:'a1', productionEnvironmentMode:'managed' as const,
   gitUrl:'git@example/repo.git', productionDeployCommand:'npm run deploy',
   productionHealthCheckCommand:'npm run health', ciBaseBranch:'main'
 }

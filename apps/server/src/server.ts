@@ -1241,6 +1241,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
     fsWrite: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
     fsMkdir: (agentId, path) => agentRegistry.fsMkdir(agentId, path),
+    fsRename: (agentId, from, to) => agentRegistry.fsRename(agentId, from, to),
     fsDelete: (agentId, path) => agentRegistry.fsDelete(agentId, path),
     closeTunnelsForAgent: (agentId) => agentRegistry.closeTunnelsForTarget(agentId)
   })

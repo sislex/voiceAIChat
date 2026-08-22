@@ -43,6 +43,7 @@ function setup(result: { exitCode: number | null; timedOut: boolean } = { exitCo
     },
     fsWrite: async (_agentId, path, dataBase64) => { files.set(path, dataBase64) },
     fsMkdir: async () => undefined,
+    fsRename: async (_agentId, from, to) => { const value = files.get(from); if (!value) throw new Error('ENOENT'); files.set(to, value); files.delete(from) },
     fsDelete,
     newId: () => `id-${++id}`, now: () => id * 100
   })
@@ -108,7 +109,11 @@ describe('FeaturePreviewManager', () => {
     const root = '/storage/projects/p1/tasks/t1/environments/preview/id-1'
     expect(first.workspacePath).toBe(`${root}/temporary/repository`)
     const manifest = JSON.parse(Buffer.from(files.get(`${root}/environment.json`)!, 'base64').toString('utf8'))
-    expect(manifest).toEqual({ formatVersion: 1, kind: 'preview', projectId: 'p1', taskId: 't1', previewId: 'id-1', storageId: 's1', machineId: 'a1' })
+    expect(manifest).toEqual({ formatVersion: 1, kind: 'preview', projectId: 'p1', taskId: 't1', storageId: 's1', machineId: 'a1', createdAt: '1970-01-01T00:00:00.100Z' })
+    const runManifest = JSON.parse(Buffer.from(files.get(`${root}/runs/id-2/run.json`)!, 'base64').toString('utf8'))
+    const report = JSON.parse(Buffer.from(files.get(`${root}/runs/id-2/report.json`)!, 'base64').toString('utf8'))
+    expect(runManifest).toMatchObject({ formatVersion: 1, runId: 'id-2', runType: 'preview', machineId: 'a1', workspace: `${root}/temporary/repository`, sourceCommit: 'aaaaaaaa' })
+    expect(report).toMatchObject({ formatVersion: 1, runId: 'id-2', status: 'success', sourceCommit: 'aaaaaaaa', finalCommit: 'aaaaaaaa', errors: [], artifacts: [] })
     const restarted = await manager.operate('u1', 'p1', 't1', 'start')
     expect(restarted.id).toBe(first.id)
     expect(restarted.workspacePath).toBe(first.workspacePath)
@@ -121,7 +126,7 @@ describe('FeaturePreviewManager', () => {
     await wait()
     await manager.operate('u1', 'p1', 't1', 'remove')
     await wait()
-    expect(fsDelete).toHaveBeenLastCalledWith('a1', env.managed!.previewRoot)
+    expect(fsDelete).toHaveBeenCalledWith('a1', env.managed!.previewRoot)
     expect(manager.get('u1', 'p1', 't1')?.state).toBe('removed')
   })
 
@@ -129,7 +134,7 @@ describe('FeaturePreviewManager', () => {
     const { manager, files, fsDelete } = setup()
     const env = await manager.operate('u1', 'p1', 't1', 'start')
     await wait()
-    files.set(`${env.managed!.previewRoot}/environment.json`, Buffer.from(JSON.stringify({ formatVersion: 1, kind: 'preview', projectId: 'p1', taskId: 'other', previewId: env.id, storageId: 's1', machineId: 'a1' })).toString('base64'))
+    files.set(`${env.managed!.previewRoot}/environment.json`, Buffer.from(JSON.stringify({ formatVersion: 1, kind: 'preview', projectId: 'p1', taskId: 'other', storageId: 's1', machineId: 'a1', createdAt: '1970-01-01T00:00:00.100Z' })).toString('base64'))
     const deletesBefore = fsDelete.mock.calls.length
     await manager.operate('u1', 'p1', 't1', 'remove')
     await wait()
