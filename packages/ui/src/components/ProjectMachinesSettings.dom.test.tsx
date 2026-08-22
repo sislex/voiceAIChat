@@ -108,3 +108,23 @@ it('разрешает выбрать собственную online-машину
   await userEvent.click(radio)
   expect(setDefault).toHaveBeenCalledWith('p1', 'a3')
 })
+
+it('показывает все назначения, меняет storage и сбрасывает override отдельно', async () => {
+  const recommendations = {
+    projectWorkdir: '/a/projects/p1/worktree', reposRoot: '/a/projects/p1/repositories', mergeClones: '/a/projects/p1/merge-clones',
+    production: '/a/projects/p1/environments/production', staging: '/a/projects/p1/environments/staging',
+    featurePreview: '/a/projects/p1/environments/previews', taskWorkspace: '/a/projects/p1/tasks'
+  } as const
+  const directories = Object.fromEntries(Object.entries(recommendations).map(([kind, path]) => [kind, { path, override: kind === 'mergeClones' }])) as NonNullable<ProjectMachine['directories']>
+  const machine: ProjectMachine = { ...own, storageId: 's1', storage: { id: 's1', machineId: 'a1', rootPath: '/a', status: 'ready', formatVersion: 1 }, availableStorages: [
+    { id: 's1', machineId: 'a1', rootPath: '/a', status: 'ready', formatVersion: 1, primary: true },
+    { id: 's2', machineId: 'a1', rootPath: '/b', status: 'ready', formatVersion: 1 }
+  ], directories, recommendations }
+  const configure = vi.fn(async () => undefined); const reset = vi.fn(async () => undefined)
+  render(<ProjectMachinesSettings projectId="p1" machines={[machine]} agents={[makeAgent({ id: 'a1', name: 'Mac' })]} onShare={vi.fn()} onSave={vi.fn()} onSetDefault={vi.fn()} onConfigureStorage={configure} onResetDirectory={reset} />)
+  expect(screen.getByLabelText('Production: Mac')).toHaveValue(recommendations.production)
+  await userEvent.selectOptions(screen.getByLabelText('MachineStorage: Mac'), 's2')
+  expect(configure).toHaveBeenCalledWith('p1', 'a1', 's2', directories)
+  await userEvent.click(screen.getByRole('button', { name: 'Сбросить' }))
+  expect(reset).toHaveBeenCalledWith('p1', 'a1', 'mergeClones')
+})

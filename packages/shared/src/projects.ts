@@ -1,6 +1,6 @@
 export const MACHINE_STORAGE_FORMAT_VERSION = 1
 
-export type MachineStorageStatus = 'ready' | 'offline' | 'unavailable'
+export type MachineStorageStatus = 'ready' | 'read-only' | 'offline' | 'unavailable'
 
 export interface MachineStorage {
   id: string
@@ -181,6 +181,7 @@ export function validateProjectMachineDirectories(
   const recommendations = recommendedProjectMachineDirectories(storageRoot, projectId, platform)
   const normalized = {} as ProjectMachineDirectoryAssignments
   const occupied = new Map<string, ProjectMachineDirectoryKind>()
+  const separator = machinePathSeparator(platform)
   for (const kind of PROJECT_MACHINE_DIRECTORY_KINDS) {
     const assignment = assignments[kind]
     if (!assignment) throw new Error(`Не задан каталог «${kind}»`)
@@ -188,8 +189,8 @@ export function validateProjectMachineDirectories(
     if (!assignment.override && path !== recommendations[kind]) throw new Error(`Managed-каталог «${kind}» не совпадает с рекомендацией`)
     if (!assignment.override && !isPathInsideMachineStorage(path, storageRoot, platform)) throw new Error(`Managed-каталог «${kind}» выходит за границы storage`)
     const key = platform === 'win32' ? path.toLowerCase() : path
-    const conflict = occupied.get(key)
-    if (conflict) throw new Error(`Каталоги «${conflict}» и «${kind}» совпадают`)
+    const conflict = [...occupied.entries()].find(([other]) => key === other || key.startsWith(other + separator) || other.startsWith(key + separator))
+    if (conflict) throw new Error(`Каталоги «${conflict[1]}» и «${kind}» совпадают или пересекаются`)
     occupied.set(key, kind)
     normalized[kind] = { path, override: assignment.override }
   }
@@ -426,6 +427,8 @@ export interface ProjectMachine {
   /** Выбранное зарегистрированное хранилище и единая схема каталогов. */
   storageId?: string | null
   storage?: MachineStorage | null
+  /** Все зарегистрированные хранилища этой машины; primary/ready выбирается первым. */
+  availableStorages?: MachineStorage[]
   directories?: ProjectMachineDirectoryAssignments
   recommendations?: Record<ProjectMachineDirectoryKind, string>
   readiness?: { ready: boolean; reasons: string[] }

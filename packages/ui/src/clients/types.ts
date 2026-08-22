@@ -168,6 +168,8 @@ export type ProjectsClient = Pick<
   | 'projects:removeMember'
   | 'projects:linkMachine'
   | 'projects:unlinkMachine'
+  | 'projects:configureMachineStorage'
+  | 'projects:resetMachineDirectory'
   | 'projects:setMachinePath'
   | 'projects:setReposRoot'
   | 'projects:setMachineSsh'

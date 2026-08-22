@@ -2919,7 +2919,9 @@ export class VoiceChatDb {
         online: false,
         addedAt: x.added_at,
         path: x.path ?? '', reposRoot: x.repos_root ?? '',
-        storageId: x.storage_id, storage, directories, recommendations,
+        storageId: x.storage_id, storage,
+        availableStorages: x.user_id === userId ? this.listMachineStorages(userId, x.agent_id).map((item, index) => ({ ...item, primary: index === 0 })) : undefined,
+        directories, recommendations,
         readiness: { ready: readinessReasons.length === 0, reasons: readinessReasons },
         sshHost: x.ssh_host ?? '', sshUser: x.ssh_user ?? ''
       }
@@ -3177,31 +3179,41 @@ export class VoiceChatDb {
     projectId: string,
     agentId: string,
     storageId: string,
-    directories?: ProjectMachineDirectoryAssignments
+    directories?: ProjectMachineDirectoryAssignments,
+    platform?: string
   ): ProjectDetail | null {
     if (!this.isProjectMember(userId, projectId)) return null
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) return null
     const storage = this.listMachineStorages(userId, agentId).find((item) => item.id === storageId)
     if (!storage) throw new Error('Хранилище не принадлежит выбранной машине')
-    const recommended = this.recommendedProjectAssignments(storage, projectId)
-    const current = this.db.prepare(`SELECT storage_id FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId) as { storage_id: string | null } | undefined
+    const targetPlatform = platform ?? this.projectStoragePlatform(storage.rootPath)
+    const recommendationPaths = recommendedProjectMachineDirectories(storage.rootPath, projectId, targetPlatform)
+    const recommended = Object.fromEntries(Object.entries(recommendationPaths).map(([kind, path]) => [kind, { path, override: false }])) as ProjectMachineDirectoryAssignments
+    const current = this.db.prepare(`SELECT storage_id, path, repos_root FROM project_machines WHERE project_id=? AND agent_id=?`).get(projectId, agentId) as { storage_id: string | null; path: string; repos_root: string } | undefined
     const changingStorage = !!current?.storage_id && current.storage_id !== storageId
-    const candidate = directories && changingStorage ? Object.fromEntries(Object.entries(recommended).map(([kind, value]) => {
+    let candidate = directories && changingStorage ? Object.fromEntries(Object.entries(recommended).map(([kind, value]) => {
       const saved = directories[kind as keyof ProjectMachineDirectoryAssignments]
       return [kind, saved?.override ? saved : value]
     })) as ProjectMachineDirectoryAssignments : directories ?? recommended
+    if (!directories && current && !current.storage_id) {
+      candidate = structuredClone(recommended)
+      if (current.path.trim()) candidate.projectWorkdir = { path: current.path, override: true }
+      if (current.repos_root.trim()) candidate.reposRoot = { path: current.repos_root, override: true }
+    }
     const assignments = validateProjectMachineDirectories(
       candidate,
       storage.rootPath,
       projectId,
-      this.projectStoragePlatform(storage.rootPath)
+      targetPlatform
     )
-    this.db.prepare(
-      `INSERT INTO project_machines (project_id,agent_id,path,repos_root,storage_id,directories_json,added_at,added_by)
-       VALUES (?,?,?,?,?,?,?,?)
-       ON CONFLICT(project_id,agent_id) DO UPDATE SET path=excluded.path,repos_root=excluded.repos_root,storage_id=excluded.storage_id,directories_json=excluded.directories_json`
-    ).run(projectId, agentId, assignments.projectWorkdir.path, assignments.reposRoot.path, storageId, JSON.stringify(assignments), this.now(), userId)
-    this.touchProject(projectId)
+    this.db.transaction(() => {
+      this.db.prepare(
+        `INSERT INTO project_machines (project_id,agent_id,path,repos_root,storage_id,directories_json,added_at,added_by)
+         VALUES (?,?,?,?,?,?,?,?)
+         ON CONFLICT(project_id,agent_id) DO UPDATE SET path=excluded.path,repos_root=excluded.repos_root,storage_id=excluded.storage_id,directories_json=excluded.directories_json`
+      ).run(projectId, agentId, assignments.projectWorkdir.path, assignments.reposRoot.path, storageId, JSON.stringify(assignments), this.now(), userId)
+      this.touchProject(projectId)
+    })()
     return this.getProject(userId, projectId)
   }
 
