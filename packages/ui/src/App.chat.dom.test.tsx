@@ -64,22 +64,19 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
     expect(await screen.findByText('Погода в июле?')).toBeInTheDocument()
   })
 
-  it('новый разговор остаётся локальным до первой отправки и получает адрес после неё', async () => {
+  it('новый разговор показывает файловое хранилище и сохраняется до первой отправки', async () => {
     const { api } = await seededApi()
     render(<App api={api} delays={SLOW} />)
     await screen.findByText('Погода в июле?')
 
     await userEvent.click(screen.getByRole('button', { name: '+ Новый' }))
-    await userEvent.click(screen.getByRole('button', { name: '+ Новый' }))
-    await waitFor(() => expect(window.location.hash).toBe('#/'))
-    expect(api._state.conversations).toHaveLength(2)
+    expect(await screen.findByRole('heading', { name: 'Файлы чата' })).toBeInTheDocument()
+    expect(screen.getByText(/\.voicechat_uploads/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Создать разговор' }))
 
-    // Десктопный композер развёрнут по умолчанию (CHAT-180) — кнопки разворота нет.
-    const composer = screen.getByPlaceholderText(/Напишите|Расшифровка|Сообщение/i)
-    await userEvent.type(composer, 'Первая реплика{Enter}')
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/chat\/.+/))
     expect(api._state.conversations).toHaveLength(3)
-    expect(api._state.conversations.filter((conversation) => conversation.title === 'Первая реплика')).toHaveLength(1)
+    expect(api._state.conversations.filter((conversation) => conversation.title === 'Новый разговор')).toHaveLength(1)
   })
 
   it('удаление открытого чата уводит на адрес следующего', async () => {
