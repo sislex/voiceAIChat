@@ -421,6 +421,7 @@ describe('VoiceChatDb — настройки', () => {
       aiAssistProvider: 'claude',
       aiAssistModel: 'haiku',
       aiAssistPrompts: DEFAULT_SETTINGS.aiAssistPrompts,
+      generatedFilesTtlDays: 30,
       personalization: DEFAULT_SETTINGS.personalization
     })
   })

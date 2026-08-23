@@ -3,12 +3,14 @@
 // мутации — только при allowWrite. Best-effort (не полноценная песочница).
 
 import {
+  lstatSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   renameSync,
   rmSync,
   statSync,
+  unlinkSync,
   writeFileSync
 } from 'node:fs'
 import { basename, dirname, posix, resolve, sep, win32 } from 'node:path'
@@ -77,13 +79,14 @@ function listResult(root: string, dir: string): FsResult {
       let size = 0
       let mtime = 0
       try {
-        const st = statSync(resolve(dir, d.name))
-        size = st.isDirectory() ? 0 : st.size
+        const st = lstatSync(resolve(dir, d.name))
+        size = st.isFile() ? st.size : 0
         mtime = st.mtimeMs
       } catch {
         /* недоступный элемент — показываем с нулями */
       }
-      return { name: d.name, kind: d.isDirectory() ? ('dir' as const) : ('file' as const), size, mtime }
+      const kind = d.isSymbolicLink() ? ('symlink' as const) : d.isDirectory() ? ('dir' as const) : d.isFile() ? ('file' as const) : ('other' as const)
+      return { name: d.name, kind, size, mtime }
     })
     // Каталоги сверху, затем по имени.
     .sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1))
@@ -118,6 +121,16 @@ export function fsDelete(root: string, policy: AgentPolicy, path: string): FsRes
   const abs = absPath(root, path)
   assertAllowed(policy, abs, true)
   rmSync(abs, { recursive: true, force: true })
+  return listResult(root, dirname(abs))
+}
+
+/** Удаляет только подтверждённый обычный файл; симлинки и каталоги не затрагивает. */
+export function fsDeleteFileSafe(root: string, policy: AgentPolicy, path: string): FsResult {
+  const abs = absPath(root, path)
+  assertAllowed(policy, abs, true)
+  const st = lstatSync(abs)
+  if (!st.isFile() || st.isSymbolicLink()) throw new Error('безопасное удаление разрешено только для обычного файла')
+  unlinkSync(abs)
   return listResult(root, dirname(abs))
 }
 

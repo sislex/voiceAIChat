@@ -168,6 +168,17 @@ CREATE TABLE IF NOT EXISTS chat_storage_bindings (
   FOREIGN KEY (storage_id) REFERENCES machine_storages(id) ON DELETE RESTRICT
 );
 
+CREATE TABLE IF NOT EXISTS generated_cleanup_retry (
+  conversation_id TEXT PRIMARY KEY,
+  user_id         TEXT NOT NULL,
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  last_error      TEXT NOT NULL,
+  next_attempt_at INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_generated_cleanup_retry_due ON generated_cleanup_retry(next_attempt_at);
+
 CREATE TABLE IF NOT EXISTS users (
   name          TEXT PRIMARY KEY,
   password_hash TEXT NOT NULL,

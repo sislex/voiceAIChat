@@ -438,9 +438,9 @@ export class AgentRegistry {
   // --- Файловый проводник по машине (по образцу exec, корреляция по opId) ---
 
   /** Отправляет файловую операцию агенту и ждёт fs.result/fs.error (по opId). */
-  private runFs(agentId: string, make: (opId: string) => FsOp): Promise<FsResult> {
+  private runFs(agentId: string, make: (opId: string) => FsOp, tool = 'fs'): Promise<FsResult> {
     if (!this.online.has(agentId)) return Promise.reject(new Error('Машина не в сети'))
-    const ve = this.versionError(agentId, 'fs')
+    const ve = this.versionError(agentId, tool)
     if (ve) return Promise.reject(ve)
     const opId = this.newId()
     return new Promise<FsResult>((resolve, reject) => {
@@ -455,6 +455,10 @@ export class AgentRegistry {
 
   fsList(agentId: string, path: string): Promise<FsResult> {
     return this.runFs(agentId, (opId) => ({ t: 'fs.list', opId, path }))
+  }
+
+  fsDeleteFileSafe(agentId: string, path: string): Promise<FsResult> {
+    return this.runFs(agentId, (opId) => ({ t: 'fs.delete-file-safe', opId, path }), 'fs-safe-delete')
   }
   fsRead(agentId: string, path: string): Promise<FsResult> {
     return this.runFs(agentId, (opId) => ({ t: 'fs.read', opId, path }))
