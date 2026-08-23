@@ -6,8 +6,9 @@ import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CODEX_MODELS } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import { Button } from '@voicechat/ui-kit'
+import { Button, EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
 import { CiSlotEditor } from './CiSlotEditor'
+import type { LoadStatus } from '../../lib/loadState'
 
 export interface CiTaskSettingsProps {
   projectId: string
@@ -31,6 +32,10 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [unavailableAgentId, setUnavailableAgentId] = useState<string | null>(null)
   const [unavailableName, setUnavailableName] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [machinesStatus, setMachinesStatus] = useState<LoadStatus>('idle')
+  const [machinesError, setMachinesError] = useState<string | null>(null)
+  const [machinesReload, setMachinesReload] = useState(0)
+  const [machinesKey, setMachinesKey] = useState<string | null>(null)
   const [enabledStages, setEnabledStages] = useState<CiProcessStage[]>([...CI_PROCESS_STAGES])
   const [stagesLoading, setStagesLoading] = useState(true)
   const [stagesSaved, setStagesSaved] = useState(true)
@@ -56,19 +61,37 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       if (cancelled) return
       setLlm(r.config); setLlmOverridden(r.overridden)
     })
-    void bridge.getTaskMachines(props.projectId, props.taskId).then((result) => {
+    const key = `${props.projectId}:${props.taskId}`
+    setMachinesStatus('loading')
+    setMachinesError(null)
+    setMachinesKey(null)
+    setMachines([])
+    setAgentId(null)
+    setUnavailableAgentId(null)
+    setUnavailableName(null)
+    if (!bridge) {
+      setMachinesStatus('error')
+      setMachinesError('Интерфейс машин недоступен')
+    } else void bridge.getTaskMachines(props.projectId, props.taskId).then((result) => {
       if (cancelled) return
       setMachines(result.machines)
       setAgentId(result.selectedAgentId)
       setUnavailableAgentId(result.unavailableSelection?.agentId ?? null)
       setUnavailableName(result.unavailableSelection?.name ?? null)
+      setMachinesKey(key)
+      setMachinesStatus('ready')
+    }).catch((error: unknown) => {
+      if (cancelled) return
+      setMachinesStatus('error')
+      setMachinesError(error instanceof Error ? error.message : String(error))
     })
     return () => { cancelled = true }
-  }, [props.projectId, props.taskId])
+  }, [props.projectId, props.taskId, machinesReload])
 
-  const selectedMachine = agentId ? machines.find((machine) => machine.agentId === agentId) : undefined
-  const personalMachines = machines.filter((machine) => machine.personal)
-  const projectMachines = machines.filter((machine) => machine.project && !machine.personal)
+  const machineDataReady = machinesStatus === 'ready' && machinesKey === `${props.projectId}:${props.taskId}`
+  const selectedMachine = machineDataReady && agentId ? machines.find((machine) => machine.agentId === agentId) : undefined
+  const personalMachines = (machineDataReady ? machines : []).filter((machine) => machine.personal)
+  const projectMachines = (machineDataReady ? machines : []).filter((machine) => machine.project && !machine.personal)
   const machineLabel = (machine: CiTaskMachine): string => {
     const access = machine.personal && machine.project ? 'моя + проектная' : machine.personal ? 'личная' : 'проектная'
     return `${machine.name} — ${machine.online ? 'online' : 'offline'}; ${access}${machine.projectDefault ? '; по умолчанию' : ''} · ${machine.agentId.slice(0, 8)}`
