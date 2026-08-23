@@ -975,3 +975,43 @@ describe('TaskModal — подготовка к разработке', () => {
     await waitFor(() => expect(within(screen.getByTestId('task-preparation-history')).getAllByRole('button')).toHaveLength(2))
   })
 })
+
+describe('TaskModal — вкладка Merge', () => {
+  beforeEach(() => {
+    window.ci = createFakeCi()
+  })
+
+  it('сохраняет загруженные машины при переключении вкладок', async () => {
+    const getTaskMachines = vi.spyOn(window.ci!, 'getTaskMachines').mockResolvedValue({
+      machines: [{ agentId: 'm1', name: 'MacBook', online: true, personal: true, project: false, projectDefault: false }],
+      selectedAgentId: null,
+      unavailableSelection: null
+    })
+    const getMergeMachines = vi.spyOn(window.ci!, 'getMergeMachines').mockResolvedValue({
+      machines: [{ agentId: 'm1', name: 'MacBook', readiness: { ready: true, selectable: true, mode: 'managed', code: 'ready', message: 'Готово' } }],
+      defaultAgentId: 'm1'
+    })
+    const mergeBoard: Board = {
+      columns: [{ ...board.columns[0]!, name: 'Ожидает merge', semanticType: 'awaiting_merge' }],
+      tasks: []
+    }
+
+    render(<TaskModal {...props({
+      board: mergeBoard,
+      initialTab: 'merge',
+      task: mkTask({ mergeSourceBranch: 'CHAT-326', mergePermitted: true, mergeMachineBound: true }),
+      onStartMerge: vi.fn()
+    })} />)
+
+    expect(await screen.findByRole('option', { name: /MacBook/ })).toBeInTheDocument()
+    const taskMachineCalls = getTaskMachines.mock.calls.length
+    const mergeMachineCalls = getMergeMachines.mock.calls.length
+    await userEvent.click(screen.getByRole('tab', { name: 'Настройки' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Merge' }))
+
+    expect(screen.getByRole('option', { name: /MacBook/ })).toBeInTheDocument()
+    expect(screen.queryByTestId('merge-machines-skeleton-list')).not.toBeInTheDocument()
+    expect(getTaskMachines).toHaveBeenCalledTimes(taskMachineCalls)
+    expect(getMergeMachines).toHaveBeenCalledTimes(mergeMachineCalls)
+  })
+})
