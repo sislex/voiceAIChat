@@ -699,6 +699,8 @@ export interface Settings {
   aiAssistModel: string
   /** Дефолтные модификаторы для полей ввода. */
   aiAssistPrompts: ModifierPrompt[]
+  /** TTL временных файлов managed `.generated` в днях (1–3650). */
+  generatedFilesTtlDays: number
   /** Централизованные предпочтения общения с моделью. */
   personalization: UserPersonalization
 }
@@ -753,6 +755,7 @@ export const DEFAULT_SETTINGS: Settings = {
   aiAssistProvider: 'claude',
   aiAssistModel: 'haiku',
   aiAssistPrompts: DEFAULT_AI_ASSIST_PROMPTS,
+  generatedFilesTtlDays: 30,
   personalization: DEFAULT_PERSONALIZATION
 
 }

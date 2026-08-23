@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-22 | ⚠ 2 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-22 | ⚠ 11 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 27 коммит(ов) в areas после сверки: 22b413d4 feat(releases): add managed production environments … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 531 коммит(ов) в areas после сверки: 7b97f224 docs(kb): update after merge 9d031a12-ac32-43a5-8143-219f9caffd09 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 532 коммит(ов) в areas после сверки: 2e398d0c docs(kb): update after merge 01015442-657d-4cbd-a9b4-cb6410daffc6 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 40 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ⚠ 2 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
@@ -33,7 +33,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 11 коммит(ов) в areas после сверки: 4cc7ad17 feat(git-access): добавить credential для связки машины … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-22 | ⚠ 7 коммит(ов) в areas после сверки: 4bfd0b43 fix(ui): show merge machine load states … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-19 | ⚠ 28 коммит(ов) в areas после сверки: 3ad35a86 CHAT-327 release agent 0.11.2 … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-22 | ⚠ 19 коммит(ов) в areas после сверки: 3ad35a86 CHAT-327 release agent 0.11.2 … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-23 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-15 | ⚠ код изменён 2026-08-23, сверка 2026-08-15 (по датам: правки того же дня не видны — поставь checked) |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 23 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-20 | ✓ |
@@ -57,18 +57,18 @@
 
 ## Журнал сессий
 
-Всего записей: 314. Последние:
+Всего записей: 315. Последние:
 
 - [2026-08-23-alexeys-macbook-air-2-managed-production-staging.md](log/2026-08-23-alexeys-macbook-air-2-managed-production-staging.md) — managed-production-staging
 - [2026-08-23-alexeys-macbook-air-2-environment-run-manifests-git-credentials.md](log/2026-08-23-alexeys-macbook-air-2-environment-run-manifests-git-credentials.md) — environment-run-manifests-git-credentials
 - [2026-08-23-alexeys-macbook-air-2-codex-thread-lease-termux-node-gyp.md](log/2026-08-23-alexeys-macbook-air-2-codex-thread-lease-termux-node-gyp.md) — codex-thread-lease-termux-node-gyp
 - [2026-08-23-alexeys-macbook-air-2-agent-0-11-2.md](log/2026-08-23-alexeys-macbook-air-2-agent-0-11-2.md) — agent-0-11-2
 - [2026-08-23-2470-com-merge-machines-load-state.md](log/2026-08-23-2470-com-merge-machines-load-state.md) — merge-machines-load-state
+- [2026-08-23-2470-com-generated-ttl-cleanup.md](log/2026-08-23-2470-com-generated-ttl-cleanup.md) — generated-ttl-cleanup
 - [2026-08-22-alexeys-macbook-air-2-task-preparation-recovery.md](log/2026-08-22-alexeys-macbook-air-2-task-preparation-recovery.md) — task-preparation-recovery
 - [2026-08-22-alexeys-macbook-air-2-task-preparation-project-model.md](log/2026-08-22-alexeys-macbook-air-2-task-preparation-project-model.md) — task-preparation-project-model
 - [2026-08-22-alexeys-macbook-air-2-project-machine-directories.md](log/2026-08-22-alexeys-macbook-air-2-project-machine-directories.md) — project-machine-directories
 - [2026-08-22-alexeys-macbook-air-2-managed-storage-integration.md](log/2026-08-22-alexeys-macbook-air-2-managed-storage-integration.md) — managed-storage-integration
-- [2026-08-22-alexeys-macbook-air-2-managed-merge-clones.md](log/2026-08-22-alexeys-macbook-air-2-managed-merge-clones.md) — managed-merge-clones
 
 ## Исторические планы
 

@@ -12,7 +12,7 @@ export interface AgentExecResult {
 /** Элемент каталога в проводнике по машине. */
 export interface FsEntry {
   name: string
-  kind: 'file' | 'dir'
+  kind: 'file' | 'dir' | 'symlink' | 'other'
   /** Размер файла в байтах (0 для каталогов). */
   size: number
   /** Время изменения (UNIX мс). */
@@ -195,6 +195,7 @@ export type FsOp =
   | { t: 'fs.read'; opId: string; path: string }
   | { t: 'fs.write'; opId: string; path: string; dataBase64: string }
   | { t: 'fs.delete'; opId: string; path: string }
+  | { t: 'fs.delete-file-safe'; opId: string; path: string }
   | { t: 'fs.rename'; opId: string; from: string; to: string }
   | { t: 'fs.mkdir'; opId: string; path: string }
 

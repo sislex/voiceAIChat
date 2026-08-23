@@ -2049,7 +2049,10 @@ export class VoiceChatDb {
     try {
       // Мержим с дефолтами, чтобы новые поля не ломали старый конфиг.
       const parsed = JSON.parse(row.value) as Partial<Settings>
-      return { ...DEFAULT_SETTINGS, ...parsed, personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization } }
+      const generatedFilesTtlDays = Number.isInteger(parsed.generatedFilesTtlDays) && parsed.generatedFilesTtlDays! >= 1 && parsed.generatedFilesTtlDays! <= 3650
+        ? parsed.generatedFilesTtlDays!
+        : DEFAULT_SETTINGS.generatedFilesTtlDays
+      return { ...DEFAULT_SETTINGS, ...parsed, generatedFilesTtlDays, personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization } }
     } catch {
       return { ...DEFAULT_SETTINGS }
     }
@@ -2148,6 +2151,33 @@ export class VoiceChatDb {
        ON CONFLICT(conversation_id) DO UPDATE SET machine_id=excluded.machine_id,storage_id=excluded.storage_id,relative_path=excluded.relative_path,updated_at=excluded.updated_at`
     ).run(binding.conversationId, binding.machineId, binding.storageId, relativePath, this.now())
     return { ...binding, relativePath }
+  }
+
+  /** Managed-разговоры и due-retry образуют идемпотентный набор целей прохода. */
+  listGeneratedCleanupTargets(now = this.now()): Array<{ userId: string; conversationId: string }> {
+    const rows = this.db.prepare(
+      `SELECT c.user_id,c.id FROM conversations c JOIN chat_storage_bindings b ON b.conversation_id=c.id
+       LEFT JOIN generated_cleanup_retry r ON r.conversation_id=c.id
+       WHERE c.user_id IS NOT NULL AND (r.next_attempt_at IS NULL OR r.next_attempt_at<=?)`
+    ).all(now) as Array<{ user_id: string; id: string }>
+    return rows.map((row) => ({ userId: row.user_id, conversationId: row.id }))
+  }
+
+  deferGeneratedCleanup(userId: string, conversationId: string, error: string, nextAttemptAt: number): void {
+    this.db.prepare(
+      `INSERT INTO generated_cleanup_retry(conversation_id,user_id,attempts,last_error,next_attempt_at,updated_at)
+       VALUES(?,?,1,?,?,?) ON CONFLICT(conversation_id) DO UPDATE SET
+       attempts=attempts+1,last_error=excluded.last_error,next_attempt_at=excluded.next_attempt_at,updated_at=excluded.updated_at`
+    ).run(conversationId, userId, error.slice(0, 500), nextAttemptAt, this.now())
+  }
+
+  completeGeneratedCleanup(conversationId: string): void {
+    this.db.prepare(`DELETE FROM generated_cleanup_retry WHERE conversation_id=?`).run(conversationId)
+  }
+
+  getGeneratedCleanupRetry(conversationId: string): { attempts: number; lastError: string; nextAttemptAt: number } | null {
+    const row = this.db.prepare(`SELECT attempts,last_error,next_attempt_at FROM generated_cleanup_retry WHERE conversation_id=?`).get(conversationId) as { attempts: number; last_error: string; next_attempt_at: number } | undefined
+    return row ? { attempts: row.attempts, lastError: row.last_error, nextAttemptAt: row.next_attempt_at } : null
   }
 
   // ---- Agents (машины для удалённого выполнения команд) ------------------
