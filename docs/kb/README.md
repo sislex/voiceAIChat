@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-22 | ⚠ 3 коммит(ов) в areas после сверки: 17a93756 feat: add managed generated files TTL cleanup … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-22 | ⚠ 12 коммит(ов) в areas после сверки: 17a93756 feat: add managed generated files TTL cleanup … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 28 коммит(ов) в areas после сверки: 17a93756 feat: add managed generated files TTL cleanup … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 533 коммит(ов) в areas после сверки: 17a93756 feat: add managed generated files TTL cleanup … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 534 коммит(ов) в areas после сверки: 8a547b55 docs(kb): update after merge 680b3f66-babc-47f4-a547-e0728f03d58c … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 41 коммит(ов) в areas после сверки: 17a93756 feat: add managed generated files TTL cleanup … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 1 коммит(ов) в areas после сверки: 17a93756 feat: add managed generated files TTL cleanup |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ⚠ 3 коммит(ов) в areas после сверки: 17a93756 feat: add managed generated files TTL cleanup … |
