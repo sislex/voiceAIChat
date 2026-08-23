@@ -15,14 +15,14 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 11 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 41 коммит(ов) в areas после сверки: 17a93756 feat: add managed generated files TTL cleanup … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-20 | ⚠ 38 коммит(ов) в areas после сверки: 0358a806 feat: add resumable legacy storage migration backend … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-23 | ⚠ 4 коммит(ов) в areas после сверки: 0358a806 feat: add resumable legacy storage migration backend … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-24 | ✓ |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ⚠ 2 коммит(ов) в areas после сверки: 17a93756 feat: add managed generated files TTL cleanup … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 86 коммит(ов) в areas после сверки: 0358a806 feat: add resumable legacy storage migration backend … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 28 коммит(ов) в areas после сверки: 0358a806 feat: add resumable legacy storage migration backend … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-22 | ⚠ 4 коммит(ов) в areas после сверки: 0358a806 feat: add resumable legacy storage migration backend … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-22 | ⚠ 13 коммит(ов) в areas после сверки: 0358a806 feat: add resumable legacy storage migration backend … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 28 коммит(ов) в areas после сверки: 17a93756 feat: add managed generated files TTL cleanup … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 534 коммит(ов) в areas после сверки: 8a547b55 docs(kb): update after merge 680b3f66-babc-47f4-a547-e0728f03d58c … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 536 коммит(ов) в areas после сверки: 198c49d4 fix(ui): finish task machine loading states … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 42 коммит(ов) в areas после сверки: 0358a806 feat: add resumable legacy storage migration backend … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 2 коммит(ов) в areas после сверки: 0358a806 feat: add resumable legacy storage migration backend … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ⚠ 4 коммит(ов) в areas после сверки: 0358a806 feat: add resumable legacy storage migration backend … |
@@ -39,7 +39,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-20 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-19 | ⚠ 6 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-20 | ⚠ 19 коммит(ов) в areas после сверки: 0358a806 feat: add resumable legacy storage migration backend … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-23 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-23 | ⚠ 2 коммит(ов) в areas после сверки: 198c49d4 fix(ui): finish task machine loading states … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-22, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -57,8 +57,9 @@
 
 ## Журнал сессий
 
-Всего записей: 316. Последние:
+Всего записей: 317. Последние:
 
+- [2026-08-24-192-168-1-9-task-machines-current-load.md](log/2026-08-24-192-168-1-9-task-machines-current-load.md) — task-machines-current-load
 - [2026-08-24-192-168-1-9-legacy-storage-migration.md](log/2026-08-24-192-168-1-9-legacy-storage-migration.md) — legacy-storage-migration
 - [2026-08-23-alexeys-macbook-air-2-managed-production-staging.md](log/2026-08-23-alexeys-macbook-air-2-managed-production-staging.md) — managed-production-staging
 - [2026-08-23-alexeys-macbook-air-2-environment-run-manifests-git-credentials.md](log/2026-08-23-alexeys-macbook-air-2-environment-run-manifests-git-credentials.md) — environment-run-manifests-git-credentials
@@ -68,7 +69,6 @@
 - [2026-08-23-2470-com-generated-ttl-cleanup.md](log/2026-08-23-2470-com-generated-ttl-cleanup.md) — generated-ttl-cleanup
 - [2026-08-22-alexeys-macbook-air-2-task-preparation-recovery.md](log/2026-08-22-alexeys-macbook-air-2-task-preparation-recovery.md) — task-preparation-recovery
 - [2026-08-22-alexeys-macbook-air-2-task-preparation-project-model.md](log/2026-08-22-alexeys-macbook-air-2-task-preparation-project-model.md) — task-preparation-project-model
-- [2026-08-22-alexeys-macbook-air-2-project-machine-directories.md](log/2026-08-22-alexeys-macbook-air-2-project-machine-directories.md) — project-machine-directories
 
 ## Исторические планы
 
