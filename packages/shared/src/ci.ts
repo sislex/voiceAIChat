@@ -1103,6 +1103,8 @@ export interface TaskImprovement {
   status: ImprovementStatus
   title: string
   description: string
+  acceptanceCriteria: string
+  createdTaskId: string | null
   fingerprint: string
   evidence: string[]
   occurrences: number
@@ -1110,6 +1112,19 @@ export interface TaskImprovement {
   isNew: boolean
   createdAt: number
   updatedAt: number
+}
+
+export interface CreateTaskFromImprovementInput {
+  columnId: string
+  title: string
+  description: string
+  acceptanceCriteria: string
+}
+
+export interface CreateTaskFromImprovementResult {
+  task: import('./projects.js').Task
+  improvement: TaskImprovement
+  created: boolean
 }
 
 export interface CiCommandSuggestion {

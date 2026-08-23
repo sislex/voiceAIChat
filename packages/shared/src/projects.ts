@@ -587,6 +587,8 @@ export interface Task {
   columnId: string
   type: WorkItemType
   parentId: string | null
+  /** Исходная задача для карточки, созданной из предложения улучшения. */
+  sourceTaskId?: string | null
   title: string
   description: string
   acceptanceCriteria: string

@@ -4,7 +4,7 @@ import { screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import type { Board, Task } from '@shared/projects'
-import type { CiRunSummary, CiTaskReport } from '@shared/ci'
+import type { CiRunSummary, CiTaskReport, TaskImprovement } from '@shared/ci'
 import { EMPTY_CI_USAGE_TOTALS } from '@shared/ci'
 import { TaskModal, type TaskModalProps } from './TaskModal'
 import '../../styles/app.css'
@@ -35,6 +35,54 @@ function props(over: Partial<TaskModalProps> = {}): TaskModalProps {
 function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
   return { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }
 }
+
+describe('TaskModal — создание задачи из улучшения', () => {
+  const improvement: TaskImprovement = {
+    id: 'i1', taskId: 't1', projectId: 'p1', runId: null, stepId: null, source: 'development',
+    status: 'new', title: 'Улучшить ретраи', description: 'Подробности', acceptanceCriteria: 'Ошибка видима',
+    createdTaskId: null, fingerprint: 'retry', evidence: [], occurrences: 1,
+    suggestedAction: 'create_chatai_task', isNew: true, createdAt: 1, updatedAt: 1
+  }
+
+  it('открывает стандартный предзаполненный черновик и создаёт только после подтверждения', async () => {
+    const ci = createFakeCi()
+    ci.listTaskImprovements = vi.fn(async () => [improvement])
+    ci.createTaskFromImprovement = vi.fn(async (_id, input) => ({
+      created: true,
+      task: mkTask({ id: 'created', columnId: input.columnId, title: input.title, description: input.description, acceptanceCriteria: input.acceptanceCriteria, sourceTaskId: 't1' }),
+      improvement: { ...improvement, status: 'implemented' as const, createdTaskId: 'created', isNew: false }
+    }))
+    window.ci = ci
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Создать задачу ChatAI' }))
+    const draft = screen.getByRole('dialog', { name: 'Создание задачи' })
+    expect(draft).toBeInTheDocument()
+    expect(within(draft).getByRole('textbox', { name: 'Заголовок задачи' })).toHaveValue('Улучшить ретраи')
+    expect(within(draft).getByText('Подробности')).toBeInTheDocument()
+    expect(ci.createTaskFromImprovement).not.toHaveBeenCalled()
+    await userEvent.selectOptions(within(draft).getByRole('combobox', { name: 'Статус' }), 'c1')
+    await userEvent.click(screen.getByRole('button', { name: 'Создать задачу' }))
+    await waitFor(() => expect(ci.createTaskFromImprovement).toHaveBeenCalledTimes(1))
+  })
+
+  it('показывает только допустимые статусные действия', async () => {
+    const ci = createFakeCi()
+    ci.listTaskImprovements = vi.fn(async () => [
+      improvement,
+      { ...improvement, id: 'i2', status: 'accepted' as const, isNew: false },
+      { ...improvement, id: 'i3', status: 'rejected' as const, isNew: false },
+      { ...improvement, id: 'i4', status: 'implemented' as const, isNew: false, createdTaskId: 't2' }
+    ])
+    window.ci = ci
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
+    expect(await screen.findAllByRole('button', { name: 'Принять' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Отклонить' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Реализовано' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Создать задачу ChatAI' })).toHaveLength(2)
+  })
+})
 
 describe('TaskModal — связанный чат создаётся при открытии карточки', () => {
   beforeEach(() => { window.ci = createFakeCi() })

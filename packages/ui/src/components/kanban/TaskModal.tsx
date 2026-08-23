@@ -239,13 +239,41 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   }
   const [activeTab, setActiveTab] = useState<TaskTab>(defaultTab)
   const [improvements, setImprovements] = useState<TaskImprovement[]>([])
+  const [improvementsError, setImprovementsError] = useState<string | null>(null)
+  const [improvementPending, setImprovementPending] = useState<string | null>(null)
+  const [improvementDraft, setImprovementDraft] = useState<{ improvement: TaskImprovement; task: Task } | null>(null)
+  const errorMessage = (error: unknown): string => error instanceof Error ? error.message : 'Не удалось выполнить действие'
   const loadImprovements = (): void => {
     if (props.draft || !window.ci?.listTaskImprovements) return
-    void window.ci.listTaskImprovements(task.projectId, task.id).then(setImprovements).catch(() => {})
+    setImprovementsError(null)
+    void window.ci.listTaskImprovements(task.projectId, task.id).then(setImprovements).catch((error) => setImprovementsError(errorMessage(error)))
   }
   useEffect(loadImprovements, [task.id, props.ciSummary?.status])
   const setImprovementStatus = (id: string, status: ImprovementStatus): void => {
-    void window.ci!.updateImprovementStatus(id, status).then((next) => setImprovements((all) => all.map((item) => item.id === id ? next : item))).catch(() => {})
+    if (improvementPending) return
+    setImprovementPending(id); setImprovementsError(null)
+    void window.ci!.updateImprovementStatus(id, status)
+      .then((next) => setImprovements((all) => all.map((item) => item.id === id ? next : item)))
+      .catch((error) => setImprovementsError(errorMessage(error)))
+      .finally(() => setImprovementPending(null))
+  }
+  const openImprovementDraft = (improvement: TaskImprovement): void => {
+    const available = board.columns.filter((column) => !column.hidden)
+    setImprovementsError(null)
+    setImprovementDraft({ improvement, task: { ...task, id: `improvement-draft-${improvement.id}`, columnId: '', type: 'task', parentId: null, sourceTaskId: task.id, title: improvement.title, description: improvement.description, acceptanceCriteria: improvement.acceptanceCriteria || improvement.evidence.join('\n'), labels: [], skills: [], storyPoints: null, dueDate: null, flagged: false, seq: 0, position: 0, createdAt: Date.now(), updatedAt: Date.now(), assignee: null } })
+    if (!available.length) setImprovementsError('В проекте нет доступных колонок')
+  }
+  const saveImprovementDraft = async (): Promise<void> => {
+    if (!improvementDraft || improvementPending) return
+    const { improvement, task: draftTask } = improvementDraft
+    if (!draftTask.columnId) { setImprovementsError('Выберите исходную колонку'); return }
+    setImprovementPending(improvement.id); setImprovementsError(null)
+    try {
+      const result = await window.ci!.createTaskFromImprovement(improvement.id, { columnId: draftTask.columnId, title: draftTask.title, description: draftTask.description, acceptanceCriteria: draftTask.acceptanceCriteria })
+      setImprovements((all) => all.map((item) => item.id === improvement.id ? result.improvement : item))
+      setImprovementDraft(null)
+    } catch (error) { setImprovementsError(errorMessage(error)) }
+    finally { setImprovementPending(null) }
   }
   const [qaStageRuns, setQaStageRuns] = useState<Partial<Record<QaRunStage, AnyQaStageRun[]>>>({})
   useEffect(() => {
@@ -442,7 +470,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         value={task.columnId}
         onChange={(e) => props.onMoveToColumn(task.id, e.target.value)}
       >
-        {board.columns.map((c) => (
+        {props.draft && !task.columnId && <option value="">Выберите колонку</option>}
+        {board.columns.filter((c) => !c.hidden).map((c) => (
           <option key={c.id} value={c.id}>{c.name}</option>
         ))}
       </select>
@@ -964,8 +993,19 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         {!props.draft && <>
         <section className="task-tab-panel" data-testid="task-timeline-panel" hidden={activeTab !== 'timeline'}>{activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}</section>
         <section className="task-tab-panel" data-testid="task-improvements-panel" hidden={activeTab !== 'improvements'}>
+          {improvementsError && <p role="alert" className="task-improvements-error">{improvementsError}</p>}
           {!improvements.length ? <div className="task-improvements-empty"><h3>Улучшений пока нет</h3><p>После авто-рана здесь появятся найденные возможности сделать процесс надёжнее.</p></div> : <div className="task-improvements">
-            {improvements.map((item) => <details key={item.id} className="task-improvement"><summary><strong>{item.title}</strong> · {item.status} · {item.source} · {item.stepId ? `автошаг ${item.stepId}` : item.runId ? `ран ${item.runId}` : 'системный сбой'} {item.isNew && <span>Новое</span>}</summary><Markdown>{item.description}</Markdown><div className="task-improvement-actions"><Button size="sm" variant="primary" onClick={() => setImprovementStatus(item.id, 'accepted')}>Принять</Button><Button size="sm" onClick={() => setImprovementStatus(item.id, 'rejected')}>Отклонить</Button>{item.suggestedAction === 'create_chatai_task' && <Button size="sm" onClick={() => setImprovementStatus(item.id, 'accepted')}>Создать задачу ChatAI</Button>}{item.suggestedAction === 'reconfigure_commands' && <Button size="sm" onClick={() => setImprovementStatus(item.id, 'accepted')}>Предложить перенастройку команд</Button>}{item.suggestedAction === 'support_ticket' && <Button size="sm" onClick={() => setImprovementStatus(item.id, 'accepted')}>Подготовить тикет техподдержки</Button>}{item.status === 'accepted' && <Button size="sm" onClick={() => setImprovementStatus(item.id, 'implemented')}>Реализовано</Button>}</div></details>)}
+            {improvements.map((item) => {
+              const pending = improvementPending === item.id
+              const blocked = improvementPending !== null
+              return <details key={item.id} className="task-improvement"><summary><strong>{item.title}</strong> · {item.status} · {item.source} · {item.stepId ? `автошаг ${item.stepId}` : item.runId ? `ран ${item.runId}` : 'системный сбой'} {item.isNew && <span>Новое</span>}</summary><Markdown>{item.description}</Markdown><div className="task-improvement-actions">
+                {item.status === 'new' && <><Button size="sm" variant="primary" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Принять</Button><Button size="sm" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'rejected')}>Отклонить</Button></>}
+                {item.suggestedAction === 'create_chatai_task' && (item.status === 'new' || item.status === 'accepted') && !item.createdTaskId && <Button size="sm" loading={pending} disabled={blocked} onClick={() => openImprovementDraft(item)}>Создать задачу ChatAI</Button>}
+                {item.suggestedAction === 'reconfigure_commands' && item.status === 'new' && <Button size="sm" disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Предложить перенастройку команд</Button>}
+                {item.suggestedAction === 'support_ticket' && item.status === 'new' && <Button size="sm" disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Подготовить тикет техподдержки</Button>}
+                {item.status === 'accepted' && <Button size="sm" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'implemented')}>Реализовано</Button>}
+              </div></details>
+            })}
           </div>}
         </section>
         <section className="task-tab-panel" data-testid="task-preparation-panel" hidden={activeTab !== 'preparation'}>{preparationVisible && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} onStart={props.onStartPreparation} onRetry={props.onRetryPreparation} llmAccess={props.llmAccess} llmEngines={props.llmEngines} onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation} />}</section>
@@ -1041,6 +1081,24 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </section></>}
       </div>
     </Dialog>
+    {improvementDraft && <TaskModal
+      task={improvementDraft.task}
+      board={board}
+      projectName={props.projectName}
+      members={props.members}
+      draft
+      onUpdate={(_id, fields) => setImprovementDraft((current) => current ? { ...current, task: { ...current.task, ...fields } } : null)}
+      onDelete={() => {}}
+      onMoveToColumn={(_id, columnId) => setImprovementDraft((current) => current ? { ...current, task: { ...current.task, columnId } } : null)}
+      onOpenTask={() => {}}
+      onClose={() => { if (!improvementPending) setImprovementDraft(null) }}
+      detailsExtra={<p>Выберите доступную исходную колонку и подтвердите создание.</p>}
+      footer={<>
+        {improvementsError && <span role="alert">{improvementsError}</span>}
+        <Button onClick={() => setImprovementDraft(null)} disabled={improvementPending !== null}>Отмена</Button>
+        <Button variant="primary" loading={improvementPending === improvementDraft.improvement.id} disabled={improvementPending !== null || !improvementDraft.task.columnId || !improvementDraft.task.title.trim()} onClick={() => void saveImprovementDraft()}>Создать задачу</Button>
+      </>}
+    />}
     <PromptBuilder {...aiAssist.popupProps} />
     </>
   )
