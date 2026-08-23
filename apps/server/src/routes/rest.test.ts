@@ -1064,6 +1064,27 @@ describe('REST: GET /api/search — полнотекстовый поиск по
   })
 })
 
+describe('REST: задачи из предложений улучшений', () => {
+  it('создаёт атомарно, возвращает идемпотентный результат и отклоняет повторный переход', async () => {
+    const project = db.createProject(U, { name: 'P' })
+    const column = db.getBoard(U, project.id)!.columns[0]!
+    const source = db.createTask(U, project.id, { columnId: column.id, title: 'Source' })!
+    const improvement = db.upsertTaskImprovement({
+      projectId: project.id, taskId: source.id, runId: null, stepId: null, source: 'development',
+      title: 'Улучшить ретраи', description: 'Подробности', fingerprint: 'rest-retry',
+      evidence: ['Ошибка видима'], suggestedAction: 'create_chatai_task'
+    })
+    const payload = { columnId: column.id, title: 'Retry task', description: 'D', acceptanceCriteria: 'AC' }
+    const first = await inj({ method: 'POST', url: `/api/improvements/${improvement.id}/create-task`, payload })
+    const second = await inj({ method: 'POST', url: `/api/improvements/${improvement.id}/create-task`, payload })
+    expect(first.statusCode).toBe(200)
+    expect(first.json()).toMatchObject({ created: true, improvement: { status: 'implemented' } })
+    expect(second.json()).toMatchObject({ created: false, task: { id: first.json().task.id } })
+    const invalid = await inj({ method: 'PATCH', url: `/api/improvements/${improvement.id}`, payload: { status: 'accepted' } })
+    expect(invalid.statusCode).toBe(409)
+  })
+})
+
 describe('REST: машины настроек разговора', () => {
   it('обычный чат видит только личные машины, проектный — личные и проектные без дублей', async () => {
     db.createUser('owner', '', 'developer')

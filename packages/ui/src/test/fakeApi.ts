@@ -1093,6 +1093,7 @@ export function createFakeCi(): FakeCi {
     listTaskImprovements: async () => [],
     listProjectImprovementTasks: async () => [],
     updateImprovementStatus: async () => { throw new Error('improvement not found') },
+    createTaskFromImprovement: async () => { throw new Error('improvement not found') },
     cancelRun: async () => ({ ok: true }),
     dequeueRun: async (rid): Promise<CiQueueRemovalResult> => {
       const d = runs.get(rid)

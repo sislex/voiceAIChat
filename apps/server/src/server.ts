@@ -1260,7 +1260,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     kbUpdate: opts.ciKbUpdate ?? ciModelHooks.kbUpdate,
     qaPreparation: (args) => { void launchQaPreparation(args) }
   })
-  registerCiRoutes(app, db, ciRunManager, agentRegistry)
+  registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId))
   const featurePreviews = new FeaturePreviewManager({
     db,
     executor: ciExecutor,

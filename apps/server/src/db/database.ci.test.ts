@@ -660,6 +660,38 @@ describe('ci: расход модели и семантика входных т�
   })
 })
 
+describe('ci: создание задачи из предложения улучшения', () => {
+  function improvement() {
+    const { p, col, task } = project()
+    const item = db.upsertTaskImprovement({
+      projectId: p.id, taskId: task.id, runId: null, stepId: null, source: 'development',
+      title: 'Улучшить ретраи', description: 'Подробности', fingerprint: 'retry',
+      evidence: ['Ошибка видима пользователю'], suggestedAction: 'create_chatai_task'
+    })
+    return { p, col, task, item }
+  }
+
+  it('атомарно создаёт связанную задачу и повторно возвращает её', () => {
+    const { p, col, task, item } = improvement()
+    const input = { columnId: col.id, title: 'Новая задача', description: 'Описание', acceptanceCriteria: 'Критерий' }
+    const first = db.createTaskFromImprovement('alice', item.id, input)!
+    const second = db.createTaskFromImprovement('alice', item.id, { ...input, title: 'Дубликат' })!
+    expect(first.created).toBe(true)
+    expect(second).toMatchObject({ created: false, task: { id: first.task.id, sourceTaskId: task.id }, improvement: { status: 'implemented', createdTaskId: first.task.id } })
+    expect(db.getBoard('alice', p.id)!.tasks.filter((candidate) => candidate.sourceTaskId === task.id)).toHaveLength(1)
+    expect(db.listProjectImprovementTaskIds('alice', p.id)).toEqual([])
+  })
+
+  it('проверяет матрицу переходов и откатывает недопустимое создание', () => {
+    const { p, task, item } = improvement()
+    expect(db.updateTaskImprovementStatus('alice', item.id, 'accepted')!.status).toBe('accepted')
+    expect(() => db.updateTaskImprovementStatus('alice', item.id, 'rejected')).toThrow('недопустим')
+    expect(() => db.createTaskFromImprovement('alice', item.id, { columnId: 'missing', title: 'X', description: '', acceptanceCriteria: '' })).toThrow('колонка')
+    expect(db.listTaskImprovements('alice', p.id, task.id)[0]).toMatchObject({ status: 'accepted', createdTaskId: null })
+    expect(db.getBoard('alice', p.id)!.tasks).toHaveLength(1)
+  })
+})
+
 describe('ci: временная шкала задачи', () => {
   it('разделяет очередь, активную работу и awaiting_input и не считает паузу активной', () => {
     const { p, task } = project()
