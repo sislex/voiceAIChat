@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-22 | ⚠ 2 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-22 | ⚠ 11 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 27 коммит(ов) в areas после сверки: 22b413d4 feat(releases): add managed production environments … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 530 коммит(ов) в areas после сверки: 43050611 fix(agent): support credentials on headless Linux … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 531 коммит(ов) в areas после сверки: 7b97f224 docs(kb): update after merge 9d031a12-ac32-43a5-8143-219f9caffd09 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 40 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ⚠ 2 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
