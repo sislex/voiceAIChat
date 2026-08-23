@@ -1,4 +1,4 @@
-import { isMachineStoragePathAllowed, managedEnvironmentPaths, type ManagedEnvironmentPaths } from '@voicechat/shared'
+import { isMachineStoragePathAllowed, managedEnvironmentPaths, parseEnvironmentManifest, type EnvironmentManifest, type ManagedEnvironmentPaths } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { ProductionTarget, ReleaseManager } from './releaseManager.js'
 
@@ -26,7 +26,7 @@ export class ManagedEnvironmentResolver {
     const assignment=machine.directories?.[kind]
     if(!assignment||assignment.override||assignment.path!==paths.root)throw new Error(`Managed-каталог ${kind} не является каноническим`)
     if(!project.productionDeployCommand?.trim()||!project.productionHealthCheckCommand?.trim())throw new Error('Deploy-команда или health-check не настроены')
-    const target:ProductionTarget={projectId,agentId:machine.agentId,path:paths.repository,prepareCheckout:true,gitUrl:project.gitUrl,expectedRepository:project.gitUrl,baseBranch:project.ciBaseBranch||'main',testCommand:project.testCommand?.trim()||'npm run typecheck && npm run test',deployCommand:project.productionDeployCommand,healthCheckCommand:project.productionHealthCheckCommand,limits:project.releaseTimeouts,mode:'managed',managedRoot:paths.root,managedDirectories:[paths.app,paths.config,paths.logs,paths.artifacts,paths.temporary],managedManifestPath:paths.manifest,managedManifest:{formatVersion:1,projectId,kind,machineId:machine.agentId,storageId:machine.storageId}}
+    const target:ProductionTarget={projectId,agentId:machine.agentId,path:paths.repository,prepareCheckout:true,gitUrl:project.gitUrl,expectedRepository:project.gitUrl,baseBranch:project.ciBaseBranch||'main',testCommand:project.testCommand?.trim()||'npm run typecheck && npm run test',deployCommand:project.productionDeployCommand,healthCheckCommand:project.productionHealthCheckCommand,limits:project.releaseTimeouts,mode:'managed',managedRoot:paths.root,managedDirectories:[paths.app,paths.config,paths.logs,paths.artifacts,paths.temporary],managedManifestPath:paths.manifest,managedManifest:parseEnvironmentManifest({formatVersion:1,projectId,kind,machineId:machine.agentId,storageId:machine.storageId,createdAt:new Date(project.createdAt).toISOString()})}
     return {target,paths,storageId:machine.storageId,storageRoot:machine.storageRoot}
   }
 

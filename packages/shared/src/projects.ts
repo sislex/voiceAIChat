@@ -284,6 +284,15 @@ export function recommendedTaskTestEnvironmentPath(projectId: string, taskId: st
   return `projects/${validateStorageRelativePath(projectId)}/tasks/${validateStorageRelativePath(taskId)}/environments/test`
 }
 
+export interface ManagedRunManifestPaths { root: string; run: string; report: string }
+/** Canonical immutable manifest directory inside a managed environment. */
+export function managedRunManifestPaths(environmentRoot: string, runId: string, platform: string): ManagedRunManifestPaths {
+  const root = normalizeMachineStoragePath(environmentRoot, platform)
+  const separator = machinePathSeparator(platform)
+  const runRoot = `${root}${separator}runs${separator}${validateStorageRelativePath(runId)}`
+  return { root: runRoot, run: `${runRoot}${separator}run.json`, report: `${runRoot}${separator}report.json` }
+}
+
 export interface ManagedCiWorkspacePaths {
   environment: string
   repoRoot: string
