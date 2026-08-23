@@ -124,9 +124,9 @@ describe('MachineStatus — добавление машины прямо в по
 describe('MachineStatus — устаревший агент и обновление', () => {
   it('у устаревшего агента есть значок, кнопка обновления и копирование команды', () => {
     render(
-      <MachineStatus agents={[agent({ version: '0.1.0' })]} onSetPolicy={vi.fn()} onUpdateAgent={vi.fn()} onClose={vi.fn()} />
+      <MachineStatus agents={[agent({ version: '0.11.1' })]} onSetPolicy={vi.fn()} onUpdateAgent={vi.fn()} onClose={vi.fn()} />
     )
-    expect(screen.getByText(/устарел, есть v/)).toBeInTheDocument()
+    expect(screen.getByText('устарел, есть v0.11.2')).toBeInTheDocument()
     expect(screen.getByLabelText('Обновить агента на Мак')).toBeInTheDocument()
     expect(screen.getByLabelText('Скопировать команду обновления для Мак')).toBeInTheDocument()
   })

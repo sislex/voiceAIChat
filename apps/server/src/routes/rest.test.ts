@@ -931,7 +931,7 @@ describe('REST: утилиты машины (exec/fs)', () => {
   it('GET /api/agents/version публичен и отдаёт версию', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/agents/version' }) // без токена
     expect(res.statusCode).toBe(200)
-    expect(typeof res.json().version).toBe('string')
+    expect(res.json()).toEqual({ version: '0.11.2' })
   })
 })
 
