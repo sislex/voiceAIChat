@@ -3,7 +3,18 @@ import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { MergePanel } from './MergePanel'
 import { createFakeCi } from '../../test/fakeApi'
-import type { MergeRun } from '@shared/merge'
+import type { MergeMachinesResponse, MergeRun } from '@shared/merge'
+import type { CiTaskMachines } from '@shared/ci'
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason: unknown) => void } {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
 
 const mergeRun = (patch: Partial<MergeRun> = {}): MergeRun => ({
   id: 'run-1', projectId: 'p1', taskId: 't1', status: 'failed', triggeredBy: 'alexey', sourceBranch: 'CHAT-255', targetBranch: 'main',
@@ -28,6 +39,81 @@ describe('MergePanel', () => {
       { agentId: 'm1', name: 'MacBook', readiness: { ready: true, selectable: true, mode: 'managed' as const, code: 'ready' as const, message: 'Managed MachineStorage готово' } },
       { agentId: 'm2', name: 'Server', readiness: { ready: false, selectable: false, mode: 'managed' as const, code: 'machine_offline' as const, message: 'Машина не в сети' } }
     ], defaultAgentId: 'm1' }))
+  })
+
+  it('показывает skeleton и aria-busy до завершения первой загрузки', () => {
+    window.ci!.getTaskMachines = vi.fn(() => new Promise<CiTaskMachines>(() => {}))
+    window.ci!.getMergeMachines = vi.fn(() => new Promise<MergeMachinesResponse>(() => {}))
+
+    render(<MergePanel projectId="p1" taskId="t1" runId={null} canStart onStartMerge={vi.fn()} />)
+
+    expect(screen.getByTestId('merge-machines')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByTestId('merge-machines-skeleton-list')).toBeInTheDocument()
+    expect(screen.queryByTestId('merge-machines-empty')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('merge-machines-error')).not.toBeInTheDocument()
+  })
+
+  it('заменяет skeleton списком после согласованной загрузки', async () => {
+    const taskMachines = deferred<CiTaskMachines>()
+    const mergeMachines = deferred<MergeMachinesResponse>()
+    window.ci!.getTaskMachines = vi.fn(() => taskMachines.promise)
+    window.ci!.getMergeMachines = vi.fn(() => mergeMachines.promise)
+
+    render(<MergePanel projectId="p1" taskId="t1" runId={null} canStart onStartMerge={vi.fn()} />)
+    expect(screen.getByTestId('merge-machines-skeleton-list')).toBeInTheDocument()
+
+    taskMachines.resolve({
+      machines: [
+        { agentId: 'm1', name: 'MacBook', online: true, personal: true, project: false, projectDefault: false },
+        { agentId: 'm2', name: 'Server', online: false, personal: false, project: true, projectDefault: true }
+      ],
+      selectedAgentId: null,
+      unavailableSelection: null
+    })
+    mergeMachines.resolve({ machines: [
+      { agentId: 'm1', name: 'MacBook', readiness: { ready: true, selectable: true, mode: 'managed', code: 'ready', message: 'Готово' } },
+      { agentId: 'm2', name: 'Server', readiness: { ready: false, selectable: false, mode: 'managed', code: 'machine_offline', message: 'Машина не в сети' } }
+    ], defaultAgentId: 'm1' })
+
+    expect(await screen.findByRole('option', { name: /MacBook/ })).toBeInTheDocument()
+    expect(screen.queryByTestId('merge-machines-skeleton-list')).not.toBeInTheDocument()
+    expect(screen.getByTestId('merge-machines')).toHaveAttribute('aria-busy', 'false')
+    expect((screen.getByRole('option', { name: /Машина не в сети/ }) as HTMLOptionElement).disabled).toBe(true)
+  })
+
+  it('показывает подтверждённое пустое состояние только после успешной загрузки', async () => {
+    const taskMachines = deferred<CiTaskMachines>()
+    const mergeMachines = deferred<MergeMachinesResponse>()
+    window.ci!.getTaskMachines = vi.fn(() => taskMachines.promise)
+    window.ci!.getMergeMachines = vi.fn(() => mergeMachines.promise)
+
+    render(<MergePanel projectId="p1" taskId="t1" runId={null} canStart onStartMerge={vi.fn()} />)
+    expect(screen.queryByTestId('merge-machines-empty')).not.toBeInTheDocument()
+
+    taskMachines.resolve({ machines: [], selectedAgentId: null, unavailableSelection: null })
+    mergeMachines.resolve({ machines: [], defaultAgentId: null })
+
+    expect(await screen.findByTestId('merge-machines-empty')).toHaveTextContent('Нет доступных машин для merge')
+    expect(screen.queryByTestId('merge-machines-skeleton-list')).not.toBeInTheDocument()
+  })
+
+  it('показывает ошибку обязательного запроса и позволяет повторить загрузку', async () => {
+    window.ci!.getTaskMachines = vi.fn().mockRejectedValueOnce(new Error('network failed')).mockResolvedValue({
+      machines: [{ agentId: 'm1', name: 'MacBook', online: true, personal: true, project: false, projectDefault: false }],
+      selectedAgentId: null,
+      unavailableSelection: null
+    })
+
+    render(<MergePanel projectId="p1" taskId="t1" runId={null} canStart onStartMerge={vi.fn()} />)
+
+    const error = await screen.findByTestId('merge-machines-error')
+    expect(error).toHaveAttribute('role', 'alert')
+    expect(error).toHaveTextContent('Не удалось загрузить машины для merge')
+    expect(screen.queryByTestId('merge-machines-empty')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(await screen.findByRole('option', { name: /MacBook/ })).toBeInTheDocument()
+    expect(window.ci!.getTaskMachines).toHaveBeenCalledTimes(2)
   })
 
   it('запускает merge только на проверенной сервером машине', async () => {
