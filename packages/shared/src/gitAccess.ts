@@ -8,7 +8,7 @@ export type GitAccessCheck = 'unknown' | 'ok' | 'denied'
 export interface GitAccessWarning { code: 'instead_of'; message: string; originalUrl: string; effectiveUrl: string }
 export interface GitAccessStatus {
   configured: boolean
-  helperKind?: 'osxkeychain' | 'manager-core' | 'libsecret' | 'termux-file'
+  helperKind?: 'osxkeychain' | 'manager-core' | 'libsecret' | 'termux-file' | 'linux-file'
   account?: string
   checkedAt?: number
   readAccess: GitAccessCheck

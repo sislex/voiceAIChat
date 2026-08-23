@@ -15,17 +15,30 @@ const inputFor = (url: string, token?: string): string => {
   const path = new URL(url).pathname.replace(/^\//, '')
   return ['protocol=https', 'host=github.com', `path=${path}`, 'username=x-access-token', ...(token ? [`password=${token}`] : []), '', ''].join('\n')
 }
-const termuxFile = (): string => join(process.env.HOME || process.cwd(), '.voicechat', 'git-credentials')
+const credentialFile = (): string => join(process.env.HOME || process.cwd(), '.voicechat', 'git-credentials')
+const isFileHelper = (kind: GitAccessStatus['helperKind']): boolean => kind === 'termux-file' || kind === 'linux-file'
+type PermissionOps = { chmodSync(path: string, mode: number): void; statSync(path: string): { mode: number } }
+export const secureCredentialFile = (file = credentialFile(), ops: PermissionOps = { chmodSync, statSync }): boolean => {
+  try {
+    ops.chmodSync(dirname(file), 0o700)
+    ops.chmodSync(file, 0o600)
+    return (ops.statSync(dirname(file)).mode & 0o777) === 0o700 && (ops.statSync(file).mode & 0o777) === 0o600
+  } catch { return false }
+}
 const available = (name: string): boolean => !/is not a git command/i.test(git([name, '--help']).stderr || '')
 const helper = (): GitAccessStatus['helperKind'] | undefined => {
   if (process.env.TERMUX_VERSION || process.env.PREFIX?.includes('com.termux')) return 'termux-file'
   if (process.platform === 'darwin' && available('credential-osxkeychain')) return 'osxkeychain'
   if (process.platform === 'win32' && available('credential-manager-core')) return 'manager-core'
-  return available('credential-libsecret') ? 'libsecret' : undefined
+  if (available('credential-libsecret')) return 'libsecret'
+  return process.platform === 'linux' ? 'linux-file' : undefined
 }
 const configureHelper = (kind: NonNullable<GitAccessStatus['helperKind']>): boolean => {
-  if (kind === 'termux-file') mkdirSync(dirname(termuxFile()), { recursive: true, mode: 0o700 })
-  const value = kind === 'termux-file' ? `store --file=${termuxFile()}` : kind
+  if (isFileHelper(kind)) {
+    mkdirSync(dirname(credentialFile()), { recursive: true, mode: 0o700 })
+    chmodSync(dirname(credentialFile()), 0o700)
+  }
+  const value = isFileHelper(kind) ? `store --file=${credentialFile()}` : kind
   return git(['config', '--global', 'credential.helper', value]).status === 0
 }
 const account = (url: string): string | undefined => {
@@ -61,18 +74,15 @@ export function handleGitAccess(request: GitAccessRequest): GitAccessResult {
     if (!request.token) return { ok: false, code: 'token_missing', status: { ...base, lastErrorCode: 'token_missing' } }
     if (!kind || !configureHelper(kind)) return { ok: false, code: 'helper_unavailable', status: { ...base, lastErrorCode: 'helper_unavailable' } }
     if (git(['credential', 'approve'], inputFor(url, request.token)).status !== 0) return { ok: false, code: 'helper_unavailable', status: { ...base, lastErrorCode: 'helper_unavailable' } }
-    if (kind === 'termux-file') try {
-      chmodSync(termuxFile(), 0o600)
-      if ((statSync(termuxFile()).mode & 0o777) !== 0o600) throw new Error('mode')
-    } catch {
-      try { unlinkSync(termuxFile()) } catch {}
+    if (isFileHelper(kind) && !secureCredentialFile()) {
+      try { unlinkSync(credentialFile()) } catch {}
       return { ok: false, code: 'insecure_credential_file', status: { ...base, lastErrorCode: 'insecure_credential_file' } }
     }
     return { ok: true, status: { ...base, configured: true, account: account(url) ?? 'x-access-token' } }
   }
   if (request.operation === 'delete') {
     git(['credential', 'reject'], inputFor(url))
-    if (kind === 'termux-file') try { unlinkSync(termuxFile()) } catch {}
+    if (isFileHelper(kind)) try { unlinkSync(credentialFile()) } catch {}
     return { ok: true, status: empty(url) }
   }
   const read = git(['ls-remote', '--exit-code', url, 'HEAD']), checkedAt = Date.now()

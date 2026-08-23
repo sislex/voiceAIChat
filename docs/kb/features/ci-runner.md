@@ -302,10 +302,13 @@ Git-доступ настраивается отдельно для связки
 Агент принимает только чистый `https://github.com/<owner>/<repo>[.git]` без
 userinfo, query, fragment и постороннего хвоста. Git запускается напрямую через
 argv и stdin без shell, с отключёнными terminal prompt и интерактивным credential
-manager. На macOS, Windows и Linux выбирается доступный системный helper; в Termux
-используется отдельный файл `~/.voicechat/git-credentials`, каталог создаётся с
-режимом 0700, а файл после записи обязан иметь 0600, иначе credential удаляется и
-операция завершается ошибкой. Реализация — `apps/agent/src/gitAccess.ts`.
+manager. На macOS и Windows выбирается доступный системный helper. Linux сначала
+использует `libsecret`, а на headless-машине без него переходит на отдельный helper
+`linux-file`; Termux использует аналогичный `termux-file`. Оба файловых helper
+хранят credential только в `~/.voicechat/git-credentials`: каталог принудительно
+получает режим 0700, файл — 0600; если права нельзя установить или проверить,
+credential удаляется и операция завершается `insecure_credential_file`.
+Реализация — `apps/agent/src/gitAccess.ts`.
 
 Проверка сначала выполняет `git ls-remote --exit-code <url> HEAD`, затем
 `git push --dry-run <url> <refspec>` и возвращает раздельные `readAccess` и
