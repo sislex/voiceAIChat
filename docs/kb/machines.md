@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-23
-checked: c33c6896
+checked: a008ec0e
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -9,12 +9,14 @@ areas:
   - apps/server/src/db/database.ts
   - apps/server/src/db/schema.ts
   - apps/server/src/mcp
+  - apps/server/src/manifests.ts
   - apps/server/src/routes/agents.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/routes/rest.ts
   - apps/server/src/preview
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/ipc.ts
+  - packages/shared/src/manifests.ts
   - packages/shared/src/projects.ts
   - packages/shared/src/protocol.ts
   - packages/shared/src/version.ts
@@ -783,6 +785,23 @@ manifest; legacy-записи без managed metadata не мигрируютс�
 Новый CI-workspace при наличии storage машины живёт в стабильном
 `projects/<projectId>/tasks/<taskId>/environments/test/temporary/repository/<taskKey>`;
 повторный ран той же задачи переиспользует этот путь. Если storage ещё не настроен,
-раннер продолжает использовать legacy `project_machines.reposRoot`. Полный lifecycle
-production-переноса, manifest-файлы `run.json`/`report.json`, TTL-очистка `.generated`
-и явный мастер миграции старых данных пока не реализованы.
+раннер продолжает использовать legacy `project_machines.reposRoot`.
+
+Общие типизированные контракты manifest format version 1 находятся в
+`packages/shared/src/manifests.ts`. `environment.json` фиксирует канонические project,
+необязательный task, kind, machine/storage identity и время создания; task обязателен
+для test/preview и запрещён для production/staging. Для каждого типа запуска общий
+контракт задаёт неизменяемый `runs/<runId>/run.json` и терминальный `report.json`, а
+`managedRunManifestPaths` строит их платформенно корректные пути. Парсеры используют
+allowlist полей, проверяют версию, UTC-время, commit SHA, статусы и безопасные
+относительные artifact paths; чтение различает absent, corrupt, unsupported и conflict.
+
+Серверный publisher в `apps/server/src/manifests.ts` сначала валидирует каноническое
+значение, подтверждает уже существующий эквивалентный файл, а новый публикует через
+уникальный temp-файл в целевом каталоге и rename с контрольным перечитыванием. Уже
+существующий повреждённый, будущей версии или конфликтующий manifest не
+перезаписывается. Сейчас environment manifest материализуется для managed production,
+staging и preview. Run/report writer подключён к preview lifecycle; development, QA,
+merge и release принимаются shared-контрактом, но их менеджеры эти два файла пока не
+публикуют. TTL-очистка `.generated` и явный мастер миграции старых данных также не
+реализованы.
