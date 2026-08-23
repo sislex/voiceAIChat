@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-08-22
-checked: c08b50f0
+updated: 2026-08-23
+checked: a008ec0e
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -265,14 +265,18 @@ DOM-контейнер, фокус и пользовательское раск�
 
 ## Git-транспорт CI-машины MacBook
 
-Диагностика публикации ветки CHAT-246 зафиксировала разные GitHub-учётные данные
-для двух транспортов: HTTPS через macOS Keychain выбирал аккаунт `StimkaT` и
-получал HTTP 403, записи `sislex` в Keychain не было. Работоспособным путём для
-этой CI-машины оказался SSH deploy key: он аутентифицировался для репозитория
-`sislex/voiceAIChat`, а dry-run push прошёл при явном URL
-`ssh://git@github.com/sislex/voiceAIChat.git`. Это операционная привязка машины,
-а не общий контракт раннера; при повторной диагностике важно проверять явный URL,
-поскольку глобальный `url.*.insteadof` может переписать scp-подобный SSH URL.
+На этой машине `/opt/homebrew/bin/git` использует кастомный exec-path
+`~/.local/git-runtime/libexec/git-core`, в котором отсутствует
+`git-credential-osxkeychain`; системный helper при этом находится в
+`/Library/Developer/CommandLineTools/usr/libexec/git-core`. Поэтому короткое
+`credential.helper=osxkeychain` не находилось именно активным Git, хотя helper был
+установлен. Глобальная настройка абсолютного пути к системному helper восстановила
+HTTPS credential flow и успешный dry-run push. Это операционная конфигурация этой
+машины, а не переносимый дефолт раннера: `apps/agent/src/gitAccess.ts` по-прежнему
+проверяет helper через exec-path активного Git и при configure записывает короткое
+имя. При похожем сбое надо сопоставить `git --exec-path`, фактический путь helper и
+`git config --show-origin --get-all credential.helper`; отдельно диагностика
+`insteadOf` показывает, не был ли HTTPS URL переписан на другой транспорт.
 
 ## HTTPS Git credential связки проекта и машины
 
