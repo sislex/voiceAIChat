@@ -13,6 +13,8 @@ import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
 import { registerPreviewProxy } from './routes/previewProxy.js'
 import { registerAgentRoutes } from './routes/agents.js'
+import { StorageMigrationManager } from './storageMigration/manager.js'
+import { registerStorageMigrationRoutes } from './storageMigration/routes.js'
 import { registerAdminRoutes } from './routes/admin.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerQaRoutes } from './routes/qa.js'
@@ -338,6 +340,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     agentApp: opts.config.agentAppPath,
     desktopApp: opts.config.desktopAppPath
   })
+  const storageMigrations = new StorageMigrationManager(join(opts.config.dataDir, 'storage-migrations.json'), {
+    list: (machineId, path) => agentRegistry.fsList(machineId, path),
+    read: (machineId, path) => agentRegistry.fsRead(machineId, path),
+    write: (machineId, path, dataBase64) => agentRegistry.fsWrite(machineId, path, dataBase64),
+    mkdir: (machineId, path) => agentRegistry.fsMkdir(machineId, path),
+    rename: (machineId, from, to) => agentRegistry.fsRename(machineId, from, to),
+    deleteFile: (machineId, path) => agentRegistry.fsDeleteFileSafe(machineId, path)
+  })
+  registerStorageMigrationRoutes(app, db, agentRegistry, storageMigrations)
   const mcpSecret = randomBytes(16).toString('hex')
   const remoteFileBroker = new RemoteFileBroker()
   const deployTrigger = opts.deployTrigger ?? (opts.config.deployApiSocket
