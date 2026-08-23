@@ -898,14 +898,15 @@ describe('TaskModal — подготовка к разработке', () => {
     finishedAt: status === 'running' ? null : 2, canRetry: status !== 'running', canCancel: status === 'running', ...over
   })
 
-  it('показывает проектную LLM без отдельного выбора, а активный ран открывает вкладку с фактической парой', async () => {
+  it('позволяет выбрать машину и LLM, а активный ран показывает фактический снимок', async () => {
+    window.ci!.getTaskMachines = vi.fn(async () => ({ machines: [{ agentId: 'm1', name: 'MacBook', online: true, canUse: true, personal: true, project: true, projectDefault: true }], selectedAgentId: null, unavailableSelection: null, effectiveAgentId: 'm1' }))
     const onStartPreparation = vi.fn().mockResolvedValue(run('running'))
-    const { unmount } = render(<TaskModal {...props({ board: preparationBoard, initialTab: 'preparation', onStartPreparation })} />)
+    const { unmount } = render(<TaskModal {...props({ board: preparationBoard, initialTab: 'preparation', onStartPreparation })} llmAccess={[]} llmEngines={[{ id: 'claude-local', name: 'Claude local', kind: 'claude', isDefault: true }]} />)
     expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toBeInTheDocument()
-    expect(await screen.findByText(/Подготовка использует модель проекта:/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('Движок подготовки')).not.toBeInTheDocument()
+    expect(await screen.findByLabelText('Машина подготовки')).toHaveValue('m1')
+    expect(screen.getByLabelText('Модель подготовки')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Запустить подготовку' }))
-    await waitFor(() => expect(onStartPreparation).toHaveBeenCalledWith('t1', expect.any(Object)))
+    await waitFor(() => expect(onStartPreparation).toHaveBeenCalledWith('t1', expect.objectContaining({ machineId: 'm1', provider: 'claude' })))
     unmount()
 
     render(<TaskModal {...props({
