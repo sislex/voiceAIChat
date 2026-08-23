@@ -28,6 +28,7 @@ let repoMissing = false
 let emptyModelWork = false
 /** Локальные правки в рабочей копии: шаг CLONE отвечает на них exit 66, как боевой. */
 let dirtyWorkspace = false
+let syncFailure: 'status' | 'fetch' | 'checkout' | 'reset' | null = null
 let onModelSend: (() => void) | null = null
 /** Снять состояние доски ровно в момент шага (после ответа ран может успеть закончиться). */
 let onExec: ((script: string) => void) | null = null
@@ -84,6 +85,7 @@ const ciExecutor: CommandExecutor = {
     if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
     if (req.script.includes('MachineStorage недоступен') && failManagedBootstrap) return { exitCode: 73, timedOut: false }
     if (req.script.includes('Рабочая копия содержит локальные изменения') && dirtyWorkspace) return { exitCode: 66, timedOut: false }
+    if (syncFailure && req.script.includes('fetch origin main')) return { exitCode: 1, timedOut: false }
     // Боевой шаг клонирования: существующая копия с правками → exit 66.
     if (req.script === 'CLONE') return { exitCode: dirtyWorkspace ? 66 : 0, timedOut: false }
     // Падение шага «оставляет» в копии правки модели — как в реальном ране.
@@ -109,6 +111,7 @@ beforeEach(async () => {
   repoMissing = false
   emptyModelWork = false
   dirtyWorkspace = false
+  syncFailure = null
   onModelSend = null
   onExec = null
   modelGate = null
@@ -251,7 +254,26 @@ describe('ci run manager', () => {
     expect(scripts).toContain('CLONE')
   })
 
-  it('dirty managed checkout останавливает ран до clone с предметной ошибкой', async () => {
+  it('синхронизирует существующий чистый checkout с origin/main без git pull', async () => {
+    const { project, task, agent } = setup()
+    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('success')
+
+    const prep = scripts[0]
+    const statusAt = prep.indexOf('status --porcelain --untracked-files=all')
+    const fetchAt = prep.indexOf('fetch origin main')
+    const checkoutAt = prep.indexOf('checkout main')
+    const resetAt = prep.indexOf('reset --hard origin/main')
+    expect(statusAt).toBeGreaterThan(-1)
+    expect(fetchAt).toBeGreaterThan(statusAt)
+    expect(checkoutAt).toBeGreaterThan(fetchAt)
+    expect(resetAt).toBeGreaterThan(checkoutAt)
+    expect(prep).not.toContain('git pull')
+  })
+
+  it.each(['tracked', 'untracked'])('%s dirty managed checkout останавливает ран до синхронизации', async () => {
     const { project, task, agent } = setup()
     db.saveMachineStorage('admin', agent.id, '/storage', 1)
     dirtyWorkspace = true
@@ -260,8 +282,24 @@ describe('ci run manager', () => {
     const detail = await waitRun(runId)
 
     expect(detail.run.status).toBe('failed')
-    expect(scripts[0]).toContain('Рабочая копия содержит локальные изменения')
+    expect(scripts[0]).toContain('status --porcelain --untracked-files=all')
+    expect(scripts[0].indexOf('Рабочая копия содержит локальные изменения')).toBeLessThan(scripts[0].indexOf('fetch origin main'))
+    expect(scripts[0]).not.toContain('git clean')
     expect(scripts).not.toContain('CLONE')
+    expect(modelRequests).toHaveLength(0)
+  })
+
+  it.each(['fetch', 'checkout', 'reset'] as const)('ошибка git %s завершает подготовку до модели', async (stage) => {
+    const { project, task, agent } = setup()
+    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    syncFailure = stage
+
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+
+    expect(detail.run.status).toBe('failed')
+    expect(detail.steps.find((step) => step.kind === 'command')?.status).toBe('failed')
+    expect(modelRequests).toHaveLength(0)
   })
 
   it('ошибка записи managed storage обнаруживается до clone', async () => {
@@ -1155,6 +1193,7 @@ describe('карточка после падения, отмены и повто
     const runId = await run(project.id, task.id)
     expect((await waitRun(runId)).run.status).toBe('failed')
     expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(readyColId)
+    const prepRunsBeforeRetry = scripts.filter((script) => script.includes('fetch origin main')).length
 
     failStep = false
     const columns = db.getBoard('admin', project.id)!.columns
@@ -1166,6 +1205,7 @@ describe('карточка после падения, отмены и повто
 
     const done = await waitRun(runId)
     expect(done.run.status).toBe('success')
+    expect(scripts.filter((script) => script.includes('fetch origin main'))).toHaveLength(prepRunsBeforeRetry)
     // Повтор — это работа, а не простой: карточка вернулась в разработку на время рана.
     expect(columnAtStep).toBe(columns.find((c) => c.semanticType === 'development')!.id)
     expect(db.getBoard('admin', project.id)!.tasks.find((t) => t.id === task.id)!.columnId).toBe(columns.find((c) => c.semanticType === 'component_qa')!.id)
