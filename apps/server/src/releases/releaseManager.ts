@@ -1,8 +1,8 @@
-import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, type ProjectRelease, type ReleaseBranch, type ReleaseStepKind, type ReleaseTimeouts } from '@voicechat/shared'
+import { assertReleaseBranch, DEFAULT_RELEASE_TIMEOUTS, type EnvironmentManifest, type ProjectRelease, type ReleaseBranch, type ReleaseStepKind, type ReleaseTimeouts } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 
 export interface ReleaseProjectTarget { projectId:string; agentId:string; path:string; baseBranch:string; testCommand:string; gitUrl:string; prepareCheckout:boolean; limits?:ReleaseTimeouts }
-export interface ProductionTarget extends ReleaseProjectTarget { deployCommand:string; healthCheckCommand:string; expectedRepository:string; mode?:'legacy'|'managed'; managedRoot?:string; managedDirectories?:string[]; managedManifestPath?:string; managedManifest?:Record<string,unknown> }
+export interface ProductionTarget extends ReleaseProjectTarget { deployCommand:string; healthCheckCommand:string; expectedRepository:string; mode?:'legacy'|'managed'; managedRoot?:string; managedDirectories?:string[]; managedManifestPath?:string; managedManifest?:EnvironmentManifest }
 export const RELEASE_TEST_TIMEOUT_MS=600_000
 export interface ReleaseCommandResult { exitCode:number|null; output:string; timedOut?:boolean }
 export interface ReleaseRuntime {
@@ -265,7 +265,8 @@ export class ReleaseManager {
       this.db.setProjectReleaseStep(release.id,'switching','running','',actor)
       if(target.mode==='managed'){
         if(!target.managedRoot||!target.managedManifest||!target.managedManifestPath||!target.managedDirectories)throw new Error('Managed production identity отсутствует')
-        const prepared=await this.runtime.exec(target,`mkdir -p ${target.managedDirectories.map(quote).join(' ')} && if [ ! -e ${quote(target.managedManifestPath)} ]; then printf %s ${quote(JSON.stringify(target.managedManifest))} > ${quote(target.managedManifestPath)}; fi && ${releaseCheckoutCommand(target)}`,target.limits?.checkoutMs??DEFAULT_RELEASE_TIMEOUTS.checkoutMs)
+        const manifestJson=JSON.stringify(target.managedManifest,null,2)+'\\n', temp=`${target.managedManifestPath}.tmp-${release.id}`
+        const prepared=await this.runtime.exec(target,`mkdir -p ${target.managedDirectories.map(quote).join(' ')} && if [ ! -e ${quote(target.managedManifestPath)} ]; then printf %s ${quote(manifestJson)} > ${quote(temp)} && mv ${quote(temp)} ${quote(target.managedManifestPath)}; fi && ${releaseCheckoutCommand(target)}`,target.limits?.checkoutMs??DEFAULT_RELEASE_TIMEOUTS.checkoutMs)
         if(prepared.timedOut||prepared.exitCode!==0)throw new Error(prepared.output||'Не удалось подготовить managed production')
       }
       const switchCommand=releaseSwitchCommand(target,release)
