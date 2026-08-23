@@ -15,21 +15,21 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 11 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 40 коммит(ов) в areas после сверки: 22b413d4 feat(releases): add managed production environments … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-20 | ⚠ 36 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-23 | ✓ |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-23 | ⚠ 1 коммит(ов) в areas после сверки: 43050611 fix(agent): support credentials on headless Linux |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ✓ |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 84 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 26 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-22 | ⚠ 2 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-22 | ⚠ 11 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 27 коммит(ов) в areas после сверки: 22b413d4 feat(releases): add managed production environments … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 528 коммит(ов) в areas после сверки: de83332c docs(kb): update after merge 7290fb34-9cc7-41c5-bb8b-50a3f63f6920 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 530 коммит(ов) в areas после сверки: 43050611 fix(agent): support credentials on headless Linux … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 40 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-22 | ⚠ 2 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 11 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 4 коммит(ов) в areas после сверки: e047ac1b Merge task 53fa5ad2-ffbd-46f1-873a-dbd8c9f5eebd … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-23 | ✓ |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-23 | ✓ |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-23 | ⚠ 1 коммит(ов) в areas после сверки: 43050611 fix(agent): support credentials on headless Linux |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 11 коммит(ов) в areas после сверки: 4cc7ad17 feat(git-access): добавить credential для связки машины … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-22 | ⚠ 6 коммит(ов) в areas после сверки: ef86d44d feat: add versioned environment and run manifests … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-19 | ⚠ 27 коммит(ов) в areas после сверки: 22b413d4 feat(releases): add managed production environments … |
