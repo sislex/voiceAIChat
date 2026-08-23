@@ -6,6 +6,7 @@ import { createAppRuntime } from './appRuntime'
 import { buildTestClients } from '../test/appHarness'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import type { SessionUser } from '@shared/types'
+import type { StoreDiagnostics } from '../store/devtools'
 
 const USER: SessionUser = { name: 'ann', role: 'admin' }
 
@@ -34,6 +35,31 @@ function makeRuntime(over: { api?: FakeApi; session?: ReturnType<typeof makeSess
     })
   }
 }
+
+describe('AppRuntime — Redux DevTools diagnostics', () => {
+  it('registers the eight active domains under stable names', () => {
+    const attached: Array<[string, string]> = []
+    const diagnostics = {
+      attach<T>(store: T, name: string, domain: string): T {
+        attached.push([name, domain])
+        return store
+      }
+    } as StoreDiagnostics
+    const runtime = createAppRuntime({ clients: buildTestClients({ api: createFakeApi() }), diagnostics })
+
+    expect(attached).toEqual([
+      ['ChatAI Shell', 'shell'],
+      ['ChatAI Session', 'session'],
+      ['ChatAI Settings', 'settings'],
+      ['ChatAI Voice', 'voice'],
+      ['ChatAI Chat', 'chat'],
+      ['ChatAI Operations', 'operations'],
+      ['ChatAI Admin', 'admin'],
+      ['ChatAI Projects', 'projects']
+    ])
+    runtime.dispose()
+  })
+})
 
 describe('AppRuntime — bootstrap', () => {
   it('без авторизации защищённый bootstrap не запускается', async () => {

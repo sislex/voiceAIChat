@@ -55,6 +55,19 @@ web/desktop host → installRemoteBridges → HTTP + WebSocket → server
 (общая основа — `store/createStore.ts`); React в них отсутствует, поэтому сложные
 сценарии тестируются без DOM, а компоненты — через Testing Library и fake bridges.
 
+В development `AppRuntime` подключает восемь активных доменов к Redux DevTools
+как отдельные экземпляры `ChatAI Shell`, `ChatAI Session`, `ChatAI Settings`,
+`ChatAI Chat`, `ChatAI Voice`, `ChatAI Operations`, `ChatAI Admin` и
+`ChatAI Projects`. Адаптер `store/devtools.ts` находится за нейтральным портом,
+именует записи как `<domain>/<publicAction>` и отключает соединение вместе со
+стором. В production подключение выключено по умолчанию и разрешается только
+build-time флагом `VITE_REDUX_DEVTOOLS=true`. Перед `init` и `send` адаптер
+создаёт отдельный JSON-безопасный снимок: рекурсивно редактирует секретные ключи,
+заменяет бинарные значения метаданными, ограничивает глубину, строки, коллекции и
+особенно streaming/log/messages-поля. Отсутствие расширения и исключения его
+`connect/init/send/disconnect` превращаются в безопасный no-op; time travel не
+поддерживается.
+
 **Глобального `voiceStore`/`useVoiceStore` больше нет** (CHAT-236): состояние
 разобрано на независимые домены, а `voiceStore` теперь отвечает только за голос.
 
