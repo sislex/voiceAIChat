@@ -174,6 +174,25 @@ describe('SettingsModal — выбор исполнителя', () => {
 })
 
 
+describe('SettingsModal — TTL временных генераций', () => {
+  it('показывает безопасный default, валидирует и сохраняет целые дни', async () => {
+    const onChange = vi.fn()
+    renderModal('developer', { onChange })
+    await userEvent.click(screen.getByRole('button', { name: 'Хранилище' }))
+    const input = screen.getByLabelText('TTL временных генераций в днях')
+    expect(input).toHaveValue(30)
+    expect(screen.getByText(/Безопасное значение по умолчанию — 30 дней/)).toBeInTheDocument()
+    await userEvent.clear(input)
+    await userEvent.type(input, '1.5')
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+    await userEvent.clear(input)
+    await userEvent.type(input, '45')
+    await userEvent.tab()
+    expect(onChange).toHaveBeenCalledWith({ generatedFilesTtlDays: 45 })
+  })
+})
+
 describe('SettingsModal — доступность', () => {
   // Разделы перечислены руками, а не собраны из DOM: если раздел переименуют или
   // потеряют, тест должен упасть, а не тихо проверить меньше экранов.

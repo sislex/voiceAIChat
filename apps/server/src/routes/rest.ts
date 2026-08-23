@@ -471,6 +471,10 @@ export async function registerRest(
     if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
       return reply.code(403).send({ error: 'llm engine is not available for role' })
     }
+    const generatedFilesTtlDays = req.body.generatedFilesTtlDays ?? db.getSettings(uid(req)).generatedFilesTtlDays
+    if (!Number.isInteger(generatedFilesTtlDays) || generatedFilesTtlDays < 1 || generatedFilesTtlDays > 3650) {
+      return reply.code(400).send({ error: 'generatedFilesTtlDays must be an integer from 1 to 3650' })
+    }
     const raw = req.body.personalization ?? db.getSettings(uid(req)).personalization
     const preferredName = raw.preferredName?.trim().replace(/\s+/g, ' ') || null
     const currentYear = new Date().getUTCFullYear()
@@ -484,7 +488,7 @@ export async function registerRest(
       ['neutral', 'friendly', 'business', 'plain'].includes(raw.tone)
     if (preferredName && preferredName.length > 80) return reply.code(400).send({ error: 'preferredName is too long' })
     if (!validParts || !validDate || !validEnums) return reply.code(400).send({ error: 'invalid personalization' })
-    db.saveSettings(uid(req), { ...req.body, personalization: { ...raw, preferredName } })
+    db.saveSettings(uid(req), { ...req.body, generatedFilesTtlDays, personalization: { ...raw, preferredName } })
     return db.getSettings(uid(req))
   })
 }

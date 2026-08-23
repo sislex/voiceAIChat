@@ -33,7 +33,7 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'ui'
+type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'storage' | 'ui'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'llm', label: 'LLM' },
   { id: 'aiAssist', label: 'AI-помощник' },
@@ -41,6 +41,7 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'stt', label: 'Распознавание' },
   { id: 'tts', label: 'Озвучка' },
   { id: 'dialog', label: 'Голосовой диалог' },
+  { id: 'storage', label: 'Хранилище' },
   { id: 'ui', label: 'Интерфейс' }
 ]
 
@@ -113,6 +114,12 @@ export function SettingsModal({
   const sttBlocked = !voiceInputEnabled || (capabilities != null && !capabilities.stt.available)
   const ttsBlocked = capabilities != null && !capabilities.tts.available
   const [section, setSection] = useState<SettingsSection>('llm')
+  const [ttlDraft, setTtlDraft] = useState(String(settings.generatedFilesTtlDays))
+  const ttlNumber = Number(ttlDraft)
+  const ttlValid = /^\d+$/.test(ttlDraft) && Number.isInteger(ttlNumber) && ttlNumber >= 1 && ttlNumber <= 3650
+  const saveTtl = (): void => {
+    if (ttlValid && ttlNumber !== settings.generatedFilesTtlDays) onChange({ generatedFilesTtlDays: ttlNumber })
+  }
   const claudeModels = allowedModels(llmAccess, 'claude')
   const codexModels = allowedModels(llmAccess, 'codex')
   const providers = (['claude', 'codex'] as const).filter((provider) => isProviderAllowed(llmAccess, provider) && (provider === 'claude' ? claudeModels.length : codexModels.length))
@@ -538,6 +545,29 @@ export function SettingsModal({
                   />
                 </div>
               </>
+            )}
+
+            {section === 'storage' && (
+              <div className="frow">
+                <div>
+                  <p className="flab">TTL временных генераций</p>
+                  <p className="fsub">Файлы в managed .generated удаляются после этого срока. Безопасное значение по умолчанию — 30 дней.</p>
+                  {!ttlValid && <p className="fsub" role="alert">Введите целое число от 1 до 3650 дней.</p>}
+                </div>
+                <input
+                  className="sel"
+                  type="number"
+                  min={1}
+                  max={3650}
+                  step={1}
+                  aria-label="TTL временных генераций в днях"
+                  aria-invalid={!ttlValid}
+                  value={ttlDraft}
+                  onChange={(event) => setTtlDraft(event.target.value)}
+                  onBlur={saveTtl}
+                  onKeyDown={(event) => { if (event.key === 'Enter') saveTtl() }}
+                />
+              </div>
             )}
 
             {section === 'ui' && (
