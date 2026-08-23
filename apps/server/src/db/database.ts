@@ -181,6 +181,7 @@ import {
   type QaTaskState,
   type TaskPreparationRun,
   type PreparationEvent,
+  type TaskPreparationStep,
   type PreparationQuestion,
   type PreparationAnswerResult,
   type PreparationClarificationNotification,
@@ -710,6 +711,8 @@ export class VoiceChatDb {
     }
     addPreparationColumn('phase', `ALTER TABLE task_preparation_runs ADD COLUMN phase TEXT NOT NULL DEFAULT 'initialization'`)
     addPreparationColumn('task_key', `ALTER TABLE task_preparation_runs ADD COLUMN task_key TEXT NOT NULL DEFAULT ''`)
+    addPreparationColumn('machine_id', `ALTER TABLE task_preparation_runs ADD COLUMN machine_id TEXT`)
+    addPreparationColumn('machine_name_snapshot', `ALTER TABLE task_preparation_runs ADD COLUMN machine_name_snapshot TEXT`)
     addPreparationColumn('llm_engine_id', `ALTER TABLE task_preparation_runs ADD COLUMN llm_engine_id TEXT`)
     addPreparationColumn('provider', `ALTER TABLE task_preparation_runs ADD COLUMN provider TEXT NOT NULL DEFAULT 'claude'`)
     addPreparationColumn('model', `ALTER TABLE task_preparation_runs ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
@@ -6211,6 +6214,27 @@ export class VoiceChatDb {
     }))
   }
 
+  private preparationSteps(attemptId: string): TaskPreparationStep[] {
+    const events = this.preparationEvents(attemptId)
+    const rows = this.db.prepare(`SELECT * FROM task_preparation_steps WHERE attempt_id=? ORDER BY ordinal`).all(attemptId) as Record<string, unknown>[]
+    return rows.map((row) => {
+      const id = String(row.id)
+      const startedAt = row.started_at == null ? null : Number(row.started_at)
+      const finishedAt = row.finished_at == null ? null : Number(row.finished_at)
+      const phaseMatches = (phase: TaskPreparationPhase): boolean => id.endsWith(':infrastructure')
+        ? ['initialization', 'knowledge_research', 'hierarchy_research', 'related_tasks_research', 'code_research', 'tests_research', 'storybook_research'].includes(phase)
+        : id.endsWith(':model')
+          ? ['clarification', 'brief_generation'].includes(phase)
+          : ['readiness_validation', 'persistence', 'completed'].includes(phase)
+      return {
+        id, name: String(row.name), ordinal: Number(row.ordinal), status: row.status as TaskPreparationStep['status'],
+        startedAt, finishedAt, durationMs: startedAt == null ? null : Math.max(0, (finishedAt ?? this.now()) - startedAt),
+        error: row.error as string | null,
+        log: events.filter((event) => phaseMatches(event.phase) && event.type === 'model_output').map((event) => ({ ...event, stepId: id, stream: 'stdout' as const }))
+      }
+    })
+  }
+
   private preparationQuestions(attemptId: string): PreparationQuestion[] {
     const rows = this.db.prepare(`SELECT * FROM task_preparation_questions WHERE attempt_id=? ORDER BY asked_at,question_id`).all(attemptId) as Record<string, unknown>[]
     return rows.map((row) => ({
@@ -6230,9 +6254,10 @@ export class VoiceChatDb {
       id: String(row.id), attemptId: String(row.id), projectId: String(row.project_id), taskId: String(row.task_id),
       taskKey: String(row.task_key || row.task_id), status, phase: (row.phase || (status === 'success' ? 'completed' : 'initialization')) as TaskPreparationPhase,
       attempt: Number(row.attempt), attemptNumber: Number(row.attempt), maxAttempts: 2,
+      machineId: row.machine_id as string | null, machineName: row.machine_name_snapshot as string | null,
       llmEngineId: row.llm_engine_id as string | null, provider: (row.provider ?? 'claude') as LlmProvider,
       model: String(row.model ?? ''), profileId: String(row.profile_id ?? ''),
-      log: String(row.log ?? ''), events: this.preparationEvents(String(row.id)), questions: this.preparationQuestions(String(row.id)),
+      log: String(row.log ?? ''), events: this.preparationEvents(String(row.id)), steps: this.preparationSteps(String(row.id)), questions: this.preparationQuestions(String(row.id)),
       error: row.error as string | null,
       readiness: row.readiness_json ? parseJsonValue<DevelopmentReadiness>(String(row.readiness_json), null as unknown as DevelopmentReadiness) : null,
       gateReasons: parseStringArray(String(row.gate_reasons_json ?? '[]')),
@@ -6387,7 +6412,7 @@ export class VoiceChatDb {
     return row ? this.mapTaskPreparationRun(row) : null
   }
 
-  startTaskPreparationRun(userId: string, projectId: string, taskId: string, execution: { llmEngineId?: string | null; provider: LlmProvider; model: string } = { provider: 'claude', model: '' }): TaskPreparationRun {
+  startTaskPreparationRun(userId: string, projectId: string, taskId: string, execution: { machineId?: string | null; machineName?: string | null; llmEngineId?: string | null; provider: LlmProvider; model: string } = { provider: 'claude', model: '' }): TaskPreparationRun {
     if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
     const task = this.getTask(projectId, taskId)
     if (!task || task.type !== 'task') throw new Error('Задача не найдена')
@@ -6403,7 +6428,9 @@ export class VoiceChatDb {
     const attempt = Number((this.db.prepare(`SELECT COALESCE(MAX(attempt), 0) + 1 AS attempt FROM task_preparation_runs WHERE task_id=?`).get(taskId) as { attempt: number }).attempt)
     const profileId = createHash('sha256').update(userId).digest('hex').slice(0, 16)
     this.db.transaction(() => {
-      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,task_key,status,phase,attempt,llm_engine_id,provider,model,profile_id,created_at,started_at) VALUES (?,?,?,?, 'running','initialization',?,?,?,?,?,?,?)`).run(id, projectId, taskId, taskId, attempt, execution.llmEngineId ?? null, execution.provider, redactPreparationText(execution.model), profileId, now, now)
+      this.db.prepare(`INSERT INTO task_preparation_runs (id,project_id,task_id,task_key,status,phase,attempt,machine_id,machine_name_snapshot,llm_engine_id,provider,model,profile_id,created_at,started_at) VALUES (?,?,?,?, 'running','initialization',?,?,?,?,?,?,?,?,?)`).run(id, projectId, taskId, taskId, attempt, execution.machineId ?? null, execution.machineName ? redactPreparationText(execution.machineName) : null, execution.llmEngineId ?? null, execution.provider, redactPreparationText(execution.model), profileId, now, now)
+      const steps = [['infrastructure', 1, 'Подготовка инфраструктуры'], ['model', 2, 'Работа модели'], ['result', 3, 'Проверка и сохранение результата']] as const
+      for (const [suffix, ordinal, name] of steps) this.db.prepare(`INSERT INTO task_preparation_steps (id,attempt_id,ordinal,name,status,started_at) VALUES (?,?,?,?,?,?)`).run(`${id}:${suffix}`, id, ordinal, name, ordinal === 1 ? 'running' : 'queued', ordinal === 1 ? now : null)
       this.appendTaskPreparationEvent(id, 'attempt_created', 'initialization', 'Попытка подготовки создана')
       this.appendTaskPreparationEvent(id, 'attempt_started', 'initialization', 'Подготовка запущена')
       if (task.columnId !== target) this.moveTask(userId, projectId, taskId, { columnId: target })
@@ -6421,8 +6448,13 @@ export class VoiceChatDb {
   }
 
   setTaskPreparationExecution(id: string, execution: { llmEngineId?: string | null; provider: LlmProvider; model: string }, phase: TaskPreparationPhase = 'knowledge_research'): void {
-    this.db.prepare(`UPDATE task_preparation_runs SET llm_engine_id=?,provider=?,model=?,status='running',phase=? WHERE id=? AND status IN ('queued','running')`).run(execution.llmEngineId ?? null, execution.provider, redactPreparationText(execution.model), phase, id)
-    this.appendTaskPreparationEvent(id, 'research_started', phase, 'Исследование источников начато')
+    const now = this.now()
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE task_preparation_runs SET status='running',phase=? WHERE id=? AND status IN ('queued','running')`).run(phase, id)
+      this.db.prepare(`UPDATE task_preparation_steps SET status='success',finished_at=? WHERE id=? AND status='running'`).run(now, `${id}:infrastructure`)
+      this.db.prepare(`UPDATE task_preparation_steps SET status='running',started_at=? WHERE id=? AND status='queued'`).run(now, `${id}:model`)
+      this.appendTaskPreparationEvent(id, 'research_started', phase, 'Исследование источников начато')
+    })()
   }
 
   completeTaskPreparationRun(userId: string, id: string, readiness: DevelopmentReadiness): TaskPreparationRun | null {
@@ -6448,10 +6480,13 @@ export class VoiceChatDb {
           required: testCase.required, testType: testCase.testType
         })
       }
+      this.db.prepare(`UPDATE task_preparation_steps SET status='success',finished_at=? WHERE id=? AND status='running'`).run(now, `${id}:model`)
+      this.db.prepare(`UPDATE task_preparation_steps SET status='running',started_at=? WHERE id=? AND status='queued'`).run(now, `${id}:result`)
       this.appendTaskPreparationEvent(id, 'gate_completed', 'readiness_validation', 'Все проверки готовности пройдены', { gateResults })
       this.appendTaskPreparationEvent(id, 'brief_persisted', 'persistence', 'Development Brief сохранён')
       this.moveTask(userId, run.projectId, run.taskId, { columnId: target })
       this.db.prepare(`UPDATE task_preparation_runs SET status='success',phase='completed',readiness_json=?,gate_reasons_json='[]',gate_results_json=?,finished_at=? WHERE id=? AND status IN ('running','validating')`).run(JSON.stringify(sanitized), JSON.stringify(gateResults), now, id)
+      this.db.prepare(`UPDATE task_preparation_steps SET status='success',finished_at=? WHERE id=? AND status='running'`).run(now, `${id}:result`)
       this.appendTaskPreparationEvent(id, 'attempt_completed', 'completed', 'Подготовка успешно завершена')
     })()
     return this.getTaskPreparationRun(userId, id)
@@ -6465,8 +6500,13 @@ export class VoiceChatDb {
 
   failTaskPreparationRun(id: string, error: string, reasons: string[] = []): void {
     const safeError = redactPreparationText(error)
-    this.db.prepare(`UPDATE task_preparation_runs SET status='failed',error=?,gate_reasons_json=?,finished_at=? WHERE id=? AND status IN ('queued','running','validating')`).run(safeError, JSON.stringify(reasons), this.now(), id)
-    this.appendTaskPreparationEvent(id, 'attempt_failed', 'completed', safeError, { reasons })
+    const now = this.now()
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE task_preparation_runs SET status='failed',error=?,gate_reasons_json=?,finished_at=? WHERE id=? AND status IN ('queued','running','validating')`).run(safeError, JSON.stringify(reasons), now, id)
+      this.db.prepare(`UPDATE task_preparation_steps SET status='failed',error=?,finished_at=? WHERE attempt_id=? AND status='running'`).run(safeError, now, id)
+      this.db.prepare(`UPDATE task_preparation_steps SET status='cancelled',finished_at=? WHERE attempt_id=? AND status='queued'`).run(now, id)
+      this.appendTaskPreparationEvent(id, 'attempt_failed', 'completed', safeError, { reasons })
+    })()
   }
 
   cancelTaskPreparationRun(userId: string, id: string, reason = 'Подготовка отменена пользователем'): TaskPreparationRun | null {
@@ -6474,7 +6514,11 @@ export class VoiceChatDb {
     if (!run) return null
     const safeReason = redactPreparationText(reason)
     const changed = this.db.prepare(`UPDATE task_preparation_runs SET status='cancelled',error=?,finished_at=? WHERE id=? AND status IN ('queued','running','waiting_for_answer','validating')`).run(safeReason, this.now(), id)
-    if (changed.changes) this.appendTaskPreparationEvent(id, 'attempt_cancelled', 'completed', safeReason, { initiatedBy: run.profileId })
+    if (changed.changes) {
+      const now = this.now()
+      this.db.prepare(`UPDATE task_preparation_steps SET status='cancelled',error=?,finished_at=? WHERE attempt_id=? AND status IN ('queued','running')`).run(safeReason, now, id)
+      this.appendTaskPreparationEvent(id, 'attempt_cancelled', 'completed', safeReason, { initiatedBy: run.profileId })
+    }
     return this.getTaskPreparationRun(userId, id)
   }
 
