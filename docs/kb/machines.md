@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-08-23
-checked: 3756df1e
+updated: 2026-08-24
+checked: a89c4cc2
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -18,7 +18,9 @@ areas:
   - packages/shared/src/ipc.ts
   - packages/shared/src/manifests.ts
   - packages/shared/src/projects.ts
+  - packages/shared/src/migration.ts
   - packages/shared/src/protocol.ts
+  - apps/server/src/storageMigration
   - packages/shared/src/version.ts
   - packages/ui/src/App.tsx
   - packages/ui/src/components/ConversationSettings.tsx
@@ -726,8 +728,8 @@ POST старта, retry и самим исполнителем перед фа�
 заранее отключает неподготовленную машину и показывает точный readiness message, но
 сервер не доверяет устаревшему результату клиента. Если `storage_id` присутствует,
 ошибка storage блокирует merge без fallback; `reposRoot` используется только когда
-MachineStorage полностью отсутствует. Legacy- и неожиданные каталоги автоматически
-не переносятся и не удаляются.
+MachineStorage полностью отсутствует. Неожиданные каталоги автоматически не переносятся
+и не удаляются; legacy-данные переносятся только отдельным подтверждаемым протоколом ниже.
 
 Настройка встроена в таблицу «Машины» (`packages/ui/src/components/MachineStatus.tsx`).
 Она показывает основной путь, фактический статус и версию формата, позволяет взять
@@ -808,5 +810,38 @@ allowlist полей, проверяют версию, UTC-время, commit SH
 перезаписывается. Сейчас environment manifest материализуется для managed production,
 staging и preview. Run/report writer подключён к preview lifecycle; development, QA,
 merge и release принимаются shared-контрактом, но их менеджеры эти два файла пока не
-публикуют. TTL-очистка `.generated` и явный мастер миграции старых данных также не
-реализованы.
+публикуют. TTL-очистка `.generated` не реализована.
+
+### Миграция legacy-каталогов
+
+Owner запускает dry-run через `POST /api/storage-migrations`, передавая online-машину,
+зарегистрированный MachineStorage и явный список источников с назначением в chat,
+project, task, environment либо `undefined`. Перед инвентаризацией сервер заново
+проверяет владение машиной и storage, `allowedDirs` и совпадение marker. Общий контракт,
+канонические назначения и кроссплатформенные проверки пути находятся в
+`packages/shared/src/migration.ts`, REST — в
+`apps/server/src/storageMigration/routes.ts`.
+
+`StorageMigrationManager` (`apps/server/src/storageMigration/manager.ts`) во время
+dry-run только читает источники и назначения и сохраняет неизменяемый план: размер,
+mtime, SHA-256, назначение, вычисленный managed-путь, конфликт и статус каждого объекта.
+Неопределённые назначения не получают цель и не копируются. Конфликтами считаются
+небезопасный выход из storage, перекрывающиеся назначения и уже занятая отличающимся
+содержимым цель; сравнение путей на Windows регистронезависимо. Существующий целевой
+файл того же размера и checksum допускается как уже опубликованное содержимое.
+
+Копирование — отдельный `POST .../:id/copy` с `confirm: true`. Перед каждым объектом
+источник повторно сверяется с dry-run по размеру и SHA-256; изменившийся получает
+`source-changed`. Новый файл пишется под уникальным `.partial`-именем, публикуется
+rename и перечитывается для проверки размера и checksum. Состояние плана, прогресс,
+аудит и соответствия legacy→managed сохраняются атомарной заменой единого JSON-снимка
+`<dataDir>/storage-migrations.json`. При сбое план становится `copy-interrupted`;
+повторный copy продолжает его, заново проверяя источник и уже опубликованную цель, а
+не принимая partial-файл. План и аудит доступны только создавшему его пользователю.
+
+Удаление источников не является частью copy: `POST .../:id/delete-sources` требует
+нового `confirm: true` и завершённого копирования. Удаляются только элементы со
+статусом `verified`, причём непосредственно перед safe-delete источник ещё раз
+сверяется с исходными размером и checksum; изменившийся источник остаётся на месте с
+событием `delete-skipped`. Все подтверждения, пропуски, проверки, сбои, возобновления
+и удаления фиксируются в audit log плана.
