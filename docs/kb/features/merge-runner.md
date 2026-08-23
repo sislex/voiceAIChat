@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
-updated: 2026-08-22
-checked: a7b8544b
+updated: 2026-08-24
+checked: d6153d87
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -12,6 +12,7 @@ areas:
   - apps/server/src/db/schema.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/server.ts
+  - packages/ui/src/components/ci/MergePanel.tsx
   - packages/ui/src/components/ci/MergeRunFeed.tsx
   - packages/ui/src/components/kanban/TaskModal.tsx
   - packages/ui/src/remote
@@ -154,6 +155,14 @@ applied, правило и количества изменений либо ко
 и неготовые варианты отключены, кнопка старта активна только для selectable-машины.
 Это лишь ранняя обратная связь: `POST …/merge`, `…/retry` и исполнитель повторяют
 тот же `MergeRunManager.checkReadiness` до создания рана и до операций с клоном.
+
+`MergePanel` получает каталог и readiness согласованно через `Promise.all` для
+`getTaskMachines` и `getMergeMachines` и публикует результат только после успеха
+обоих запросов. `loadView` различает первую загрузку (`Skeleton` и `aria-busy`),
+успешный пустой ответ (`EmptyState`) и ошибку (`ErrorState` с повтором); при
+обновлении уже показанные данные остаются на экране с `RefreshIndicator` либо
+компактной ошибкой. Данные дополнительно привязаны к ключу `projectId:taskId`,
+поэтому ответ или сохранённый список другой задачи не открывает селектор текущей.
 
 `POST …/merge` и `…/retry` принимают `agentId`; retry без нового id наследует машину
 предыдущей попытки. Когда ответ рана разрешает retry (`canRetry`), лента показывает
