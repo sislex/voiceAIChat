@@ -1445,14 +1445,18 @@ fi`
     }
     const guardExisting = [
       `if git -C ${shq(repoPath)} rev-parse --is-inside-work-tree >/dev/null 2>&1; then`,
-      `  if [ -n "$(git -C ${shq(repoPath)} status --porcelain --untracked-files=all 2>/dev/null)" ]; then`,
+      `  git_status="$(git -C ${shq(repoPath)} status --porcelain --untracked-files=all)" || exit $?`,
+      `  if [ -n "$git_status" ]; then`,
       `    echo "Рабочая копия содержит локальные изменения: ${repoPath}" >&2; exit 66`,
       `  fi`,
+      `  git -C ${shq(repoPath)} fetch origin main || exit $?`,
+      `  git -C ${shq(repoPath)} checkout main || exit $?`,
+      `  git -C ${shq(repoPath)} reset --hard origin/main || exit $?`,
       `elif [ -d ${shq(workspacePath)} ] && [ -n "$(ls -A ${shq(workspacePath)} 2>/dev/null)" ]; then`,
       `  echo "Рабочая директория не является Git-репозиторием и содержит файлы: ${workspacePath}" >&2; exit 65`,
       `fi`
     ].join('\n')
-    // clean явно пересоздаёт checkout; fail/reuse переиспользуют только настоящий
+    // clean явно пересоздаёт checkout; fail/reuse синхронизируют только настоящий
     // чистый Git-репозиторий. Пустая либо только родительская структура допустима.
     const workspacePrep = strategy === 'clean'
       ? `rm -rf ${shq(workspacePath)}; mkdir -p ${shq(commandWorkspacePath)}`
