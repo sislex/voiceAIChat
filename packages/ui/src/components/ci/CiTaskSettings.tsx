@@ -6,8 +6,9 @@ import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CODEX_MODELS } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import { Button } from '@voicechat/ui-kit'
+import { Button, EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
 import { CiSlotEditor } from './CiSlotEditor'
+import type { LoadStatus } from '../../lib/loadState'
 
 export interface CiTaskSettingsProps {
   projectId: string
@@ -31,6 +32,10 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [unavailableAgentId, setUnavailableAgentId] = useState<string | null>(null)
   const [unavailableName, setUnavailableName] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [machinesStatus, setMachinesStatus] = useState<LoadStatus>('idle')
+  const [machinesError, setMachinesError] = useState<string | null>(null)
+  const [machinesReload, setMachinesReload] = useState(0)
+  const [machinesKey, setMachinesKey] = useState<string | null>(null)
   const [enabledStages, setEnabledStages] = useState<CiProcessStage[]>([...CI_PROCESS_STAGES])
   const [stagesLoading, setStagesLoading] = useState(true)
   const [stagesSaved, setStagesSaved] = useState(true)
@@ -56,19 +61,37 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
       if (cancelled) return
       setLlm(r.config); setLlmOverridden(r.overridden)
     })
-    void bridge.getTaskMachines(props.projectId, props.taskId).then((result) => {
+    const key = `${props.projectId}:${props.taskId}`
+    setMachinesStatus('loading')
+    setMachinesError(null)
+    setMachinesKey(null)
+    setMachines([])
+    setAgentId(null)
+    setUnavailableAgentId(null)
+    setUnavailableName(null)
+    if (!bridge) {
+      setMachinesStatus('error')
+      setMachinesError('Интерфейс машин недоступен')
+    } else void bridge.getTaskMachines(props.projectId, props.taskId).then((result) => {
       if (cancelled) return
       setMachines(result.machines)
       setAgentId(result.selectedAgentId)
       setUnavailableAgentId(result.unavailableSelection?.agentId ?? null)
       setUnavailableName(result.unavailableSelection?.name ?? null)
+      setMachinesKey(key)
+      setMachinesStatus('ready')
+    }).catch((error: unknown) => {
+      if (cancelled) return
+      setMachinesStatus('error')
+      setMachinesError(error instanceof Error ? error.message : String(error))
     })
     return () => { cancelled = true }
-  }, [props.projectId, props.taskId])
+  }, [props.projectId, props.taskId, machinesReload])
 
-  const selectedMachine = agentId ? machines.find((machine) => machine.agentId === agentId) : undefined
-  const personalMachines = machines.filter((machine) => machine.personal)
-  const projectMachines = machines.filter((machine) => machine.project && !machine.personal)
+  const machineDataReady = machinesStatus === 'ready' && machinesKey === `${props.projectId}:${props.taskId}`
+  const selectedMachine = machineDataReady && agentId ? machines.find((machine) => machine.agentId === agentId) : undefined
+  const personalMachines = (machineDataReady ? machines : []).filter((machine) => machine.personal)
+  const projectMachines = (machineDataReady ? machines : []).filter((machine) => machine.project && !machine.personal)
   const machineLabel = (machine: CiTaskMachine): string => {
     const access = machine.personal && machine.project ? 'моя + проектная' : machine.personal ? 'личная' : 'проектная'
     return `${machine.name} — ${machine.online ? 'online' : 'offline'}; ${access}${machine.projectDefault ? '; по умолчанию' : ''} · ${machine.agentId.slice(0, 8)}`
@@ -122,43 +145,59 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     </>}
     {props.section === 'machine' && <>
     <div className="ci-task-head"><span className="ci-task-title">Машина выполнения</span></div>
-    <label>Машина<select aria-label="Машина выполнения" className="sel" value={agentId ?? ''} onChange={(e) => {
-      const next = e.target.value || null
-      setAgentId(next)
-      setUnavailableAgentId(null)
-      setUnavailableName(null)
-      setSaveError(null)
-      void window.api?.['tasks:update']({ projectId: props.projectId, taskId: props.taskId, agentId: next })
-        .catch((error: unknown) => setSaveError(error instanceof Error ? error.message : String(error)))
-    }}>
-      <option value="">Машина проекта по умолчанию</option>
-      {unavailableAgentId && <option value={unavailableAgentId}>{unavailableName ?? 'Недоступная машина'} — недоступна · {unavailableAgentId.slice(0, 8)}</option>}
-      {personalMachines.length > 0 && <optgroup label="Мои машины">
-        {personalMachines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machineLabel(machine)}</option>)}
-      </optgroup>}
-      {projectMachines.length > 0 && <optgroup label="Машины проекта">
-        {projectMachines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machineLabel(machine)}</option>)}
-      </optgroup>}
-    </select></label>
-    {unavailableAgentId && <div className="ci-warn">Сохранённая машина больше не существует или недоступна. Выбор не изменён автоматически; запуск CI заблокирован до выбора доступной машины.</div>}
-    {!agentId && machines.some((machine) => machine.projectDefault) && <p className="ci-task-hint">По умолчанию проекта: <b>{machines.find((machine) => machine.projectDefault)?.name}</b></p>}
-    {!agentId && !machines.some((machine) => machine.projectDefault) && <div className="ci-warn">Машина проекта по умолчанию не задана или недоступна. Запуск CI заблокирован.</div>}
-    {selectedMachine && !selectedMachine.online && <div className="ci-warn">Машина offline. CI не ждёт подключения и не запустится, пока вы не выберете online-машину.</div>}
-    {saveError && <div className="ci-warn">Не удалось сохранить машину: {saveError}</div>}
-    {/* Принудительный запуск работает и для задачи, чей ран стоит в очереди:
-        сервер продвинет его на выбранную машину, а не отменит. */}
-    {agentId && selectedMachine?.online && (
-      <div className="ci-task-llm-actions">
-        <Button size="sm" onClick={() => {
-          setForceStatus({ kind: 'idle' })
-          void window.ci?.forceStartRun(props.projectId, props.taskId, agentId)
-            .then(() => setForceStatus({ kind: 'started' }))
-            .catch((err: unknown) => setForceStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) }))
-        }} title="Запустить или продвинуть ожидающий ран на выбранной машине">Запустить на этой машине сейчас</Button>
-      </div>
-    )}
-    {forceStatus.kind === 'started' && <p className="ci-task-hint">Ран запущен на выбранной машине, мимо очереди.</p>}
-    {forceStatus.kind === 'error' && <div className="ci-warn">{forceStatus.text}</div>}
+    <div aria-busy={machinesStatus === 'loading'}>
+      {machinesStatus === 'loading' || !machineDataReady && machinesStatus !== 'error'
+        ? <Skeleton variant="block" height={54} testId="task-machines-skeleton" />
+        : machinesStatus === 'error'
+          ? <ErrorState
+              message="Не удалось загрузить машины"
+              detail={machinesError}
+              onRetry={() => setMachinesReload((value) => value + 1)}
+            />
+          : <>
+            <label>Машина<select aria-label="Машина выполнения" className="sel" value={agentId ?? ''} onChange={(e) => {
+              const next = e.target.value || null
+              setAgentId(next)
+              setUnavailableAgentId(null)
+              setUnavailableName(null)
+              setSaveError(null)
+              void window.api?.['tasks:update']({ projectId: props.projectId, taskId: props.taskId, agentId: next })
+                .catch((error: unknown) => setSaveError(error instanceof Error ? error.message : String(error)))
+            }}>
+              <option value="">Машина проекта по умолчанию</option>
+              {unavailableAgentId && <option value={unavailableAgentId}>{unavailableName ?? 'Недоступная машина'} — недоступна · {unavailableAgentId.slice(0, 8)}</option>}
+              {personalMachines.length > 0 && <optgroup label="Мои машины">
+                {personalMachines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machineLabel(machine)}</option>)}
+              </optgroup>}
+              {projectMachines.length > 0 && <optgroup label="Машины проекта">
+                {projectMachines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machineLabel(machine)}</option>)}
+              </optgroup>}
+            </select></label>
+            {machines.length === 0 && !unavailableAgentId && <EmptyState
+              title="Доступных машин нет"
+              description="Добавьте машину в проект или проверьте доступ к личным машинам."
+            />}
+            {unavailableAgentId && <div className="ci-warn">Сохранённая машина больше не существует или недоступна. Выбор не изменён автоматически; запуск CI заблокирован до выбора доступной машины.</div>}
+            {!agentId && machines.some((machine) => machine.projectDefault) && <p className="ci-task-hint">По умолчанию проекта: <b>{machines.find((machine) => machine.projectDefault)?.name}</b></p>}
+            {!agentId && !machines.some((machine) => machine.projectDefault) && <div className="ci-warn">Машина проекта по умолчанию не задана или недоступна. Запуск CI заблокирован.</div>}
+            {selectedMachine && !selectedMachine.online && <div className="ci-warn">Машина offline. CI не ждёт подключения и не запустится, пока вы не выберете online-машину.</div>}
+            {saveError && <div className="ci-warn">Не удалось сохранить машину: {saveError}</div>}
+            {/* Принудительный запуск работает и для задачи, чей ран стоит в очереди:
+                сервер продвинет его на выбранную машину, а не отменит. */}
+            {agentId && selectedMachine?.online && (
+              <div className="ci-task-llm-actions">
+                <Button size="sm" onClick={() => {
+                  setForceStatus({ kind: 'idle' })
+                  void window.ci?.forceStartRun(props.projectId, props.taskId, agentId)
+                    .then(() => setForceStatus({ kind: 'started' }))
+                    .catch((err: unknown) => setForceStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) }))
+                }} title="Запустить или продвинуть ожидающий ран на выбранной машине">Запустить на этой машине сейчас</Button>
+              </div>
+            )}
+            {forceStatus.kind === 'started' && <p className="ci-task-hint">Ран запущен на выбранной машине, мимо очереди.</p>}
+            {forceStatus.kind === 'error' && <div className="ci-warn">{forceStatus.text}</div>}
+          </>}
+    </div>
     </>}
     {props.section === 'model' && <>
     <div className="ci-task-head"><span className="ci-task-title">Движок модели</span><span className={`lozenge ${llmOverridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{llmOverridden ? 'переопределено' : 'унаследовано'}</span></div>
