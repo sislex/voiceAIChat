@@ -931,13 +931,20 @@ Development-run нельзя запустить из `backlog` или `preparati
 macOS, Windows drive, UNC и MSYS-путей. Bootstrap не зависит от чата задачи.
 
 Существующий каталог считается checkout только после успешного
-`git rev-parse --is-inside-work-tree`. Чистый Git checkout переиспользуется;
-tracked или untracked изменения останавливают подготовку с exit `66`. Пустой
-checkout-каталог и отсутствующие родительские каталоги допустимы, а непустой
-не-Git каталог отклоняется с exit `65`. Ошибка создания managed-каталогов
-сообщает корень MachineStorage и возникает до clone. Если MachineStorage не
-зарегистрирован, сохраняется legacy layout от `project_machines.reposRoot` (или
-родителя `machine.path`).
+`git rev-parse --is-inside-work-tree`. Для нового полного development-рана
+tracked и untracked изменения сначала проверяются командой
+`git status --porcelain --untracked-files=all` и останавливают подготовку с
+exit `66` без удаления файлов. Чистый checkout синхронизируется строго командами
+`git fetch origin main`, `git checkout main`, `git reset --hard origin/main`;
+`git pull` не используется. Ошибка status или любого этапа синхронизации
+завершает системную подготовку до пользовательских команд и запуска модели.
+Retry-from-step системную подготовку и синхронизацию не повторяет, сохраняя
+результаты выполненных шагов. Пустой checkout-каталог и отсутствующие родительские
+каталоги допустимы и по-прежнему передаются стандартной команде clone из
+`before_model`, а непустой не-Git каталог отклоняется с exit `65`. Ошибка
+создания managed-каталогов сообщает корень MachineStorage и возникает до clone.
+Если MachineStorage не зарегистрирован, сохраняется legacy layout от
+`project_machines.reposRoot` (или родителя `machine.path`).
 
 На MacBook, где SSH-ключ не авторизован в GitHub, сама команда клонирования не
 меняется: глобальный Git rewrite `url.https://github.com/.insteadOf git@github.com:`
