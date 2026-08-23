@@ -95,6 +95,69 @@ describe('CiTaskSettings', () => {
     expect(screen.queryByRole('button', { name: 'Запустить на этой машине сейчас' })).not.toBeInTheDocument()
   })
 
+  it('блокирует селектор до загрузки и показывает актуальную проектную машину', async () => {
+    const response = {
+      machines: [{ agentId: 'macbook-id', name: 'MacBook', online: true, personal: false, project: true, projectDefault: true }],
+      selectedAgentId: null,
+      unavailableSelection: null
+    }
+    let resolveMachines!: (value: typeof response) => void
+    window.ci!.getTaskMachines = vi.fn(() => new Promise<typeof response>((resolve) => { resolveMachines = resolve }))
+    render(<CiTaskSettings section="machine" projectId="p1" taskId="t1" />)
+
+    expect(screen.getByTestId('task-machines-skeleton')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Машина выполнения')).not.toBeInTheDocument()
+
+    resolveMachines(response)
+    expect(await screen.findByText(/По умолчанию проекта:/)).toHaveTextContent('MacBook')
+    expect(screen.getByLabelText('Машина выполнения')).toHaveValue('')
+  })
+
+  it('при смене проекта скрывает прежний projectDefault до нового ответа', async () => {
+    const nextResponse = {
+      machines: [{ agentId: 'server-id', name: 'Новый сервер', online: true, personal: false, project: true, projectDefault: true }],
+      selectedAgentId: null,
+      unavailableSelection: null
+    }
+    let resolveNext!: (value: typeof nextResponse) => void
+    window.ci!.getTaskMachines = vi.fn()
+      .mockResolvedValueOnce({
+        machines: [{ agentId: 'macbook-id', name: 'MacBook', online: true, personal: false, project: true, projectDefault: true }],
+        selectedAgentId: null,
+        unavailableSelection: null
+      })
+      .mockImplementationOnce(() => new Promise<typeof nextResponse>((resolve) => { resolveNext = resolve }))
+
+    const view = render(<CiTaskSettings section="machine" projectId="p1" taskId="t1" />)
+    expect(await screen.findByText('MacBook')).toBeInTheDocument()
+
+    view.rerender(<CiTaskSettings section="machine" projectId="p2" taskId="t1" />)
+    await waitFor(() => expect(screen.getByTestId('task-machines-skeleton')).toBeInTheDocument())
+    expect(screen.queryByText(/MacBook/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Машина выполнения')).not.toBeInTheDocument()
+
+    resolveNext(nextResponse)
+    expect(await screen.findByText('Новый сервер')).toBeInTheDocument()
+  })
+
+  it('показывает ошибку загрузки машин и повторяет запрос по кнопке', async () => {
+    window.ci!.getTaskMachines = vi.fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce({
+        machines: [{ agentId: 'macbook-id', name: 'MacBook', online: true, personal: false, project: true, projectDefault: true }],
+        selectedAgentId: null,
+        unavailableSelection: null
+      })
+    render(<CiTaskSettings section="machine" projectId="p1" taskId="t1" />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось загрузить машины')
+    expect(screen.getByRole('alert')).toHaveTextContent('network down')
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+
+    expect(await screen.findByText('MacBook')).toBeInTheDocument()
+    expect(window.ci!.getTaskMachines).toHaveBeenCalledTimes(2)
+  })
+
   it('показывает унаследованные движок и модель и сохраняет переопределение', async () => {
     render(<CiTaskSettings section="model" projectId="p1" taskId="t1" />)
     await waitFor(() => expect(screen.getByLabelText('Движок модели')).toHaveValue('claude'))
