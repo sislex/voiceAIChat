@@ -77,6 +77,7 @@ import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
 import { AuthStatusState } from './auth/statusState.js'
 import { processImageRetouch, saveRetouchedImage, type RetouchGenerator } from './imageRetouch.js'
 import { llmRetouchGenerator } from './llm/imageRetouchGenerator.js'
+import { GeneratedCleanupService, withGeneratedFileLease, type GeneratedCleanupCounters } from './generatedCleanup.js'
 
 const VERSION = process.env.VC_RELEASE_VERSION?.trim() || null
 const RELEASED_AT = process.env.VC_RELEASED_AT?.trim() || new Date().toISOString()
@@ -122,6 +123,8 @@ export interface BuildOptions {
   authStatus?: AuthStatusState
   /** Генератор crop для локальной ретуши; тесты инъектируют детерминированный ответ. */
   imageRetouchGenerator?: RetouchGenerator
+  /** Sink структурированного итога TTL-очистки. */
+  generatedCleanupLog?: (result: GeneratedCleanupCounters) => void
 }
 
 export interface BuiltServer {
@@ -465,6 +468,26 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       if (!binding || parsed.id !== binding.storageId) throw new Error('Marker привязанного хранилища отсутствует или конфликтует')
     }
   })
+  const generatedCleanup = new GeneratedCleanupService({
+    targets: () => db.listGeneratedCleanupTargets(),
+    ttlDays: (userId) => db.getSettings(userId).generatedFilesTtlDays,
+    messages: (userId, conversationId) => db.listMessages(userId, conversationId),
+    resolve: managedChatStorage,
+    list: (machineId, path) => agentRegistry.fsList(machineId, path),
+    deleteFile: (machineId, path) => agentRegistry.fsDeleteFileSafe(machineId, path),
+    defer: (target, error, nextAttemptAt) => db.deferGeneratedCleanup(target.userId, target.conversationId, error, nextAttemptAt),
+    complete: (target) => db.completeGeneratedCleanup(target.conversationId),
+    log: opts.generatedCleanupLog ?? ((result) => app.log.info({ event: 'generated_cleanup', ...result }))
+  })
+  // Тестовые buildServer используют фейковые реестры и запускают сервис явно.
+  // Production-процесс делает первый проход после старта и затем каждые шесть часов.
+  if (!process.env.VITEST) {
+    const cleanupTimer = setInterval(() => { void generatedCleanup.run() }, 6 * 60 * 60 * 1000)
+    cleanupTimer.unref()
+    app.addHook('onClose', async () => clearInterval(cleanupTimer))
+    queueMicrotask(() => { void generatedCleanup.run() })
+  }
+
   app.post<{ Body: { name?: string; dataBase64?: string; agentId?: string; conversationId?: string; mimeType?: string } }>(
     REST.uploads,
     { bodyLimit: 64 * 1024 * 1024 }, // до 64 МБ на вложение (base64 раздувает ~на треть)
@@ -551,6 +574,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
       try {
         const managed = await managedChatStorage(userId, body.conversationId)
+        const executeRetouch = async (): Promise<ImageRetouchResult> => {
         const original = await readAttachment(body.source)
         const references = await Promise.all((body.references ?? []).map(readAttachment))
         const generator = opts.imageRetouchGenerator ?? llmRetouchGenerator({
@@ -592,6 +616,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const now = new Date()
         const message = db.addMessage(userId, body.conversationId, 'ai', text, now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), 'codex', undefined, image.agentId ?? null, [image])
         return { message, image }
+        }
+        return managed
+          ? await withGeneratedFileLease(managed.binding.machineId, body.source.path, executeRetouch)
+          : await executeRetouch()
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
         return reply.code(422).send({ error: message }) as never
@@ -617,6 +645,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
           || parseImages(message.text).images.some((image) => image.path === body.source.path && image.agentId === body.source.agentId)
         )
         if (!known) return reply.code(403).send({ error: 'Файл не принадлежит этому разговору' }) as never
+        return await withGeneratedFileLease(managed.binding.machineId, body.source.path, async () => {
         const source = await agentRegistry.fsRead(managed.binding.machineId, body.source.path)
         if (!source.dataBase64) throw new Error('Временный файл не найден')
         await agentRegistry.fsMkdir(managed.binding.machineId, managed.artifacts)
@@ -646,6 +675,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const now = new Date()
         const message = db.addMessage(userId, body.conversationId, 'ai', text, now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), 'codex', undefined, managed.binding.machineId, [artifact])
         return { artifact, message }
+        })
       } catch (error) {
         return reply.code(422).send({ error: error instanceof Error ? error.message : String(error) }) as never
       }

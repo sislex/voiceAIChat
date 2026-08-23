@@ -16,7 +16,7 @@ import {
 import type { AgentConfig } from './config.js'
 import { runCommand, cancelCommand } from './exec.js'
 import { startPty, writePty, resizePty, killPty } from './pty.js'
-import { fsDelete, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.js'
+import { fsDelete, fsDeleteFileSafe, fsList, fsMkdir, fsRead, fsRename, fsWrite } from './fileOps.js'
 import { createTelemetryCollector } from './telemetry.js'
 import { resolveShellInfo } from './platform.js'
 import { ensureImageDir, localAddresses, startImageHost, type ImageHost } from './imageHost.js'
@@ -295,6 +295,7 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
         case 'fs.read':
         case 'fs.write':
         case 'fs.delete':
+        case 'fs.delete-file-safe':
         case 'fs.rename':
         case 'fs.mkdir': {
           const root = config.rootDir
@@ -312,6 +313,9 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
                 break
               case 'fs.delete':
                 result = fsDelete(root, policy, msg.path)
+                break
+              case 'fs.delete-file-safe':
+                result = fsDeleteFileSafe(root, policy, msg.path)
                 break
               case 'fs.rename':
                 result = fsRename(root, policy, msg.from, msg.to)

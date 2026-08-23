@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { AGENT_VERSION, compareVersions, isToolAllowed, requiredVersion } from './version'
 
 describe('AGENT_VERSION', () => {
-  it('публикует релиз с безопасным файловым Git helper для headless Linux', () => {
-    expect(AGENT_VERSION).toBe('0.11.2')
+  it('публикует релиз с безопасным удалением временных файлов', () => {
+    expect(AGENT_VERSION).toBe('0.12.0')
   })
 })
 

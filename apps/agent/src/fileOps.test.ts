@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, win32 } from 'node:path'
 import { DEFAULT_AGENT_POLICY, type AgentPolicy } from '@voicechat/shared'
-import { fsList, fsRead, fsWrite, fsDelete, fsRename, fsMkdir, toNativePath } from './fileOps'
+import { fsList, fsRead, fsWrite, fsDelete, fsDeleteFileSafe, fsRename, fsMkdir, toNativePath } from './fileOps'
 
 const OPEN: AgentPolicy = { ...DEFAULT_AGENT_POLICY }
 
@@ -41,6 +41,20 @@ describe('fileOps', () => {
     expect(fsList(root, OPEN, '').entries!.some((e) => e.name === 'c.txt')).toBe(true)
     fsDelete(root, OPEN, join(root, 'c.txt'))
     expect(fsList(root, OPEN, '').entries!.some((e) => e.name === 'c.txt')).toBe(false)
+  })
+
+  it('safe delete не следует по симлинку и не удаляет каталог', () => {
+    const outside = join(root, '..', `outside-${Date.now()}.txt`)
+    writeFileSync(outside, 'keep')
+    symlinkSync(outside, join(root, 'link'))
+    expect(fsList(root, OPEN, '').entries).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'link', kind: 'symlink' })]))
+    expect(() => fsDeleteFileSafe(root, OPEN, join(root, 'link'))).toThrow(/обычного файла/)
+    expect(existsSync(outside)).toBe(true)
+    fsMkdir(root, OPEN, join(root, 'dir'))
+    expect(() => fsDeleteFileSafe(root, OPEN, join(root, 'dir'))).toThrow(/обычного файла/)
+    fsDeleteFileSafe(root, OPEN, join(root, 'a.txt'))
+    expect(existsSync(join(root, 'a.txt'))).toBe(false)
+    rmSync(outside, { force: true })
   })
 
   it('mkdir возвращает листинг РОДИТЕЛЯ с новой папкой (видна в текущем каталоге)', () => {
