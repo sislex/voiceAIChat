@@ -54,7 +54,8 @@ const ids = (store: TestStore): string[] => store.getState().conversations.map((
 
 /** Проматывает окно склейки и даёт улететь отложенному `conversations:list`. */
 async function flushRefresh(): Promise<void> {
-  await vi.advanceTimersByTimeAsync(CONVERSATIONS_REFRESH_DEBOUNCE_MS + 1)
+  // board.changed сначала проходит 50-мс debounce доски, затем debounce списка.
+  await vi.advanceTimersByTimeAsync(CONVERSATIONS_REFRESH_DEBOUNCE_MS + 51)
   await Promise.resolve()
 }
 
@@ -162,15 +163,13 @@ describe('voiceStore — сайдбар обновляется по событи
     expect(s.store.getState().pinnedConversation?.id).toBe(s.chatId)
   })
 
-  it('board.update скрывает строку открытого cancelled-чата, не закрывая экран', async () => {
+  it('board.changed скрывает строку открытого cancelled-чата, не закрывая экран', async () => {
     const s = await scene()
     await s.store.actions.openBoard(s.projectId)
     expect(await s.store.actions.selectConversation(s.chatId)).toBe(true)
     s.store.actions.setDraft('черновик')
     await s.api['tasks:move']({ projectId: s.projectId, taskId: s.taskId, columnId: s.cancelledColumnId })
-    const board = await s.api['board:get']({ id: s.projectId })
-
-    s.store.actions.applyBoardUpdate(s.projectId, board)
+    s.store.actions.applyBoardChanged(s.projectId)
     await flushRefresh()
 
     expect(ids(s.store)).not.toContain(s.chatId)
@@ -195,19 +194,19 @@ describe('voiceStore — сайдбар обновляется по событи
     expect(s.store.getState().messages.map((m) => m.id)).not.toContain(`msg-${chat.id}`)
   })
 
-  it('board.update с переездом карточки прячет и возвращает чат задачи', async () => {
+  it('board.changed с переездом карточки прячет и возвращает чат задачи', async () => {
     const s = await scene()
     await s.store.actions.newConversation()
     await s.store.actions.openBoard(s.projectId)
 
     await s.api['tasks:move']({ projectId: s.projectId, taskId: s.taskId, columnId: s.doneColumnId })
-    s.store.actions.applyBoardUpdate(s.projectId, await s.api['board:get']({ id: s.projectId }))
+    s.store.actions.applyBoardChanged(s.projectId)
     await flushRefresh()
     expect(ids(s.store)).not.toContain(s.chatId)
 
     // Карточку вернули в работу — строка возвращается без перезагрузки.
     await s.api['tasks:move']({ projectId: s.projectId, taskId: s.taskId, columnId: s.workColumnId })
-    s.store.actions.applyBoardUpdate(s.projectId, await s.api['board:get']({ id: s.projectId }))
+    s.store.actions.applyBoardChanged(s.projectId)
     await flushRefresh()
     expect(ids(s.store)).toContain(s.chatId)
   })

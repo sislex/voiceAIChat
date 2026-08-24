@@ -249,20 +249,28 @@ describe('voiceStore — проекты и доска', () => {
       .toEqual([first!.id, second!.id])
   })
 
-  it('applyBoardUpdate синхронизирует UI после action только для активного проекта', async () => {
-    const { store } = makeStore()
-    await store.actions.createProject({ name: 'P1' })
-    const id = store.getState().projectDetail!.id
-    await store.actions.openBoard(id)
-    const initial = store.getState().board!
-    const column = initial.columns[0]!
-    await store.actions.createTask(column.id, { title: 'До action' })
-    const current = store.getState().board!
-    const changed = { ...current, tasks: current.tasks.map((task) => ({ ...task, title: 'После action', updatedAt: task.updatedAt + 1 })) }
-    store.actions.applyBoardUpdate('other', changed)
-    expect(store.getState().board!.tasks[0]?.title).toBe('До action')
-    store.actions.applyBoardUpdate(id, changed)
-    expect(store.getState().board!.tasks[0]?.title).toBe('После action')
+  it('applyBoardChanged refetch-ит только активный проект', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, api } = makeStore()
+      await store.actions.createProject({ name: 'P1' })
+      const id = store.getState().projectDetail!.id
+      await store.actions.openBoard(id)
+      const column = store.getState().board!.columns[0]!
+      await store.actions.createTask(column.id, { title: 'До action' })
+      const task = store.getState().board!.tasks[0]!
+      await api['tasks:update']({ projectId: id, taskId: task.id, title: 'После action' })
+
+      store.actions.applyBoardChanged('other')
+      await vi.advanceTimersByTimeAsync(100)
+      expect(store.getState().board!.tasks[0]?.title).toBe('До action')
+
+      store.actions.applyBoardChanged(id)
+      await vi.advanceTimersByTimeAsync(100)
+      expect(store.getState().board!.tasks[0]?.title).toBe('После action')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('closeProjects сбрасывает состояние проектов и доски', async () => {

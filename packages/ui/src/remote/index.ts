@@ -150,9 +150,10 @@ export function makeRealtimeBridge(ws: WsClient): RendererRealtimeBridge {
 
 function makeBoardBridge(ws: WsClient): RendererBoardBridge {
   return {
-    subscribe: (projectId, includeCompleted) => ws.send({ t: 'board.subscribe', projectId, includeCompleted }),
+    subscribe: (projectId) => ws.send({ t: 'board.subscribe', projectId }),
     unsubscribe: () => ws.send({ t: 'board.unsubscribe' }),
-    onUpdate: (cb) => ws.on('board.update', (m) => cb({ projectId: m.projectId, board: m.board }))
+    onChanged: (cb) => ws.on('board.changed', (m) => cb({ projectId: m.projectId })),
+    onConnected: (cb) => ws.onConnected((reconnected) => { if (reconnected) cb() })
   }
 }
 
