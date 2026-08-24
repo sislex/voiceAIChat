@@ -1,15 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { PREVIEW_ACTION_COMMAND_TYPE } from '@shared/previewActions'
+import { Recorder } from './Recorder'
+
+/*
 import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE, type PreviewDomAction } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_MESSAGE_TYPE } from '@shared/previewInspector'
 import { WEB_RECORDER_MESSAGE_TYPE, type WebRecorderHostMessage } from '@shared/webRecorder'
-import { browserId } from '@shared/browserId'
+import { browserId } from '@shared/webRecorder'
 
 type Step = { kind: 'click' | 'type'; selector: string; text: string; sensitive?: boolean }
 const RECORD = 'voicechat.preview.record.v1'
 const sameOrigin = window.location.origin
 const validUrl = (value: string): string | null => { try { const url = new URL(value.trim()); return /^https?:$/.test(url.protocol) ? url.toString() : null } catch { return null } }
 
-/** Standalone recorder: its state and preview iframe never belong to ChatAI. */
+/** Standalone recorder: its state and preview iframe never belong to ChatAI. * /
 export function Recorder(): JSX.Element {
   const [url, setUrl] = useState<string | null>(null); const [draft, setDraft] = useState(''); const [recording, setRecording] = useState(false)
   const [steps, setSteps] = useState<Step[]>([]); const [error, setError] = useState<string | null>(null); const frame = useRef<HTMLIFrameElement>(null); const pageReady = useRef(false); const currentUrl = useRef<string | null>(null)
@@ -44,6 +50,44 @@ export function Recorder(): JSX.Element {
         {step.kind === 'type' && <input aria-label={'Значение шага ' + (index + 1)} value={step.sensitive ? '••••••' : step.text} readOnly={step.sensitive} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />}
         {step.sensitive && <em>секрет не сохранён</em>}</li>)}
     </ol></section>}
-    {url ? <iframe ref={frame} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={() => { setTimeout(() => { if (pageReady.current) return; let message = 'Сайт недоступен или вернул страницу, которую Web Reader не может прочитать.'; try { const body = frame.current?.contentDocument?.body?.textContent?.trim(); if (body) { const parsed = JSON.parse(body) as { message?: unknown }; if (typeof parsed.message === 'string') message = parsed.message } } catch { /* не-JSON страница без клиентского моста */ }; reply({ kind:'page-status', status:'error', url, error:message }) }, 0) }} onError={() => { pageReady.current = false; reply({ kind:'page-status', status:'error', url, error:'Не удалось загрузить сайт: сетевая ошибка.' }) }} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
+    {url ? <iframe ref={frame} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={() => { setTimeout(() => { if (pageReady.current) return; let message = 'Сайт недоступен или вернул страницу, которую Web Reader не может прочитать.'; try { const body = frame.current?.contentDocument?.body?.textContent?.trim(); if (body) { const parsed = JSON.parse(body) as { message?: unknown }; if (typeof parsed.message === 'string') message = parsed.message } } catch { /* не-JSON страница без клиентского моста * / }; reply({ kind:'page-status', status:'error', url, error:message }) }, 0) }} onError={() => { pageReady.current = false; reply({ kind:'page-status', status:'error', url, error:'Не удалось загрузить сайт: сетевая ошибка.' }) }} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
   </section>
 }
+*/
+
+const originalCryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  if (originalCryptoDescriptor) Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor)
+  else delete (globalThis as { crypto?: Crypto }).crypto
+})
+
+describe('Recorder scenario', () => {
+  it('runs every step with a distinct requestId without randomUUID', () => {
+    let byte = 0
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => { bytes.fill(++byte); return bytes } })
+    render(<Recorder />)
+    fireEvent.change(screen.getByPlaceholderText('https://example.com'), { target: { value: 'http://example.test' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const postMessage = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    for (const step of [
+      { kind: 'click', selector: '#buy', text: '' },
+      { kind: 'type', selector: '#search', text: 'shoes' }
+    ]) {
+      fireEvent(window, new MessageEvent('message', {
+        origin: window.location.origin,
+        source: frame.contentWindow,
+        data: { type: 'voicechat.preview.record.v1', step }
+      }))
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    const commands = postMessage.mock.calls
+      .map(([message]) => message as { type?: string; requestId?: string })
+      .filter((message) => message.type === PREVIEW_ACTION_COMMAND_TYPE)
+    expect(commands).toHaveLength(2)
+    expect(commands.every((command) => command.requestId?.startsWith('scenario-'))).toBe(true)
+    expect(new Set(commands.map((command) => command.requestId))).toHaveLength(2)
+  })
+})
