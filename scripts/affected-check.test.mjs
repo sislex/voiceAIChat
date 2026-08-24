@@ -318,3 +318,193 @@ esac
     rmSync(tempRoot, { recursive: true, force: true })
   }
 })
+
+test('production deploy безопасно мигрирует постоянный серверный том до compose up', async (t) => {
+  const repository = dirname(dirname(fileURLToPath(import.meta.url)))
+
+  const runScenario = ({ target = [], legacy = {}, fail = '' }) => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'voicechat-volume-test-'))
+    const commandsDirectory = join(tempRoot, 'commands')
+    const volumesRoot = join(tempRoot, 'volumes')
+    const calls = join(tempRoot, 'docker-calls')
+    mkdirSync(commandsDirectory)
+    mkdirSync(volumesRoot)
+
+    const putVolume = (name, files) => {
+      const directory = join(volumesRoot, name)
+      mkdirSync(directory, { recursive: true })
+      for (const [file, contents] of Object.entries(files)) {
+        writeFileSync(join(directory, file), contents)
+      }
+    }
+    putVolume('voicechat-server-data', Object.fromEntries(target.map(([name, value]) => [name, value])))
+    for (const [name, files] of Object.entries(legacy)) putVolume(name, Object.fromEntries(files))
+
+    const executable = (name, body) => {
+      const path = join(commandsDirectory, name)
+      writeFileSync(path, `#!/bin/bash
+set -eu
+${body}
+`)
+      chmodSync(path, 0o755)
+    }
+    executable('git', `
+case "$*" in
+  "rev-parse --short=12 HEAD") echo abcdef123456 ;;
+  "rev-parse --short HEAD") echo abcdef1 ;;
+  "log -1 --pretty=%s") echo "volume migration test" ;;
+esac
+`)
+    executable('flock', 'exit 0')
+    executable('curl', `printf '%s\\n' '{"ok":true}'`)
+    executable('docker', `
+printf '%s\\n' "$*" >>"$DOCKER_CALLS"
+if [[ \${1:-} == volume && \${2:-} == create ]]; then
+  mkdir -p "$VOLUMES_ROOT/\${3}"
+  exit 0
+fi
+if [[ \${1:-} == volume && \${2:-} == ls ]]; then
+  printf '%s\\n' \${LEGACY_VOLUMES:-}
+  exit 0
+fi
+if [[ \${1:-} == compose ]]; then exit 0; fi
+mounts=()
+previous=
+for argument in "$@"; do
+  if [[ $previous == -v ]]; then mounts+=("$argument"); fi
+  previous=$argument
+done
+data=
+source=
+target=
+backup=
+for mount in "\${mounts[@]}"; do
+  volume=\${mount%%:*}
+  path=\${mount#*:}; path=\${path%%:*}
+  case "$path" in
+    /data) data=$volume ;;
+    /source) source=$volume ;;
+    /target) target=$volume ;;
+    /backup) backup=$volume ;;
+  esac
+done
+if [[ -n $data && "$*" == *python3* ]]; then
+  [[ -f "$VOLUMES_ROOT/$data/voicechat.db" &&
+     -s "$VOLUMES_ROOT/$data/voicechat.db" &&
+     -f "$VOLUMES_ROOT/$data/session.secret" &&
+     -s "$VOLUMES_ROOT/$data/session.secret" &&
+     "$(IFS= read -r line <"$VOLUMES_ROOT/$data/voicechat.db"; printf %s "$line")" == valid-db ]]
+  exit
+fi
+if [[ -n $data ]]; then
+  [[ -n "$(find "$VOLUMES_ROOT/$data" -mindepth 1 -maxdepth 1 -print -quit)" ]]
+  exit
+fi
+if [[ -n $backup ]]; then
+  if [[ "\${MIGRATION_FAIL:-}" == backup ]]; then exit 42; fi
+  mkdir -p "$VOLUMES_ROOT/$backup/snapshot"
+  cp -R "$VOLUMES_ROOT/$source/." "$VOLUMES_ROOT/$backup/snapshot/"
+  exit
+fi
+if [[ -n $target ]]; then
+  if [[ "\${MIGRATION_FAIL:-}" == copy ]]; then exit 43; fi
+  cp -R "$VOLUMES_ROOT/$source/." "$VOLUMES_ROOT/$target/"
+  exit
+fi
+exit 2
+`)
+
+    const result = spawnSync('bash', [join(repository, 'scripts/prod/deploy.sh')], {
+      cwd: tempRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${commandsDirectory}:${process.env.PATH}`,
+        VC_DEPLOY_CHILD: '1',
+        VC_REPO_DIR: tempRoot,
+        VC_DEPLOY_LOCK: join(tempRoot, 'deploy.lock'),
+        VC_HEALTH_TRIES: '1',
+        VOLUMES_ROOT: volumesRoot,
+        DOCKER_CALLS: calls,
+        LEGACY_VOLUMES: Object.keys(legacy).join(' '),
+        MIGRATION_FAIL: fail
+      }
+    })
+    return {
+      result,
+      calls: readFileSync(calls, 'utf8'),
+      read: (volume, file) => readFileSync(join(volumesRoot, volume, file), 'utf8'),
+      cleanup: () => rmSync(tempRoot, { recursive: true, force: true })
+    }
+  }
+
+  await t.test('единственный корректный legacy-том копируется после backup и повторно не заменяется', () => {
+    const scenario = runScenario({
+      legacy: { 'old_project_vc-data': [['voicechat.db', 'valid-db'], ['session.secret', 'secret']] }
+    })
+    try {
+      assert.equal(scenario.result.status, 0, scenario.result.stderr)
+      assert.equal(scenario.read('voicechat-server-data', 'session.secret'), 'secret')
+      const backupAt = scenario.calls.indexOf('/backup')
+      const copyAt = scenario.calls.indexOf('/target')
+      const upAt = scenario.calls.indexOf('compose up -d --build')
+      assert.ok(backupAt >= 0 && backupAt < copyAt && copyAt < upAt, scenario.calls)
+    } finally { scenario.cleanup() }
+
+    const repeat = runScenario({
+      target: [['voicechat.db', 'valid-db'], ['session.secret', 'current']],
+      legacy: { 'old_project_vc-data': [['voicechat.db', 'valid-db'], ['session.secret', 'old']] }
+    })
+    try {
+      assert.equal(repeat.result.status, 0, repeat.result.stderr)
+      assert.equal(repeat.read('voicechat-server-data', 'session.secret'), 'current')
+      assert.doesNotMatch(repeat.calls, /\/target/)
+    } finally { repeat.cleanup() }
+  })
+
+  await t.test('чистая установка и пустой legacy не блокируют compose', () => {
+    const scenario = runScenario({ legacy: { 'old_project_vc-data': [] } })
+    try {
+      assert.equal(scenario.result.status, 0, scenario.result.stderr)
+      assert.match(scenario.calls, /compose up -d --build/)
+      assert.doesNotMatch(scenario.calls, /\/backup|\/target/)
+    } finally { scenario.cleanup() }
+  })
+
+  for (const [name, options] of [
+    ['повреждённая БД', { legacy: { old: [['voicechat.db', 'broken'], ['session.secret', 'secret']] } }],
+    ['отсутствующий secret', { legacy: { old: [['voicechat.db', 'valid-db']] } }],
+    ['пустой secret', { legacy: { old: [['voicechat.db', 'valid-db'], ['session.secret', '']] } }],
+    ['частичный постоянный том', { target: [['voicechat.db', 'valid-db']] }],
+    ['несколько legacy-томов', {
+      legacy: {
+        old_a: [['voicechat.db', 'valid-db'], ['session.secret', 'a']],
+        old_b: [['voicechat.db', 'valid-db'], ['session.secret', 'b']]
+      }
+    }],
+    ['ошибка backup', {
+      legacy: { old: [['voicechat.db', 'valid-db'], ['session.secret', 'secret']] },
+      fail: 'backup'
+    }],
+    ['ошибка копирования', {
+      legacy: { old: [['voicechat.db', 'valid-db'], ['session.secret', 'secret']] },
+      fail: 'copy'
+    }]
+  ]) {
+    await t.test(name + ' останавливает deploy до compose up', () => {
+      const scenario = runScenario(options)
+      try {
+        assert.notEqual(scenario.result.status, 0)
+        assert.doesNotMatch(scenario.calls, /compose up -d --build/)
+      } finally { scenario.cleanup() }
+    })
+  }
+})
+
+test('production compose закрепляет каноническое имя server data volume', () => {
+  const repository = dirname(dirname(fileURLToPath(import.meta.url)))
+  const compose = readFileSync(join(repository, 'docker-compose.yml'), 'utf8')
+  assert.match(compose, /vc-data:\n {4}name: voicechat-server-data/)
+  assert.match(compose, /- vc-data:\/data/)
+  assert.match(compose, /- vc-data:\/mnt\/server-data:ro/)
+})
