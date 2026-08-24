@@ -355,6 +355,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   acceptance_criteria TEXT NOT NULL DEFAULT '',
   type        TEXT NOT NULL DEFAULT 'task',
   parent_id   TEXT,
+  source_task_id TEXT,
   priority    TEXT NOT NULL DEFAULT 'medium',
   assignee    TEXT,
   created_by  TEXT,
@@ -375,7 +376,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at  INTEGER NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id)       ON DELETE CASCADE,
   FOREIGN KEY (column_id)  REFERENCES kanban_columns(id) ON DELETE CASCADE,
-  FOREIGN KEY (parent_id)  REFERENCES tasks(id) ON DELETE SET NULL
+  FOREIGN KEY (parent_id)  REFERENCES tasks(id) ON DELETE SET NULL,
+  FOREIGN KEY (source_task_id) REFERENCES tasks(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_column
@@ -793,6 +795,8 @@ CREATE TABLE IF NOT EXISTS task_improvements (
   status TEXT NOT NULL DEFAULT 'new',
   title TEXT NOT NULL,
   description TEXT NOT NULL,
+  acceptance_criteria TEXT NOT NULL DEFAULT '',
+  created_task_id TEXT,
   fingerprint TEXT NOT NULL,
   evidence_json TEXT NOT NULL DEFAULT '[]',
   occurrences INTEGER NOT NULL DEFAULT 1,
@@ -803,7 +807,9 @@ CREATE TABLE IF NOT EXISTS task_improvements (
   resolved_at INTEGER,
   UNIQUE(task_id, fingerprint),
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_task_id) REFERENCES tasks(id) ON DELETE SET NULL,
+  UNIQUE(created_task_id)
 );
 CREATE INDEX IF NOT EXISTS idx_task_improvements_task ON task_improvements(task_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_task_improvements_project ON task_improvements(project_id, status, updated_at DESC);
