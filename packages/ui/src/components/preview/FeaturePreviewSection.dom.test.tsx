@@ -136,3 +136,21 @@ describe('FeaturePreviewSection', () => {
     expect(screen.queryByText(/ssh -N -L/)).not.toBeInTheDocument()
   })
 })
+
+describe('Тестировать в Web Reader', () => {
+  it('создаёт Reader-чат с machine-адресом окружения и открывает его в новой вкладке', async () => {
+    const env = { ...environment('running'), appUrl: 'http://127.0.0.1:18123/' }
+    window.featurePreview = { get: vi.fn().mockResolvedValue(env), operate: vi.fn(), cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
+    const create = vi.fn().mockResolvedValue({ id: 'conv-9' })
+    const setPreviewUrl = vi.fn().mockResolvedValue(null)
+    ;(window as unknown as { api: unknown }).api = { 'conversations:create': create, 'conversations:setPreviewUrl': setPreviewUrl, 'projects:get': vi.fn().mockResolvedValue(null) }
+    const opened = vi.spyOn(window, 'open').mockImplementation(() => null)
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Тестировать в Web Reader' }))
+    await waitFor(() => expect(setPreviewUrl).toHaveBeenCalledWith({ id: 'conv-9', previewUrl: 'http://a1.machine.internal:18123/' }))
+    expect(create).toHaveBeenCalledWith({ title: 'Reader: feature/1', assistantKind: 'web-recorder' })
+    expect(opened).toHaveBeenCalledWith(expect.stringContaining('#/web-reader/conv-9'), '_blank', 'noopener,noreferrer')
+    opened.mockRestore()
+    delete (window as unknown as { api?: unknown }).api
+  })
+})

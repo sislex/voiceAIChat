@@ -181,3 +181,17 @@ describe('isPreviewAction: screenshot и кап результата снимк�
     expect(isPreviewActionResultMessage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'r1', ok: true, result: { text: 'A'.repeat(120_000) } })).toBe(false)
   })
 })
+
+describe('isPreviewAction: errors, wait, back, edits', () => {
+  it('валидирует новые действия и их границы', () => {
+    expect(isPreviewAction({ kind: 'errors' })).toBe(true)
+    expect(isPreviewAction({ kind: 'errors', clear: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'errors', clear: 'yes' })).toBe(false)
+    expect(isPreviewAction({ kind: 'wait', selector: '#x' })).toBe(true)
+    expect(isPreviewAction({ kind: 'wait', text: 'Готово', timeoutMs: 3000 })).toBe(true)
+    expect(isPreviewAction({ kind: 'wait' })).toBe(false)
+    expect(isPreviewAction({ kind: 'wait', selector: '#x', timeoutMs: 60_000 })).toBe(false)
+    expect(isPreviewAction({ kind: 'back' })).toBe(true)
+    expect(isPreviewAction({ kind: 'edits' })).toBe(true)
+  })
+})

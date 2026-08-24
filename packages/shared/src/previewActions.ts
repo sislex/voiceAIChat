@@ -54,6 +54,14 @@ export type PreviewAction =
   | { kind: 'press'; key: string; selector?: string; diagnostic?: boolean }
   /** Снимок области: элемент по селектору, явный rect (координаты документа) или видимая область. */
   | { kind: 'screenshot'; selector?: string; rect?: { x: number; y: number; width: number; height: number }; diagnostic?: boolean }
+  /** Ошибки открытой страницы: JS-исключения, unhandledrejection, console.error, неуспешные fetch/XHR. */
+  | { kind: 'errors'; clear?: boolean; diagnostic?: boolean }
+  /** Дождаться появления элемента (selector или видимый text) с таймаутом. */
+  | { kind: 'wait'; selector?: string; text?: string; timeoutMs?: number; diagnostic?: boolean }
+  /** Назад по истории внутренней страницы (переход подтверждается page-ready). */
+  | { kind: 'back'; diagnostic?: boolean }
+  /** Сохранённые правки edit-режима текущей страницы (перенести «как поправил» в код). */
+  | { kind: 'edits'; diagnostic?: boolean }
 
 /** DOM-действия, которые уходят в iframe (все, кроме `open`). */
 export type PreviewDomAction = Exclude<PreviewAction, { kind: 'open' }>
@@ -138,6 +146,48 @@ export interface PreviewScreenshotResult {
   dataUrl: string
 }
 
+/** Запись об ошибке страницы (кольцевой буфер инъецированного скрипта). */
+export interface PreviewPageError {
+  kind: 'error' | 'unhandledrejection' | 'console.error' | 'network'
+  message: string
+  /** Для network: реальный (не прокси) адрес и статус ответа. */
+  url?: string
+  status?: number
+  /** Миллисекунды с загрузки страницы (performance.now на момент ошибки). */
+  at: number
+}
+
+export interface PreviewErrorsResult {
+  page: PreviewPageInfo
+  errors: PreviewPageError[]
+  /** Сколько всего накоплено (errors обрезан лимитом выдачи). */
+  total: number
+}
+
+export interface PreviewWaitResult {
+  page: PreviewPageInfo
+  found: PreviewActionElement
+  waitedMs: number
+}
+
+export interface PreviewBackResult {
+  page: PreviewPageInfo
+  navigating: boolean
+}
+
+/** Правка edit-режима одного элемента (selector → что изменено). */
+export interface PreviewEditEntry {
+  selector: string
+  style?: Record<string, string>
+  text?: string
+  deleted?: boolean
+}
+
+export interface PreviewEditsResult {
+  page: PreviewPageInfo
+  edits: PreviewEditEntry[]
+}
+
 export type PreviewActionResult =
   | PreviewOpenResult
   | PreviewFindResult
@@ -149,6 +199,10 @@ export type PreviewActionResult =
   | PreviewScrollResult
   | PreviewPressResult
   | PreviewScreenshotResult
+  | PreviewErrorsResult
+  | PreviewWaitResult
+  | PreviewBackResult
+  | PreviewEditsResult
 
 /** Команда родителя в iframe превью. */
 export interface PreviewActionCommand {
@@ -230,6 +284,18 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
       return (['x', 'y', 'width', 'height'] as const).every((key) => typeof rect[key] === 'number' && Number.isFinite(rect[key] as number) && Math.abs(rect[key] as number) <= 100_000) &&
         (rect.width as number) > 0 && (rect.height as number) > 0
     }
+    case 'errors':
+      return value.clear === undefined || typeof value.clear === 'boolean'
+    case 'wait':
+      return (
+        optBounded(value.selector, L.selector) &&
+        optBounded(value.text, L.text) &&
+        (value.selector !== undefined || value.text !== undefined) &&
+        (value.timeoutMs === undefined || (typeof value.timeoutMs === 'number' && Number.isFinite(value.timeoutMs) && value.timeoutMs > 0 && value.timeoutMs <= 8_000))
+      )
+    case 'back':
+    case 'edits':
+      return true
     default:
       return false
   }
@@ -306,7 +372,10 @@ export function previewToolHint(): string {
     'После open или click, ведущего к переходу, страница загружается заново — перечитай её read перед следующим действием. ' +
     'Дополнительно: hover {selector|text} — навести курсор (выпадающие меню); scroll {to: top|bottom | dy, selector?} — ' +
     'прокрутить окно или контейнер (ленивые ленты); press {key, selector?} — нажать клавишу (Escape, Enter, Tab, ArrowDown…); ' +
-    'screenshot {selector? | rect?} — картинка элемента, области или видимой части страницы, когда важен внешний вид, а не текст. ' +
+    'screenshot {selector? | rect?} — картинка элемента, области или видимой части страницы, когда важен внешний вид, а не текст; ' +
+    'errors {clear?} — накопленные ошибки страницы (JS-исключения, console.error, упавшие запросы) — проверяй их после действий при тестировании; ' +
+    'wait {selector|text, timeoutMs?} — дождаться появления элемента (асинхронные SPA); back — назад по истории страницы; ' +
+    'edits — правки, сделанные пользователем в режиме «Редактировать» (перенеси их в код, если просят «сделай как я поправил»). ' +
     'Тестовое окружение, запущенное на машине этого разговора (dev-сервер репозитория, feature-preview), открывай ' +
     'адресом http://machine.internal:<порт>/ — прокси доставит запрос на 127.0.0.1:<порт> машины разговора; ' +
     'типовой цикл: поправь код в репозитории машины, запусти или перезапусти dev-сервер, открой machine.internal и проверь фичу. ' +

@@ -160,11 +160,26 @@ export class PreviewActionRelay {
  * Контекст тестовых окружений хода: машина разговора (для алиаса
  * machine.internal) и тестовые учётки проекта (инструмент test-users).
  */
+/** Feature-preview окружение проекта в форме, пригодной для open Reader-ом. */
+export interface PreviewEnvironmentInfo {
+  taskId: string
+  branch: string
+  state: string
+  healthy: boolean
+  /** Адрес приложения окружения уже в форме http://<agentId>.machine.internal:<port>/. */
+  appUrl: string | null
+  storybookUrl: string | null
+}
+
 export interface PreviewTurnContext {
   /** agentId машины разговора или null (нет машины / нет доступа). */
   machineOf(entry: PreviewToolEntry): string | null
   /** Тестовые пользователи проекта разговора (пусто — не заведены). */
   testUsersOf(entry: PreviewToolEntry): ProjectTestUser[]
+  /** Активные feature-preview окружения проекта разговора. */
+  environmentsOf?(entry: PreviewToolEntry): PreviewEnvironmentInfo[]
+  /** Сброс cookie-контейнера превью пользователя (host сужает до одного сайта). */
+  clearCookies?(entry: PreviewToolEntry, host?: string): number
 }
 
 export interface RegisterPreviewMcpOptions {
@@ -332,6 +347,93 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
               { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.` }
             ]
           }
+        }
+      )
+
+      server.registerTool(
+        'errors',
+        {
+          description:
+            'Накопленные ошибки открытой в превью страницы: JS-исключения, unhandledrejection, console.error и ' +
+            'упавшие fetch/XHR (статус и реальный URL). Проверяй после действий при тестировании фич. clear очищает буфер.',
+          inputSchema: { clear: z.boolean().optional().describe('Очистить буфер после чтения') }
+        },
+        async ({ clear }) => run({ kind: 'errors', ...(clear !== undefined ? { clear } : {}) })
+      )
+
+      server.registerTool(
+        'wait',
+        {
+          description:
+            'Дождаться появления элемента на открытой в превью странице (асинхронные SPA): CSS-селектор или видимый текст, ' +
+            'таймаут до 8000 мс (по умолчанию 5000). Возвращает найденный элемент и время ожидания.',
+          inputSchema: {
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор ожидаемого элемента'),
+            text: z.string().max(L.text).optional().describe('Видимый текст ожидаемого элемента'),
+            timeoutMs: z.number().positive().max(8_000).optional().describe('Таймаут ожидания, мс')
+          }
+        },
+        async ({ selector, text, timeoutMs }) => {
+          if (!selector && !text) {
+            return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
+          }
+          return run({ kind: 'wait', ...(selector ? { selector } : {}), ...(text ? { text } : {}), ...(typeof timeoutMs === 'number' ? { timeoutMs } : {}) })
+        }
+      )
+
+      server.registerTool(
+        'back',
+        {
+          description: 'Назад по истории открытой в превью страницы. После перехода перечитай страницу read.',
+          inputSchema: {}
+        },
+        async () => run({ kind: 'back' })
+      )
+
+      server.registerTool(
+        'edits',
+        {
+          description:
+            'Правки, сделанные пользователем в режиме «Редактировать» на открытой странице (selector → стили/текст/удаление). ' +
+            'Используй, когда просят «сделай как я поправил»: перенеси эти правки в исходники проекта.',
+          inputSchema: {}
+        },
+        async () => run({ kind: 'edits' })
+      )
+
+      server.registerTool(
+        'reset-session',
+        {
+          description:
+            'Сбросить cookie-сессии превью (логины в окружениях/сайтах): без host — все, с host — только один сайт. ' +
+            'Используй, чтобы перелогиниться под другим тестовым пользователем.',
+          inputSchema: { host: z.string().max(255).optional().describe('Домен сайта (например agent-1.machine.internal); без него — все сайты') }
+        },
+        async ({ host }) => {
+          if (!entry) return noContext
+          if (!opts.context?.clearCookies) {
+            return { content: [{ type: 'text', text: 'Сброс сессий недоступен на этом сервере.' }], isError: true }
+          }
+          const cleared = opts.context.clearCookies(entry, host)
+          return { content: [{ type: 'text', text: `Сброшено cookie: ${cleared}. Открой страницу заново (open), чтобы увидеть разлогиненное состояние.` }] }
+        }
+      )
+
+      server.registerTool(
+        'environment',
+        {
+          description:
+            'Активные feature-preview окружения проекта этого разговора: адрес для open (machine.internal), ' +
+            'ветка, состояние и готовность. Открой appUrl и тестируй фичу задачи.',
+          inputSchema: {}
+        },
+        async () => {
+          if (!entry) return noContext
+          const environments = opts.context?.environmentsOf?.(entry) ?? []
+          if (!environments.length) {
+            return { content: [{ type: 'text', text: 'У проекта разговора нет активных feature-preview окружений. Запусти окружение из карточки задачи (секция «Тестовое окружение») либо подними dev-сервер на машине и открой http://machine.internal:<порт>/.' }] }
+          }
+          return { content: [{ type: 'text', text: JSON.stringify(environments) }] }
         }
       )
 

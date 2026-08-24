@@ -126,9 +126,24 @@ export function useCreateAppRuntime(options: CreateRuntimeOptions = {}): AppRunt
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // StrictMode в dev монтирует эффект дважды (mount → cleanup → mount), а
+  // dispose runtime необратим: немедленный dispose оставлял живое приложение с
+  // мёртвыми сторами (вечный экран входа). Поэтому dispose откладывается на тик
+  // и отменяется повторным mount той же пары.
+  const pendingDispose = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
-    void runtime.start(initialChatId.current)
-    return () => runtime.dispose()
+    if (pendingDispose.current !== null) {
+      clearTimeout(pendingDispose.current)
+      pendingDispose.current = null
+    } else {
+      void runtime.start(initialChatId.current)
+    }
+    return () => {
+      pendingDispose.current = setTimeout(() => {
+        pendingDispose.current = null
+        runtime.dispose()
+      }, 0)
+    }
   }, [runtime])
 
   return runtime

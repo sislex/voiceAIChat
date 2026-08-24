@@ -106,11 +106,16 @@ export function createReduxDevToolsDiagnostics(environment: DevToolsEnvironment)
           // Diagnostics must never affect application behavior.
         }
       })
+      // Обёртки кэшируются: новая функция на каждый доступ ломала зависимости
+      // React-эффектов (useEffect([..., actions.x]) срабатывал каждый рендер).
+      const wrapped = new Map<PropertyKey, (...args: unknown[]) => unknown>()
       const actions = new Proxy(store.actions, {
         get(target, property, receiver) {
           const member: unknown = Reflect.get(target, property, receiver)
           if (typeof member !== 'function') return member
-          return (...args: unknown[]) => {
+          const cached = wrapped.get(property)
+          if (cached) return cached
+          const wrapper = (...args: unknown[]) => {
             const action = `${domain}/${String(property)}`
             actionStack.push(action)
             try {
@@ -124,6 +129,8 @@ export function createReduxDevToolsDiagnostics(environment: DevToolsEnvironment)
               actionStack.pop()
             }
           }
+          wrapped.set(property, wrapper)
+          return wrapper
         }
       })
 

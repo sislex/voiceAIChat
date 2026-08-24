@@ -119,3 +119,33 @@ describe('/api/preview через мост машины', () => {
     await app.close()
   })
 })
+
+describe('https-окружения и сброс cookie', () => {
+  it('https-адрес машины передаёт агенту protocol https и порт 443 по умолчанию', async () => {
+    const bridge = makeBridge(() => html('<h1>Secure dev</h1>'))
+    const app = await makeApp(bridge)
+    const res = await app.inject({ method: 'GET', url: '/api/preview?url=' + encodeURIComponent('https://agent-1.machine.internal/secure') })
+    expect(res.statusCode).toBe(200)
+    expect(bridge.calls[0]?.request).toMatchObject({ protocol: 'https', port: 443, path: '/secure' })
+    await app.close()
+  })
+
+  it('POST /api/preview/reset-cookies очищает сессии окружений пользователя', async () => {
+    const bridge = makeBridge(({ request }) => {
+      if (request.method === 'POST') {
+        return { status: 200, headers: { 'set-cookie': 'sid=alive; Path=/' }, bodyBase64: Buffer.from('ok').toString('base64') }
+      }
+      return html(request.headers.cookie ? '<p>session</p>' : '<p>anonymous</p>')
+    })
+    const app = await makeApp(bridge)
+    const machineUrl = (path: string): string => '/api/preview?url=' + encodeURIComponent('http://agent-1.machine.internal:5173' + path)
+    await app.inject({ method: 'POST', url: machineUrl('/login'), payload: 'x', headers: { 'content-type': 'text/plain' } })
+    const before = await app.inject({ method: 'GET', url: machineUrl('/profile') })
+    expect(before.body).toContain('session')
+    const reset = await app.inject({ method: 'POST', url: '/api/preview/reset-cookies', payload: {}, headers: { 'content-type': 'application/json' } })
+    expect(reset.json()).toMatchObject({ cleared: 1 })
+    const after = await app.inject({ method: 'GET', url: machineUrl('/profile') })
+    expect(after.body).toContain('anonymous')
+    await app.close()
+  })
+})

@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-25
-checked: 1badcd2b
+checked: bba3b601
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -966,6 +966,14 @@ Reader hash-маршрут служит источником истины и д�
 Кнопка «📸 Область» в тулбаре Reader включает режим выделения (канал `voicechat.preview.capture.v1`): пользователь растягивает прямоугольник, инъецированный скрипт собирает снимок области без пикселей экрана — клон body с инлайн-стилями рисуется через SVG foreignObject в canvas и кадрируется (ресурсы same-origin через прокси, `<img>` инлайнятся в data-URL; лимиты: ≤2500 узлов, ~1.8 МБ, PNG→JPEG fallback). Снимок уходит Reader-ом сообщением `area-screenshot` (валидатор в webRecorder: data-URL картинки, rect в координатах документа, реальный pageUrl), host (App) кладёт PNG вложением композера, добавляет в черновик строку с адресом страницы и координатами x/y/размером и показывает тост. Ошибка рендера показывается в Reader и host-у не уходит. Esc выключает режим; capture, инспектор и edit-режим взаимоисключаются; события выделения не попадают в запись сценария.
 
 Исправлен скрытый флейк повторного `open`: React мог сбатчить `set-url(null)`+`set-url(url)` в один рендер, iframe с тем же src не перезагружался и `page-ready` не приходил (10-секундный таймаут). Теперь Recorder пересоздаёт внутренний iframe ключом `frameKey`, инкрементируемым на каждый непустой `set-url`, — повторный open детерминированно перезагружает страницу (регресс-тест в `Recorder.dom.test.tsx`).
+
+### Тестирование фич: errors, wait, back, edits, сессии и сценарии
+
+Действия модели дополнены: `errors {clear?}` — кольцевой буфер ошибок страницы (window error, unhandledrejection, console.error, fetch/XHR со статусом ≥400 с реальным URL; кап 100 записей, выдача 50) — инъецированный скрипт оборачивает уже шимованный fetch и XMLHttpRequest.send; `wait {selector|text, timeoutMs≤8000}` — поллинг появления элемента; `back` — history.back внутренней страницы (переход подтверждает обычный page-loading→ready); `edits` — сохранённые правки edit-режима текущей страницы (selector → style/text/deleted) для сценария «сделай как я поправил». MCP-инструменты те же + `reset-session {host?}` (чистит серверный cookie-контейнер превью через `clearPreviewCookies`; смена тестового пользователя) и `environment` (активные feature-preview окружения проекта разговора с адресами в machine.internal-форме; wiring через ленивый `featurePreviewsRef` в server.ts). Самодиагностика — 21 шаг (`wait` по `#page-bottom`, `errors` c total=0).
+
+Пользовательский Reader: кнопки ‹ › (история внутренней страницы), «⟲ Сессия» (POST `/api/preview/reset-cookies`, авторизуется preview-cookie — путь добавлен в исключение auth рядом с точным `/api/preview`), селект «Адаптив» (ширина iframe 375/768/1024), `target=_blank` вырезается rewrite-ом, а `window.open` страницы шим переводит в навигацию того же окна. Сценарии сохраняются в localStorage браузера по origin+path страницы и восстанавливаются при открытии; секретные шаги воспроизводятся значением, введённым в поле шага перед запуском (не сохраняется); «Экспорт в Playwright» скачивает spec-файл (`apps/web-recorder/src/playwrightExport.ts`: goto/click/fill/press, секреты — `process.env.SCENARIO_SECRET_N`). В карточке задачи feature-preview есть «Тестировать в Web Reader»: создаёт Reader-чат с machine.internal-адресом окружения и открывает его в новой вкладке.
+
+Починены оба дефекта dev-режима из testing-operations: dispose runtime в `useCreateAppRuntime` откладывается на тик и отменяется повторным StrictMode-mount; Proxy-обёртки actions в `devtools.ts` кэшируются (стабильные ссылки для deps эффектов). `WebReaderFrame` создаёт мост в эффекте (пересоздаваемо), а не в useMemo — иначе StrictMode оставлял его необратимо disposed; cookie-гейт гоняется по generation моста. Dev-вход работает без обходов, живой прогон диагностики в StrictMode — 21/21.
 
 ### Тестовые окружения проекта в Web Reader
 

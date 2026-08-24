@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-08-24
-checked: 79851eea
+updated: 2026-08-25
+checked: bba3b601
 areas:
   - package.json
   - scripts
@@ -92,7 +92,7 @@ Electron main/preload код тестируется без запуска реа
 - **React StrictMode + одноразовый dispose runtime.** `useCreateAppRuntime` создаёт runtime в `useMemo`, а эффект на StrictMode-цикле mount → cleanup → mount вызывает `runtime.dispose()` и затем `start()` на уже необратимо disposed runtime: все `setState` доменных сторов молча блокируются, `check()`/`login()` не устанавливают `currentUser`, и приложение навсегда остаётся на экране «Вход», хотя сетевые запросы (login 200, bootstrap) проходят.
 - **Redux DevTools-обёртка зацикливает эффекты.** `createReduxDevToolsDiagnostics` оборачивает `store.actions` в Proxy, чей `get` создаёт новую функцию на каждый доступ; зависимость `useEffect(..., [path, setSidebarOpen])` в `App.tsx` меняется на каждом рендере, а `setState` без bail-out уведомляет подписчиков даже без изменения значения — при установленном расширении Redux DevTools рендер падает в «Maximum update depth exceeded» и экран пуст. Без расширения обёртка неактивна и дефект не виден.
 
-Обход для ручной live-проверки dev: временно монтировать `<App/>` без `<React.StrictMode>` и удалить `window.__REDUX_DEVTOOLS_EXTENSION__` до монтирования (см. `apps/web/src/main.tsx`); в репозиторий такие правки не коммитятся. Правильное лечение — переживаемый StrictMode dispose (или guard повторного `start`) и стабильные ссылки на action-функции в devtools Proxy.
+**Исправлено 2026-08-25:** dispose runtime в `useCreateAppRuntime` откладывается на тик и отменяется повторным StrictMode-mount (регресс — StrictMode-тест в `App.dom.test.tsx`), а Proxy devtools кэширует обёртки actions (стабильные ссылки; тест в `store/devtools.test.ts`). Dev-вход работает без обходов.
 
 ## Docker
 

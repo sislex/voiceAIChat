@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -107,6 +108,16 @@ async function openSettings(section?: string): Promise<void> {
   await userEvent.click(screen.getByText('Настройки'))
   if (section) await userEvent.click(screen.getByRole('button', { name: section }))
 }
+
+describe('App — StrictMode (dev double-effect)', () => {
+  it('двойной mount эффектов не дизейблит runtime: разговоры загружаются', async () => {
+    const api = await seededApi()
+    render(<StrictMode><App api={api} delays={SLOW} /></StrictMode>)
+    // При необратимом dispose стор молча глотал setState и список никогда не появлялся.
+    await screen.findByText('Поездка в Лиссабон', {}, { timeout: 10_000 })
+    expect(screen.getByText('Идеи для подарка')).toBeInTheDocument()
+  })
+})
 
 describe('App — онбординг первого запуска', () => {
   it('показывается при onboarded=false и скрывается после «Начать»', async () => {

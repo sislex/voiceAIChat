@@ -170,6 +170,7 @@ return nativeFetch(target,options)}catch{return nativeFetch(input,init)}};
 if(window.XMLHttpRequest&&window.XMLHttpRequest.prototype){const xhr=window.XMLHttpRequest.prototype,xhrOpen=xhr.open,xhrSetHeader=xhr.setRequestHeader;
 xhr.open=function(method,url){const rest=Array.prototype.slice.call(arguments,2);return xhrOpen.apply(this,[method,toProxy(String(url))].concat(rest))};
 xhr.setRequestHeader=function(name,value){return xhrSetHeader.call(this,/^authorization$/i.test(String(name))?'x-preview-authorization':String(name),value)}}
+try{const nativeOpen=window.open?window.open.bind(window):null;window.open=function(url){if(url==null||url==='')return nativeOpen?nativeOpen():null;location.assign(toProxy(String(url)));return null}}catch{}
 if(typeof navigator.sendBeacon==='function')try{const nativeBeacon=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(url,data){return arguments.length>1?nativeBeacon(toProxy(String(url)),data):nativeBeacon(toProxy(String(url)))}}catch{}
 try{const nativeAssign=location.assign.bind(location);Object.defineProperty(location,'assign',{configurable:true,value:(value)=>nativeAssign(toProxy(String(value)))})}catch{}
 try{const nativeLocReplace=location.replace.bind(location);Object.defineProperty(location,'replace',{configurable:true,value:(value)=>nativeLocReplace(toProxy(String(value)))})}catch{}
@@ -235,6 +236,17 @@ const disable=()=>{active=false;selected=null;document.removeEventListener('poin
 const ACTION='voicechat.preview.action.v1', RESULT='voicechat.preview.action-result.v1', READY='voicechat.preview.page-ready.v1', LOADING='voicechat.preview.page-loading.v1', RECORD='voicechat.preview.record.v1';
 parent.postMessage({type:READY,url:location.href},location.origin);
 addEventListener('beforeunload',()=>parent.postMessage({type:LOADING,url:location.href},location.origin));
+// ---- Буфер ошибок страницы: модель проверяет их действием errors ----
+const pageErrors=[];const ERRORS_CAP=100;
+const pushError=(entry)=>{entry.message=String(entry.message||'').slice(0,500);entry.at=Math.round(performance.now());pageErrors.push(entry);if(pageErrors.length>ERRORS_CAP)pageErrors.shift()};
+addEventListener('error',(e)=>{if(e instanceof ErrorEvent)pushError({kind:'error',message:e.message||'Ошибка скрипта'})},true);
+addEventListener('unhandledrejection',(e)=>pushError({kind:'unhandledrejection',message:e&&e.reason&&(e.reason.message||String(e.reason))||'unhandledrejection'}));
+try{const nativeConsoleError=console.error.bind(console);console.error=function(){try{pushError({kind:'console.error',message:Array.prototype.map.call(arguments,(a)=>a&&a.message||(typeof a==='object'?JSON.stringify(a):String(a))).join(' ')})}catch{}return nativeConsoleError.apply(null,arguments)}}catch{}
+// fetch уже переписан context-шимом на прокси — оборачиваем поверх для статусов.
+try{const shimFetch=window.fetch.bind(window);window.fetch=function(input,init){return shimFetch(input,init).then((res)=>{if(res&&res.status>=400)pushError({kind:'network',message:'HTTP '+res.status,url:(()=>{try{return unproxyLazy(res.url)}catch{return String(res.url).slice(0,300)}})(),status:res.status});return res},(err)=>{pushError({kind:'network',message:err&&err.message||'network error'});throw err})}}catch{}
+try{const xhrSend=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){this.addEventListener('loadend',()=>{if(this.status>=400)pushError({kind:'network',message:'HTTP '+this.status,url:(()=>{try{return unproxyLazy(this.responseURL)}catch{return ''}})(),status:this.status})});return xhrSend.apply(this,arguments)}}catch{}
+// unproxy объявлен ниже — ленивое обращение (ошибки случаются после инициализации).
+function unproxyLazy(value){return typeof unproxy==='function'?unproxy(value):String(value)}
 const EL_TEXT=200, SNIPPET=4000, FIND_MAX=30, HEADINGS=64, LINKS=100, BUTTONS=50, INPUTS=50;
 const CLICKABLE='a,button,[role=button],[role=link],[role=tab],[role=menuitem],input,select,textarea,label,summary,[onclick]';
 const unproxy=(value)=>{try{const u=new URL(value,location.href);if(u.pathname==='/api/preview'){const t=u.searchParams.get('url');if(t)return t}return u.toString()}catch{return value}};
@@ -330,6 +342,35 @@ const run=(action)=>{
     else if(typeof action.dy==='number')el.scrollTop=el.scrollTop+action.dy;
     el.dispatchEvent(new Event('scroll',{bubbles:true}));
     return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop:Math.max(0,el.scrollHeight-el.clientHeight)}}
+  }
+  if(action.kind==='errors'){
+    const errors=pageErrors.slice(-50).map((e)=>({kind:e.kind,message:e.message,at:e.at,...(e.url?{url:String(e.url).slice(0,300)}:{}),...(typeof e.status==='number'?{status:e.status}:{})}));
+    const total=pageErrors.length;
+    if(action.clear)pageErrors.length=0;
+    return {page:pageInfo(),errors,total}
+  }
+  if(action.kind==='wait'){
+    const timeoutMs=Math.min(8000,typeof action.timeoutMs==='number'&&action.timeoutMs>0?action.timeoutMs:5000);
+    const started=performance.now();
+    return new Promise((ok,fail)=>{
+      const attempt=()=>{
+        let found=[];
+        try{found=findTargets(action)}catch(err){fail(err);return}
+        if(found.length){ok({page:pageInfo(),found:describe(found[0]),waitedMs:Math.round(performance.now()-started)});return}
+        if(performance.now()-started>=timeoutMs){fail(new Error('Элемент не появился за '+timeoutMs+' мс: '+(action.selector||action.text)));return}
+        setTimeout(attempt,120)
+      };
+      attempt()
+    })
+  }
+  if(action.kind==='back'){
+    const info=pageInfo();
+    history.back();
+    return {page:info,navigating:true}
+  }
+  if(action.kind==='edits'){
+    const edits=loadEdits();
+    return {page:pageInfo(),edits:Object.keys(edits).map((selector)=>{const entry=edits[selector];return {selector,...(entry.style?{style:entry.style}:{}),...(typeof entry.text==='string'?{text:entry.text}:{}),...(entry.deleted?{deleted:true}:{})}})}
   }
   if(action.kind==='screenshot'){
     const scroller=document.scrollingElement||document.documentElement;
@@ -548,7 +589,7 @@ const captureArea=async(rect,maxSide)=>{
   if(!ctx)throw new Error('Canvas недоступен в этом окружении');
   const source=document.body;
   const all=source.querySelectorAll('*');
-  if(all.length>2500)throw new Error('Страница слишком сложная для снимка области');
+  if(all.length>4000)throw new Error('Страница слишком сложная для снимка области');
   const clone=source.cloneNode(true);
   const srcEls=[source,...all],dstEls=[clone,...clone.querySelectorAll('*')];
   for(let i=0;i<srcEls.length&&i<dstEls.length;i++){
@@ -605,6 +646,8 @@ export function rewritePreviewBody(body: Buffer, type: string, base: URL): Buffe
   const rewriteCssUrls = (css: string): string => css.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi, (_m, quote, value) => 'url(' + quote + proxyUrl(value, base) + quote + ')')
   if (/text\/html|application\/xhtml\+xml/i.test(type)) {
     text = text.replace(/<meta\b[^>]*http-equiv\s*=\s*(['"]?)content-security-policy\1[^>]*>/gi, '')
+      // target=_blank выпрыгивал бы из iframe в голую вкладку прокси.
+      .replace(/\starget\s*=\s*(["'])_blank\1/gi, '')
       .replace(/\b(href|src|action|poster)\s*=\s*(["'])(.*?)\2/gi, (_m, name, quote, value) => name + '=' + quote + proxyUrl(value, base) + quote)
       .replace(/\bsrcset\s*=\s*(["'])(.*?)\1/gi, (_m, quote, value) => 'srcset=' + quote + value.split(',').map((part: string) => {
         const [url, ...descriptor] = part.trim().split(/\s+/)
@@ -742,12 +785,14 @@ async function loadViaMachine(
     if (!agentId) throw new PreviewProxyError(502, 'Тестовое окружение перенаправило наружу — открой внешний адрес напрямую')
     if (!deps.canUse(userId, agentId)) throw new PreviewProxyError(403, 'Машина недоступна этому пользователю')
     if (!deps.bridge.isOnline(agentId)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
-    const port = current.port ? Number(current.port) : 80
+    const secure = current.protocol === 'https:'
+    const port = current.port ? Number(current.port) : secure ? 443 : 80
     const cookie = requestCookieHeader(userId, current)
     let response: AgentHttpResponse
     try {
       response = await deps.bridge.http(agentId, {
         method: currentMethod,
+        ...(secure ? { protocol: 'https' as const } : {}),
         port,
         path: current.pathname + current.search,
         headers: { ...headers, ...(cookie ? { cookie } : {}) },
@@ -775,7 +820,26 @@ async function loadViaMachine(
   throw new PreviewProxyError(502, 'Слишком много перенаправлений')
 }
 
+/** Сколько cookie снято; host сужает сброс до одного сайта (домен + поддомены). */
+export function clearPreviewCookies(userId: string, host?: string): number {
+  const cookies = cookiesByUser.get(userId) ?? []
+  if (!host) {
+    cookiesByUser.delete(userId)
+    return cookies.length
+  }
+  const target = host.toLowerCase()
+  const kept = cookies.filter((cookie) => cookie.domain !== target && !target.endsWith('.' + cookie.domain) && !cookie.domain.endsWith('.' + target))
+  cookiesByUser.set(userId, kept)
+  return cookies.length - kept.length
+}
+
 export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDeps = {}): void {
+  // Сброс сессий окружений: удобно перелогиниться под другим тестовым
+  // пользователем. Авторизуется preview-cookie (кнопка «Сессия» в Reader) или Bearer.
+  app.post<{ Body: { host?: string } }>('/api/preview/reset-cookies', async (req) => {
+    const host = typeof req.body?.host === 'string' && req.body.host.length <= 255 ? req.body.host : undefined
+    return { cleared: clearPreviewCookies(uid(req), host) }
+  })
   app.get<{ Querystring: { page?: string } }>('/api/preview/diagnostics', async (req, reply) =>
     reply.type('text/html; charset=utf-8').send(previewDiagnosticsHtml(req.query.page === 'destination'))
   )

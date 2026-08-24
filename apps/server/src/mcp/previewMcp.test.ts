@@ -143,7 +143,47 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['click', 'find', 'hover', 'open', 'press', 'read', 'screenshot', 'scroll', 'test-users', 'type'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['back', 'click', 'edits', 'environment', 'errors', 'find', 'hover', 'open', 'press', 'read', 'reset-session', 'screenshot', 'scroll', 'test-users', 'type', 'wait'])
+  })
+
+  it('errors, wait, back и edits доходят до клиента как действия', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, errors: [], total: 0 } })
+    }
+    await call('errors', { clear: true })
+    await call('wait', { selector: '#late', timeoutMs: 2000 })
+    await call('back')
+    await call('edits')
+    expect(seen).toEqual([
+      { kind: 'errors', clear: true },
+      { kind: 'wait', selector: '#late', timeoutMs: 2000 },
+      { kind: 'back' },
+      { kind: 'edits' }
+    ])
+  })
+
+  it('environment отдаёт окружения проекта, reset-session чистит cookie через контекст', async () => {
+    const clears: Array<string | undefined> = []
+    await makeApp({
+      machineOf: () => null,
+      testUsersOf: () => [],
+      environmentsOf: () => [{ taskId: 't1', branch: 'CHAT-1', state: 'running', healthy: true, appUrl: 'http://agent-1.machine.internal:18123/', storybookUrl: null }],
+      clearCookies: (_entry, host) => { clears.push(host); return 2 }
+    })
+    const environments = await call('environment')
+    expect(JSON.parse(environments.text)).toEqual([{ taskId: 't1', branch: 'CHAT-1', state: 'running', healthy: true, appUrl: 'http://agent-1.machine.internal:18123/', storybookUrl: null }])
+    const reset = await call('reset-session', { host: 'agent-1.machine.internal' })
+    expect(reset.text).toContain('Сброшено cookie: 2')
+    expect(clears).toEqual(['agent-1.machine.internal'])
+  })
+
+  it('environment без окружений объясняет, как их поднять', async () => {
+    await makeApp({ machineOf: () => null, testUsersOf: () => [], environmentsOf: () => [], clearCookies: () => 0 })
+    const result = await call('environment')
+    expect(result.text).toContain('карточки задачи')
   })
 
   it('screenshot возвращает модели картинку image-контентом с координатами', async () => {
