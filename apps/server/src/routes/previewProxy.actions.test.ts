@@ -338,3 +338,65 @@ describe('скрипт превью: screenshot', () => {
     expect(res.error).toContain('не найден')
   })
 })
+
+describe('скрипт превью: errors, wait, back, edits', () => {
+  it('errors копит console.error, исключения и unhandledrejection; clear очищает', async () => {
+    console.error('первая ошибка приложения')
+    window.dispatchEvent(new ErrorEvent('error', { message: 'Uncaught boom' }))
+    const rejection = new Event('unhandledrejection') as Event & { reason?: unknown }
+    rejection.reason = new Error('promise upal')
+    window.dispatchEvent(rejection)
+    const res = await act({ kind: 'errors', clear: true })
+    expect(res.ok).toBe(true)
+    const list = res.result as { errors: Array<{ kind: string; message: string; at: number }>; total: number }
+    expect(list.total).toBeGreaterThanOrEqual(3)
+    expect(list.errors.some((e) => e.kind === 'console.error' && e.message.includes('первая ошибка'))).toBe(true)
+    expect(list.errors.some((e) => e.kind === 'error' && e.message.includes('boom'))).toBe(true)
+    expect(list.errors.some((e) => e.kind === 'unhandledrejection' && e.message.includes('promise upal'))).toBe(true)
+    const cleared = await act({ kind: 'errors' })
+    expect((cleared.result as { total: number }).total).toBe(0)
+  })
+
+  it('wait дожидается элемента, появившегося позже, и падает по таймауту', async () => {
+    setTimeout(() => {
+      const late = document.createElement('p')
+      late.id = 'late-element'
+      late.textContent = 'появился'
+      document.body.append(late)
+    }, 200)
+    const found = await act({ kind: 'wait', selector: '#late-element', timeoutMs: 3000 })
+    expect(found.ok).toBe(true)
+    const result = found.result as { found: { selector: string }; waitedMs: number }
+    expect(result.found.selector).toBe('#late-element')
+    expect(result.waitedMs).toBeGreaterThanOrEqual(100)
+    const missing = await act({ kind: 'wait', selector: '#never', timeoutMs: 300 })
+    expect(missing.ok).toBe(false)
+    expect(missing.error).toContain('не появился')
+  }, 10_000)
+
+  it('back отвечает сразу и инициирует переход по истории', async () => {
+    const res = await act({ kind: 'back' })
+    expect(res.ok).toBe(true)
+    expect((res.result as { navigating: boolean }).navigating).toBe(true)
+  })
+
+  it('edits возвращает сохранённые правки страницы', async () => {
+    // Ключ строится от unproxy(location) — соседние pushState-тесты меняли адрес.
+    const real = (() => {
+      const current = new URL(window.location.href)
+      const target = current.searchParams.get('url')
+      return current.pathname === '/api/preview' && target ? new URL(target) : current
+    })()
+    const key = 'voicechat.preview.edits.v1:' + real.origin + real.pathname
+    localStorage.setItem(key, JSON.stringify({
+      '#q': { original: { cssText: '', text: null }, style: { fontWeight: '700' }, text: 'Новый текст' },
+      '#gone': { original: { cssText: '', text: null }, deleted: true }
+    }))
+    const res = await act({ kind: 'edits' })
+    expect(res.ok).toBe(true)
+    const list = (res.result as { edits: Array<{ selector: string; style?: Record<string, string>; text?: string; deleted?: boolean }> }).edits
+    expect(list).toContainEqual({ selector: '#q', style: { fontWeight: '700' }, text: 'Новый текст' })
+    expect(list).toContainEqual({ selector: '#gone', deleted: true })
+    localStorage.removeItem(key)
+  })
+})

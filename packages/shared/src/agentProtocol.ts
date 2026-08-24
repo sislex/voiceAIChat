@@ -90,6 +90,8 @@ export interface AgentTelemetry {
  */
 export interface AgentHttpRequest {
   method: string
+  /** https — для локальных dev-серверов с самоподписанным сертификатом. */
+  protocol?: 'http' | 'https'
   /** Порт на 127.0.0.1 машины (1–65535). */
   port: number
   /** Путь с query, начинается с '/'. */

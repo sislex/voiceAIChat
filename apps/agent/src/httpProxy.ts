@@ -4,6 +4,7 @@
 // tunnel.connect) — сервер и клиент не могут направить запрос наружу.
 
 import { request as httpRequest } from 'node:http'
+import { request as httpsRequest } from 'node:https'
 import type { AgentHttpRequest, AgentHttpResponse } from '@voicechat/shared'
 
 /** Кап тела ответа: тем же лимитом ограничен серверный /api/preview. */
@@ -23,8 +24,10 @@ export function fetchLocal(request: AgentHttpRequest, timeoutMs = HTTP_PROXY_TIM
   const invalid = validateHttpProxyRequest(request)
   if (invalid) return Promise.reject(new Error(invalid))
   const body = request.bodyBase64 === undefined ? undefined : Buffer.from(request.bodyBase64, 'base64')
+  const secure = request.protocol === 'https'
+  const transport = secure ? httpsRequest : httpRequest
   return new Promise((resolve, reject) => {
-    const req = httpRequest(
+    const req = transport(
       {
         host: '127.0.0.1',
         port: request.port,
@@ -35,7 +38,10 @@ export function fetchLocal(request: AgentHttpRequest, timeoutMs = HTTP_PROXY_TIM
           host: `127.0.0.1:${request.port}`,
           ...(body === undefined ? {} : { 'content-length': String(body.length) })
         },
-        timeout: timeoutMs
+        timeout: timeoutMs,
+        // Локальные dev-серверы обычно на самоподписанном сертификате; запрос
+        // не покидает 127.0.0.1 машины, поэтому проверка цепочки не обязательна.
+        ...(secure ? { rejectUnauthorized: false } : {})
       },
       (response) => {
         const chunks: Buffer[] = []

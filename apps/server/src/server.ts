@@ -11,7 +11,7 @@ import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
 import { registerRest } from './routes/rest.js'
-import { registerPreviewProxy } from './routes/previewProxy.js'
+import { clearPreviewCookies, registerPreviewProxy } from './routes/previewProxy.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { StorageMigrationManager } from './storageMigration/manager.js'
 import { registerStorageMigrationRoutes } from './storageMigration/routes.js'
@@ -390,6 +390,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Действия веб-превью (mcp__browser__*): relay «сервер → клиенты пользователя»,
   // сессии WS подписываются на подключении, ход адресуется токеном ?turn=.
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
+  // FeaturePreviewManager создаётся ниже по файлу — previewMcp получает его лениво.
+  const featurePreviewsRef: { current: FeaturePreviewManager | null } = { current: null }
   registerPreviewMcp(app, {
     secret: mcpSecret,
     relay: previewRelay,
@@ -405,7 +407,30 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const projectId = db.getConversation(userId, conversationId)?.projectId
         if (!projectId) return []
         return db.getProject(userId, projectId)?.testUsers ?? []
-      }
+      },
+      environmentsOf: ({ userId, conversationId }) => {
+        const projectId = db.getConversation(userId, conversationId)?.projectId
+        if (!projectId || !db.getProject(userId, projectId)) return []
+        const toMachineUrl = (agentId: string, raw: string | null): string | null => {
+          if (!raw) return null
+          try {
+            const url = new URL(raw)
+            url.hostname = agentId + '.machine.internal'
+            return url.toString()
+          } catch { return null }
+        }
+        return (featurePreviewsRef.current?.list() ?? [])
+          .filter((env) => env.projectId === projectId)
+          .map((env) => ({
+            taskId: env.taskId,
+            branch: env.branch,
+            state: env.state,
+            healthy: env.healthStatus === 'healthy',
+            appUrl: toMachineUrl(env.agentId, env.appUrl),
+            storybookUrl: toMachineUrl(env.agentId, env.storybookUrl)
+          }))
+      },
+      clearCookies: ({ userId }, host) => clearPreviewCookies(userId, host)
     }
   })
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
@@ -1328,6 +1353,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     fsDelete: (agentId, path) => agentRegistry.fsDelete(agentId, path),
     closeTunnelsForAgent: (agentId) => agentRegistry.closeTunnelsForTarget(agentId)
   })
+  featurePreviewsRef.current = featurePreviews
   registerFeaturePreviewRoutes(app, featurePreviews, db, agentRegistry)
   void featurePreviews.reconcile()
   const releaseManager = new ReleaseManager(db, {

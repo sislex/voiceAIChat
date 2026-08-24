@@ -28,6 +28,7 @@ const originalCryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'cr
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  localStorage.clear() // персист сценариев не должен протекать между тестами
   if (originalCryptoDescriptor) Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor)
   else delete (globalThis as { crypto?: Crypto }).crypto
 })
@@ -144,8 +145,10 @@ describe('Recorder inspector и запись', () => {
     expect(steps[0]).toMatchObject({ step: { kind: 'click', selector: '#buy', text: 'Купить', sensitive: false } })
     expect(steps[1]).toMatchObject({ step: { kind: 'type', selector: '#password', text: '', sensitive: true } })
     expect(JSON.stringify(steps)).not.toContain('hunter2')
-    expect((screen.getByLabelText('Значение шага 2') as HTMLInputElement).value).toBe('••••••')
-    expect(screen.getByText('секрет не сохранён')).toBeTruthy()
+    const secret = screen.getByLabelText('Секретное значение шага 2') as HTMLInputElement
+    expect(secret.value).toBe('') // значение поля не пришло и не показано
+    expect(secret.getAttribute('placeholder')).toContain('для запуска')
+    expect(screen.getByText('секрет не сохраняется')).toBeTruthy()
   })
 })
 

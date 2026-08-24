@@ -49,6 +49,24 @@ describe('Redux DevTools diagnostics', () => {
   })
 })
 
+describe('Redux DevTools diagnostics — стабильность ссылок actions', () => {
+  it('повторное чтение action возвращает ту же обёртку (deps эффектов не пересоздаются)', () => {
+    const raw = {
+      getState: () => ({ value: 1 }),
+      subscribe: () => () => undefined,
+      actions: { setValue: (_next: number) => undefined },
+      dispose: () => undefined
+    }
+    const attached = createReduxDevToolsDiagnostics({
+      mode: 'development',
+      extension: { connect: () => ({ init: () => undefined, send: () => undefined }) }
+    }).attach(raw, 'ChatAI Test', 'test')
+    // Раньше Proxy создавал новую функцию на каждый доступ — useEffect с dep
+    // actions.setValue зацикливал рендер («Maximum update depth exceeded»).
+    expect(attached.actions.setValue).toBe(attached.actions.setValue)
+  })
+})
+
 describe('sanitizeDevToolsState', () => {
   it('redacts secrets, bounds streams and binaries without mutation', () => {
     const input = {

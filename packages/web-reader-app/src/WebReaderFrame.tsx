@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import type { WebRecorderAreaScreenshot, WebRecorderHostMessage } from '@shared/webRecorder'
 import { browserId } from '@shared/browserId'
@@ -42,23 +42,26 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost })
   callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost }
 
-  // Мост живёт со смонтированным iframe одного разговора: смена разговора
-  // размонтирует компонент (key у вызывающего) и dispose-ит старый lifecycle.
-  const bridge: ReaderHostBridge = useMemo(() => createReaderHostBridge({
-    conversationId,
-    newId: browserId,
-    send: (message: WebRecorderHostMessage) => {
-      frameRef.current?.contentWindow?.postMessage(message, platform.origin)
-    },
-    capabilities: ['mcp-actions', 'diagnostics', 'inspector', 'recording'],
-    onRegistration: (registration) => callbacks.current.onRegisterHost?.(registration),
-    onSaveUrl: (nextUrl) => void callbacks.current.onSave(nextUrl),
-    onElement: (element) => callbacks.current.onSelectElement?.(element),
-    onAreaScreenshot: (shot) => callbacks.current.onAreaScreenshot?.(shot)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [conversationId])
-
+  // Мост живёт со смонтированным iframe одного разговора и создаётся в эффекте:
+  // dispose необратим, а StrictMode в dev прогоняет mount → cleanup → mount —
+  // мост из useMemo оставался бы мёртвым после повторного mount.
+  const bridgeRef = useRef<ReaderHostBridge | null>(null)
+  const [bridgeGeneration, setBridgeGeneration] = useState(0)
   useEffect(() => {
+    const bridge = createReaderHostBridge({
+      conversationId,
+      newId: browserId,
+      send: (message: WebRecorderHostMessage) => {
+        frameRef.current?.contentWindow?.postMessage(message, platform.origin)
+      },
+      capabilities: ['mcp-actions', 'diagnostics', 'inspector', 'recording'],
+      onRegistration: (registration) => callbacks.current.onRegisterHost?.(registration),
+      onSaveUrl: (nextUrl) => void callbacks.current.onSave(nextUrl),
+      onElement: (element) => callbacks.current.onSelectElement?.(element),
+      onAreaScreenshot: (shot) => callbacks.current.onAreaScreenshot?.(shot)
+    })
+    bridgeRef.current = bridge
+    setBridgeGeneration((value) => value + 1)
     const unsubscribe = platform.subscribeMessages((event) => {
       if (event.origin !== platform.origin || event.source !== frameRef.current?.contentWindow) return
       bridge.receive(event.data)
@@ -66,12 +69,17 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     return () => {
       unsubscribe()
       bridge.dispose()
+      if (bridgeRef.current === bridge) bridgeRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bridge])
+  }, [conversationId])
 
   // Cookie-гейт: целевой URL уходит Reader-у только после успешного ensurePreview.
   useEffect(() => {
+    const bridge = bridgeRef.current
+    // Первый commit проходит с generation 0 (state моста ещё не применён) —
+    // гейт запускается один раз на поколение моста, иначе ensurePreview дублировался бы.
+    if (!bridge || bridgeGeneration === 0) return
     const sequence = ++gateSequence.current
     if (!url) {
       setPreviewSession('ready')
@@ -96,7 +104,7 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
       () => { if (alive && sequence === gateSequence.current) setPreviewSession('failed') }
     )
     return () => { alive = false }
-  }, [bridge, ensurePreview, url, retryKey])
+  }, [bridgeGeneration, ensurePreview, url, retryKey])
 
   return <section className="webpreview" aria-label="Web Reader">
     {url && previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}

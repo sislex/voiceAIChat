@@ -14,7 +14,7 @@ export const WEB_READER_DIAGNOSTICS_CAPABILITIES = [
   'iframe handshake (ready/init), conversation and registration IDs',
   'active Reader conversation and registered tab', 'preview cookie/auth', '/api/preview proxy',
   'ready/loading lifecycle', 'open and DOM read', 'find by text and selector', 'computed styles',
-  'hover events', 'scroll position', 'key press', 'element screenshot',
+  'hover events', 'scroll position', 'key press', 'element screenshot', 'wait for element', 'page errors buffer',
   'type with input/change events', 'form submit', 'click and navigation',
   'queued read after navigation', 'requestId correlation'
 ] as const
@@ -100,6 +100,8 @@ export async function runWebReaderDiagnostics(options: DiagnosticsOptions): Prom
       return run({ kind: 'read', selector: '#key-status', diagnostic: true })
     }, (r) => 'text' in r && (r as PreviewReadResult).text.includes('key:Escape'))
     await step('screenshot', 'screenshot: снимок элемента', 'action', () => run({ kind: 'screenshot', selector: '#diagnostic-style', diagnostic: true }), (r) => 'dataUrl' in r && (r as { dataUrl: string }).dataUrl.startsWith('data:image/'))
+    await step('wait', 'wait: ожидание элемента', 'action', () => run({ kind: 'wait', selector: '#page-bottom', timeoutMs: 3_000, diagnostic: true }), (r) => 'found' in r)
+    await step('errors', 'errors: буфер ошибок страницы пуст', 'action', () => run({ kind: 'errors', diagnostic: true }), (r) => 'total' in r && 'errors' in r && (r as { total: number }).total === 0)
     await step('type', 'type, input и change', 'action', () => run({ kind: 'type', selector: '#diagnostic-input', text: 'diagnostic-input', diagnostic: true }))
     await step('events', 'проверка input/change', 'action', () => run({ kind: 'read', selector: '#event-status', diagnostic: true }), (r) => 'text' in r && /input:1 change:1/.test((r as PreviewReadResult).text))
     await step('submit', 'отправка формы', 'action', () => run({ kind: 'type', selector: '#diagnostic-input', text: 'diagnostic-input', submit: true, diagnostic: true }), (r) => 'submitted' in r && r.submitted)

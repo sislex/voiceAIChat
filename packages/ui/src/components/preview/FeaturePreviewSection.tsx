@@ -27,6 +27,7 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
   const [machines, setMachines] = useState<ProjectMachine[]>([])
   const [selectedAgentId, setSelectedAgentId] = useState('')
   const [opening, setOpening] = useState<PreviewServiceKind | null>(null)
+  const [readerOpening, setReaderOpening] = useState(false)
   const [connection, setConnection] = useState<PreviewAccessResult | null>(null)
   const [launching, setLaunching] = useState(false)
   const [now, setNow] = useState(Date.now())
@@ -96,6 +97,28 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
     if (!connection?.tunnelId) return
     await api.closeTunnel(props.projectId, props.taskId, connection.tunnelId)
     setConnection({ ...connection, state: 'closed', url: null })
+  }
+  // «Тестировать в Web Reader»: создаёт Reader-чат с адресом окружения через
+  // loopback-мост машины и открывает его в новой вкладке — модель и пользователь
+  // сразу тестируют фичу задачи инструментами браузера.
+  const openInWebReader = async (): Promise<void> => {
+    const chatApi = window.api
+    if (!chatApi || !environment?.appUrl) return
+    setReaderOpening(true)
+    try {
+      const parsed = new URL(environment.appUrl, 'http://127.0.0.1/')
+      parsed.hostname = environment.agentId + '.machine.internal'
+      const conversation = await chatApi['conversations:create']({ title: `Reader: ${environment.branch}`, assistantKind: 'web-recorder' })
+      await chatApi['conversations:setPreviewUrl']({ id: conversation.id, previewUrl: parsed.toString() })
+      const target = new URL(window.location.href)
+      target.hash = `#/web-reader/${conversation.id}`
+      window.open(target.toString(), '_blank', 'noopener,noreferrer')
+      setError(null)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setReaderOpening(false)
+    }
   }
   const run = environment?.runs.at(-1)
   const activeRun = !!run && ['queued','running','cancelling'].includes(run.status)
@@ -171,6 +194,7 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
       {actions.includes('rebuild') && <Button size="sm" onClick={() => void operate('rebuild')}>Пересобрать</Button>}
       {actions.includes('stop') && <Button size="sm" onClick={() => void operate('stop')}>Остановить</Button>}
       {canOpen && environment?.appUrl && <Button variant="primary" size="sm" disabled={opening !== null} onClick={() => void openService('app')}>{opening === 'app' ? 'Создаём подключение…' : 'Открыть проект'}</Button>}
+      {canOpen && environment?.appUrl && <Button variant="secondary" size="sm" loading={readerOpening} onClick={() => void openInWebReader()}>Тестировать в Web Reader</Button>}
       {canOpen && environment?.storybookUrl && environment.storybookStatus === 'ready' && <Button size="sm" disabled={opening !== null} onClick={() => void openService('storybook')}>{opening === 'storybook' ? 'Создаём подключение…' : 'Открыть Storybook'}</Button>}
       {actions.includes('seed') && <Button size="sm" onClick={() => void operate('seed')}>Подготовить тестовые данные</Button>}
       {actions.includes('reset') && <Button size="sm" onClick={() => void operate('reset')}>Сбросить тестовые данные</Button>}
