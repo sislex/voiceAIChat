@@ -44,8 +44,10 @@ export default defineConfig({
     }
   },
   server: {
+    host: '127.0.0.1',
     port: 5273,
     proxy: {
+      '/web-recorder/': { target: 'http://127.0.0.1:5274', changeOrigin: true },
       '/api': { target: 'http://127.0.0.1:8787', changeOrigin: true },
       '/ws': { target: 'ws://127.0.0.1:8787', ws: true },
       // Компаньон-агент подключается по /agent — в dev проксируем на бэкенд,

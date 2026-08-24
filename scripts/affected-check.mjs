@@ -14,12 +14,13 @@ export const PACKAGES = [
   { id: 'web-reader', path: 'packages/web-reader-app', workspace: '@voicechat/web-reader-app' },
   { id: 'playwright-reader', path: 'packages/playwright-reader-app', workspace: '@voicechat/playwright-reader-app' },
   { id: 'web', path: 'apps/web', workspace: '@voicechat/web' },
+  { id: 'web-recorder', path: 'apps/web-recorder', workspace: '@voicechat/web-recorder' },
   { id: 'desktop', path: 'apps/desktop', prefix: 'apps/desktop' },
   { id: 'agent-tray', path: 'apps/agent-tray', prefix: 'apps/agent-tray' }
 ]
 
 // Это явная карта зависимостей: shared — контракт всех workspace-потребителей.
-const sharedConsumers = ['server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web']
+const sharedConsumers = ['server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder']
 const workspacePackages = PACKAGES.filter((pkg) => pkg.workspace)
 const fullGate = (reason) => ({ full: true, reason, packages: workspacePackages })
 const harmlessPaths = [/^docs\//, /^generated\/kb\//, /^(README|LICENSE)(\.md)?$/]
@@ -48,6 +49,7 @@ export function selectAffected(files) {
   }
 
   if (affected.has('shared')) for (const consumer of sharedConsumers) affected.add(consumer)
+  if (affected.has('ui')) affected.add('web-recorder')
   return { full: false, reason: null, packages: PACKAGES.filter((pkg) => affected.has(pkg.id)) }
 }
 
