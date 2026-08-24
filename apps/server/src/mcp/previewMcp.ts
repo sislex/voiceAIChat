@@ -302,6 +302,40 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'screenshot',
+        {
+          description:
+            'Скриншот открытой в превью страницы: элемента по CSS-селектору, области rect (координаты документа) ' +
+            'или видимой части без аргументов. Возвращает картинку — используй, когда важен внешний вид, а не текст.',
+          inputSchema: {
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента для снимка'),
+            rect: z.object({ x: z.number(), y: z.number(), width: z.number().positive(), height: z.number().positive() }).optional().describe('Область в координатах документа страницы')
+          }
+        },
+        async ({ selector, rect }) => {
+          if (!entry) return noContext
+          const outcome = await opts.relay.request(entry.userId, entry.conversationId, {
+            kind: 'screenshot',
+            ...(selector ? { selector } : {}),
+            ...(rect ? { rect } : {})
+          }, opts.timeoutMs)
+          if (!outcome.ok) return toolResult(outcome)
+          const result = outcome.result as { dataUrl?: string; rect?: { x: number; y: number; width: number; height: number } } | undefined
+          const match = typeof result?.dataUrl === 'string' ? /^data:(image\/[a-z+]+);base64,(.+)$/.exec(result.dataUrl) : null
+          if (!match) {
+            return { content: [{ type: 'text' as const, text: 'Снимок не получен: страница не вернула картинку.' }], isError: true }
+          }
+          const where = result?.rect ? `x=${result.rect.x}, y=${result.rect.y}, ${result.rect.width}×${result.rect.height} px` : ''
+          return {
+            content: [
+              { type: 'image' as const, data: match[2], mimeType: match[1] },
+              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.` }
+            ]
+          }
+        }
+      )
+
+      server.registerTool(
         'test-users',
         {
           description:

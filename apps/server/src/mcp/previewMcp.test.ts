@@ -134,7 +134,7 @@ describe('previewMcp — инструменты browser', () => {
     expect(res.statusCode).toBe(403)
   })
 
-  it('tools/list показывает open, read, find, click, type, hover, scroll, press и test-users', async () => {
+  it('tools/list показывает все инструменты браузера', async () => {
     await makeApp()
     const res = await app.inject({
       method: 'POST',
@@ -143,7 +143,35 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['click', 'find', 'hover', 'open', 'press', 'read', 'scroll', 'test-users', 'type'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['click', 'find', 'hover', 'open', 'press', 'read', 'screenshot', 'scroll', 'test-users', 'type'])
+  })
+
+  it('screenshot возвращает модели картинку image-контентом с координатами', async () => {
+    await makeApp()
+    let seen: unknown
+    client = (m) => {
+      seen = m.action
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, rect: { x: 4, y: 8, width: 320, height: 200 }, dataUrl: 'data:image/png;base64,QUJD' } })
+    }
+    const res = await app.inject({
+      method: 'POST',
+      url: `${PREVIEW_MCP_PATH}?k=${SECRET}&turn=${TURN}`,
+      headers: MCP_HEADERS,
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'screenshot', arguments: { selector: '#hero' } } }
+    })
+    expect(seen).toEqual({ kind: 'screenshot', selector: '#hero' })
+    const body = res.json() as { result: { content: Array<{ type: string; data?: string; mimeType?: string; text?: string }>; isError?: boolean } }
+    expect(body.result.isError).not.toBe(true)
+    expect(body.result.content[0]).toMatchObject({ type: 'image', data: 'QUJD', mimeType: 'image/png' })
+    expect(body.result.content[1]?.text).toContain('320×200')
+  })
+
+  it('screenshot без картинки в ответе — ошибка, отказ клиента доходит как текст', async () => {
+    await makeApp()
+    client = (m) => relay.resolve(U, m.requestId, { ok: false, error: 'Страница ещё загружается.' })
+    const result = await call('screenshot', {})
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('загружается')
   })
 
   it('hover/scroll/press доходят до клиента как действия', async () => {

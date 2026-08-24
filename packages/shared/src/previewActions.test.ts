@@ -165,3 +165,19 @@ describe('isPreviewAction: hover, scroll, press', () => {
     expect(isPreviewAction({ kind: 'press', key: 'x'.repeat(40) })).toBe(false)
   })
 })
+
+describe('isPreviewAction: screenshot и кап результата снимка', () => {
+  it('screenshot допускает selector, явный rect или пустые аргументы', () => {
+    expect(isPreviewAction({ kind: 'screenshot' })).toBe(true)
+    expect(isPreviewAction({ kind: 'screenshot', selector: '#hero' })).toBe(true)
+    expect(isPreviewAction({ kind: 'screenshot', rect: { x: 10, y: 20, width: 300, height: 200 } })).toBe(true)
+    expect(isPreviewAction({ kind: 'screenshot', rect: { x: 0, y: 0, width: 0, height: 10 } })).toBe(false)
+    expect(isPreviewAction({ kind: 'screenshot', rect: { x: Number.NaN, y: 0, width: 10, height: 10 } })).toBe(false)
+  })
+
+  it('результат со снимком проходит расширенный кап, обычный — нет', () => {
+    const big = 'data:image/png;base64,' + 'A'.repeat(120_000)
+    expect(isPreviewActionResultMessage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'r1', ok: true, result: { page: { url: '', title: '' }, rect: { x: 0, y: 0, width: 1, height: 1 }, dataUrl: big } })).toBe(true)
+    expect(isPreviewActionResultMessage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'r1', ok: true, result: { text: 'A'.repeat(120_000) } })).toBe(false)
+  })
+})

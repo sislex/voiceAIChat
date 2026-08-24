@@ -331,6 +331,23 @@ const run=(action)=>{
     el.dispatchEvent(new Event('scroll',{bubbles:true}));
     return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop:Math.max(0,el.scrollHeight-el.clientHeight)}}
   }
+  if(action.kind==='screenshot'){
+    const scroller=document.scrollingElement||document.documentElement;
+    let rect;
+    if(action.selector){
+      const found=bySelector(action.selector);
+      if(!found.length)throw new Error('Элемент не найден: '+action.selector);
+      found[0].scrollIntoView&&found[0].scrollIntoView({block:'center'});
+      const r=found[0].getBoundingClientRect();
+      rect={x:Math.round(r.left+scroller.scrollLeft),y:Math.round(r.top+scroller.scrollTop),width:Math.max(1,Math.round(r.width)),height:Math.max(1,Math.round(r.height))}
+    }else if(action.rect){
+      rect={x:Math.round(action.rect.x),y:Math.round(action.rect.y),width:Math.max(1,Math.round(action.rect.width)),height:Math.max(1,Math.round(action.rect.height))}
+    }else{
+      rect={x:scroller.scrollLeft,y:scroller.scrollTop,width:innerWidth,height:innerHeight}
+    }
+    // Масштаб до 1400px по большей стороне: снимок агента идёт в контекст модели.
+    return captureArea(rect,1400).then((dataUrl)=>({page:pageInfo(),rect,dataUrl}))
+  }
   if(action.kind==='press'){
     let el=document.activeElement&&document.activeElement!==document.body?document.activeElement:document.body;
     if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);el=found[0];el.focus&&el.focus()}
@@ -523,9 +540,10 @@ const inlineImages=(root)=>Promise.all([...root.querySelectorAll('img')].map(asy
     img.setAttribute('src',await new Promise((ok,fail)=>{const reader=new FileReader();reader.onload=()=>ok(String(reader.result));reader.onerror=fail;reader.readAsDataURL(blob)}))
   }catch{img.removeAttribute('src')}
 }));
-const captureArea=async(rect)=>{
+const captureArea=async(rect,maxSide)=>{
   // Canvas проверяем до тяжёлой работы: без него снимок невозможен в принципе.
-  const canvas=document.createElement('canvas');canvas.width=rect.width;canvas.height=rect.height;
+  const scale=maxSide?Math.min(1,maxSide/Math.max(rect.width,rect.height)):1;
+  const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(rect.width*scale));canvas.height=Math.max(1,Math.round(rect.height*scale));
   const ctx=canvas.getContext&&canvas.getContext('2d');
   if(!ctx)throw new Error('Canvas недоступен в этом окружении');
   const source=document.body;
@@ -550,7 +568,8 @@ const captureArea=async(rect)=>{
     image.onerror=()=>{clearTimeout(guard);fail(new Error('Не удалось отрисовать снимок страницы'))};
     image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)
   });
-  ctx.fillStyle='#ffffff';ctx.fillRect(0,0,rect.width,rect.height);
+  ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
+  if(scale!==1)ctx.scale(scale,scale);
   ctx.drawImage(image,-rect.x,-rect.y);
   let dataUrl=canvas.toDataURL('image/png');
   if(dataUrl.length>1800000)dataUrl=canvas.toDataURL('image/jpeg',0.85);
@@ -566,8 +585,14 @@ const message=(e)=>{
   if(e.data.type===RECORD&&typeof e.data.enabled==='boolean'){setRecording(e.data.enabled);return}
   if(e.data.type===ACTION&&typeof e.data.requestId==='string'&&e.data.action&&typeof e.data.action.kind==='string'){
     diagnosticRunning=e.data.action.diagnostic===true;
-    try{reply(e.data.requestId,true,run(e.data.action))}
-    catch(err){reply(e.data.requestId,false,err&&err.message||err)}
+    const requestId=e.data.requestId;
+    try{
+      const value=run(e.data.action);
+      // Снимок собирается асинхронно — ответ уходит по завершении промиса.
+      if(value&&typeof value.then==='function')value.then((r)=>reply(requestId,true,r),(err)=>reply(requestId,false,err&&err.message||err));
+      else reply(requestId,true,value)
+    }
+    catch(err){reply(requestId,false,err&&err.message||err)}
     finally{diagnosticRunning=false}
   }
 };

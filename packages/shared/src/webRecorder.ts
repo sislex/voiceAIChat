@@ -1,4 +1,4 @@
-import { PREVIEW_ACTION_LIMITS, isHttpUrl, isPreviewDomAction, type PreviewDomAction, type PreviewActionResult } from './previewActions'
+import { PREVIEW_ACTION_LIMITS, isHttpUrl, isPreviewDomAction, isScreenshotResult, type PreviewDomAction, type PreviewActionResult } from './previewActions'
 import { isPreviewElementPayload, type PreviewElementPayload } from './previewInspector'
 
 // Публичный postMessage-контракт между host ChatAI и самостоятельным
@@ -16,7 +16,7 @@ export const WEB_RECORDER_PROTOCOL_VERSION = 2 as const
 
 /** Возможности Reader, объявляемые в ready (host показывает их в диагностике). */
 export const WEB_RECORDER_CAPABILITIES = [
-  'open', 'read', 'find', 'click', 'type', 'styles', 'hover', 'scroll', 'press',
+  'open', 'read', 'find', 'click', 'type', 'styles', 'hover', 'scroll', 'press', 'screenshot',
   'inspector', 'recording', 'diagnostics', 'area-screenshot'
 ] as const
 
@@ -134,7 +134,8 @@ export function isWebRecorderClientMessage(value: unknown): value is WebRecorder
       if (value.result === undefined) return true
       if (!record(value.result)) return false
       try {
-        return JSON.stringify(value.result).length <= PREVIEW_ACTION_LIMITS.resultJson
+        const cap = isScreenshotResult(value.result) ? PREVIEW_ACTION_LIMITS.screenshotJson : PREVIEW_ACTION_LIMITS.resultJson
+        return JSON.stringify(value.result).length <= cap
       } catch {
         return false
       }
