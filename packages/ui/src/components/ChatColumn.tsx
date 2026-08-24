@@ -446,7 +446,7 @@ export function ChatColumn({
   }, [hasStream, aiLabel])
 
   return (
-    <main className="main">
+    <main className={messages.length === 0 ? 'main main--empty' : 'main main--conversation'} data-chat-layout={messages.length === 0 ? 'centered' : 'docked'}>
       <header className="mhead">
         {onToggleSidebar && (
           <SidebarToggle className="burger" expanded={sidebarExpanded} onToggle={onToggleSidebar} />
@@ -954,7 +954,9 @@ export function ChatColumn({
         </div>
       )}
 
-      {voiceBar}
+      <div className={messages.length === 0 ? 'chat-composer chat-composer--centered' : 'chat-composer chat-composer--docked'}>
+        {voiceBar}
+      </div>
     </main>
   )
 }

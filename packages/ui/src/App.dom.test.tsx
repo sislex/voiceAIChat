@@ -232,13 +232,12 @@ describe('App — интеграция UI со стором и IPC', () => {
     expect(screen.getByLabelText('Поле ввода сообщения')).not.toHaveFocus()
   })
 
-  it('на viewport 768px и уже открывает свёрнутый композер', async () => {
+  it('на viewport 768px пустой центральный композер остаётся открытым', async () => {
     const restore = setChatViewport(true)
     try {
       await renderApp()
-      expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
-      await userEvent.click(screen.getByTestId('composer-expand'))
-      expect(screen.getByLabelText('Поле ввода сообщения')).toHaveFocus()
+      expect(screen.getByLabelText('Поле ввода сообщения')).toBeInTheDocument()
+      expect(screen.queryByTestId('composer-expand')).not.toBeInTheDocument()
     } finally {
       restore()
     }

@@ -151,7 +151,7 @@ export const WithAttachments: Story = {
 
 /** Пустой чат: композер по центру с приветствием. */
 export const EmptyCentered: Story = {
-  args: { layout: 'centered', draft: '' }
+  args: { layout: 'centered', draft: '', userDisplayName: 'Анна' }
 }
 
 /** Разговор начат: композер закреплён внизу колонки. */
