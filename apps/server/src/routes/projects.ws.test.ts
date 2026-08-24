@@ -144,15 +144,15 @@ describe('WS: живое обновление доски', () => {
     ws.close()
   })
 
-  it('адресует инвалидирование участникам и финально уведомляет удалённого участника', async () => {
+  it('не инвалидирует notifications обычной board-мутацией и адресует изменения доступа', async () => {
     const p = await createProject()
     const admin = await connect(adminTok)
     const bob = await connect(bobTok)
     const outsiderEvent = waitNotificationInvalidation(bob)
-    const adminEvent = waitNotificationInvalidation(admin)
+    const adminEvent = waitNotificationInvalidation(admin, 600)
     const board = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: { authorization: `Bearer ${adminTok}` } })).json() as Board
     await app.inject({ method: 'POST', url: `/api/projects/${p.id}/tasks`, headers: { authorization: `Bearer ${adminTok}` }, payload: { columnId: board.columns[0]!.id, title: 'Invalidate' } })
-    expect((await adminEvent)?.projectId).toBe(p.id)
+    expect(await adminEvent).toBeNull()
     expect(await outsiderEvent).toBeNull()
 
     const added = waitNotificationInvalidation(bob)

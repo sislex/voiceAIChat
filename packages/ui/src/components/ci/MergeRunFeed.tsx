@@ -59,8 +59,8 @@ function MergeKbDisclosure({ run }: { run: MergeRun }): JSX.Element {
 }
 
 /** Живая лента merge-рана: статус-шапка, степпер стадий, терминальные блоки
- *  лога и проверок. Обновления — WS merge.snapshot + fallback-опрос. */
-export function MergeRunFeed({ runId, machines = [], onRunChanged }: { runId: string; machines?: CiTaskMachine[]; onRunChanged?: () => void }): JSX.Element {
+ *  лога и проверок. После начального REST-снимка обновляется через WS merge.snapshot. */
+export function MergeRunFeed({ runId, initialRun, machines = [], onRunChanged }: { runId: string; initialRun?: MergeRun; machines?: CiTaskMachine[]; onRunChanged?: (run?: MergeRun) => void }): JSX.Element {
   const [run, setRun] = useState<MergeRun | null>(null)
   const [retryAgentId, setRetryAgentId] = useState('')
   const [error, setError] = useState('')
@@ -70,12 +70,13 @@ export function MergeRunFeed({ runId, machines = [], onRunChanged }: { runId: st
   useEffect(() => {
     let alive = true
     setRetryAgentId('')
-    const load = (): Promise<void> | undefined => window.ci?.getMerge(runId).then((value) => { if (alive) { setRun(value); setRetryAgentId((current) => current || value.agentId); setError('') } }).catch((e) => { if (alive) setError(e instanceof Error ? e.message : String(e)) })
-    void load()
-    const off = window.ci?.onMerge(({ runId: id, run: value }) => { if (alive && id === runId) setRun(value) })
-    const timer = window.setInterval(() => void load(), 3000)
-    return () => { alive = false; off?.(); window.clearInterval(timer) }
-  }, [runId, reload])
+    const apply = (value: MergeRun): void => { if (alive) { setRun(value); setRetryAgentId((current) => current || value.agentId); setError('') } }
+    const load = (): Promise<void> | undefined => initialRun ? undefined : window.ci?.getMerge(runId).then(apply).catch((e) => { if (alive) setError(e instanceof Error ? e.message : String(e)) })
+    if (initialRun) apply(initialRun); else void load()
+    const off = window.ci?.onMerge(({ runId: id, run: value }) => { if (id === runId) apply(value) })
+    const offReconnect = window.board?.onReconnect?.(() => { void load() })
+    return () => { alive = false; off?.(); offReconnect?.() }
+  }, [runId, initialRun, reload])
   useEffect(() => { const el = logRef.current; if (autoscroll && el) el.scrollTop = el.scrollHeight }, [run?.log, autoscroll])
   const onLogScroll = (): void => {
     const element = logRef.current
@@ -93,7 +94,7 @@ export function MergeRunFeed({ runId, machines = [], onRunChanged }: { runId: st
   const duration = (run.finishedAt ?? Date.now()) - (run.startedAt ?? run.createdAt)
   const stale = /stale source/i.test(run.error ?? '')
   const llmFallbackMessage = mergeLlmFallbackMessage(run)
-  const act = (value: MergeRun): void => { setRun(value); setRetryAgentId(value.agentId); onRunChanged?.() }
+  const act = (value: MergeRun): void => { setRun(value); setRetryAgentId(value.agentId); onRunChanged?.(value) }
   const retry = (unpin = false): void => { void window.ci?.retryMerge(run.id, retryAgentId || run.agentId, unpin).then(act) }
   const retryMachines = machines.some((machine) => machine.agentId === run.agentId)
     ? machines

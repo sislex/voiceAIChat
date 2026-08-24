@@ -1056,6 +1056,7 @@ describe('TaskModal — подготовка к разработке', () => {
       subscribe: vi.fn(), unsubscribe: vi.fn(),
       onChanged: vi.fn(() => () => {}), onConnected: vi.fn(() => () => {}),
       onPreparationRunUpdated: vi.fn((cb) => { preparationUpdated = cb; return offUpdate }),
+      onTaskRepositoriesUpdated: vi.fn(() => () => {}),
       onReconnect: vi.fn((cb) => { reconnected = cb; return offReconnect })
     }
     const load = vi.fn(async () => [run('waiting_for_answer')])
@@ -1103,7 +1104,7 @@ describe('TaskModal — вкладка Merge', () => {
     window.ci = createFakeCi()
   })
 
-  it('сохраняет загруженные машины при переключении вкладок', async () => {
+  it('размонтирует скрытую Merge-панель и делает один новый snapshot при повторном открытии', async () => {
     const getTaskMachines = vi.spyOn(window.ci!, 'getTaskMachines').mockResolvedValue({
       machines: [{ agentId: 'm1', name: 'MacBook', online: true, personal: true, project: false, projectDefault: false }],
       selectedAgentId: null,
@@ -1133,7 +1134,7 @@ describe('TaskModal — вкладка Merge', () => {
 
     expect(screen.getByRole('option', { name: /MacBook/ })).toBeInTheDocument()
     expect(screen.queryByTestId('merge-machines-skeleton-list')).not.toBeInTheDocument()
-    expect(getTaskMachines).toHaveBeenCalledTimes(taskMachineCalls)
-    expect(getMergeMachines).toHaveBeenCalledTimes(mergeMachineCalls)
+    expect(getTaskMachines).toHaveBeenCalledTimes(taskMachineCalls + 1)
+    expect(getMergeMachines).toHaveBeenCalledTimes(mergeMachineCalls + 1)
   })
 })
