@@ -73,6 +73,18 @@ describe('Recorder handshake', () => {
   })
 })
 
+describe('Recorder reload по set-url', () => {
+  it('set-url(null)+set-url(url) в одном тике пересоздают iframe (повторный open = перезагрузка)', async () => {
+    render(<Recorder />)
+    fromHost(init)
+    const before = screen.getByTitle('Предпросмотр сайта')
+    // Слипшиеся сообщения host при повторном open того же адреса.
+    fromHost({ type, ...ids, kind: 'set-url', url: null })
+    fromHost({ type, ...ids, kind: 'set-url', url: 'https://shop.example/' })
+    await waitFor(() => expect(screen.getByTitle('Предпросмотр сайта')).not.toBe(before))
+  })
+})
+
 describe('Recorder commands', () => {
   it('command до готовности страницы получает строго определённую ошибку', () => {
     const post = vi.spyOn(window, 'postMessage')
@@ -174,6 +186,39 @@ describe('Recorder edit-режим', () => {
     fireEvent.click(screen.getByRole('button', { name: /Редактировать$/ }))
     fromPage({ type: 'voicechat.preview.edit.v1', enabled: false })
     expect(screen.getByRole('button', { name: /Редактировать$/ }).getAttribute('aria-pressed')).toBe('false')
+  })
+})
+
+describe('Recorder скриншот области', () => {
+  it('кнопка «📸 Область» включает режим выделения внутри iframe', () => {
+    render(<Recorder />)
+    fromHost(init)
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const inner = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    const toggle = screen.getByRole('button', { name: /Область/ })
+    fireEvent.click(toggle)
+    expect(inner.mock.calls.some(([message]) => (message as { type?: string; enabled?: boolean }).type === 'voicechat.preview.capture.v1' && (message as { enabled?: boolean }).enabled === true)).toBe(true)
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('снимок пересылается host сообщением area-screenshot с ID регистрации', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    fireEvent.click(screen.getByRole('button', { name: /Область/ }))
+    const shot = { dataUrl: 'data:image/png;base64,AAAA', rect: { x: 5, y: 6, width: 70, height: 80 }, pageUrl: 'https://example.test/' }
+    fromPage({ type: 'voicechat.preview.capture.v1', enabled: false, shot })
+    expect(screen.getByRole('button', { name: /Область/ }).getAttribute('aria-pressed')).toBe('false')
+    expect(sent(post).find((message) => message.kind === 'area-screenshot')).toMatchObject({ ...ids, shot })
+  })
+
+  it('ошибка снимка показывается пользователю и не уходит host', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    fromPage({ type: 'voicechat.preview.capture.v1', error: 'Canvas недоступен', rect: { x: 0, y: 0, width: 1, height: 1 } })
+    expect(screen.getByRole('alert').textContent).toContain('Canvas недоступен')
+    expect(sent(post).filter((message) => message.kind === 'area-screenshot')).toHaveLength(0)
   })
 })
 

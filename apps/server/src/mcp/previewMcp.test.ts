@@ -134,7 +134,7 @@ describe('previewMcp — инструменты browser', () => {
     expect(res.statusCode).toBe(403)
   })
 
-  it('tools/list показывает open, read, find, click, type и test-users', async () => {
+  it('tools/list показывает open, read, find, click, type, hover, scroll, press и test-users', async () => {
     await makeApp()
     const res = await app.inject({
       method: 'POST',
@@ -143,7 +143,33 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['click', 'find', 'open', 'read', 'test-users', 'type'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['click', 'find', 'hover', 'open', 'press', 'read', 'scroll', 'test-users', 'type'])
+  })
+
+  it('hover/scroll/press доходят до клиента как действия', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, pressed: { key: 'Escape', selector: 'body' } } })
+    }
+    await call('hover', { text: 'Меню' })
+    await call('scroll', { to: 'bottom' })
+    await call('press', { key: 'Escape' })
+    expect(seen).toEqual([
+      { kind: 'hover', text: 'Меню' },
+      { kind: 'scroll', to: 'bottom' },
+      { kind: 'press', key: 'Escape' }
+    ])
+  })
+
+  it('scroll без to и dy — ошибка аргументов без похода к клиенту', async () => {
+    await makeApp()
+    let touched = false
+    client = () => { touched = true }
+    const result = await call('scroll', {})
+    expect(result.isError).toBe(true)
+    expect(touched).toBe(false)
   })
 
   it('open разворачивает алиас machine.internal в машину разговора', async () => {

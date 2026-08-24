@@ -25,15 +25,20 @@ interface DiagnosticsStep { requestId: string; action: string; ok: boolean; dura
 const RECORD = 'voicechat.preview.record.v1'
 // Режим правок страницы: канал Reader ↔ инъецированный скрипт previewProxy.
 const EDIT = 'voicechat.preview.edit.v1'
+// Режим скриншота области: тот же канал Reader ↔ инъецированный скрипт.
+const CAPTURE = 'voicechat.preview.capture.v1'
 const sameOrigin = window.location.origin
 const validUrl = (value: string): string | null => { try { const url = new URL(value.trim()); return /^https?:$/.test(url.protocol) ? url.toString() : null } catch { return null } }
 
 export function Recorder(): JSX.Element {
   const [url, setUrl] = useState<string | null>(null); const [draft, setDraft] = useState(''); const [recording, setRecording] = useState(false)
-  const [inspecting, setInspecting] = useState(false); const [editing, setEditing] = useState(false); const [disposed, setDisposed] = useState(false)
+  const [inspecting, setInspecting] = useState(false); const [editing, setEditing] = useState(false); const [capturing, setCapturing] = useState(false); const [disposed, setDisposed] = useState(false)
   const [steps, setSteps] = useState<Step[]>([]); const [error, setError] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<DiagnosticsStep[] | null>(null)
   const frame = useRef<HTMLIFrameElement>(null); const pageReady = useRef(false); const currentUrl = useRef<string | null>(null)
+  // Ключ пересоздания iframe: set-url(null)+set-url(url) могут слипнуться в один
+  // React-рендер, и iframe с тем же src не перезагрузился бы — page-ready не пришёл бы.
+  const [frameKey, setFrameKey] = useState(0)
   // Актуальная регистрация от init; до неё Reader шлёт только ready.
   const session = useRef<{ conversationId: string; registrationId: string } | null>(null)
   const diagnosticsMode = useRef(false)
@@ -48,6 +53,7 @@ export function Recorder(): JSX.Element {
   const applyUrl = (next: string | null): void => {
     pageReady.current = false
     currentUrl.current = next
+    if (next) setFrameKey((value) => value + 1)
     setUrl(next); setDraft(next ?? ''); setError(null)
     reply({ kind: 'page-status', status: next ? 'loading' : 'empty', url: next })
   }
@@ -126,6 +132,16 @@ export function Recorder(): JSX.Element {
       }
       if (isPreviewInspectorCommand(message)) { setInspecting(message.enabled); return }
       if (message?.type === EDIT && message.enabled === false) { setEditing(false); return }
+      if (message?.type === CAPTURE) {
+        const capture = message as { enabled?: unknown; shot?: { dataUrl?: unknown; rect?: unknown; pageUrl?: unknown }; error?: unknown }
+        if (capture.enabled === false) setCapturing(false)
+        if (typeof capture.error === 'string') { setError('Снимок области не получился: ' + capture.error); return }
+        const shot = capture.shot
+        if (shot && typeof shot.dataUrl === 'string' && typeof shot.pageUrl === 'string' && shot.rect) {
+          reply({ kind: 'area-screenshot', shot: { dataUrl: shot.dataUrl, rect: shot.rect as { x: number; y: number; width: number; height: number }, pageUrl: shot.pageUrl } })
+        }
+        return
+      }
       if (message?.type === PREVIEW_INSPECTOR_MESSAGE_TYPE) { reply({ kind: 'element-selected', element: message.payload as never }); return }
       if (message?.type === RECORD && !diagnosticsMode.current) {
         const raw = message.step as { kind?: unknown; selector?: unknown; text?: unknown; sensitive?: unknown; submit?: unknown } | undefined
@@ -160,6 +176,7 @@ export function Recorder(): JSX.Element {
 
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: RECORD, enabled: recording }, sameOrigin) }, [recording, url])
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: EDIT, enabled: editing }, sameOrigin) }, [editing, url])
+  useEffect(() => { frame.current?.contentWindow?.postMessage({ type: CAPTURE, enabled: capturing }, sameOrigin) }, [capturing, url])
   const open = (): void => {
     const next = validUrl(draft)
     if (draft && !next) { setError('Введите адрес с протоколом http:// или https://'); return }
@@ -188,6 +205,7 @@ export function Recorder(): JSX.Element {
       <button className="vc-btn vc-btn--secondary">Открыть</button>
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={toggleInspector}>⌖ Выбор элемента</button>
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => setEditing((value) => !value)}>✎ Редактировать</button>
+      <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={capturing} onClick={() => setCapturing((value) => !value)}>📸 Область</button>
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} onClick={() => setRecording((value) => !value)}>{recording ? 'Остановить запись' : 'Записать сценарий'}</button>
     </form>
     {error && <p className="webpreview-error" role="alert">{error}</p>}
@@ -201,6 +219,6 @@ export function Recorder(): JSX.Element {
         {step.submit === true && <em>⏎ submit</em>}
         {step.sensitive && <em>секрет не сохранён</em>}</li>)}
     </ol></section>}
-    {url ? <iframe ref={frame} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={() => { setTimeout(() => { if (pageReady.current) return; let message = 'Сайт недоступен или вернул страницу, которую Web Reader не может прочитать.'; try { const body = frame.current?.contentDocument?.body?.textContent?.trim(); if (body) { const parsed = JSON.parse(body) as { message?: unknown }; if (typeof parsed.message === 'string') message = parsed.message } } catch { /* не-JSON страница без клиентского моста */ }; reply({ kind: 'page-status', status: 'error', url, error: message }) }, 0) }} onError={() => { pageReady.current = false; reply({ kind: 'page-status', status: 'error', url, error: 'Не удалось загрузить сайт: сетевая ошибка.' }) }} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
+    {url ? <iframe key={frameKey} ref={frame} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={() => { setTimeout(() => { if (pageReady.current) return; let message = 'Сайт недоступен или вернул страницу, которую Web Reader не может прочитать.'; try { const body = frame.current?.contentDocument?.body?.textContent?.trim(); if (body) { const parsed = JSON.parse(body) as { message?: unknown }; if (typeof parsed.message === 'string') message = parsed.message } } catch { /* не-JSON страница без клиентского моста */ }; reply({ kind: 'page-status', status: 'error', url, error: message }) }, 0) }} onError={() => { pageReady.current = false; reply({ kind: 'page-status', status: 'error', url, error: 'Не удалось загрузить сайт: сетевая ошибка.' }) }} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
   </section>
 }

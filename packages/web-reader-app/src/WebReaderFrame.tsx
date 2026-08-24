@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PreviewElementPayload } from '@shared/previewInspector'
-import type { WebRecorderHostMessage } from '@shared/webRecorder'
+import type { WebRecorderAreaScreenshot, WebRecorderHostMessage } from '@shared/webRecorder'
 import { browserId } from '@shared/browserId'
 import { createReaderHostBridge, type ReaderHostBridge, type ReaderHostRegistration } from './hostBridge'
 
@@ -25,20 +25,22 @@ export interface WebReaderFrameProps {
   ensurePreview?: (() => Promise<boolean>) | undefined
   onSave: (url: string | null) => Promise<void>
   onSelectElement?: ((element: PreviewElementPayload) => void) | undefined
+  /** Снимок области страницы, выделенной пользователем («📸 Область»). */
+  onAreaScreenshot?: ((shot: WebRecorderAreaScreenshot) => void) | undefined
   /** Актуальная регистрация iframe (или null): host сверяет по ней MCP-команды. */
   onRegisterHost?: ((registration: ReaderHostRegistration | null) => void) | undefined
   /** Адрес standalone-сборки Reader; production и dev-proxy раздают /web-recorder/. */
   src?: string
 }
 
-export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onRegisterHost, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
+export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
   const [retryKey, setRetryKey] = useState(0)
   const gateSequence = useRef(0)
   const url = conversationUrl ?? projectUrl
-  const callbacks = useRef({ onSave, onSelectElement, onRegisterHost })
-  callbacks.current = { onSave, onSelectElement, onRegisterHost }
+  const callbacks = useRef({ onSave, onSelectElement, onAreaScreenshot, onRegisterHost })
+  callbacks.current = { onSave, onSelectElement, onAreaScreenshot, onRegisterHost }
 
   // Мост живёт со смонтированным iframe одного разговора: смена разговора
   // размонтирует компонент (key у вызывающего) и dispose-ит старый lifecycle.
@@ -51,7 +53,8 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
     capabilities: ['mcp-actions', 'diagnostics', 'inspector', 'recording'],
     onRegistration: (registration) => callbacks.current.onRegisterHost?.(registration),
     onSaveUrl: (nextUrl) => void callbacks.current.onSave(nextUrl),
-    onElement: (element) => callbacks.current.onSelectElement?.(element)
+    onElement: (element) => callbacks.current.onSelectElement?.(element),
+    onAreaScreenshot: (shot) => callbacks.current.onAreaScreenshot?.(shot)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [conversationId])
 

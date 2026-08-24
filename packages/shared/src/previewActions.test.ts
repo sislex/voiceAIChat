@@ -142,3 +142,26 @@ describe('previewToolHint', () => {
     expect(hint).toContain('активного чата')
   })
 })
+
+describe('isPreviewAction: hover, scroll, press', () => {
+  it('hover требует text или selector', () => {
+    expect(isPreviewAction({ kind: 'hover', text: 'Меню' })).toBe(true)
+    expect(isPreviewAction({ kind: 'hover', selector: '.menu' })).toBe(true)
+    expect(isPreviewAction({ kind: 'hover' })).toBe(false)
+  })
+
+  it('scroll требует to или dy и валидирует значения', () => {
+    expect(isPreviewAction({ kind: 'scroll', to: 'bottom' })).toBe(true)
+    expect(isPreviewAction({ kind: 'scroll', dy: -300, selector: '.feed' })).toBe(true)
+    expect(isPreviewAction({ kind: 'scroll' })).toBe(false)
+    expect(isPreviewAction({ kind: 'scroll', to: 'middle' })).toBe(false)
+    expect(isPreviewAction({ kind: 'scroll', dy: Number.NaN })).toBe(false)
+  })
+
+  it('press требует непустой key разумной длины', () => {
+    expect(isPreviewAction({ kind: 'press', key: 'Escape' })).toBe(true)
+    expect(isPreviewAction({ kind: 'press', key: 'Enter', selector: '#q' })).toBe(true)
+    expect(isPreviewAction({ kind: 'press', key: '' })).toBe(false)
+    expect(isPreviewAction({ kind: 'press', key: 'x'.repeat(40) })).toBe(false)
+  })
+})

@@ -62,6 +62,15 @@ describe('webRecorder client message validator', () => {
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'recording-step', step: { kind: 'type', selector: '#password', text: 'hunter2', sensitive: true } })).toBe(false)
   })
 
+it('area-screenshot валидирует data-URL картинки, rect и pageUrl', () => {
+    const shot = { dataUrl: 'data:image/png;base64,AAAA', rect: { x: 10, y: 20, width: 300, height: 200 }, pageUrl: 'https://example.test/page' }
+    expect(isWebRecorderClientMessage({ type, ...ids, kind: 'area-screenshot', shot })).toBe(true)
+    expect(isWebRecorderClientMessage({ type, ...ids, kind: 'area-screenshot', shot: { ...shot, dataUrl: 'javascript:x' } })).toBe(false)
+    expect(isWebRecorderClientMessage({ type, ...ids, kind: 'area-screenshot', shot: { ...shot, dataUrl: 'data:image/png;base64,' + 'A'.repeat(2_100_000) } })).toBe(false)
+    expect(isWebRecorderClientMessage({ type, ...ids, kind: 'area-screenshot', shot: { ...shot, rect: { x: 0, y: 0, width: 0, height: 10 } } })).toBe(false)
+    expect(isWebRecorderClientMessage({ type, ...ids, kind: 'area-screenshot', shot: { ...shot, pageUrl: 'ftp://x' } })).toBe(false)
+  })
+
   it('submit допустим только у type-шага', () => {
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'recording-step', step: { kind: 'type', selector: '#password', text: '', sensitive: true, submit: true } })).toBe(true)
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'recording-step', step: { kind: 'click', selector: '#enter', text: 'Войти', sensitive: false, submit: true } })).toBe(false)
