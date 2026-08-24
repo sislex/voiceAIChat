@@ -33,6 +33,7 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     const command=releaseCheckoutCommand({...ci(),path:'/repos/.release_repo',prepareCheckout:true})
     expect(command).toContain("git clone -- 'git@example/repo.git' '/repos/.release_repo'")
     expect(command).toContain('другой remote.origin.url')
+    expect(command).toContain("find '/repos/.release_repo' -mindepth 1 -maxdepth 1 -print -quit")
     expect(command).not.toContain('rm -rf')
   })
 
