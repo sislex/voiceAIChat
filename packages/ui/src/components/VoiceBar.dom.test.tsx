@@ -178,9 +178,9 @@ describe('VoiceBar — состояния', () => {
     expect(screen.queryByText('Голосовой ввод временно недоступен')).not.toBeInTheDocument()
   })
 
-  it('непустой инпут: кнопка «Отправить» вместо микрофона, клик → onSubmitText', async () => {
+  it('непустой инпут: микрофон остаётся рядом с отправкой, клик → onSubmitText', async () => {
     const props = setup('idle', { draft: 'привет' })
-    expect(screen.queryByLabelText('Говорить')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Говорить')).toBeInTheDocument()
     const sendBtn = screen.getByLabelText('Отправить сообщение')
     await userEvent.click(sendBtn)
     expect(props.onSubmitText).toHaveBeenCalledOnce()
@@ -280,17 +280,25 @@ describe('VoiceBar — высота поля ввода', () => {
 
 
 describe('VoiceBar — быстрый режим', () => {
-  it('переключает План на Разработку', async () => {
+  it('переключает План на Разработку через доступный dropdown', async () => {
     const onChangePermissionMode = vi.fn()
     setup('idle', { permissionMode: 'plan', onChangePermissionMode })
-    expect(screen.getByRole('button', { name: 'План' })).toHaveAttribute('aria-pressed', 'true')
-    await userEvent.click(screen.getByRole('button', { name: 'Разработка' }))
+    const trigger = screen.getByRole('button', { name: 'Режим работы' })
+    expect(trigger).toHaveTextContent('План')
+    expect(trigger).toHaveAttribute('aria-haspopup', 'listbox')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    await userEvent.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('option', { name: /План/ })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.click(screen.getByRole('option', { name: /Разработка/ }))
     expect(onChangePermissionMode).toHaveBeenCalledWith('acceptEdits')
+    expect(trigger).toHaveFocus()
   })
 
-  it('блокирует переключение во время хода', () => {
+  it('блокирует dropdown режима во время хода', () => {
     setup('thinking', { permissionMode: 'plan', onChangePermissionMode: vi.fn() })
-    expect(screen.getByRole('button', { name: 'Разработка' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Режим работы' })).toBeDisabled()
   })
 })
 
@@ -527,14 +535,19 @@ describe('VoiceBar — объявления для скринридера', () =
 })
 
 describe('VoiceBar — адаптивный композер', () => {
-  it('показывает приветствие только в центральном варианте нового чата', () => {
-    const { container, rerender } = render(<VoiceBar {...makeProps('idle', { layout: 'centered' })} />)
+  it('показывает персональное или нейтральное приветствие только в центральном варианте', () => {
+    const { container, rerender } = render(
+      <VoiceBar {...makeProps('idle', { layout: 'centered', userDisplayName: '  Анна   Смирнова  ' })} />
+    )
     expect(container.querySelector('.voicebar')).toHaveAttribute('data-layout', 'centered')
-    expect(screen.getByRole('heading', { name: 'Чем я могу помочь?' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Привет, Анна Смирнова' })).toBeInTheDocument()
 
-    rerender(<VoiceBar {...makeProps('idle', { layout: 'docked' })} />)
+    rerender(<VoiceBar {...makeProps('idle', { layout: 'centered', userDisplayName: '   ' })} />)
+    expect(screen.getByRole('heading', { name: 'Привет' })).toBeInTheDocument()
+
+    rerender(<VoiceBar {...makeProps('idle', { layout: 'docked', userDisplayName: 'Анна' })} />)
     expect(container.querySelector('.voicebar')).toHaveAttribute('data-layout', 'docked')
-    expect(screen.queryByRole('heading', { name: 'Чем я могу помочь?' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading')).not.toBeInTheDocument()
   })
 
   it('блокирует отправку processing/error вложений и позволяет повтор', async () => {
