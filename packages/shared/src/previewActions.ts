@@ -38,11 +38,12 @@ export const PREVIEW_ACTION_LIMITS = {
 
 /** Действие браузера, запрошенное моделью. `open` выполняет сам UI (без iframe). */
 export type PreviewAction =
-  | { kind: 'open'; url: string }
-  | { kind: 'find'; text?: string; selector?: string; limit?: number }
-  | { kind: 'click'; selector?: string; text?: string }
-  | { kind: 'type'; selector: string; text: string; submit?: boolean }
-  | { kind: 'read'; selector?: string }
+  | { kind: 'open'; url: string; diagnostic?: boolean }
+  | { kind: 'find'; text?: string; selector?: string; limit?: number; diagnostic?: boolean }
+  | { kind: 'click'; selector?: string; text?: string; diagnostic?: boolean }
+  | { kind: 'type'; selector: string; text: string; submit?: boolean; diagnostic?: boolean }
+  | { kind: 'read'; selector?: string; diagnostic?: boolean }
+  | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
 
 /** DOM-действия, которые уходят в iframe (все, кроме `open`). */
 export type PreviewDomAction = Exclude<PreviewAction, { kind: 'open' }>
@@ -97,12 +98,19 @@ export interface PreviewOpenResult {
   url: string
 }
 
+export interface PreviewStylesResult {
+  page: PreviewPageInfo
+  selector: string
+  styles: Record<string, string>
+}
+
 export type PreviewActionResult =
   | PreviewOpenResult
   | PreviewFindResult
   | PreviewClickResult
   | PreviewTypeResult
   | PreviewReadResult
+  | PreviewStylesResult
 
 /** Команда родителя в iframe превью. */
 export interface PreviewActionCommand {
@@ -155,6 +163,9 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         (value.submit === undefined || typeof value.submit === 'boolean')
     case 'read':
       return optBounded(value.selector, L.selector)
+    case 'styles':
+      return bounded(value.selector, L.selector) &&
+        (value.properties === undefined || (Array.isArray(value.properties) && value.properties.length <= 32 && value.properties.every((item) => bounded(item, 100))))
     default:
       return false
   }

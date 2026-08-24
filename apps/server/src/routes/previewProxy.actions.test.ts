@@ -12,7 +12,7 @@ import {
   type PreviewActionResultMessage,
   type PreviewDomAction
 } from '@voicechat/shared'
-import { PreviewProxyError, previewContextScript, previewInspectorScript, publicLookupResult, requestCookieHeader, storeResponseCookies } from './previewProxy.js'
+import { PreviewProxyError, previewContextScript, previewDiagnosticsHtml, previewInspectorScript, publicLookupResult, requestCookieHeader, storeResponseCookies } from './previewProxy.js'
 
 let counter = 0
 
@@ -169,6 +169,18 @@ describe('скрипт превью: DOM-действия', () => {
     const res = await act({ kind: 'type', selector: 'h1', text: 'x' })
     expect(res.ok).toBe(false)
     expect(res.error).toContain('полем ввода')
+  })
+
+  it('computed styles возвращает только запрошенные свойства', async () => {
+    const res = await act({ kind: 'styles', selector: '#q', properties: ['display', 'color'], diagnostic: true })
+    expect(res.ok).toBe(true)
+    expect((res.result as { styles: Record<string, string> }).styles).toEqual(expect.objectContaining({ display: expect.any(String), color: expect.any(String) }))
+  })
+
+  it('внутренняя диагностическая страница детерминирована и имеет отдельную цель навигации', () => {
+    expect(previewDiagnosticsHtml()).toContain('VoiceChat Web Reader Diagnostics')
+    expect(previewDiagnosticsHtml()).toContain('id="diagnostic-input"')
+    expect(previewDiagnosticsHtml(true)).toContain('Diagnostics destination')
   })
 
   it('битый CSS-селектор — понятная ошибка', async () => {
