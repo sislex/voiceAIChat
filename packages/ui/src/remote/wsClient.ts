@@ -130,6 +130,7 @@ export class WsClient {
   /** Подписка на каждое успешное соединение, включая reconnect. */
   onConnected(cb: () => void): () => void {
     this.connectedListeners.add(cb)
+    if (this.ws?.readyState === WebSocket.OPEN) queueMicrotask(cb)
     return () => this.connectedListeners.delete(cb)
   }
 

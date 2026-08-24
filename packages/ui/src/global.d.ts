@@ -13,6 +13,7 @@ import type {
   RendererFilesBridge,
   RendererFsBridge,
   RendererPreviewBridge,
+  RendererRealtimeBridge,
   RendererPtyBridge,
   RendererSessionBridge,
   RendererSttBridge,
@@ -35,6 +36,8 @@ declare global {
     codex: RendererCodexBridge
     /** Живой список агентов (web); в desktop отсутствует. */
     agents?: RendererAgentsBridge
+    /** Lifecycle и общие адресные realtime-события (web). */
+    realtime?: RendererRealtimeBridge
     /** Живая канбан-доска проекта (web); в desktop отсутствует. */
     board?: RendererBoardBridge
     /** Сессия пользователя (web); в desktop отсутствует → без экрана логина. */
