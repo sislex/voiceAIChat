@@ -67,7 +67,7 @@ const MESSAGE_SEARCH_DEBOUNCE_MS = 250
 const MESSAGE_SEARCH_PAGE = 20
 /**
  * Окно склейки фоновых перезапросов списка бесед: на одно событие прилетает
- * сразу несколько кадров (`ci.done` + `ci.summary` + `board.update`).
+ * сразу несколько кадров (`ci.done` + `ci.summary` + `board.changed`).
  */
 export const CONVERSATIONS_REFRESH_DEBOUNCE_MS = 300
 /** Ограничение роста лога консоли и накопленной активности хода. */
