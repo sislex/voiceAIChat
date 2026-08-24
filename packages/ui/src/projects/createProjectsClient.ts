@@ -9,11 +9,15 @@ export function createProjectsClient(api: RendererApi, board?: RendererBoardBrid
     updateProject: (projectId, input) => api['projects:update']({ id: projectId, ...input }),
     deleteProject: (projectId) => api['projects:delete']({ id: projectId }),
     getBoard: (projectId, options) => api['board:get']({ id: projectId, includeCompleted: options?.includeCompleted }),
-    subscribeBoard: (projectId, listener, options) => {
+    subscribeBoard: (projectId, listener) => {
       if (!board) return () => undefined
-      const stop = board.onUpdate(listener)
-      board.subscribe(projectId, options?.includeCompleted)
-      return () => { stop(); board.unsubscribe() }
+      const stopChanged = board.onChanged(listener)
+      const stopConnected = board.onConnected(() => {
+        board.subscribe(projectId)
+        listener({ projectId, reason: 'reconnected' })
+      })
+      board.subscribe(projectId)
+      return () => { stopChanged(); stopConnected(); board.unsubscribe() }
     },
     createColumn: (projectId, input) => api['columns:create']({ projectId, name: input.name }),
     updateColumn: async (projectId, columnId, patch) => {

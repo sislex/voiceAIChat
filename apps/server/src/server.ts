@@ -409,7 +409,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Админ-страница пользователей (роуты под guard requireAdmin).
   registerAdminRoutes(app, db, agentRegistry, deployTrigger)
 
-  // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.
+  // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.

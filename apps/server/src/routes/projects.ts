@@ -1,6 +1,6 @@
 // REST для проектов и канбан-доски. Все маршруты под Bearer-защитой; доступ
 // определяется членством в проекте (см. VoiceChatDb: isProjectMember/Owner).
-// После мутаций доски зовём boardHub.emit → живой board.update подписчикам.
+// После мутаций доски зовём boardHub.emit → живой board.changed подписчикам.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {

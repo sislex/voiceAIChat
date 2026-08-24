@@ -389,11 +389,23 @@ Done ставит её заново; перенос между done-колонк
 ## Реалтайм (BoardHub)
 
 Живые изменения доски рассылаются по WS: `apps/server/src/projects/boardHub.ts` —
-процесс-глобальный эмиттер (`emit(projectId)` из REST-мутаций, `onChange` для сессий),
-по образцу `AgentRegistry.onChange`. Per-connection подписка — в `session.ts`
-(`board.subscribe`/`board.unsubscribe` → снапшот `board.update` только участникам).
-Клиентский мост `window.board` (`RendererBoardBridge`) — только web; в desktop живой
-синхронизации нет.
+процесс-глобальный stateless-эмиттер (`emit(projectId)` после успешных REST-, CI- и
+QA-мутаций, `onChange` для сессий), по образцу `AgentRegistry.onChange`.
+Per-connection подписка в `session.ts` принимает `board.subscribe`, проверяет членство
+через существующее чтение доски и затем отправляет только лёгкие
+`{t:'board.changed', projectId}`; полный `Board` по WebSocket не передаётся.
+`board.unsubscribe` и закрытие сокета снимают логическую подписку.
+
+Единственный источник полного снимка — `GET /api/projects/:projectId/board`.
+Web-клиент отправляет подписку до первоначального GET, игнорирует инвалидации других
+проектов и объединяет сигналы активного проекта окном 50 мс. Координатор в обоих
+projects store допускает один GET для текущей версии `projectId + includeCompleted`;
+сигнал во время загрузки ставит один pending-refetch, а generation-token не даёт
+запоздалому ответу старого проекта или фильтра заменить состояние. Успешный reconnect
+повторно отправляет только текущую логическую подписку и планирует одну синхронизацию.
+Смена проекта/фильтра, закрытие и dispose очищают debounce-таймер, pending-сигнал и
+подписку. Фоновая ошибка сохраняет последний успешный снимок. Клиентский мост
+`window.board` (`RendererBoardBridge`) — только web; в desktop живой синхронизации нет.
 
 ## Фронтенд
 
@@ -402,7 +414,7 @@ Done ставит её заново; перенос между done-колонк
 `TaskCard`, `TaskModal`, CI/QA/merge-панели, releases и `KanbanAssistant` — по-прежнему
 живут в `packages/ui` и работают на доменном `projectsStore` из `packages/ui/src/store/domains` (`projectsOpen`, `projects`,
 `projectsLoaded`, `projectDetail`, `activeProjectId`, `board`; оптимистичные
-`moveTask`/`reorderColumns`, мерж `applyBoardUpdate` из WS). Новый workspace-пакет
+`moveTask`/`reorderColumns`, управляемый REST-refetch после `applyBoardChanged` из WS). Новый workspace-пакет
 `packages/projects-app` (`@voicechat/projects-app`) содержит будущий фундамент этого
 раздела: контракты `ProjectsClient`/`ProjectsHost`/`ProjectsChatPort`, React-независимый
 `createProjectsStore`, `ProjectsProvider`, `ProjectsApp`, parser/builder всех `#/projects/*`

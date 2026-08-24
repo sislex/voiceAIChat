@@ -8,6 +8,6 @@ export type { ProjectsActions, ProjectsState, ProjectsStore } from './store/proj
 export { buildProjectsRoute, parseProjectsRoute, projectRouteId } from './routes/projectsRoute'
 export type { ProjectsRoute } from './routes/projectsRoute'
 export type {
-  BoardUpdate, CreateProjectInput, CreateTaskInput, ProjectsChatPort, ProjectsClient,
+  BoardInvalidation, CreateProjectInput, CreateTaskInput, ProjectsChatPort, ProjectsClient,
   ProjectsHost, ProjectsNavigationModel, TaskChatReference, TaskPatch, UpdateProjectInput
 } from './contracts'
