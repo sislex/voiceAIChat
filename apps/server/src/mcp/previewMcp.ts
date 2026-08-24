@@ -65,6 +65,7 @@ export interface PreviewActionOutcome {
 
 interface PendingRequest {
   userId: string
+  conversationId: string
   /** Скольким клиентам ушёл запрос — ждём первый успех или все отказы. */
   expected: number
   answered: number
@@ -122,6 +123,7 @@ export class PreviewActionRelay {
       }
       this.pending.set(requestId, {
         userId,
+        conversationId,
         expected: sinks.size,
         answered: 0,
         timer: setTimeout(
@@ -136,9 +138,9 @@ export class PreviewActionRelay {
   }
 
   /** Ответ клиента; чужой userId или неизвестный requestId молча игнорируются. */
-  resolve(userId: string, requestId: string, outcome: PreviewActionOutcome): void {
+  resolve(userId: string, requestId: string, outcome: PreviewActionOutcome, conversationId?: string): void {
     const entry = this.pending.get(requestId)
-    if (!entry || entry.userId !== userId) return
+    if (!entry || entry.userId !== userId || (conversationId !== undefined && entry.conversationId !== conversationId)) return
     const error = typeof outcome.error === 'string' ? outcome.error.slice(0, 2_000) : undefined
     if (outcome.ok) {
       entry.resolve({ ok: true, ...(outcome.result !== undefined ? { result: outcome.result } : {}) })

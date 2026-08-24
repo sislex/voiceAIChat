@@ -133,6 +133,8 @@ export function makePreviewBridge(ws: WsClient): RendererPreviewBridge {
       ws.send({
         t: 'preview.result',
         requestId: m.requestId,
+        ...(m.conversationId ? { conversationId: m.conversationId } : {}),
+        ...(m.registrationId ? { registrationId: m.registrationId } : {}),
         ok: m.ok,
         ...(m.result !== undefined ? { result: m.result } : {}),
         ...(m.error !== undefined ? { error: m.error } : {})

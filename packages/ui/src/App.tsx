@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { parseChatRoute } from '@voicechat/chat-app'
+import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
 import { parseProjectsRoute } from '@voicechat/projects-app'
 import type { RendererApi } from '@shared/ipc'
@@ -76,6 +76,9 @@ import { useHashRoute } from './lib/useHashRoute'
 import { useHotkeys, type HotkeyBinding } from './lib/useHotkeys'
 import { useCommandSource } from './lib/useCommands'
 import { buildAppCommands, buildHotkeyBindings } from './lib/appCommands'
+import { isWebReaderDiagnosticsCommand, runWebReaderDiagnostics } from './webReaderDiagnostics'
+const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
+
 const UsersAdmin = lazy(async () => {
   const module = await import('@voicechat/admin-app')
   return { default: module.UsersAdmin }
@@ -425,7 +428,11 @@ export function WebReaderHost({ conversationUrl, projectUrl, onSave, onSelectEle
     if (!onRegisterActionRunner) return
     onRegisterActionRunner((action) => {
       if (!shellReady.current) return Promise.resolve({ ok: false, error: 'Панель Web Reader не открыта или ещё не подключена.' })
-      if (action.kind === 'open') { pageStatus.current = 'loading'; pageError.current = undefined }
+      if (action.kind === 'open') {
+        pageStatus.current = 'loading'; pageError.current = undefined; approvedUrl.current = action.url
+        // Явный reset делает повторный open того же URL детерминированной перезагрузкой.
+        send({ kind: 'set-url', url: null }); queueMicrotask(() => send({ kind: 'set-url', url: action.url }))
+      }
       if (pageStatus.current === 'empty' && action.kind !== 'open') return Promise.resolve({ ok: false, error: 'Панель открыта, но в ней нет страницы — сначала вызови open.' })
       if (pageStatus.current === 'error' && action.kind !== 'open') return Promise.resolve({ ok: false, error: 'Сайт или страница недоступны: ' + (pageError.current ?? 'ошибка загрузки.') })
       return new Promise((resolve) => {
@@ -578,11 +585,26 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Действия модели в превью (mcp__browser__*): регистрация хранит не только
   // runner, но и чат панели. Это не даёт переключившемуся чату обратиться к host,
   // который ещё размонтируется, и делает Reader-маршруты единым источником истины.
-  const previewRunnerRef = useRef<{ conversationId: string; runner: PreviewActionRunner } | null>(null)
+  const previewRunnerRef = useRef<{ conversationId: string; registrationId: string; runner: PreviewActionRunner } | null>(null)
+  const diagnosticsControllerRef = useRef<AbortController | null>(null)
+  useEffect(() => () => diagnosticsControllerRef.current?.abort(), [])
+  useEffect(() => { diagnosticsControllerRef.current?.abort(); diagnosticsControllerRef.current = null }, [chat.activeId])
   const registerPreviewRunner = useCallback((runner: PreviewActionRunner | null) => {
-    if (runner && chat.activeId) previewRunnerRef.current = { conversationId: chat.activeId, runner }
+    if (runner && chat.activeId) {
+      const registrationId = crypto.randomUUID()
+      previewRunnerRef.current = { conversationId: chat.activeId, registrationId, runner }
+      globalThis.localStorage?.setItem(PREVIEW_ACTIVE_REGISTRATION_KEY, registrationId)
+    }
     else if (!runner && previewRunnerRef.current?.conversationId === chat.activeId) previewRunnerRef.current = null
   }, [chat.activeId])
+  useEffect(() => {
+    const claimActiveTab = (): void => {
+      const registration = previewRunnerRef.current
+      if (registration) globalThis.localStorage?.setItem(PREVIEW_ACTIVE_REGISTRATION_KEY, registration.registrationId)
+    }
+    window.addEventListener('focus', claimActiveTab)
+    return () => window.removeEventListener('focus', claimActiveTab)
+  }, [])
   useEffect(() => {
     const bridge = window.preview
     if (!bridge) return
@@ -593,7 +615,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           return { ok: false, error: 'Этот чат сейчас не открыт на странице Reader — панель превью недоступна.' }
         }
         const registration = previewRunnerRef.current
-        if (!registration || registration.conversationId !== conversationId) {
+        if (!registration || registration.conversationId !== conversationId || globalThis.localStorage?.getItem(PREVIEW_ACTIVE_REGISTRATION_KEY) !== registration.registrationId) {
           return { ok: false, error: 'Панель превью активного чата не открыта или ещё не подключена.' }
         }
         if (action.kind === 'open') {
@@ -606,7 +628,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           }
         }
         return registration.runner(action)
-      })().then((outcome) => bridge.result({ requestId, ...outcome }))
+      })().then((outcome) => bridge.result({ conversationId, registrationId: previewRunnerRef.current?.registrationId, requestId, ...outcome }))
     })
   }, [chat.activeId, chatActions, inReader, inPlaywrightReader])
   useEffect(() => {
@@ -1119,6 +1141,31 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const readerActiveListed = chat.readerConversations.some((c) => c.id === chat.activeId)
   const playwrightReaderActiveListed = chat.playwrightReaderConversations.some((c) => c.id === chat.activeId)
   const activeConversation = chat.conversations.find((c) => c.id === chat.activeId)
+  const startWebReaderDiagnostics = useCallback((): void => {
+    const conversationId = chat.activeId
+    if (!inReader || !conversationId || !activeConversation || !isReaderConversation(activeConversation)) {
+      toast.error('Самодиагностика доступна только в активном Web Reader-чате.')
+      return
+    }
+    const registration = previewRunnerRef.current
+    if (!registration || registration.conversationId !== conversationId) {
+      toast.error('Панель превью активного чата не открыта или ещё не подключена.')
+      return
+    }
+    diagnosticsControllerRef.current?.abort()
+    const controller = new AbortController()
+    diagnosticsControllerRef.current = controller
+    setConversationSettingsOpen(false)
+    void runWebReaderDiagnostics({
+      origin: window.location.origin,
+      run: registration.runner,
+      ensurePreview: window.session?.ensurePreview,
+      signal: controller.signal,
+      publish: (text) => chatActions.publishDiagnosticMessage(conversationId, text)
+    }).finally(() => {
+      if (diagnosticsControllerRef.current === controller) diagnosticsControllerRef.current = null
+    })
+  }, [activeConversation, chat.activeId, chatActions, inReader, toast])
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
   const activeKbUsage = chat.activeId ? chat.kbUsage[chat.activeId] : undefined
@@ -1634,7 +1681,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             onDeleteQueued={chatActions.deleteQueued}
             onSendQueuedNow={chatActions.sendQueuedNow}
             onDraftChange={chatActions.setDraft}
-            onSubmitText={() => { void chatActions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) }) }}
+            onSubmitText={() => {
+              if (inReader && isWebReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startWebReaderDiagnostics(); return }
+              void chatActions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) })
+            }}
             onStartVoice={voiceActions.startVoice}
             onStopVoice={voiceActions.stopVoice}
             onStopSpeak={voiceActions.stopSpeak}
@@ -1992,6 +2042,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           llmAccess={settingsState.llmAccess}
           defaultAgentId={settingsState.settings.defaultAgentId}
           projects={projects.projects}
+          webReaderDiagnostics={inReader ? { running: diagnosticsControllerRef.current !== null, onRun: startWebReaderDiagnostics } : undefined}
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}
           onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
