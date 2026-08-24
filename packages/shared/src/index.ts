@@ -43,6 +43,7 @@ export * from './previewInspector'
 export * from './previewActions'
 export * from './preview'
 export * from './webRecorder'
+export * from './browserId'
 export * from './widgetAssistant'
 
 export * from './kb'
