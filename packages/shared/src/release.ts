@@ -23,6 +23,14 @@ export function validateReleaseTimeouts(value: ReleaseTimeouts): ReleaseTimeouts
 export const releaseStepLimit = (kind: ReleaseStepKind, limits: ReleaseTimeouts): number => ({checkout:limits.checkoutMs,knowledge_base:limits.knowledgeBaseMs,regression:limits.regressionMs,switching:limits.switchingMs,building:limits.buildingMs,health_check:limits.healthCheckMs})[kind]
 
 export interface ReleaseBranch { branch: string; version: string; sha: string }
+
+export interface ManagedPreflightResult {
+  ok: boolean
+  environment: 'production' | 'staging'
+  paths: import('./projects').ManagedEnvironmentPaths
+  checks: Record<'marker' | 'manifest' | 'origin' | 'branch' | 'write' | 'freeSpace' | 'deployCommand' | 'healthCheckCommand', { ok: boolean; message: string }>
+}
+export type ManagedPreflightConfirmation = ManagedPreflightResult & { confirmationToken: string }
 export interface ReleaseStep {
   id: string
   kind: ReleaseStepKind

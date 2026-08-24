@@ -1,13 +1,7 @@
-import { isMachineStoragePathAllowed, managedEnvironmentPaths, parseEnvironmentManifest, type EnvironmentManifest, type ManagedEnvironmentPaths } from '@voicechat/shared'
+import { isMachineStoragePathAllowed, managedEnvironmentPaths, parseEnvironmentManifest, type ManagedPreflightResult } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { ProductionTarget, ReleaseManager } from './releaseManager.js'
 
-export interface ManagedPreflightResult {
-  ok: boolean
-  environment: 'production' | 'staging'
-  paths: ManagedEnvironmentPaths
-  checks: Record<'marker'|'manifest'|'origin'|'branch'|'write'|'freeSpace'|'deployCommand'|'healthCheckCommand', { ok: boolean; message: string }>
-}
 const quote=(value:string):string=>`'${value.replace(/'/g,`'"'"'`)}'`
 const platformFor=(root:string):string=>/^(?:[A-Za-z]:[\\/]|\\\\)/.test(root)?'win32':'linux'
 
