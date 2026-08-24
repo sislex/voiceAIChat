@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-24
-checked: a89c4cc2
+checked: 59c7c476
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -13,6 +13,7 @@ areas:
   - apps/server/src/routes/agents.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/routes/rest.ts
+  - apps/server/src/turns.ts
   - apps/server/src/preview
   - packages/shared/src/agentProtocol.ts
   - packages/shared/src/ipc.ts
@@ -788,6 +789,34 @@ manifest; legacy-записи без managed metadata не мигрируютс�
 относительный каталог; offline/unavailable варианты остаются видны, но отключены.
 Рабочий Git-cwd настраивается независимо. Смена проекта только предлагает storage
 эффективной машины, а сохранённая привязка меняется после сохранения настроек.
+
+### Managed Git workspace разговора
+
+Фактический Git workspace разговора хранится отдельно и от файловой привязки
+`chat_storage_bindings`, и от legacy `conversations.workdir`: таблица
+`conversation_workspaces` связывает разговор с project/machine/storage, режимом,
+закреплённым `baseSha`, веткой, каноническим путём, состоянием и диагностикой.
+`VoiceChatDb` публикует эту запись в `Conversation.workspace`; произвольный cwd при
+наличии managed workspace в настройках не показывается. Общие режимы и состояния
+описаны в `packages/shared/src/projects.ts`, а UI показывает фактические mode/state,
+SHA, ветку, путь и диагностику в шапке и настройках разговора.
+
+Для обычного проектного чата общий helper строит изолированный путь
+`projects/<projectId>/chats/<conversationId>/workspace/repository` и соседний
+`workspace.json`; идентификаторы проходят ту же проверку безопасного относительного
+пути и результат обязан оставаться внутри storage. Manifest format version 1
+описывает project main и chat workspace, включая канонический путь, origin, ветку и
+machine/storage identity.
+
+`ProjectMainSnapshotCoordinator` в `apps/server/src/turns.ts` задаёт process-wide
+reader/writer координацию по тройке project/machine/storage: параллельные читатели
+совместно используют один refresh и получают один закреплённый SHA с идемпотентным
+`release`, а invalidation ждёт ухода активных readers и выполняется единственным
+writer. Это пока инфраструктурный контракт: production turn lifecycle не создаёт
+адаптер Git-refresh, не берёт snapshot для read-only хода и не повышает чат лениво
+в изменяемый workspace. Поэтому наличие типов, таблицы и UI не означает, что
+проектный ход уже автоматически работает из общего managed main или отдельного
+chat workspace.
 
 Новый CI-workspace при наличии storage машины живёт в стабильном
 `projects/<projectId>/tasks/<taskId>/environments/test/temporary/repository/<taskKey>`;
