@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-24
-checked: 6e37a2c6
+checked: 2bf2e934
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -401,6 +401,16 @@ Per-connection подписка в `session.ts` принимает `board.subscr
 `preparation.run.updated` с `projectId`, `taskId`, `runId`, не перечитывая доску.
 Текстовые дельты подготовки используют только этот адресный канал и не создают
 `board.changed` для каждого фрагмента лога.
+
+Изменения учтённых копий репозитория задачи идут ещё одним адресным каналом
+`emitTaskRepositories` / `onTaskRepositoriesChange`. `MergeRunManager` публикует
+его после регистрации task repository и после успешного удаления хотя бы одной
+копии. WS-сессия перед отправкой `task.repositories.updated` с `projectId` и
+`taskId` проверяет текущий доступ чтением доски. Активный `MergePanel` принимает
+только событие своей задачи, склеивает близкие сигналы 100-миллисекундным debounce
+и адресно перечитывает список репозиториев; содержимое по WS не передаётся.
+Источники — `apps/server/src/projects/boardHub.ts`, `apps/server/src/session.ts` и
+`packages/ui/src/components/ci/MergePanel.tsx`.
 
 Единственный источник полного снимка доски — `GET /api/projects/:projectId/board`.
 Web-клиент отправляет подписку до первоначального GET, игнорирует инвалидации других
