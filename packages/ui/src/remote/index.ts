@@ -67,6 +67,7 @@ export function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
       }),
     editQueued: (payload) => ws.send({ t: 'claude.queue.edit', ...payload }),
     deleteQueued: (payload) => ws.send({ t: 'claude.queue.delete', ...payload }),
+    reorderQueued: (payload) => ws.send({ t: 'claude.queue.reorder', ...payload }),
     sendQueuedNow: (payload) => ws.send({ t: 'claude.queue.now', ...payload }),
     onToken: (cb) =>
       ws.on('claude.token', (m) => cb({ conversationId: m.conversationId, delta: m.delta })),
@@ -85,7 +86,7 @@ export function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
     onLog: (cb) =>
       ws.on('claude.log', (m) => cb({ conversationId: m.conversationId, entry: m.entry })),
     onActive: (cb) => ws.on('claude.active', (m) => cb({ turns: m.turns })),
-    onQueue: (cb) => ws.on('claude.queue', (m) => cb({ conversationId: m.conversationId, items: m.items, paused: m.paused, published: m.published })),
+    onQueue: (cb) => ws.on('claude.queue', (m) => cb({ conversationId: m.conversationId, items: m.items, paused: m.paused, published: m.published, removedMessageIds: m.removedMessageIds })),
     onUsage: (cb) =>
       ws.on('claude.usage', (m) => cb({ conversationId: m.conversationId, usage: m.usage }))
   }

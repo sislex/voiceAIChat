@@ -15,6 +15,7 @@ export interface ChatTurnPort {
   cancel?(conversationId?: string): void
   editQueued?(conversationId: string, id: string, text: string): void
   deleteQueued?(conversationId: string, id: string): void
+  reorderQueued?(conversationId: string, ids: string[]): void
   sendQueuedNow?(conversationId: string, id: string): void
 }
 
