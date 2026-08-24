@@ -348,6 +348,10 @@ export function WebReaderHost({ conversationUrl, projectUrl, onSave, onSelectEle
   const shellReady = useRef(false)
   const pageStatus = useRef<'empty' | 'loading' | 'ready' | 'error'>('empty')
   const pageError = useRef<string>()
+  const approvedUrl = useRef<string | null>(null)
+  const gateSequence = useRef(0)
+  const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
+  const [retryKey, setRetryKey] = useState(0)
   const pending = useRef(new Map<string, { action: PreviewAction; sent: boolean; timer: ReturnType<typeof setTimeout>; resolve: (outcome: PreviewActionOutcome) => void }>())
   const url = conversationUrl ?? projectUrl
   const send = (message: object): void => frameRef.current?.contentWindow?.postMessage({ type: WEB_RECORDER_MESSAGE_TYPE, ...message }, '*')
@@ -367,12 +371,43 @@ export function WebReaderHost({ conversationUrl, projectUrl, onSave, onSelectEle
       send({ kind: 'run-action', requestId, action: entry.action })
     }
   }
-  useEffect(() => { pageStatus.current = url ? 'loading' : 'empty'; pageError.current = undefined; send({ kind: 'set-url', url }) }, [url])
+  useEffect(() => {
+    const sequence = ++gateSequence.current
+    approvedUrl.current = null
+    pageStatus.current = url ? 'loading' : 'empty'
+    pageError.current = undefined
+    if (!url) {
+      setPreviewSession('ready')
+      send({ kind: 'set-url', url: null })
+      return
+    }
+    const ensure = window.session?.ensurePreview
+    if (!ensure) {
+      approvedUrl.current = url
+      setPreviewSession('ready')
+      if (shellReady.current) send({ kind: 'set-url', url })
+      return
+    }
+    setPreviewSession('pending')
+    if (shellReady.current) send({ kind: 'set-url', url: null })
+    let alive = true
+    void ensure().then(
+      (ok) => {
+        if (!alive || sequence !== gateSequence.current) return
+        if (!ok) { setPreviewSession('failed'); return }
+        approvedUrl.current = url
+        setPreviewSession('ready')
+        if (shellReady.current) send({ kind: 'set-url', url })
+      },
+      () => { if (alive && sequence === gateSequence.current) setPreviewSession('failed') }
+    )
+    return () => { alive = false }
+  }, [url, retryKey])
   useEffect(() => {
     const receive = (event: MessageEvent): void => {
       if (event.source !== frameRef.current?.contentWindow || event.data?.type !== WEB_RECORDER_MESSAGE_TYPE) return
       const message = event.data as WebRecorderClientMessage
-      if (message.kind === 'ready') { shellReady.current = true; send({ kind: 'set-url', url }); return }
+      if (message.kind === 'ready') { shellReady.current = true; send({ kind: 'set-url', url: approvedUrl.current }); return }
       if (message.kind === 'page-status') {
         pageStatus.current = message.status
         pageError.current = message.error
@@ -385,7 +420,7 @@ export function WebReaderHost({ conversationUrl, projectUrl, onSave, onSelectEle
       if (message.kind === 'action-result') settle(message.requestId, message.ok ? { ok: true, ...(message.result ? { result: message.result } : {}) } : { ok: false, error: message.error ?? 'Действие в превью не выполнено.' })
     }
     window.addEventListener('message', receive); return () => window.removeEventListener('message', receive)
-  }, [onSave, onSelectElement, url])
+  }, [onSave, onSelectElement])
   useEffect(() => {
     if (!onRegisterActionRunner) return
     onRegisterActionRunner((action) => {
@@ -411,7 +446,11 @@ export function WebReaderHost({ conversationUrl, projectUrl, onSave, onSelectEle
       shellReady.current = false
     }
   }, [onRegisterActionRunner])
-  return <section className="webpreview" aria-label="Web Reader"><iframe ref={frameRef} className="webpreview-frame" src="/web-recorder/" title="Web Reader" aria-hidden="true" /></section>
+  return <section className="webpreview" aria-label="Web Reader">
+    {url && previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
+    {url && previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => setRetryKey((value) => value + 1)}>Повторить</button></div>}
+    <iframe ref={frameRef} className="webpreview-frame" src="/web-recorder/" title="Web Reader" aria-hidden={previewSession !== 'ready'} />
+  </section>
 }
 
 /**

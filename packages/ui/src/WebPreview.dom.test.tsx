@@ -157,6 +157,70 @@ describe('WebReaderHost action lifecycle', () => {
   const hostMessage = (frame: HTMLIFrameElement, data: object): void => {
     fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, ...data } }))
   }
+  const withSessionBridge = (ensurePreview: () => Promise<boolean>): void => {
+    ;(window as { session?: unknown }).session = {
+      login: vi.fn(), me: vi.fn(), logout: vi.fn(), ensurePreview
+    }
+  }
+
+  afterEach(() => { delete (window as { session?: unknown }).session })
+
+  it('не передаёт целевой URL до успешного выпуска preview-cookie', async () => {
+    let release: (ok: boolean) => void = () => undefined
+    const ensurePreview = vi.fn(() => new Promise<boolean>((resolve) => { release = resolve }))
+    withSessionBridge(ensurePreview)
+    render(<WebReaderHost conversationUrl="https://shop.example" projectUrl={null} onSave={vi.fn()} />)
+    const frame = screen.getByTitle('Web Reader') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    hostMessage(frame, { kind: 'ready' })
+    expect(screen.getByRole('status')).toHaveTextContent('Подключение Web Preview')
+    expect(post.mock.calls.some(([message]) => (message as { url?: string }).url === 'https://shop.example')).toBe(false)
+    release(true)
+    await waitFor(() => expect(post.mock.calls.some(([message]) => (message as { url?: string }).url === 'https://shop.example')).toBe(true))
+    expect(ensurePreview).toHaveBeenCalledTimes(1)
+  })
+
+  it('показывает отказ и повторно вызывает ensurePreview для projectUrl', async () => {
+    const ensurePreview = vi.fn()
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(true)
+    withSessionBridge(ensurePreview)
+    render(<WebReaderHost conversationUrl={null} projectUrl="https://project.example" onSave={vi.fn()} />)
+    const frame = screen.getByTitle('Web Reader') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    hostMessage(frame, { kind: 'ready' })
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Не удалось подготовить'))
+    expect(post.mock.calls.some(([message]) => (message as { url?: string }).url === 'https://project.example')).toBe(false)
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(post.mock.calls.some(([message]) => (message as { url?: string }).url === 'https://project.example')).toBe(true))
+    expect(ensurePreview).toHaveBeenCalledTimes(2)
+  })
+
+  it('после смены URL во время ожидания открывает только актуальный адрес', async () => {
+    const releases: Array<(ok: boolean) => void> = []
+    withSessionBridge(() => new Promise<boolean>((resolve) => { releases.push(resolve) }))
+    const view = render(<WebReaderHost conversationUrl="https://old.example" projectUrl={null} onSave={vi.fn()} />)
+    const frame = screen.getByTitle('Web Reader') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    hostMessage(frame, { kind: 'ready' })
+    view.rerender(<WebReaderHost conversationUrl="https://new.example" projectUrl={null} onSave={vi.fn()} />)
+    releases[0](true)
+    await Promise.resolve()
+    expect(post.mock.calls.some(([message]) => (message as { url?: string }).url === 'https://old.example')).toBe(false)
+    releases[1](true)
+    await waitFor(() => expect(post.mock.calls.some(([message]) => (message as { url?: string }).url === 'https://new.example')).toBe(true))
+  })
+
+  it('без URL не вызывает ensurePreview и не передаёт целевую страницу', () => {
+    const ensurePreview = vi.fn(async () => true)
+    withSessionBridge(ensurePreview)
+    render(<WebReaderHost conversationUrl={null} projectUrl={null} onSave={vi.fn()} />)
+    const frame = screen.getByTitle('Web Reader') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    hostMessage(frame, { kind: 'ready' })
+    expect(ensurePreview).not.toHaveBeenCalled()
+    expect(post.mock.calls.every(([message]) => (message as { url?: string | null }).url == null)).toBe(true)
+  })
 
   it('open→read ждёт page ready и сопоставляет ответ', async () => {
     const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
