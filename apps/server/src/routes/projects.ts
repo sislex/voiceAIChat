@@ -741,7 +741,7 @@ export function registerProjectRoutes(
     })
     if (!task) return nf(reply)
     // Ручное закрытие задачи чистит её копии репозиториев так же, как успешный merge.
-    if (to?.semanticType === 'done') void merge?.releaseTaskRepositories({ taskId: req.params.taskId }).catch(() => {})
+    if (to?.semanticType === 'done') void merge?.releaseTaskRepositories({ projectId: req.params.id, taskId: req.params.taskId }).catch(() => {})
     boardHub.emit(req.params.id)
     return task
   })

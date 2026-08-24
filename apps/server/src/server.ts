@@ -416,8 +416,6 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     if (boardChanged) boardHub.emit(projectId)
   }
   const notificationHub = new NotificationHub()
-  // Любая проектная мутация потенциально меняет доступность либо жизненный цикл вопроса.
-  boardHub.onChange((projectId) => notificationHub.emit(projectId))
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = (): WhisperModel => db.getSettings('admin').whisperModel
@@ -1336,7 +1334,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl, mode:'legacy' }
   })
   registerReleaseRoutes(app, db, releaseManager, managedEnvironments)
-  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
+  const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId))
   mergeRunManager.reconcile()
   const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:(id)=>boardHub.emit(id)})
@@ -1410,7 +1408,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       board: {
         getBoard: (projectId, includeCompleted) => db.getBoard(user.name, projectId, { includeCompleted }),
         subscribe: (cb) => boardHub.onChange(cb),
-        subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb)
+        subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb),
+        subscribeTaskRepositories: (cb) => boardHub.onTaskRepositoriesChange(cb)
       },
       preparationNotifications: {
         canAccess: (projectId) => db.getProject(user.name, projectId) !== null,

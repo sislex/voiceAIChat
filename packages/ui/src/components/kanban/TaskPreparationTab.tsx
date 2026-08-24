@@ -172,7 +172,6 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
         setRuns((previous) => [next, ...previous.filter((run) => run.id !== next.id)])
         setSelectedId(next.id)
       }
-      await refresh()
     } finally {
       setPending(null)
     }
@@ -199,7 +198,6 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
     try {
       const next = await props.onStart(props.taskId, selection)
       if (next) { setRuns((previous) => [next, ...previous.filter((run) => run.id !== next.id)]); setSelectedId(next.id) }
-      await refresh()
     } finally { setPending(null) }
   }
 
