@@ -1,7 +1,7 @@
 ---
 title: Merge-ран задачи: безопасное слияние в main
 updated: 2026-08-24
-checked: 2198e7a9
+checked: 59c7c476
 areas:
   - packages/shared/src/merge.ts
   - packages/shared/src/projects.ts
@@ -12,6 +12,7 @@ areas:
   - apps/server/src/db/schema.ts
   - apps/server/src/routes/projects.ts
   - apps/server/src/server.ts
+  - apps/server/src/turns.ts
   - packages/ui/src/components/ci/MergePanel.tsx
   - packages/ui/src/components/ci/MergeRunFeed.tsx
   - packages/ui/src/components/kanban/TaskModal.tsx
@@ -285,6 +286,15 @@ source и main, `merging` — проверяемый SHA («main + feature»), �
 `git worktree remove --force`, затем `git worktree prune` убирает служебные
 записи. Ошибки самой очистки проглатываются: отключившаяся машина не должна
 подменять настоящую причину остановки рана.
+
+Managed workspace обычного разговора не является частью этого cleanup. Его запись
+живёт в отдельной таблице `conversation_workspaces`, а канонический chat-путь и
+`ProjectWorkspaceManifest` определены в `packages/shared/src/projects.ts`.
+`MergeRunManager` сейчас не читает эту запись, не проверяет `origin/main` или
+`workspace.json` такого workspace и не выполняет manifest-guarded удаление либо
+очистку chat workspace после merge. Текущий merge cleanup охватывает только два
+временных detached worktree рана и отдельно учтённые task repositories; связывать
+с ним lifecycle workspace разговора пока нельзя.
 
 Оркестрация целиком покрыта `apps/server/src/merge/runManager.test.ts` без
 единого реального CLI, git-репозитория и сети. `CommandExecutor` — `vi.fn`,
