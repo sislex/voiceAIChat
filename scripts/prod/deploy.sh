@@ -78,6 +78,95 @@ task_ref=$(git log -1 --pretty=%s | grep -Eio 'chat(ai)?[-[:space:]]*[0-9]+' | g
 export VC_RELEASE_TASK=${task_ref:+chat-$task_ref}
 log "метаданные релиза: version=${VC_RELEASE_VERSION:-нет} commit=$VC_RELEASE_COMMIT task=${VC_RELEASE_TASK:-нет} source=$release_version_source"
 
+# Канонический серверный том не зависит от Compose project name. До первого
+# пересоздания безопасно переносим единственный прежний Compose-том vc-data.
+data_volume=${VC_DATA_VOLUME:-voicechat-server-data}
+backup_volume=${VC_DATA_BACKUP_VOLUME:-voicechat-server-data-backups}
+files_image=${VC_DATA_FILES_IMAGE:-alpine:3.20}
+sqlite_image=${VC_DATA_SQLITE_IMAGE:-python:3.12-alpine}
+
+volume_nonempty() {
+  docker run --rm -v "$1:/data:ro" "$files_image" sh -eu -c \
+    'test -n "$(find /data -mindepth 1 -maxdepth 1 -print -quit)"'
+}
+
+validate_data_volume() {
+  docker run --rm -v "$1:/data:ro" "$sqlite_image" python3 -c \
+    'import os,sqlite3,stat
+db="/data/voicechat.db"
+secret="/data/session.secret"
+for path in (db,secret):
+ item=os.stat(path)
+ assert stat.S_ISREG(item.st_mode), f"{path} is not a regular file"
+ assert item.st_size > 0, f"{path} is empty"
+connection=sqlite3.connect(f"file:{db}?mode=ro",uri=True)
+result=connection.execute("PRAGMA integrity_check").fetchone()
+connection.close()
+assert result and result[0]=="ok", f"voicechat.db integrity_check: {result}"'
+}
+
+migration_error() {
+  log "!!! миграция серверных данных: $*" >&2
+  exit 1
+}
+
+log "проверяем постоянный том серверных данных $data_volume"
+docker volume create "$data_volume" >/dev/null ||
+  migration_error "не удалось создать или открыть постоянный том"
+
+if volume_nonempty "$data_volume"; then
+  validate_data_volume "$data_volume" ||
+    migration_error "постоянный том непуст, но не содержит корректный комплект voicechat.db/session.secret"
+  log 'постоянный том уже содержит корректные данные; миграция не требуется'
+else
+  volume_status=$?
+  (( volume_status == 1 )) ||
+    migration_error "не удалось проверить содержимое постоянного тома"
+  legacy_output=$(docker volume ls --filter label=com.docker.compose.volume=vc-data --format '{{.Name}}') ||
+    migration_error "не удалось получить список прежних Compose-томов"
+  legacy_volumes=()
+  while IFS= read -r volume; do
+    [[ -n $volume ]] && legacy_volumes+=("$volume")
+  done <<<"$legacy_output"
+
+  nonempty_legacy=()
+  for volume in "${legacy_volumes[@]}"; do
+    [[ -n $volume && $volume != "$data_volume" ]] || continue
+    if volume_nonempty "$volume"; then
+      nonempty_legacy+=("$volume")
+    else
+      volume_status=$?
+      (( volume_status == 1 )) ||
+        migration_error "не удалось проверить содержимое прежнего тома $volume"
+    fi
+  done
+
+  if (( ${#nonempty_legacy[@]} > 1 )); then
+    migration_error "найдено несколько непустых прежних томов: ${nonempty_legacy[*]}"
+  elif (( ${#nonempty_legacy[@]} == 0 )); then
+    log 'прежние данные не найдены; разрешена чистая установка'
+  else
+    source_volume=${nonempty_legacy[0]}
+    validate_data_volume "$source_volume" ||
+      migration_error "прежний том $source_volume неполон или повреждён"
+
+    docker volume create "$backup_volume" >/dev/null ||
+      migration_error "не удалось создать том резервных копий"
+    backup_id="$(date -u +%Y%m%dT%H%M%SZ)-$source_volume"
+    docker run --rm -v "$source_volume:/source:ro" -v "$backup_volume:/backup" "$files_image" sh -eu -c \
+      'mkdir "/backup/$1" && tar -C /source -czf "/backup/$1/data.tar.gz" . && tar -tzf "/backup/$1/data.tar.gz" >/dev/null' sh "$backup_id" ||
+      migration_error "не удалось создать и проверить резервную копию $backup_id"
+    log "резервная копия сохранена как $backup_volume/$backup_id/data.tar.gz"
+
+    docker run --rm -v "$source_volume:/source:ro" -v "$data_volume:/target" "$files_image" sh -eu -c \
+      'test -z "$(find /target -mindepth 1 -maxdepth 1 -print -quit)" && cp -a /source/. /target/' ||
+      migration_error "не удалось скопировать данные в постоянный том"
+    validate_data_volume "$data_volume" ||
+      migration_error "скопированные данные не прошли итоговую проверку"
+    log "данные однократно перенесены из $source_volume и проверены"
+  fi
+fi
+
 log 'docker compose up -d --build'
 docker compose up -d --build
 
