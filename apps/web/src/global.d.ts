@@ -13,6 +13,7 @@ import type {
   RendererFilesBridge,
   RendererFsBridge,
   RendererPreviewBridge,
+  RendererRealtimeBridge,
   RendererPtyBridge,
   RendererSessionBridge,
   RendererSttBridge,
@@ -31,6 +32,7 @@ declare global {
     cc: RendererCcBridge
     codex: RendererCodexBridge
     agents?: RendererAgentsBridge
+    realtime?: RendererRealtimeBridge
     board?: RendererBoardBridge
     session?: RendererSessionBridge
     fs?: RendererFsBridge

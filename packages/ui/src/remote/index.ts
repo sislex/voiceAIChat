@@ -14,6 +14,7 @@ import type {
   RendererFilesBridge,
   RendererFsBridge,
   RendererPreviewBridge,
+  RendererRealtimeBridge,
   RendererPtyBridge,
   RendererSessionBridge,
   RendererSttBridge,
@@ -136,6 +137,14 @@ export function makePreviewBridge(ws: WsClient): RendererPreviewBridge {
         ...(m.result !== undefined ? { result: m.result } : {}),
         ...(m.error !== undefined ? { error: m.error } : {})
       })
+  }
+}
+
+export function makeRealtimeBridge(ws: WsClient): RendererRealtimeBridge {
+  return {
+    onConnected: (cb) => ws.onConnected(cb),
+    onTaskPreparationNotificationsInvalidated: (cb) =>
+      ws.on('task-preparation.notifications.invalidate', (m) => cb({ projectId: m.projectId }))
   }
 }
 
@@ -368,6 +377,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   window.cc = makeCcBridge(ws)
   window.codex = makeCodexBridge(ws)
   window.agents = makeAgentsBridge(ws)
+  window.realtime = makeRealtimeBridge(ws)
   window.board = makeBoardBridge(ws)
   window.ci = makeCiBridge(httpBase, ws)
   window.kb = makeKbBridge(httpBase, ws)

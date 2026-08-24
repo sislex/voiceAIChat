@@ -634,6 +634,13 @@ export interface RendererAgentsBridge {
  * Мост живой канбан-доски (web, поверх WS): подписка на доску проекта и приём
  * инвалидаций board.changed. В desktop отсутствует → без живой синхронизации.
  */
+export interface RendererRealtimeBridge {
+  /** Каждое успешное WS-подключение, включая reconnect. */
+  onConnected(cb: () => void): () => void
+  /** Invalidation-only событие; полный снимок читается по HTTP. */
+  onTaskPreparationNotificationsInvalidated(cb: (m: { projectId: string }) => void): () => void
+}
+
 export interface RendererBoardBridge {
   /** Подписаться на инвалидации доски проекта. */
   subscribe(projectId: string): void

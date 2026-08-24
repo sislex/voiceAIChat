@@ -5,6 +5,24 @@
 
 export type BoardListener = (projectId: string) => void
 
+export interface NotificationInvalidation {
+  projectId: string
+  userId?: string
+}
+
+export class NotificationHub {
+  private readonly listeners = new Set<(event: NotificationInvalidation) => void>()
+
+  emit(projectId: string, userId?: string): void {
+    for (const listener of this.listeners) listener({ projectId, ...(userId ? { userId } : {}) })
+  }
+
+  onChange(listener: (event: NotificationInvalidation) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+}
+
 export class BoardHub {
   private readonly listeners = new Set<BoardListener>()
 

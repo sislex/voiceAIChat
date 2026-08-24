@@ -58,6 +58,19 @@ function waitBoardChanged(ws: WebSocket, projectId: string, ms = 1000): Promise<
   })
 }
 
+function waitNotificationInvalidation(ws: WebSocket, ms = 600): Promise<Extract<ServerMessage, { t: 'task-preparation.notifications.invalidate' }> | null> {
+  return new Promise((resolve) => {
+    const onMsg = (data: Buffer) => {
+      const message = JSON.parse(data.toString()) as ServerMessage
+      if (message.t !== 'task-preparation.notifications.invalidate') return
+      ws.off('message', onMsg)
+      resolve(message)
+    }
+    ws.on('message', onMsg)
+    setTimeout(() => { ws.off('message', onMsg); resolve(null) }, ms)
+  })
+}
+
 async function createProject(): Promise<ProjectDetail> {
   const res = await app.inject({
     method: 'POST',
@@ -129,6 +142,27 @@ describe('WS: живое обновление доски', () => {
     const cancelledBoard = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
     expect(cancelledBoard.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'cancelled' })
     ws.close()
+  })
+
+  it('адресует инвалидирование участникам и финально уведомляет удалённого участника', async () => {
+    const p = await createProject()
+    const admin = await connect(adminTok)
+    const bob = await connect(bobTok)
+    const outsiderEvent = waitNotificationInvalidation(bob)
+    const adminEvent = waitNotificationInvalidation(admin)
+    const board = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: { authorization: `Bearer ${adminTok}` } })).json() as Board
+    await app.inject({ method: 'POST', url: `/api/projects/${p.id}/tasks`, headers: { authorization: `Bearer ${adminTok}` }, payload: { columnId: board.columns[0]!.id, title: 'Invalidate' } })
+    expect((await adminEvent)?.projectId).toBe(p.id)
+    expect(await outsiderEvent).toBeNull()
+
+    const added = waitNotificationInvalidation(bob)
+    await app.inject({ method: 'POST', url: `/api/projects/${p.id}/members`, headers: { authorization: `Bearer ${adminTok}` }, payload: { username: 'bob' } })
+    expect((await added)?.projectId).toBe(p.id)
+    const removed = waitNotificationInvalidation(bob)
+    await app.inject({ method: 'DELETE', url: `/api/projects/${p.id}/members/bob`, headers: { authorization: `Bearer ${adminTok}` } })
+    expect((await removed)?.projectId).toBe(p.id)
+    admin.close()
+    bob.close()
   })
 
   it('не-участник не получает board.changed по подписке', async () => {
