@@ -326,6 +326,7 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
   modelSummary: CiModelSummaryHook
   attemptFix: CiFixHook
   kbUpdate: CiKbUpdateHook
+  conflictFixForMerge(args: { run: import('@voicechat/shared').MergeRun; repo: string; conflicts: string[]; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }>
   kbUpdateForMerge(args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }>
 } {
   const now = deps.now ?? (() => Date.now())
@@ -1127,6 +1128,45 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     return { ok: true, message: repairRecovered ? `Финальный JSON восстановлен дополнительным запросом. ${summary}` : summary }
   }
 
+  const conflictFixForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; conflicts: string[]; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
+    const project = deps.db.getProject(args.run.triggeredBy, args.run.projectId)
+    const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
+    const development = deps.db.findLatestCiRunForTask(args.run.projectId, args.run.taskId)
+    const llm = { llmEngineId:args.run.llmEngineId, provider:args.run.llmProvider, model:args.run.llmModel }
+    if (!project || !task || !development) return { ok:false, message:'Контекст development-рана для исправления конфликтов недоступен', llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
+    const noop = (): never => { throw new Error('Операция development CI недоступна в merge conflict_fix') }
+    const ctx = {
+      runId:development.id, agentId:args.run.agentId, workspacePath:args.repo,
+      env:{BASE_BRANCH:'main'}, signal:args.signal, addStep:noop, finishStep:noop,
+      log:(_stepId:string,_stream:'stdout'|'stderr'|'system',chunk:string)=>args.log(chunk),
+      runCommandById:noop, setModelSessionId:()=>{}, recordFix:noop, suggest:noop,
+      askUser:noop, askPlanApproval:noop,
+      run:{...development,llmEngineId:llm.llmEngineId,llmProvider:llm.provider,llmModel:llm.model},
+      task, project, parentStepId:'merge-conflict-fix'
+    } as unknown as CiModelContext
+    const request=(model:string):LlmRequest=>({
+      userId:args.run.triggeredBy,
+      prompt:[
+        'Дополнительный шаг CI: исправь Git-конфликты текущего merge в рабочей копии.',
+        `Задача: ${task.title}`,
+        task.description?`Описание: ${task.description}`:'',
+        task.acceptanceCriteria?`Критерии приёмки: ${task.acceptanceCriteria}`:'',
+        `Конфликтующие файлы: ${args.conflicts.join(', ')}`,
+        'Изучи обе стороны и общий предок, сохрани совместимое поведение обеих веток. Удали все конфликтные маркеры и проиндексируй исправленные файлы через git add.',
+        'Не выполняй git merge --abort, commit, push, reset, checkout другой ветки или очистку рабочей копии. Не расширяй задачу и не меняй файлы без необходимости.',
+        'Перед завершением проверь git diff --name-only --diff-filter=U. Сервер независимо проверит результат и создаст merge-коммит.'
+      ].filter(Boolean).join('\\n'),
+      sessionId:null, model, permissionMode:'acceptEdits',
+      remote:{mcpUrl:`${deps.mcpBaseUrl}&agent=${encodeURIComponent(args.run.agentId)}&cwd=${encodeURIComponent(args.repo)}`,agentName:deps.agentNameOf(args.run.agentId)??args.run.agentId}
+    })
+    try {
+      const turn=await stageRunner(ctx,'fix','merge-conflict-fix')(request,(_stream,chunk)=>args.log(chunk),args.signal,'Исправление конфликтов остановлено.\\n')
+      return {llmEngineId:llm.llmEngineId,llmProvider:llm.provider,llmModel:llm.model,ok:turn.ok&&!turn.cancelled,message:turn.ok?'Дополнительный шаг исправления конфликтов завершён':'Модель не смогла исправить конфликты'}
+    } catch(error) {
+      return {llmEngineId:llm.llmEngineId,llmProvider:llm.provider,llmModel:llm.model,ok:false,message:`Шаг исправления конфликтов не выполнен: ${error instanceof Error?error.message:String(error)}`}
+    }
+  }
+
   const kbUpdateForMerge = async (args: { run: import('@voicechat/shared').MergeRun; repo: string; targetRef: string; signal: AbortSignal; log(chunk:string):void }): Promise<{ ok:boolean; message:string; llmEngineId:string|null; llmProvider:'claude'|'codex'; llmModel:string }> => {
     const project = deps.db.getProject(args.run.triggeredBy, args.run.projectId)
     const task = deps.db.getCiTask(args.run.triggeredBy, args.run.projectId, args.run.taskId)
@@ -1165,5 +1205,5 @@ export function createCiModelHooks(deps: CiModelHooksDeps): {
     return { ...result, llmEngineId:llm.llmEngineId, llmProvider:llm.provider, llmModel:llm.model }
   }
 
-  return { modelWork, modelSummary, attemptFix, kbUpdate, kbUpdateForMerge }
+  return { modelWork, modelSummary, attemptFix, kbUpdate, conflictFixForMerge, kbUpdateForMerge }
 }

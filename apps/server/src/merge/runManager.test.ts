@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { recommendedProjectMachineDirectories, type MergeRun, type ProjectMachineDirectoryAssignments } from '@voicechat/shared'
-import { MergeRunManager, type MergeKbUpdateContext } from './runManager.js'
+import { MergeRunManager, type MergeConflictFixContext, type MergeKbUpdateContext } from './runManager.js'
 import type { VoiceChatDb } from '../db/database.js'
 import type { CommandExecutor } from '../ci/types.js'
 
@@ -8,7 +8,7 @@ const source='1'.repeat(40), target='2'.repeat(40), merged='3'.repeat(40)
 const base=():MergeRun=>({id:'r1',projectId:'p1',taskId:'t1',status:'queued',triggeredBy:'admin',sourceBranch:'CHAT-178',targetBranch:'main',sourceSha:source,targetSha:null,mergeSha:null,revertSha:null,agentId:'a1',machineName:'Mac',llmEngineId:null,llmProvider:'claude',llmModel:'',stage:'queued',stages:[],conflicts:[],conflictDetails:[],checks:[],deployId:null,deployVersion:null,productionStatus:null,error:null,recommendedAction:null,log:'',canCancel:true,canRetry:false,pushStartedAt:null,startedAt:null,finishedAt:null,createdAt:1})
 
 type Out=string|{output:string;exitCode:number}
-function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'}), isOnline:(agentId:string)=>boolean=()=>true, kbFiles:string[]=[]){
+function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affected-check', gitUrl='git@example/repo.git', kbUpdate:(ctx:MergeKbUpdateContext)=>Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>=async()=>({ok:true,message:'Нечего обновлять'}), isOnline:(agentId:string)=>boolean=()=>true, kbFiles:string[]=[], conflictFix:(ctx:MergeConflictFixContext)=>Promise<{ok:boolean;message:string}>=async()=>({ok:false,message:'Модель не исправила конфликты'})){
   const kbSha=kbFiles.length?'5'.repeat(40):merged
   let run=initial
   const moves:string[]=[]
@@ -38,7 +38,7 @@ function setup(outputs:Out[], initial:MergeRun=base(), testCommand='npm run affe
     if(req.script.includes('git checkout --ours -- docs/kb/README.md'))return{exitCode:0,timedOut:false}
     const item=outputs.shift()??'';const spec=typeof item==='string'?{output:item,exitCode:0}:item;onChunk(spec.output);return{exitCode:spec.exitCode,timedOut:false}
   })}
-  const manager=new MergeRunManager({db:db as unknown as VoiceChatDb,executor,kbUpdate,isOnline,broadcast:()=>{},boardChanged:()=>{},now:(()=>{let n=10;return()=>++n})()})
+  const manager=new MergeRunManager({db:db as unknown as VoiceChatDb,executor,conflictFix,kbUpdate,isOnline,broadcast:()=>{},boardChanged:()=>{},now:(()=>{let n=10;return()=>++n})()})
   return{manager,get run(){return run},moves,executor,repositories}
 }
 
@@ -119,22 +119,37 @@ describe('MergeRunManager',()=>{
     expect(resolve).toContain('kb.mjs check')
     expect((s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script).some(v=>v.includes('kb.mjs index'))).toBe(true)
   })
-  it('stops for a decision when KB topics diverge in content',async()=>{
+  it('runs the additional step after deterministic KB resolution fails',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},'docs/kb/README.md\ndocs/kb/ui.md\n',{output:'',exitCode:65}])
     s.manager.start(s.run)
-    await vi.waitFor(()=>expect(s.run.status).toBe('decision_required'))
+    await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
     expect(s.run.conflicts).toEqual(['docs/kb/ui.md'])
-    expect(s.run.stages.find(stage=>stage.stage==='resolving_conflicts')?.message).toContain('содержательное расхождение')
+    expect(s.run.stages.find(stage=>stage.stage==='resolving_conflicts')?.message).toContain('Модель не исправила конфликты')
   })
   it('stops for a decision when conflicts touch anything beyond the KB index',async()=>{
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},'docs/kb/README.md\napps/server/src/index.ts\n','','apps/server/src/index.ts\n'])
     s.manager.start(s.run)
-    await vi.waitFor(()=>expect(s.run.status).toBe('decision_required'))
+    await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
     expect(s.run.conflicts).toEqual(['apps/server/src/index.ts'])
     const scripts=(s.executor.run as ReturnType<typeof vi.fn>).mock.calls.map(call=>call[0].script)
     expect(scripts.some(v=>v.includes('git checkout --ours -- docs/kb/README.md'))).toBe(true)
     expect(scripts.some(v=>v.includes('kb.mjs index'))).toBe(false)
   })
+  it('runs one additional model step for an ambiguous conflict and continues after server verification',async()=>{
+    const enc=(value:string)=>Buffer.from(value).toString('base64')
+    const path='apps/server/src/index.ts'
+    const stages=`100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1\t${path}\n100644 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 2\t${path}\n100644 cccccccccccccccccccccccccccccccccccccccc 3\t${path}\nSTAGE1=${enc('a\nb\n')}\nSTAGE2=${enc('a\nours\n')}\nSTAGE3=${enc('a\ntheirs\n')}\n`
+    const fix=vi.fn(async(ctx:MergeConflictFixContext)=>({ok:true,message:`Исправлен ${ctx.conflicts.join(', ')}`}))
+    const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},path+'\n',stages,path+'\n','','',merged+'\n','deps ok\n','tests ok\n',`TARGET=${target}\n`,'push ok\n',merged+' refs/heads/main\n',''],base(),'npm run affected-check','git@example/repo.git',async()=>({ok:true,message:'Нечего обновлять'}),()=>true,[],fix)
+    s.manager.start(s.run)
+    await vi.waitFor(()=>expect(['success','failed']).toContain(s.run.status))
+    expect(s.run.status,`${s.run.error}\\n${s.run.log}`).toBe('success')
+    expect(fix).toHaveBeenCalledTimes(1)
+    expect(fix.mock.calls[0][0]).toMatchObject({repo:'/repo/.merge',conflicts:[path]})
+    expect(s.run.conflicts).toEqual([])
+    expect(s.run.stages.find(stage=>stage.stage==='resolving_conflicts')).toMatchObject({status:'passed'})
+  })
+
   it('auto-resolves all independent text conflicts and continues through gates',async()=>{
     const enc=(value:string)=>Buffer.from(value).toString('base64')
     const path='packages/ui/src/styles/app.css', baseCss='.automation-progress {}\n'
@@ -156,7 +171,7 @@ describe('MergeRunManager',()=>{
     const safe='safe.css',ambiguous='ambiguous.ts'
     const s=setup(['','git@example/repo.git\ntrue\n',`SOURCE=${source}\nTARGET=${target}\n`,'PENDING\n','',{output:'CONFLICT\n',exitCode:1},safe+'\n'+ambiguous+'\n',stages('a\n','a\nours\n','a\ntheirs\n',safe),'',stages('a\nb\n','a\nB\n','a\nX\n',ambiguous),ambiguous+'\n'])
     s.manager.start(s.run)
-    await vi.waitFor(()=>expect(s.run.status).toBe('decision_required'))
+    await vi.waitFor(()=>expect(s.run.status).toBe('failed'))
     expect(s.run.conflicts).toEqual([ambiguous])
     expect(s.run.log).toContain(`Авторазрешение ${safe}: classification=same-anchor-independent-insert, applied=yes`)
     expect(s.run.log).toContain(`Авторазрешение ${ambiguous}: classification=ambiguous, applied=no`)
