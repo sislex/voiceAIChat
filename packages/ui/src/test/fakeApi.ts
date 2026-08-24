@@ -243,6 +243,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       draftRequests.set(idempotencyKey, conv.id)
       return { conversation: withCounts(conv), messages: [persisted] }
     },
+    'conversations:contextSnapshot': async ({ id }) => ({ schemaVersion: 1, conversationId: id, generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовый снимок.', summary: { provider: 'claude', model: 'default', permissionMode: { value: 'plan', displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto', displayName: 'Автоматически', explanation: 'Тест' } }, groups: [] }),
     'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
     'conversations:get': async ({ id }) => {
       const conv = conversations.find((c) => c.id === id)

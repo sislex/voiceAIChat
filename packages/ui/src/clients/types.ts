@@ -90,6 +90,7 @@ export type ChatClient = Pick<
   | 'conversations:create'
   | 'conversations:createDraft'
   | 'conversations:get'
+  | 'conversations:contextSnapshot'
   | 'conversations:search'
   | 'conversations:rename'
   | 'conversations:setProject'

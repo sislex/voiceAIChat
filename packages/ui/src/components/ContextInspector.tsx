@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AgentInfo } from '@shared/agentProtocol'
-import type { KbContextMode, LlmProvider, PermissionMode } from '@shared/types'
+import type { ConversationContextSnapshot, KbContextMode, LlmProvider, PermissionMode } from '@shared/types'
 import type { ProjectSummary } from '@shared/projects'
 import { Button } from '@voicechat/ui-kit'
 
@@ -32,14 +32,28 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     window.addEventListener('hashchange', sync)
     return () => window.removeEventListener('hashchange', sync)
   }, [props.conversationId])
+  const [snapshot, setSnapshot] = useState<ConversationContextSnapshot | null>(null)
+  const [snapshotError, setSnapshotError] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
+  useEffect(() => {
+    let alive = true
+    setSnapshot(null); setSnapshotError(null)
+    void window.api['conversations:contextSnapshot']({ id: props.conversationId }).then((value) => {
+      if (!alive) return
+      if (!value) setSnapshotError('Разговор или источник больше недоступен.')
+      else setSnapshot(value)
+    }).catch((error) => { if (alive) setSnapshotError(error instanceof Error ? error.message : String(error)) })
+    return () => { alive = false }
+  }, [props.conversationId, reload])
 
   const groups = useMemo<ContextGroup[]>(() => {
+    return []
     const skills = props.agent?.policy.skills ?? []
     const selected = new Set(props.selectedSkillNames)
     const projectItems: ContextItem[] = [{ id: 'project-agents', title: props.workdir ? 'Инструкции AGENTS.md рабочей директории' : 'Проектные инструкции', description: props.workdir ? 'Иерархия AGENTS.md от корня проекта до текущего каталога.' : 'Рабочая директория не выбрана.', type: 'Проектная инструкция', source: props.workdir ? `${props.workdir}/AGENTS.md и родительские каталоги` : 'AGENTS.md', scope: props.workdir ?? 'Рабочая директория не выбрана', status: props.workdir ? 'Применяется' : 'Не применимо', priority: 'Инструкции проекта и рабочей директории', details: 'Более конкретный AGENTS.md уточняет инструкции родительского каталога в своей области.', reason: props.workdir ? 'Рабочая директория задаёт цепочку применимых файлов.' : 'Без рабочей директории применимость не определена.', limitations: 'Полный текст открывается только после проверки доступа к файлу; инспектор не раскрывает его автоматически.' }]
     const settings: ContextItem[] = [
       { id: 'chat-llm', title: 'Модель и провайдер', description: `${props.provider} · ${props.model || 'модель из конфигурации'}`, type: 'Настройка разговора', source: 'Настройки чата', scope: 'Следующий ход', status: 'Применяется', priority: 'Настройки текущего разговора', details: 'Эффективная пара провайдера и модели для следующего сообщения.', reason: 'Выбрана в разговоре или унаследована.', limitations: 'Доступность дополнительно проверяется сервером.' },
-      { id: 'chat-machine', title: 'Машина и рабочая директория', description: props.agent ? `${props.agent.name} · ${props.workdir || 'корень машины'}` : 'Удалённая машина не подключена', type: 'Настройка разговора', source: 'Настройки чата', scope: props.workdir ?? 'Без машины', status: props.agent ? (props.agent.online ? 'Применяется' : 'Недоступен') : 'Не выбран', priority: 'Настройки текущего разговора', details: 'Цель выполнения и каталог хранятся отдельно для разговора.', reason: props.agent ? 'Машина выбрана в настройках.' : 'Машина не выбрана.', limitations: props.agent?.online ? 'Операции ограничены политикой машины и режимом прав.' : 'Для команд нужна доступная машина.' },
+      { id: 'chat-machine', title: 'Машина и рабочая директория', description: props.agent ? `${props.agent?.name} · ${props.workdir || 'корень машины'}` : 'Удалённая машина не подключена', type: 'Настройка разговора', source: 'Настройки чата', scope: props.workdir ?? 'Без машины', status: props.agent ? (props.agent?.online ? 'Применяется' : 'Недоступен') : 'Не выбран', priority: 'Настройки текущего разговора', details: 'Цель выполнения и каталог хранятся отдельно для разговора.', reason: props.agent ? 'Машина выбрана в настройках.' : 'Машина не выбрана.', limitations: props.agent?.online ? 'Операции ограничены политикой машины и режимом прав.' : 'Для команд нужна доступная машина.' },
       { id: 'chat-permissions', title: 'Режим разрешений', description: props.permissionMode, type: 'Настройка разговора', source: 'Настройки чата', scope: 'Инструменты и изменения', status: props.permissionMode === 'plan' ? 'Ограничен' : 'Применяется', priority: 'Настройки текущего разговора', details: 'Определяет, может ли агент изменять данные.', reason: 'Вычислен из настроек и серверных ограничений.', limitations: props.permissionMode === 'plan' ? 'Только чтение и планирование.' : 'Опасные действия ограничены правилами выше.' },
       { id: 'chat-project', title: 'Привязанный проект', description: props.project?.name ?? 'Проект не выбран', type: 'Настройка разговора', source: 'Настройки чата', scope: props.project?.name ?? 'Без проекта', status: props.project ? 'Применяется' : 'Не выбран', priority: 'Настройки текущего разговора', details: 'Проект определяет доступные машины и документы БЗ.', reason: props.project ? 'Проект привязан к разговору.' : 'Проект не привязан.', limitations: 'Доступ сохраняется, пока пользователь состоит в проекте.' }
     ]
@@ -69,24 +83,33 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     ]
   }, [props.agent, props.kbMode, props.model, props.permissionMode, props.project, props.provider, props.selectedSkillNames, props.workdir])
 
-  const allItems = groups.flatMap((group) => group.items)
-  const detail = detailId ? allItems.find((item) => item.id === detailId) : undefined
-  const tools = groups.find((group) => group.id === 'tools')?.items.filter((item) => item.status === 'Доступен').length ?? 0
-  const instructions = groups.slice(0, 4).flatMap((group) => group.items).filter((item) => ['Применяется', 'Скрытый текст', 'Ограничен'].includes(item.status)).length
+  void groups // legacy memo is not rendered; the server snapshot is authoritative.
+  const snapshotGroups = snapshot?.groups ?? []
+  const allItems = snapshotGroups.flatMap((group) => group.items)
+  const detail = detailId ? allItems.find((entry) => entry.id === detailId) : undefined
   const openDetail = (id: string): void => { window.location.hash = `/chat/${encodeURIComponent(props.conversationId)}/context/${encodeURIComponent(id)}`; setDetailId(id) }
   const closeDetail = (): void => { window.location.hash = `/chat/${encodeURIComponent(props.conversationId)}`; setDetailId(null) }
+  const state = (value: boolean): string => value ? 'Да' : 'Нет'
 
+  if (snapshotError) return <section className="context-inspector" role="alert"><h2>Не удалось загрузить снимок</h2><p>{snapshotError}</p><Button size="sm" onClick={() => setReload((value) => value + 1)}>Повторить</Button></section>
+  if (!snapshot) return <section className="context-inspector" aria-busy="true"><h2>Формируем снимок контекста…</h2></section>
+  if (detailId && !detail) return <section className="context-detail"><Button size="sm" onClick={closeDetail}>← Ко всем источникам</Button><h2>Источник не найден</h2><p>Он мог стать недоступен после обновления конфигурации.</p></section>
   if (detail) return <section className="context-detail" aria-labelledby="context-detail-title">
     <Button size="sm" onClick={closeDetail}>← Ко всем источникам</Button>
-    <header><span className="context-type">{detail.type}</span><h2 id="context-detail-title">{detail.title}</h2><p>{detail.details}</p></header>
-    <dl className="context-metadata"><div><dt>Приоритет</dt><dd>{detail.priority}</dd></div><div><dt>Источник</dt><dd>{detail.source}</dd></div><div><dt>Область действия</dt><dd>{detail.scope}</dd></div><div><dt>Статус</dt><dd><span className="context-status">{detail.status}</span></dd></div><div><dt>Почему применяется</dt><dd>{detail.reason}</dd></div><div><dt>Ограничения</dt><dd>{detail.limitations}</dd></div>{detail.technicalName && <div><dt>Техническое имя</dt><dd><code>{detail.technicalName}</code></dd></div>}{detail.parameters && <div><dt>Параметры верхнего уровня</dt><dd>{detail.parameters.join(', ')}</dd></div>}{detail.mutates !== undefined && <div><dt>Изменение данных</dt><dd>{detail.mutates ? 'Может изменять данные' : 'Только чтение'}</dd></div>}</dl>
-    {detail.status === 'Скрытый текст' && <p className="context-secret-note">Полный текст недоступен, показано описание.</p>}
+    <header><span className="context-type">{detail.type}</span><h2 id="context-detail-title">{detail.title}</h2><p>{detail.description}</p></header>
+    <dl className="context-metadata">
+      <div><dt>Приоритет</dt><dd>{detail.priority}</dd></div><div><dt>Источник</dt><dd>{detail.source}</dd></div><div><dt>Область действия</dt><dd>{detail.scope}</dd></div>
+      <div><dt>Настроено</dt><dd>{state(detail.configured)}</dd></div><div><dt>Доступно</dt><dd>{state(detail.available)}</dd></div><div><dt>Будет добавлено в следующий ход</dt><dd>{state(detail.includedInNextTurn)}</dd></div>
+      <div><dt>Пояснение</dt><dd>{detail.explanation}</dd></div>
+      {detail.details && Object.entries(detail.details).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(', ') : String(value ?? '—')}</dd></div>)}
+    </dl>
   </section>
 
+  const included = allItems.filter((entry) => entry.includedInNextTurn).length
+  const available = allItems.filter((entry) => entry.available).length
   return <section className="context-inspector" aria-labelledby="context-inspector-title">
-    <div className="context-summary"><div><span className="context-eyebrow">Что действует прямо сейчас</span><h2 id="context-inspector-title">{props.provider} · {props.model || 'модель из конфигурации'}</h2><p>{props.agent ? `Работа с файлами выполняется на ${props.agent.name}` : 'Удалённая машина не выбрана'}. Режим прав: {props.permissionMode}. БЗ: {props.kbMode}.</p></div><dl><div><dt>Инструкции</dt><dd>{instructions}</dd></div><div><dt>Навыки</dt><dd>{props.selectedSkillNames.length}</dd></div><div><dt>Инструменты</dt><dd>{tools}</dd></div></dl></div>
-    <aside className="context-conflicts"><b>Как разрешаются конфликты</b><p>Применяется инструкция более высокого уровня. Более конкретная инструкция одного уровня может уточнять общую, если не противоречит ей. Инструменты сами по себе не являются уровнем команд.</p></aside>
-    <div className="context-groups">{groups.map((group) => <details className="context-group" key={group.id} open={group.level <= 4}><summary><span className="context-level">{group.level}</span><span><b>{group.title}</b><small>{group.description}</small></span><span className="context-count">{group.items.length}</span></summary><div className="context-items" role="list">{group.items.map((item) => <div role="listitem" key={item.id}><button type="button" className="context-item" onClick={() => openDetail(item.id)}><span className="context-item-main"><span className="context-type">{item.type}</span><b>{item.title}</b><small>{item.description}</small></span><span className="context-item-meta"><span>{item.source}</span><span>{item.scope}</span><span className="context-status">{item.status}</span></span><span aria-hidden="true">→</span></button></div>)}</div></details>)}</div>
-    <details className="context-plugins"><summary>Можно подключить</summary><p>Неустановленные плагины не являются активными возможностями.</p><span className="context-status">Не установлен</span> GitHub · Figma · Notion · Slack · Google Drive</details>
+    <div className="context-summary"><div><span className="context-eyebrow">Снимок следующего хода</span><h2 id="context-inspector-title">{snapshot.summary.provider} · {snapshot.summary.model || 'модель из конфигурации'}</h2><p>Режим прав: {snapshot.summary.permissionMode.displayName}. БЗ: {snapshot.summary.kbMode.displayName}.</p><small>Сформирован: {new Date(snapshot.generatedAt).toLocaleString('ru-RU')}</small></div><dl><div><dt>Источники</dt><dd>{allItems.length}</dd></div><div><dt>Доступно</dt><dd>{available}</dd></div><div><dt>В следующем ходе</dt><dd>{included}</dd></div></dl></div>
+    <aside className="context-conflicts"><b>Снимок может измениться</b><p>{snapshot.freshnessWarning}</p></aside>
+    <div className="context-groups">{snapshotGroups.map((group) => <details className="context-group" key={group.id} open={group.order <= 3}><summary><span className="context-level">{group.order}</span><span><b>{group.title}</b><small>{group.description}</small></span><span className="context-count">{group.items.length}</span></summary><div className="context-items" role="list">{group.items.map((entry) => <div role="listitem" key={entry.id}><button type="button" className="context-item" onClick={() => openDetail(entry.id)}><span className="context-item-main"><span className="context-type">{entry.type}</span><b>{entry.title}</b><small>{entry.description}</small></span><span className="context-item-meta"><span>{entry.source}</span><span>{entry.scope}</span><span className="context-status">{entry.includedInNextTurn ? 'Будет добавлено' : entry.available ? 'Доступно' : entry.configured ? 'Недоступно' : 'Не настроено'}</span></span><span aria-hidden="true">→</span></button></div>)}</div></details>)}</div>
   </section>
 }

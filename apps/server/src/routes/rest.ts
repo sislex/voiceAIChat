@@ -23,6 +23,67 @@ import { readUserFile } from '../serverFiles.js'
 import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
+import type { ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
+
+const permissionDisplay: Record<PermissionMode, { displayName: string; explanation: string }> = {
+  plan: { displayName: 'Только планирование', explanation: 'Изменение данных отключено.' },
+  acceptEdits: { displayName: 'Авто-правки файлов', explanation: 'Правки разрешены в пределах политики машины.' },
+  bypassPermissions: { displayName: 'Полный доступ', explanation: 'Действия ограничены системными правилами и политикой машины.' }
+}
+const kbDisplay: Record<KbContextMode, { displayName: string; explanation: string }> = {
+  auto: { displayName: 'Автоматически', explanation: 'Документы выбираются по отправляемому сообщению; поиск также доступен.' },
+  manual: { displayName: 'По запросу', explanation: 'Автоматической вставки нет, инструменты поиска доступны.' },
+  off: { displayName: 'Отключено', explanation: 'Автоматический контекст и инструменты БЗ не подключаются.' }
+}
+function contextItem(value: ContextSnapshotItem): ContextSnapshotItem { return value }
+function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, isOnline?: (id: string) => boolean): ConversationContextSnapshot | null {
+  const conversation = db.getConversation(userId, conversationId)
+  if (!conversation) return null
+  const settings = db.getSettings(userId)
+  const role = db.getUser(userId)?.role ?? 'developer'
+  const resolution = db.resolveConversationMachine(userId, conversationId, { isOnline })
+  const agent = resolution?.agentId ? db.listUsableAgents(userId, conversation.projectId).find((a) => a.id === resolution.agentId) : undefined
+  const machineAvailable = Boolean(resolution?.agentId && !resolution.error)
+  const provider = conversation.llmProvider ?? settings.llmProvider
+  const model = conversation.llmProvider ? (conversation.llmModel ?? (provider === 'codex' ? settings.codexModel : settings.model)) : (provider === 'codex' ? settings.codexModel : settings.model)
+  const permissionMode: PermissionMode = conversation.execTarget === 'none' || (role !== 'admin' && !machineAvailable) ? 'plan' : (conversation.permissionMode ?? settings.permissionMode)
+  const kbMode = conversation.kbContextMode ?? 'auto'
+  const project = conversation.projectId ? db.getProject(userId, conversation.projectId) : null
+  const projectMachine = project?.machines.find((entry) => entry.agentId === resolution?.agentId)
+  const workdir = conversation.workdir ?? projectMachine?.path ?? settings.workdir
+  const messages = db.listMessages(userId, conversationId)
+  const selectedSkills = new Set(conversation.skillNames)
+  const groups: ContextSnapshotGroup[] = [
+    { id: 'instructions', order: 1, title: 'Системные и прикладные инструкции', description: 'Закрытые тексты представлены безопасными метаданными.', items: [
+      contextItem({ id: 'platform-instructions', type: 'Системная инструкция', source: 'Платформа', scope: 'Все ходы', priority: '1 · системный', title: 'Правила платформы', description: 'Безопасность, конфиденциальность и границы действий.', explanation: 'Применяются всегда; полный текст закрыт.', configured: true, available: true, includedInNextTurn: true }),
+      contextItem({ id: 'application-instructions', type: 'Инструкция приложения', source: 'VoiceChat', scope: 'Текущий разговор', priority: '2 · приложение', title: 'Правила VoiceChat', description: 'Маршрутизация инструментов, машин и БЗ.', explanation: 'Сервер добавляет их к каждому ходу.', configured: true, available: true, includedInNextTurn: true }),
+      contextItem({ id: 'personalization', type: 'Персонализация', source: 'Настройки пользователя', scope: 'Ответы пользователю', priority: '3 · пользователь', title: 'Предпочтения ответа', description: settings.personalization.responseLanguage || settings.personalization.responseStyle, explanation: 'Учитываются при сборке прикладных инструкций.', configured: Object.values(settings.personalization).some(Boolean), available: true, includedInNextTurn: Object.values(settings.personalization).some(Boolean) })
+    ] },
+    { id: 'project', order: 2, title: 'Проект, директория и AGENTS.md', description: 'Эффективная рабочая область следующего хода.', items: [
+      contextItem({ id: 'project-binding', type: 'Проект', source: 'Настройки разговора', scope: project?.name ?? 'Без проекта', priority: '4 · проект', title: project?.name ?? 'Проект не выбран', description: project ? 'Проект доступен пользователю.' : 'Привязка отсутствует.', explanation: project ? 'Явная привязка разговора.' : 'Проектный контекст не включён.', configured: Boolean(conversation.projectId), available: Boolean(project), includedInNextTurn: Boolean(project) }),
+      contextItem({ id: 'working-directory', type: 'Рабочая директория', source: conversation.workdir ? 'Разговор' : projectMachine ? 'Проект' : 'Настройки пользователя', scope: workdir ?? 'Не задана', priority: '5 · рабочая область', title: 'Рабочая директория', description: workdir ?? 'Каталог не настроен.', explanation: workdir && machineAvailable ? 'Передаётся исполнителю как cwd.' : 'Каталог нельзя проверить без доступной машины.', configured: Boolean(workdir), available: Boolean(workdir && machineAvailable), includedInNextTurn: Boolean(workdir) }),
+      contextItem({ id: 'agents-chain', type: 'AGENTS.md', source: 'Рабочая директория', scope: workdir ?? 'Не определена', priority: '6 · от общей к конкретной', title: 'Цепочка AGENTS.md', description: workdir ? 'Фактическую цепочку разрешает исполнитель в рабочей директории.' : 'Без директории цепочка не определяется.', explanation: workdir && machineAvailable ? 'Текст скрыт: снимок не раскрывает файл без отдельного подтверждённого чтения.' : 'Директория или машина недоступна.', configured: Boolean(workdir), available: Boolean(workdir && machineAvailable), includedInNextTurn: Boolean(workdir && machineAvailable), details: { hiddenReason: 'Содержимое не читалось сервером инспектора.' } })
+    ] },
+    { id: 'conversation', order: 3, title: 'Настройки разговора', description: 'Эффективные значения с учётом наследования.', items: [
+      contextItem({ id: 'llm', type: 'Настройка разговора', source: conversation.llmProvider ? 'Разговор' : 'Настройки пользователя', scope: 'Следующий ход', priority: '7 · конфигурация', title: 'Модель и провайдер', description: `${provider} · ${model || 'модель из конфигурации CLI'}`, explanation: conversation.llmProvider ? 'Явное переопределение.' : 'Унаследовано.', configured: true, available: true, includedInNextTurn: true }),
+      contextItem({ id: 'machine', type: 'Настройка разговора', source: resolution?.source === 'explicit' ? 'Разговор' : 'Резолвер сервера', scope: agent?.name ?? resolution?.agentId ?? 'Сервер', priority: '7 · конфигурация', title: 'Машина выполнения', description: agent?.name ?? 'Доступной машины нет', explanation: resolution?.error ? `Недоступна: ${resolution.error}.` : `Источник: ${resolution?.source ?? 'none'}.`, configured: conversation.execTarget !== null, available: machineAvailable, includedInNextTurn: machineAvailable }),
+      contextItem({ id: 'permission-mode', type: 'Режим разрешений', source: conversation.permissionMode ? 'Разговор' : 'Эффективная политика сервера', scope: 'Инструменты и изменения', priority: '7 · конфигурация', title: permissionDisplay[permissionMode].displayName, description: permissionDisplay[permissionMode].explanation, explanation: permissionMode === 'plan' && conversation.permissionMode !== 'plan' ? 'Сервер безопасно форсировал режим.' : 'Выбранное или унаследованное значение.', configured: true, available: true, includedInNextTurn: true, details: { value: permissionMode } })
+    ] },
+    { id: 'skills', order: 4, title: 'Навыки', description: 'Выбор отделён от доступности и активации.', items: (agent?.policy.skills ?? []).map((skill) => contextItem({ id: `skill-${encodeURIComponent(skill.name)}`, type: 'Навык', source: 'Политика машины', scope: agent?.name ?? 'Машина', priority: '8 · навык', title: skill.name, description: skill.description || 'Инструкция навыка', explanation: selectedSkills.has(skill.name) ? 'Выбран; активация определяется текстом сообщения при отправке.' : 'Доступен, но не выбран.', configured: selectedSkills.has(skill.name), available: machineAvailable, includedInNextTurn: false, details: { activationReason: 'Текущее сообщение ещё не отправлено.' } })) },
+    { id: 'capabilities', order: 5, title: 'MCP, приложения и плагины', description: 'Активный каталог вычислен сервером для текущего окружения.', items: [
+      ...(['machines', 'read', 'edit', 'bash'] as const).map((name) => contextItem({ id: `mcp-remote-${name}`, type: 'MCP-инструмент', source: 'MCP remote', scope: agent?.name ?? 'Удалённая машина', priority: 'Возможность', title: `remote:${name}`, description: 'Инструмент удалённой машины.', explanation: machineAvailable ? 'Подключается для эффективной машины.' : 'Машина недоступна.', configured: Boolean(resolution?.agentId), available: machineAvailable, includedInNextTurn: machineAvailable })),
+      ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: 'Инструмент базы знаний.', explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off' }))
+    ] },
+    { id: 'knowledge', order: 6, title: 'База знаний', description: 'Режим и фактически подготовленный автоматический контекст.', items: [
+      contextItem({ id: 'knowledge-mode', type: 'База знаний', source: 'Настройки разговора', scope: 'Следующий ход', priority: '9 · дополнительный контекст', title: kbDisplay[kbMode].displayName, description: kbDisplay[kbMode].explanation, explanation: kbMode === 'auto' ? 'Документы ещё не выбраны: текущее сообщение не отправлено.' : kbDisplay[kbMode].explanation, configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { value: kbMode, autoContextDocuments: [] } })
+    ] },
+    { id: 'history', order: 7, title: 'История и текущее сообщение', description: 'Серверные метаданные пользовательского контекста.', items: [
+      contextItem({ id: 'conversation-history', type: 'История', source: 'Текущий разговор', scope: 'Следующий ход', priority: '10 · история', title: 'История разговора', description: `${messages.length} сообщений`, explanation: 'Сохранённая история передаётся при подготовке хода.', configured: messages.length > 0, available: true, includedInNextTurn: messages.length > 0, details: { messageCount: messages.length } }),
+      contextItem({ id: 'current-message', type: 'Текущее сообщение', source: 'Поле ввода', scope: 'Следующий ход', priority: '11 · текущая задача', title: 'Текущее сообщение', description: 'Сообщение ещё не отправлено серверу.', explanation: 'Preview не считает будущий текст включённым.', configured: false, available: false, includedInNextTurn: false })
+    ] }
+  ]
+  return { schemaVersion: 1, conversationId, generatedAt: new Date().toISOString(), freshnessWarning: 'Снимок отражает сохранённую конфигурацию на момент формирования. До отправки следующего сообщения настройки, доступность машин и контекст могут измениться.', summary: { provider, model, permissionMode: { value: permissionMode, ...permissionDisplay[permissionMode] }, kbMode: { value: kbMode, ...kbDisplay[kbMode] } }, groups }
+}
 import type { AuthStatusState } from '../auth/statusState.js'
 import { listProjects, listSessions, readTranscript, readUsage } from '../cc/ccSessions.js'
 import {
@@ -153,6 +214,12 @@ export async function registerRest(
     const conversation = db.getConversation(uid(req), req.params.id)
     if (!conversation) return reply.code(404).send({ error: 'not found' })
     return { conversation, messages: db.listMessages(uid(req), req.params.id) }
+  })
+
+  app.get<{ Params: { id: string } }>('/api/conversations/:id/context-snapshot', async (req, reply) => {
+    const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline)
+    if (!snapshot) return reply.code(404).send({ error: 'not found' })
+    return snapshot
   })
 
   app.patch<{

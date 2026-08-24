@@ -110,6 +110,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       if (!res.ok) throw new Error(`GET ${REST.conversation(id)} → ${res.status}`)
       return res.json()
     },
+    'conversations:contextSnapshot': async ({ id }) => {
+      try { return await req(REST.conversationContextSnapshot(id)) } catch (error) {
+        if (error instanceof Error && error.message.includes('404')) return null
+        throw error
+      }
+    },
     'conversations:listMachines': ({ id, projectId }) =>
       req(`${REST.conversationMachines(id)}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
     'conversations:search': ({ query, includeCompleted }) =>
