@@ -1148,6 +1148,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // ссылке): подсвечивать вместо него первый пункт селектора нельзя — покажем плейсхолдер.
   const readerActiveListed = chat.readerConversations.some((c) => c.id === chat.activeId)
   const playwrightReaderActiveListed = chat.playwrightReaderConversations.some((c) => c.id === chat.activeId)
+  // Reader route is authoritative. While its asynchronous conversation selection is
+  // pending, the previous ChatColumn must not remain interactive: otherwise a user
+  // can submit a turn for the old activeId while already seeing the new Reader URL.
+  const readerRouteReady =
+    !inReader ||
+    (routeReaderChatId !== null && chat.activeId === routeReaderChatId && readerActiveListed)
+  const playwrightReaderRouteReady =
+    !inPlaywrightReader ||
+    (routePlaywrightReaderChatId !== null &&
+      chat.activeId === routePlaywrightReaderChatId &&
+      playwrightReaderActiveListed)
+  const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady
   const activeConversation = chat.conversations.find((c) => c.id === chat.activeId)
   const startWebReaderDiagnostics = useCallback((): void => {
     const conversationId = chat.activeId
@@ -1587,7 +1599,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       <div className="chat-split-chat">
       {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
-      <ChatColumn
+      {readerSurfaceReady ? <ChatColumn
         conversationId={chat.activeId}
         onToggleSidebar={(inReader || inPlaywrightReader) ? undefined : toggleSidebar}
         sidebarExpanded={sidebarExpanded}
@@ -1711,10 +1723,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
           />
         }
-      />
+      /> : <div className="chat-route-loading" role="status">Открываем выбранный Reader-разговор…</div>}
       </div>
-      {(inReader || inPlaywrightReader) && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
-      {(inReader || inPlaywrightReader) && <WebReaderHost conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />}
+      {(inReader || inPlaywrightReader) && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
+      {(inReader || inPlaywrightReader) && readerSurfaceReady && <WebReaderHost conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />}
       </div>
       )}
 
