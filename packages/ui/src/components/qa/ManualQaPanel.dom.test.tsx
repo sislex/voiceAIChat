@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { QaTaskState } from '@shared/qa'
 import { ManualQaPanel } from './ManualQaPanel'
@@ -27,21 +27,21 @@ describe('ManualQaPanel', () => {
     const saveResult=vi.fn().mockResolvedValue(saved)
     window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
-    expect(await screen.findByRole('button',{name:'Успешно'})).toHaveAttribute('aria-pressed','false')
-    expect(screen.getByRole('button',{name:'Неуспешно'})).toBeTruthy()
+    expect(await screen.findByRole('button',{name:'Работает'})).toHaveAttribute('aria-pressed','false')
+    expect(screen.getByRole('button',{name:'Не работает'})).toBeTruthy()
     expect(screen.getByLabelText('Комментарий')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button',{name:'Успешно'}))
+    fireEvent.click(screen.getByRole('button',{name:'Работает'}))
     fireEvent.click(screen.getByRole('button',{name:'Сохранить результат'}))
     await waitFor(()=>expect(saveResult).toHaveBeenCalledWith('p1','t1','r1',1,expect.objectContaining({draft:false,status:'passed'})))
-    expect(await screen.findByText('Сохранено: Успешно')).toBeTruthy()
+    expect(await screen.findByText('Сохранено: Работает')).toBeTruthy()
   })
 
   it('requires a comment for failure and preserves it after a save error', async () => {
     const saveResult=vi.fn().mockRejectedValue(new Error('QA result revision conflict'))
     window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
-    await screen.findByRole('button',{name:'Неуспешно'})
-    fireEvent.click(screen.getByRole('button',{name:'Неуспешно'}))
+    await screen.findByRole('button',{name:'Не работает'})
+    fireEvent.click(screen.getByRole('button',{name:'Не работает'}))
     fireEvent.click(screen.getByRole('button',{name:'Сохранить результат'}))
     expect(screen.getByRole('alert')).toHaveTextContent('Опишите фактический результат')
     expect(saveResult).not.toHaveBeenCalled()
@@ -57,7 +57,7 @@ describe('ManualQaPanel', () => {
     const saveResult=vi.fn().mockResolvedValue(saved)
     window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
-    fireEvent.click(await screen.findByRole('button',{name:'Заблокировано'}))
+    fireEvent.click(await screen.findByRole('button',{name:'Нет возможности проверить'}))
     fireEvent.change(screen.getByLabelText('Комментарий (обязательно)'), { target:{ value:'Preview недоступен' } })
     fireEvent.click(screen.getByRole('button',{name:'Сохранить результат'}))
     await waitFor(()=>expect(saveResult).toHaveBeenCalledWith('p1','t1','r1',1,expect.objectContaining({
@@ -106,6 +106,74 @@ describe('ManualQaPanel', () => {
     render(<ManualQaPanel projectId="p1" taskId="t1" />)
     expect(await screen.findByText('commit_sha_changed')).toBeTruthy()
     fireEvent.click(screen.getByRole('button',{name:/Тест 1/}))
-    expect(screen.getByRole('button',{name:'Успешно'})).toBeDisabled()
+    expect(screen.getByRole('button',{name:'Работает'})).toBeDisabled()
+  })
+
+  it('shows exactly three mutually exclusive results even for an optional test', async () => {
+    const state = qaState()
+    state.criteria[0].required = false
+    state.activeSession!.criteriaSnapshot[0].required = false
+    window.qa={get:vi.fn().mockResolvedValue(state),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
+    render(<ManualQaPanel projectId="p1" taskId="t1" />)
+    const group = await screen.findByRole('group', { name:/Результат теста/ })
+    expect(within(group).getAllByRole('button')).toHaveLength(3)
+    for (const name of ['Работает', 'Нет возможности проверить', 'Не работает']) {
+      fireEvent.click(within(group).getByRole('button', { name }))
+      expect(within(group).getByRole('button', { name })).toHaveAttribute('aria-pressed', 'true')
+      expect(within(group).getAllByRole('button').filter((button) => button.getAttribute('aria-pressed') === 'true')).toHaveLength(1)
+    }
+    expect(within(group).queryByRole('button', { name:'Пропустить' })).toBeNull()
+  })
+
+  it('saves dirty results before completing and guards a double click', async () => {
+    const initial = qaState()
+    const passed = qaState('passed')
+    const saved = { ...passed.activeSession!.results[0], revision:2 }
+    const get = vi.fn().mockResolvedValueOnce(initial).mockResolvedValue(passed)
+    const saveResult = vi.fn().mockResolvedValue(saved)
+    let resolveComplete!: () => void
+    const complete = vi.fn().mockReturnValue(new Promise<void>((resolve) => { resolveComplete = resolve }))
+    window.qa={get,saveResult,addAttachment:vi.fn(),complete,completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
+    render(<ManualQaPanel projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button',{name:'Работает'}))
+    const next = screen.getByRole('button',{name:'Следующий этап'})
+    fireEvent.click(next)
+    fireEvent.click(next)
+    await waitFor(() => expect(saveResult).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(complete).toHaveBeenCalledTimes(1))
+    expect(saveResult.mock.invocationCallOrder[0]).toBeLessThan(complete.mock.invocationCallOrder[0])
+    expect(next).toBeDisabled()
+    resolveComplete()
+  })
+
+  it('does not transition when flushing a dirty result fails', async () => {
+    const saveResult = vi.fn().mockRejectedValue(new Error('Конфликт ревизии'))
+    const complete = vi.fn()
+    window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete,completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
+    render(<ManualQaPanel projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button',{name:'Работает'}))
+    fireEvent.click(screen.getByRole('button',{name:'Следующий этап'}))
+    await waitFor(() => expect(saveResult).toHaveBeenCalledTimes(1))
+    expect(complete).not.toHaveBeenCalled()
+    expect(screen.getByText(/Не удалось сохранить изменения тестов/)).toBeTruthy()
+  })
+
+  it('saves a failure before requesting fix', async () => {
+    const initial = qaState()
+    const failed = qaState('failed')
+    failed.activeSession!.results[0].comment = 'Кнопка не отвечает'
+    const saved = { ...failed.activeSession!.results[0], revision:2 }
+    const get = vi.fn().mockResolvedValueOnce(initial).mockResolvedValue(failed)
+    const saveResult = vi.fn().mockResolvedValue(saved)
+    const requestFix = vi.fn().mockResolvedValue({ id:'run-fix' })
+    const onFixStarted = vi.fn()
+    window.qa={get,saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix}
+    render(<ManualQaPanel projectId="p1" taskId="t1" onFixStarted={onFixStarted} />)
+    fireEvent.click(await screen.findByRole('button',{name:'Не работает'}))
+    fireEvent.change(screen.getByLabelText('Комментарий (обязательно)'), { target:{ value:'Кнопка не отвечает' } })
+    fireEvent.click(screen.getByRole('button',{name:'Отправить на доработку'}))
+    await waitFor(() => expect(requestFix).toHaveBeenCalledTimes(1))
+    expect(saveResult.mock.invocationCallOrder[0]).toBeLessThan(requestFix.mock.invocationCallOrder[0])
+    expect(onFixStarted).toHaveBeenCalledWith('run-fix')
   })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, QaCriterionResult, QaResultStatus, QaSession, QaTaskState } from '@shared/qa'
 import { canCompleteQa, qaProgress } from '@shared/qa'
 import { Button } from '@voicechat/ui-kit'
@@ -10,7 +10,8 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
   const [error, setError] = useState('')
   const [preparationOpen, setPreparationOpen] = useState(true)
   const [additionalIssues, setAdditionalIssues] = useState('')
-  const [pendingResults, setPendingResults] = useState<Record<string, boolean>>({})
+  const [pendingResults, setPendingResults] = useState<Record<string, (() => Promise<boolean>) | null>>({})
+  const actionInFlight = useRef(false)
   const [draft, setDraft] = useState<AcceptanceCriterionSnapshot>({
     title: '', description: '', preconditions: '', steps: '', testData: '', expectedResult: '', required: true, testType: 'manual'
   })
@@ -43,7 +44,51 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
       setError(message)
+      await load()
       throw new Error(message)
+    }
+  }
+
+  const flushPendingResults = async (): Promise<boolean> => {
+    const saves = Object.values(pendingResults).filter((save): save is () => Promise<boolean> => Boolean(save))
+    for (const save of saves) if (!await save()) return false
+    return true
+  }
+
+  const runFinalAction = async (action: 'complete' | 'fix'): Promise<void> => {
+    if (!window.qa || actionInFlight.current) return
+    actionInFlight.current = true
+    setBusy(true)
+    setError('')
+    try {
+      if (!await flushPendingResults()) {
+        setError('Не удалось сохранить изменения тестов. Исправьте ошибки и повторите действие.')
+        return
+      }
+      if (action === 'complete') {
+        const latest = await window.qa.get(props.projectId, props.taskId)
+        if (!latest) throw new Error('QA-сессия недоступна')
+        setState(latest)
+        const latestSession = latest.activeSession
+        if (!latestSession) throw new Error('Активная QA-сессия недоступна')
+        const gate = canCompleteQa({ ...latestSession, additionalIssues })
+        if (!gate.allowed) throw new Error(completionReason(latestSession, latest.criteria, additionalIssues))
+        await window.qa.complete(props.projectId, props.taskId, latestSession.id, 'Ручное QA подтверждено тестировщиком')
+      } else {
+        const latest = await window.qa.get(props.projectId, props.taskId)
+        if (!latest) throw new Error('QA-сессия недоступна')
+        setState(latest)
+        const latestSession = latest.activeSession
+        if (!latestSession) throw new Error('Активная QA-сессия недоступна')
+        const run = await window.qa.requestFix(props.projectId, props.taskId, latestSession.id)
+        props.onFixStarted?.(run.id)
+      }
+      await load()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      actionInFlight.current = false
+      setBusy(false)
     }
   }
 
@@ -105,7 +150,7 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
           {state.criteria.filter((criterion) => criterion.active).map((criterion) =>
             <CriterionCard key={criterion.id} criterion={criterion} result={session?.results.find((result) => result.criterionId === criterion.id) ?? null}
               open={open === criterion.id} onToggle={() => setOpen(open === criterion.id ? null : criterion.id)}
-              onUpdate={update} onPendingChange={(pending) => setPendingResults((current) => ({ ...current, [criterion.id]: pending }))} onAttach={async (result, file) => {
+              onUpdate={update} onPendingChange={(save) => setPendingResults((current) => ({ ...current, [criterion.id]: save }))} onAttach={async (result, file) => {
                 if (!window.qa || !['image/png','image/jpeg','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError('Допустимы PNG, JPEG и WebP до 10 МБ'); return }
                 setBusy(true)
                 try {
@@ -126,21 +171,11 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
         finally { setBusy(false) }
       }}>Сценарии готовы — перейти в ручное QA</Button>}
       {state.activeSession && <label className="manual-qa-additional">Дополнительные баги и недоработки<textarea value={additionalIssues} disabled={busy || state.canEdit === false} onChange={(event) => setAdditionalIssues(event.target.value)} onBlur={async () => { if (!window.qa?.saveAdditionalIssues || additionalIssues === (state.activeSession?.additionalIssues ?? '')) return; setBusy(true); try { await window.qa.saveAdditionalIssues(props.projectId, props.taskId, state.activeSession!.id, additionalIssues); await load() } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) } finally { setBusy(false) } }} /></label>}
-      {state.activeSession && progress && (progress.failed > 0 || additionalIssues.trim()) && <Button variant="primary" disabled={busy || state.canEdit === false || props.activeRun || state.activeSession.results.some((result) => result.status === 'failed' && !result.comment.trim())} onClick={async () => {
-        if (!window.qa) return
-        setBusy(true)
-        try { const run = await window.qa.requestFix(props.projectId, props.taskId, state.activeSession!.id); props.onFixStarted?.(run.id); await load() }
-        catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-        finally { setBusy(false) }
-      }}>Отправить на доработку</Button>}
-      {state.activeSession && <Button variant="primary" disabled={busy || state.canEdit === false || Object.values(pendingResults).some(Boolean) || !canCompleteQa({ ...state.activeSession, additionalIssues }).allowed} onClick={async () => {
-        if (!window.qa) return
-        setBusy(true)
-        try { await window.qa.complete(props.projectId, props.taskId, state.activeSession!.id, 'Ручное QA подтверждено тестировщиком'); await load() }
-        catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-        finally { setBusy(false) }
-      }}>Прошёл тестирование</Button>}
-      {state.activeSession && !canCompleteQa({ ...state.activeSession, additionalIssues }).allowed && <p className="muted">{completionReason(state.activeSession, state.criteria, additionalIssues)}</p>}
+      {state.activeSession && <div className="manual-qa-final-actions">
+        <Button variant="primary" disabled={busy || state.canEdit === false || props.activeRun} onClick={() => void runFinalAction('fix')}>Отправить на доработку</Button>
+        <Button variant="primary" disabled={busy || state.canEdit === false} onClick={() => void runFinalAction('complete')}>Следующий этап</Button>
+      </div>}
+      {state.activeSession && (Object.values(pendingResults).some(Boolean) || !canCompleteQa({ ...state.activeSession, additionalIssues }).allowed) && <p className="muted">{Object.values(pendingResults).some(Boolean) ? 'Есть несохранённые изменения — перед переходом они будут сохранены' : completionReason(state.activeSession, state.criteria, additionalIssues)}</p>}
     </>}
   </section>
 }
@@ -148,7 +183,7 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
 function CriterionCard(props: {
   criterion: AcceptanceCriterion; result: QaCriterionResult | null; open: boolean; disabled: boolean
   onToggle(): void
-  onPendingChange(pending: boolean): void
+  onPendingChange(save: (() => Promise<boolean>) | null): void
   onAttach(result: QaCriterionResult, file: File): Promise<void>
   onUpdate(result: QaCriterionResult, status: QaResultStatus, fields?: Record<string, unknown>): Promise<void>
 }): JSX.Element {
@@ -166,25 +201,27 @@ function CriterionCard(props: {
   const commentRequired = selected === 'failed' || selected === 'blocked'
   const commentId = `qa-comment-${props.criterion.id}`
   const errorId = `qa-error-${props.criterion.id}`
-  const save = async (): Promise<void> => {
-    if (!result || saving) return
-    if (commentRequired && !comment.trim()) {
-      setSaveError(selected === 'blocked' ? 'Укажите причину блокировки' : 'Опишите фактический результат или отличие от ожидания')
-      return
+  const save = async (status: QaResultStatus = selected, value: string = comment): Promise<boolean> => {
+    if (!result || saving) return false
+    if ((status === 'failed' || status === 'blocked') && !value.trim()) {
+      setSaveError(status === 'blocked' ? 'Укажите причину блокировки' : 'Опишите фактический результат или отличие от ожидания')
+      return false
     }
     setSaving(true)
     setSaveError('')
     try {
-      const fields = selected === 'failed'
-        ? { comment, actualResult: comment, classification: 'implementation_defect', severity: 'major', frequency: 'unknown', reproduction: comment }
-        : selected === 'blocked'
-          ? { comment, blockerReason: comment, blockerType: 'other', blockerOwner: 'Не назначен' }
-          : { comment }
-      await props.onUpdate(result, selected, fields)
+      const fields = status === 'failed'
+        ? { comment: value, actualResult: value, classification: 'implementation_defect', severity: 'major', frequency: 'unknown', reproduction: value }
+        : status === 'blocked'
+          ? { comment: value, blockerReason: value, blockerType: 'other', blockerOwner: 'Не назначен' }
+          : { comment: value }
+      await props.onUpdate(result, status, fields)
       setDirty(false)
-      props.onPendingChange(false)
+      props.onPendingChange(null)
+      return true
     } catch (cause) {
       setSaveError(cause instanceof Error ? cause.message : String(cause))
+      return false
     } finally {
       setSaving(false)
     }
@@ -192,7 +229,7 @@ function CriterionCard(props: {
   const choose = (status: QaResultStatus): void => {
     setSelected(status)
     setDirty(status !== result?.status || comment !== (result?.comment ?? ''))
-    props.onPendingChange(status !== result?.status || comment !== (result?.comment ?? ''))
+    props.onPendingChange(status !== result?.status || comment !== (result?.comment ?? '') ? () => save(status, comment) : null)
     setSaveError('')
   }
   return <article className="manual-qa-card" role="listitem" data-status={selected}>
@@ -200,6 +237,7 @@ function CriterionCard(props: {
       <span>Тест {props.criterion.order}. {props.criterion.title} {!props.criterion.required && <small>необязательный</small>}</span>
       <span>{resultStatusLabel(selected)} · v{props.criterion.currentVersion}</span>
     </button>
+    <p className="manual-qa-card__description">{props.criterion.description || 'Описание не указано'}</p>
     {props.open && <div className="manual-qa-card__details">
       <dl>
         <dt>Предусловия</dt><dd>{props.criterion.preconditions || '—'}</dd>
@@ -210,16 +248,15 @@ function CriterionCard(props: {
     </div>}
     {result && <div className="manual-qa-card__body">
       <div className="manual-qa-actions" role="group" aria-label={`Результат теста ${props.criterion.title}`}>
-        <Button size="sm" variant={selected === 'passed' ? 'primary' : undefined} aria-pressed={selected === 'passed'} disabled={props.disabled || saving} onClick={() => choose('passed')}>Успешно</Button>
-        <Button size="sm" variant={selected === 'failed' ? 'primary' : undefined} aria-pressed={selected === 'failed'} disabled={props.disabled || saving} onClick={() => choose('failed')}>Неуспешно</Button>
-        <Button size="sm" variant={selected === 'blocked' ? 'primary' : undefined} aria-pressed={selected === 'blocked'} disabled={props.disabled || saving} onClick={() => choose('blocked')}>Заблокировано</Button>
-        {!props.criterion.required && <Button size="sm" variant={selected === 'not_applicable' ? 'primary' : undefined} aria-pressed={selected === 'not_applicable'} disabled={props.disabled || saving} onClick={() => choose('not_applicable')}>Пропустить</Button>}
+        <Button size="sm" variant={selected === 'passed' ? 'primary' : undefined} aria-pressed={selected === 'passed'} disabled={props.disabled || saving} onClick={() => choose('passed')}>Работает</Button>
+        <Button size="sm" variant={selected === 'blocked' ? 'primary' : undefined} aria-pressed={selected === 'blocked'} disabled={props.disabled || saving} onClick={() => choose('blocked')}>Нет возможности проверить</Button>
+        <Button size="sm" variant={selected === 'failed' ? 'primary' : undefined} aria-pressed={selected === 'failed'} disabled={props.disabled || saving} onClick={() => choose('failed')}>Не работает</Button>
       </div>
       <label htmlFor={commentId}>Комментарий{commentRequired ? ' (обязательно)' : ''}</label>
-      <textarea id={commentId} value={comment} disabled={props.disabled || saving} aria-invalid={Boolean(saveError)} aria-describedby={saveError ? errorId : undefined} onChange={(event) => { setComment(event.target.value); setDirty(true); props.onPendingChange(true); setSaveError('') }} placeholder="Фактический результат, наблюдения, шаг ошибки или причина блокировки" />
+      <textarea id={commentId} value={comment} disabled={props.disabled || saving} aria-invalid={Boolean(saveError)} aria-describedby={saveError ? errorId : undefined} onChange={(event) => { const value = event.target.value; setComment(value); setDirty(true); props.onPendingChange(() => save(selected, value)); setSaveError('') }} placeholder="Фактический результат, наблюдения, шаг ошибки или причина блокировки" />
       <div className="manual-qa-save-state" role="status">{saving ? 'Сохраняем…' : saveError ? 'Не сохранено' : dirty ? 'Есть несохранённые изменения' : result.draft ? 'Черновик' : `Сохранено: ${resultStatusLabel(result.status)}`}</div>
       {saveError && <div id={errorId} className="err" role="alert">{saveError}</div>}
-      {!props.disabled && <Button size="sm" variant="primary" disabled={saving || !dirty} onClick={() => void save()}>{saveError ? 'Повторить сохранение' : 'Сохранить результат'}</Button>}
+      {!props.disabled && <Button size="sm" variant="primary" disabled={saving || !dirty} onClick={() => { void save() }}>{saveError ? 'Повторить сохранение' : 'Сохранить результат'}</Button>}
       <label>Скриншоты<input type="file" accept="image/png,image/jpeg,image/webp" multiple disabled={props.disabled || saving} onChange={(event) => { for (const file of Array.from(event.currentTarget.files ?? [])) void props.onAttach(result, file) }} /></label>
       {result.attachments.length > 0 && <div>{result.attachments.map((attachment) => <a key={attachment.id} href={`/api/qa/attachments/${attachment.id}`} target="_blank" rel="noreferrer">{attachment.caption || attachment.name}</a>)}</div>}
       {result.issue && <div>Связанный дефект: {result.issue.classification} · {result.issue.reproduction}</div>}
@@ -233,9 +270,10 @@ function formatDuration(ms: number): string {
 }
 
 function resultStatusLabel(status?: QaResultStatus): string {
-  if (status === 'passed') return 'Успешно'
-  if (status === 'failed') return 'Ошибка'
-  if (status === 'not_applicable') return 'Пропущен'
+  if (status === 'passed') return 'Работает'
+  if (status === 'failed') return 'Не работает'
+  if (status === 'blocked') return 'Нет возможности проверить'
+  if (status === 'not_applicable') return 'Не применимо'
   return 'Без результата'
 }
 
@@ -243,10 +281,12 @@ function completionReason(session: QaSession, criteria: AcceptanceCriterion[], a
   if (session.status !== 'active') return session.status === 'stale' ? 'QA-сессия устарела после изменения кода' : 'QA-сессия уже завершена'
   if (additionalIssues.trim()) return 'Есть дополнительные баги — задачу нельзя отправить на merge'
   const failed = session.results.find((result) => result.status === 'failed')
-  if (failed) return `Обнаружены ошибки — задачу нельзя отправить на merge${failed.comment.trim() ? '' : `. Заполните описание ошибки для теста «${criteria.find((item) => item.id === failed.criterionId)?.title ?? 'Без названия'}»`}`
+  if (failed) return `Тест «${criteria.find((item) => item.id === failed.criterionId)?.title ?? 'Без названия'}» не работает${failed.comment.trim() ? '' : ' — заполните описание ошибки'}`
+  const blocked = session.results.find((result) => result.status === 'blocked')
+  if (blocked) return `Тест «${criteria.find((item) => item.id === blocked.criterionId)?.title ?? 'Без названия'}» невозможно проверить${blocked.comment.trim() ? '' : ' — укажите причину'}`
   const remaining = session.criteriaSnapshot.filter((item) => {
     const result = session.results.find((value) => value.criterionId === item.criterionId && value.criterionVersion === item.version)
-    return item.required ? result?.status !== 'passed' : !result || !['passed', 'not_applicable'].includes(result.status)
+    return item.required && result?.status !== 'passed'
   })
   return remaining.length ? `Осталось проверить ${remaining.length} тестов` : ''
 }
