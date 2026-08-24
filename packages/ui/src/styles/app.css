@@ -3523,7 +3523,7 @@ button.conscmd:hover {
 
 
 /* Отдельная страница параметров активного разговора. */
-.convsettings { position: fixed; inset: 0; z-index: 90; display: grid; grid-template-rows: auto 1fr auto; background: var(--bg, #f6f7fb); color: var(--text, #20232b); }
+.convsettings { position: fixed; inset: 0; z-index: 90; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; background: var(--bg, #f6f7fb); color: var(--text, #20232b); }
 .convsettings-head { display: flex; gap: 16px; align-items: center; padding: 20px max(24px, calc((100vw - 900px) / 2)); border-bottom: 1px solid var(--line, #ddd); background: var(--panel, #fff); }
 .convsettings-head h1 { margin: 0; font-size: 24px; }.convsettings-head p,.convsettings-sectionhead p { margin: 4px 0 0; color: var(--muted, #737987); }
 .convsettings-back { font-size: 22px; }
