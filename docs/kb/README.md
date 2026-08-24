@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 6 коммит(ов) в areas после сверки: de8b4dea merge: resolve CHAT-337 realtime conflicts … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 9 коммит(ов) в areas после сверки: de8b4dea merge: resolve CHAT-337 realtime conflicts … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 34 коммит(ов) в areas после сверки: 6db37a38 Merge task 4c81c35a-a3eb-408e-9a30-5622b01034ac … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 559 коммит(ов) в areas после сверки: 6db37a38 Merge task 4c81c35a-a3eb-408e-9a30-5622b01034ac … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 560 коммит(ов) в areas после сверки: cf958109 docs(kb): update after merge 4c81c35a-a3eb-408e-9a30-5622b01034ac … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 53 коммит(ов) в areas после сверки: de8b4dea merge: resolve CHAT-337 realtime conflicts … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 15 коммит(ов) в areas после сверки: 6db37a38 Merge task 4c81c35a-a3eb-408e-9a30-5622b01034ac … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-24 | ⚠ 6 коммит(ов) в areas после сверки: 6db37a38 Merge task 4c81c35a-a3eb-408e-9a30-5622b01034ac … |
