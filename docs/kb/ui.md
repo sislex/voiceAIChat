@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-24
-checked: f5f9dd2e
+checked: 20240427
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -946,6 +946,8 @@ Production-сборка Vite задаёт `base: '/web-recorder/'`, поэтом
 `Recorder` в самостоятельном приложении включает запись сообщением `voicechat.preview.record.v1`; инъецированный скрипт iframe в capture-фазе отправляет клики по кликабельной цели и события `input` для `input`, `textarea`, `select` и contenteditable. Рекордер принимает сообщения только с origin приложения и от `contentWindow` собственного iframe, добавляет шаги с CSS-селектором к локальному редактируемому списку. Для пароля, autocomplete current/new-password и полей, чьи `name`/`id` похожи на секрет, токен, карту или CVV, значение не передаётся: шаг помечается `sensitive`, отображается маской и не воспроизводится автоматически.
 
 Кнопка «Запустить» последовательно посылает каждый несекретный шаг через `voicechat.preview.action.v1`, то есть использует тот же DOM-исполнитель, что и MCP-действия модели. Селекторы и значения обычных полей можно править до запуска. URL, запись и сценарий живут только в состоянии рекордера; ChatAI их не импортирует и не хранит, кроме URL превью разговора, который сохраняется через сообщение `save-url`.
+
+Общий синхронный генератор клиентских идентификаторов — `browserId()` из `packages/shared/src/browserId.ts`, экспортированный публичным barrel `packages/shared/src/index.ts`. Он сначала использует нативный `crypto.randomUUID()`, при его отсутствии формирует UUID v4 из `crypto.getRandomValues()`, а без обоих Web Crypto API возвращает непустой локально уникальный идентификатор из времени, последовательного счётчика и безопасной от исключений псевдослучайной части. Поэтому генерация не зависит от secure context и работает как на HTTP, так и на HTTPS. Один генератор используют request ID команд `WebReaderHost`, идентификатор регистрации preview/MCP-моста в `AppBody`, idempotency key Feature Preview и Kanban Assistant, а также request ID повторяемых шагов Web Recorder; прямого требования `crypto.randomUUID()` в этих клиентских операциях больше нет.
 
 ## Граница `@voicechat/operations-app`
 
