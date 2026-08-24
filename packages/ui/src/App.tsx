@@ -611,13 +611,20 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (!bridge) return
     return bridge.onAction(({ conversationId, requestId, action }) => {
       void (async (): Promise<PreviewActionOutcome> => {
-        // Действия ограничены активной Reader-страницей и host-ом того же чата.
-        if (chat.activeId !== conversationId || (!inReader && !inPlaywrightReader)) {
+        // Активный чат остаётся первым рубежом изоляции. Зарегистрированный
+        // host — источник истины для Reader-панели: флаг hash-маршрута может на один
+        // render отставать от уже подключённой панели.
+        if (chat.activeId !== conversationId) {
           return { ok: false, error: 'Этот чат сейчас не открыт на странице Reader — панель превью недоступна.' }
         }
         const registration = previewRunnerRef.current
         if (!registration || registration.conversationId !== conversationId || globalThis.localStorage?.getItem(PREVIEW_ACTIVE_REGISTRATION_KEY) !== registration.registrationId) {
-          return { ok: false, error: 'Панель превью активного чата не открыта или ещё не подключена.' }
+          return {
+            ok: false,
+            error: inReader || inPlaywrightReader
+              ? 'Панель превью активного чата не открыта или ещё не подключена.'
+              : 'Этот чат сейчас не открыт на странице Reader — панель превью недоступна.'
+          }
         }
         if (action.kind === 'open') {
           try {

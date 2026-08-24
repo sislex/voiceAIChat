@@ -241,6 +241,24 @@ describe('WebReaderHost action lifecycle', () => {
     view.unmount()
   })
 
+  it('повторный open того же URL перезагружает recorder и получает новый ready', async () => {
+    const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
+    render(<WebReaderHost conversationUrl="https://shop.example" projectUrl={null} onSave={vi.fn()} onRegisterActionRunner={register} />)
+    const frame = screen.getByTitle('Web Reader') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    hostMessage(frame, { kind: 'ready' })
+    hostMessage(frame, { kind: 'page-status', status: 'ready', url: 'https://shop.example' })
+
+    post.mockClear()
+    const open = register.mock.calls.at(-1)?.[0]!({ kind: 'open', url: 'https://shop.example' })
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: 'set-url', url: null }), '*')
+    await Promise.resolve()
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ kind: 'set-url', url: 'https://shop.example' }), '*')
+    hostMessage(frame, { kind: 'page-status', status: 'ready', url: 'https://shop.example' })
+
+    await expect(open).resolves.toEqual({ ok: true, result: { url: 'https://shop.example' } })
+  })
+
   it('find→click и read после navigation снова ждёт ready', async () => {
     const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
     render(<WebReaderHost conversationUrl="https://shop.example" projectUrl={null} onSave={vi.fn()} onRegisterActionRunner={register} />)
