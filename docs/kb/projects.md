@@ -392,8 +392,14 @@ Done ставит её заново; перенос между done-колонк
 процесс-глобальный эмиттер (`emit(projectId)` из REST-мутаций, `onChange` для сессий),
 по образцу `AgentRegistry.onChange`. Per-connection подписка — в `session.ts`
 (`board.subscribe`/`board.unsubscribe` → снапшот `board.update` только участникам).
-Клиентский мост `window.board` (`RendererBoardBridge`) — только web; в desktop живой
-синхронизации нет.
+Тот же hub имеет отдельный лёгкий канал `emitPreparationRun` /
+`onPreparationRunChange`: сессия фильтрует его по владельцу соединения и отправляет
+`preparation.run.updated` с `projectId`, `taskId`, `runId`, не перечитывая доску.
+Текстовые дельты подготовки используют только этот канал; `board.update` остаётся
+для содержательных переходов карточки, а не для каждого фрагмента лога.
+Клиентский мост `window.board` (`RendererBoardBridge`) — только web; он доставляет
+снапшоты доски, адресные preparation-run invalidation-события и отдельный сигнал
+успешного reconnect после первого соединения. В desktop живой синхронизации нет.
 
 ## Фронтенд
 

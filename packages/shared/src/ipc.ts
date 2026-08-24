@@ -641,6 +641,10 @@ export interface RendererBoardBridge {
   unsubscribe(): void
   /** Подписка на снапшоты доски. */
   onUpdate(cb: (m: { projectId: string; board: Board }) => void): () => void
+  /** Адресная инвалидация истории подготовки задачи. */
+  onPreparationRunUpdated(cb: (m: { projectId: string; taskId: string; runId: string }) => void): () => void
+  /** Успешное восстановление WS после уже состоявшегося подключения. */
+  onReconnect(cb: () => void): () => void
 }
 
 /**

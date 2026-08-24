@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
@@ -49,25 +49,78 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
   const [modelsLoading, setModelsLoading] = useState(true)
   const [modelsError, setModelsError] = useState<string | null>(null)
   const [machineFallback, setMachineFallback] = useState(false)
+  const identityRef = useRef('')
+  const liveRunIdRef = useRef(props.liveRunId)
+  const refreshStatesRef = useRef(new Map<string, { running: boolean; pending: boolean }>())
+  liveRunIdRef.current = props.liveRunId
 
   const refresh = useCallback(async (): Promise<void> => {
-    if (!props.loadRuns) { setLoading(false); return }
-    try {
-      const next = await props.loadRuns(props.taskId)
-      setRuns(next)
-      setSelectedId((current) => {
-        if (props.liveRunId && next.some((run) => run.id === props.liveRunId)) return props.liveRunId
-        return current && next.some((run) => run.id === current) ? current : next[0]?.id ?? null
-      })
-      setError(null)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
-    } finally {
-      setLoading(false)
+    const loadRuns = props.loadRuns
+    const key = `${props.projectId}:${props.taskId}`
+    if (!loadRuns) { if (identityRef.current === key) setLoading(false); return }
+    let state = refreshStatesRef.current.get(key)
+    if (!state) {
+      state = { running: false, pending: false }
+      refreshStatesRef.current.set(key, state)
     }
-  }, [props.loadRuns, props.taskId, props.liveRunId])
+    if (state.running) { state.pending = true; return }
+    state.running = true
+    try {
+      do {
+        state.pending = false
+        try {
+          const next = await loadRuns(props.taskId)
+          if (identityRef.current !== key) return
+          setRuns(next)
+          setSelectedId((current) => {
+            const liveRunId = liveRunIdRef.current
+            if (liveRunId && next.some((run) => run.id === liveRunId)) return liveRunId
+            return current && next.some((run) => run.id === current) ? current : next[0]?.id ?? null
+          })
+          setError(null)
+        } catch (reason) {
+          if (identityRef.current === key) setError(reason instanceof Error ? reason.message : String(reason))
+        } finally {
+          if (identityRef.current === key) setLoading(false)
+        }
+      } while (state.pending && identityRef.current === key)
+    } finally {
+      state.running = false
+      if (refreshStatesRef.current.get(key) === state && identityRef.current !== key) refreshStatesRef.current.delete(key)
+    }
+  }, [props.loadRuns, props.projectId, props.taskId])
 
-  useEffect(() => { void refresh() }, [refresh])
+  useEffect(() => {
+    const key = `${props.projectId}:${props.taskId}`
+    identityRef.current = key
+    setRuns([])
+    setSelectedId(liveRunIdRef.current ?? null)
+    setLoading(Boolean(props.loadRuns))
+    setError(null)
+    void refresh()
+
+    let debounceTimer: number | null = null
+    const scheduleRefresh = (): void => {
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer)
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = null
+        if (identityRef.current === key) void refresh()
+      }, 100)
+    }
+    const bridge = window.board
+    const offUpdate = bridge?.onPreparationRunUpdated?.((event) => {
+      if (event.projectId === props.projectId && event.taskId === props.taskId) scheduleRefresh()
+    })
+    const offReconnect = bridge?.onReconnect?.(() => {
+      if (identityRef.current === key) void refresh()
+    })
+    return () => {
+      if (identityRef.current === key) identityRef.current = ''
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer)
+      offUpdate?.()
+      offReconnect?.()
+    }
+  }, [props.projectId, props.taskId, props.loadRuns, refresh])
   const loadMachines = useCallback(async (): Promise<void> => {
     setMachinesLoading(true)
     setMachinesError(null)
@@ -103,11 +156,6 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
   }, [props.projectId, props.taskId])
 
   useEffect(() => { void loadMachines(); void loadModels() }, [loadMachines, loadModels])
-  useEffect(() => {
-    if (!props.liveStatus || !['queued', 'running', 'waiting_for_answer', 'validating'].includes(props.liveStatus)) return
-    const timer = window.setInterval(() => void refresh(), 1500)
-    return () => window.clearInterval(timer)
-  }, [props.liveStatus, refresh])
 
   const selected = runs.find((run) => run.id === selectedId) ?? runs[0] ?? null
   const selectedMachine = machines?.machines.find((machine) => machine.agentId === selection.machineId)

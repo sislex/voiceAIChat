@@ -12,6 +12,8 @@ export class WsClient {
   private queue: Array<string | ArrayBuffer> = []
   private listeners = new Map<string, Set<Listener>>()
   private connectedListeners = new Set<() => void>()
+  private reconnectListeners = new Set<() => void>()
+  private hasConnected = false
   private closed = false
   // Буфер сообщений, пришедших ДО регистрации слушателей: сокет открывается на
   // загрузке модуля, а подписки — позже, в React-эффекте. Без буфера снапшот
@@ -47,7 +49,10 @@ export class WsClient {
       const pending = this.queue
       this.queue = []
       for (const m of pending) ws.send(m)
+      const reconnected = this.hasConnected
+      this.hasConnected = true
       for (const listener of [...this.connectedListeners]) listener()
+      if (reconnected) for (const listener of [...this.reconnectListeners]) listener()
     }
     ws.onmessage = (ev) => {
       if (typeof ev.data !== 'string') return // TTS приходит base64 в JSON, бинарь не ждём
@@ -131,6 +136,12 @@ export class WsClient {
   onConnected(cb: () => void): () => void {
     this.connectedListeners.add(cb)
     return () => this.connectedListeners.delete(cb)
+  }
+
+  /** Подписка только на успешные восстановления после первого соединения. */
+  onReconnect(cb: () => void): () => void {
+    this.reconnectListeners.add(cb)
+    return () => this.reconnectListeners.delete(cb)
   }
 
   /** Пере-дозвон с актуальным токеном (после логина/логаута). */
