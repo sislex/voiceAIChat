@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 14 коммит(ов) в areas после сверки: 5f601791 feat: add server context snapshot inspector … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 3 коммит(ов) в areas после сверки: 5f601791 feat: add server context snapshot inspector … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 44 коммит(ов) в areas после сверки: 6032c62f Merge task 6fc687ce-e1c7-476c-b8e0-3f787c5b2edd … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 572 коммит(ов) в areas после сверки: 9dfd283d docs(kb): update after merge f8449463-0bc5-4ae2-9559-f62ba09a2491 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 573 коммит(ов) в areas после сверки: 436e1925 docs(kb): update after merge 6fc687ce-e1c7-476c-b8e0-3f787c5b2edd … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 67 коммит(ов) в areas после сверки: 6032c62f Merge task 6fc687ce-e1c7-476c-b8e0-3f787c5b2edd … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 32 коммит(ов) в areas после сверки: 6032c62f Merge task 6fc687ce-e1c7-476c-b8e0-3f787c5b2edd … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-24 | ⚠ 6 коммит(ов) в areas после сверки: 6032c62f Merge task 6fc687ce-e1c7-476c-b8e0-3f787c5b2edd … |
