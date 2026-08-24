@@ -21,6 +21,7 @@ import { createTelemetryCollector } from './telemetry.js'
 import { resolveShellInfo } from './platform.js'
 import { ensureImageDir, localAddresses, startImageHost, type ImageHost } from './imageHost.js'
 import { handleGitAccess } from './gitAccess.js'
+import { fetchLocal } from './httpProxy.js'
 
 const BACKOFF_START_MS = 1_000
 const BACKOFF_MAX_MS = 30_000
@@ -291,6 +292,13 @@ export function startConnection(config: AgentConfig, handlers: AgentHandlers = {
         }
         case 'tunnel.close':
           closeTunnel(msg.tunnelId); break
+        case 'http.request':
+          // Loopback-мост тестовых окружений: запрос идёт строго на 127.0.0.1.
+          void fetchLocal(msg.request).then(
+            (response) => send({ t: 'http.result', requestId: msg.requestId, response }),
+            (error: unknown) => send({ t: 'http.error', requestId: msg.requestId, message: error instanceof Error ? error.message : String(error) })
+          )
+          break
         case 'fs.list':
         case 'fs.read':
         case 'fs.write':

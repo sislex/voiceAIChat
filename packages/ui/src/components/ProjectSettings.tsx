@@ -5,7 +5,7 @@ import { CiProjectDefaults } from './ci/CiProjectDefaults'
 // Управляющие контролы (правка, участники, машины, удаление) — только владельцу.
 
 import { useEffect, useState } from 'react'
-import type { ProjectDetail, ProjectSummary, WorkItemDefaultSkills, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
+import type { ProjectDetail, ProjectSummary, ProjectTestUser, WorkItemDefaultSkills, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
 import type { KbContextMode } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
@@ -24,7 +24,7 @@ export interface ProjectSettingsProps {
   currentUsername?: string
   llmAccess?: UserLlmAccess[]
   llmEngines?: LlmEngineOption[]
-  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null }) => void
+  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; testUsers?: ProjectTestUser[]; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null }) => void
 
   onDelete: (id: string) => void
   onAddMember: (id: string, username: string) => void
@@ -96,6 +96,16 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   const [gitUrl, setGitUrl] = useState(detail.gitUrl ?? '')
   const [previewUrl, setPreviewUrl] = useState(detail.previewUrl ?? '')
   useEffect(() => setPreviewUrl(detail.previewUrl ?? ''), [detail.previewUrl])
+  // Тестовые учётки окружений: правки локальные, коммит по blur/удалению.
+  const [testUsers, setTestUsers] = useState<ProjectTestUser[]>(detail.testUsers ?? [])
+  useEffect(() => setTestUsers(detail.testUsers ?? []), [detail.testUsers])
+  const commitTestUsers = (next: ProjectTestUser[]): void => {
+    setTestUsers(next)
+    props.onUpdate(detail.id, { testUsers: next.filter((user) => user.name.trim()) })
+  }
+  const patchTestUser = (index: number, patch: Partial<ProjectTestUser>): void => {
+    setTestUsers((all) => all.map((user, i) => (i === index ? { ...user, ...patch } : user)))
+  }
   const [newMember, setNewMember] = useState('')
   const [confirmDel, setConfirmDel] = useState(false)
   const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'>('general')
@@ -165,6 +175,33 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
 
       <TagEditor label="Технологии" tags={detail.technologies} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { technologies: next })} />
       <TagEditor label="Навыки" tags={detail.skills} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { skills: next })} />
+
+      <section className="proj-section" aria-label="Тестовые пользователи">
+        <p className="proj-field-label">Тестовые пользователи</p>
+        <p className="proj-hint">
+          Учётные записи для входа в тестовые окружения проекта из Web Reader: модель получает их
+          MCP-инструментом test-users и логинится в окружении сама. Не храните здесь production-пароли.
+        </p>
+        {testUsers.length === 0 && <p className="proj-muted">Тестовые пользователи не заведены</p>}
+        <ul className="proj-test-users" role="list">
+          {testUsers.map((user, index) => (
+            <li key={index}>
+              {isOwner ? <>
+                <input className="login-input" aria-label={`Логин тестового пользователя ${index + 1}`} placeholder="Логин" value={user.name} onChange={(e) => patchTestUser(index, { name: e.target.value })} onBlur={() => commitTestUsers(testUsers)} />
+                <input className="login-input" aria-label={`Пароль тестового пользователя ${index + 1}`} placeholder="Пароль" value={user.password} onChange={(e) => patchTestUser(index, { password: e.target.value })} onBlur={() => commitTestUsers(testUsers)} />
+                <input className="login-input" aria-label={`Роль тестового пользователя ${index + 1}`} placeholder="Роль (admin, user…)" value={user.role ?? ''} onChange={(e) => patchTestUser(index, { role: e.target.value })} onBlur={() => commitTestUsers(testUsers)} />
+                <input className="login-input" aria-label={`Заметка тестового пользователя ${index + 1}`} placeholder="Что доступно этой учётке" value={user.note ?? ''} onChange={(e) => patchTestUser(index, { note: e.target.value })} onBlur={() => commitTestUsers(testUsers)} />
+                <IconButton aria-label={`Удалить тестового пользователя ${index + 1}`} title="Удалить" onClick={() => commitTestUsers(testUsers.filter((_, i) => i !== index))}>✕</IconButton>
+              </> : <span>{user.name}{user.role ? ` — ${user.role}` : ''}{user.note ? ` (${user.note})` : ''}</span>}
+            </li>
+          ))}
+        </ul>
+        {isOwner && (
+          <Button variant="secondary" onClick={() => setTestUsers([...testUsers, { name: '', password: '' }])}>
+            + Добавить тестового пользователя
+          </Button>
+        )}
+      </section>
       </>}
 
       {activeTab === 'board' && <>

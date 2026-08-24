@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-24
-checked: 59c7c476
+checked: 3475466c
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -462,6 +462,12 @@ CI-рана) модель видит остальные машины проек�
 
 Возможность гейтится `TOOL_MIN_VERSION.images = 0.5.0` — на старом агенте
 `imageHost` не появится, и всё поедет прежним путём.
+
+## Loopback HTTP-мост тестовых окружений (http.request)
+
+С агента 0.13.0 сервер может выполнить HTTP-запрос к loopback машины: кадры `http.request` (сервер → агент, `AgentHttpRequest`: method/port/path/headers/bodyBase64) и `http.result`/`http.error` (агент → сервер) в `packages/shared/src/agentProtocol.ts`. Агент (`apps/agent/src/httpProxy.ts`) выполняет запрос строго к `127.0.0.1:<port>` — target host, как и в `tunnel.connect`, задать извне нельзя; тело ответа ограничено 5 MiB, таймаут 10 с, редиректам агент не следует (решает сервер). Серверная корреляция — `AgentRegistry.http()` по образцу fs-операций (таймаут ответа 15 с, гейт версии `http-proxy` ≥ 0.13.0, дисконнект отклоняет pending).
+
+Потребитель моста — `/api/preview` (Web Reader): виртуальный host `<agentId>.machine.internal:<port>` доставляется агентом, а не сетью; доступ проверяет `VoiceChatDb.canUseAgentForPreview` (владелец машины либо share машины в любом проекте, где пользователь — активный участник). Внутренние редиректы окружения на `127.0.0.1`/`localhost` возвращаются на мост той же машины; редирект наружу не следуется. Ответ проходит общий rewrite и cookie-контейнер превью, поэтому логин в окружение и относительные ссылки работают как на публичных сайтах. Детали Reader-стороны — [ui.md](ui.md), раздел «Тестовые окружения проекта в Web Reader».
 
 ## Телеметрия
 

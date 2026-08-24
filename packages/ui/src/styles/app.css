@@ -4033,6 +4033,10 @@ button.conscmd:hover {
   color: #626f86; margin: 10px 0 4px; opacity: 1; }
 [data-theme='dark'] .proj-field-label { color: #96a0b5; }
 .proj-hint { font-size: 12px; color: #626f86; margin: 2px 0 8px; line-height: 1.5; max-width: 640px; }
+/* Тестовые пользователи окружений: строка = логин/пароль/роль/заметка/удалить. */
+.proj-test-users { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
+.proj-test-users li { display: grid; grid-template-columns: 1fr 1fr 1fr 1.4fr auto; gap: 6px; align-items: center; }
+@media (max-width: 720px) { .proj-test-users li { grid-template-columns: 1fr 1fr; } }
 [data-theme='dark'] .proj-hint { color: #96a0b5; }
 .proj-default-skills .proj-tags { margin-top: 4px; }
 /* Чипы навыков по умолчанию — Atlassian-«subtle» вид */

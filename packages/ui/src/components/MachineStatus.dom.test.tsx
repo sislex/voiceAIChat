@@ -126,7 +126,7 @@ describe('MachineStatus — устаревший агент и обновлен�
     render(
       <MachineStatus agents={[agent({ version: '0.11.1' })]} onSetPolicy={vi.fn()} onUpdateAgent={vi.fn()} onClose={vi.fn()} />
     )
-    expect(screen.getByText('устарел, есть v0.12.0')).toBeInTheDocument()
+    expect(screen.getByText('устарел, есть v0.13.0')).toBeInTheDocument()
     expect(screen.getByLabelText('Обновить агента на Мак')).toBeInTheDocument()
     expect(screen.getByLabelText('Скопировать команду обновления для Мак')).toBeInTheDocument()
   })

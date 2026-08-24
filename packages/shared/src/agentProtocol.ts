@@ -82,6 +82,30 @@ export interface AgentTelemetry {
   }
 }
 
+/**
+ * HTTP-запрос сервера к loopback-порту машины: мост тестовых окружений Web
+ * Reader (`http://<agentId>.machine.internal:<port>` в /api/preview). Агент
+ * выполняет запрос строго к 127.0.0.1 — target host клиент задать не может,
+ * как и в tunnel.connect.
+ */
+export interface AgentHttpRequest {
+  method: string
+  /** Порт на 127.0.0.1 машины (1–65535). */
+  port: number
+  /** Путь с query, начинается с '/'. */
+  path: string
+  headers: Record<string, string | string[]>
+  /** Тело запроса (base64), только для методов с телом. */
+  bodyBase64?: string
+}
+
+/** Ответ loopback-запроса; тело ограничено капом агента (5 MiB). */
+export interface AgentHttpResponse {
+  status: number
+  headers: Record<string, string | string[]>
+  bodyBase64: string
+}
+
 /** Сообщения агент → сервер. */
 export type AgentToServer =
   | { t: 'agent.register'; token: string; version?: string; imageHost?: AgentImageHost }
@@ -105,6 +129,8 @@ export type AgentToServer =
   | { t: 'tunnel.end'; tunnelId: string; connectionId: string }
   | { t: 'tunnel.error'; tunnelId: string; message: string }
   | { t: 'tunnel.connectionError'; tunnelId: string; connectionId: string; message: string }
+  | { t: 'http.result'; requestId: string; response: AgentHttpResponse }
+  | { t: 'http.error'; requestId: string; message: string }
 
 /** Именованный скрипт («навык»), разрешённый к запуску на машине. */
 export interface AgentSkill {
@@ -217,6 +243,7 @@ export type ServerToAgent =
   | { t: 'tunnel.data'; tunnelId: string; connectionId: string; data: string }
   | { t: 'tunnel.end'; tunnelId: string; connectionId: string }
   | { t: 'tunnel.close'; tunnelId: string }
+  | { t: 'http.request'; requestId: string; request: AgentHttpRequest }
   | FsOp
 
 /** Машина-агент для списка в настройках. */

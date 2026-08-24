@@ -132,3 +132,35 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     expect(input).toHaveValue('https://old.example/')
   })
 })
+
+describe('ProjectSettings — тестовые пользователи', () => {
+  it('владелец добавляет учётку: заполнение и blur сохраняют список', async () => {
+    const onUpdate = vi.fn()
+    render(<ProjectSettings {...props({ onUpdate })} />)
+    expect(screen.getByText('Тестовые пользователи не заведены')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: '+ Добавить тестового пользователя' }))
+    await userEvent.type(screen.getByLabelText('Логин тестового пользователя 1'), 'tester')
+    await userEvent.type(screen.getByLabelText('Пароль тестового пользователя 1'), 'test-pass')
+    await userEvent.tab()
+    const last = onUpdate.mock.calls.at(-1)
+    expect(last?.[1]).toEqual({ testUsers: [{ name: 'tester', password: 'test-pass' }] })
+  })
+
+  it('удаление учётки уходит в onUpdate без неё', async () => {
+    const onUpdate = vi.fn()
+    render(<ProjectSettings {...props({
+      onUpdate,
+      detail: detail({ testUsers: [{ name: 'tester', password: 'p' }, { name: 'viewer', password: '' }] })
+    })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить тестового пользователя 1' }))
+    expect(onUpdate).toHaveBeenCalledWith('p1', { testUsers: [{ name: 'viewer', password: '' }] })
+  })
+
+  it('участник видит список без полей редактирования', async () => {
+    render(<ProjectSettings {...props({
+      detail: detail({ role: 'member', testUsers: [{ name: 'tester', password: 'p', role: 'admin', note: 'полный доступ' }] })
+    })} />)
+    expect(screen.getByText('tester — admin (полный доступ)')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Логин тестового пользователя 1')).not.toBeInTheDocument()
+  })
+})

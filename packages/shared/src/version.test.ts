@@ -2,8 +2,14 @@ import { describe, it, expect } from 'vitest'
 import { AGENT_VERSION, compareVersions, isToolAllowed, requiredVersion } from './version'
 
 describe('AGENT_VERSION', () => {
-  it('публикует релиз с безопасным удалением временных файлов', () => {
-    expect(AGENT_VERSION).toBe('0.12.0')
+  it('публикует релиз с loopback HTTP-мостом тестовых окружений', () => {
+    expect(AGENT_VERSION).toBe('0.13.0')
+  })
+
+  it('http-proxy требует агента 0.13.0', () => {
+    expect(requiredVersion('http-proxy')).toBe('0.13.0')
+    expect(isToolAllowed('0.12.0', 'http-proxy')).toBe(false)
+    expect(isToolAllowed('0.13.0', 'http-proxy')).toBe(true)
   })
 })
 
