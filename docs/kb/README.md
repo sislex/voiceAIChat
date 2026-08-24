@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 8 коммит(ов) в areas после сверки: 2198e7a9 fix: auto-resolve merge conflicts with model step … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ✓ |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 37 коммит(ов) в areas после сверки: 4a7c3b1c merge: resolve CHAT-340 conflicts with current main … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 563 коммит(ов) в areas после сверки: 4a7c3b1c merge: resolve CHAT-340 conflicts with current main … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 564 коммит(ов) в areas после сверки: 607b323d docs(kb): update after merge 05058870-03f0-47c2-9d36-ae6137f9fc27 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 56 коммит(ов) в areas после сверки: 4a7c3b1c merge: resolve CHAT-340 conflicts with current main … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 19 коммит(ов) в areas после сверки: 4a7c3b1c merge: resolve CHAT-340 conflicts with current main … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-24 | ⚠ 10 коммит(ов) в areas после сверки: 4a7c3b1c merge: resolve CHAT-340 conflicts with current main … |
