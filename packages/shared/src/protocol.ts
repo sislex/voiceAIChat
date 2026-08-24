@@ -447,7 +447,7 @@ export type ClientMessage =
    * Ответ клиента на preview.action: результат действия в панели превью.
    * `requestId` — из запроса; `result` уходит модели сериализованным JSON.
    */
-  | { t: 'preview.result'; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }
+  | { t: 'preview.result'; conversationId?: string; registrationId?: string; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }
 
 /** server → client. */
 export type ServerMessage =

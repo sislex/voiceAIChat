@@ -29,6 +29,8 @@ export interface ConversationSettingsProps {
   defaultAgentId?: string | null
   /** Проекты пользователя — для привязки чата к проекту. */
   projects: ProjectSummary[]
+  /** Доступно только для активного Web Reader-разговора. */
+  webReaderDiagnostics?: { running: boolean; onRun: () => void }
   /** Загрузка деталей проекта (машины/папки/дефолт) для выбранного проекта. */
   fetchProjectDetail: (id: string) => Promise<ProjectDetail | null>
   /** Серверный список машин с тем же правилом доступа, что используется при сохранении. */
@@ -62,7 +64,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -316,6 +318,9 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           project={projects.find((project) => project.id === projectId)}
           selectedSkillNames={skillNames}
         />}
+        {webReaderDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика Web Reader">
+          <div className="convsettings-sectionhead"><div><h2>Web Reader</h2><p>Проверяет cookie, proxy, загрузку, DOM-мост, события, навигацию, очередь и requestId на внутренней странице. Полный перечень и результаты появятся в чате.</p></div><Button onClick={webReaderDiagnostics.onRun} disabled={webReaderDiagnostics.running}>{webReaderDiagnostics.running ? 'Выполняется…' : 'Самодиагностика'}</Button></div>
+        </section>}
         <section className="convsettings-card">
           <label className="convsettings-field"><span>Название разговора</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
           <label className="convsettings-field"><span>Проект</span>

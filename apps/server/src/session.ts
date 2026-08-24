@@ -77,7 +77,7 @@ export interface SessionDeps {
    */
   preview?: {
     subscribe(userId: string, sink: (m: ServerMessage) => void): () => void
-    resolve(userId: string, requestId: string, outcome: { ok: boolean; result?: PreviewActionResult; error?: string }): void
+    resolve(userId: string, requestId: string, outcome: { ok: boolean; result?: PreviewActionResult; error?: string }, conversationId?: string): void
   }
 }
 
@@ -328,7 +328,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
             ok: msg.ok === true,
             ...(msg.result !== undefined ? { result: msg.result } : {}),
             ...(typeof msg.error === 'string' ? { error: msg.error } : {})
-          })
+          }, msg.conversationId)
           break
 
         default:

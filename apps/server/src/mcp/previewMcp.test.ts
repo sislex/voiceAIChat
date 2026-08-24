@@ -72,6 +72,18 @@ describe('PreviewActionRelay', () => {
     const outcome = await relay.request(U, CONV, { kind: 'read' })
     expect(outcome.ok).toBe(false)
   })
+
+  it('игнорирует ответ с requestId целевого запроса, но от чужого разговора', async () => {
+    const relay = new PreviewActionRelay()
+    let request: Extract<ServerMessage, { t: 'preview.action' }> | undefined
+    relay.subscribe(U, (message) => { if (message.t === 'preview.action') request = message })
+    const pending = relay.request(U, CONV, { kind: 'read' }, 1_000)
+    if (!request) throw new Error('ожидался preview.action')
+    relay.resolve(U, request.requestId, { ok: true, result: { url: 'https://wrong.example' } }, 'conv-other')
+    expect(relay.pendingCount()).toBe(1)
+    relay.resolve(U, request.requestId, { ok: true, result: { url: 'https://right.example' } }, CONV)
+    await expect(pending).resolves.toEqual({ ok: true, result: { url: 'https://right.example' } })
+  })
 })
 
 describe('previewMcp — инструменты browser', () => {
