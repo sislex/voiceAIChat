@@ -210,6 +210,7 @@ describe('App — отдельная страница Web Reader', () => {
     await api['conversations:create']({ title: 'Обычный' })
     // Ответ выбора reader-чата задержан: активным пока остаётся обычный чат.
     const realGet = api['conversations:get']
+    const addMessage = vi.spyOn(api, 'messages:add')
     let release!: () => void
     const gate = new Promise<void>((resolve) => { release = resolve })
     api['conversations:get'] = async (arg) => {
@@ -223,10 +224,22 @@ describe('App — отдельная страница Web Reader', () => {
     const select = screen.getByLabelText('Разговор Web Reader')
     expect(select).toHaveValue('')
     expect(screen.getByRole('option', { name: 'Чат не выбран' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Открываем выбранный Reader-разговор…')
+    // Старый ChatColumn не остаётся интерактивным под уже изменившимся Reader URL.
+    expect(screen.queryByPlaceholderText(/Напишите сообщение/)).not.toBeInTheDocument()
+    expect(screen.queryByTitle('Web Reader')).not.toBeInTheDocument()
 
     release()
     await waitFor(() => expect(select).toHaveValue(reader.id))
     expect(screen.queryByRole('option', { name: 'Чат не выбран' })).not.toBeInTheDocument()
+    const composer = screen.getByPlaceholderText(/Напишите сообщение/)
+    expect(composer).toBeInTheDocument()
+    expect(screen.getByTitle('Web Reader')).toBeInTheDocument()
+
+    await userEvent.type(composer, 'Сообщение Reader{enter}')
+    await waitFor(() => expect(addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: reader.id, text: 'Сообщение Reader' })
+    ))
   })
 
   it('«+ Новый» детерминированно открывает созданный чат, устаревший ответ не возвращает старый', async () => {
