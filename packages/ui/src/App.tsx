@@ -1280,7 +1280,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }
 
   const changeConversationMode = async (mode: PermissionMode): Promise<void> => {
-    if (!activeConversation || mode === activePermissionMode) return
+    if (mode === activePermissionMode) return
+    if (!activeConversation) {
+      await settingsActions.updateSettings({ permissionMode: mode })
+      return
+    }
     if (
       activePermissionMode === 'plan' &&
       mode === 'bypassPermissions' &&
@@ -1611,7 +1615,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
-            defaultCollapsed={compactChat}
+            key={chat.conversationsStatus === 'ready' && !chat.activeId && chat.messages.length === 0 ? 'centered' : 'docked'}
+            defaultCollapsed={compactChat && !(chat.conversationsStatus === 'ready' && !chat.activeId && chat.messages.length === 0)}
+            layout={chat.conversationsStatus === 'ready' && !chat.activeId && chat.messages.length === 0 ? 'centered' : 'docked'}
             state={voice.voice}
             replyStarted={chat.streamingReply.length > 0}
             requestError={shell.error}
@@ -1635,6 +1641,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             onCancelRequest={chatActions.cancelRequest}
             onAddFiles={(files) => files.forEach((f) => void chatActions.addAttachment(f))}
             onRemoveAttachment={chatActions.removeAttachment}
+            onRetryAttachment={(id) => { void chatActions.retryAttachment(id) }}
             onRemovePreviewElement={() => setPreviewElement(null)}
             permissionMode={activePermissionMode}
             onChangePermissionMode={(mode) => void changeConversationMode(mode)}

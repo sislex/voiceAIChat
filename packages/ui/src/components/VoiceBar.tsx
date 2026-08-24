@@ -20,43 +20,73 @@ import { applyNativeInputValue, useAiAssist } from './prompt-builder/useAiAssist
 const DRAFT_MIN_ROWS = 2
 const DRAFT_MAX_ROWS = 4
 
+export interface ComposerAttachment {
+  localId?: string
+  status?: 'processing' | 'ready' | 'error'
+  previewUrl?: string | null
+  error?: string | null
+  upload?: UploadInfo | null
+  file?: File
+  id?: string
+  name?: string
+  path?: string
+  mimeType?: string
+  size?: number
+}
+
 function AttachmentChip({
   attachment,
   onRemove,
+  onRetry,
   readServerFile
 }: {
-  attachment: UploadInfo
+  attachment: ComposerAttachment
   onRemove: () => void
+  onRetry?: () => void
   readServerFile?: (path: string) => Promise<ServerFileInfo | null>
 }): JSX.Element {
-  const image = attachment.mimeType?.startsWith('image/') ?? false
-  const [src, setSrc] = useState<string | null>(null)
+  const upload = attachment.upload ?? attachment
+  const name = upload.name ?? attachment.name ?? attachment.file?.name ?? 'Файл'
+  const mimeType = upload.mimeType ?? attachment.mimeType ?? ''
+  const path = upload.path ?? attachment.path
+  const status = attachment.status ?? 'ready'
+  const image = mimeType.startsWith('image/') || Boolean(attachment.previewUrl)
+  const [src, setSrc] = useState<string | null>(attachment.previewUrl ?? null)
 
   useEffect(() => {
-    if (!image || !readServerFile) return
+    if (attachment.previewUrl) {
+      setSrc(attachment.previewUrl)
+      return
+    }
+    if (!image || !readServerFile || !path) return
     let alive = true
-    void readServerFile(attachment.path).then((file) => {
-      if (alive && file) setSrc(`data:${attachment.mimeType};base64,${file.dataBase64}`)
+    void readServerFile(path).then((file) => {
+      if (alive && file) setSrc(`data:${mimeType};base64,${file.dataBase64}`)
     }).catch(() => undefined)
     return () => { alive = false }
-  }, [attachment.mimeType, attachment.path, image, readServerFile])
+  }, [attachment.previewUrl, mimeType, path, image, readServerFile])
 
   if (!image) {
     return (
-      <span className="attchip">
-        📎 {attachment.name}
-        <button className="attx" aria-label={`Убрать вложение ${attachment.name}`} title={`Убрать вложение ${attachment.name}`} onClick={onRemove}>✕</button>
+      <span className={`attchip attchip--${status}`}>
+        📎 {name}
+        {status === 'processing' && <span role="status">Загрузка…</span>}
+        {status === 'error' && onRetry && <button type="button" onClick={onRetry}>Повторить</button>}
+        <button className="attx" aria-label={`Убрать вложение ${name}`} title={`Убрать вложение ${name}`} onClick={onRemove}>✕</button>
       </span>
     )
   }
 
   return (
-    <figure className="attpreview" data-testid="attachment-image-preview">
+    <figure className={`attpreview attpreview--${status}`} data-testid="attachment-image-preview" data-status={status}>
       <div className="attpreview-image">
         {src ? <img src={src} alt="" /> : <span aria-hidden="true">🖼</span>}
+        {status === 'processing' && <span className="attpreview-state" role="status">Загрузка…</span>}
+        {status === 'error' && <span className="attpreview-state" role="alert">Ошибка</span>}
       </div>
-      <figcaption title={attachment.name}>{attachment.name}</figcaption>
-      <button className="attx attpreview-remove" aria-label={`Убрать вложение ${attachment.name}`} title={`Убрать вложение ${attachment.name}`} onClick={onRemove}>✕</button>
+      <figcaption title={name}>{name}</figcaption>
+      {status === 'error' && onRetry && <button className="attpreview-retry" type="button" onClick={onRetry}>Повторить</button>}
+      <button className="attx attpreview-remove" aria-label={`Убрать вложение ${name}`} title={`Убрать вложение ${name}`} onClick={onRemove}>✕</button>
     </figure>
   )
 }
@@ -68,7 +98,7 @@ export interface VoiceBarProps {
   /** Номера обнаруженных спикеров во время записи (для строки «Обнаружено говорящих»). */
   detectedSpeakers: number[]
   /** Прикреплённые к следующему сообщению файлы. */
-  attachments: UploadInfo[]
+  attachments: ComposerAttachment[]
   /** DOM-область из веб-превью, приложенная к следующей реплике. */
   previewElement?: PreviewElementPayload | null
   queuedTurns?: QueuedTurn[]
@@ -87,6 +117,7 @@ export interface VoiceBarProps {
   onAddFiles: (files: File[]) => void
   /** Убрать вложение по id. */
   onRemoveAttachment: (id: string) => void
+  onRetryAttachment?: (id: string) => void
   /** Прочитать загруженное изображение для миниатюры композера. */
   readServerFile?: (path: string) => Promise<ServerFileInfo | null>
   /** Убрать выбранную DOM-область. */
@@ -119,6 +150,7 @@ export interface VoiceBarProps {
    * а проп также позволяет витрине и изолированным тестам выбрать нужный вид.
    */
   defaultCollapsed?: boolean
+  layout?: 'centered' | 'docked'
 }
 
 export function VoiceBar({
@@ -141,6 +173,7 @@ export function VoiceBar({
   onCancelRequest,
   onAddFiles,
   onRemoveAttachment,
+  onRetryAttachment,
   readServerFile,
   onRemovePreviewElement,
   aiLabel = 'Claude',
@@ -156,7 +189,8 @@ export function VoiceBar({
   onSuggestPrompts,
   onApplyPromptSuggestion,
   onClosePromptSuggestions,
-  defaultCollapsed = true
+  defaultCollapsed = true,
+  layout = 'docked'
 }: VoiceBarProps): JSX.Element {
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
@@ -164,6 +198,7 @@ export function VoiceBar({
   type RequestPhase = 'sending' | 'processing' | 'streaming' | 'stopping' | 'stopped' | 'error'
   const [requestPhase, setRequestPhase] = useState<RequestPhase | null>(null)
   const [queueExpanded, setQueueExpanded] = useState(false)
+  const [editorExpanded, setEditorExpanded] = useState(false)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [queueEditText, setQueueEditText] = useState('')
   const requestWasActive = useRef(false)
@@ -229,8 +264,10 @@ export function VoiceBar({
   // Композер начинается с двух строк и растёт с текстом до четырёх, дальше — скролл.
   const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
-  const canSend = draft.trim().length > 0 || attachments.length > 0 || previewElement !== null
-  const canSubmit = canSend
+  const blockedAttachments = attachments.filter((item) => item.status && item.status !== 'ready')
+  const readyAttachments = attachments.filter((item) => !item.status || item.status === 'ready')
+  const canSend = draft.trim().length > 0 || readyAttachments.length > 0 || previewElement !== null
+  const canSubmit = canSend && blockedAttachments.length === 0
   const helper = promptHelper ?? { open: false, loading: false, variants: [], error: null }
   // Палочку показываем в idle, когда есть что переформулировать.
   const canSuggest = isIdle && draft.trim().length > 0 && !!onSuggestPrompts
@@ -409,7 +446,8 @@ export function VoiceBar({
   }
 
   return (
-    <div className="voicebar">
+    <div className={`voicebar voicebar--${layout}${editorExpanded ? ' voicebar--expanded' : ''}`} data-layout={layout}>
+      {layout === 'centered' && <h2 className="voicebar-greeting">Чем я могу помочь?</h2>}
       <div className="vinner">
         <div className="vhandle">
           <IconButton
@@ -423,6 +461,28 @@ export function VoiceBar({
           >
             ⌄
           </IconButton>
+          {(editorExpanded || draft.includes('\n')) && (
+            <IconButton
+              className="vhandle-btn"
+              size="sm"
+              aria-expanded={editorExpanded}
+              aria-label={editorExpanded ? 'Свернуть поле ввода' : 'Развернуть поле ввода'}
+              title={editorExpanded ? 'Свернуть поле ввода' : 'Развернуть поле ввода'}
+              data-testid="composer-size-toggle"
+              onClick={() => {
+                const element = inputRef.current
+                const selection = element ? [element.selectionStart, element.selectionEnd] as const : null
+                setEditorExpanded((value) => !value)
+                requestAnimationFrame(() => {
+                  if (!element) return
+                  element.focus()
+                  if (selection) element.setSelectionRange(selection[0], selection[1])
+                })
+              }}
+            >
+              {editorExpanded ? '↙' : '↗'}
+            </IconButton>
+          )}
         </div>
         {helper.open && (
           <div className="prompt-helper" data-testid="prompt-helper" role="group" aria-label="Варианты формулировки запроса">
@@ -490,9 +550,10 @@ export function VoiceBar({
             )}
             {attachments.map((attachment) => (
               <AttachmentChip
-                key={attachment.id}
+                key={attachment.localId ?? attachment.id}
                 attachment={attachment}
-                onRemove={() => onRemoveAttachment(attachment.id)}
+                onRemove={() => onRemoveAttachment(attachment.localId ?? attachment.id ?? '')}
+                onRetry={onRetryAttachment ? () => onRetryAttachment(attachment.localId ?? attachment.id ?? '') : undefined}
                 {...(readServerFile ? { readServerFile } : {})}
               />
             ))}
@@ -500,6 +561,14 @@ export function VoiceBar({
         )}
 
         {renderTurnQueue()}
+
+        {blockedAttachments.length > 0 && (
+          <p className="attachment-submit-error" id="attachment-submit-error" role="status">
+            {blockedAttachments.some((item) => item.status === 'processing')
+              ? `Обрабатывается файлов: ${blockedAttachments.filter((item) => item.status === 'processing').length}. Дождитесь завершения.`
+              : 'Повторите загрузку или удалите вложение с ошибкой.'}
+          </p>
+        )}
 
         <div className="vrow" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
           {composerMode && (
@@ -513,7 +582,7 @@ export function VoiceBar({
                     element.focus()
                   }
                 }}
-                className="tin"
+                className={`tin${editorExpanded ? ' tin--expanded' : ''}`}
                 placeholder="Напишите сообщение (Shift+Enter — новая строка)…"
                 value={draft}
                 rows={DRAFT_MIN_ROWS}
@@ -521,6 +590,7 @@ export function VoiceBar({
                 onKeyDown={onKey}
                 onPaste={onPaste}
                 aria-label="Поле ввода сообщения"
+                aria-invalid={blockedAttachments.length > 0 || undefined}
                 data-ai-assist={aiAssistEnabled ? '' : undefined}
               />
               <input
@@ -564,6 +634,8 @@ export function VoiceBar({
                     onClick={submitRequest}
                     title={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
                     aria-label={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
+                    disabled={!canSubmit}
+                    aria-describedby={blockedAttachments.length > 0 ? 'attachment-submit-error' : undefined}
                   >
                     <SendIcon />
                   </IconButton>

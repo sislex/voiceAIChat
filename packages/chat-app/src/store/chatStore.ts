@@ -122,6 +122,16 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary)
 }
 
+export interface LocalAttachment {
+  id: string
+  localId: string
+  file: File
+  status: 'processing' | 'ready' | 'error'
+  previewUrl: string | null
+  error: string | null
+  upload: UploadInfo | null
+}
+
 export interface ChatState {
   conversations: Conversation[]
   /** Все reader-чаты пользователя — без фильтра сайдбара по проекту. */
@@ -141,7 +151,7 @@ export interface ChatState {
   draft: string
   /** Помощник промптов: список переформулировок черновика и состояние панели. */
   promptHelper: { open: boolean; loading: boolean; variants: string[]; error: string | null }
-  attachments: UploadInfo[]
+  attachments: LocalAttachment[]
   /** Лог активности агента (режим консоли). */
   consoleLog: ClaudeLogEntry[]
   /** Активность текущего (незавершённого) хода активного разговора. */
@@ -207,6 +217,7 @@ export interface ChatActions {
   exportConversation(format: 'md' | 'json'): void
   setDraft(value: string): void
   submitText(previewElement?: PreviewElementPayload): Promise<boolean>
+  retryAttachment(localId: string): Promise<void>
   /** Готовая транскрипция из голосового домена: реплики + ход модели. */
   submitVoiceSegments(segments: LiveSegment[]): Promise<void>
   suggestPrompts(modifiers: Settings['aiAssistPrompts']): Promise<void>
@@ -747,7 +758,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       loadingMessages: false,
       draft: '',
       promptHelper: { open: false, loading: false, variants: [], error: null },
-      attachments: [] as UploadInfo[]
+      attachments: [] as LocalAttachment[]
     }
     if (!assistantKind) {
       setState({ activeId: null, ...common })
@@ -857,16 +868,50 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   // --- Отправка -------------------------------------------------------------
 
+  async function uploadLocalAttachment(localId: string): Promise<void> {
+    const item = getState().attachments.find((attachment) => attachment.localId === localId)
+    if (!item) return
+    try {
+      const dataBase64 = await fileToBase64(item.file)
+      const conversation = activeConversation()
+      const selectedTarget = conversation?.execTarget ?? deps.getSettings().execTarget
+      const agentId = selectedTarget && selectedTarget !== 'none' ? selectedTarget : undefined
+      const upload = await client['uploads:add']({
+        name: item.file.name,
+        dataBase64,
+        ...(item.file.type ? { mimeType: item.file.type } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(conversation?.id ? { conversationId: conversation.id } : {})
+      })
+      setState({ attachments: getState().attachments.map((attachment) =>
+        attachment.localId === localId ? { ...attachment, id: upload.id, status: 'ready', upload, error: null } : attachment
+      ) })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setState({ attachments: getState().attachments.map((attachment) =>
+        attachment.localId === localId ? { ...attachment, status: 'error', error: message, upload: null } : attachment
+      ) })
+    }
+  }
+
   async function performSubmitText(previewElement?: PreviewElementPayload): Promise<boolean> {
     const state = getState()
     const text = state.draft.trim()
     const atts = state.attachments
-    if (!text && atts.length === 0 && !previewElement) return false
+    const blocked = atts.filter((item) => item.status !== 'ready' || !item.upload)
+    if (blocked.length > 0) {
+      setError(blocked.some((item) => item.status === 'processing')
+        ? 'Дождитесь завершения загрузки вложений.'
+        : 'Исправьте или удалите вложения с ошибкой перед отправкой.')
+      return false
+    }
+    const ready = atts.flatMap((item) => item.upload ? [item.upload] : [])
+    if (!text && ready.length === 0 && !previewElement) return false
     const v = voice.state()
     // Ход уже идёт: реплика уходит в серверную очередь, второй локальный ход не стартует.
     const queueOnly = v === 'thinking' || v === 'speaking' || v === 'transcribing'
     setError(null)
-    const messageAttachments = atts.map((file) => ({
+    const messageAttachments = ready.map((file) => ({
       uploadId: file.id,
       path: file.path,
       name: file.name,
@@ -874,9 +919,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       size: file.size,
       ...(file.agentId ? { agentId: file.agentId } : {})
     }))
-    const messageText = composeUserText(text, atts)
+    const messageText = composeUserText(text, ready)
     const messageMeta = previewElement ? { previewElement } : undefined
-    const created = await ensureConversation(text || atts.map((a) => a.name).join(', '), {
+    const created = await ensureConversation(text || ready.map((a) => a.name).join(', '), {
       role: 'u1',
       text: messageText,
       time: formatTime(now()),
@@ -888,19 +933,22 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       ? [...getState().messages].reverse().find((message) => message.role !== 'ai')
       : await persistMessage('u1', messageText, undefined, messageMeta, execTarget, messageAttachments)
     // Текст и вложения чистим только после успешной отправки.
+    for (const attachment of atts) {
+      if (attachment.previewUrl && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(attachment.previewUrl)
+    }
     setState({ draft: '', attachments: [] })
     await refreshConversations()
     // Команда «открой консоль/проводник» → виджет в ответе, без обращения к LLM.
-    if (!queueOnly && atts.length === 0 && !previewElement && (await maybeOpenUtility(text))) return true
+    if (!queueOnly && ready.length === 0 && !previewElement && (await maybeOpenUtility(text))) return true
     if (!queueOnly && !voice.dispatch('submit_text')) return false // idle → thinking
     const segments = [
       { speakerId: 1, text: withPreviewElementContext(text || 'См. приложенные файлы.', previewElement) }
     ]
     const activeId = getState().activeId
     if (queueOnly && turn.enabled && turn.send && activeId) {
-      turn.send(activeId, segments, atts.map((a) => a.id), true, execTarget, persisted?.id)
+      turn.send(activeId, segments, ready.map((a) => a.id), true, execTarget, persisted?.id)
     } else {
-      beginReply(segments, atts.map((a) => a.id), execTarget)
+      beginReply(segments, ready.map((a) => a.id), execTarget)
     }
     return true
   }
@@ -1499,25 +1547,26 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         )
       },
       async addAttachment(file) {
-        try {
-          const dataBase64 = await fileToBase64(file)
-          const conversation = activeConversation()
-          const selectedTarget = conversation?.execTarget ?? deps.getSettings().execTarget
-          const agentId = selectedTarget && selectedTarget !== 'none' ? selectedTarget : undefined
-          const info = await client['uploads:add']({
-            name: file.name,
-            dataBase64,
-            ...(file.type ? { mimeType: file.type } : {}),
-            ...(agentId ? { agentId } : {}),
-            ...(conversation?.id ? { conversationId: conversation.id } : {})
-          })
-          setState({ attachments: [...getState().attachments, info] })
-        } catch (err) {
-          setError(`Не удалось загрузить файл: ${err instanceof Error ? err.message : String(err)}`)
-        }
+        const localId = globalThis.crypto?.randomUUID?.() ?? `attachment-${Date.now()}-${Math.random()}`
+        const previewUrl = file.type?.startsWith('image/') && typeof URL.createObjectURL === 'function'
+          ? URL.createObjectURL(file)
+          : null
+        const local: LocalAttachment = { id: localId, localId, file, status: 'processing', previewUrl, error: null, upload: null }
+        setState({ attachments: [...getState().attachments, local] })
+        await uploadLocalAttachment(localId)
       },
-      removeAttachment(id) {
-        setState({ attachments: getState().attachments.filter((a) => a.id !== id) })
+      async retryAttachment(localId) {
+        const item = getState().attachments.find((attachment) => attachment.localId === localId)
+        if (!item || item.status === 'processing') return
+        setState({ attachments: getState().attachments.map((attachment) =>
+          attachment.localId === localId ? { ...attachment, status: 'processing', error: null } : attachment
+        ) })
+        await uploadLocalAttachment(localId)
+      },
+      removeAttachment(localId) {
+        const item = getState().attachments.find((attachment) => attachment.localId === localId)
+        if (item?.previewUrl && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(item.previewUrl)
+        setState({ attachments: getState().attachments.filter((attachment) => attachment.localId !== localId) })
       },
       applyClaudeToken,
       applyClaudeDone,
