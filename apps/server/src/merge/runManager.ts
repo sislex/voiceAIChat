@@ -24,7 +24,14 @@ export interface MergeKbUpdateContext {
   signal: AbortSignal
   log(chunk: string): void
 }
-export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; now?:()=>number }
+export interface MergeConflictFixContext {
+  run: MergeRun
+  repo: string
+  conflicts: string[]
+  signal: AbortSignal
+  log(chunk: string): void
+}
+export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; conflictFix?(ctx:MergeConflictFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; now?:()=>number }
 const terminal = new Set(['success','failed','cancelled','decision_required'])
 const validSha = /^[0-9a-f]{40}$/i
 const validBranch = /^(?!-)(?!.*\.\.)(?!.*[~^:?*\[\]\\])[A-Za-z0-9._/-]+$/
@@ -328,14 +335,44 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
           ].join('\n')).join('\n')
           const resolved=await this.cmd(run,`set -e\n${perFile}\nrm -f .merge-kb-base .merge-kb-ours .merge-kb-theirs .merge-kb-base.n .merge-kb-ours.n .merge-kb-theirs.n\nnode scripts/kb.mjs check\ngit -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit`,repo,300000)
           if(resolved.exitCode||resolved.timedOut){
-            this.stage(id,'resolving_conflicts','failed',`Конфликты: ${unresolved.join(', ')} — содержательное расхождение тем БЗ`)
-            this.finish(id,'decision_required','Конфликты требуют решения пользователя','Разрешите файлы в ветке задачи и повторите merge.','decision_required'); return
+            this.log(id,`Детерминированное разрешение тем БЗ не удалось; передаю дополнительному шагу: ${unresolved.join(', ')}`)
+          } else {
+            unresolved=[]
+            this.deps.db.updateMergeRun(id,{conflicts:[]})
+            this.stage(id,'resolving_conflicts','passed','Метаданные тем нормализованы; индекс будет перегенерирован после актуализации БЗ')
           }
+        }
+        if(unresolved.length){
+          this.stage(id,'resolving_conflicts','running',`Запускаю дополнительный шаг исправления конфликтов: ${unresolved.join(', ')||'не удалось определить'}`)
+          if (!this.deps.conflictFix) {
+            this.stage(id,'resolving_conflicts','failed','Обработчик исправления конфликтов не подключён')
+            this.finish(id,'failed','Автоматическое исправление конфликтов недоступно','Подключите модель исправления конфликтов и повторите merge.','merge'); return
+          }
+          const fixed=await this.deps.conflictFix({run:this.deps.db.getMergeRunRaw(id)??run,repo,conflicts:unresolved,signal:ctl.signal,log:chunk=>this.log(id,chunk)})
+          this.deps.db.updateMergeRun(id,{
+            ...(fixed.llmEngineId!==undefined?{llmEngineId:fixed.llmEngineId}:{}),
+            ...(fixed.llmProvider?{llmProvider:fixed.llmProvider}:{}),
+            ...(fixed.llmModel!==undefined?{llmModel:fixed.llmModel}:{})
+          })
+          if(!fixed.ok){
+            this.stage(id,'resolving_conflicts','failed',fixed.message)
+            this.finish(id,'failed','Дополнительный шаг не исправил конфликты','Рабочая копия сохранена; исправьте причину и повторите merge.','merge'); return
+          }
+          const remaining=await this.cmd(run,`unmerged="$(git diff --name-only --diff-filter=U)"
+printf '%s\\n' "$unmerged"
+[ -z "$unmerged" ] || exit 66
+if git grep -n -E '^(<<<<<<<|=======|>>>>>>>)( |$)' -- . ':!docs/kb/README.md'; then exit 67; fi
+exit 0`,repo,30000)
+          const remainingFiles=remaining.output.split(/\r?\n/).map(v=>v.trim()).filter(v=>v&&!v.includes(':<<<<<<<')&&!v.includes(':=======')&&!v.includes(':>>>>>>>'))
+          if(remaining.exitCode||remaining.timedOut||remainingFiles.length){
+            this.deps.db.updateMergeRun(id,{conflicts:remainingFiles.length?remainingFiles:unresolved})
+            this.stage(id,'resolving_conflicts','failed',`После дополнительного шага остались конфликты: ${remainingFiles.join(', ')||unresolved.join(', ')}`)
+            this.finish(id,'failed','Автоматическое исправление конфликтов не прошло серверную проверку','Рабочая копия сохранена; исправьте причину и повторите merge.','merge'); return
+          }
+          const committed=await this.cmd(run,'git add -A\ngit -c user.name=voiceAIChat -c user.email=merge@voicechat.local commit --no-edit',repo,30000)
+          if(committed.exitCode||committed.timedOut)throw new Error('Не удалось создать merge-коммит после исправления конфликтов')
           this.deps.db.updateMergeRun(id,{conflicts:[]})
-          this.stage(id,'resolving_conflicts','passed','Метаданные тем нормализованы; индекс будет перегенерирован после актуализации БЗ')
-        } else {
-          this.stage(id,'resolving_conflicts','failed',`Конфликты: ${unresolved.join(', ')||'не удалось определить'}`)
-          this.finish(id,'decision_required','Конфликты требуют решения пользователя','Разрешите файлы в ветке задачи и повторите merge.','decision_required'); return
+          this.stage(id,'resolving_conflicts','passed',fixed.message)
         }
       }
       const rev=await this.cmd(run,'git rev-parse HEAD',repo,30000), checkedSha=rev.output.match(/[0-9a-f]{40}/i)?.[0]
