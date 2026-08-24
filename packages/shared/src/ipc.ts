@@ -652,6 +652,8 @@ export interface RendererBoardBridge {
   onConnected(cb: () => void): () => void
   /** Адресная инвалидация истории подготовки задачи. */
   onPreparationRunUpdated(cb: (m: { projectId: string; taskId: string; runId: string }) => void): () => void
+  /** Адресная инвалидация списка репозиториев задачи. */
+  onTaskRepositoriesUpdated(cb: (m: { projectId: string; taskId: string }) => void): () => void
   /** Успешное восстановление WS после уже состоявшегося подключения. */
   onReconnect(cb: () => void): () => void
 }

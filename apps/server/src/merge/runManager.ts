@@ -31,7 +31,7 @@ export interface MergeConflictFixContext {
   signal: AbortSignal
   log(chunk: string): void
 }
-export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; conflictFix?(ctx:MergeConflictFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; now?:()=>number }
+export interface MergeRunManagerDeps { db: VoiceChatDb; executor: CommandExecutor; conflictFix?(ctx:MergeConflictFixContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; kbUpdate?(ctx:MergeKbUpdateContext):Promise<{ok:boolean;message:string;llmEngineId?:string|null;llmProvider?:'claude'|'codex';llmModel?:string}>; isOnline(id:string):boolean; platformOf?(id:string):string|undefined; policyOf?(id:string):{allowedDirs:string[]}|undefined; fsRead?(id:string,path:string):Promise<{dataBase64?:string}>; fsWrite?(id:string,path:string,dataBase64:string):Promise<unknown>; fsDelete?(id:string,path:string):Promise<unknown>; broadcast(message:ServerMessage,userId:string):void; boardChanged(projectId:string):void; repositoriesChanged?(projectId:string,taskId:string):void; now?:()=>number }
 const terminal = new Set(['success','failed','cancelled','decision_required'])
 const validSha = /^[0-9a-f]{40}$/i
 const validBranch = /^(?!-)(?!.*\.\.)(?!.*[~^:?*\[\]\\])[A-Za-z0-9._/-]+$/
@@ -260,7 +260,10 @@ git ls-remote --exit-code ${shellQuote(project.gitUrl)} refs/heads/main refs/hea
       if(preflight.exitCode||preflightRefs.length!==2)throw new Error('origin недоступен либо main/feature-ветка не существует')
       const cloned=await this.cmd(run,`mkdir -p ${shellQuote(parent)}\nif [ -d ${shellQuote(`${repo}/.git`)} ]; then echo "постоянный merge-клон уже создан"; else git clone --no-checkout --origin origin ${shellQuote(project.gitUrl)} ${shellQuote(repo)}; fi`,workdir)
       if(cloned.exitCode)throw new Error('Не удалось подготовить постоянный merge-клон')
-      if(ws.agentId)this.deps.db.upsertTaskRepository(run.projectId,run.taskId,ws.agentId,ws.path,'dev-workspace')
+      if(ws.agentId){
+        this.deps.db.upsertTaskRepository(run.projectId,run.taskId,ws.agentId,ws.path,'dev-workspace')
+        this.deps.repositoriesChanged?.(run.projectId,run.taskId)
+      }
       const origin=await this.cmd(run,'git remote get-url origin && git rev-parse --is-inside-work-tree',repo,30000)
       const actual=origin.output.split(/\r?\n/).map(v=>v.trim()).find(Boolean)
       if(origin.exitCode||!actual||canonicalGitUrl(actual)!==canonicalGitUrl(project.gitUrl))throw new Error('URL origin временного merge-клона не совпадает с проектом')
@@ -485,13 +488,15 @@ exit 0`,repo,30000)
    *  машинах; недоступная машина оставляет запись до следующей очистки.
    *  Постоянный merge-клон проекта в учёте задач не значится и не трогается.
    *  Публичный: вызывается и при ручном переносе карточки в Done. */
-  async releaseTaskRepositories(run:{taskId:string}):Promise<void> {
+  async releaseTaskRepositories(run:{projectId:string;taskId:string}):Promise<void> {
+    let changed=false
     for(const repo of this.deps.db.listActiveTaskRepositories(run.taskId)){
       if(!this.deps.isOnline(repo.agentId))continue
       try {
         const result=await this.deps.executor.run({agentId:repo.agentId,script:`rm -rf -- ${shellQuote(repo.path)}`,workdir:this.workspaceParent(repo.path),env:{},timeoutMs:60000,secrets:[]},()=>{})
-        if(!result.exitCode)this.deps.db.markTaskRepositoryDeleted(repo.taskId,repo.agentId,repo.path)
+        if(!result.exitCode){ this.deps.db.markTaskRepositoryDeleted(repo.taskId,repo.agentId,repo.path); changed=true }
       } catch { /* машина отвалилась в момент очистки — запись остаётся */ }
     }
+    if(changed)this.deps.repositoriesChanged?.(run.projectId,run.taskId)
   }
 }

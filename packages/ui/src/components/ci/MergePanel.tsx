@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MergeMachineReadiness, MergeRun, TaskRepository } from '@shared/merge'
 import type { CiTaskMachine } from '@shared/ci'
 import { Button, EmptyState, ErrorState, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
@@ -48,16 +48,77 @@ export function MergePanel(props: {
     })
     return () => { cancelled = true }
   }, [props.projectId, props.taskId, machinesReload])
-  const reload = useCallback((): void => {
-    void window.ci?.getTaskRepositories(props.projectId, props.taskId).then(setRepos).catch(() => {})
-    void window.ci?.listMergeRuns(props.projectId, props.taskId).then(setRuns).catch(() => {})
+  const identityRef = useRef('')
+  const refreshRef = useRef({
+    repositories: { running: false, pending: false },
+    runs: { running: false, pending: false }
+  })
+  const loadResource = useCallback(async (resource: 'repositories' | 'runs'): Promise<void> => {
+    const key = `${props.projectId}:${props.taskId}`
+    const state = refreshRef.current[resource]
+    if (state.running) { state.pending = true; return }
+    state.running = true
+    try {
+      do {
+        state.pending = false
+        try {
+          if (resource === 'repositories') {
+            const value = await window.ci?.getTaskRepositories(props.projectId, props.taskId)
+            if (identityRef.current === key && value) setRepos(value)
+          } else {
+            const value = await window.ci?.listMergeRuns(props.projectId, props.taskId)
+            if (identityRef.current === key && value) setRuns(value)
+          }
+        } catch { /* сохраняем последний успешный снимок при фоновой ошибке */ }
+      } while (state.pending && identityRef.current === key)
+    } finally {
+      state.running = false
+    }
   }, [props.projectId, props.taskId])
+  const upsertRun = useCallback((run: MergeRun): void => {
+    setRuns((previous) => [run, ...previous.filter((item) => item.id !== run.id)])
+  }, [])
   useEffect(() => {
-    reload()
-    const timer = window.setInterval(reload, 5000)
-    return () => window.clearInterval(timer)
-  }, [reload, props.runId])
+    const key = `${props.projectId}:${props.taskId}`
+    identityRef.current = key
+    refreshRef.current = {
+      repositories: { running: false, pending: false },
+      runs: { running: false, pending: false }
+    }
+    setRepos([])
+    setRuns([])
+    setSelectedRunId(null)
+    void loadResource('repositories')
+    void loadResource('runs')
+    let repositoriesTimer: number | null = null
+    const scheduleRepositories = (): void => {
+      if (repositoriesTimer !== null) window.clearTimeout(repositoriesTimer)
+      repositoriesTimer = window.setTimeout(() => {
+        repositoriesTimer = null
+        if (identityRef.current === key) void loadResource('repositories')
+      }, 100)
+    }
+    const offRepositories = window.board?.onTaskRepositoriesUpdated?.((event) => {
+      if (event.projectId === props.projectId && event.taskId === props.taskId) scheduleRepositories()
+    })
+    const offMerge = window.ci?.onMerge(({ run }) => {
+      if (identityRef.current === key && run.projectId === props.projectId && run.taskId === props.taskId) upsertRun(run)
+    })
+    const offReconnect = window.board?.onReconnect?.(() => {
+      if (identityRef.current !== key) return
+      scheduleRepositories()
+      void loadResource('runs')
+    })
+    return () => {
+      if (identityRef.current === key) identityRef.current = ''
+      if (repositoriesTimer !== null) window.clearTimeout(repositoriesTimer)
+      offRepositories?.()
+      offMerge?.()
+      offReconnect?.()
+    }
+  }, [props.projectId, props.taskId, loadResource, upsertRun])
   const activeRunId = selectedRunId ?? props.runId ?? runs[0]?.id ?? null
+  const activeRun = runs.find((run) => run.id === activeRunId)
   const visibleRepos = showDeleted ? repos : repos.filter((repo) => repo.state === 'active')
   const machinesKey = `${props.projectId}:${props.taskId}`
   const currentMachines = loadedMachinesKey === machinesKey ? machines : []
@@ -114,7 +175,7 @@ export function MergePanel(props: {
           )}
         </>}
       </section>
-      {activeRunId ? <MergeRunFeed runId={activeRunId} machines={machines} onRunChanged={reload} /> : <p className="task-tab-empty">Merge-ранов у задачи ещё не было.</p>}
+      {activeRun ? <MergeRunFeed runId={activeRun.id} initialRun={activeRun} machines={machines} onRunChanged={(run) => { if (run) upsertRun(run) }} /> : activeRunId ? <p className="task-tab-empty">Загрузка merge-рана…</p> : <p className="task-tab-empty">Merge-ранов у задачи ещё не было.</p>}
       {runs.length > 1 && (
         <section className="merge-history">
           <strong>Попытки</strong>

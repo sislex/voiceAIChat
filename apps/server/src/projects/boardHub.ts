@@ -6,6 +6,8 @@
 export type BoardListener = (projectId: string) => void
 export interface PreparationRunUpdate { userId: string; projectId: string; taskId: string; runId: string }
 export type PreparationRunListener = (update: PreparationRunUpdate) => void
+export interface TaskRepositoriesUpdate { projectId: string; taskId: string }
+export type TaskRepositoriesListener = (update: TaskRepositoriesUpdate) => void
 
 export interface NotificationInvalidation {
   projectId: string
@@ -28,6 +30,7 @@ export class NotificationHub {
 export class BoardHub {
   private readonly listeners = new Set<BoardListener>()
   private readonly preparationRunListeners = new Set<PreparationRunListener>()
+  private readonly taskRepositoriesListeners = new Set<TaskRepositoriesListener>()
 
   /** Уведомить подписчиков об изменении доски проекта. */
   emit(projectId: string): void {
@@ -50,5 +53,14 @@ export class BoardHub {
   onPreparationRunChange(cb: PreparationRunListener): () => void {
     this.preparationRunListeners.add(cb)
     return () => this.preparationRunListeners.delete(cb)
+  }
+
+  emitTaskRepositories(update: TaskRepositoriesUpdate): void {
+    for (const listener of this.taskRepositoriesListeners) listener(update)
+  }
+
+  onTaskRepositoriesChange(cb: TaskRepositoriesListener): () => void {
+    this.taskRepositoriesListeners.add(cb)
+    return () => this.taskRepositoriesListeners.delete(cb)
   }
 }
