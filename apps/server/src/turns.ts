@@ -116,6 +116,92 @@ export interface TurnManagerDeps {
   onAuthError?: (userId: string, provider: LlmProvider, message: string) => void
 }
 
+export interface ProjectMainIdentity {
+  projectId: string
+  machineId: string
+  storageId: string
+}
+export interface ProjectMainSnapshot {
+  baseSha: string
+  path: string
+  release(): void
+}
+export interface ProjectMainRefreshAdapter {
+  refresh(identity: ProjectMainIdentity, signal?: AbortSignal): Promise<{ baseSha: string; path: string }>
+}
+
+/** Fair process-wide reader/writer coordination for the shared managed main checkout. */
+export class ProjectMainSnapshotCoordinator {
+  private entries = new Map<string, {
+    readers: number
+    writer: boolean
+    pendingWriter: boolean
+    refresh: Promise<{ baseSha: string; path: string }> | null
+    changed: Promise<void>
+    wake: () => void
+  }>()
+  constructor(private adapter: ProjectMainRefreshAdapter) {}
+  private entry(identity: ProjectMainIdentity) {
+    const key = [identity.projectId, identity.machineId, identity.storageId].join('\u0000')
+    let state = this.entries.get(key)
+    if (!state) {
+      let wake = () => {}
+      const changed = new Promise<void>((resolve) => { wake = resolve })
+      state = { readers: 0, writer: false, pendingWriter: false, refresh: null, changed, wake }
+      this.entries.set(key, state)
+    }
+    return state
+  }
+  private notify(state: ReturnType<ProjectMainSnapshotCoordinator['entry']>) {
+    state.wake()
+    let wake = () => {}
+    state.changed = new Promise<void>((resolve) => { wake = resolve })
+    state.wake = wake
+  }
+  private async wait(state: ReturnType<ProjectMainSnapshotCoordinator['entry']>, predicate: () => boolean, signal?: AbortSignal) {
+    while (!predicate()) {
+      if (signal?.aborted) throw signal.reason ?? new Error('Операция отменена')
+      await state.changed
+    }
+  }
+  private refresh(identity: ProjectMainIdentity, signal?: AbortSignal) {
+    const state = this.entry(identity)
+    if (state.refresh) return state.refresh
+    state.pendingWriter = true
+    const operation = (async () => {
+      await this.wait(state, () => state.readers === 0 && !state.writer, signal)
+      state.writer = true
+      state.pendingWriter = false
+      try { return await this.adapter.refresh(identity, signal) } finally {
+        state.writer = false
+        this.notify(state)
+      }
+    })()
+    state.refresh = operation
+    void operation.finally(() => {
+      if (state.refresh === operation) state.refresh = null
+      this.notify(state)
+    }).catch(() => {})
+    return operation
+  }
+  async acquireReadSnapshot(identity: ProjectMainIdentity, signal?: AbortSignal): Promise<ProjectMainSnapshot> {
+    const state = this.entry(identity)
+    const refreshed = await this.refresh(identity, signal)
+    await this.wait(state, () => !state.writer && !state.pendingWriter, signal)
+    state.readers++
+    let released = false
+    return { ...refreshed, release: () => {
+      if (released) return
+      released = true
+      state.readers--
+      this.notify(state)
+    } }
+  }
+  invalidateProjectMain(identity: ProjectMainIdentity, signal?: AbortSignal) {
+    return this.refresh(identity, signal)
+  }
+}
+
 /** Запрос нового хода (соответствует клиентскому claude.send). */
 async function loadAttachment(
   source: string | LlmAttachment | null | undefined | Promise<string | LlmAttachment | null | undefined>
