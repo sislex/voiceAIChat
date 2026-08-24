@@ -49,7 +49,7 @@ export interface RealtimeHandlers {
   turnDone(text: string, meta?: TurnMeta, engine?: LlmProvider, message?: Message, conversationId?: string): void
   turnError(message: string, conversationId?: string): void
   turnActive(turns: ActiveTurn[]): void
-  turnQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message): void
+  turnQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message, removedMessageIds?: string[]): void
   turnUsage(usage: TurnUsage, conversationId?: string): void
   turnLog(entry: ClaudeLogEntry, conversationId?: string): void
   ccTail(items: CcItem[]): void
@@ -233,8 +233,8 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       void chat.actions.applyClaudeDone(text, meta, engine, message, conversationId),
     turnError: (message, conversationId) => chat.actions.applyClaudeError(message, conversationId),
     turnActive: (turns) => chat.actions.applyClaudeActive(turns),
-    turnQueue: (conversationId, items, paused, published) =>
-      chat.actions.applyClaudeQueue(conversationId, items, paused, published),
+    turnQueue: (conversationId, items, paused, published, removedMessageIds) =>
+      chat.actions.applyClaudeQueue(conversationId, items, paused, published, removedMessageIds),
     turnUsage: (usage, conversationId) => chat.actions.applyClaudeUsage(usage, conversationId),
     turnLog: (entry, conversationId) => chat.actions.applyClaudeLog(entry, conversationId),
     ccTail: (items) => operations.actions.applyCcTailItems(items),

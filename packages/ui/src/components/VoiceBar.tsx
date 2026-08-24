@@ -105,6 +105,7 @@ export interface VoiceBarProps {
   queuePaused?: boolean
   onEditQueued?: (id: string, text: string) => void
   onDeleteQueued?: (id: string) => void
+  onReorderQueued?: (ids: string[]) => void
   onSendQueuedNow?: (id: string) => void
   onDraftChange: (value: string) => void
   onSubmitText: () => void
@@ -164,6 +165,7 @@ export function VoiceBar({
   queuePaused = false,
   onEditQueued,
   onDeleteQueued,
+  onReorderQueued,
   onSendQueuedNow,
   onDraftChange,
   onSubmitText,
@@ -201,6 +203,7 @@ export function VoiceBar({
   const [editorExpanded, setEditorExpanded] = useState(false)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [queueEditText, setQueueEditText] = useState('')
+  const [draggedQueueId, setDraggedQueueId] = useState<string | null>(null)
   const requestWasActive = useRef(false)
   const cancelSent = useRef(false)
 
@@ -329,6 +332,15 @@ export function VoiceBar({
     e.target.value = '' // позволяет выбрать тот же файл повторно
   }
 
+  const moveQueued = (id: string, targetId: string): void => {
+    if (id === targetId) return
+    const ids = queuedTurns.map((item) => item.id)
+    const from = ids.indexOf(id)
+    const to = ids.indexOf(targetId)
+    if (from < 0 || to < 0) return
+    ids.splice(to, 0, ids.splice(from, 1)[0]!)
+    onReorderQueued?.(ids)
+  }
   // Очередь остаётся самостоятельной поверхностью возле композера даже когда
   // само поле свёрнуто (это дефолт на телефоне). Иначе ожидающие сообщения и все
   // действия над ними пропадали до ручного раскрытия поля ввода.
@@ -340,7 +352,24 @@ export function VoiceBar({
       </div>
       <ol className={queueExpanded ? 'turn-queue__list turn-queue__list--expanded' : 'turn-queue__list'}>
         {(queueExpanded ? queuedTurns : queuedTurns.slice(0, 3)).map((item) => (
-          <li key={item.id} data-testid="turn-queue-item">
+          <li
+            key={item.id}
+            data-testid="turn-queue-item"
+            draggable={editingQueueId !== item.id}
+            onDragStart={(event) => {
+              setDraggedQueueId(item.id)
+              event.dataTransfer.effectAllowed = 'move'
+              event.dataTransfer.setData('text/plain', item.id)
+            }}
+            onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }}
+            onDrop={(event) => {
+              event.preventDefault()
+              const sourceId = draggedQueueId ?? event.dataTransfer.getData('text/plain')
+              if (sourceId) moveQueued(sourceId, item.id)
+              setDraggedQueueId(null)
+            }}
+            onDragEnd={() => setDraggedQueueId(null)}
+          >
             {editingQueueId === item.id ? (
               <form className="turn-queue__edit" onSubmit={(event) => {
                 event.preventDefault()

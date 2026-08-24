@@ -1674,6 +1674,32 @@ export class VoiceChatDb {
     return this.listQueuedTurns(userId, conversationId)
   }
 
+  /** Атомарно применяет полный порядок, только если набор элементов не изменился. */
+  reorderQueuedTurns(userId: string, conversationId: string, ids: string[]): QueuedTurn[] {
+    this.db.transaction(() => {
+      if (!this.ownsConversation(userId, conversationId) || new Set(ids).size !== ids.length) return
+      const current = this.db.prepare(
+        `SELECT id FROM conversation_turn_queue
+         WHERE user_id = ? AND conversation_id = ? AND status IN ('queued','failed')
+         ORDER BY position, created_at`
+      ).all(userId, conversationId) as Array<{ id: string }>
+      if (current.length !== ids.length || current.some((row) => !ids.includes(row.id))) return
+      const now = this.now()
+      // Уникальный индекс проверяется построчно, поэтому сначала переносим все
+      // позиции во временный отрицательный диапазон, затем назначаем 1..N.
+      this.db.prepare(
+        `UPDATE conversation_turn_queue SET position = -(position + 1000000), updated_at = ?
+         WHERE user_id = ? AND conversation_id = ? AND status IN ('queued','failed')`
+      ).run(now, userId, conversationId)
+      const update = this.db.prepare(
+        `UPDATE conversation_turn_queue SET position = ?, status = 'queued', updated_at = ?
+         WHERE id = ? AND user_id = ? AND conversation_id = ?`
+      )
+      ids.forEach((id, index) => update.run(index + 1, now, id, userId, conversationId))
+    })()
+    return this.listQueuedTurns(userId, conversationId)
+  }
+
   /**
    * Атомарно присоединяет выбранную ожидающую реплику к активной пользовательской
    * реплике. Скрытое сообщение и строка очереди удаляются, активное сохраняет id
@@ -1685,7 +1711,7 @@ export class VoiceChatDb {
     id: string,
     activeMessageId: string,
     activePayload: QueueTurnPayload
-  ): { message: Message; payload: QueueTurnPayload } | null {
+  ): { message: Message; payload: QueueTurnPayload; replacedMessageIds: [string, string] } | null {
     return this.db.transaction(() => {
       if (!this.ownsConversation(userId, conversationId)) return null
       const queued = this.db.prepare(
@@ -1696,9 +1722,9 @@ export class VoiceChatDb {
             AND q.status IN ('queued','failed')`
       ).get(id, conversationId, userId) as { message_id: string; payload: string; text: string; attachments: string | null } | undefined
       const active = this.db.prepare(
-        `SELECT text, attachments FROM messages
+        `SELECT role, text, attachments, time, exec_target FROM messages
           WHERE id = ? AND conversation_id = ? AND state = 'published' AND role <> 'ai'`
-      ).get(activeMessageId, conversationId) as { text: string; attachments: string | null } | undefined
+      ).get(activeMessageId, conversationId) as { role: MessageRole; text: string; attachments: string | null; time: string; exec_target: string | null } | undefined
       if (!queued || !active || queued.message_id === activeMessageId) return null
 
       let queuedPayload: QueueTurnPayload
@@ -1706,32 +1732,36 @@ export class VoiceChatDb {
       const parseDetails = (value: string | null): MessageAttachment[] => {
         try { return value ? JSON.parse(value) as MessageAttachment[] : [] } catch { return [] }
       }
+      // Не дедуплицируем: одинаковая ссылка в двух сообщениях остаётся двумя
+      // упорядоченными позициями, как и передал пользователь.
       const details = [...parseDetails(active.attachments), ...parseDetails(queued.attachments)]
-      const uniqueDetails = details.filter((item, index) => {
-        const key = item.uploadId ?? item.path
-        return details.findIndex((candidate) => (candidate.uploadId ?? candidate.path) === key) === index
-      })
-      const attachmentIds = [...(activePayload.attachments ?? []), ...(queuedPayload.attachments ?? [])]
-        .filter((value, index, all) => all.indexOf(value) === index)
       const payload: QueueTurnPayload = {
         ...activePayload,
         ...queuedPayload,
         segments: [...activePayload.segments, ...queuedPayload.segments],
-        attachments: attachmentIds
+        attachments: [...(activePayload.attachments ?? []), ...(queuedPayload.attachments ?? [])]
       }
       const text = [active.text.trim(), queued.text.trim()].filter(Boolean).join('\n\n')
+      const messageId = this.newId()
+      const createdAt = this.now()
+      const historyPosition = (this.db.prepare(
+        `SELECT COALESCE(MAX(history_position), 0) + 1 AS position FROM messages WHERE conversation_id = ? AND state = 'published'`
+      ).get(conversationId) as { position: number }).position
 
-      this.db.prepare(
-        `UPDATE messages SET text = ?, attachments = ? WHERE id = ? AND conversation_id = ?`
-      ).run(text, uniqueDetails.length ? JSON.stringify(uniqueDetails) : null, activeMessageId, conversationId)
       this.db.prepare(`DELETE FROM conversation_turn_queue WHERE id = ?`).run(id)
-      this.db.prepare(`DELETE FROM messages WHERE id = ? AND conversation_id = ?`).run(queued.message_id, conversationId)
+      this.db.prepare(`DELETE FROM messages WHERE id IN (?, ?) AND conversation_id = ?`)
+        .run(activeMessageId, queued.message_id, conversationId)
+      this.db.prepare(
+        `INSERT INTO messages (id, conversation_id, role, text, time, created_at, exec_target, attachments, state, history_position)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', ?)`
+      ).run(messageId, conversationId, active.role, text, active.time, createdAt, active.exec_target,
+        details.length ? JSON.stringify(details) : null, historyPosition)
       this.db.prepare(`UPDATE conversations SET claude_session_id = NULL, updated_at = ? WHERE id = ? AND user_id = ?`)
-        .run(this.now(), conversationId, userId)
+        .run(createdAt, conversationId, userId)
 
-      const message = this.listMessages(userId, conversationId).find((item) => item.id === activeMessageId)
-      if (!message) throw new Error('active message not found')
-      return { message, payload }
+      const message = this.listMessages(userId, conversationId).find((item) => item.id === messageId)
+      if (!message) throw new Error('merged message not found')
+      return { message, payload, replacedMessageIds: [activeMessageId, queued.message_id] as [string, string] }
     })()
   }
 
