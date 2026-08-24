@@ -383,3 +383,45 @@ describe('AgentRegistry — телеметрия', () => {
     expect(reg.platformOf('a1')).toBe('win32')
   })
 })
+
+describe('loopback HTTP-мост (http.request)', () => {
+  it('шлёт http.request и резолвится по http.result с тем же requestId', async () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.13.0')
+    const promise = reg.http('a1', { method: 'GET', port: 5173, path: '/', headers: {} })
+    const sent = sock.sent.at(-1) as Extract<ServerToAgent, { t: 'http.request' }>
+    expect(sent).toMatchObject({ t: 'http.request', request: { method: 'GET', port: 5173, path: '/' } })
+    reg.handleMessage('a1', { t: 'http.result', requestId: sent.requestId, response: { status: 200, headers: { 'content-type': 'text/html' }, bodyBase64: Buffer.from('<h1>ok</h1>').toString('base64') } })
+    await expect(promise).resolves.toMatchObject({ status: 200 })
+  })
+
+  it('устаревший агент получает понятный отказ и сигнал об обновлении', async () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.12.0')
+    await expect(reg.http('a1', { method: 'GET', port: 5173, path: '/', headers: {} })).rejects.toThrow(/устарел/)
+    expect(sock.sent.some((m) => m.t === 'agent.updateAvailable')).toBe(true)
+  })
+
+  it('офлайн-агент → reject; дисконнект отклоняет незавершённый запрос', async () => {
+    const reg = makeRegistry()
+    await expect(reg.http('a1', { method: 'GET', port: 80, path: '/', headers: {} })).rejects.toThrow('Машина не в сети')
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.13.0')
+    const pending = reg.http('a1', { method: 'GET', port: 80, path: '/', headers: {} })
+    reg.unregister('a1')
+    await expect(pending).rejects.toThrow('Машина отключилась')
+  })
+
+  it('http.error агента → reject с его сообщением; чужой агент игнорируется', async () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock, DEFAULT_AGENT_POLICY, '0.13.0')
+    const pending = reg.http('a1', { method: 'GET', port: 80, path: '/', headers: {} })
+    const sent = sock.sent.at(-1) as Extract<ServerToAgent, { t: 'http.request' }>
+    reg.handleMessage('other', { t: 'http.error', requestId: sent.requestId, message: 'подделка' })
+    reg.handleMessage('a1', { t: 'http.error', requestId: sent.requestId, message: 'ECONNREFUSED' })
+    await expect(pending).rejects.toThrow('ECONNREFUSED')
+  })
+})

@@ -260,7 +260,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     authStatus,
     isAgentOnline: (agentId) => agentRegistry.isOnline(agentId)
   })
-  registerPreviewProxy(app)
+  registerPreviewProxy(app, {
+    machines: {
+      bridge: agentRegistry,
+      canUse: (userId, agentId) => db.canUseAgentForPreview(userId, agentId)
+    }
+  })
 
   const profileHome = (userId: string): string =>
     ensureCliProfile(opts.config.dataDir, userId).home
@@ -385,7 +390,24 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Действия веб-превью (mcp__browser__*): relay «сервер → клиенты пользователя»,
   // сессии WS подписываются на подключении, ход адресуется токеном ?turn=.
   const previewRelay = opts.previewRelay ?? new PreviewActionRelay()
-  registerPreviewMcp(app, { secret: mcpSecret, relay: previewRelay })
+  registerPreviewMcp(app, {
+    secret: mcpSecret,
+    relay: previewRelay,
+    context: {
+      // Машина алиаса machine.internal: execTarget разговора (agentId) с гейтом доступа.
+      machineOf: ({ userId, conversationId }) => {
+        const conversation = db.getConversation(userId, conversationId)
+        const target = conversation?.execTarget
+        if (!target || target === 'none' || target === 'server') return null
+        return db.canUseAgentForPreview(userId, target) || db.canUseAgent(userId, target, conversation?.projectId ?? null) ? target : null
+      },
+      testUsersOf: ({ userId, conversationId }) => {
+        const projectId = db.getConversation(userId, conversationId)?.projectId
+        if (!projectId) return []
+        return db.getProject(userId, projectId)?.testUsers ?? []
+      }
+    }
+  })
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
   const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)

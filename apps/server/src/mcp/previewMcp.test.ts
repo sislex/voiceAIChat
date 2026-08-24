@@ -92,13 +92,13 @@ describe('previewMcp — инструменты browser', () => {
   /** Автоответчик «клиента»: получает preview.action и отвечает через relay. */
   let client: (m: Extract<ServerMessage, { t: 'preview.action' }>) => void
 
-  async function makeApp(): Promise<void> {
+  async function makeApp(context?: import('./previewMcp').PreviewTurnContext): Promise<void> {
     app = Fastify({ logger: false })
     relay = new PreviewActionRelay()
     relay.subscribe(U, (m) => {
       if (m.t === 'preview.action') client(m)
     })
-    registerPreviewMcp(app, { secret: SECRET, relay, timeoutMs: 500 })
+    registerPreviewMcp(app, { secret: SECRET, relay, timeoutMs: 500, ...(context ? { context } : {}) })
     await app.ready()
   }
 
@@ -134,7 +134,7 @@ describe('previewMcp — инструменты browser', () => {
     expect(res.statusCode).toBe(403)
   })
 
-  it('tools/list показывает open, read, find, click, type', async () => {
+  it('tools/list показывает open, read, find, click, type и test-users', async () => {
     await makeApp()
     const res = await app.inject({
       method: 'POST',
@@ -143,7 +143,45 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['click', 'find', 'open', 'read', 'type'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['click', 'find', 'open', 'read', 'test-users', 'type'])
+  })
+
+  it('open разворачивает алиас machine.internal в машину разговора', async () => {
+    await makeApp({ machineOf: () => 'agent-7', testUsersOf: () => [] })
+    let seen: unknown
+    client = (m) => {
+      seen = m.action
+      relay.resolve(U, m.requestId, { ok: true, result: { url: 'http://agent-7.machine.internal:5173/' } })
+    }
+    const result = await call('open', { url: 'http://machine.internal:5173/' })
+    expect(seen).toEqual({ kind: 'open', url: 'http://agent-7.machine.internal:5173/' })
+    expect(result.isError).not.toBe(true)
+  })
+
+  it('алиас machine.internal без машины разговора — понятная ошибка без похода к клиенту', async () => {
+    await makeApp({ machineOf: () => null, testUsersOf: () => [] })
+    let touched = false
+    client = () => { touched = true }
+    const result = await call('open', { url: 'http://machine.internal:5173/' })
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('нет доступной машины')
+    expect(touched).toBe(false)
+  })
+
+  it('test-users возвращает тестовые учётки проекта разговора', async () => {
+    await makeApp({
+      machineOf: () => null,
+      testUsersOf: (entry) => (entry.conversationId === CONV ? [{ name: 'tester', password: 'test-pass', role: 'admin' }] : [])
+    })
+    const result = await call('test-users')
+    expect(JSON.parse(result.text)).toEqual([{ name: 'tester', password: 'test-pass', role: 'admin' }])
+    expect(result.isError).not.toBe(true)
+  })
+
+  it('test-users без заведённых учёток объясняет, где их завести', async () => {
+    await makeApp({ machineOf: () => null, testUsersOf: () => [] })
+    const result = await call('test-users')
+    expect(result.text).toContain('настройках проекта')
   })
 
   it('open транслирует действие клиенту и возвращает его результат', async () => {

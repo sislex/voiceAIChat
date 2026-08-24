@@ -5,6 +5,7 @@ import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { IncomingMessage } from 'node:http'
 import type { FastifyInstance } from 'fastify'
+import type { AgentHttpRequest, AgentHttpResponse } from '@voicechat/shared'
 import { uid } from '../users/auth.js'
 
 const MAX_REDIRECTS = 5
@@ -61,6 +62,41 @@ export function requestCookieHeader(userId: string, url: URL): string | undefine
 
 export class PreviewProxyError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
+}
+
+// ---- Loopback-мост машин: тестовые окружения Web Reader --------------------
+// Виртуальный хост `<agentId>.machine.internal:<port>` доставляется не сетью, а
+// компаньон-агентом машины (HTTP строго к его 127.0.0.1:<port>). Так модель и
+// пользователь открывают в Reader dev-серверы и feature-preview репозиториев,
+// не выставляя их наружу; SSRF-гейт публичных адресов эта ветка не ослабляет.
+export const MACHINE_PREVIEW_SUFFIX = '.machine.internal'
+/** Алиас «машина текущего разговора» — разворачивает previewMcp в open. */
+export const MACHINE_PREVIEW_ALIAS_HOST = 'machine.internal'
+
+/** agentId из виртуального hostname; null — не машинный адрес. */
+export function machineAgentIdOf(hostname: string): string | null {
+  if (!hostname.endsWith(MACHINE_PREVIEW_SUFFIX)) return null
+  const id = hostname.slice(0, -MACHINE_PREVIEW_SUFFIX.length)
+  return id && !id.includes('.') ? id : null
+}
+
+/** Мост к машинам для превью (реализует AgentRegistry). */
+export interface PreviewMachineBridge {
+  isOnline(agentId: string): boolean
+  http(agentId: string, request: AgentHttpRequest): Promise<AgentHttpResponse>
+}
+
+export interface PreviewProxyDeps {
+  machines?: {
+    bridge: PreviewMachineBridge
+    /** Доступ пользователя к машине (владелец или share проекта). */
+    canUse(userId: string, agentId: string): boolean
+  }
+}
+
+function headerValue(headers: Record<string, string | string[]>, name: string): string | undefined {
+  const value = headers[name] ?? headers[name.toLowerCase()]
+  return Array.isArray(value) ? value[0] : value
 }
 
 export function isPublicAddress(address: string): boolean {
@@ -542,7 +578,63 @@ export function previewDiagnosticsHtml(destination = false): string {
 </body></html>`
 }
 
-export function registerPreviewProxy(app: FastifyInstance): void {
+/**
+ * Проксирует запрос в loopback машины через компаньон-агента, следуя внутренним
+ * редиректам окружения. Ответ проходит тот же rewrite и cookie-контейнер, что и
+ * публичные сайты, поэтому логин тестовых пользователей и относительные ссылки
+ * работают как обычно.
+ */
+async function loadViaMachine(
+  deps: NonNullable<PreviewProxyDeps['machines']>,
+  userId: string,
+  url: URL,
+  method: string,
+  body: string | Buffer | undefined,
+  incomingHeaders: Record<string, string | string[]>
+): Promise<{ status: number; headers: Record<string, string | string[]>; body: Buffer; finalUrl: URL }> {
+  let current = url
+  let currentMethod = method
+  let currentBody = body
+  const headers = { ...incomingHeaders }
+  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+    const agentId = machineAgentIdOf(current.hostname)
+    if (!agentId) throw new PreviewProxyError(502, 'Тестовое окружение перенаправило наружу — открой внешний адрес напрямую')
+    if (!deps.canUse(userId, agentId)) throw new PreviewProxyError(403, 'Машина недоступна этому пользователю')
+    if (!deps.bridge.isOnline(agentId)) throw new PreviewProxyError(502, 'Машина тестового окружения не в сети')
+    const port = current.port ? Number(current.port) : 80
+    const cookie = requestCookieHeader(userId, current)
+    let response: AgentHttpResponse
+    try {
+      response = await deps.bridge.http(agentId, {
+        method: currentMethod,
+        port,
+        path: current.pathname + current.search,
+        headers: { ...headers, ...(cookie ? { cookie } : {}) },
+        ...(currentBody === undefined ? {} : { bodyBase64: Buffer.from(currentBody).toString('base64') })
+      })
+    } catch (err) {
+      throw new PreviewProxyError(502, err instanceof Error ? err.message : 'Тестовое окружение недоступно')
+    }
+    storeResponseCookies(userId, current, response.headers['set-cookie'])
+    const location = headerValue(response.headers, 'location')
+    if (location && [301, 302, 303, 307, 308].includes(response.status)) {
+      const next = new URL(location, current)
+      // Окружение знает себя как 127.0.0.1/localhost — возвращаем редирект на мост той же машины.
+      if (next.hostname === '127.0.0.1' || next.hostname === 'localhost') next.hostname = agentId + MACHINE_PREVIEW_SUFFIX
+      if ([301, 302, 303].includes(response.status) && currentMethod !== 'GET' && currentMethod !== 'HEAD') {
+        currentMethod = 'GET'
+        currentBody = undefined
+        delete headers['content-type']
+      }
+      current = next
+      continue
+    }
+    return { status: response.status, headers: response.headers, body: Buffer.from(response.bodyBase64, 'base64'), finalUrl: current }
+  }
+  throw new PreviewProxyError(502, 'Слишком много перенаправлений')
+}
+
+export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDeps = {}): void {
   app.get<{ Querystring: { page?: string } }>('/api/preview/diagnostics', async (req, reply) =>
     reply.type('text/html; charset=utf-8').send(previewDiagnosticsHtml(req.query.page === 'destination'))
   )
@@ -569,6 +661,23 @@ export function registerPreviewProxy(app: FastifyInstance): void {
         }
         const userId = uid(req)
         const body = (typeof req.body === 'string' || Buffer.isBuffer(req.body)) && req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
+        // Тестовые окружения машин: доставка через компаньон-агента, не сетью.
+        if (machineAgentIdOf(url.hostname)) {
+          if (!deps.machines) throw new PreviewProxyError(502, 'Мост машин недоступен на этом сервере')
+          const machine = await loadViaMachine(deps.machines, userId, url, req.method, body, upstreamRequestHeaders(req.headers))
+          const machineType = headerValue(machine.headers, 'content-type') ?? 'application/octet-stream'
+          const machineBody = /text\/(html|css)|application\/xhtml\+xml/i.test(machineType)
+            ? rewritePreviewBody(machine.body, machineType, machine.finalUrl)
+            : machine.body
+          reply.code(machine.status)
+          for (const [name, value] of Object.entries(machine.headers)) {
+            if (value === undefined || ['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding', 'location'].includes(name.toLowerCase())) continue
+            reply.header(name, value)
+          }
+          reply.header('content-type', machineType)
+          reply.header('content-length', String(machineBody.length))
+          return reply.send(machineBody)
+        }
         const { response, finalUrl } = await load(url, userId, req.method, body, upstreamRequestHeaders(req.headers))
         storeResponseCookies(userId, finalUrl, response.headers['set-cookie'])
         const responseType = response.headers['content-type'] ?? 'application/octet-stream'

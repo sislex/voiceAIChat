@@ -21,8 +21,10 @@ import {
   previewResultJson,
   type PreviewAction,
   type PreviewActionResult,
+  type ProjectTestUser,
   type ServerMessage
 } from '@voicechat/shared'
+import { MACHINE_PREVIEW_ALIAS_HOST, MACHINE_PREVIEW_SUFFIX } from '../routes/previewProxy.js'
 
 export const PREVIEW_MCP_PATH = '/mcp/preview'
 
@@ -154,10 +156,23 @@ export class PreviewActionRelay {
   }
 }
 
+/**
+ * Контекст тестовых окружений хода: машина разговора (для алиаса
+ * machine.internal) и тестовые учётки проекта (инструмент test-users).
+ */
+export interface PreviewTurnContext {
+  /** agentId машины разговора или null (нет машины / нет доступа). */
+  machineOf(entry: PreviewToolEntry): string | null
+  /** Тестовые пользователи проекта разговора (пусто — не заведены). */
+  testUsersOf(entry: PreviewToolEntry): ProjectTestUser[]
+}
+
 export interface RegisterPreviewMcpOptions {
   secret: string
   relay: PreviewActionRelay
   broker?: PreviewToolBroker
+  /** Контекст машин/тестовых пользователей; без него алиас и test-users недоступны. */
+  context?: PreviewTurnContext
   /** Таймаут ожидания клиента (переопределяется в тестах). */
   timeoutMs?: number
 }
@@ -206,14 +221,48 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Открыть сайт в панели веб-превью пользователя. Адрес сохраняется как превью текущего чата. ' +
-            'Только HTTP/HTTPS.',
+            'Только HTTP/HTTPS. Тестовое окружение на машине этого разговора открывается адресом ' +
+            'http://machine.internal:<порт>/ — запрос уйдёт на 127.0.0.1:<порт> машины.',
           inputSchema: { url: z.string().max(L.url).describe('Полный адрес с протоколом http:// или https://') }
         },
         async ({ url }) => {
           if (!isHttpUrl(url)) {
             return { content: [{ type: 'text', text: 'Разрешены только HTTP и HTTPS адреса с протоколом.' }], isError: true }
           }
-          return run({ kind: 'open', url })
+          let target = url
+          const parsed = new URL(url)
+          // Алиас «машина разговора»: канонизируем до <agentId>.machine.internal,
+          // чтобы страница и все её под-запросы держали конкретную машину.
+          if (parsed.hostname === MACHINE_PREVIEW_ALIAS_HOST) {
+            const agentId = entry && opts.context ? opts.context.machineOf(entry) : null
+            if (!agentId) {
+              return {
+                content: [{ type: 'text', text: 'У этого разговора нет доступной машины — выбери машину в настройках разговора, чтобы открывать её тестовое окружение.' }],
+                isError: true
+              }
+            }
+            parsed.hostname = agentId + MACHINE_PREVIEW_SUFFIX
+            target = parsed.toString()
+          }
+          return run({ kind: 'open', url: target })
+        }
+      )
+
+      server.registerTool(
+        'test-users',
+        {
+          description:
+            'Тестовые учётные записи проекта этого разговора для входа в тестовое окружение (логин, пароль, роль). ' +
+            'Это заведомо тестовые креды: используй их с type/click на форме логина открытого окружения.',
+          inputSchema: {}
+        },
+        async () => {
+          if (!entry) return noContext
+          const users = opts.context?.testUsersOf(entry) ?? []
+          if (!users.length) {
+            return { content: [{ type: 'text', text: 'У проекта нет тестовых пользователей. Их заводят в настройках проекта (секция «Тестовые пользователи»).' }] }
+          }
+          return { content: [{ type: 'text', text: JSON.stringify(users) }] }
         }
       )
 

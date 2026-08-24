@@ -474,6 +474,47 @@ export interface ProjectMember {
   active?: boolean
 }
 
+/** Тестовая учётная запись окружения проекта (не production-секрет). */
+export interface ProjectTestUser {
+  name: string
+  password: string
+  /** Роль в тестируемом приложении ('admin', 'user', …) — свободный текст. */
+  role?: string
+  /** Пояснение, что доступно этой учётке. */
+  note?: string
+}
+
+const TEST_USER_FIELD_LIMIT = 200
+const TEST_USERS_LIMIT = 32
+
+/**
+ * Валидация списка тестовых пользователей на границе REST: непустое имя,
+ * строковый пароль, ограниченные длины и размер списка. Бросает при мусоре.
+ */
+export function sanitizeProjectTestUsers(value: unknown): ProjectTestUser[] {
+  if (!Array.isArray(value)) throw new Error('testUsers must be an array')
+  if (value.length > TEST_USERS_LIMIT) throw new Error(`testUsers: не больше ${TEST_USERS_LIMIT} записей`)
+  return value.map((item) => {
+    if (typeof item !== 'object' || item === null) throw new Error('testUsers: запись должна быть объектом')
+    const raw = item as { name?: unknown; password?: unknown; role?: unknown; note?: unknown }
+    const text = (field: string, input: unknown, required = false): string | undefined => {
+      if (input === undefined || input === null || input === '') {
+        if (required) throw new Error(`testUsers: поле ${field} обязательно`)
+        return undefined
+      }
+      if (typeof input !== 'string' || input.length > TEST_USER_FIELD_LIMIT) throw new Error(`testUsers: некорректное поле ${field}`)
+      return input
+    }
+    const name = text('name', raw.name, true)!
+    if (!name.trim()) throw new Error('testUsers: поле name обязательно')
+    const password = typeof raw.password === 'string' && raw.password.length <= TEST_USER_FIELD_LIMIT ? raw.password : undefined
+    if (password === undefined) throw new Error('testUsers: некорректное поле password')
+    const role = text('role', raw.role)
+    const note = text('note', raw.note)
+    return { name, password, ...(role !== undefined ? { role } : {}), ...(note !== undefined ? { note } : {}) }
+  })
+}
+
 /**
  * Проект в списке. `role` — роль текущего пользователя (запрос знает uid),
  * технологии/навыки — свободные теги.
@@ -485,6 +526,12 @@ export interface ProjectSummary {
   gitUrl: string | null
   /** Адрес веб-превью по умолчанию для чатов проекта. */
   previewUrl?: string | null
+  /**
+   * Тестовые учётные записи для входа в тестовые окружения проекта из Web
+   * Reader. Это заведомо не-production креды: модель получает их MCP-инструментом
+   * `test-users`, чтобы логиниться в окружении и проверять фичи под ролями.
+   */
+  testUsers?: ProjectTestUser[]
   technologies: string[]
   skills: string[]
   /** Навыки по умолчанию для новых элементов, отдельно по типу. */

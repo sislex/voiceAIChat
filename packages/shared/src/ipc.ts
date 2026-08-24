@@ -314,6 +314,7 @@ export interface IpcInvokeMap {
       description?: string
       gitUrl?: string | null
       previewUrl?: string | null
+      testUsers?: import('./projects').ProjectTestUser[]
       technologies?: string[]
       skills?: string[]
       defaultSkills?: Partial<WorkItemDefaultSkills>

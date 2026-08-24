@@ -196,6 +196,7 @@ export function registerProjectRoutes(
       description?: string
       gitUrl?: string | null
       previewUrl?: string | null
+      testUsers?: import('@voicechat/shared').ProjectTestUser[]
       technologies?: string[]
       skills?: string[]
       defaultSkills?: Partial<WorkItemDefaultSkills>
@@ -228,6 +229,9 @@ export function registerProjectRoutes(
       const previewUrl = normalizePreviewUrl(body.previewUrl)
       if (previewUrl === undefined) return badReq(reply, 'previewUrl must be an http/https URL')
       body.previewUrl = previewUrl
+    }
+    if (body.testUsers !== undefined) {
+      try { const { sanitizeProjectTestUsers } = await import('@voicechat/shared'); body.testUsers = sanitizeProjectTestUsers(body.testUsers) } catch (error) { return badReq(reply, errMessage(error)) }
     }
     if (body.doneRetentionDays !== undefined) body.doneRetentionDays = normRetentionDays(body.doneRetentionDays)
     if (body.ciTestFixCycleLimit !== undefined && (!Number.isInteger(body.ciTestFixCycleLimit) || body.ciTestFixCycleLimit < 0)) return badReq(reply, 'ciTestFixCycleLimit must be a non-negative integer')

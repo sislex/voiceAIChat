@@ -8,6 +8,8 @@ import {
   requiredVersion,
   AGENT_VERSION,
   DEFAULT_AGENT_POLICY,
+  type AgentHttpRequest,
+  type AgentHttpResponse,
   type AgentImageHost,
   type AgentPolicy,
   type AgentTelemetry,
@@ -100,6 +102,16 @@ interface PendingFs {
   reject(err: Error): void
 }
 
+interface PendingHttp {
+  agentId: string
+  timer: NodeJS.Timeout
+  resolve(response: AgentHttpResponse): void
+  reject(err: Error): void
+}
+
+/** Таймаут loopback HTTP-моста: чуть больше 10-секундного лимита агента. */
+export const HTTP_PROXY_REPLY_TIMEOUT_MS = 15_000
+
 interface OnlineAgent {
   name: string
   socket: AgentSocket
@@ -129,6 +141,7 @@ export class AgentRegistry {
   private readonly online = new Map<string, OnlineAgent>()
   private readonly pending = new Map<string, PendingExec>()
   private readonly pendingFs = new Map<string, PendingFs>()
+  private readonly pendingHttp = new Map<string, PendingHttp>()
   private readonly pendingGitAccess = new Map<string, PendingGitAccess>()
   private readonly ptys = new Map<string, PtySession>()
   private readonly telemetry = new Map<string, AgentTelemetry>()
@@ -237,6 +250,12 @@ export class AgentRegistry {
     for (const [opId, p] of this.pendingFs) {
       if (p.agentId !== agentId) continue
       this.pendingFs.delete(opId)
+      clearTimeout(p.timer)
+      p.reject(new Error('Машина отключилась'))
+    }
+    for (const [requestId, p] of this.pendingHttp) {
+      if (p.agentId !== agentId) continue
+      this.pendingHttp.delete(requestId)
       clearTimeout(p.timer)
       p.reject(new Error('Машина отключилась'))
     }
@@ -476,6 +495,25 @@ export class AgentRegistry {
     return this.runFs(agentId, (opId) => ({ t: 'fs.mkdir', opId, path }))
   }
 
+  /**
+   * Loopback HTTP-запрос к машине (мост тестовых окружений Web Reader):
+   * шлёт http.request, ждёт http.result/http.error по requestId.
+   */
+  http(agentId: string, request: AgentHttpRequest): Promise<AgentHttpResponse> {
+    if (!this.online.has(agentId)) return Promise.reject(new Error('Машина не в сети'))
+    const ve = this.versionError(agentId, 'http-proxy')
+    if (ve) return Promise.reject(ve)
+    const requestId = this.newId()
+    return new Promise<AgentHttpResponse>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingHttp.delete(requestId)
+        reject(new Error('Машина не ответила на запрос тестового окружения'))
+      }, HTTP_PROXY_REPLY_TIMEOUT_MS)
+      this.pendingHttp.set(requestId, { agentId, timer, resolve, reject })
+      this.send(agentId, { t: 'http.request', requestId, request })
+    })
+  }
+
   // --- Живой PTY-терминал по машине (релей, БЕЗ накопления вывода) ---
 
   /** Открывает PTY на агенте; вывод/выход/ошибки уходят через emit клиенту. */
@@ -642,6 +680,15 @@ export class AgentRegistry {
       this.pendingGitAccess.delete(msg.requestId)
       clearTimeout(pending.timer)
       pending.resolve(msg.result)
+      return
+    }
+    if (msg.t === 'http.result' || msg.t === 'http.error') {
+      const ph = this.pendingHttp.get(msg.requestId)
+      if (!ph || ph.agentId !== agentId) return
+      this.pendingHttp.delete(msg.requestId)
+      clearTimeout(ph.timer)
+      if (msg.t === 'http.result') ph.resolve(msg.response)
+      else ph.reject(new Error(msg.message))
       return
     }
     if (msg.t === 'fs.result' || msg.t === 'fs.error') {

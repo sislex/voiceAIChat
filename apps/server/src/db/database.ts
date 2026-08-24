@@ -395,6 +395,7 @@ interface ProjectRow {
   description: string
   git_url: string | null
   preview_url: string | null
+  test_users_json?: string | null
   technologies: string
   skills: string
   created_by: string
@@ -1005,6 +1006,7 @@ export class VoiceChatDb {
     })()
     const featureProjectCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'preview_url')) this.db.exec(`ALTER TABLE projects ADD COLUMN preview_url TEXT`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_users_json')) this.db.exec(`ALTER TABLE projects ADD COLUMN test_users_json TEXT`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'commit_policy')) this.db.exec(`ALTER TABLE projects ADD COLUMN commit_policy TEXT NOT NULL DEFAULT 'agent_commits'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'merge_transport')) this.db.exec(`ALTER TABLE projects ADD COLUMN merge_transport TEXT NOT NULL DEFAULT 'local'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
@@ -2282,6 +2284,20 @@ export class VoiceChatDb {
    * Единый гейт использования машины. Проектный доступ существует только при
    * явно переданном контексте проекта и действующем членстве пользователя.
    */
+  /**
+   * Доступ к машине для loopback-моста превью (тестовые окружения Web Reader):
+   * владелец машины либо share в любом проекте, где пользователь — участник.
+   */
+  canUseAgentForPreview(userId: string, agentId: string): boolean {
+    if (this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) return true
+    return Boolean(this.db.prepare(
+      `SELECT 1 FROM machine_project_shares share
+       JOIN project_members member ON member.project_id = share.project_id
+       JOIN users u ON u.name = member.username
+       WHERE share.agent_id = ? AND share.shared = 1 AND member.username = ? AND u.blocked = 0`
+    ).get(agentId, userId))
+  }
+
   canUseAgent(userId: string, agentId: string, projectId?: string | null): boolean {
     if (this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) return true
     if (!projectId) return false
@@ -2850,6 +2866,7 @@ export class VoiceChatDb {
       description: r.description,
       gitUrl: r.git_url,
       previewUrl: r.preview_url ?? null,
+      testUsers: parseJsonValue<import('@voicechat/shared').ProjectTestUser[]>(r.test_users_json ?? null, []),
       technologies: parseStringArray(r.technologies),
       skills: parseStringArray(r.skills),
       defaultSkills: {
@@ -3079,6 +3096,7 @@ export class VoiceChatDb {
       description?: string
       gitUrl?: string | null
       previewUrl?: string | null
+      testUsers?: import('@voicechat/shared').ProjectTestUser[]
       technologies?: string[]
       skills?: string[]
       defaultSkills?: Partial<WorkItemDefaultSkills>
@@ -3120,6 +3138,10 @@ export class VoiceChatDb {
     if (fields.previewUrl !== undefined) {
       set.push('preview_url = ?')
       vals.push(fields.previewUrl)
+    }
+    if (fields.testUsers !== undefined) {
+      set.push('test_users_json = ?')
+      vals.push(JSON.stringify(fields.testUsers))
     }
     if (fields.technologies !== undefined) {
       set.push('technologies = ?')

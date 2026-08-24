@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
+  sanitizeProjectTestUsers
+} from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -289,5 +291,25 @@ describe('widget query contract', () => {
     ]
     expect(queryWidgetItems(items, 'ui', ['epic'], 10).map((item) => item.id)).toEqual(['e1'])
     expect(queryWidgetItems(items, 'интерфейс', [], 1).map((item) => item.id)).toEqual(['e1'])
+  })
+})
+
+describe('sanitizeProjectTestUsers', () => {
+  it('нормализует записи и опускает пустые role/note', () => {
+    expect(sanitizeProjectTestUsers([
+      { name: 'tester', password: 'p', role: 'admin', note: '' },
+      { name: 'viewer', password: '' }
+    ])).toEqual([
+      { name: 'tester', password: 'p', role: 'admin' },
+      { name: 'viewer', password: '' }
+    ])
+  })
+
+  it('отклоняет не-массив, пустое имя, не-строковый пароль и переполнение', () => {
+    expect(() => sanitizeProjectTestUsers('x')).toThrow()
+    expect(() => sanitizeProjectTestUsers([{ name: '  ', password: 'p' }])).toThrow()
+    expect(() => sanitizeProjectTestUsers([{ name: 'a', password: 5 }])).toThrow()
+    expect(() => sanitizeProjectTestUsers([{ name: 'a', password: 'x'.repeat(300) }])).toThrow()
+    expect(() => sanitizeProjectTestUsers(Array.from({ length: 33 }, (_, i) => ({ name: 'u' + i, password: '' })))).toThrow()
   })
 })

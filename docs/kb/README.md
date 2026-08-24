@@ -22,14 +22,14 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 14 коммит(ов) в areas после сверки: 5f601791 feat: add server context snapshot inspector … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 3 коммит(ов) в areas после сверки: 5f601791 feat: add server context snapshot inspector … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 49 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 581 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 582 коммит(ов) в areas после сверки: 753e985b docs(kb): update after merge 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 68 коммит(ов) в areas после сверки: 7d9381b3 fix(ui): обновить композер чата … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 37 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-24 | ⚠ 11 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 30 коммит(ов) в areas после сверки: 5f601791 feat: add server context snapshot inspector … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 5 коммит(ов) в areas после сверки: 2198e7a9 fix: auto-resolve merge conflicts with model step … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-23 | ⚠ 12 коммит(ов) в areas после сверки: 5f601791 feat: add server context snapshot inspector … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-24 | ⚠ 13 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-24 | ⚠ 2 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 27 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-24 | ⚠ 12 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-24 | ⚠ 2 коммит(ов) в areas после сверки: 3475466c web reader … |
@@ -57,7 +57,7 @@
 
 ## Журнал сессий
 
-Всего записей: 339. Последние:
+Всего записей: 340. Последние:
 
 - [2026-08-24-macbook-air-user-server-data-volume-migration.md](log/2026-08-24-macbook-air-user-server-data-volume-migration.md) — server-data-volume-migration
 - [2026-08-24-macbook-air-user-queue-reorder-and-atomic-merge.md](log/2026-08-24-macbook-air-user-queue-reorder-and-atomic-merge.md) — queue-reorder-and-atomic-merge
