@@ -297,15 +297,123 @@ const run=(action)=>{
   throw new Error('Неизвестное действие')
 };
 const reply=(requestId,ok,payload)=>parent.postMessage(ok?{type:RESULT,requestId,ok:true,result:payload}:{type:RESULT,requestId,ok:false,error:String(payload).slice(0,2000)},location.origin);
-let recording=false,diagnosticRunning=false;
+let recording=false,diagnosticRunning=false,lastRecordedClickAt=0;
 const sensitive=(el)=>el.localName==='input'&&(el.type==='password'||el.autocomplete==='current-password'||el.autocomplete==='new-password'||/pass|secret|token|card|cvv/i.test((el.name||'')+' '+(el.id||'')));
-const record=(step)=>{if(recording&&!diagnosticRunning)parent.postMessage({type:RECORD,step},location.origin)};
-const recordClick=(e)=>{const el=e.target instanceof Element?clickTarget(e.target):null;if(el&&!el.closest('[data-voicechat-inspector]'))record({kind:'click',selector:uniqueSelector(el),text:textOf(el).slice(0,EL_TEXT)})};
-const recordInput=(e)=>{const el=e.target instanceof Element?e.target:null;if(!el||!el.matches('input,textarea,select,[contenteditable=true]'))return;record({kind:'type',selector:uniqueSelector(el),text:sensitive(el)?'':String(el.value===undefined?el.textContent||'':el.value).slice(0,2000),sensitive:sensitive(el)})};
-const setRecording=(enabled)=>{if(recording===enabled)return;recording=enabled;if(enabled){document.addEventListener('click',recordClick,true);document.addEventListener('input',recordInput,true)}else{document.removeEventListener('click',recordClick,true);document.removeEventListener('input',recordInput,true)}};
+const record=(step)=>{if(recording&&!diagnosticRunning&&!editActive)parent.postMessage({type:RECORD,step},location.origin)};
+const recordClick=(e)=>{const el=e.target instanceof Element?clickTarget(e.target):null;if(el&&!el.closest('[data-voicechat-inspector]')){lastRecordedClickAt=Date.now();record({kind:'click',selector:uniqueSelector(el),text:textOf(el).slice(0,EL_TEXT)})}};
+const recordInput=(e)=>{const el=e.target instanceof Element?e.target:null;if(!el||el.closest('[data-voicechat-inspector]')||!el.matches('input,textarea,select,[contenteditable=true]'))return;record({kind:'type',selector:uniqueSelector(el),text:sensitive(el)?'':String(el.value===undefined?el.textContent||'':el.value).slice(0,2000),sensitive:sensitive(el)})};
+// Enter-сабмит без клика (авторизация) иначе терялся: кнопки-сабмиттеры пишутся
+// кликом, а «тихий» submit — как type с submit по активному полю формы.
+const recordSubmit=(e)=>{
+  if(Date.now()-lastRecordedClickAt<300)return;
+  const form=e.target instanceof Element?e.target:null;
+  if(!form||form.closest('[data-voicechat-inspector]'))return;
+  const submitter=e.submitter instanceof Element?e.submitter:null;
+  if(submitter){record({kind:'click',selector:uniqueSelector(submitter),text:textOf(submitter).slice(0,EL_TEXT)});return}
+  const field=document.activeElement;
+  if(field instanceof Element&&field.matches('input,textarea')&&form.contains(field))record({kind:'type',selector:uniqueSelector(field),text:sensitive(field)?'':String(field.value||'').slice(0,2000),sensitive:sensitive(field),submit:true})
+};
+const setRecording=(enabled)=>{if(recording===enabled)return;recording=enabled;if(enabled){document.addEventListener('click',recordClick,true);document.addEventListener('input',recordInput,true);document.addEventListener('submit',recordSubmit,true)}else{document.removeEventListener('click',recordClick,true);document.removeEventListener('input',recordInput,true);document.removeEventListener('submit',recordSubmit,true)}};
+// ---- Edit-режим: правки страницы сохраняются в браузере клиента ----
+// localStorage здесь уже подменён context-шимом, поэтому правки автоматически
+// разделены по внешнему origin; ключ добавляет pathname реальной страницы.
+const EDIT='voicechat.preview.edit.v1', EDITS_KEY='voicechat.preview.edits.v1';
+let editActive=false, editEl=null, editPanel=null;
+const pageKey=()=>{try{const u=new URL(unproxy(location.href));return EDITS_KEY+':'+u.origin+u.pathname}catch{return EDITS_KEY+':'+location.pathname}};
+const loadEdits=()=>{try{return JSON.parse(localStorage.getItem(pageKey())||'{}')||{}}catch{return {}}};
+const saveEdits=(edits)=>{try{Object.keys(edits).length?localStorage.setItem(pageKey(),JSON.stringify(edits)):localStorage.removeItem(pageKey())}catch{}};
+const applyEditEntry=(el,entry)=>{
+  if(entry.deleted){el.style.setProperty('display','none','important');return}
+  for(const key of Object.keys(entry.style||{}))el.style[key]=entry.style[key];
+  if(typeof entry.text==='string')el.textContent=entry.text
+};
+const restoreEdits=()=>{const edits=loadEdits();for(const selector of Object.keys(edits)){try{const el=document.querySelector(selector);if(el&&!el.closest('[data-voicechat-inspector]'))applyEditEntry(el,edits[selector])}catch{}}};
+const commitEdit=(el,patch)=>{
+  const edits=loadEdits(),selector=uniqueSelector(el);
+  const entry=edits[selector]||(edits[selector]={original:{cssText:el.style.cssText,text:null}});
+  if(patch.style){entry.style=Object.assign(entry.style||{},patch.style);for(const key of Object.keys(patch.style))el.style[key]=patch.style[key]}
+  if(patch.text!==undefined){if(entry.original.text===null)entry.original.text=el.textContent;entry.text=patch.text}
+  if(patch.deleted){entry.deleted=true;el.style.setProperty('display','none','important')}
+  edits[selector]=entry;saveEdits(edits)
+};
+const resetEdit=(el)=>{
+  const edits=loadEdits(),selector=uniqueSelector(el),entry=edits[selector];
+  if(!entry)return;
+  el.style.cssText=entry.original&&entry.original.cssText||'';
+  if(entry.original&&entry.original.text!==null)el.textContent=entry.original.text;
+  delete edits[selector];saveEdits(edits)
+};
+const stopTextEdit=()=>{if(editEl&&editEl.isContentEditable){editEl.removeAttribute('contenteditable');editEl.removeEventListener('input',editTextInput)}};
+const editTextInput=()=>{if(editEl)commitEdit(editEl,{text:editEl.textContent})};
+const closeEditPanel=()=>{stopTextEdit();editPanel?.remove();editPanel=null;editEl=null;hide()};
+const panelButton=(label,title,onClick)=>{
+  const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.setAttribute('aria-label',title);
+  Object.assign(b.style,{background:'transparent',color:'#fff',border:'0',borderRadius:'6px',padding:'4px 8px',font:'13px/1.2 system-ui,sans-serif',cursor:'pointer'});
+  b.addEventListener('click',(e)=>{e.preventDefault();e.stopPropagation();onClick(b)});
+  return b
+};
+const panelSelect=(title,options,value,onChange)=>{
+  const s=document.createElement('select');s.title=title;s.setAttribute('aria-label',title);
+  Object.assign(s.style,{background:'#2c2c2e',color:'#fff',border:'0',borderRadius:'6px',padding:'4px 6px',font:'12px/1.2 system-ui,sans-serif'});
+  for(const [v,label] of options){const o=document.createElement('option');o.value=v;o.textContent=label;s.append(o)}
+  s.value=value;s.addEventListener('change',()=>onChange(s.value));
+  s.addEventListener('click',(e)=>e.stopPropagation());
+  return s
+};
+const openEditPanel=(el)=>{
+  closeEditPanel();editEl=el;draw(el);
+  editPanel=document.createElement('div');editPanel.setAttribute('data-voicechat-inspector','edit-panel');
+  Object.assign(editPanel.style,{position:'fixed',zIndex:'2147483647',display:'flex',alignItems:'center',gap:'2px',padding:'6px',borderRadius:'10px',background:'#1c1c1e',boxShadow:'0 8px 24px rgba(0,0,0,.45)'});
+  const computed=getComputedStyle(el);
+  editPanel.append(panelSelect('Шрифт',[['','Шрифт'],['system-ui, sans-serif','System'],['Arial, sans-serif','Arial'],['Georgia, serif','Georgia'],['"Times New Roman", serif','Times'],['ui-monospace, monospace','Mono']],'',(value)=>{if(value)commitEdit(el,{style:{fontFamily:value}})}));
+  let size=Math.round(parseFloat(computed.fontSize)||14);
+  const sizeLabel=document.createElement('span');sizeLabel.textContent=String(size);sizeLabel.setAttribute('data-voicechat-edit','font-size');
+  Object.assign(sizeLabel.style,{color:'#fff',font:'13px/1.2 system-ui,sans-serif',minWidth:'22px',textAlign:'center'});
+  const resize=(delta)=>{size=Math.max(6,Math.min(200,size+delta));sizeLabel.textContent=String(size);commitEdit(el,{style:{fontSize:size+'px'}})};
+  editPanel.append(panelButton('−','Уменьшить шрифт',()=>resize(-1)),sizeLabel,panelButton('+','Увеличить шрифт',()=>resize(1)));
+  const boldButton=panelButton('B','Жирный',()=>{const bold=parseInt(getComputedStyle(el).fontWeight,10)>=600;commitEdit(el,{style:{fontWeight:bold?'400':'700'}});boldButton.style.background=bold?'transparent':'#3a3a3c'});
+  boldButton.style.fontWeight='700';
+  const italicButton=panelButton('I','Курсив',()=>{const italic=getComputedStyle(el).fontStyle==='italic';commitEdit(el,{style:{fontStyle:italic?'normal':'italic'}});italicButton.style.background=italic?'transparent':'#3a3a3c'});
+  italicButton.style.fontStyle='italic';
+  editPanel.append(boldButton,italicButton);
+  editPanel.append(panelSelect('Выравнивание',[['','Выравн.'],['left','Слева'],['center','По центру'],['right','Справа']],'',(value)=>{if(value)commitEdit(el,{style:{textAlign:value}})}));
+  editPanel.append(panelButton('✎','Редактировать текст',()=>{
+    if(el.isContentEditable){stopTextEdit();return}
+    // Исходный текст фиксируется до первой правки — иначе сброс вернёт правленый.
+    const edits=loadEdits(),selector=uniqueSelector(el);
+    const entry=edits[selector]||(edits[selector]={original:{cssText:el.style.cssText,text:null}});
+    if(entry.original.text===null){entry.original.text=el.textContent;edits[selector]=entry;saveEdits(edits)}
+    el.setAttribute('contenteditable','true');el.addEventListener('input',editTextInput);el.focus()
+  }));
+  editPanel.append(panelButton('⟲','Сбросить правки элемента',()=>{resetEdit(el);closeEditPanel()}));
+  editPanel.append(panelButton('🗑','Удалить элемент',()=>{commitEdit(el,{deleted:true});closeEditPanel()}));
+  editPanel.append(panelButton('✕','Закрыть',()=>closeEditPanel()));
+  document.documentElement.append(editPanel);
+  const r=el.getBoundingClientRect(),w=editPanel.offsetWidth,h=editPanel.offsetHeight;
+  Object.assign(editPanel.style,{left:Math.max(4,Math.min(r.left,innerWidth-w-4))+'px',top:Math.min(innerHeight-h-4,Math.max(4,r.bottom+6))+'px'})
+};
+const editMove=(e)=>{if(!editActive||editEl)return;const el=e.target;if(el instanceof Element&&!el.closest('[data-voicechat-inspector]'))draw(el)};
+const editClick=(e)=>{
+  if(!editActive)return;
+  const el=e.target;
+  if(!(el instanceof Element)||el.closest('[data-voicechat-inspector]'))return;
+  // Клики внутри редактируемого текста двигают каретку, а не переоткрывают панель.
+  if(editEl&&editEl.isContentEditable&&(el===editEl||editEl.contains(el)))return;
+  e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();openEditPanel(el)
+};
+const editKey=(e)=>{
+  if(!editActive||e.key!=='Escape')return;
+  e.preventDefault();
+  if(editEl){closeEditPanel();return}
+  disableEdit();parent.postMessage({type:EDIT,enabled:false},location.origin)
+};
+const enableEdit=()=>{if(editActive)return;disable();editActive=true;document.addEventListener('pointerover',editMove,true);document.addEventListener('click',editClick,true);document.addEventListener('keydown',editKey,true)};
+const disableEdit=()=>{if(!editActive)return;editActive=false;closeEditPanel();document.removeEventListener('pointerover',editMove,true);document.removeEventListener('click',editClick,true);document.removeEventListener('keydown',editKey,true)};
+restoreEdits();
 const message=(e)=>{
   if(e.source!==parent||e.origin!==location.origin||!e.data)return;
-  if(e.data.type===COMMAND&&typeof e.data.enabled==='boolean'){e.data.enabled?enable():disable();return}
+  if(e.data.type===COMMAND&&typeof e.data.enabled==='boolean'){if(e.data.enabled){disableEdit();enable()}else disable();return}
+  if(e.data.type===EDIT&&typeof e.data.enabled==='boolean'){e.data.enabled?enableEdit():disableEdit();return}
   if(e.data.type===RECORD&&typeof e.data.enabled==='boolean'){setRecording(e.data.enabled);return}
   if(e.data.type===ACTION&&typeof e.data.requestId==='string'&&e.data.action&&typeof e.data.action.kind==='string'){
     diagnosticRunning=e.data.action.diagnostic===true;
@@ -314,7 +422,7 @@ const message=(e)=>{
     finally{diagnosticRunning=false}
   }
 };
-addEventListener('message',message);addEventListener('pagehide',()=>{disable();setRecording(false);removeEventListener('message',message)},{once:true});
+addEventListener('message',message);addEventListener('pagehide',()=>{disable();disableEdit();setRecording(false);removeEventListener('message',message)},{once:true});
 })();<\/script>`
 }
 

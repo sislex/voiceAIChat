@@ -61,4 +61,10 @@ describe('webRecorder client message validator', () => {
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'recording-step', step: { kind: 'type', selector: '#password', text: '', sensitive: true } })).toBe(true)
     expect(isWebRecorderClientMessage({ type, ...ids, kind: 'recording-step', step: { kind: 'type', selector: '#password', text: 'hunter2', sensitive: true } })).toBe(false)
   })
+
+  it('submit допустим только у type-шага', () => {
+    expect(isWebRecorderClientMessage({ type, ...ids, kind: 'recording-step', step: { kind: 'type', selector: '#password', text: '', sensitive: true, submit: true } })).toBe(true)
+    expect(isWebRecorderClientMessage({ type, ...ids, kind: 'recording-step', step: { kind: 'click', selector: '#enter', text: 'Войти', sensitive: false, submit: true } })).toBe(false)
+    expect(isWebRecorderClientMessage({ type, ...ids, kind: 'recording-step', step: { kind: 'type', selector: '#q', text: 'x', sensitive: false, submit: 'yes' } })).toBe(false)
+  })
 })

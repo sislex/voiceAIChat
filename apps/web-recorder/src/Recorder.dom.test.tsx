@@ -156,6 +156,52 @@ describe('Recorder диагностика', () => {
   })
 })
 
+describe('Recorder edit-режим', () => {
+  it('кнопка «Редактировать» включает edit-режим внутреннего iframe', () => {
+    render(<Recorder />)
+    fromHost(init)
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const inner = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    const toggle = screen.getByRole('button', { name: /Редактировать$/ })
+    fireEvent.click(toggle)
+    expect(inner.mock.calls.some(([message]) => (message as { type?: string; enabled?: boolean }).type === 'voicechat.preview.edit.v1' && (message as { enabled?: boolean }).enabled === true)).toBe(true)
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('Escape внутри страницы выключает режим: iframe сообщает enabled:false', () => {
+    render(<Recorder />)
+    fromHost(init)
+    fireEvent.click(screen.getByRole('button', { name: /Редактировать$/ }))
+    fromPage({ type: 'voicechat.preview.edit.v1', enabled: false })
+    expect(screen.getByRole('button', { name: /Редактировать$/ }).getAttribute('aria-pressed')).toBe('false')
+  })
+})
+
+describe('Recorder submit-шаги', () => {
+  it('Enter-сабмит авторизации показывается бейджем и уходит host-у с submit', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#password', text: '', sensitive: true, submit: true } })
+    expect(screen.getByText('⏎ submit')).toBeTruthy()
+    const step = sent(post).find((message) => message.kind === 'recording-step')!
+    expect(step).toMatchObject({ step: { kind: 'type', selector: '#password', text: '', sensitive: true, submit: true } })
+  })
+
+  it('воспроизведение submit-шага отправляет type-действие с submit', () => {
+    render(<Recorder />)
+    fromHost(init)
+    fireEvent.change(screen.getByPlaceholderText('https://example.com'), { target: { value: 'http://example.test' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const inner = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#q', text: 'ноутбук', submit: true } })
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
+    const action = inner.mock.calls.map(([message]) => message as { type?: string; action?: { kind?: string; submit?: boolean; sensitive?: unknown } }).find((message) => message.type === PREVIEW_ACTION_COMMAND_TYPE)!
+    expect(action.action).toEqual({ kind: 'type', selector: '#q', text: 'ноутбук', submit: true })
+  })
+})
+
 describe('Recorder scenario', () => {
   it('запускает каждый шаг с уникальным локальным requestId без randomUUID', () => {
     let byte = 0
