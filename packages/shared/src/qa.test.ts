@@ -167,6 +167,11 @@ describe('manual QA gate', () => {
   ] as const)('%j -> %s', (statuses, allowed) => {
     expect(canCompleteQa(session([...statuses])).allowed).toBe(allowed)
   })
+  it('does not require a result for an optional criterion', () => {
+    const value = session(['passed', 'not_tested'])
+    value.criteriaSnapshot[1].required = false
+    expect(canCompleteQa(value).allowed).toBe(true)
+  })
   it('rejects stale SHA and preview', () => {
     const value = session(['passed'])
     value.results[0].commitSha = 'old'
