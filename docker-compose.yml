@@ -198,6 +198,7 @@ services:
 
 volumes:
   vc-data:
+    name: voicechat-server-data
   vc-automation-data:
   vc-claude:
   vc-codex:
