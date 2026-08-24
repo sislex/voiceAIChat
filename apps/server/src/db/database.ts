@@ -6379,6 +6379,7 @@ export class VoiceChatDb {
       LEFT JOIN task_preparation_notification_dismissals d
         ON d.question_id=q.question_id AND d.user_id=?
       WHERE q.material=1 AND q.answered_at IS NULL AND r.status='waiting_for_answer'
+        AND d.question_id IS NULL
       ORDER BY q.asked_at,q.question_id
     `).all(userId, userId) as Record<string, unknown>[]
     return rows.map((row) => ({

@@ -32,7 +32,7 @@ import { MergeRunManager } from './merge/runManager.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
-import { BoardHub } from './projects/boardHub.js'
+import { BoardHub, NotificationHub } from './projects/boardHub.js'
 import { registerAuth, resolveUser, uid } from './users/auth.js'
 import { loadOrCreateSecret } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
@@ -409,12 +409,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Админ-страница пользователей (роуты под guard requireAdmin).
   registerAdminRoutes(app, db, agentRegistry, deployTrigger)
 
-  // Проекты + канбан-доска (членство в проекте) + живой board.update по WS.
+  // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()
   const preparationRunUpdated = (userId: string, projectId: string, taskId: string, runId: string, boardChanged = true): void => {
     boardHub.emitPreparationRun({ userId, projectId, taskId, runId })
     if (boardChanged) boardHub.emit(projectId)
   }
+  const notificationHub = new NotificationHub()
+  // Любая проектная мутация потенциально меняет доступность либо жизненный цикл вопроса.
+  boardHub.onChange((projectId) => notificationHub.emit(projectId))
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
   // её выбор берём у канонического пользователя (admin), а не per-user.
   const machineWhisperModel = (): WhisperModel => db.getSettings('admin').whisperModel
@@ -1178,8 +1181,10 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     db.listTaskPreparationNotifications(uid(req))
   )
   app.post<{ Params: { questionId: string } }>('/api/task-preparation/notifications/:questionId/dismiss', async (req, reply) => {
+    const current = db.listTaskPreparationNotifications(uid(req)).find((item) => item.questionId === req.params.questionId)
     const dismissed = db.dismissTaskPreparationNotification(uid(req), req.params.questionId)
     if (!dismissed) return reply.code(404).send({ error: 'not found' })
+    if (current) notificationHub.emit(current.projectId, uid(req))
     return { dismissed: true }
   })
 
@@ -1332,7 +1337,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   })
   registerReleaseRoutes(app, db, releaseManager, managedEnvironments)
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id) })
-  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection))
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId))
   mergeRunManager.reconcile()
   const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:(id)=>boardHub.emit(id)})
   const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor,boardChanged:(id)=>boardHub.emit(id)})
@@ -1406,6 +1411,10 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         getBoard: (projectId, includeCompleted) => db.getBoard(user.name, projectId, { includeCompleted }),
         subscribe: (cb) => boardHub.onChange(cb),
         subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb)
+      },
+      preparationNotifications: {
+        canAccess: (projectId) => db.getProject(user.name, projectId) !== null,
+        subscribe: (cb) => notificationHub.onChange(cb)
       },
       ci: ciRunManager,
       kbUsage,

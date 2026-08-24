@@ -632,15 +632,24 @@ export interface RendererAgentsBridge {
 
 /**
  * Мост живой канбан-доски (web, поверх WS): подписка на доску проекта и приём
- * снапшотов board.update. В desktop отсутствует → без живой синхронизации.
+ * инвалидаций board.changed. В desktop отсутствует → без живой синхронизации.
  */
+export interface RendererRealtimeBridge {
+  /** Каждое успешное WS-подключение, включая reconnect. */
+  onConnected(cb: () => void): () => void
+  /** Invalidation-only событие; полный снимок читается по HTTP. */
+  onTaskPreparationNotificationsInvalidated(cb: (m: { projectId: string }) => void): () => void
+}
+
 export interface RendererBoardBridge {
-  /** Подписаться на доску проекта (сервер сразу шлёт снапшот). */
-  subscribe(projectId: string, includeCompleted?: boolean): void
+  /** Подписаться на инвалидации доски проекта. */
+  subscribe(projectId: string): void
   /** Отписаться от текущей доски. */
   unsubscribe(): void
-  /** Подписка на снапшоты доски. */
-  onUpdate(cb: (m: { projectId: string; board: Board }) => void): () => void
+  /** Подписка на инвалидации доски. */
+  onChanged(cb: (m: { projectId: string }) => void): () => void
+  /** Успешное открытие общего WebSocket, включая reconnect. */
+  onConnected(cb: () => void): () => void
   /** Адресная инвалидация истории подготовки задачи. */
   onPreparationRunUpdated(cb: (m: { projectId: string; taskId: string; runId: string }) => void): () => void
   /** Успешное восстановление WS после уже состоявшегося подключения. */

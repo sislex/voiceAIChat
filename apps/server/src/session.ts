@@ -53,6 +53,11 @@ export interface SessionDeps {
     subscribe(cb: (projectId: string) => void): () => void
     subscribePreparationRuns(cb: (update: { userId: string; projectId: string; taskId: string; runId: string }) => void): () => void
   }
+  /** Адресная инвалидизация HTTP-снимка уведомлений подготовки. */
+  preparationNotifications?: {
+    canAccess(projectId: string): boolean
+    subscribe(cb: (event: { projectId: string; userId?: string }) => void): () => void
+  }
   /** Live-tail проводника CC/Codex: локальный fs.watch или SSE исполнителя. */
   observerTail?: {
     watchCc(userId: string, slug: string, id: string, onItems: (items: CcItem[]) => void): () => void
@@ -93,9 +98,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubAgents: (() => void) | null = null
   let unsubBoard: (() => void) | null = null
   let unsubPreparationRuns: (() => void) | null = null
+  let unsubPreparationNotifications: (() => void) | null = null
   let boardProjectId: string | null = null
   /** Просит ли подписчик отдавать и давно завершённые задачи («Показать завершённые»). */
-  let boardIncludeCompleted = false
   let unsubTurns: (() => void) | null = null
   let unsubCi: (() => void) | null = null
   let unsubKbUsage: (() => void) | null = null
@@ -148,11 +153,16 @@ export function createSession(deps: SessionDeps): WsHandlers {
           ctx.send({ t: 'agents', agents: deps.agentsFeed!.list() })
         )
       }
+      if (deps.preparationNotifications) {
+        unsubPreparationNotifications = deps.preparationNotifications.subscribe((event) => {
+          if (event.userId ? event.userId !== deps.user.name : !deps.preparationNotifications!.canAccess(event.projectId)) return
+          ctx.send({ t: 'task-preparation.notifications.invalidate', v: 1, projectId: event.projectId })
+        })
+      }
       if (deps.board) {
         unsubBoard = deps.board.subscribe((projectId) => {
           if (projectId !== boardProjectId) return
-          const board = deps.board!.getBoard(projectId, boardIncludeCompleted)
-          if (board) ctx.send({ t: 'board.update', projectId, board })
+          ctx.send({ t: 'board.changed', projectId })
         })
         unsubPreparationRuns = deps.board.subscribePreparationRuns((update) => {
           if (update.userId !== deps.user.name) return
@@ -297,16 +307,13 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'board.subscribe': {
-          const board = deps.board?.getBoard(msg.projectId, msg.includeCompleted) ?? null
-          if (!board) break
+          // getBoard сохраняет действующую проверку членства, но снапшот по WS не отправляется.
+          if (!deps.board?.getBoard(msg.projectId, false)) break
           boardProjectId = msg.projectId
-          boardIncludeCompleted = msg.includeCompleted === true
-          ctx.send({ t: 'board.update', projectId: msg.projectId, board })
           break
         }
         case 'board.unsubscribe':
           boardProjectId = null
-          boardIncludeCompleted = false
           break
         case 'ci.subscribe': {
           const snap = deps.ci?.snapshot(deps.user.name, msg.runId)
@@ -344,8 +351,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubBoard = null
       unsubPreparationRuns?.()
       unsubPreparationRuns = null
+      unsubPreparationNotifications?.()
+      unsubPreparationNotifications = null
       boardProjectId = null
-      boardIncludeCompleted = false
       unsubTurns?.()
       unsubTurns = null
       unsubCi?.()

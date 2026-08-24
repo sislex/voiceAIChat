@@ -1,6 +1,6 @@
 // REST для проектов и канбан-доски. Все маршруты под Bearer-защитой; доступ
 // определяется членством в проекте (см. VoiceChatDb: isProjectMember/Owner).
-// После мутаций доски зовём boardHub.emit → живой board.update подписчикам.
+// После мутаций доски зовём boardHub.emit → живой board.changed подписчикам.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import {
@@ -79,7 +79,8 @@ export function registerProjectRoutes(
   ci?: CiRunManager,
   agents?: AgentRegistry,
   merge?: MergeRunManager,
-  startTaskPreparation?: (userId: string, projectId: string, taskId: string, selection?: TaskPreparationLlmSelection) => TaskPreparationRun
+  startTaskPreparation?: (userId: string, projectId: string, taskId: string, selection?: TaskPreparationLlmSelection) => TaskPreparationRun,
+  membershipChanged?: (projectId: string, affectedUserId?: string) => void
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = (project: ProjectDetail | null, userId: string): ProjectDetail | null => {
@@ -251,7 +252,9 @@ export function registerProjectRoutes(
         const username = (req.body?.username ?? '').trim()
       if (!username) return badReq(reply, 'username required')
       try {
-        return db.addMember(uid(req), req.params.id, username) ?? nf(reply)
+        const detail = db.addMember(uid(req), req.params.id, username) ?? nf(reply)
+        membershipChanged?.(req.params.id)
+        return detail
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
@@ -266,7 +269,9 @@ export function registerProjectRoutes(
       const role = req.body?.role
       if (role !== 'owner' && role !== 'member') return badReq(reply, 'role must be owner or member')
       try {
-        return db.updateMemberRole(uid(req), req.params.id, req.params.username, role) ?? nf(reply)
+        const detail = db.updateMemberRole(uid(req), req.params.id, req.params.username, role) ?? nf(reply)
+        membershipChanged?.(req.params.id)
+        return detail
       } catch (err) {
         return badReq(reply, errMessage(err))
       }
@@ -281,6 +286,7 @@ export function registerProjectRoutes(
       try {
         const detail = db.removeMember(uid(req), req.params.id, req.params.username)
         boardHub.emit(req.params.id) // снятые назначения меняют доску
+        if (detail) membershipChanged?.(req.params.id, req.params.username)
         return detail ?? nf(reply)
       } catch (err) {
         return badReq(reply, errMessage(err))

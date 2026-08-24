@@ -20,7 +20,7 @@ export interface CreateProjectInput {
 export type UpdateProjectInput = Partial<Omit<ProjectSummary, 'id' | 'createdBy' | 'createdAt' | 'updatedAt' | 'role'>>
 export type CreateTaskInput = Pick<Task, 'title'> & Partial<Omit<Task, 'id' | 'projectId' | 'title' | 'createdAt' | 'updatedAt' | 'seq' | 'position'>>
 export type TaskPatch = Partial<Omit<Task, 'id' | 'projectId' | 'createdAt' | 'seq'>>
-export interface BoardUpdate { projectId: string; board: Board; revision?: string }
+export interface BoardInvalidation { projectId: string; reason?: 'changed' | 'reconnected' }
 export interface TaskChatReference { conversationId: string }
 
 export interface ProjectsClient {
@@ -30,7 +30,7 @@ export interface ProjectsClient {
   updateProject(projectId: string, input: UpdateProjectInput): Promise<ProjectDetail>
   deleteProject(projectId: string): Promise<void>
   getBoard(projectId: string, options?: { includeCompleted?: boolean }): Promise<Board>
-  subscribeBoard(projectId: string, listener: (event: BoardUpdate) => void, options?: { includeCompleted?: boolean }): () => void
+  subscribeBoard(projectId: string, listener: (event: BoardInvalidation) => void): () => void
   createColumn(projectId: string, input: Pick<KanbanColumn, 'name'> & Partial<Pick<KanbanColumn, 'wipLimit'>>): Promise<KanbanColumn>
   updateColumn(projectId: string, columnId: string, patch: Partial<Pick<KanbanColumn, 'name' | 'hidden' | 'wipLimit'>>): Promise<void>
   deleteColumn(projectId: string, columnId: string): Promise<void>

@@ -609,18 +609,51 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     return snapshot
   }, [api, authed, clarificationErrors])
   useEffect(() => {
-    if (!authed) return
+    if (!authed) { setClarificationNotifications([]); return }
     let active = true
-    const refresh = (): void => {
-      void refreshClarificationNotifications().catch(() => {
-        // Фоновая синхронизация не подменяет уже показанные уведомления ошибкой.
-      })
+    let inFlight = false
+    let trailing = false
+    let debounceTimer: number | null = null
+
+    const synchronize = async (): Promise<void> => {
+      if (!active) return
+      if (inFlight) { trailing = true; return }
+      inFlight = true
+      try {
+        await refreshClarificationNotifications()
+      } catch {
+        // Ошибка фоновой синхронизации сохраняет последний успешный снимок.
+      } finally {
+        inFlight = false
+        if (active && trailing) {
+          trailing = false
+          schedule()
+        }
+      }
     }
-    refresh()
-    const timer = window.setInterval(refresh, 1500)
-    const onVisible = (): void => { if (active && document.visibilityState === 'visible') refresh() }
+    const schedule = (): void => {
+      if (!active) return
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer)
+      debounceTimer = window.setTimeout(() => {
+        debounceTimer = null
+        void synchronize()
+      }, 75)
+    }
+    const onVisible = (): void => { if (document.visibilityState === 'visible') schedule() }
+    const realtime = window.realtime
+    const unsubs = realtime
+      ? [realtime.onConnected(schedule), realtime.onTaskPreparationNotificationsInvalidated(schedule)]
+      : []
+
+    // Авторизация — первая контрольная точка; connect того же тика схлопнется debounce.
+    schedule()
     document.addEventListener('visibilitychange', onVisible)
-    return () => { active = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
+    return () => {
+      active = false
+      if (debounceTimer !== null) window.clearTimeout(debounceTimer)
+      document.removeEventListener('visibilitychange', onVisible)
+      unsubs.forEach((unsubscribe) => unsubscribe())
+    }
   }, [authed, refreshClarificationNotifications])
 
   const dismissClarificationNotification = useCallback(async (notification: PreparationClarificationNotification): Promise<void> => {

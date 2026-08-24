@@ -1053,7 +1053,8 @@ describe('TaskModal — подготовка к разработке', () => {
     const offReconnect = vi.fn()
     const previousBoard = window.board
     window.board = {
-      subscribe: vi.fn(), unsubscribe: vi.fn(), onUpdate: vi.fn(() => () => {}),
+      subscribe: vi.fn(), unsubscribe: vi.fn(),
+      onChanged: vi.fn(() => () => {}), onConnected: vi.fn(() => () => {}),
       onPreparationRunUpdated: vi.fn((cb) => { preparationUpdated = cb; return offUpdate }),
       onReconnect: vi.fn((cb) => { reconnected = cb; return offReconnect })
     }

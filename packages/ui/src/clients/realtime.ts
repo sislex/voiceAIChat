@@ -52,7 +52,7 @@ export const createBrowserRealtime = (): RealtimeConnect => (handlers) => {
   if (window.cc) unsubs.push(window.cc.onTail((m) => handlers.ccTail(m.items)))
   if (window.codex) unsubs.push(window.codex.onTail((m) => handlers.cxTail(m.items)))
   if (window.agents) unsubs.push(window.agents.onChange((list) => handlers.agents(list)))
-  if (window.board) unsubs.push(window.board.onUpdate((m) => handlers.boardUpdate(m.projectId, m.board)))
+  if (window.board) unsubs.push(window.board.onChanged((m) => handlers.boardChanged(m.projectId)))
 
   const ci = window.ci
   if (ci) {
