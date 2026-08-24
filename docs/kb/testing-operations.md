@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-08-24
-checked: 6db37a38
+checked: 20240427
 areas:
   - package.json
   - scripts
@@ -49,6 +49,8 @@ Server запускает исходники через tsx. Основной We
 | agent tray | `npm run typecheck:agent-tray` | `npm run test:agent-tray` | electron-vite build/dist |
 
 `npm run verify` выполняет полный набор. Для локального шага предпочтителен узкий гейт затронутых пакетов, затем полный verify перед релизом/крупным merge.
+
+`affected-check` считает `apps/web-recorder` отдельным workspace: изменения `packages/shared` включают его как потребителя, а изменения `packages/ui` добавляют его явно. Поэтому affected-ран выполняет его `typecheck` и `test`. Дорогой `frontend:build-gates` запускается при затронутых UI/Web/Desktop пакетах, но эта команда собирает основной Web, bundle gate, Storybook и Desktop renderer и не включает production build Web Recorder. После клиентских изменений, затрагивающих standalone recorder, его production-сборку нужно проверять отдельно: `npm run -w @voicechat/web-recorder build`.
 
 ### Fast-stage затронутых тестов
 
