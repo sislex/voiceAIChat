@@ -1680,6 +1680,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             queuePaused={chat.activeId ? chat.queuePaused[chat.activeId] ?? false : false}
             onEditQueued={chatActions.editQueued}
             onDeleteQueued={chatActions.deleteQueued}
+            onReorderQueued={chatActions.reorderQueued}
             onSendQueuedNow={chatActions.sendQueuedNow}
             onDraftChange={chatActions.setDraft}
             onSubmitText={() => {

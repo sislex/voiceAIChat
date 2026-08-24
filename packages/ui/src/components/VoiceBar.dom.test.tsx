@@ -472,6 +472,17 @@ describe('VoiceBar — серверная очередь', () => {
     expect(screen.getByRole('button', { name: 'Свернуть очередь' })).toHaveAttribute('aria-expanded', 'true')
   })
 
+  it('немедленно отдаёт полный порядок после drag-and-drop', () => {
+    const onReorderQueued = vi.fn()
+    setup('thinking', { queuedTurns: items.slice(0, 3), onReorderQueued })
+    const rows = screen.getAllByTestId('turn-queue-item')
+    const transfer = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn(() => 'q2') }
+    fireEvent.dragStart(rows[1]!, { dataTransfer: transfer })
+    fireEvent.dragOver(rows[0]!, { dataTransfer: transfer })
+    fireEvent.drop(rows[0]!, { dataTransfer: transfer })
+    expect(onReorderQueued).toHaveBeenCalledWith(['q2', 'q1', 'q3'])
+  })
+
   it('вызывает удаление и повышение приоритета выбранного элемента', async () => {
     const onDeleteQueued = vi.fn()
     const onSendQueuedNow = vi.fn()

@@ -51,6 +51,7 @@ export interface HarnessDeps {
   cancelClaude?: (conversationId?: string) => void
   editQueued?: (conversationId: string, id: string, text: string) => void
   deleteQueued?: (conversationId: string, id: string) => void
+  reorderQueued?: (conversationId: string, ids: string[]) => void
   sendQueuedNow?: (conversationId: string, id: string) => void
   getSttStatus?: () => Promise<SttStatus>
   startModelDownload?: () => void
@@ -111,6 +112,7 @@ export function buildTestClients(deps: HarnessDeps): AppClients {
         ...(deps.cancelClaude ? { cancel: deps.cancelClaude } : {}),
         ...(deps.editQueued ? { editQueued: deps.editQueued } : {}),
         ...(deps.deleteQueued ? { deleteQueued: deps.deleteQueued } : {}),
+        ...(deps.reorderQueued ? { reorderQueued: deps.reorderQueued } : {}),
         ...(deps.sendQueuedNow ? { sendQueuedNow: deps.sendQueuedNow } : {})
       }
     }),

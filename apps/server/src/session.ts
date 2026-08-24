@@ -199,6 +199,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
         case 'claude.queue.delete':
           deps.turns.deleteQueued(deps.user.name, msg.conversationId, msg.id)
           break
+        case 'claude.queue.reorder':
+          deps.turns.reorderQueued(deps.user.name, msg.conversationId, msg.ids)
+          break
         case 'claude.queue.now':
           deps.turns.sendQueuedNow(deps.user.name, msg.conversationId, msg.id)
           break

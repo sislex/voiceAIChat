@@ -242,6 +242,7 @@ export interface TurnManager {
   cancel(conversationId?: string): void
   editQueued(userId: string, conversationId: string, id: string, text: string, segments: SttSegmentWire[]): void
   deleteQueued(userId: string, conversationId: string, id: string): void
+  reorderQueued(userId: string, conversationId: string, ids: string[]): void
   sendQueuedNow(userId: string, conversationId: string, id: string): void
   queueSnapshot(userId: string, conversationId: string): void
   resumeQueues(userId: string): void
@@ -359,13 +360,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     for (const l of listeners) l(m, ownerUserId)
   }
 
-  function emitQueue(userId: string, conversationId: string, published?: Message): void {
+  function emitQueue(userId: string, conversationId: string, published?: Message, removedMessageIds?: string[]): void {
     broadcast({
       t: 'claude.queue',
       conversationId,
       items: deps.db.listQueuedTurns(userId, conversationId),
       paused: deps.db.isTurnQueuePaused(userId, conversationId),
-      ...(published ? { published } : {})
+      ...(published ? { published } : {}),
+      ...(removedMessageIds?.length ? { removedMessageIds } : {})
     }, userId)
   }
 
@@ -1026,6 +1028,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     emitQueue(userId, conversationId)
   }
 
+  function reorderQueued(userId: string, conversationId: string, ids: string[]): void {
+    deps.db.reorderQueuedTurns(userId, conversationId, ids)
+    // И успех, и конфликт возвращают авторитетный снимок: клиент либо подтверждает
+    // оптимистичный порядок, либо откатывается без потери элементов.
+    emitQueue(userId, conversationId)
+  }
+
   function sendQueuedNow(userId: string, conversationId: string, id: string): void {
     const turn = turns.get(conversationId)
     if (restarting.has(conversationId)) {
@@ -1064,10 +1073,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     turns.delete(conversationId)
     turn.done = true
     releaseTurnTools(turn)
-    turn.handle.cancel()
+    try {
+      turn.handle.cancel()
+    } catch {
+      // Не запускаем второй процесс, если отмену даже не удалось инициировать.
+      // Объединённая реплика уже атомарно сохранена и остаётся recoverable.
+      deps.db.enqueueTurn(userId, conversationId, merged.message.id, merged.payload, false)
+      deps.db.markQueuedTurnFailed(userId, conversationId, merged.message.id)
+      deps.db.setTurnQueuePaused(userId, conversationId, true)
+      emitQueue(userId, conversationId, merged.message, merged.replacedMessageIds)
+      broadcast({ t: 'claude.error', conversationId, message: 'Не удалось остановить предыдущий запрос.' }, userId)
+      return
+    }
     deps.db.setTurnQueuePaused(userId, conversationId, false)
     restarting.add(conversationId)
-    emitQueue(userId, conversationId, merged.message)
+    emitQueue(userId, conversationId, merged.message, merged.replacedMessageIds)
     queueMicrotask(() => {
       restarting.delete(conversationId)
       void start({
@@ -1075,6 +1095,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         conversationId,
         messageId: merged.message.id,
         ...merged.payload
+      }).catch((error: unknown) => {
+        deps.db.enqueueTurn(userId, conversationId, merged.message.id, merged.payload, false)
+        deps.db.markQueuedTurnFailed(userId, conversationId, merged.message.id)
+        deps.db.setTurnQueuePaused(userId, conversationId, true)
+        emitQueue(userId, conversationId)
+        broadcast({ t: 'claude.error', conversationId, message: error instanceof Error ? error.message : String(error) }, userId)
       })
     })
   }
@@ -1145,6 +1171,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     cancel,
     editQueued,
     deleteQueued,
+    reorderQueued,
     sendQueuedNow,
     queueSnapshot,
     resumeQueues,
