@@ -1215,9 +1215,57 @@
 
 /* ---- Голосовая панель ---- */
 .voicebar {
-  border-top: 1px solid var(--border-soft);
+  flex: none;
+  border-top: 0;
   background: var(--bg);
-  padding: 14px 28px 20px 28px;
+  padding: 14px 28px 20px;
+}
+.voicebar .vinner {
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 10px 30px rgba(31, 35, 48, .09);
+}
+.voicebar--centered {
+  position: absolute;
+  z-index: 4;
+  left: 0;
+  right: 0;
+  top: 48%;
+  transform: translateY(-50%);
+  background: transparent;
+}
+.voicebar-greeting {
+  display: block;
+  max-width: 720px;
+  margin: 0 auto 16px;
+  color: var(--text);
+  font-size: clamp(24px, 4vw, 36px);
+  font-weight: 750;
+  text-align: center;
+}
+.voicebar--expanded {
+  position: absolute;
+  z-index: 30;
+  inset: max(68px, env(safe-area-inset-top)) 0 max(8px, env(safe-area-inset-bottom));
+  display: flex;
+  transform: none;
+  padding-top: 8px;
+}
+.voicebar--expanded .vinner {
+  flex: 1;
+  max-height: 100%;
+}
+.voicebar--expanded .vrow {
+  flex: 1;
+  min-height: 0;
+  align-items: flex-end;
+}
+.voicebar--expanded .tin {
+  align-self: stretch;
+  height: auto !important;
+  max-height: none;
 }
 .vinner {
   position: relative;
@@ -1316,8 +1364,10 @@
   color: var(--text);
   resize: none;
   line-height: 1.4;
-  max-height: 160px;
+  max-height: min(240px, 32dvh);
   overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
 }
 .tin:focus {
   border-color: #9ba9d6;
@@ -1403,6 +1453,9 @@
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 8px;
+  max-height: 190px;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .attchip {
   display: inline-flex;
@@ -1446,6 +1499,30 @@
   font-size: 24px;
 }
 .attpreview-image img { width: 100%; height: 100%; object-fit: cover; }
+.attpreview-state {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(24, 27, 35, .62);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+}
+.attpreview--error { border-color: #c94b4b; }
+.attpreview-retry {
+  position: absolute;
+  left: 6px;
+  bottom: 27px;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 10px;
+  cursor: pointer;
+}
+.attachment-submit-error { margin: 0; color: #a33a3a; font-size: 12px; }
 .attpreview figcaption {
   min-width: 0;
   padding: 5px 7px 6px;

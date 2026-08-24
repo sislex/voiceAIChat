@@ -513,3 +513,44 @@ describe('VoiceBar — объявления для скринридера', () =
     expect(screen.getByTestId('voice-announce')).toHaveTextContent('Запрос отправлен движку Codex, ждём ответ')
   })
 })
+
+describe('VoiceBar — адаптивный композер', () => {
+  it('помечает центральный вариант нового чата', () => {
+    const { container } = render(<VoiceBar {...makeProps('idle', { layout: 'centered' })} />)
+    expect(container.querySelector('.voicebar')).toHaveAttribute('data-layout', 'centered')
+  })
+
+  it('блокирует отправку processing/error вложений и позволяет повтор', async () => {
+    const onRetryAttachment = vi.fn()
+    setup('idle', {
+      draft: 'не потерять',
+      onRetryAttachment,
+      attachments: [{
+        id: 'local-1',
+        localId: 'local-1',
+        file: new File(['x'], 'photo.png', { type: 'image/png' }),
+        status: 'error',
+        previewUrl: 'blob:photo',
+        error: 'network',
+        upload: null
+      }]
+    })
+    expect(screen.getByLabelText('Отправить сообщение')).toBeDisabled()
+    expect(screen.getByText(/Повторите загрузку/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(onRetryAttachment).toHaveBeenCalledWith('local-1')
+  })
+
+  it('разворачивает тот же textarea с сохранением выделения и фокуса', async () => {
+    setup('idle', { draft: 'первая строка\nвторая строка' })
+    const input = screen.getByLabelText('Поле ввода сообщения') as HTMLTextAreaElement
+    input.focus()
+    input.setSelectionRange(2, 8)
+    await userEvent.click(screen.getByTestId('composer-size-toggle'))
+    await waitFor(() => expect(input).toHaveFocus())
+    expect(input.selectionStart).toBe(2)
+    expect(input.selectionEnd).toBe(8)
+    expect(input.closest('.voicebar')).toHaveClass('voicebar--expanded')
+    expect(screen.getByTestId('composer-size-toggle')).toHaveAccessibleName('Свернуть поле ввода')
+  })
+})
