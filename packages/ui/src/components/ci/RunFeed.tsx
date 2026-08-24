@@ -9,6 +9,7 @@ import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion, CiInteraction,
 import { DEFAULT_CI_CLAUDE_MODEL, isTerminalCiStatus } from '@shared/ci'
 import type { LlmEngineOption } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
+import type { TaskPreparationStep } from '@shared/qa'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import type { CiMetrics } from '../../remote/ciBridge'
 import { ciLlmLabel, ciStageLabel, ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
@@ -24,6 +25,19 @@ import { loadView, type LoadStatus } from '../../lib/loadState'
 import { useCommandSource } from '../../lib/useCommands'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { useRemoteReport } from '../../lib/useRemoteReport'
+
+export function PreparationRunSteps({ steps, fallback }: { steps: TaskPreparationStep[]; fallback: string }): JSX.Element {
+  return <ol className="ci-step-list" data-testid="task-preparation-feed" aria-live="polite">
+    {steps.map((step) => <li key={step.id} className="ci-step">
+      <details>
+        <summary className="ci-step-head"><span className="ci-step-title">{step.name}</span><span className="ci-lozenge">{step.status}</span><span className="ci-step-dur">{step.durationMs == null ? '—' : fmtDuration(step.durationMs)}</span></summary>
+        {step.error && <p role="alert">{step.error}</p>}
+        <pre className="ci-console-pre">{step.log.map((event) => event.text).join('') || 'Лог шага пуст.'}</pre>
+      </details>
+    </li>)}
+    {!steps.length && <li>{fallback}</li>}
+  </ol>
+}
 
 export interface RunFeedCache {
   detail: CiRunDetail | null

@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
+import type { CiTaskMachines } from '@shared/ci'
 import { DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
+import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { Button } from '@voicechat/ui-kit'
+import { PreparationRunSteps } from '../ci/RunFeed'
 
 export interface TaskPreparationTabProps {
   projectId: string
@@ -39,7 +42,13 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<'start' | 'retry' | 'cancel' | 'answer' | null>(null)
   const [answer, setAnswer] = useState('')
-  const [selection, setSelection] = useState<TaskPreparationLlmSelection>({ provider: DEFAULT_CI_LLM_CONFIG.provider, model: DEFAULT_CI_LLM_CONFIG.model, llmEngineId: DEFAULT_CI_LLM_CONFIG.llmEngineId })
+  const [selection, setSelection] = useState<TaskPreparationLlmSelection>({ machineId: '', provider: DEFAULT_CI_LLM_CONFIG.provider, model: DEFAULT_CI_LLM_CONFIG.model, llmEngineId: DEFAULT_CI_LLM_CONFIG.llmEngineId })
+  const [machines, setMachines] = useState<CiTaskMachines | null>(null)
+  const [machinesLoading, setMachinesLoading] = useState(true)
+  const [machinesError, setMachinesError] = useState<string | null>(null)
+  const [modelsLoading, setModelsLoading] = useState(true)
+  const [modelsError, setModelsError] = useState<string | null>(null)
+  const [machineFallback, setMachineFallback] = useState(false)
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!props.loadRuns) { setLoading(false); return }
@@ -59,9 +68,41 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
   }, [props.loadRuns, props.taskId, props.liveRunId])
 
   useEffect(() => { void refresh() }, [refresh])
-  useEffect(() => {
-    void window.ci?.getTaskPreparationLlm(props.projectId, props.taskId).then((value) => setSelection({ provider: value.provider, model: value.model, llmEngineId: value.llmEngineId }))
+  const loadMachines = useCallback(async (): Promise<void> => {
+    setMachinesLoading(true)
+    setMachinesError(null)
+    try {
+      if (!window.ci) throw new Error('CI bridge недоступен')
+      const value = await window.ci.getTaskMachines(props.projectId, props.taskId)
+      setMachines(value)
+      const preferred = value.effectiveAgentId
+      const preferredMachine = value.machines.find((machine) => machine.agentId === preferred && machine.canUse !== false && machine.online)
+      const fallback = value.machines.find((machine) => machine.canUse !== false && machine.online)
+      const chosen = preferredMachine ?? fallback
+      setSelection((current) => ({ ...current, machineId: chosen?.agentId ?? '' }))
+      setMachineFallback(Boolean(preferred && !preferredMachine && fallback))
+    } catch (reason) {
+      setMachinesError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setMachinesLoading(false)
+    }
   }, [props.projectId, props.taskId])
+
+  const loadModels = useCallback(async (): Promise<void> => {
+    setModelsLoading(true)
+    setModelsError(null)
+    try {
+      if (!window.ci) throw new Error('CI bridge недоступен')
+      const value = await window.ci.getTaskPreparationLlm(props.projectId, props.taskId)
+      setSelection((current) => ({ ...current, provider: value.provider, model: value.model, llmEngineId: value.llmEngineId }))
+    } catch (reason) {
+      setModelsError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setModelsLoading(false)
+    }
+  }, [props.projectId, props.taskId])
+
+  useEffect(() => { void loadMachines(); void loadModels() }, [loadMachines, loadModels])
   useEffect(() => {
     if (!props.liveStatus || !['queued', 'running', 'waiting_for_answer', 'validating'].includes(props.liveStatus)) return
     const timer = window.setInterval(() => void refresh(), 1500)
@@ -69,6 +110,10 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
   }, [props.liveStatus, refresh])
 
   const selected = runs.find((run) => run.id === selectedId) ?? runs[0] ?? null
+  const selectedMachine = machines?.machines.find((machine) => machine.agentId === selection.machineId)
+  const modelOptions = allowedModels(props.llmAccess ?? [], selection.provider)
+  const engineOptions = (props.llmEngines ?? []).filter((engine) => engine.kind === selection.provider)
+  const selectionReady = Boolean(selectedMachine?.online && selectedMachine.canUse !== false && selection.model && isProviderAllowed(props.llmAccess ?? [], selection.provider))
 
   const act = async (kind: 'retry' | 'cancel'): Promise<void> => {
     if (!selected || pending) return
@@ -101,7 +146,7 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
   if (error && runs.length === 0) return <div role="alert"><p>{error}</p><Button size="sm" onClick={() => void refresh()}>Повторить загрузку</Button></div>
 
   const start = async (): Promise<void> => {
-    if (!props.onStart || pending) return
+    if (!props.onStart || pending || !selectionReady) return
     setPending('start')
     try {
       const next = await props.onStart(props.taskId, selection)
@@ -112,13 +157,29 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
 
   return (
     <div className="task-preparation-tab" data-testid="task-preparation-tab">
-      <p className="task-tab-empty">Подготовка использует модель проекта: {selection.provider} · {selection.model || 'по умолчанию'}.</p>
-      {!selected && <div data-testid="task-preparation-empty"><p className="task-tab-empty">Подготовка к разработке ещё не запускалась.</p>{props.onStart && <Button variant="primary" size="sm" loading={pending === 'start'} onClick={() => void start()}>Запустить подготовку</Button>}</div>}
+      {!selected && <section aria-label="Настройка запуска подготовки">
+        <h4>Исполнитель подготовки</h4>
+        {machinesLoading ? <p aria-live="polite">Загрузка списка машин…</p> : machinesError ? <div role="alert"><p>Не удалось загрузить машины: {machinesError}</p><Button size="sm" onClick={() => void loadMachines()}>Повторить загрузку машин</Button></div> : (machines?.machines.length ?? 0) === 0 ? <p role="status">В проекте нет доступных машин.</p> : <label>Машина
+          <select aria-label="Машина подготовки" value={selection.machineId} onChange={(event) => setSelection((current) => ({ ...current, machineId: event.target.value }))}>
+            {(machines?.machines ?? []).map((machine) => <option key={machine.agentId} value={machine.agentId} disabled={!machine.online || machine.canUse === false}>{machine.name}{machine.online ? '' : ' (offline)'}</option>)}
+          </select>
+        </label>}
+        {machineFallback && <p role="status">Машина проекта по умолчанию недоступна — выбрана первая доступная online-машина.</p>}
+        <h4>LLM-конфигурация</h4>
+        {modelsLoading ? <p aria-live="polite">Загрузка каталога моделей…</p> : modelsError ? <div role="alert"><p>Не удалось загрузить модели: {modelsError}</p><Button size="sm" onClick={() => void loadModels()}>Повторить загрузку моделей</Button></div> : <>
+          <label>Исполнитель LLM <select aria-label="Исполнитель LLM" value={selection.llmEngineId ?? ''} onChange={(event) => setSelection((current) => ({ ...current, llmEngineId: event.target.value || null }))}>{engineOptions.map((engine) => <option key={engine.id} value={engine.id}>{engine.name}</option>)}</select></label>
+          <label>Провайдер <select aria-label="Провайдер модели" value={selection.provider} onChange={(event) => { const provider = event.target.value as 'claude' | 'codex'; const first = allowedModels(props.llmAccess ?? [], provider)[0]; setSelection((current) => ({ ...current, provider, model: first?.id ?? '' })) }}><option value="claude" disabled={!isProviderAllowed(props.llmAccess ?? [], 'claude')}>Claude</option><option value="codex" disabled={!isProviderAllowed(props.llmAccess ?? [], 'codex')}>Codex</option></select></label>
+          <label>Модель <select aria-label="Модель подготовки" value={selection.model} onChange={(event) => setSelection((current) => ({ ...current, model: event.target.value }))}>{modelOptions.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}</select></label>
+        </>}
+        <p className="task-tab-empty">Выбор будет зафиксирован в новой попытке.</p>
+        <div data-testid="task-preparation-empty"><p className="task-tab-empty">Подготовка к разработке ещё не запускалась.</p>{props.onStart && <Button variant="primary" size="sm" loading={pending === 'start'} disabled={!selectionReady || machinesLoading || modelsLoading} onClick={() => void start()}>Запустить подготовку</Button>}</div>
+      </section>}
       {selected && <>
       <div className="jmodal-ci-head">
         <span className="ci-task-title">Подготовка к разработке</span>
         <span className="ci-lozenge">Статус: {STATUS_LABEL[selected.status]}</span>
         <span className="ci-lozenge">Фаза: {selected.phase ?? 'initialization'}</span>
+        <span className="ci-lozenge">Машина: {selected.machineName ?? (selected.machineId ? selected.machineId : 'legacy: снимок отсутствует')}</span>
         <span className="ci-lozenge">LLM: {selected.provider ?? 'claude'} · {selected.model || 'по умолчанию'}</span>
         <span className="ci-lozenge">Длительность: {Math.round((selected.durationMs ?? 0) / 1000)} с</span>
       </div>
@@ -143,9 +204,7 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
           <ul data-testid="task-preparation-gate-reasons">{selected.gateReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
         </div>
       )}
-      <ol className="ci-console-pre" data-testid="task-preparation-feed" aria-live="polite">
-        {selected.events?.length ? selected.events.map((event) => <li key={event.eventId}>#{event.sequence} · {event.phase} · {event.text}</li>) : <li>{selected.log || (selected.canCancel ? 'Ожидаем ответ модели…' : 'Лента этой попытки пуста.')}</li>}
-      </ol>
+      <PreparationRunSteps steps={selected.steps ?? []} fallback={selected.log || (selected.canCancel ? 'Ожидаем ответ модели…' : 'Лента этой попытки пуста.')} />
       {selected.readiness && <section data-testid="task-preparation-brief"><h4>Development Brief</h4><pre className="ci-console-pre">{JSON.stringify(selected.readiness, null, 2)}</pre></section>}
       <div className="jmodal-ci-actions">
         {selected.canCancel && props.onCancel && <Button variant="danger" size="sm" loading={pending === 'cancel'} onClick={() => void act('cancel')}>Отменить</Button>}

@@ -958,19 +958,29 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     for (const handle of taskPreparationHandles.values()) handle.cancel()
     taskPreparationHandles.clear()
   })
-  const launchTaskPreparation = (userId: string, projectId: string, taskId: string, _selection?: import('@voicechat/shared').TaskPreparationLlmSelection): import('@voicechat/shared').TaskPreparationRun => {
+  const launchTaskPreparation = (userId: string, projectId: string, taskId: string, selection?: import('@voicechat/shared').TaskPreparationLlmSelection): import('@voicechat/shared').TaskPreparationRun => {
     let run = db.activeTaskPreparationRun(userId, projectId, taskId)
     if (!run) {
-      // Подготовка использует effective-настройку модели проекта. Проверяем
-      // персональный deny-list до создания попытки и никогда не подменяем пару.
+      const project = db.getProject(userId, projectId)
+      if (!project) throw new Error('Проект недоступен')
       const projectLlm = db.getCiLlmConfig('project', projectId) ?? db.ciLlmDefaultsForUser(userId)
-      const provider = projectLlm.provider
-      const model = taskPreparationModel(provider, projectLlm.model)
+      const explicitSelection = Boolean(selection?.machineId)
+      const provider = explicitSelection ? selection!.provider : projectLlm.provider
+      const model = taskPreparationModel(provider, explicitSelection ? selection!.model : projectLlm.model)
+      const llmEngineId = explicitSelection ? selection!.llmEngineId ?? null : projectLlm.llmEngineId ?? null
       const access = db.getUserLlmAccess(userId)
-      if (!isProviderAllowed(access, provider)) throw new Error(`Проектный движок ${provider === 'codex' ? 'Codex' : 'Claude'} недоступен пользователю`)
-      if (!isModelAllowedForUser(access, provider, model)) throw new Error(`Проектная модель ${provider}:${model} недоступна пользователю`)
+      if (!isProviderAllowed(access, provider)) throw new Error(explicitSelection ? 'model_unavailable: выбранный провайдер недоступен' : `Проектный движок ${provider === 'codex' ? 'Codex' : 'Claude'} недоступен пользователю`)
+      if (!isModelAllowedForUser(access, provider, model)) throw new Error(explicitSelection ? 'model_unavailable: выбранная модель недоступна' : `Проектная модель ${provider}:${model} недоступна пользователю`)
+      const usable = db.listUsableAgents(userId, projectId)
+      const machineId = selection?.machineId ?? db.getUserProjectDefaultMachine(userId, projectId) ?? project.defaultAgentId ?? project.machines.find((candidate) => candidate.canUse !== false && candidate.path.trim())?.agentId ?? ''
+      const agent = usable.find((candidate) => candidate.id === machineId)
+      const configured = project.machines.find((candidate) => candidate.agentId === machineId && candidate.canUse !== false && candidate.path.trim())
+      if (explicitSelection && (!agent || !configured)) throw new Error('unknown_machine: выбранная машина недоступна проекту')
+      if (explicitSelection && !agentRegistry.isOnline(machineId)) throw new Error('machine_offline: выбранная машина offline')
       run = db.startTaskPreparationRun(userId, projectId, taskId, {
-        llmEngineId: projectLlm.llmEngineId ?? null,
+        machineId: configured?.agentId ?? null,
+        machineName: configured?.name ?? agent?.name ?? null,
+        llmEngineId,
         provider,
         model
       })
@@ -986,8 +996,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const client = provider === 'codex' ? codex : claude
     const project = db.getProject(userId, projectId)
     const configuredMachines = (project?.machines ?? []).filter((machine) => machine.canUse !== false && machine.path.trim())
-    const preferredAgentId = db.getUserProjectDefaultMachine(userId, projectId) ?? project?.defaultAgentId ?? null
-    const selectedMachine = configuredMachines.find((machine) => machine.agentId === preferredAgentId) ?? configuredMachines[0] ?? null
+    const selectedMachine = configuredMachines.find((machine) => machine.agentId === run.machineId) ?? null
     const projectMachines = db.listProjectMachines(projectId)
     const kbToken = randomUUID()
     const kbEnabled = opts.config.kbToolEnabled

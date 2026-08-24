@@ -485,6 +485,20 @@ export interface PreparationGateResult { code: string; status: 'pass' | 'fail'; 
 export interface PreparationEvent {
   eventId: string; attemptId: string; sequence: number; timestamp: number
   type: string; phase: TaskPreparationPhase; text: string; data?: Record<string, unknown>
+  stepId?: string | null
+  stream?: 'stdout' | 'stderr' | 'system'
+}
+export type TaskPreparationStepStatus = 'queued' | 'running' | 'success' | 'failed' | 'cancelled'
+export interface TaskPreparationStep {
+  id: string
+  name: string
+  ordinal: number
+  status: TaskPreparationStepStatus
+  startedAt: number | null
+  finishedAt: number | null
+  durationMs: number | null
+  error: string | null
+  log: PreparationEvent[]
 }
 export interface PreparationQuestion {
   questionId: string; attemptId: string; text: string; material: boolean
@@ -505,6 +519,7 @@ export interface PreparationClarificationNotification {
   dismissedAt: number | null
 }
 export interface TaskPreparationLlmSelection {
+  machineId?: string
   llmEngineId?: string | null
   provider: 'claude' | 'codex'
   model: string
@@ -520,12 +535,15 @@ export interface TaskPreparationRun {
   attempt: number
   attemptNumber?: number
   maxAttempts: number
+  machineId?: string | null
+  machineName?: string | null
   llmEngineId?: string | null
   provider?: 'claude' | 'codex'
   model?: string
   profileId?: string
   log: string
   events?: PreparationEvent[]
+  steps?: TaskPreparationStep[]
   questions?: PreparationQuestion[]
   error: string | null
   readiness: DevelopmentReadiness | null

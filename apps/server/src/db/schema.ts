@@ -1141,6 +1141,10 @@ CREATE TABLE IF NOT EXISTS task_preparation_runs (
   phase TEXT NOT NULL DEFAULT 'initialization',
   attempt INTEGER NOT NULL DEFAULT 1,
   task_key TEXT NOT NULL DEFAULT '',
+  machine_id TEXT,
+  machine_name_snapshot TEXT,
+  llm_engine_id TEXT,
+  provider TEXT NOT NULL DEFAULT 'claude',
   model TEXT NOT NULL DEFAULT '',
   profile_id TEXT NOT NULL DEFAULT '',
   log TEXT NOT NULL DEFAULT '',
@@ -1170,6 +1174,19 @@ CREATE TABLE IF NOT EXISTS task_preparation_events (
   FOREIGN KEY (attempt_id) REFERENCES task_preparation_runs(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_task_preparation_events_attempt ON task_preparation_events(attempt_id, sequence);
+CREATE TABLE IF NOT EXISTS task_preparation_steps (
+  id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  started_at INTEGER,
+  finished_at INTEGER,
+  error TEXT,
+  UNIQUE(attempt_id, ordinal),
+  FOREIGN KEY (attempt_id) REFERENCES task_preparation_runs(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_task_preparation_steps_attempt ON task_preparation_steps(attempt_id, ordinal);
 CREATE TABLE IF NOT EXISTS task_preparation_questions (
   question_id TEXT PRIMARY KEY,
   attempt_id TEXT NOT NULL,
