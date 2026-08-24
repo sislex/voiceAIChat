@@ -1421,6 +1421,7 @@ describe('voiceStore — ходы, переживающие обновление
     cancelClaude: ReturnType<typeof vi.fn>
     editQueued: ReturnType<typeof vi.fn>
     deleteQueued: ReturnType<typeof vi.fn>
+    reorderQueued: ReturnType<typeof vi.fn>
     sendQueuedNow: ReturnType<typeof vi.fn>
   } {
     const api = createFakeApi([])
@@ -1428,6 +1429,7 @@ describe('voiceStore — ходы, переживающие обновление
     const cancelClaude = vi.fn()
     const editQueued = vi.fn()
     const deleteQueued = vi.fn()
+    const reorderQueued = vi.fn()
     const sendQueuedNow = vi.fn()
     const store = createTestStore({
       api,
@@ -1437,9 +1439,10 @@ describe('voiceStore — ходы, переживающие обновление
       cancelClaude,
       editQueued,
       deleteQueued,
+      reorderQueued,
       sendQueuedNow
     })
-    return { store, api, sendClaudePrompt, cancelClaude, editQueued, deleteQueued, sendQueuedNow }
+    return { store, api, sendClaudePrompt, cancelClaude, editQueued, deleteQueued, reorderQueued, sendQueuedNow }
   }
 
   /** Сообщение «как из БД сервера» (сервер сохраняет ответ сам). */
@@ -1530,12 +1533,10 @@ describe('voiceStore — ходы, переживающие обновление
     const active = store.getState().messages.at(-1)!
     store.actions.applyClaudeToken('Старый partial', id)
 
-    store.actions.applyClaudeQueue(id, [], false, {
-      ...active,
-      text: 'первый вопрос\n\nдополнение'
-    })
-    expect(store.getState().messages.find((message) => message.id === active.id)?.text)
-      .toBe('первый вопрос\n\nдополнение')
+    const merged = { ...active, id: 'merged-message', text: 'первый вопрос\n\nдополнение' }
+    store.actions.applyClaudeQueue(id, [], false, merged, [active.id, 'queued-message'])
+    expect(store.getState().messages.find((message) => message.id === active.id)).toBeUndefined()
+    expect(store.getState().messages.at(-1)).toEqual(merged)
     expect(store.getState().streamingReply).toBe('')
 
     store.actions.applyClaudeToken('Новый ответ', id)
@@ -1583,7 +1584,7 @@ describe('voiceStore — ходы, переживающие обновление
   })
 
   it('восстанавливает очередь и адресует edit/delete/send now активному разговору', async () => {
-    const { store, editQueued, deleteQueued, sendQueuedNow } = makeClaudeStore()
+    const { store, editQueued, deleteQueued, reorderQueued, sendQueuedNow } = makeClaudeStore()
     await store.actions.init()
     store.actions.setDraft('активный')
     await store.actions.submitText()
@@ -1598,6 +1599,14 @@ describe('voiceStore — ходы, переживающие обновление
     expect(store.getState().messages.filter((message) => message.id === 'm2')).toEqual([published])
     store.actions.applyClaudeQueue(conversationId, [], false, published)
     expect(store.getState().messages.filter((message) => message.id === 'm2')).toHaveLength(1)
+    const second = { ...item, id: 'q2', messageId: 'm3', text: 'Ещё', position: 2 }
+    store.actions.applyClaudeQueue(conversationId, [item, second], true)
+    store.actions.reorderQueued(['q2', 'q1'])
+    expect(store.getState().queuedTurns[conversationId]?.map((queued) => queued.id)).toEqual(['q2', 'q1'])
+    expect(reorderQueued).toHaveBeenCalledWith(conversationId, ['q2', 'q1'])
+    // Авторитетный ответ сервера откатывает неуспешную оптимистичную перестановку.
+    store.actions.applyClaudeQueue(conversationId, [item, second], true)
+    expect(store.getState().queuedTurns[conversationId]?.map((queued) => queued.id)).toEqual(['q1', 'q2'])
     store.actions.editQueued('q1', 'Исправленный')
     store.actions.deleteQueued('q1')
     store.actions.sendQueuedNow('q1')

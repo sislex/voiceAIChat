@@ -558,7 +558,7 @@ export interface IpcEventMap {
   'claude:usage': { conversationId: string; usage: TurnUsage }
   /** Снапшот активных ходов при (пере)подключении — восстановление стрима. */
   'claude:active': { turns: Array<{ conversationId: string; partial: string; activity?: ClaudeLogEntry[]; usage?: TurnUsage }> }
-  'claude:queue': { conversationId: string; items: QueuedTurn[]; paused: boolean; published?: Message }
+  'claude:queue': { conversationId: string; items: QueuedTurn[]; paused: boolean; published?: Message; removedMessageIds?: string[] }
   /** Прогресс скачивания модели Whisper (0–100). */
   'stt:downloadProgress': { percent: number }
   /** Скачивание модели завершено. */
@@ -743,6 +743,7 @@ export interface RendererClaudeBridge {
   cancel(payload?: IpcSendPayload<'claude:cancel'>): void
   editQueued?(payload: { conversationId: string; id: string; text: string; segments: SttSegmentWire[] }): void
   deleteQueued?(payload: { conversationId: string; id: string }): void
+  reorderQueued?(payload: { conversationId: string; ids: string[] }): void
   sendQueuedNow?(payload: { conversationId: string; id: string }): void
   onToken(cb: (msg: IpcEventPayload<'claude:token'>) => void): () => void
   onDone(cb: (msg: IpcEventPayload<'claude:done'>) => void): () => void

@@ -237,11 +237,12 @@ export interface ChatActions {
   applyClaudeDone(text: string, meta?: TurnMeta, engine?: LlmProvider, message?: Message, conversationId?: string): Promise<void>
   applyClaudeError(message: string, conversationId?: string): void
   applyClaudeActive(turns: ActiveTurn[]): void
-  applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message): void
+  applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message, removedMessageIds?: string[]): void
   applyClaudeUsage(usage: TurnUsage, conversationId?: string): void
   applyClaudeLog(entry: ClaudeLogEntry, conversationId?: string): void
   editQueued(id: string, text: string): void
   deleteQueued(id: string): void
+  reorderQueued(ids: string[]): void
   sendQueuedNow(id: string): void
   applyChatMessage(conversationId: string, message: Message): void
   /** Перечитать ленту активного разговора (после ответа на паузу CI-рана). */
@@ -1140,7 +1141,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     restoreStreamIfActive()
   }
 
-  function applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message): void {
+  function applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message, removedMessageIds: string[] = []): void {
     const state = getState()
     const queuedIds = new Set(items.map((item) => item.messageId))
     const patch: Partial<ChatState> = {
@@ -1148,16 +1149,17 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       queuePaused: { ...state.queuePaused, [conversationId]: paused }
     }
     if (conversationId === state.activeId) {
-      const visible = state.messages.filter((message) => !queuedIds.has(message.id))
+      const removedIds = new Set(removedMessageIds)
+      const visible = state.messages.filter((message) => !queuedIds.has(message.id) && !removedIds.has(message.id))
       const publishedIndex = published ? visible.findIndex((message) => message.id === published.id) : -1
       patch.messages = published
         ? publishedIndex >= 0
           ? visible.map((message) => (message.id === published.id ? published : message))
           : [...visible, published]
         : visible
-      if (publishedIndex >= 0) {
-        // Тот же messageId означает замену активного запроса через «Отправить
-        // сейчас»: старый partial не должен стать началом нового ответа.
+      if (publishedIndex >= 0 || removedMessageIds.length > 0) {
+        // Атомарная замена запроса удаляет старую реплику и публикует новую:
+        // старый partial не должен стать началом нового ответа.
         patch.streamingReply = ''
         patch.liveActivity = []
         patch.liveUsage = null
@@ -1592,6 +1594,19 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         const activeId = getState().activeId
         if (!activeId) return
         turn.deleteQueued?.(activeId, id)
+      },
+      reorderQueued(ids) {
+        const activeId = getState().activeId
+        if (!activeId) return
+        const current = getState().queuedTurns[activeId] ?? []
+        if (ids.length !== current.length || new Set(ids).size !== ids.length) return
+        const byId = new Map(current.map((item) => [item.id, item]))
+        if (ids.some((id) => !byId.has(id))) return
+        // Оптимистичный порядок виден немедленно. Следующий claude.queue — всегда
+        // авторитетный снимок и тем самым подтверждение либо откат.
+        const reordered = ids.map((id, index) => ({ ...byId.get(id)!, position: index + 1 }))
+        setState({ queuedTurns: { ...getState().queuedTurns, [activeId]: reordered } })
+        turn.reorderQueued?.(activeId, ids)
       },
       sendQueuedNow(id) {
         const activeId = getState().activeId

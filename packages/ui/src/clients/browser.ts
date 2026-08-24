@@ -143,6 +143,7 @@ export function createBrowserClients(overrides: BrowserClientOverrides = {}): Ap
               editQueued: (conversationId: string, id: string, text: string) =>
                 claude.editQueued?.({ conversationId, id, text, segments: [{ speakerId: 1, text }] }),
               deleteQueued: (conversationId: string, id: string) => claude.deleteQueued?.({ conversationId, id }),
+              reorderQueued: (conversationId: string, ids: string[]) => claude.reorderQueued?.({ conversationId, ids }),
               sendQueuedNow: (conversationId: string, id: string) => claude.sendQueuedNow?.({ conversationId, id })
             }
           : {})

@@ -426,6 +426,8 @@ export type ClientMessage =
   | { t: 'claude.cancel'; conversationId?: string }
   | { t: 'claude.queue.edit'; conversationId: string; id: string; text: string; segments: SttSegmentWire[] }
   | { t: 'claude.queue.delete'; conversationId: string; id: string }
+  /** Полный желаемый порядок ожидающих элементов; сервер применяет его атомарно. */
+  | { t: 'claude.queue.reorder'; conversationId: string; ids: string[] }
   | { t: 'claude.queue.now'; conversationId: string; id: string }
   | { t: 'tts.speak'; text: string; voice: string }
   | { t: 'tts.cancel' }
@@ -469,7 +471,7 @@ export type ServerMessage =
   | { t: 'claude.log'; conversationId: string; entry: ClaudeLogEntry }
   | { t: 'claude.usage'; conversationId: string; usage: TurnUsage }
   | { t: 'claude.active'; turns: ActiveTurn[] }
-  | { t: 'claude.queue'; conversationId: string; items: QueuedTurn[]; paused: boolean; published?: Message }
+  | { t: 'claude.queue'; conversationId: string; items: QueuedTurn[]; paused: boolean; published?: Message; removedMessageIds?: string[] }
   | { t: 'tts.audio'; audio: string } // base64 WAV (или бинарный кадр — см. реализацию)
   | { t: 'tts.error'; message: string }
   | { t: 'tts.voiceProgress'; id: string; percent: number }
@@ -529,6 +531,7 @@ export const CLIENT_MESSAGE_TYPES: ClientMessageType[] = [
   'claude.cancel',
   'claude.queue.edit',
   'claude.queue.delete',
+  'claude.queue.reorder',
   'claude.queue.now',
   'tts.speak',
   'tts.cancel',
