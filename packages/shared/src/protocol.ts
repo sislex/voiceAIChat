@@ -486,6 +486,7 @@ export type ServerMessage =
   | { t: 'pty.error'; ptyId: string; message: string }
   | { t: 'board.changed'; projectId: string }
   | { t: 'preparation.run.updated'; projectId: string; taskId: string; runId: string }
+  | { t: 'task.repositories.updated'; projectId: string; taskId: string }
   /** Снимок уведомлений подготовки изменился; содержимое читается только по HTTP. */
   | { t: 'task-preparation.notifications.invalidate'; v: 1; projectId: string }
   | { t: 'ci.snapshot'; runId: string; detail: CiRunDetail; log: CiLogLine[] }
@@ -577,6 +578,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'pty.error',
   'board.changed',
   'preparation.run.updated',
+  'task.repositories.updated',
   'task-preparation.notifications.invalidate',
   'ci.snapshot',
   'ci.run',
