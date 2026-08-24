@@ -27,6 +27,8 @@ export interface WebRecorderScenarioStep {
   selector: string
   text: string
   sensitive: boolean
+  /** Только для type: Enter-отправка формы записывается и воспроизводится сабмитом. */
+  submit?: boolean
 }
 
 type Envelope = { type: typeof WEB_RECORDER_MESSAGE_TYPE }
@@ -134,6 +136,8 @@ export function isWebRecorderClientMessage(value: unknown): value is WebRecorder
       const step = value.step
       if (step.kind !== 'click' && step.kind !== 'type') return false
       if (!bounded(step.selector, PREVIEW_ACTION_LIMITS.selector) || typeof step.sensitive !== 'boolean') return false
+      // Сабмит — свойство ввода: click с submit невалиден.
+      if (step.submit !== undefined && (typeof step.submit !== 'boolean' || step.kind !== 'type')) return false
       // Значение секретного поля не должно покидать Reader ни в каком сообщении.
       if (step.sensitive) return step.text === ''
       return typeof step.text === 'string' && step.text.length <= PREVIEW_ACTION_LIMITS.text

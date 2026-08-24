@@ -23,12 +23,14 @@ type Addressed = Extract<WebRecorderClientMessage, { registrationId: string }>
 type ReplyBody = Addressed extends infer M ? M extends Addressed ? Omit<M, 'type' | 'conversationId' | 'registrationId'> : never : never
 interface DiagnosticsStep { requestId: string; action: string; ok: boolean; durationMs: number }
 const RECORD = 'voicechat.preview.record.v1'
+// Режим правок страницы: канал Reader ↔ инъецированный скрипт previewProxy.
+const EDIT = 'voicechat.preview.edit.v1'
 const sameOrigin = window.location.origin
 const validUrl = (value: string): string | null => { try { const url = new URL(value.trim()); return /^https?:$/.test(url.protocol) ? url.toString() : null } catch { return null } }
 
 export function Recorder(): JSX.Element {
   const [url, setUrl] = useState<string | null>(null); const [draft, setDraft] = useState(''); const [recording, setRecording] = useState(false)
-  const [inspecting, setInspecting] = useState(false); const [disposed, setDisposed] = useState(false)
+  const [inspecting, setInspecting] = useState(false); const [editing, setEditing] = useState(false); const [disposed, setDisposed] = useState(false)
   const [steps, setSteps] = useState<Step[]>([]); const [error, setError] = useState<string | null>(null)
   const [diagnostics, setDiagnostics] = useState<DiagnosticsStep[] | null>(null)
   const frame = useRef<HTMLIFrameElement>(null); const pageReady = useRef(false); const currentUrl = useRef<string | null>(null)
@@ -123,13 +125,14 @@ export function Recorder(): JSX.Element {
         return
       }
       if (isPreviewInspectorCommand(message)) { setInspecting(message.enabled); return }
+      if (message?.type === EDIT && message.enabled === false) { setEditing(false); return }
       if (message?.type === PREVIEW_INSPECTOR_MESSAGE_TYPE) { reply({ kind: 'element-selected', element: message.payload as never }); return }
       if (message?.type === RECORD && !diagnosticsMode.current) {
-        const raw = message.step as { kind?: unknown; selector?: unknown; text?: unknown; sensitive?: unknown } | undefined
+        const raw = message.step as { kind?: unknown; selector?: unknown; text?: unknown; sensitive?: unknown; submit?: unknown } | undefined
         if (!raw || (raw.kind !== 'click' && raw.kind !== 'type') || typeof raw.selector !== 'string') return
         const sensitive = raw.sensitive === true
         // Значение секретного поля не сохраняется и не покидает страницу.
-        const step: Step = { kind: raw.kind, selector: raw.selector, text: sensitive ? '' : typeof raw.text === 'string' ? raw.text : '', sensitive }
+        const step: Step = { kind: raw.kind, selector: raw.selector, text: sensitive ? '' : typeof raw.text === 'string' ? raw.text : '', sensitive, ...(raw.kind === 'type' && raw.submit === true ? { submit: true } : {}) }
         setSteps((old) => [...old, step])
         reply({ kind: 'recording-step', step })
       }
@@ -156,6 +159,7 @@ export function Recorder(): JSX.Element {
   }, [])
 
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: RECORD, enabled: recording }, sameOrigin) }, [recording, url])
+  useEffect(() => { frame.current?.contentWindow?.postMessage({ type: EDIT, enabled: editing }, sameOrigin) }, [editing, url])
   const open = (): void => {
     const next = validUrl(draft)
     if (draft && !next) { setError('Введите адрес с протоколом http:// или https://'); return }
@@ -171,7 +175,10 @@ export function Recorder(): JSX.Element {
     if (!frame.current?.contentWindow || !url) return
     for (const step of steps) {
       if (step.sensitive) { setError('Чувствительное значение не сохранено — заполните поле вручную'); return }
-      frame.current.contentWindow.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId: 'local-' + browserId(), action: step as PreviewDomAction }, sameOrigin)
+      const action: PreviewDomAction = step.kind === 'click'
+        ? { kind: 'click', selector: step.selector }
+        : { kind: 'type', selector: step.selector, text: step.text, ...(step.submit ? { submit: true } : {}) }
+      frame.current.contentWindow.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId: 'local-' + browserId(), action }, sameOrigin)
     }
   }
   if (disposed) return <section className="webpreview" aria-label="Web Reader"><div className="webpreview-empty" role="status">Панель Web Reader отключена host-приложением</div></section>
@@ -180,6 +187,7 @@ export function Recorder(): JSX.Element {
       <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" value={draft} placeholder="https://example.com" onChange={(event) => setDraft(event.target.value)} /></label>
       <button className="vc-btn vc-btn--secondary">Открыть</button>
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={toggleInspector}>⌖ Выбор элемента</button>
+      <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => setEditing((value) => !value)}>✎ Редактировать</button>
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} onClick={() => setRecording((value) => !value)}>{recording ? 'Остановить запись' : 'Записать сценарий'}</button>
     </form>
     {error && <p className="webpreview-error" role="alert">{error}</p>}
@@ -190,6 +198,7 @@ export function Recorder(): JSX.Element {
     {steps.length > 0 && <section className="webpreview-scenario" aria-label="Сценарий автотеста"><button className="vc-btn vc-btn--secondary" onClick={run}>Запустить</button><ol>
       {steps.map((step, index) => <li key={index}><code>{step.kind}</code><input aria-label={'Селектор шага ' + (index + 1)} value={step.selector} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, selector: event.target.value } : item))} />
         {step.kind === 'type' && <input aria-label={'Значение шага ' + (index + 1)} value={step.sensitive ? '••••••' : step.text} readOnly={step.sensitive} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />}
+        {step.submit === true && <em>⏎ submit</em>}
         {step.sensitive && <em>секрет не сохранён</em>}</li>)}
     </ol></section>}
     {url ? <iframe ref={frame} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={() => { setTimeout(() => { if (pageReady.current) return; let message = 'Сайт недоступен или вернул страницу, которую Web Reader не может прочитать.'; try { const body = frame.current?.contentDocument?.body?.textContent?.trim(); if (body) { const parsed = JSON.parse(body) as { message?: unknown }; if (typeof parsed.message === 'string') message = parsed.message } } catch { /* не-JSON страница без клиентского моста */ }; reply({ kind: 'page-status', status: 'error', url, error: message }) }, 0) }} onError={() => { pageReady.current = false; reply({ kind: 'page-status', status: 'error', url, error: 'Не удалось загрузить сайт: сетевая ошибка.' }) }} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
