@@ -52,6 +52,11 @@ export interface SessionDeps {
     getBoard(projectId: string, includeCompleted?: boolean): Board | null
     subscribe(cb: (projectId: string) => void): () => void
   }
+  /** Адресная инвалидизация HTTP-снимка уведомлений подготовки. */
+  preparationNotifications?: {
+    canAccess(projectId: string): boolean
+    subscribe(cb: (event: { projectId: string; userId?: string }) => void): () => void
+  }
   /** Live-tail проводника CC/Codex: локальный fs.watch или SSE исполнителя. */
   observerTail?: {
     watchCc(userId: string, slug: string, id: string, onItems: (items: CcItem[]) => void): () => void
@@ -91,6 +96,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubDownload: (() => void) | null = null
   let unsubAgents: (() => void) | null = null
   let unsubBoard: (() => void) | null = null
+  let unsubPreparationNotifications: (() => void) | null = null
   let boardProjectId: string | null = null
   /** Просит ли подписчик отдавать и давно завершённые задачи («Показать завершённые»). */
   let boardIncludeCompleted = false
@@ -145,6 +151,12 @@ export function createSession(deps: SessionDeps): WsHandlers {
         unsubAgents = deps.agentsFeed.subscribe(() =>
           ctx.send({ t: 'agents', agents: deps.agentsFeed!.list() })
         )
+      }
+      if (deps.preparationNotifications) {
+        unsubPreparationNotifications = deps.preparationNotifications.subscribe((event) => {
+          if (event.userId ? event.userId !== deps.user.name : !deps.preparationNotifications!.canAccess(event.projectId)) return
+          ctx.send({ t: 'task-preparation.notifications.invalidate', v: 1, projectId: event.projectId })
+        })
       }
       if (deps.board) {
         unsubBoard = deps.board.subscribe((projectId) => {
@@ -336,6 +348,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubAgents = null
       unsubBoard?.()
       unsubBoard = null
+      unsubPreparationNotifications?.()
+      unsubPreparationNotifications = null
       boardProjectId = null
       boardIncludeCompleted = false
       unsubTurns?.()
