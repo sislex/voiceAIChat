@@ -1373,9 +1373,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
         voiceBar={
           <VoiceBar
-            key={chat.conversationsStatus === 'ready' && !chat.activeId && chat.messages.length === 0 ? 'centered' : 'docked'}
-            defaultCollapsed={compactChat && !(chat.conversationsStatus === 'ready' && !chat.activeId && chat.messages.length === 0)}
-            layout={chat.conversationsStatus === 'ready' && !chat.activeId && chat.messages.length === 0 ? 'centered' : 'docked'}
+            defaultCollapsed={compactChat && chat.messages.length > 0}
+            layout={chat.messages.length === 0 ? 'centered' : 'docked'}
+            userDisplayName={session.currentUser?.name}
             state={voice.voice}
             replyStarted={chat.streamingReply.length > 0}
             requestError={shell.error}

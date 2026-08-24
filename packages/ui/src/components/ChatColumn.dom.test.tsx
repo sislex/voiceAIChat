@@ -606,7 +606,7 @@ describe('ChatColumn — автопрокрутка ленты', () => {
 
     expect(box.scrollTop).toBe(480)
     expect(screen.getByRole('button', { name: 'К новому сообщению' })).toBeInTheDocument()
-    expect(screen.getByTestId('composer').previousElementSibling).toHaveClass('new-message-row')
+    expect(screen.getByRole('button', { name: 'К новому сообщению' }).closest('.new-message-row')?.nextElementSibling).toHaveClass('chat-composer')
   })
 
   it('кнопка возвращает вниз, включает follow и исчезает', async () => {
