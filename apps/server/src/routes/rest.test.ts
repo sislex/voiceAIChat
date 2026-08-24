@@ -491,6 +491,30 @@ describe('REST: conversations/messages/settings', () => {
     expect(res.statusCode).toBe(404)
   })
 
+  it('возвращает авторизованный серверный снимок эффективного контекста', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Контекст' } })).json()
+    const res = await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })
+    expect(res.statusCode).toBe(200)
+    const snapshot = res.json()
+    expect(snapshot).toMatchObject({ schemaVersion: 1, conversationId: created.id })
+    expect(new Date(snapshot.generatedAt).toISOString()).toBe(snapshot.generatedAt)
+    expect(snapshot.freshnessWarning).toContain('момент формирования')
+    const items = snapshot.groups.flatMap((group: { items: unknown[] }) => group.items)
+    expect(items.length).toBeGreaterThan(10)
+    for (const entry of items) expect(entry).toEqual(expect.objectContaining({ id: expect.any(String), type: expect.any(String), source: expect.any(String), scope: expect.any(String), priority: expect.any(String), configured: expect.any(Boolean), available: expect.any(Boolean), includedInNextTurn: expect.any(Boolean) }))
+    expect(items.find((entry: { id: string }) => entry.id === 'current-message')).toMatchObject({ configured: false, available: false, includedInNextTurn: false })
+    expect(items.find((entry: { id: string }) => entry.id === 'knowledge-mode').details.autoContextDocuments).toEqual([])
+  })
+
+  it('не раскрывает снимок чужого или отсутствующего разговора', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Чужой' } })).json()
+    db.createUser('other', 'password', 'developer')
+    const other = signToken({ name: 'other', role: 'developer' }, SECRET)
+    const hidden = await app.inject({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot`, headers: { authorization: `Bearer ${other}` } })
+    expect(hidden.statusCode).toBe(404)
+    expect((await inj({ method: 'GET', url: '/api/conversations/missing/context-snapshot' })).statusCode).toBe(404)
+  })
+
   it('поиск /conversations/search находит по названию (статик-роут не конфликтует с :id)', async () => {
     await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Лиссабон' } })
     await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Погода' } })

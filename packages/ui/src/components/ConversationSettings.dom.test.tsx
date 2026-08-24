@@ -185,47 +185,25 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kbContextMode: 'manual' })))
   })
 
-  it('показывает инспектор в фактическом порядке приоритетов и отделяет инструменты', () => {
-    render(<ConversationSettings conversation={{ ...conversation, workdir: '/repo/app', skillNames: ['build'] }} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
-    expect(screen.getByText('Что действует прямо сейчас')).toBeInTheDocument()
-     const summaries = Array.from(document.querySelectorAll('.context-group > summary b')).map((node) => node.textContent)
-    expect(summaries.slice(0, 4)).toEqual(['Системные правила платформы', 'Инструкции приложения ChatAI', 'Инструкции проекта и рабочей директории', 'Настройки текущего разговора'])
-    expect(screen.getByText('MCP-инструменты и приложения')).toBeInTheDocument()
-    expect(screen.getByText('Неустановленные плагины не являются активными возможностями.')).toBeInTheDocument()
-  })
-
-  it('открывает каждый источник по каноническому URL без возврата к родителю', () => {
-    window.location.hash = '#/chat/c1'
+  it('показывает загруженный серверный снимок, timestamp и предупреждение', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [] }) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
-    const titles = Array.from(document.querySelectorAll<HTMLButtonElement>('.context-item')).map((button) => button.querySelector('b')?.textContent ?? '')
-
-    for (const title of titles) {
-      fireEvent.click(screen.getByRole('button', { name: new RegExp(title) }))
-      expect(window.location.hash).toMatch(/^#\/chat\/c1\/context\//)
-      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: '← Ко всем источникам' }))
-      expect(window.location.hash).toBe('#/chat/c1')
-    }
+    expect(await screen.findByText('Снимок следующего хода')).toBeInTheDocument()
+    expect(screen.getByText('Снимок может измениться')).toBeInTheDocument()
+    expect(screen.getByText(/Сформирован:/)).toBeInTheDocument()
+    expect(screen.queryByText(/GitHub · Figma/)).not.toBeInTheDocument()
   })
 
-  it('восстанавливает вложенный экран из URL и при навигации истории', async () => {
-    window.location.hash = '#/chat/c1/context/platform-safety'
+  it('показывает контролируемое состояние неизвестной карточки и сохраняет канонический URL', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [] }) } as never
+    window.location.hash = '#/chat/c1/context/disappeared'
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
-
     expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('heading', { name: 'Правила безопасности' })).toBeInTheDocument()
-    expect(screen.getByText('Полный текст недоступен, показано описание.')).toBeInTheDocument()
-
-    window.location.hash = '#/chat/c1/context/remote-bash'
-    window.dispatchEvent(new HashChangeEvent('hashchange'))
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Команда на удалённой машине' })).toBeInTheDocument())
-
-    window.location.hash = '#/chat/c1'
-    window.dispatchEvent(new HashChangeEvent('hashchange'))
-    await waitFor(() => expect(screen.getByText('Что действует прямо сейчас')).toBeInTheDocument())
-    expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('heading', { name: 'Источник не найден' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/chat/c1/context/disappeared')
+    fireEvent.click(screen.getByRole('button', { name: '← Ко всем источникам' }))
+    expect(window.location.hash).toBe('#/chat/c1')
   })
 
 })
