@@ -22,6 +22,7 @@ describe('Web Reader diagnostics', () => {
       if (action.kind === 'hover') return { ok: true, result: { page: { url: '', title: '' }, hovered: { selector: '#hover-target', tag: 'p', text: '' } } }
       if (action.kind === 'scroll') return { ok: true, result: { page: { url: '', title: '' }, target: 'window', scrolled: { top: 2600, left: 0, maxTop: 2600 } } }
       if (action.kind === 'press') return { ok: true, result: { page: { url: '', title: '' }, pressed: { key: 'Escape', selector: 'body' } } }
+      if (action.kind === 'screenshot') return { ok: true, result: { page: { url: '', title: '' }, rect: { x: 0, y: 0, width: 100, height: 40 }, dataUrl: 'data:image/png;base64,AAAA' } }
       const text = action.selector === '#event-status' ? 'input:1 change:1' : action.selector === '#submit-status' ? 'submitted:diagnostic-input' : action.selector === '#hover-status' ? 'hover:1' : action.selector === '#key-status' ? 'key:Escape' : actions.includes('click') ? 'Diagnostics destination' : 'VoiceChat Web Reader Diagnostics'
       return { ok: true, result: { page: { url: '', title: '' }, headings: [], links: [], buttons: [], inputs: [], text } }
     })
@@ -33,7 +34,7 @@ describe('Web Reader diagnostics', () => {
       publish: async (text) => { published.push(text) }
     })
     expect(published[0]).toContain(WEB_READER_DIAGNOSTICS_CAPABILITIES[0])
-    expect(actions).toEqual(['open', 'read', 'find', 'find', 'styles', 'hover', 'read', 'scroll', 'press', 'read', 'type', 'read', 'type', 'read', 'click', 'read'])
+    expect(actions).toEqual(['open', 'read', 'find', 'find', 'styles', 'hover', 'read', 'scroll', 'press', 'read', 'screenshot', 'type', 'read', 'type', 'read', 'click', 'read'])
     expect(results.every((step) => step.ok && step.durationMs >= 0)).toBe(true)
     expect(run.mock.calls.every(([action]) => action.diagnostic === true)).toBe(true)
   })

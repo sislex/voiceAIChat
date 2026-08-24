@@ -33,7 +33,9 @@ export const PREVIEW_ACTION_LIMITS = {
   /** Текстовая выжимка страницы в `read`. */
   snippet: 4_000,
   /** Кап сериализованного результата, который сервер вернёт модели. */
-  resultJson: 32_000
+  resultJson: 32_000,
+  /** Отдельный кап результата со снимком (dataUrl не влезает в resultJson). */
+  screenshotJson: 2_000_000
 } as const
 
 /** Действие браузера, запрошенное моделью. `open` выполняет сам UI (без iframe). */
@@ -50,6 +52,8 @@ export type PreviewAction =
   | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dy?: number; diagnostic?: boolean }
   /** Нажатие клавиши (Escape, Enter, Tab, ArrowDown, …) на элементе или активном поле. */
   | { kind: 'press'; key: string; selector?: string; diagnostic?: boolean }
+  /** Снимок области: элемент по селектору, явный rect (координаты документа) или видимая область. */
+  | { kind: 'screenshot'; selector?: string; rect?: { x: number; y: number; width: number; height: number }; diagnostic?: boolean }
 
 /** DOM-действия, которые уходят в iframe (все, кроме `open`). */
 export type PreviewDomAction = Exclude<PreviewAction, { kind: 'open' }>
@@ -127,6 +131,13 @@ export interface PreviewPressResult {
   pressed: { key: string; selector: string }
 }
 
+/** Снимок области страницы: PNG/JPEG data-URL и итоговый rect в координатах документа. */
+export interface PreviewScreenshotResult {
+  page: PreviewPageInfo
+  rect: { x: number; y: number; width: number; height: number }
+  dataUrl: string
+}
+
 export type PreviewActionResult =
   | PreviewOpenResult
   | PreviewFindResult
@@ -137,6 +148,7 @@ export type PreviewActionResult =
   | PreviewHoverResult
   | PreviewScrollResult
   | PreviewPressResult
+  | PreviewScreenshotResult
 
 /** Команда родителя в iframe превью. */
 export interface PreviewActionCommand {
@@ -210,6 +222,14 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
         typeof value.key === 'string' && value.key.length >= 1 && value.key.length <= 32 &&
         optBounded(value.selector, L.selector)
       )
+    case 'screenshot': {
+      if (!optBounded(value.selector, L.selector)) return false
+      if (value.rect === undefined) return true
+      if (!record(value.rect)) return false
+      const rect = value.rect
+      return (['x', 'y', 'width', 'height'] as const).every((key) => typeof rect[key] === 'number' && Number.isFinite(rect[key] as number) && Math.abs(rect[key] as number) <= 100_000) &&
+        (rect.width as number) > 0 && (rect.height as number) > 0
+    }
     default:
       return false
   }
@@ -250,10 +270,16 @@ export function isPreviewActionResultMessage(value: unknown): value is PreviewAc
   if (value.result === undefined) return true
   if (!record(value.result)) return false
   try {
-    return JSON.stringify(value.result).length <= PREVIEW_ACTION_LIMITS.resultJson
+    const cap = isScreenshotResult(value.result) ? PREVIEW_ACTION_LIMITS.screenshotJson : PREVIEW_ACTION_LIMITS.resultJson
+    return JSON.stringify(value.result).length <= cap
   } catch {
     return false
   }
+}
+
+/** Результат снимка: единственный тип, которому разрешён кап больше resultJson. */
+export function isScreenshotResult(result: Record<string, unknown>): boolean {
+  return typeof result.dataUrl === 'string' && result.dataUrl.startsWith('data:image/')
 }
 
 /**
@@ -279,7 +305,8 @@ export function previewToolHint(): string {
     'Просьбы «открой сайт …», «нажми …», «что на странице?» выполняй этими инструментами, а не shell-командами. ' +
     'После open или click, ведущего к переходу, страница загружается заново — перечитай её read перед следующим действием. ' +
     'Дополнительно: hover {selector|text} — навести курсор (выпадающие меню); scroll {to: top|bottom | dy, selector?} — ' +
-    'прокрутить окно или контейнер (ленивые ленты); press {key, selector?} — нажать клавишу (Escape, Enter, Tab, ArrowDown…). ' +
+    'прокрутить окно или контейнер (ленивые ленты); press {key, selector?} — нажать клавишу (Escape, Enter, Tab, ArrowDown…); ' +
+    'screenshot {selector? | rect?} — картинка элемента, области или видимой части страницы, когда важен внешний вид, а не текст. ' +
     'Тестовое окружение, запущенное на машине этого разговора (dev-сервер репозитория, feature-preview), открывай ' +
     'адресом http://machine.internal:<порт>/ — прокси доставит запрос на 127.0.0.1:<порт> машины разговора; ' +
     'типовой цикл: поправь код в репозитории машины, запусти или перезапусти dev-сервер, открой machine.internal и проверь фичу. ' +

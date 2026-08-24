@@ -324,3 +324,17 @@ describe('скрипт превью: hover, scroll, press', () => {
     expect(keys).toEqual(['down:Escape', 'up:Escape'])
   })
 })
+
+describe('скрипт превью: screenshot', () => {
+  it('screenshot без canvas (jsdom) отвечает асинхронной понятной ошибкой, а не молчит', async () => {
+    const res = await act({ kind: 'screenshot', selector: 'main' })
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('Canvas')
+  })
+
+  it('screenshot по отсутствующему селектору — ошибка поиска', async () => {
+    const res = await act({ kind: 'screenshot', selector: '#no-such' })
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('не найден')
+  })
+})
