@@ -228,14 +228,14 @@ describe('VoiceBar — состояния', () => {
 
 describe('VoiceBar — высота поля ввода', () => {
   // В jsdom нет раскладки: задаём метрики поля стилем и подменяем scrollHeight так,
-  // будто текст занял свои строки. Строка — 20px, паддинги 10+10, рамка 1+1.
+  // будто текст занял свои строки. Строка — 20px, паддинги 5+5, рамка 1+1.
   const LINE = 20
-  const PAD = 20
+  const PAD = 10
 
   beforeEach(() => {
     document.head.insertAdjacentHTML(
       'beforeend',
-      '<style id="tin-metrics">.tin{line-height:20px;padding:10px 16px;border:1px solid #000}</style>'
+      '<style id="tin-metrics">.tin{line-height:20px;padding:5px 16px;border:1px solid #000}</style>'
     )
     Object.defineProperty(HTMLTextAreaElement.prototype, 'scrollHeight', {
       configurable: true,
@@ -257,23 +257,24 @@ describe('VoiceBar — высота поля ввода', () => {
     return height
   }
 
-  it('поле открывается на двух строках', () => {
+  it('поле открывается на одной строке', () => {
     setup('idle')
-    expect(screen.getByLabelText('Поле ввода сообщения')).toHaveAttribute('rows', '2')
+    expect(screen.getByLabelText('Поле ввода сообщения')).toHaveAttribute('rows', '1')
   })
 
-  it('одна строка текста всё равно даёт высоту двух строк', () => {
-    expect(heightOf('привет')).toBe('62px') // 2*20 + 20 + рамка 2
+  it('одна строка текста занимает одну строку', () => {
+    expect(heightOf('привет')).toBe('32px') // 1*20 + 10 + рамка 2
   })
 
-  it('высота идёт за числом строк: 3 и 4 строки', () => {
-    expect(heightOf('a\nb\nc')).toBe('82px')
-    expect(heightOf('a\nb\nc\nd')).toBe('102px')
+  it('высота увеличивается с каждой новой строкой до четырёх', () => {
+    expect(heightOf('a\nb')).toBe('52px')
+    expect(heightOf('a\nb\nc')).toBe('72px')
+    expect(heightOf('a\nb\nc\nd')).toBe('92px')
   })
 
   it('после четырёх строк не растёт — дальше скролл', () => {
-    expect(heightOf('a\nb\nc\nd\ne')).toBe('102px')
-    expect(heightOf('a\nb\nc\nd\ne\nf\ng\nh')).toBe('102px')
+    expect(heightOf('a\nb\nc\nd\ne')).toBe('92px')
+    expect(heightOf('a\nb\nc\nd\ne\nf\ng\nh')).toBe('92px')
   })
 })
 
