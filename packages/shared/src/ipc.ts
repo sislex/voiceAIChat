@@ -650,6 +650,10 @@ export interface RendererBoardBridge {
   onChanged(cb: (m: { projectId: string }) => void): () => void
   /** Успешное открытие общего WebSocket, включая reconnect. */
   onConnected(cb: () => void): () => void
+  /** Адресная инвалидация истории подготовки задачи. */
+  onPreparationRunUpdated(cb: (m: { projectId: string; taskId: string; runId: string }) => void): () => void
+  /** Успешное восстановление WS после уже состоявшегося подключения. */
+  onReconnect(cb: () => void): () => void
 }
 
 /**

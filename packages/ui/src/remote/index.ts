@@ -148,12 +148,14 @@ export function makeRealtimeBridge(ws: WsClient): RendererRealtimeBridge {
   }
 }
 
-function makeBoardBridge(ws: WsClient): RendererBoardBridge {
+export function makeBoardBridge(ws: WsClient): RendererBoardBridge {
   return {
     subscribe: (projectId) => ws.send({ t: 'board.subscribe', projectId }),
     unsubscribe: () => ws.send({ t: 'board.unsubscribe' }),
     onChanged: (cb) => ws.on('board.changed', (m) => cb({ projectId: m.projectId })),
-    onConnected: (cb) => ws.onConnected((reconnected) => { if (reconnected) cb() })
+    onConnected: (cb) => ws.onConnected(() => cb()),
+    onPreparationRunUpdated: (cb) => ws.on('preparation.run.updated', (m) => cb({ projectId: m.projectId, taskId: m.taskId, runId: m.runId })),
+    onReconnect: (cb) => ws.onConnected((reconnected) => { if (reconnected) cb() })
   }
 }
 

@@ -701,9 +701,15 @@ default. Ошибка запроса отображается через `ErrorS
 `role="alert"` для failed, список `gateReasons`
 (`task-preparation-gate-reasons`), потоковый `log` в `aria-live="polite"` и
 пустое состояние `task-preparation-empty` («Подготовка к разработке ещё не
-запускалась»), когда истории нет. Реальное время сделано поллингом: пока
-`task.taskPreparationStatus === 'running'`, история перечитывается раз в 1,5 с,
-поэтому лог растёт без перезагрузки страницы; отдельного SSE/WS у подготовки нет.
+запускалась»), когда истории нет. История загружается один раз при открытии или
+смене задачи. Дальнейшая синхронизация идёт по адресному WS-событию
+`preparation.run.updated` (`projectId`, `taskId`, `runId`), одному сигналу после
+reconnect либо после пользовательской мутации. Совпадающие события склеиваются
+100-миллисекундным debounce; чужие project/task игнорируются. Если событие приходит
+во время GET, допускается одна последующая синхронизация. Cleanup при смене задачи
+или размонтировании снимает callbacks, очищает debounce и не даёт устаревшему ответу
+изменить состояние. Постоянного polling нет ни для активных, ни для пассивных или
+терминальных статусов.
 
 Действия ограничены статусом самого рана, а не UI: «Отменить» рисуется только
 при `status === 'running' && canCancel`, «Повторить подготовку» — только при
@@ -726,7 +732,9 @@ default. Ошибка запроса отображается через `ErrorS
 модели внутри одной записи (`sendAttempt` с коррекцией промпта). Рендерер ходит
 через мост, каналы `tasks:listPreparationRuns`, `tasks:cancelPreparationRun`,
 `tasks:retryPreparationRun` (`packages/shared/src/ipc.ts`,
-`packages/ui/src/remote/httpApi.ts`).
+`packages/ui/src/remote/httpApi.ts`). WS-инвалидация и reconnect доставляются через
+`RendererBoardBridge.onPreparationRunUpdated`/`onReconnect`; desktop без
+`window.board` остаётся вне этой realtime-проводки.
 
 Отмена жива и на сервере, а не только в БД. `server.ts` держит
 `taskPreparationHandles: Map<runId, {cancel()}>` с handle CLI-вызова: DELETE

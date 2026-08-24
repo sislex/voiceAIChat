@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
-import { screen, fireEvent, within, waitFor } from '@testing-library/react'
+import { act, screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import type { Board, Task } from '@shared/projects'
@@ -1022,6 +1022,79 @@ describe('TaskModal — подготовка к разработке', () => {
     })} />)
     await userEvent.click(await screen.findByRole('button', { name: 'Повторить подготовку' }))
     await waitFor(() => expect(within(screen.getByTestId('task-preparation-history')).getAllByRole('button')).toHaveLength(2))
+  })
+
+  it('не применяет устаревший ответ после смены задачи', async () => {
+    let resolveOld!: (runs: TaskPreparationRun[]) => void
+    const oldRequest = new Promise<TaskPreparationRun[]>((resolve) => { resolveOld = resolve })
+    const load = vi.fn((taskId: string) => taskId === 't1'
+      ? oldRequest
+      : Promise.resolve([run('success', { id: 'prep-new', taskId: 't2' })]))
+    const view = render(<TaskModal {...props({
+      board: preparationBoard, initialTab: 'preparation',
+      task: mkTask({ taskPreparationRunId: 'prep-old', taskPreparationStatus: 'running' }),
+      loadPreparationRuns: load
+    })} />)
+    view.rerender(<TaskModal {...props({
+      board: preparationBoard, initialTab: 'preparation',
+      task: mkTask({ id: 't2', taskPreparationRunId: 'prep-new', taskPreparationStatus: 'success' }),
+      loadPreparationRuns: load
+    })} />)
+    expect(await screen.findByText('Статус: успешно')).toBeInTheDocument()
+    await act(async () => { resolveOld([run('failed', { id: 'prep-old' })]); await oldRequest })
+    expect(screen.getByText('Статус: успешно')).toBeInTheDocument()
+    expect(screen.queryByText('Статус: ошибка')).not.toBeInTheDocument()
+  })
+
+  it('обновляет историю адресно с debounce, синхронизируется один раз после reconnect и очищает обработчики', async () => {
+    let preparationUpdated: ((event: { projectId: string; taskId: string; runId: string }) => void) | null = null
+    let reconnected: (() => void) | null = null
+    const offUpdate = vi.fn()
+    const offReconnect = vi.fn()
+    const previousBoard = window.board
+    window.board = {
+      subscribe: vi.fn(), unsubscribe: vi.fn(),
+      onChanged: vi.fn(() => () => {}), onConnected: vi.fn(() => () => {}),
+      onPreparationRunUpdated: vi.fn((cb) => { preparationUpdated = cb; return offUpdate }),
+      onReconnect: vi.fn((cb) => { reconnected = cb; return offReconnect })
+    }
+    const load = vi.fn(async () => [run('waiting_for_answer')])
+    const view = render(<TaskModal {...props({
+      board: preparationBoard,
+      initialTab: 'preparation',
+      task: mkTask({ taskPreparationRunId: 'prep-waiting_for_answer', taskPreparationStatus: 'waiting_for_answer' }),
+      loadPreparationRuns: load
+    })} />)
+    await screen.findByText('Статус: ожидает ответа')
+    expect(load).toHaveBeenCalledTimes(1)
+
+    vi.useFakeTimers()
+    try {
+      act(() => {
+        preparationUpdated?.({ projectId: 'other', taskId: 't1', runId: 'foreign-project' })
+        preparationUpdated?.({ projectId: 'p1', taskId: 'other', runId: 'foreign-task' })
+        preparationUpdated?.({ projectId: 'p1', taskId: 't1', runId: 'prep-1' })
+        preparationUpdated?.({ projectId: 'p1', taskId: 't1', runId: 'prep-2' })
+        vi.advanceTimersByTime(100)
+      })
+      await act(async () => { await Promise.resolve() })
+      expect(load).toHaveBeenCalledTimes(2)
+
+      await act(async () => { reconnected?.(); await Promise.resolve() })
+      expect(load).toHaveBeenCalledTimes(3)
+      act(() => vi.advanceTimersByTime(10_000))
+      expect(load).toHaveBeenCalledTimes(3)
+
+      act(() => preparationUpdated?.({ projectId: 'p1', taskId: 't1', runId: 'late' }))
+      view.unmount()
+      act(() => vi.advanceTimersByTime(100))
+      expect(load).toHaveBeenCalledTimes(3)
+      expect(offUpdate).toHaveBeenCalledOnce()
+      expect(offReconnect).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+      window.board = previousBoard
+    }
   })
 })
 
