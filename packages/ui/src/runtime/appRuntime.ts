@@ -35,6 +35,7 @@ import { createVoiceStore, type VoiceStore } from '../store/domains/voiceStore'
 import { createOperationsStore, type OperationsStore } from '../store/domains/operationsStore'
 import { createAdminStore, type AdminStore } from '@voicechat/admin-app'
 import { createProjectsStore, type ProjectsStore } from '../store/domains/projectsStore'
+import { createBrowserReduxDevToolsDiagnostics, type StoreDiagnostics } from '../store/devtools'
 
 /** Входящие realtime-кадры: их владельца знает только runtime. */
 export interface RealtimeHandlers {
@@ -82,6 +83,8 @@ export interface AppRuntimeDeps {
   realtime?: RealtimeConnect
   now?: () => number
   delays?: Partial<PipelineDelays>
+  /** Optional diagnostic port; browser builds use the safe Redux DevTools adapter. */
+  diagnostics?: StoreDiagnostics
 }
 
 export interface AppRuntime {
@@ -116,18 +119,19 @@ export interface AppRuntime {
 export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
   const { clients } = deps
   const now = deps.now ?? Date.now
+  const diagnostics = deps.diagnostics ?? createBrowserReduxDevToolsDiagnostics()
 
-  const shell = createShellStore({ prefs: clients.prefs })
-  const session = createSessionStore({ ...(clients.session ? { session: clients.session } : {}) })
+  const shell = diagnostics.attach(createShellStore({ prefs: clients.prefs }), 'ChatAI Shell', 'shell')
+  const session = diagnostics.attach(createSessionStore({ ...(clients.session ? { session: clients.session } : {}) }), 'ChatAI Session', 'session')
 
-  const settings = createSettingsStore({
+  const settings = diagnostics.attach(createSettingsStore({
     settings: clients.settings,
     stt: clients.stt,
     tts: clients.tts,
     notifyError: (message) => shell.actions.setError(message)
-  })
+  }), 'ChatAI Settings', 'settings')
 
-  const voice = createVoiceStore({
+  const voice = diagnostics.attach(createVoiceStore({
     voiceInput: clients.voiceInput ?? null,
     stt: clients.stt,
     tts: clients.tts,
@@ -140,9 +144,9 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       chat.actions.applyClaudeLog({ kind, summary: `${label}: ${(ms / 1000).toFixed(1)} с`, raw: JSON.stringify({ kind, label, ms }) }),
     onError: (message) => shell.actions.setError(message),
     onMicsChanged: () => void settings.actions.refreshMics()
-  })
+  }), 'ChatAI Voice', 'voice')
 
-  const chat: ChatStore = createChatStore({
+  const chat: ChatStore = diagnostics.attach(createChatStore({
     chat: clients.chat,
     prefs: clients.prefs,
     download: clients.download,
@@ -166,9 +170,9 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     onTaskBadgeRuns: (badges) => projects.actions.applyTaskChatRuns(badges),
     setError: (message) => shell.actions.setError(message),
     fail: (err, retry) => shell.actions.fail(err, retry)
-  })
+  }), 'ChatAI Chat', 'chat')
 
-  const operations: OperationsStore = createOperationsStore({
+  const operations: OperationsStore = diagnostics.attach(createOperationsStore({
     operations: clients.operations,
     download: clients.download,
     activeChat: () => {
@@ -186,9 +190,9 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       chat.actions.forgetAgent(id)
       settings.actions.forgetAgent(id)
     }
-  })
+  }), 'ChatAI Operations', 'operations')
 
-  const admin = createAdminStore({
+  const admin = diagnostics.attach(createAdminStore({
     client: clients.admin,
     session: {
       currentUser: () => session.getState().currentUser,
@@ -198,9 +202,9 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     },
     fail: (err, retry) => shell.actions.fail(err, retry),
     notify: (notice) => shell.actions.notify(notice)
-  })
+  }), 'ChatAI Admin', 'admin')
 
-  const projects: ProjectsStore = createProjectsStore({
+  const projects: ProjectsStore = diagnostics.attach(createProjectsStore({
     projects: clients.projects,
     now,
     chat: {
@@ -211,7 +215,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     },
     fail: (err, retry) => shell.actions.fail(err, retry),
     notify: (notice) => shell.actions.notify(notice)
-  })
+  }), 'ChatAI Projects', 'projects')
 
   const stores = [shell, session, settings, voice, chat, operations, admin, projects]
 
