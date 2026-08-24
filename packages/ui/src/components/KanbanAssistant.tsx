@@ -5,6 +5,7 @@ import { isWidgetAssistantProposal, parseWidgetAssistantReply, taskWidgetItem } 
 import type { Conversation, Message } from '@shared/types'
 import type { LlmEngineOption } from '@shared/admin'
 import type { RendererApi } from '@shared/ipc'
+import { browserId } from '@shared/browserId'
 import { WidgetProposalCard } from './WidgetAssistantFrame'
 import { ChatColumn } from './ChatColumn'
 import { VoiceBar } from './VoiceBar'
@@ -142,7 +143,7 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
     if (command.type === 'propose.settings-update') { await onCommand(command); return }
     const scope = toolScope(turnId)
     if (!scope) throw new Error('Чат ассистента больше не активен')
-    const idempotencyKey = crypto.randomUUID()
+    const idempotencyKey = browserId()
     if (command.type === 'propose.task-create') {
       await api['widget:action']({
         ...scope,
