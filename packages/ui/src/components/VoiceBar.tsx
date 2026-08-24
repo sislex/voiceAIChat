@@ -13,11 +13,11 @@ import { useAutoGrow } from '../lib/autoGrow'
 import { chipClass, composerPeek, speakerName, voiceAnnouncement } from '../lib/view'
 import { WaveBars, Dots } from './animations'
 import { IconButton } from '@voicechat/ui-kit'
-import { MicIcon, SendIcon, StopIcon, WandIcon } from './icons'
+import { DiagonalResizeIcon, MicIcon, SendIcon, StopIcon, WandIcon } from './icons'
 import { PromptBuilder, type GenerateParams, type Suggestion } from './prompt-builder/PromptBuilder'
 import { applyNativeInputValue, useAiAssist } from './prompt-builder/useAiAssist'
 
-const DRAFT_MIN_ROWS = 2
+const DRAFT_MIN_ROWS = 1
 const DRAFT_MAX_ROWS = 4
 
 export interface ComposerAttachment {
@@ -261,7 +261,7 @@ export function VoiceBar({
   }
 
   const fileRef = useRef<HTMLInputElement>(null)
-  // Композер начинается с двух строк и растёт с текстом до четырёх, дальше — скролл.
+  // Композер начинается с одной строки и растёт с текстом до четырёх, дальше — скролл.
   const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const blockedAttachments = attachments.filter((item) => item.status && item.status !== 'ready')
@@ -482,7 +482,7 @@ export function VoiceBar({
                 })
               }}
             >
-              {editorExpanded ? '↙' : '↗'}
+              <DiagonalResizeIcon expanded={editorExpanded} />
             </IconButton>
           )}
         </div>
