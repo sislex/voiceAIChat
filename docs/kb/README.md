@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 14 коммит(ов) в areas после сверки: 5f601791 feat: add server context snapshot inspector … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 3 коммит(ов) в areas после сверки: 5f601791 feat: add server context snapshot inspector … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 49 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 581 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 582 коммит(ов) в areas после сверки: 753e985b docs(kb): update after merge 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 68 коммит(ов) в areas после сверки: 7d9381b3 fix(ui): обновить композер чата … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 37 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-24 | ⚠ 11 коммит(ов) в areas после сверки: 407b2a41 Merge task 002ad131-c455-4fb3-bc0d-cde80e4ff042 … |
