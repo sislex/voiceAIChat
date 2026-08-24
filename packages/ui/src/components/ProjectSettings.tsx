@@ -7,6 +7,7 @@ import { CiProjectDefaults } from './ci/CiProjectDefaults'
 import { useEffect, useState } from 'react'
 import type { ProjectDetail, ProjectSummary, ProjectTestUser, WorkItemDefaultSkills, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
 import type { KbContextMode } from '@shared/types'
+import type { ManagedPreflightConfirmation } from '@shared/release'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 
@@ -39,6 +40,8 @@ export interface ProjectSettingsProps {
   onSetMachineSsh: (id: string, agentId: string, sshHost: string, sshUser: string) => void | Promise<void>
   onSetDefaultMachine: (id: string, agentId: string) => void | Promise<void>
   gitAccessApi?: Pick<RendererApi, 'projects:gitAccessStatus' | 'projects:configureGitAccess' | 'projects:verifyGitAccess' | 'projects:deleteGitAccess' | 'projects:gitAccessDiagnostics'>
+  managedProductionApi?: Pick<RendererApi, 'releases:managedPreflight' | 'releases:managedConfirm'>
+  onManagedProductionConfirmed?: (detail: ProjectDetail) => void | Promise<void>
 }
 
 /** Редактор списка тегов (технологии/навыки). */
@@ -111,6 +114,26 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'>('general')
   const [selectedGitMachineId, setSelectedGitMachineId] = useState('')
   const [machineTab, setMachineTab] = useState<'settings' | 'git'>('settings')
+  const [managedPreflight, setManagedPreflight] = useState<ManagedPreflightConfirmation | null>(null)
+  const [managedProductionBusy, setManagedProductionBusy] = useState(false)
+  const [managedProductionError, setManagedProductionError] = useState('')
+  const runManagedPreflight = async (): Promise<void> => {
+    if (!props.managedProductionApi) return
+    setManagedProductionBusy(true); setManagedProductionError(''); setManagedPreflight(null)
+    try { setManagedPreflight(await props.managedProductionApi['releases:managedPreflight']({ projectId: detail.id })) }
+    catch (error) { setManagedProductionError(error instanceof Error ? error.message : String(error)) }
+    finally { setManagedProductionBusy(false) }
+  }
+  const confirmManagedProduction = async (): Promise<void> => {
+    if (!props.managedProductionApi || !managedPreflight) return
+    setManagedProductionBusy(true); setManagedProductionError('')
+    try {
+      const updated = await props.managedProductionApi['releases:managedConfirm']({ projectId: detail.id, confirmationToken: managedPreflight.confirmationToken })
+      setManagedPreflight(null)
+      await props.onManagedProductionConfirmed?.(updated)
+    } catch (error) { setManagedProductionError(error instanceof Error ? error.message : String(error)) }
+    finally { setManagedProductionBusy(false) }
+  }
   // Порог скрытия завершённых: черновик строкой — пустое поле это «не скрывать»
   // (null), а не 0. Синхронизируем с ответом сервера.
   const retentionOf = (v: number | null | undefined): string => (v == null ? '' : String(v))
@@ -276,7 +299,19 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         <label>План агента<select className="sel" disabled={!isOwner} value={detail.agentPlanApprovalMode} onChange={(e) => props.onUpdate(detail.id, { agentPlanApprovalMode: e.target.value as ProjectSummary['agentPlanApprovalMode'] })}><option value="manual">Подтверждать</option><option value="automatic">Запускать автоматически</option></select></label>
         <label>Команда тестирования<input className="login-input" disabled={!isOwner} value={detail.testCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { testCommand: e.target.value })} placeholder="npm test" /></label>
         <p className="proj-field-label" data-testid="production-environment-mode">Режим production: {detail.productionEnvironmentMode==='managed'?'Managed MachineStorage':'Legacy compatibility'}</p>
-        {detail.productionEnvironmentMode!=='managed'&&<p className="proj-muted">Legacy checkout не управляется MachineStorage и сохраняется неизменным при переходе.</p>}
+        {detail.productionEnvironmentMode!=='managed'&&<>
+          <p className="proj-muted">Legacy checkout не управляется MachineStorage и сохраняется неизменным при переходе.</p>
+          {isOwner&&props.managedProductionApi&&<div className="proj-managed-production" data-testid="managed-production-transition">
+            <Button type="button" variant="secondary" disabled={managedProductionBusy} onClick={() => void runManagedPreflight()}>{managedProductionBusy?'Проверка…':'Проверить Managed production'}</Button>
+            {managedProductionError&&<p role="alert" className="proj-error">{managedProductionError}</p>}
+            {managedPreflight&&<div className="proj-managed-preflight">
+              <p role="status">Preflight пройден. Checkout: {managedPreflight.paths.repository}</p>
+              <ul>{Object.entries(managedPreflight.checks).map(([name,check])=><li key={name}>{name}: {check.ok?'готово':check.message}</li>)}</ul>
+              <p className="proj-muted">Переход необратимо отключит legacy checkout. Deploy автоматически не запустится.</p>
+              <Button type="button" variant="primary" disabled={managedProductionBusy} onClick={() => void confirmManagedProduction()}>Подтвердить переход в Managed</Button>
+            </div>}
+          </div>}
+        </>}
         <label>Production-машина<select className="sel" disabled={!isOwner} value={detail.productionAgentId ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionAgentId: e.target.value || null })}><option value="">Не настроена</option>{detail.machines.map(machine=><option key={machine.agentId} value={machine.agentId}>{machine.name ?? machine.agentId}{machine.online===false?' · offline':''}</option>)}</select></label>
         <label>Production checkout<input className="login-input" disabled={!isOwner||detail.productionEnvironmentMode==='managed'} value={detail.productionCheckoutPath ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionCheckoutPath: e.target.value })} placeholder="/root/voiceAIChat" /></label>
         <label>Штатная команда production-деплоя<input className="login-input" disabled={!isOwner} value={detail.productionDeployCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionDeployCommand: e.target.value })} placeholder="voicechat-deploy" /></label>

@@ -1496,6 +1496,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                   'projects:deleteGitAccess': api['projects:deleteGitAccess'],
                   'projects:gitAccessDiagnostics': api['projects:gitAccessDiagnostics']
                 }}
+                managedProductionApi={{
+                  'releases:managedPreflight': api['releases:managedPreflight'],
+                  'releases:managedConfirm': api['releases:managedConfirm']
+                }}
+                onManagedProductionConfirmed={() => projectsActions.selectProject(routeProjectId)}
               />
             ) : (
               <div className="proj-page-state" aria-busy="true">

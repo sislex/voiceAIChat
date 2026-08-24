@@ -303,6 +303,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'releases:get': ({ projectId, releaseId }) => req(REST.projectRelease(projectId, releaseId)),
     'releases:deploy': ({ projectId, ...body }) =>
       req(REST.projectReleaseDeploy(projectId), { method: 'POST', body: JSON.stringify(body) }),
+    'releases:managedPreflight': ({ projectId }) =>
+      req(REST.projectManagedProductionPreflight(projectId), { method: 'POST', body: JSON.stringify({ environment: 'production' }) }),
+    'releases:managedConfirm': ({ projectId, confirmationToken }) =>
+      req(REST.projectManagedProductionConfirm(projectId), { method: 'POST', body: JSON.stringify({ confirmationToken }) }),
     'releases:delete': ({ projectId, releaseId, branch }) =>
       req(REST.projectRelease(projectId, releaseId), { method: 'DELETE', body: JSON.stringify({ branch }) }),
     'projects:update': ({ id, ...fields }) =>

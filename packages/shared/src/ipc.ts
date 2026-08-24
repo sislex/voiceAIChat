@@ -306,6 +306,8 @@ export interface IpcInvokeMap {
   'releases:list': { arg: { projectId: string }; result: import('./release').ProjectReleaseSummary[] }
   'releases:get': { arg: { projectId: string; releaseId: string }; result: import('./release').ProjectRelease | null }
   'releases:deploy': { arg: { projectId: string; branch: string }; result: import('./release').ProjectRelease }
+  'releases:managedPreflight': { arg: { projectId: string }; result: import('./release').ManagedPreflightConfirmation }
+  'releases:managedConfirm': { arg: { projectId: string; confirmationToken: string }; result: ProjectDetail }
   'releases:delete': { arg: { projectId: string; releaseId: string; branch: string }; result: { deleted: true } }
   'projects:update': {
     arg: {
@@ -886,6 +888,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'releases:list',
   'releases:get',
   'releases:deploy',
+  'releases:managedPreflight',
+  'releases:managedConfirm',
   'releases:delete',
   'projects:update',
   'projects:delete',

@@ -131,6 +131,38 @@ describe('ProjectSettings — режим базы знаний для CI-ран�
     await userEvent.tab()
     expect(input).toHaveValue('https://old.example/')
   })
+
+  it('переводит legacy production в managed только после preflight и отдельного подтверждения', async () => {
+    const preflight = vi.fn(async () => ({
+      ok: true, environment: 'production' as const, confirmationToken: 'token-1',
+      paths: { repository: '/storage/projects/p1/environments/production/temporary/repository' },
+      checks: { marker: { ok: true, message: 'ok' } }
+    }))
+    const updated = detail({ productionEnvironmentMode: 'managed' })
+    const confirm = vi.fn(async () => updated)
+    const onConfirmed = vi.fn()
+    render(<ProjectSettings {...props({
+      detail: detail({ productionEnvironmentMode: 'legacy', productionCheckoutPath: '/root/voiceAIChat' }),
+      managedProductionApi: { 'releases:managedPreflight': preflight, 'releases:managedConfirm': confirm } as never,
+      onManagedProductionConfirmed: onConfirmed
+    })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Workflow и CI' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить Managed production' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('/storage/projects/p1/environments/production/temporary/repository')
+    expect(confirm).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Подтвердить переход в Managed' }))
+    expect(confirm).toHaveBeenCalledWith({ projectId: 'p1', confirmationToken: 'token-1' })
+    expect(onConfirmed).toHaveBeenCalledWith(updated)
+  })
+
+  it('не показывает переход участнику и скрывает его для managed-проекта', async () => {
+    const api = { 'releases:managedPreflight': vi.fn(), 'releases:managedConfirm': vi.fn() } as never
+    const view = render(<ProjectSettings {...props({ detail: detail({ role: 'member', productionEnvironmentMode: 'legacy' }), managedProductionApi: api })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Workflow и CI' }))
+    expect(screen.queryByRole('button', { name: 'Проверить Managed production' })).not.toBeInTheDocument()
+    view.rerender(<ProjectSettings {...props({ detail: detail({ productionEnvironmentMode: 'managed' }), managedProductionApi: api })} />)
+    expect(screen.queryByTestId('managed-production-transition')).not.toBeInTheDocument()
+  })
 })
 
 describe('ProjectSettings — тестовые пользователи', () => {
