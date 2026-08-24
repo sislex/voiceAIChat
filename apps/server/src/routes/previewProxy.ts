@@ -310,6 +310,35 @@ const run=(action)=>{
     const computed=getComputedStyle(found[0]);const names=Array.isArray(action.properties)&&action.properties.length?action.properties:['display','color','font-size','visibility'];const values={};for(const name of names.slice(0,32))values[name]=computed.getPropertyValue(name)||computed[name]||'';
     return {page:pageInfo(),selector:uniqueSelector(found[0]),styles:values}
   }
+  if(action.kind==='hover'){
+    const found=findTargets(action);
+    if(!found.length)throw new Error('Элемент не найден: '+(action.selector||action.text));
+    // mouseenter не всплывает: как и click, поднимаемся до интерактивного предка.
+    const el=clickTarget(found[0]);
+    el.scrollIntoView&&el.scrollIntoView({block:'center'});
+    const r=el.getBoundingClientRect();
+    const opts={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2};
+    for(const type of ['pointerover','pointerenter','pointermove'])el.dispatchEvent(new (window.PointerEvent||MouseEvent)(type,opts));
+    for(const type of ['mouseover','mouseenter','mousemove'])el.dispatchEvent(new MouseEvent(type,opts));
+    return {page:pageInfo(),hovered:describe(el)}
+  }
+  if(action.kind==='scroll'){
+    let el=document.scrollingElement||document.documentElement,target='window';
+    if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);el=found[0];target=uniqueSelector(el)}
+    if(action.to==='top')el.scrollTop=0;
+    else if(action.to==='bottom')el.scrollTop=el.scrollHeight;
+    else if(typeof action.dy==='number')el.scrollTop=el.scrollTop+action.dy;
+    el.dispatchEvent(new Event('scroll',{bubbles:true}));
+    return {page:pageInfo(),target,scrolled:{top:el.scrollTop,left:el.scrollLeft,maxTop:Math.max(0,el.scrollHeight-el.clientHeight)}}
+  }
+  if(action.kind==='press'){
+    let el=document.activeElement&&document.activeElement!==document.body?document.activeElement:document.body;
+    if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);el=found[0];el.focus&&el.focus()}
+    const opts={key:action.key,bubbles:true,cancelable:true};
+    el.dispatchEvent(new KeyboardEvent('keydown',opts));
+    el.dispatchEvent(new KeyboardEvent('keyup',opts));
+    return {page:pageInfo(),pressed:{key:action.key,selector:el===document.body?'body':uniqueSelector(el)}}
+  }
   if(action.kind==='read'){
     let scope=document.body||document.documentElement;
     if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);scope=found[0]}
@@ -445,11 +474,95 @@ const editKey=(e)=>{
 };
 const enableEdit=()=>{if(editActive)return;disable();editActive=true;document.addEventListener('pointerover',editMove,true);document.addEventListener('click',editClick,true);document.addEventListener('keydown',editKey,true)};
 const disableEdit=()=>{if(!editActive)return;editActive=false;closeEditPanel();document.removeEventListener('pointerover',editMove,true);document.removeEventListener('click',editClick,true);document.removeEventListener('keydown',editKey,true)};
+// ---- Скриншот области: выделение прямоугольника и снимок DOM → PNG ----
+// Снимок собирается без пикселей экрана: клон body с инлайн-стилями рисуется
+// через SVG foreignObject в canvas и кадрируется областью. Все ресурсы страницы
+// same-origin (прокси), поэтому canvas не «портится», а <img> инлайнятся в data-URL.
+const CAPTURE='voicechat.preview.capture.v1';
+let captureActive=false,captureBox=null,captureStart=null,captureOverlay=null;
+const captureCleanup=()=>{captureOverlay?.remove();captureOverlay=null;captureBox=null;captureStart=null};
+const captureKey=(e)=>{if(captureActive&&e.key==='Escape'){e.preventDefault();disableCapture();parent.postMessage({type:CAPTURE,enabled:false},location.origin)}};
+const captureRect=(e)=>({left:Math.min(captureStart.x,e.clientX),top:Math.min(captureStart.y,e.clientY),width:Math.abs(e.clientX-captureStart.x),height:Math.abs(e.clientY-captureStart.y)});
+const captureDown=(e)=>{if(!captureActive)return;e.preventDefault();e.stopPropagation();captureStart={x:e.clientX,y:e.clientY};Object.assign(captureBox.style,{display:'block',left:e.clientX+'px',top:e.clientY+'px',width:'0px',height:'0px'})};
+const captureMove=(e)=>{if(!captureActive||!captureStart)return;const r=captureRect(e);Object.assign(captureBox.style,{left:r.left+'px',top:r.top+'px',width:r.width+'px',height:r.height+'px'})};
+const captureUp=(e)=>{
+  if(!captureActive||!captureStart)return;
+  e.preventDefault();e.stopPropagation();
+  const view=captureRect(e);
+  disableCapture();
+  parent.postMessage({type:CAPTURE,enabled:false},location.origin);
+  if(view.width<8||view.height<8)return;
+  const scroller=document.scrollingElement||document.documentElement;
+  const rect={x:Math.round(view.left+scroller.scrollLeft),y:Math.round(view.top+scroller.scrollTop),width:Math.round(view.width),height:Math.round(view.height)};
+  void captureArea(rect).then(
+    (dataUrl)=>parent.postMessage({type:CAPTURE,shot:{dataUrl,rect,pageUrl:unproxy(location.href)}},location.origin),
+    (err)=>parent.postMessage({type:CAPTURE,error:String(err&&err.message||err).slice(0,500),rect},location.origin)
+  )
+};
+const enableCapture=()=>{
+  if(captureActive)return;
+  disable();disableEdit();
+  captureActive=true;
+  captureOverlay=document.createElement('div');captureOverlay.setAttribute('data-voicechat-inspector','capture');
+  Object.assign(captureOverlay.style,{position:'fixed',inset:'0',zIndex:'2147483647',cursor:'crosshair',background:'rgba(23,32,51,.15)'});
+  captureBox=document.createElement('div');
+  Object.assign(captureBox.style,{position:'fixed',border:'2px dashed #4f8cff',background:'rgba(79,140,255,.15)',display:'none',pointerEvents:'none'});
+  captureOverlay.append(captureBox);document.documentElement.append(captureOverlay);
+  document.addEventListener('pointerdown',captureDown,true);document.addEventListener('pointermove',captureMove,true);document.addEventListener('pointerup',captureUp,true);document.addEventListener('keydown',captureKey,true)
+};
+const disableCapture=()=>{
+  if(!captureActive)return;
+  captureActive=false;captureCleanup();
+  document.removeEventListener('pointerdown',captureDown,true);document.removeEventListener('pointermove',captureMove,true);document.removeEventListener('pointerup',captureUp,true);document.removeEventListener('keydown',captureKey,true)
+};
+const inlineImages=(root)=>Promise.all([...root.querySelectorAll('img')].map(async(img)=>{
+  try{
+    const src=img.getAttribute('src');
+    if(!src||src.startsWith('data:'))return;
+    const res=await fetch(src);const blob=await res.blob();
+    img.setAttribute('src',await new Promise((ok,fail)=>{const reader=new FileReader();reader.onload=()=>ok(String(reader.result));reader.onerror=fail;reader.readAsDataURL(blob)}))
+  }catch{img.removeAttribute('src')}
+}));
+const captureArea=async(rect)=>{
+  // Canvas проверяем до тяжёлой работы: без него снимок невозможен в принципе.
+  const canvas=document.createElement('canvas');canvas.width=rect.width;canvas.height=rect.height;
+  const ctx=canvas.getContext&&canvas.getContext('2d');
+  if(!ctx)throw new Error('Canvas недоступен в этом окружении');
+  const source=document.body;
+  const all=source.querySelectorAll('*');
+  if(all.length>2500)throw new Error('Страница слишком сложная для снимка области');
+  const clone=source.cloneNode(true);
+  const srcEls=[source,...all],dstEls=[clone,...clone.querySelectorAll('*')];
+  for(let i=0;i<srcEls.length&&i<dstEls.length;i++){
+    const cs=getComputedStyle(srcEls[i]);let css='';
+    for(let j=0;j<cs.length;j++){const prop=cs[j];css+=prop+':'+cs.getPropertyValue(prop).replace(/"/g,"'")+';'}
+    dstEls[i].setAttribute('style',css)
+  }
+  for(const el of clone.querySelectorAll('[data-voicechat-inspector]'))el.remove();
+  await inlineImages(clone);
+  const scroller=document.scrollingElement||document.documentElement;
+  const width=Math.max(scroller.scrollWidth,innerWidth),height=Math.max(scroller.scrollHeight,innerHeight);
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+height+'"><foreignObject width="100%" height="100%">'+new XMLSerializer().serializeToString(clone)+'</foreignObject></svg>';
+  const image=new Image();
+  await new Promise((ok,fail)=>{
+    const guard=setTimeout(()=>fail(new Error('Снимок страницы не отрисовался вовремя')),7000);
+    image.onload=()=>{clearTimeout(guard);ok()};
+    image.onerror=()=>{clearTimeout(guard);fail(new Error('Не удалось отрисовать снимок страницы'))};
+    image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)
+  });
+  ctx.fillStyle='#ffffff';ctx.fillRect(0,0,rect.width,rect.height);
+  ctx.drawImage(image,-rect.x,-rect.y);
+  let dataUrl=canvas.toDataURL('image/png');
+  if(dataUrl.length>1800000)dataUrl=canvas.toDataURL('image/jpeg',0.85);
+  if(dataUrl.length>1800000)throw new Error('Снимок области слишком большой — выделите меньшую область');
+  return dataUrl
+};
 restoreEdits();
 const message=(e)=>{
   if(e.source!==parent||e.origin!==location.origin||!e.data)return;
-  if(e.data.type===COMMAND&&typeof e.data.enabled==='boolean'){if(e.data.enabled){disableEdit();enable()}else disable();return}
-  if(e.data.type===EDIT&&typeof e.data.enabled==='boolean'){e.data.enabled?enableEdit():disableEdit();return}
+  if(e.data.type===COMMAND&&typeof e.data.enabled==='boolean'){if(e.data.enabled){disableEdit();disableCapture();enable()}else disable();return}
+  if(e.data.type===EDIT&&typeof e.data.enabled==='boolean'){if(e.data.enabled){disableCapture();enableEdit()}else disableEdit();return}
+  if(e.data.type===CAPTURE&&typeof e.data.enabled==='boolean'){e.data.enabled?enableCapture():disableCapture();return}
   if(e.data.type===RECORD&&typeof e.data.enabled==='boolean'){setRecording(e.data.enabled);return}
   if(e.data.type===ACTION&&typeof e.data.requestId==='string'&&e.data.action&&typeof e.data.action.kind==='string'){
     diagnosticRunning=e.data.action.diagnostic===true;
@@ -458,7 +571,7 @@ const message=(e)=>{
     finally{diagnosticRunning=false}
   }
 };
-addEventListener('message',message);addEventListener('pagehide',()=>{disable();disableEdit();setRecording(false);removeEventListener('message',message)},{once:true});
+addEventListener('message',message);addEventListener('pagehide',()=>{disable();disableEdit();disableCapture();setRecording(false);removeEventListener('message',message)},{once:true});
 })();<\/script>`
 }
 
@@ -573,8 +686,11 @@ export function previewDiagnosticsHtml(destination = false): string {
 <h1>VoiceChat Web Reader Diagnostics</h1><p id="diagnostic-style">Diagnostic action surface</p>
 <form id="diagnostic-form"><input id="diagnostic-input" name="diagnostic-input" autocomplete="off"><button type="submit">Submit diagnostic form</button></form>
 <p id="event-status">input:0 change:0</p><p id="submit-status">not-submitted</p>
+<p id="hover-target">Diagnostic hover target</p><p id="hover-status">hover:0</p>
+<p id="key-status">key:none</p>
 <a id="diagnostic-nav" href="/api/preview/diagnostics?page=destination">Diagnostic action navigation</a>
-<script>(()=>{let input=0,change=0;const field=document.querySelector('#diagnostic-input'),events=document.querySelector('#event-status');field.addEventListener('input',()=>{input++;events.textContent='input:'+input+' change:'+change});field.addEventListener('change',()=>{change++;events.textContent='input:'+input+' change:'+change});document.querySelector('#diagnostic-form').addEventListener('submit',(event)=>{event.preventDefault();document.querySelector('#submit-status').textContent='submitted:'+field.value})})()<\/script>
+<div id="diagnostic-tall" style="height:3000px"></div><p id="page-bottom">page bottom</p>
+<script>(()=>{let input=0,change=0,hover=0;const field=document.querySelector('#diagnostic-input'),events=document.querySelector('#event-status');field.addEventListener('input',()=>{input++;events.textContent='input:'+input+' change:'+change});field.addEventListener('change',()=>{change++;events.textContent='input:'+input+' change:'+change});document.querySelector('#diagnostic-form').addEventListener('submit',(event)=>{event.preventDefault();document.querySelector('#submit-status').textContent='submitted:'+field.value});document.querySelector('#hover-target').addEventListener('mouseover',()=>{hover++;document.querySelector('#hover-status').textContent='hover:'+hover});document.addEventListener('keydown',(event)=>{document.querySelector('#key-status').textContent='key:'+event.key})})()<\/script>
 </body></html>`
 }
 

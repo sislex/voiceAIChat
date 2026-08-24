@@ -44,6 +44,12 @@ export type PreviewAction =
   | { kind: 'type'; selector: string; text: string; submit?: boolean; diagnostic?: boolean }
   | { kind: 'read'; selector?: string; diagnostic?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[]; diagnostic?: boolean }
+  /** Наведение курсора: pointer/mouse-события по элементу (выпадающие меню). */
+  | { kind: 'hover'; selector?: string; text?: string; diagnostic?: boolean }
+  /** Прокрутка окна или контейнера: к краю (`to`) либо на `dy` пикселей. */
+  | { kind: 'scroll'; selector?: string; to?: 'top' | 'bottom'; dy?: number; diagnostic?: boolean }
+  /** Нажатие клавиши (Escape, Enter, Tab, ArrowDown, …) на элементе или активном поле. */
+  | { kind: 'press'; key: string; selector?: string; diagnostic?: boolean }
 
 /** DOM-действия, которые уходят в iframe (все, кроме `open`). */
 export type PreviewDomAction = Exclude<PreviewAction, { kind: 'open' }>
@@ -104,6 +110,23 @@ export interface PreviewStylesResult {
   styles: Record<string, string>
 }
 
+export interface PreviewHoverResult {
+  page: PreviewPageInfo
+  hovered: PreviewActionElement
+}
+
+export interface PreviewScrollResult {
+  page: PreviewPageInfo
+  /** Что прокручено: окно или контейнер по селектору. */
+  target: string
+  scrolled: { top: number; left: number; maxTop: number }
+}
+
+export interface PreviewPressResult {
+  page: PreviewPageInfo
+  pressed: { key: string; selector: string }
+}
+
 export type PreviewActionResult =
   | PreviewOpenResult
   | PreviewFindResult
@@ -111,6 +134,9 @@ export type PreviewActionResult =
   | PreviewTypeResult
   | PreviewReadResult
   | PreviewStylesResult
+  | PreviewHoverResult
+  | PreviewScrollResult
+  | PreviewPressResult
 
 /** Команда родителя в iframe превью. */
 export interface PreviewActionCommand {
@@ -166,6 +192,24 @@ export function isPreviewAction(value: unknown): value is PreviewAction {
     case 'styles':
       return bounded(value.selector, L.selector) &&
         (value.properties === undefined || (Array.isArray(value.properties) && value.properties.length <= 32 && value.properties.every((item) => bounded(item, 100))))
+    case 'hover':
+      return (
+        optBounded(value.text, L.text) &&
+        optBounded(value.selector, L.selector) &&
+        (value.text !== undefined || value.selector !== undefined)
+      )
+    case 'scroll':
+      return (
+        optBounded(value.selector, L.selector) &&
+        (value.to === undefined || value.to === 'top' || value.to === 'bottom') &&
+        (value.dy === undefined || (typeof value.dy === 'number' && Number.isFinite(value.dy) && Math.abs(value.dy) <= 100_000)) &&
+        (value.to !== undefined || value.dy !== undefined)
+      )
+    case 'press':
+      return (
+        typeof value.key === 'string' && value.key.length >= 1 && value.key.length <= 32 &&
+        optBounded(value.selector, L.selector)
+      )
     default:
       return false
   }
@@ -234,6 +278,8 @@ export function previewToolHint(): string {
     'Действия выполняются только на странице, открытой в превью активного чата пользователя. ' +
     'Просьбы «открой сайт …», «нажми …», «что на странице?» выполняй этими инструментами, а не shell-командами. ' +
     'После open или click, ведущего к переходу, страница загружается заново — перечитай её read перед следующим действием. ' +
+    'Дополнительно: hover {selector|text} — навести курсор (выпадающие меню); scroll {to: top|bottom | dy, selector?} — ' +
+    'прокрутить окно или контейнер (ленивые ленты); press {key, selector?} — нажать клавишу (Escape, Enter, Tab, ArrowDown…). ' +
     'Тестовое окружение, запущенное на машине этого разговора (dev-сервер репозитория, feature-preview), открывай ' +
     'адресом http://machine.internal:<порт>/ — прокси доставит запрос на 127.0.0.1:<порт> машины разговора; ' +
     'типовой цикл: поправь код в репозитории машины, запусти или перезапусти dev-сервер, открой machine.internal и проверь фичу. ' +

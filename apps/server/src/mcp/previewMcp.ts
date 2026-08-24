@@ -249,6 +249,59 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'hover',
+        {
+          description:
+            'Навести курсор на элемент открытой в превью страницы (pointer/mouse-события): раскрывает выпадающие ' +
+            'меню и hover-состояния. Нужен selector или text.',
+          inputSchema: {
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
+            text: z.string().max(L.text).optional().describe('Видимый текст элемента')
+          }
+        },
+        async ({ selector, text }) => {
+          if (!text && !selector) {
+            return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
+          }
+          return run({ kind: 'hover', ...(selector ? { selector } : {}), ...(text ? { text } : {}) })
+        }
+      )
+
+      server.registerTool(
+        'scroll',
+        {
+          description:
+            'Прокрутить открытую в превью страницу или контейнер: to — к краю, dy — на пиксели (отрицательное — вверх). ' +
+            'Полезно для лент с ленивой подгрузкой. Возвращает позицию прокрутки.',
+          inputSchema: {
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор прокручиваемого контейнера (без него — окно)'),
+            to: z.enum(['top', 'bottom']).optional().describe('Прокрутить к началу или концу'),
+            dy: z.number().optional().describe('Сдвиг в пикселях (отрицательное значение — вверх)')
+          }
+        },
+        async ({ selector, to, dy }) => {
+          if (to === undefined && typeof dy !== 'number') {
+            return { content: [{ type: 'text', text: 'Укажи to (top|bottom) или dy (пиксели).' }], isError: true }
+          }
+          return run({ kind: 'scroll', ...(selector ? { selector } : {}), ...(to ? { to } : {}), ...(typeof dy === 'number' ? { dy } : {}) })
+        }
+      )
+
+      server.registerTool(
+        'press',
+        {
+          description:
+            'Нажать клавишу на открытой в превью странице (keydown+keyup): Escape, Enter, Tab, ArrowDown и т. п. ' +
+            'selector фокусирует элемент перед нажатием; без него — активный элемент страницы.',
+          inputSchema: {
+            key: z.string().min(1).max(32).describe('Имя клавиши как в KeyboardEvent.key (Escape, Enter, ArrowDown, a…)'),
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента-получателя')
+          }
+        },
+        async ({ key, selector }) => run({ kind: 'press', key, ...(selector ? { selector } : {}) })
+      )
+
+      server.registerTool(
         'test-users',
         {
           description:

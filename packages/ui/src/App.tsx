@@ -10,7 +10,7 @@ import type { PreparationClarificationNotification } from '@shared/qa'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
 import type { PreviewElementPayload } from '@shared/previewInspector'
-import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration } from '@voicechat/web-reader-app'
+import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration, type WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -345,6 +345,24 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [api])
   const toast = useToast()
   const confirm = useConfirm()
+  // Снимок области из Reader: PNG уходит вложением композера, координаты — в черновик.
+  const attachAreaScreenshot = useCallback((shot: WebRecorderAreaScreenshot) => {
+    try {
+      const [meta, data] = shot.dataUrl.split(',')
+      const mime = /data:([^;]+)/.exec(meta ?? '')?.[1] ?? 'image/png'
+      const binary = atob(data ?? '')
+      const bytes = new Uint8Array(binary.length)
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+      const file = new File([bytes], `web-reader-area-${shot.rect.width}x${shot.rect.height}.${mime === 'image/jpeg' ? 'jpg' : 'png'}`, { type: mime })
+      void chatActions.addAttachment(file)
+      const note = `Скриншот области страницы ${shot.pageUrl}: x=${shot.rect.x}, y=${shot.rect.y}, размер ${shot.rect.width}×${shot.rect.height} px.`
+      chatActions.setDraft(chat.draft.trim() ? chat.draft + '\n' + note : note)
+      toast.success('Снимок области добавлен в композер')
+    } catch {
+      toast.error('Не удалось обработать снимок области.')
+    }
+  }, [chat.draft, chatActions, toast])
+
   const authed = !session.authRequired || Boolean(session.currentUser)
   const refreshClarificationNotifications = useCallback(async (): Promise<PreparationClarificationNotification[]> => {
     if (!authed) { setClarificationNotifications([]); return [] }
@@ -1416,7 +1434,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       /> : <div className="chat-route-loading" role="status">Открываем выбранный Reader-разговор…</div>}
       </div>
       {(inReader || inPlaywrightReader) && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
-      {(inReader || inPlaywrightReader) && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterHost={registerReaderHost} />}
+      {(inReader || inPlaywrightReader) && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
       </div>
       )}
 

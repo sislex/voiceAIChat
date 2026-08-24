@@ -19,7 +19,10 @@ describe('Web Reader diagnostics', () => {
       if (action.kind === 'styles') return { ok: true, result: { page: { url: '', title: '' }, selector: '#diagnostic-style', styles: { display: 'block', color: 'rgb(12, 34, 56)' } } }
       if (action.kind === 'type') return { ok: true, result: { page: { url: '', title: '' }, typed: { selector: '#diagnostic-input', tag: 'input', text: '' }, submitted: true } }
       if (action.kind === 'click') return { ok: true, result: { page: { url: '', title: '' }, clicked: { selector: '#diagnostic-nav', tag: 'a', text: '' } } }
-      const text = action.selector === '#event-status' ? 'input:1 change:1' : action.selector === '#submit-status' ? 'submitted:diagnostic-input' : actions.includes('click') ? 'Diagnostics destination' : 'VoiceChat Web Reader Diagnostics'
+      if (action.kind === 'hover') return { ok: true, result: { page: { url: '', title: '' }, hovered: { selector: '#hover-target', tag: 'p', text: '' } } }
+      if (action.kind === 'scroll') return { ok: true, result: { page: { url: '', title: '' }, target: 'window', scrolled: { top: 2600, left: 0, maxTop: 2600 } } }
+      if (action.kind === 'press') return { ok: true, result: { page: { url: '', title: '' }, pressed: { key: 'Escape', selector: 'body' } } }
+      const text = action.selector === '#event-status' ? 'input:1 change:1' : action.selector === '#submit-status' ? 'submitted:diagnostic-input' : action.selector === '#hover-status' ? 'hover:1' : action.selector === '#key-status' ? 'key:Escape' : actions.includes('click') ? 'Diagnostics destination' : 'VoiceChat Web Reader Diagnostics'
       return { ok: true, result: { page: { url: '', title: '' }, headings: [], links: [], buttons: [], inputs: [], text } }
     })
     const results = await runWebReaderDiagnostics({
@@ -30,7 +33,7 @@ describe('Web Reader diagnostics', () => {
       publish: async (text) => { published.push(text) }
     })
     expect(published[0]).toContain(WEB_READER_DIAGNOSTICS_CAPABILITIES[0])
-    expect(actions).toEqual(['open', 'read', 'find', 'find', 'styles', 'type', 'read', 'type', 'read', 'click', 'read'])
+    expect(actions).toEqual(['open', 'read', 'find', 'find', 'styles', 'hover', 'read', 'scroll', 'press', 'read', 'type', 'read', 'type', 'read', 'click', 'read'])
     expect(results.every((step) => step.ok && step.durationMs >= 0)).toBe(true)
     expect(run.mock.calls.every(([action]) => action.diagnostic === true)).toBe(true)
   })

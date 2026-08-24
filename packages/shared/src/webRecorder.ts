@@ -16,10 +16,21 @@ export const WEB_RECORDER_PROTOCOL_VERSION = 2 as const
 
 /** Возможности Reader, объявляемые в ready (host показывает их в диагностике). */
 export const WEB_RECORDER_CAPABILITIES = [
-  'open', 'read', 'find', 'click', 'type', 'styles', 'inspector', 'recording', 'diagnostics'
+  'open', 'read', 'find', 'click', 'type', 'styles', 'hover', 'scroll', 'press',
+  'inspector', 'recording', 'diagnostics', 'area-screenshot'
 ] as const
 
 export type WebRecorderPageStatus = 'empty' | 'loading' | 'ready' | 'error'
+
+/** Снимок области страницы, выделенной пользователем (кнопка «📸 Область»). */
+export interface WebRecorderAreaScreenshot {
+  /** PNG/JPEG data-URL; кап согласован с валидатором (2 МБ). */
+  dataUrl: string
+  /** Область в координатах документа страницы. */
+  rect: { x: number; y: number; width: number; height: number }
+  /** Реальный (не прокси) адрес страницы. */
+  pageUrl: string
+}
 
 /** Шаг записанного сценария; у sensitive-шага значение не покидает страницу. */
 export interface WebRecorderScenarioStep {
@@ -50,6 +61,7 @@ export type WebRecorderClientMessage =
   | (Addressed & { kind: 'save-url'; url: string | null })
   | (Addressed & { kind: 'element-selected'; element: PreviewElementPayload })
   | (Addressed & { kind: 'recording-step'; step: WebRecorderScenarioStep })
+  | (Addressed & { kind: 'area-screenshot'; shot: WebRecorderAreaScreenshot })
   | (Addressed & { kind: 'diagnostics-progress'; requestId: string; action: string; ok: boolean; durationMs: number })
   | (Addressed & { kind: 'diagnostics-complete'; total: number })
   | (Addressed & { kind: 'disposed' })
@@ -141,6 +153,16 @@ export function isWebRecorderClientMessage(value: unknown): value is WebRecorder
       // Значение секретного поля не должно покидать Reader ни в каком сообщении.
       if (step.sensitive) return step.text === ''
       return typeof step.text === 'string' && step.text.length <= PREVIEW_ACTION_LIMITS.text
+    }
+    case 'area-screenshot': {
+      if (!record(value.shot)) return false
+      const shot = value.shot
+      if (typeof shot.dataUrl !== 'string' || !shot.dataUrl.startsWith('data:image/') || shot.dataUrl.length > 2_000_000) return false
+      if (!bounded(shot.pageUrl, PREVIEW_ACTION_LIMITS.url) || !isHttpUrl(shot.pageUrl)) return false
+      if (!record(shot.rect)) return false
+      const rect = shot.rect
+      return (['x', 'y', 'width', 'height'] as const).every((key) => typeof rect[key] === 'number' && Number.isFinite(rect[key])) &&
+        (rect.width as number) > 0 && (rect.height as number) > 0
     }
     case 'diagnostics-progress':
       return bounded(value.requestId, ID_LIMIT) && bounded(value.action, 64) && typeof value.ok === 'boolean' &&

@@ -14,6 +14,7 @@ export const WEB_READER_DIAGNOSTICS_CAPABILITIES = [
   'iframe handshake (ready/init), conversation and registration IDs',
   'active Reader conversation and registered tab', 'preview cookie/auth', '/api/preview proxy',
   'ready/loading lifecycle', 'open and DOM read', 'find by text and selector', 'computed styles',
+  'hover events', 'scroll position', 'key press',
   'type with input/change events', 'form submit', 'click and navigation',
   'queued read after navigation', 'requestId correlation'
 ] as const
@@ -89,6 +90,15 @@ export async function runWebReaderDiagnostics(options: DiagnosticsOptions): Prom
     await step('find-text', 'find по тексту', 'action', () => run({ kind: 'find', text: 'Diagnostic action', diagnostic: true }), (r) => 'total' in r && r.total > 0)
     await step('find-selector', 'find по селектору', 'action', () => run({ kind: 'find', selector: '#diagnostic-input', diagnostic: true }), (r) => 'total' in r && r.total === 1)
     await step('styles', 'computed styles', 'action', () => run({ kind: 'styles', selector: '#diagnostic-style', properties: ['display', 'color'], diagnostic: true }), (r) => 'styles' in r && (r as PreviewStylesResult).styles.display === 'block')
+    await step('hover', 'hover: pointer/mouse-события', 'action', async () => {
+      await run({ kind: 'hover', selector: '#hover-target', diagnostic: true })
+      return run({ kind: 'read', selector: '#hover-status', diagnostic: true })
+    }, (r) => 'text' in r && /hover:[1-9]/.test((r as PreviewReadResult).text))
+    await step('scroll', 'scroll: прокрутка страницы', 'action', () => run({ kind: 'scroll', to: 'bottom', diagnostic: true }), (r) => 'scrolled' in r && (r as { scrolled: { top: number } }).scrolled.top > 0)
+    await step('press', 'press: нажатие клавиши', 'action', async () => {
+      await run({ kind: 'press', key: 'Escape', diagnostic: true })
+      return run({ kind: 'read', selector: '#key-status', diagnostic: true })
+    }, (r) => 'text' in r && (r as PreviewReadResult).text.includes('key:Escape'))
     await step('type', 'type, input и change', 'action', () => run({ kind: 'type', selector: '#diagnostic-input', text: 'diagnostic-input', diagnostic: true }))
     await step('events', 'проверка input/change', 'action', () => run({ kind: 'read', selector: '#event-status', diagnostic: true }), (r) => 'text' in r && /input:1 change:1/.test((r as PreviewReadResult).text))
     await step('submit', 'отправка формы', 'action', () => run({ kind: 'type', selector: '#diagnostic-input', text: 'diagnostic-input', submit: true, diagnostic: true }), (r) => 'submitted' in r && r.submitted)

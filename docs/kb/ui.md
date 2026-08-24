@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-08-24
-checked: 407b2a41
+updated: 2026-08-25
+checked: 8b8e498e
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -956,6 +956,14 @@ Reader hash-маршрут служит источником истины и д�
 Правки сохраняются в браузере клиента: скрипт пишет их через страничный `localStorage` (он уже подменён context-шимом, поэтому записи автоматически разделены по внешнему origin) под ключом `voicechat.preview.edits.v1:<origin+pathname реального URL>`. Формат — карта `selector → { original: {cssText, text}, style?, text?, deleted? }`; при каждой загрузке страницы скрипт применяет сохранённые правки заново, поэтому они переживают reload, навигацию туда-обратно и перезапуск браузера (в пределах native localStorage). Действия edit-режима не попадают в запись сценария и не мешают MCP-командам. Покрытие — `apps/server/src/routes/previewProxy.edit.test.ts`; Reader-сторона кнопки — `apps/web-recorder/src/Recorder.dom.test.tsx`.
 
 Общий синхронный генератор клиентских идентификаторов — `browserId()` из `packages/shared/src/browserId.ts`, экспортированный публичным barrel `packages/shared/src/index.ts`. Он сначала использует нативный `crypto.randomUUID()`, при его отсутствии формирует UUID v4 из `crypto.getRandomValues()`, а без обоих Web Crypto API возвращает непустой локально уникальный идентификатор из времени, последовательного счётчика и безопасной от исключений псевдослучайной части. Поэтому генерация не зависит от secure context и работает как на HTTP, так и на HTTPS. Один генератор используют request ID команд `WebReaderHost`, идентификатор регистрации preview/MCP-моста в `AppBody`, idempotency key Feature Preview и Kanban Assistant, а также request ID повторяемых шагов Web Recorder; прямого требования `crypto.randomUUID()` в этих клиентских операциях больше нет.
+
+### Действия hover, scroll, press и скриншот области
+
+К DOM-действиям модели добавлены `hover` (pointer/mouse-события с подъёмом до интерактивного предка — mouseenter не всплывает), `scroll` (окно или контейнер по селектору: `to: top|bottom` либо `dy` в пикселях, возвращает позицию и maxTop) и `press` (keydown+keyup с `KeyboardEvent.key`; селектор фокусирует получателя, иначе активный элемент). Контракт и валидатор — `packages/shared/src/previewActions.ts`, исполнение — инъецированный скрипт previewProxy, MCP-инструменты — `previewMcp.ts`; самодиагностика проверяет все три шага на диагностической странице (`#hover-status`, `#key-status`, высокий блок для scroll) — всего 18 проверок.
+
+Кнопка «📸 Область» в тулбаре Reader включает режим выделения (канал `voicechat.preview.capture.v1`): пользователь растягивает прямоугольник, инъецированный скрипт собирает снимок области без пикселей экрана — клон body с инлайн-стилями рисуется через SVG foreignObject в canvas и кадрируется (ресурсы same-origin через прокси, `<img>` инлайнятся в data-URL; лимиты: ≤2500 узлов, ~1.8 МБ, PNG→JPEG fallback). Снимок уходит Reader-ом сообщением `area-screenshot` (валидатор в webRecorder: data-URL картинки, rect в координатах документа, реальный pageUrl), host (App) кладёт PNG вложением композера, добавляет в черновик строку с адресом страницы и координатами x/y/размером и показывает тост. Ошибка рендера показывается в Reader и host-у не уходит. Esc выключает режим; capture, инспектор и edit-режим взаимоисключаются; события выделения не попадают в запись сценария.
+
+Исправлен скрытый флейк повторного `open`: React мог сбатчить `set-url(null)`+`set-url(url)` в один рендер, iframe с тем же src не перезагружался и `page-ready` не приходил (10-секундный таймаут). Теперь Recorder пересоздаёт внутренний iframe ключом `frameKey`, инкрементируемым на каждый непустой `set-url`, — повторный open детерминированно перезагружает страницу (регресс-тест в `Recorder.dom.test.tsx`).
 
 ### Тестовые окружения проекта в Web Reader
 

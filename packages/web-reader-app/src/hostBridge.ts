@@ -4,10 +4,14 @@ import {
   WEB_RECORDER_MESSAGE_TYPE,
   WEB_RECORDER_PROTOCOL_VERSION,
   isWebRecorderClientMessage,
+  type WebRecorderAreaScreenshot,
   type WebRecorderHostMessage,
   type WebRecorderPageStatus,
   type WebRecorderScenarioStep
 } from '@shared/webRecorder'
+
+// Реэкспорт для host: тип снимка области без прямого импорта @shared/webRecorder.
+export type { WebRecorderAreaScreenshot } from '@shared/webRecorder'
 
 // React-free ядро host-стороны iframe-контракта Web Reader: явный автомат
 // состояний, очередь DOM-команд до готовности страницы, таймеры pending-запросов
@@ -51,6 +55,8 @@ export interface ReaderHostBridgeOptions {
   onSaveUrl?: (url: string | null) => void
   onElement?: (element: PreviewElementPayload) => void
   onRecordingStep?: (step: WebRecorderScenarioStep) => void
+  /** Снимок области, выделенной пользователем в Reader. */
+  onAreaScreenshot?: (shot: WebRecorderAreaScreenshot) => void
   onDiagnosticsProgress?: (progress: { requestId: string; action: string; ok: boolean; durationMs: number }) => void
   onStatus?: (status: ReaderHostStatus) => void
 }
@@ -247,6 +253,9 @@ export function createReaderHostBridge(options: ReaderHostBridgeOptions): Reader
           return
         case 'recording-step':
           options.onRecordingStep?.(message.step)
+          return
+        case 'area-screenshot':
+          options.onAreaScreenshot?.(message.shot)
           return
         case 'diagnostics-progress':
           options.onDiagnosticsProgress?.({ requestId: message.requestId, action: message.action, ok: message.ok, durationMs: message.durationMs })

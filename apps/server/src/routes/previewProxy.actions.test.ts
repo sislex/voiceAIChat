@@ -279,3 +279,48 @@ describe('контекст превью: сетевой шим', () => {
     expect(fetchCalls.at(-1)?.input).toBe('/api/preview?url=' + encodeURIComponent('https://shop.example/spa/next'))
   })
 })
+
+describe('скрипт превью: hover, scroll, press', () => {
+  it('hover шлёт pointer/mouse-события по элементу', async () => {
+    const target = document.querySelector('nav a') as HTMLAnchorElement
+    const events: string[] = []
+    for (const type of ['mouseover', 'mouseenter', 'mousemove']) target.addEventListener(type, () => events.push(type))
+    const res = await act({ kind: 'hover', text: 'Электроника' })
+    expect(res.ok).toBe(true)
+    expect((res.result as { hovered: { tag: string } }).hovered.tag).toBe('a')
+    expect(events).toEqual(['mouseover', 'mouseenter', 'mousemove'])
+  })
+
+  it('hover по отсутствующему элементу — ошибка', async () => {
+    const res = await act({ kind: 'hover', text: 'Такого нет' })
+    expect(res.ok).toBe(false)
+    expect(res.error).toContain('не найден')
+  })
+
+  it('scroll прокручивает контейнер и возвращает позицию', async () => {
+    const main = document.querySelector('main') as HTMLElement
+    Object.defineProperty(main, 'scrollHeight', { configurable: true, value: 2000 })
+    Object.defineProperty(main, 'clientHeight', { configurable: true, value: 400 })
+    const scrolls: number[] = []
+    main.addEventListener('scroll', () => scrolls.push(main.scrollTop))
+    const down = await act({ kind: 'scroll', selector: 'main', dy: 300 })
+    expect(down.ok).toBe(true)
+    expect((down.result as { scrolled: { top: number; maxTop: number } }).scrolled).toMatchObject({ top: 300, maxTop: 1600 })
+    const bottom = await act({ kind: 'scroll', selector: 'main', to: 'bottom' })
+    expect((bottom.result as { scrolled: { top: number } }).scrolled.top).toBe(2000)
+    const top = await act({ kind: 'scroll', selector: 'main', to: 'top' })
+    expect((top.result as { scrolled: { top: number }; target: string }).scrolled.top).toBe(0)
+    expect(scrolls.length).toBe(3)
+  })
+
+  it('press шлёт keydown/keyup c нужной клавишей и фокусирует селектор', async () => {
+    const input = document.getElementById('q') as HTMLInputElement
+    const keys: string[] = []
+    input.addEventListener('keydown', (e) => keys.push('down:' + e.key))
+    input.addEventListener('keyup', (e) => keys.push('up:' + e.key))
+    const res = await act({ kind: 'press', key: 'Escape', selector: '#q' })
+    expect(res.ok).toBe(true)
+    expect((res.result as { pressed: { key: string; selector: string } }).pressed).toMatchObject({ key: 'Escape', selector: '#q' })
+    expect(keys).toEqual(['down:Escape', 'up:Escape'])
+  })
+})

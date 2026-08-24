@@ -186,6 +186,26 @@ describe('dispose', () => {
   })
 })
 
+describe('снимок области', () => {
+  it('area-screenshot доходит до callback только с актуальными ID', () => {
+    let seq = 0
+    const shots: unknown[] = []
+    const bridge = createReaderHostBridge({
+      conversationId: 'conv-1',
+      newId: () => `id-${++seq}`,
+      send: () => undefined,
+      onAreaScreenshot: (shot) => shots.push(shot)
+    })
+    bridge.receive({ type: WEB_RECORDER_MESSAGE_TYPE, kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: ['read'] })
+    const registrationId = bridge.registrationId()!
+    const shot = { dataUrl: 'data:image/png;base64,AAAA', rect: { x: 1, y: 2, width: 30, height: 40 }, pageUrl: 'https://example.test/' }
+    bridge.receive({ type: WEB_RECORDER_MESSAGE_TYPE, conversationId: 'conv-1', registrationId: 'stale', kind: 'area-screenshot', shot })
+    expect(shots).toHaveLength(0)
+    bridge.receive({ type: WEB_RECORDER_MESSAGE_TYPE, conversationId: 'conv-1', registrationId, kind: 'area-screenshot', shot })
+    expect(shots).toEqual([shot])
+  })
+})
+
 describe('диагностика и запись', () => {
   it('регистрация умеет begin/endDiagnostics, мост шлёт inspector/recording-state', () => {
     const h = harness()
