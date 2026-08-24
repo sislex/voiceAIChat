@@ -4,6 +4,8 @@
 // AgentRegistry.onChange для живого списка машин.
 
 export type BoardListener = (projectId: string) => void
+export interface PreparationRunUpdate { userId: string; projectId: string; taskId: string; runId: string }
+export type PreparationRunListener = (update: PreparationRunUpdate) => void
 
 export interface NotificationInvalidation {
   projectId: string
@@ -25,6 +27,7 @@ export class NotificationHub {
 
 export class BoardHub {
   private readonly listeners = new Set<BoardListener>()
+  private readonly preparationRunListeners = new Set<PreparationRunListener>()
 
   /** Уведомить подписчиков об изменении доски проекта. */
   emit(projectId: string): void {
@@ -37,5 +40,15 @@ export class BoardHub {
     return () => {
       this.listeners.delete(cb)
     }
+  }
+
+  /** Лёгкая адресная инвалидация REST-снимка истории preparation-run. */
+  emitPreparationRun(update: PreparationRunUpdate): void {
+    for (const listener of this.preparationRunListeners) listener(update)
+  }
+
+  onPreparationRunChange(cb: PreparationRunListener): () => void {
+    this.preparationRunListeners.add(cb)
+    return () => this.preparationRunListeners.delete(cb)
   }
 }

@@ -49,7 +49,7 @@ areas:
 
 Все пути берутся из объекта `REST`, строки вручную не дублируются. Динамические функции пути применяют `encodeURIComponent` там, где идентификатор может содержать пользовательский ввод. Типы request/response лежат рядом с доменом, а не в реализации fetch.
 
-`ClientMessage` и `ServerMessage` — discriminated unions с полем `t`. `CLIENT_MESSAGE_TYPES` и `SERVER_MESSAGE_TYPES` являются runtime-перечнями и проверяются contract-тестами: новый вариант union обязан попасть и в соответствующий список.
+`ClientMessage` и `ServerMessage` — discriminated unions с полем `t`. `CLIENT_MESSAGE_TYPES` и `SERVER_MESSAGE_TYPES` являются runtime-перечнями и проверяются contract-тестами: новый вариант union обязан попасть и в соответствующий список. `preparation.run.updated` — лёгкая адресная инвалидация REST-истории подготовки с обязательными `projectId`, `taskId` и `runId`; полную запись рана WS не дублирует.
 
 Аудио микрофона передаётся бинарными PCM16-кадрами; управляющие события — JSON. TTS может использовать бинарный кадр с заголовком. Кодирование/декодирование должно оставаться симметричным между `protocol.ts`, серверным `ws.ts` и `packages/ui/src/remote/decode.ts`.
 
@@ -57,7 +57,7 @@ areas:
 
 ## Мосты UI
 
-`ipc.ts` определяет фасады `RendererApi`, `RendererAudioBridge`, `RendererSttBridge`, `RendererClaudeBridge`, `RendererTtsBridge`, `RendererCcBridge`, `RendererCodexBridge`, `RendererAgentsBridge`, `RendererSessionBridge`, `RendererFsBridge` и `RendererPtyBridge`. Они публикуются в глобальном `Window` через `packages/ui/src/global.d.ts`.
+`ipc.ts` определяет фасады `RendererApi`, `RendererAudioBridge`, `RendererSttBridge`, `RendererClaudeBridge`, `RendererTtsBridge`, `RendererCcBridge`, `RendererCodexBridge`, `RendererAgentsBridge`, `RendererBoardBridge`, `RendererSessionBridge`, `RendererFsBridge` и `RendererPtyBridge`. Они публикуются в глобальном `Window` через `packages/ui/src/global.d.ts`. Web-реализация `RendererBoardBridge` также даёт `onPreparationRunUpdated` и `onReconnect`; последний не срабатывает на первом успешном соединении.
 
 Имена методов исторически похожи на Electron IPC (`conversation:list`, `claude:send`), но это логические команды, не обязательный транспорт. Web реализует их через HTTP/WS, desktop устанавливает те же remote-мосты в renderer. Компонент не должен вызывать `fetch`, `WebSocket` или `ipcRenderer` напрямую.
 

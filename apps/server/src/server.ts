@@ -411,6 +411,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()
+  const preparationRunUpdated = (userId: string, projectId: string, taskId: string, runId: string, boardChanged = true): void => {
+    boardHub.emitPreparationRun({ userId, projectId, taskId, runId })
+    if (boardChanged) boardHub.emit(projectId)
+  }
   const notificationHub = new NotificationHub()
   // Любая проектная мутация потенциально меняет доступность либо жизненный цикл вопроса.
   boardHub.onChange((projectId) => notificationHub.emit(projectId))
@@ -1063,12 +1067,13 @@ ${machineDiagnostic}`
       const results = readiness ? developmentReadinessGateResults(readiness) : []
       db.blockTaskPreparationRun(run.id, terminalMessage, results.flatMap((item) => item.status === 'fail' ? item.refs : []), results)
       closePreparationTools()
-      boardHub.emit(projectId)
+      preparationRunUpdated(userId, projectId, taskId, run.id)
     }
     const sendRecovery = (reason: string): void => {
       const sourceName = `${provider}:${model}`
       const recoveryName = sourceName
       db.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Аварийное восстановление Development Brief')
+      preparationRunUpdated(userId, projectId, taskId, run.id)
       db.appendTaskPreparationEvent(run.id, 'recovery_started', 'brief_generation', `Recovery через зафиксированную проектную пару ${recoveryName}: ${reason}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, reason })
       db.appendTaskPreparationLog(run.id, `[система] Recovery через зафиксированную проектную пару: ${recoveryName}; причина: ${reason}\\n`)
       const recoveryPrompt = `Исправь ТОЛЬКО структуру уже подготовленного Development Brief без повторного исследования и без изменения смысла требований. Верни только один JSON-объект schemaVersion=2.\\n
@@ -1091,13 +1096,14 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
           try {
             db.transitionTaskPreparationRun(run.id, 'validating', 'readiness_validation', 'Проверка восстановленного Development Brief')
+            preparationRunUpdated(userId, projectId, taskId, run.id)
             const readiness = parseTaskPreparation(text)
             const gate = canConfirmDevelopmentReadiness(readiness)
             if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
             db.appendTaskPreparationEvent(run.id, 'recovery_completed', 'readiness_validation', `Recovery ${recoveryName} успешно прошёл runtime-валидацию и readiness-гейт`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, result: 'success' })
             db.completeTaskPreparationRun(userId, run.id, readiness)
             closePreparationTools()
-            boardHub.emit(projectId)
+            preparationRunUpdated(userId, projectId, taskId, run.id)
           } catch (error) {
             const recoveryError = redactPreparationText(error instanceof Error ? error.message : String(error))
             db.appendTaskPreparationEvent(run.id, 'recovery_failed', 'readiness_validation', `Recovery ${recoveryName} отклонён: ${recoveryError}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, result: 'failed', error: recoveryError })
@@ -1117,7 +1123,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     const sendAttempt = (attempt: number, correction?: string): void => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
       const handle = client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, ...remote, ...kbFields }, {
-        onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); boardHub.emit(projectId) },
+        onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); preparationRunUpdated(userId, projectId, taskId, run.id, false) },
         onSession: () => {},
         onDone: (text) => {
           taskPreparationHandles.delete(run.id)
@@ -1129,7 +1135,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
               const question = db.createTaskPreparationQuestion(run.id, candidate.question, candidate.material !== false)
               if (!question) throw new Error('Не удалось сохранить уточняющий вопрос')
               closePreparationTools()
-              boardHub.emit(projectId)
+              preparationRunUpdated(userId, projectId, taskId, run.id)
               return
             }
           } catch {
@@ -1137,16 +1143,18 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           }
           try {
             db.transitionTaskPreparationRun(run.id, 'validating', 'readiness_validation', 'Проверка Development Brief')
+            preparationRunUpdated(userId, projectId, taskId, run.id)
             const readiness = parseTaskPreparation(text)
             const gate = canConfirmDevelopmentReadiness(readiness)
             if (!gate.allowed) throw new Error(`Гейт готовности не пройден: ${gate.reasons.join(', ')}`)
             db.completeTaskPreparationRun(userId, run.id, readiness)
             closePreparationTools()
-            boardHub.emit(projectId)
+            preparationRunUpdated(userId, projectId, taskId, run.id)
           } catch (error) {
             const message = redactPreparationText(error instanceof Error ? error.message : String(error))
             if (attempt < 2) {
               db.transitionTaskPreparationRun(run.id, 'running', 'brief_generation', 'Исправление Development Brief после проверки')
+              preparationRunUpdated(userId, projectId, taskId, run.id)
               sendAttempt(attempt + 1, message)
             } else if (message.includes('.kind имеет недопустимое значение')) {
               terminalValidationFailure(message, text)
@@ -1159,13 +1167,13 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           taskPreparationHandles.delete(run.id)
           if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
           if (attempt < 2) sendAttempt(attempt + 1, message)
-          else { db.failTaskPreparationRun(run.id, taskPreparationFailure(provider, userId, message)); closePreparationTools(); boardHub.emit(projectId) }
+          else { db.failTaskPreparationRun(run.id, taskPreparationFailure(provider, userId, message)); closePreparationTools(); preparationRunUpdated(userId, projectId, taskId, run.id) }
         }
       })
       if (handle) taskPreparationHandles.set(run.id, { cancel: () => { closePreparationTools(); handle.cancel() } })
     }
     sendAttempt(1)
-    boardHub.emit(projectId)
+    preparationRunUpdated(userId, projectId, taskId, run.id)
     return run
   }
 
@@ -1237,7 +1245,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     const run = db.cancelTaskPreparationRun(uid(req), req.params.runId)
     if (!run) return reply.code(404).send({ error: 'not found' })
     try { taskPreparationHandles.get(run.id)?.cancel() } finally { taskPreparationHandles.delete(run.id) }
-    boardHub.emit(run.projectId)
+    preparationRunUpdated(uid(req), run.projectId, run.taskId, run.id)
     return run
   })
   app.post<{ Params: { runId: string }; Body: Partial<import('@voicechat/shared').TaskPreparationLlmSelection> }>('/api/task-preparation/runs/:runId/retry', async (req, reply) => {
@@ -1401,7 +1409,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       // Живая канбан-доска: чтение снапшота (с проверкой членства) + подписка на изменения.
       board: {
         getBoard: (projectId, includeCompleted) => db.getBoard(user.name, projectId, { includeCompleted }),
-        subscribe: (cb) => boardHub.onChange(cb)
+        subscribe: (cb) => boardHub.onChange(cb),
+        subscribePreparationRuns: (cb) => boardHub.onPreparationRunChange(cb)
       },
       preparationNotifications: {
         canAccess: (projectId) => db.getProject(user.name, projectId) !== null,

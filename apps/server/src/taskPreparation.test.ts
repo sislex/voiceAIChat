@@ -5,6 +5,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
+import type { AddressInfo } from 'node:net'
+import { WebSocket } from 'ws'
 import { buildServer, taskPreparationFailure, taskPreparationModel } from './server.js'
 import { loadConfig } from './config.js'
 import { VoiceChatDb } from './db/database.js'
@@ -60,7 +62,12 @@ function fakeCli(calls: LlmRequest[], answer: () => (attempt: number) => Answer)
       const reply = answer()(attempt)
       const timer = setTimeout(() => {
         if ('error' in reply) handlers.onError(reply.error)
-        else if ('text' in reply) handlers.onDone(reply.text)
+        else if ('text' in reply) {
+          handlers.onDelta('фрагмент-1')
+          handlers.onDelta('фрагмент-2')
+          handlers.onDelta('фрагмент-3')
+          handlers.onDone(reply.text)
+        }
       }, 0)
       return { cancel: () => { cancelled++; clearTimeout(timer) } }
     }
@@ -129,6 +136,27 @@ function useCodex(userId: string): void {
 }
 
 describe('подготовка к разработке: движок из настроек', () => {
+  it('публикует адресные WS-инвалидации и не рассылает полную доску на каждую текстовую дельту', async () => {
+    const { project, task } = await taskInBacklog()
+    await app.listen({ port: 0, host: '127.0.0.1' })
+    const port = (app.server.address() as AddressInfo).port
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=${adminTok}`)
+    const messages: Array<{ t: string; projectId?: string; taskId?: string; runId?: string }> = []
+    ws.on('message', (data) => messages.push(JSON.parse(data.toString()) as never))
+    await new Promise<void>((resolve, reject) => { ws.once('open', () => resolve()); ws.once('error', reject) })
+    ws.send(JSON.stringify({ t: 'board.subscribe', projectId: project.id }))
+
+    const started = await launch(adminTok, project.id, task.id)
+    await settled(adminTok, started.id)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const updates = messages.filter((message) => message.t === 'preparation.run.updated')
+    expect(updates.length).toBeGreaterThanOrEqual(5)
+    expect(updates.every((message) => message.projectId === project.id && message.taskId === task.id && message.runId === started.id)).toBe(true)
+    expect(messages.filter((message) => message.t === 'board.update').length).toBeLessThan(updates.length)
+    await new Promise<void>((resolve) => { ws.once('close', () => resolve()); ws.close() })
+  })
+
   it('проект на Codex: запрос уходит в Codex-клиент и подготовка проходит', async () => {
     const { project, task } = await taskInBacklog()
     db.setCiLlmConfig('project', project.id, { provider: 'codex', model: DEFAULT_CODEX_MODEL, mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })

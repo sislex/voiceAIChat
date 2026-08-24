@@ -51,6 +51,7 @@ export interface SessionDeps {
   board?: {
     getBoard(projectId: string, includeCompleted?: boolean): Board | null
     subscribe(cb: (projectId: string) => void): () => void
+    subscribePreparationRuns(cb: (update: { userId: string; projectId: string; taskId: string; runId: string }) => void): () => void
   }
   /** Адресная инвалидизация HTTP-снимка уведомлений подготовки. */
   preparationNotifications?: {
@@ -96,6 +97,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubDownload: (() => void) | null = null
   let unsubAgents: (() => void) | null = null
   let unsubBoard: (() => void) | null = null
+  let unsubPreparationRuns: (() => void) | null = null
   let unsubPreparationNotifications: (() => void) | null = null
   let boardProjectId: string | null = null
   /** Просит ли подписчик отдавать и давно завершённые задачи («Показать завершённые»). */
@@ -161,6 +163,10 @@ export function createSession(deps: SessionDeps): WsHandlers {
         unsubBoard = deps.board.subscribe((projectId) => {
           if (projectId !== boardProjectId) return
           ctx.send({ t: 'board.changed', projectId })
+        })
+        unsubPreparationRuns = deps.board.subscribePreparationRuns((update) => {
+          if (update.userId !== deps.user.name) return
+          ctx.send({ t: 'preparation.run.updated', projectId: update.projectId, taskId: update.taskId, runId: update.runId })
         })
       }
     },
@@ -343,6 +349,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubAgents = null
       unsubBoard?.()
       unsubBoard = null
+      unsubPreparationRuns?.()
+      unsubPreparationRuns = null
       unsubPreparationNotifications?.()
       unsubPreparationNotifications = null
       boardProjectId = null

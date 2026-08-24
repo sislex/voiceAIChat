@@ -20,6 +20,10 @@ describe('контракт протокола', () => {
     expect(SERVER_MESSAGE_TYPES).toContain('claude.log')
   })
 
+  it('содержит адресное событие обновления preparation-run', () => {
+    expect(SERVER_MESSAGE_TYPES).toContain('preparation.run.updated')
+  })
+
   it('содержит cc.tail (Проводник Claude Code)', () => {
     expect(CLIENT_MESSAGE_TYPES).toContain('cc.tail.start')
     expect(CLIENT_MESSAGE_TYPES).toContain('cc.tail.stop')
