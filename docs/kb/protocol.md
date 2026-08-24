@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-08-19
-checked: e76af0f2
+updated: 2026-08-24
+checked: d9ed9768
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -113,6 +113,24 @@ URL руками. Параметризованные пути — функции
 всем сокетам пользователя, клиент с активным чатом исполняет его и отвечает
 `preview.result`; мост — `RendererPreviewBridge` (`window.preview`, только web,
 в desktop отсутствует). Подписки нет — рассылка по `userId`, как у `kb.usage`.
+Relay хранит у pending-запроса `userId`, `conversationId` и `requestId` и игнорирует
+ответ другого пользователя, разговора или неизвестного запроса. UI дополнительно
+выдаёт каждой смонтированной панели случайный `registrationId`; выполнять действие
+может только панель текущего Reader-маршрута, чей id записан активным для вкладки в
+`localStorage` (фокус вкладки обновляет claim). Ответ несёт conversation/registration
+контекст, поэтому одинаково подключённые вкладки не подменяют активный Web Reader.
+
+Самодиагностика из `packages/ui/src/webReaderDiagnostics.ts` выполняет один
+последовательный сценарий на same-origin `/api/preview/diagnostics`. Страница
+проходит через существующий `/api/preview`, rewrite и DOM bridge без внешнего
+сетевого запроса и детерминированно предоставляет цели для read/find/styles,
+input/change, submit, click и навигации; открытие повторно сбрасывает URL, а read,
+поставленный одновременно с навигацией, проверяет очередь и correlation. Все
+действия помечены `diagnostic: true`: iframe временно подавляет их запись в recorder.
+Перед сценарием проверяется подготовка preview cookie/auth, а ошибки относятся к
+слоям route/active-chat, host, cookie/auth, proxy/network, page-loading, dom-bridge,
+action или timeout. Детали действий и UI запуска — [ui.md](ui.md).
+
 Детали протокола действий, лимиты и relay — [ui.md](ui.md#действия-модели-в-превью-mcp__browser__)
 и [llm.md](llm.md).
 
