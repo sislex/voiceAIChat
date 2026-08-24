@@ -40,14 +40,14 @@ function connect(token: string): Promise<WebSocket> {
   })
 }
 
-/** Ждём board.update, удовлетворяющий предикату, иначе null по таймауту. */
-function waitBoard(ws: WebSocket, pred: (b: Board) => boolean, ms = 1000): Promise<Board | null> {
+/** Ждём лёгкую инвалидацию board.changed, иначе null по таймауту. */
+function waitBoardChanged(ws: WebSocket, projectId: string, ms = 1000): Promise<Extract<ServerMessage, { t: 'board.changed' }> | null> {
   return new Promise((resolve) => {
     const onMsg = (d: Buffer) => {
       const m = JSON.parse(d.toString()) as ServerMessage
-      if (m.t === 'board.update' && pred(m.board)) {
+      if (m.t === 'board.changed' && m.projectId === projectId) {
         ws.off('message', onMsg)
-        resolve(m.board)
+        resolve(m)
       }
     }
     ws.on('message', onMsg)
@@ -82,62 +82,40 @@ async function createProject(): Promise<ProjectDetail> {
 }
 
 describe('WS: живое обновление доски', () => {
-  it('участник получает board.update после мутации через REST', async () => {
-    const p = await createProject()
-    const ws = await connect(adminTok)
-    // initial snapshot по подписке
-    const initial = waitBoard(ws, () => true)
-    ws.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id }))
-    const first = await initial
-    expect(first).not.toBeNull()
-    const todo = first!.columns[0]
-
-    // мутация через REST → boardHub.emit → board.update с новой задачей
-    const next = waitBoard(ws, (b) => b.tasks.some((t) => t.title === 'Hello'))
-    await app.inject({
-      method: 'POST',
-      url: `/api/projects/${p.id}/tasks`,
-      headers: { authorization: `Bearer ${adminTok}` },
-      payload: { columnId: todo.id, title: 'Hello' }
-    })
-    const got = await next
-    expect(got).not.toBeNull()
-    expect(got!.tasks.some((t) => t.title === 'Hello')).toBe(true)
-    ws.close()
-  })
-
-  it('подписка с includeCompleted держит завершённые и в живых обновлениях', async () => {
+  it('участник получает board.changed без снапшота после мутации через REST', async () => {
     const p = await createProject()
     const auth = { authorization: `Bearer ${adminTok}` }
     const board = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
-    const done = board.columns.find((c) => c.semanticType === 'done')!
-    const task = (await app.inject({
-      method: 'POST', url: `/api/projects/${p.id}/tasks`, headers: auth, payload: { columnId: done.id, title: 'Завершённая' }
-    })).json() as { id: string }
-    // Порог 0 — «убрать в конце дня»: за полночью задача уходит с доски, но не
-    // из системы (мгновенно она не исчезает — в «Готово» карточку переносит и CI-ран).
-    await app.inject({ method: 'PATCH', url: `/api/projects/${p.id}`, headers: auth, payload: { doneRetentionDays: 0 } })
-    clock = new Date(clock).setHours(24, 0, 0, 0)
-
     const ws = await connect(adminTok)
-    const snap = waitBoard(ws, () => true)
-    ws.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id, includeCompleted: true }))
-    expect((await snap)!.tasks.map((t) => t.id)).toContain(task.id)
+    ws.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
 
-    // Живой board.update приходит в том же составе — карточка не исчезает.
-    const next = waitBoard(ws, (b) => b.tasks.some((t) => t.title === 'Новая'))
+    const next = waitBoardChanged(ws, p.id)
     await app.inject({
-      method: 'POST', url: `/api/projects/${p.id}/tasks`, headers: auth, payload: { columnId: board.columns[0].id, title: 'Новая' }
+      method: 'POST',
+      url: `/api/projects/${p.id}/tasks`,
+      headers: auth,
+      payload: { columnId: board.columns[0]!.id, title: 'Hello' }
     })
-    expect((await next)!.tasks.map((t) => t.id)).toContain(task.id)
-
-    // Без флага той же доски — завершённой нет.
-    const plain = await connect(adminTok)
-    const plainSnap = waitBoard(plain, () => true)
-    plain.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id }))
-    expect((await plainSnap)!.tasks.map((t) => t.id)).not.toContain(task.id)
+    const got = await next
+    expect(got).toEqual({ t: 'board.changed', projectId: p.id })
+    expect(got).not.toHaveProperty('board')
     ws.close()
-    plain.close()
+  })
+
+  it('подписка не отправляет начальный снапшот и не принимает фильтр', async () => {
+    const p = await createProject()
+    const ws = await connect(adminTok)
+    const initial = waitBoardChanged(ws, p.id, 150)
+    ws.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id }))
+    expect(await initial).toBeNull()
+
+    const board = (await app.inject({
+      method: 'GET', url: `/api/projects/${p.id}/board?includeCompleted=1`,
+      headers: { authorization: `Bearer ${adminTok}` }
+    })).json() as Board
+    expect(board.columns.length).toBeGreaterThan(0)
+    ws.close()
   })
 
   it('обновляет нормализованный результат после старта и отмены QA-рана', async () => {
@@ -147,19 +125,22 @@ describe('WS: живое обновление доски', () => {
     const column = board.columns.find((item) => item.semanticType === 'automated_qa')!
     const task = (await app.inject({ method: 'POST', url: `/api/projects/${p.id}/tasks`, headers: auth, payload: { columnId: column.id, title: 'QA realtime' } })).json() as { id: string }
     const ws = await connect(adminTok)
-    const initial = waitBoard(ws, () => true)
     ws.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id }))
-    await initial
+    await new Promise((resolve) => setTimeout(resolve, 20))
 
-    const active = waitBoard(ws, (snapshot) => snapshot.tasks.find((item) => item.id === task.id)?.latestRunResult?.outcome === 'active')
+    const active = waitBoardChanged(ws, p.id)
     const started = await app.inject({ method: 'POST', url: `/api/projects/${p.id}/tasks/${task.id}/qa/runs/automated_qa`, headers: auth })
     expect(started.statusCode).toBe(202)
     const run = started.json() as { id: string }
-    expect((await active)?.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'active' })
+    expect(await active).toEqual({ t: 'board.changed', projectId: p.id })
+    const activeBoard = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
+    expect(activeBoard.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'active' })
 
-    const cancelled = waitBoard(ws, (snapshot) => snapshot.tasks.find((item) => item.id === task.id)?.latestRunResult?.outcome === 'cancelled')
+    const cancelled = waitBoardChanged(ws, p.id)
     expect((await app.inject({ method: 'DELETE', url: `/api/qa/runs/${run.id}`, headers: auth })).statusCode).toBe(200)
-    expect((await cancelled)?.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'cancelled' })
+    expect(await cancelled).toEqual({ t: 'board.changed', projectId: p.id })
+    const cancelledBoard = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
+    expect(cancelledBoard.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'cancelled' })
     ws.close()
   })
 
@@ -184,12 +165,18 @@ describe('WS: живое обновление доски', () => {
     bob.close()
   })
 
-  it('не-участник не получает snapshot по подписке', async () => {
+  it('не-участник не получает board.changed по подписке', async () => {
     const p = await createProject()
     const ws = await connect(bobTok)
-    const snap = waitBoard(ws, () => true, 600)
+    const changed = waitBoardChanged(ws, p.id, 600)
     ws.send(JSON.stringify({ t: 'board.subscribe', projectId: p.id }))
-    expect(await snap).toBeNull()
+    const board = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: { authorization: `Bearer ${adminTok}` } })).json() as Board
+    await app.inject({
+      method: 'POST', url: `/api/projects/${p.id}/tasks`,
+      headers: { authorization: `Bearer ${adminTok}` },
+      payload: { columnId: board.columns[0]!.id, title: 'secret' }
+    })
+    expect(await changed).toBeNull()
     ws.close()
   })
 })

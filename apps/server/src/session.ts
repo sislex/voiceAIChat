@@ -99,7 +99,6 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubPreparationNotifications: (() => void) | null = null
   let boardProjectId: string | null = null
   /** Просит ли подписчик отдавать и давно завершённые задачи («Показать завершённые»). */
-  let boardIncludeCompleted = false
   let unsubTurns: (() => void) | null = null
   let unsubCi: (() => void) | null = null
   let unsubKbUsage: (() => void) | null = null
@@ -161,8 +160,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
       if (deps.board) {
         unsubBoard = deps.board.subscribe((projectId) => {
           if (projectId !== boardProjectId) return
-          const board = deps.board!.getBoard(projectId, boardIncludeCompleted)
-          if (board) ctx.send({ t: 'board.update', projectId, board })
+          ctx.send({ t: 'board.changed', projectId })
         })
       }
     },
@@ -303,16 +301,13 @@ export function createSession(deps: SessionDeps): WsHandlers {
           break
 
         case 'board.subscribe': {
-          const board = deps.board?.getBoard(msg.projectId, msg.includeCompleted) ?? null
-          if (!board) break
+          // getBoard сохраняет действующую проверку членства, но снапшот по WS не отправляется.
+          if (!deps.board?.getBoard(msg.projectId, false)) break
           boardProjectId = msg.projectId
-          boardIncludeCompleted = msg.includeCompleted === true
-          ctx.send({ t: 'board.update', projectId: msg.projectId, board })
           break
         }
         case 'board.unsubscribe':
           boardProjectId = null
-          boardIncludeCompleted = false
           break
         case 'ci.subscribe': {
           const snap = deps.ci?.snapshot(deps.user.name, msg.runId)
@@ -351,7 +346,6 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubPreparationNotifications?.()
       unsubPreparationNotifications = null
       boardProjectId = null
-      boardIncludeCompleted = false
       unsubTurns?.()
       unsubTurns = null
       unsubCi?.()

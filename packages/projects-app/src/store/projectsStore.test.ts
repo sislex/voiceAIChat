@@ -57,14 +57,14 @@ describe('projects store', () => {
     expect(store.getState().projectDetail?.id).toBe('p2')
   })
   it('moves optimistically and ignores events from another project', async () => {
-    let listener: ((event: { projectId: string; board: Board }) => void) | undefined
+    let listener: ((event: { projectId: string }) => void) | undefined
     const client = fake({ subscribeBoard: vi.fn((_id, next) => { listener = next; return vi.fn() }) })
     const store = createProjectsStore(client)
     await store.actions.openProject('p1')
     const promise = store.actions.moveTask('t1', 'done')
     expect(store.getState().board?.tasks[0]?.columnId).toBe('done')
     await promise
-    listener?.({ projectId: 'p2', board: board('p2') })
+    listener?.({ projectId: 'p2' })
     expect(store.getState().board?.tasks[0]?.projectId).toBe('p1')
   })
   it('rolls back and reconciles after a failed optimistic reorder', async () => {
@@ -74,5 +74,58 @@ describe('projects store', () => {
     await store.actions.reorderColumns(['done', 'todo'])
     expect(client.getBoard).toHaveBeenCalledTimes(2)
     expect(store.getState().board?.columns[0]?.id).toBe('todo')
+  })
+
+  it('debounce-объединяет инвалидации и игнорирует другой проект', async () => {
+    vi.useFakeTimers()
+    try {
+      let listener: ((event: { projectId: string }) => void) | undefined
+      const client = fake({ subscribeBoard: vi.fn((_id, next) => { listener = next; return vi.fn() }) })
+      const store = createProjectsStore(client)
+      await store.actions.openProject('p1')
+      listener?.({ projectId: 'p2' })
+      for (let i = 0; i < 5; i++) listener?.({ projectId: 'p1' })
+      await vi.advanceTimersByTimeAsync(49)
+      expect(client.getBoard).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(client.getBoard).toHaveBeenCalledTimes(2)
+      store.actions.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('single-flight оставляет одну завершающую синхронизацию', async () => {
+    vi.useFakeTimers()
+    try {
+      let listener: ((event: { projectId: string }) => void) | undefined
+      let resolve!: (value: Board) => void
+      let active = 0
+      let maxActive = 0
+      const deferred = new Promise<Board>((done) => { resolve = done })
+      const getBoard = vi.fn(async () => board())
+      const client = fake({ getBoard, subscribeBoard: vi.fn((_id, next) => { listener = next; return vi.fn() }) })
+      const store = createProjectsStore(client)
+      await store.actions.openProject('p1')
+      getBoard.mockImplementationOnce(async () => {
+        active++
+        maxActive = Math.max(maxActive, active)
+        const value = await deferred
+        active--
+        return value
+      })
+      listener?.({ projectId: 'p1' })
+      await vi.advanceTimersByTimeAsync(50)
+      listener?.({ projectId: 'p1' })
+      listener?.({ projectId: 'p1' })
+      resolve(board())
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(maxActive).toBe(1)
+      expect(getBoard).toHaveBeenCalledTimes(3)
+      store.actions.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
