@@ -665,7 +665,7 @@ export interface RendererPreviewBridge {
   /** Подписка на действия сервера (preview.action). */
   onAction(cb: (m: { conversationId: string; requestId: string; action: PreviewAction }) => void): () => void
   /** Ответ на действие (preview.result). */
-  result(m: { requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }): void
+  result(m: { conversationId?: string; registrationId?: string; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }): void
 }
 
 /**

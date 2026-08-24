@@ -207,6 +207,8 @@ export interface ChatActions {
   exportConversation(format: 'md' | 'json'): void
   setDraft(value: string): void
   submitText(previewElement?: PreviewElementPayload): Promise<boolean>
+  /** Сохраняет безопасный служебный результат без запуска LLM. */
+  publishDiagnosticMessage(conversationId: string, text: string): Promise<void>
   /** Готовая транскрипция из голосового домена: реплики + ход модели. */
   submitVoiceSegments(segments: LiveSegment[]): Promise<void>
   suggestPrompts(modifiers: Settings['aiAssistPrompts']): Promise<void>
@@ -905,6 +907,11 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     return true
   }
 
+  async function publishDiagnosticMessage(conversationId: string, text: string): Promise<void> {
+    if (getState().activeId !== conversationId) return
+    await persistMessage('ai', text.slice(0, 4_000))
+  }
+
   let submitTextInFlight: Promise<boolean> | null = null
 
   function submitText(previewElement?: PreviewElementPayload): Promise<boolean> {
@@ -1371,6 +1378,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         setState({ draft: value })
       },
       submitText,
+      publishDiagnosticMessage,
       submitVoiceSegments,
       async suggestPrompts(modifiers) {
         const text = getState().draft.trim()

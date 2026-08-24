@@ -269,6 +269,11 @@ const run=(action)=>{
     }
     return {page:pageInfo(),typed:describe(el),submitted}
   }
+  if(action.kind==='styles'){
+    const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);
+    const computed=getComputedStyle(found[0]);const names=Array.isArray(action.properties)&&action.properties.length?action.properties:['display','color','font-size','visibility'];const values={};for(const name of names.slice(0,32))values[name]=computed.getPropertyValue(name)||computed[name]||'';
+    return {page:pageInfo(),selector:uniqueSelector(found[0]),styles:values}
+  }
   if(action.kind==='read'){
     let scope=document.body||document.documentElement;
     if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);scope=found[0]}
@@ -292,9 +297,9 @@ const run=(action)=>{
   throw new Error('Неизвестное действие')
 };
 const reply=(requestId,ok,payload)=>parent.postMessage(ok?{type:RESULT,requestId,ok:true,result:payload}:{type:RESULT,requestId,ok:false,error:String(payload).slice(0,2000)},location.origin);
-let recording=false;
+let recording=false,diagnosticRunning=false;
 const sensitive=(el)=>el.localName==='input'&&(el.type==='password'||el.autocomplete==='current-password'||el.autocomplete==='new-password'||/pass|secret|token|card|cvv/i.test((el.name||'')+' '+(el.id||'')));
-const record=(step)=>{if(recording)parent.postMessage({type:RECORD,step},location.origin)};
+const record=(step)=>{if(recording&&!diagnosticRunning)parent.postMessage({type:RECORD,step},location.origin)};
 const recordClick=(e)=>{const el=e.target instanceof Element?clickTarget(e.target):null;if(el&&!el.closest('[data-voicechat-inspector]'))record({kind:'click',selector:uniqueSelector(el),text:textOf(el).slice(0,EL_TEXT)})};
 const recordInput=(e)=>{const el=e.target instanceof Element?e.target:null;if(!el||!el.matches('input,textarea,select,[contenteditable=true]'))return;record({kind:'type',selector:uniqueSelector(el),text:sensitive(el)?'':String(el.value===undefined?el.textContent||'':el.value).slice(0,2000),sensitive:sensitive(el)})};
 const setRecording=(enabled)=>{if(recording===enabled)return;recording=enabled;if(enabled){document.addEventListener('click',recordClick,true);document.addEventListener('input',recordInput,true)}else{document.removeEventListener('click',recordClick,true);document.removeEventListener('input',recordInput,true)}};
@@ -303,8 +308,10 @@ const message=(e)=>{
   if(e.data.type===COMMAND&&typeof e.data.enabled==='boolean'){e.data.enabled?enable():disable();return}
   if(e.data.type===RECORD&&typeof e.data.enabled==='boolean'){setRecording(e.data.enabled);return}
   if(e.data.type===ACTION&&typeof e.data.requestId==='string'&&e.data.action&&typeof e.data.action.kind==='string'){
+    diagnosticRunning=e.data.action.diagnostic===true;
     try{reply(e.data.requestId,true,run(e.data.action))}
     catch(err){reply(e.data.requestId,false,err&&err.message||err)}
+    finally{diagnosticRunning=false}
   }
 };
 addEventListener('message',message);addEventListener('pagehide',()=>{disable();setRecording(false);removeEventListener('message',message)},{once:true});
@@ -416,7 +423,21 @@ async function readLimited(response: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks)
 }
 
+export function previewDiagnosticsHtml(destination = false): string {
+  if (destination) return '<!doctype html><html><head><title>Diagnostics destination</title></head><body><h1>Diagnostics destination</h1><p id="destination-status">navigation:ready</p></body></html>'
+  return `<!doctype html><html><head><title>VoiceChat Web Reader Diagnostics</title><style>#diagnostic-style{display:block;color:rgb(12, 34, 56)}</style></head><body>
+<h1>VoiceChat Web Reader Diagnostics</h1><p id="diagnostic-style">Diagnostic action surface</p>
+<form id="diagnostic-form"><input id="diagnostic-input" name="diagnostic-input" autocomplete="off"><button type="submit">Submit diagnostic form</button></form>
+<p id="event-status">input:0 change:0</p><p id="submit-status">not-submitted</p>
+<a id="diagnostic-nav" href="/api/preview/diagnostics?page=destination">Diagnostic action navigation</a>
+<script>(()=>{let input=0,change=0;const field=document.querySelector('#diagnostic-input'),events=document.querySelector('#event-status');field.addEventListener('input',()=>{input++;events.textContent='input:'+input+' change:'+change});field.addEventListener('change',()=>{change++;events.textContent='input:'+input+' change:'+change});document.querySelector('#diagnostic-form').addEventListener('submit',(event)=>{event.preventDefault();document.querySelector('#submit-status').textContent='submitted:'+field.value})})()<\/script>
+</body></html>`
+}
+
 export function registerPreviewProxy(app: FastifyInstance): void {
+  app.get<{ Querystring: { page?: string } }>('/api/preview/diagnostics', async (req, reply) =>
+    reply.type('text/html; charset=utf-8').send(previewDiagnosticsHtml(req.query.page === 'destination'))
+  )
   // Отдельный scope: тело любого content-type (JSON, multipart, бинарь) уходит
   // апстриму сырым буфером и не попадает в парсеры остального API.
   void app.register(async (scope) => {
@@ -431,6 +452,13 @@ export function registerPreviewProxy(app: FastifyInstance): void {
         return reply.code(400).send({ error: 'invalid_url', message: 'Разрешены только HTTP и HTTPS адреса' })
       }
       try {
+        // Самодиагностика не выполняет сетевой запрос: принимается только точный
+        // same-origin внутренний маршрут и проходит через тот же rewrite/DOM bridge.
+        if (url.pathname === '/api/preview/diagnostics' && url.host === req.headers.host) {
+          const source = Buffer.from(previewDiagnosticsHtml(url.searchParams.get('page') === 'destination'))
+          const rewritten = rewritePreviewBody(source, 'text/html; charset=utf-8', url)
+          return reply.type('text/html; charset=utf-8').send(rewritten)
+        }
         const userId = uid(req)
         const body = (typeof req.body === 'string' || Buffer.isBuffer(req.body)) && req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined
         const { response, finalUrl } = await load(url, userId, req.method, body, upstreamRequestHeaders(req.headers))

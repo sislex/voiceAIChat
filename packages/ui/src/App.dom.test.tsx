@@ -190,7 +190,7 @@ describe('App — действия модели в веб-превью (мост
     bridge.emit({ conversationId: chat.id, requestId: 'pw-open', action: { kind: 'open', url: 'https://shop.example/' } })
     await waitFor(() => expect(api._state.conversations.find((item) => item.id === chat.id)?.previewUrl).toBe('https://shop.example/'))
     fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'page-status', status: 'ready', url: 'https://shop.example/' } }))
-    await waitFor(() => expect(bridge.results).toContainEqual({ requestId: 'pw-open', ok: true, result: { url: 'https://shop.example/' } }))
+    await waitFor(() => expect(bridge.results).toContainEqual(expect.objectContaining({ conversationId: chat.id, requestId: 'pw-open', ok: true, result: { url: 'https://shop.example/' } })))
 
     view.unmount()
     bridge = installPreviewBridge()
@@ -204,7 +204,7 @@ describe('App — действия модели в веб-превью (мост
     const command = post.mock.calls.map(([message]) => message as { kind?: string; requestId?: string; action?: { kind: string } }).find((message) => message.kind === 'run-action' && message.action?.kind === 'read')!
     const result = { page: { url: 'https://shop.example/', title: 'Shop' }, headings: [], links: [], buttons: [], inputs: [], text: 'Loaded' }
     fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'action-result', requestId: command.requestId, ok: true, result } }))
-    await waitFor(() => expect(bridge.results).toContainEqual({ requestId: 'pw-read', ok: true, result }))
+    await waitFor(() => expect(bridge.results).toContainEqual(expect.objectContaining({ conversationId: chat.id, requestId: 'pw-read', ok: true, result })))
   })
 
   it('при переключении Playwright Reader отклоняет команды панели другого чата', async () => {
