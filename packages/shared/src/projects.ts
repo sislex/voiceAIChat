@@ -112,6 +112,48 @@ export function recommendedChatStoragePath(context: StorageContext): string {
 
 export type ManagedEnvironmentKind = 'production' | 'staging' | 'test' | 'preview'
 
+export const PROJECT_WORKSPACE_MANIFEST_FORMAT_VERSION = 1
+export type WorkspaceMode = 'shared_main' | 'chat_workspace' | 'task_workspace' | 'legacy'
+export type WorkspaceState = 'ready' | 'refreshing' | 'creating' | 'merge_pending' | 'merge_failed' | 'blocked' | 'unavailable'
+
+export interface WorkspaceView {
+  mode: WorkspaceMode
+  baseSha: string | null
+  branch: string | null
+  path: string | null
+  readOnly: boolean
+  state: WorkspaceState
+  diagnostic: string | null
+}
+
+export interface ProjectWorkspaceManifest {
+  formatVersion: typeof PROJECT_WORKSPACE_MANIFEST_FORMAT_VERSION
+  kind: 'project_main' | 'chat_workspace'
+  projectId: string
+  machineId: string
+  storageId: string
+  canonicalPath: string
+  origin: string
+  branch: string
+  conversationId?: string
+  baseSha?: string
+}
+
+export interface ManagedChatWorkspacePaths {
+  root: string
+  repository: string
+  manifest: string
+}
+
+/** Canonical isolated workspace for a normal project conversation. */
+export function managedChatWorkspacePaths(storageRoot: string, projectId: string, conversationId: string, platform: string): ManagedChatWorkspacePaths {
+  const root = normalizeMachineStoragePath(storageRoot, platform)
+  const separator = machinePathSeparator(platform)
+  const workspace = [root, 'projects', validateStorageRelativePath(projectId), 'chats', validateStorageRelativePath(conversationId), 'workspace'].join(separator)
+  if (!isPathInsideMachineStorage(workspace, root, platform)) throw new Error('Chat workspace path выходит за границы storage')
+  return { root: workspace, repository: `${workspace}${separator}repository`, manifest: `${workspace}${separator}workspace.json` }
+}
+
 export const PROJECT_MACHINE_DIRECTORY_KINDS = [
   'projectWorkdir', 'reposRoot', 'mergeClones', 'production', 'staging',
   'featurePreview', 'taskWorkspace'

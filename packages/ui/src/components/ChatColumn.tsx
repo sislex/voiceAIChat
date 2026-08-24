@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
+import type { WorkspaceView } from '@shared/projects'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages, isImagePath } from '@shared/images'
@@ -98,6 +99,8 @@ export interface ChatColumnProps {
   onOpenConversationSettings?: () => void
   /** Фактический режим активного разговора для бейджа в шапке. */
   permissionMode?: PermissionMode
+  /** Фактический managed workspace, вычисленный сервером. */
+  workspace?: WorkspaceView | null
   /** Выполнить исходный запрос планового ответа в режиме разработки. */
   onExecutePlan?: (answerId: string) => void
   /** Разрешено ли эскалировать план (user без машины — нет). */
@@ -203,6 +206,7 @@ export function ChatColumn({
   sidebarExpanded = true,
   onOpenConversationSettings,
   permissionMode = 'plan',
+  workspace = null,
   onExecutePlan,
   canExecutePlan = true,
   state,
@@ -476,6 +480,18 @@ export function ChatColumn({
         <span className="mtitle-machine" data-testid="head-machine" title="Машина этого разговора">
           {execTarget === 'none' ? 'Без машины' : execTarget ? (agents.find((a) => a.id === execTarget)?.name ?? execTarget) : 'Сервер'}
         </span>
+        {workspace && (
+          <span
+            className={`mode-badge workspace-badge workspace-badge--${workspace.state}`}
+            data-testid="workspace-badge"
+            aria-label={`Workspace: ${workspace.mode}; состояние: ${workspace.state}`}
+            title={[workspace.path, workspace.branch, workspace.baseSha, workspace.diagnostic].filter(Boolean).join('\n')}
+          >
+            {workspace.mode === 'shared_main' ? 'Общий main' : workspace.mode === 'chat_workspace' ? 'Workspace чата' : workspace.mode === 'task_workspace' ? 'Workspace задачи' : 'Legacy cwd'}
+            {workspace.baseSha ? ` · ${workspace.baseSha.slice(0, 8)}` : ''}
+            {workspace.state !== 'ready' ? ` · ${workspace.state}` : ''}
+          </span>
+        )}
         <button
           className={`mode-badge mode-badge--${permissionMode}`}
           data-testid="mode-badge"

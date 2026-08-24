@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories } from './projects'
+import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
 const DAY = 24 * 60 * 60 * 1000
@@ -160,6 +160,17 @@ describe('portable storage paths', () => {
     })
     expect(managedPreviewEnvironmentPaths('C:\\VoiceChat', 'p1', 't1', 'pr1', 'win32').repository)
       .toBe('C:\\VoiceChat\\projects\\p1\\tasks\\t1\\environments\\preview\\pr1\\temporary\\repository')
+  })
+
+  it('builds isolated managed chat workspace paths', () => {
+    expect(managedChatWorkspacePaths('/storage', 'p-1', 'c-1', 'linux')).toEqual({
+      root: '/storage/projects/p-1/chats/c-1/workspace',
+      repository: '/storage/projects/p-1/chats/c-1/workspace/repository',
+      manifest: '/storage/projects/p-1/chats/c-1/workspace/workspace.json'
+    })
+    expect(managedChatWorkspacePaths('C:\\Storage', 'p-1', 'c-1', 'win32').repository)
+      .toBe('C:\\Storage\\projects\\p-1\\chats\\c-1\\workspace\\repository')
+    expect(() => managedChatWorkspacePaths('/storage', '../escape', 'c-1', 'linux')).toThrow(/safe relative path/)
   })
 
   it('rejects absolute paths and traversal', () => {

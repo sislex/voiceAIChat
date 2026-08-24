@@ -199,6 +199,8 @@ export interface Conversation {
   execTarget: string | null
   /** Корневая директория для команд на выбранной машине. */
   workdir: string | null
+  /** Фактический managed Git workspace; legacy workdir сам по себе его не определяет. */
+  workspace?: import('./projects').WorkspaceView | null
   /** Имена навыков выбранной машины, включённых для этого разговора. */
   skillNames: string[]
   /** Исполнитель только этого разговора; null — из общих настроек пользователя. */
