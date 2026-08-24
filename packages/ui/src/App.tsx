@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
 import { parseProjectsRoute } from '@voicechat/projects-app'
@@ -9,10 +9,8 @@ import { recommendedChatStoragePath, validateStorageRelativePath, type Board, ty
 import type { PreparationClarificationNotification } from '@shared/qa'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
-import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
-import { PREVIEW_ACTION_COMMAND_TYPE, isPreviewActionResultMessage, type PreviewAction, type PreviewActionResult } from '@shared/previewActions'
-import { WEB_RECORDER_MESSAGE_TYPE, type WebRecorderClientMessage } from '@shared/webRecorder'
-import { browserId } from '@shared/browserId'
+import type { PreviewElementPayload } from '@shared/previewInspector'
+import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration } from '@voicechat/web-reader-app'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -124,218 +122,6 @@ const HOST_UTILITY_PAGES: readonly string[] = ['users', 'personalization']
 
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
-function normalizeWebUrl(value: string): string | null {
-  try {
-    const url = new URL(value.trim())
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
-  } catch { return null }
-}
-
-/** Итог DOM-действия модели в превью (форма ответа preview.result). */
-export interface PreviewActionOutcome {
-  ok: boolean
-  result?: PreviewActionResult
-  error?: string
-}
-
-/** Исполнитель DOM-действий модели на странице превью (регистрирует PreviewPane). */
-export type PreviewActionRunner = (action: PreviewAction) => Promise<PreviewActionOutcome>
-
-/** Сценарий автотеста хранит устойчивый CSS-селектор; секреты не содержат значение. */
-export type WebScenarioStep =
-  | { kind: 'click'; selector: string; text: string; sensitive?: false }
-  | { kind: 'type'; selector: string; text: string; sensitive: boolean }
-export type WebScenarioStepStatus = 'idle' | 'running' | 'passed' | 'failed'
-const PREVIEW_RECORD_TYPE = 'voicechat.preview.record.v1'
-
-/** Сколько ждём ответ страницы на действие: дольше — значит она ещё грузится. */
-const PREVIEW_ACTION_UI_TIMEOUT_MS = 10_000
-
-export interface PreviewPaneProps {
-  conversationUrl: string | null
-  projectUrl: string | null
-  onSave: (url: string | null) => Promise<void>
-  onSelectElement?: (element: PreviewElementPayload) => void
-  /**
-   * Регистрация исполнителя DOM-действий модели (mcp__browser__*): пока панель
-   * смонтирована и страница загружена, действия уходят в iframe; null — снятие.
-   */
-  onRegisterActionRunner?: (runner: PreviewActionRunner | null) => void
-}
-
-export function PreviewPane({ conversationUrl, projectUrl, onSave, onSelectElement, onRegisterActionRunner }: PreviewPaneProps): JSX.Element {
-  const effective = conversationUrl ?? projectUrl
-  const [draft, setDraft] = useState(effective ?? '')
-  const [loaded, setLoaded] = useState(effective)
-  const [reloadKey, setReloadKey] = useState(0)
-  const [error, setError] = useState<string | null>(null)
-  const [inspecting, setInspecting] = useState(false)
-  const [recording, setRecording] = useState(false)
-  const [scenario, setScenario] = useState<WebScenarioStep[]>([])
-  const [scenarioStatus, setScenarioStatus] = useState<WebScenarioStepStatus[]>([])
-  // Без HttpOnly-cookie превью same-origin /api/preview отвечает 401, поэтому iframe
-  // ждёт ensurePreview session-моста; в desktop моста нет — там гейт не нужен.
-  const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>(
-    () => (window.session?.ensurePreview ? 'pending' : 'ready')
-  )
-  const frameRef = useRef<HTMLIFrameElement>(null)
-  // Ожидающие ответа DOM-действия модели: requestId → resolve с таймером.
-  const pendingActions = useRef(new Map<string, { resolve: (outcome: PreviewActionOutcome) => void; timer: ReturnType<typeof setTimeout> }>())
-  const actionSeq = useRef(0)
-  const sendInspectorState = (enabled: boolean): void => {
-    frameRef.current?.contentWindow?.postMessage({ type: PREVIEW_INSPECTOR_COMMAND_TYPE, enabled }, window.location.origin)
-  }
-  useEffect(() => {
-    setDraft(effective ?? ''); setLoaded(effective); setError(null); setInspecting(false)
-  }, [effective])
-  useEffect(() => {
-    const receive = (event: MessageEvent): void => {
-      if (event.origin !== window.location.origin || event.source !== frameRef.current?.contentWindow) return
-      if (event.data?.type === PREVIEW_RECORD_TYPE && event.data.step && (event.data.step.kind === 'click' || event.data.step.kind === 'type') && typeof event.data.step.selector === 'string') {
-        const raw = event.data.step as { kind: 'click' | 'type'; selector: string; text?: unknown; sensitive?: unknown }
-        const step: WebScenarioStep = raw.kind === 'click'
-          ? { kind: 'click', selector: raw.selector, text: typeof raw.text === 'string' ? raw.text : '' }
-          : { kind: 'type', selector: raw.selector, text: typeof raw.text === 'string' ? raw.text : '', sensitive: raw.sensitive === true }
-        setScenario((previous) => [...previous, step])
-        setScenarioStatus((previous) => [...previous, 'idle'])
-        return
-      }
-      if (isPreviewInspectorCommand(event.data)) { setInspecting(event.data.enabled); return }
-      if (isPreviewActionResultMessage(event.data)) {
-        const pending = pendingActions.current.get(event.data.requestId)
-        if (!pending) return
-        clearTimeout(pending.timer)
-        pendingActions.current.delete(event.data.requestId)
-        pending.resolve(
-          event.data.ok
-            ? { ok: true, ...(event.data.result !== undefined ? { result: event.data.result } : {}) }
-            : { ok: false, error: event.data.error ?? 'Действие в превью не выполнено' }
-        )
-        return
-      }
-      if (isPreviewElementMessage(event.data)) onSelectElement?.(event.data.payload)
-    }
-    const hotkey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && inspecting) { event.preventDefault(); setInspecting(false); return }
-      if (event.altKey && event.key.toLowerCase() === 'i') { event.preventDefault(); setInspecting((value) => !value) }
-    }
-    window.addEventListener('message', receive)
-    window.addEventListener('keydown', hotkey)
-    return () => { sendInspectorState(false); window.removeEventListener('message', receive); window.removeEventListener('keydown', hotkey) }
-  }, [inspecting, onSelectElement])
-  useEffect(() => { sendInspectorState(inspecting) }, [inspecting])
-  useEffect(() => {
-    frameRef.current?.contentWindow?.postMessage({ type: PREVIEW_RECORD_TYPE, enabled: recording }, window.location.origin)
-  }, [recording, reloadKey, loaded])
-  const runScenario = async (): Promise<void> => {
-    const runner = frameRef.current?.contentWindow
-    if (!loaded || !runner) { setError('Сначала откройте страницу для запуска сценария'); return }
-    setScenarioStatus(scenario.map(() => 'idle'))
-    for (let index = 0; index < scenario.length; index++) {
-      const step = scenario[index]
-      setScenarioStatus((current) => current.map((status, position) => position === index ? 'running' : status))
-      if (step.kind === 'type' && step.sensitive) {
-        setScenarioStatus((current) => current.map((status, position) => position === index ? 'failed' : status))
-        setError(`Шаг ${index + 1}: чувствительное значение не записано; заполните его вручную и запустите снова.`)
-        return
-      }
-      const outcome = await new Promise<PreviewActionOutcome>((resolve) => {
-        const requestId = `scenario-${++actionSeq.current}`
-        const timer = setTimeout(() => { pendingActions.current.delete(requestId); resolve({ ok: false, error: 'Страница не ответила' }) }, PREVIEW_ACTION_UI_TIMEOUT_MS)
-        pendingActions.current.set(requestId, { resolve, timer })
-        runner.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId, action: step }, window.location.origin)
-      })
-      if (!outcome.ok) {
-        setScenarioStatus((current) => current.map((status, position) => position === index ? 'failed' : status))
-        setError(`Шаг ${index + 1}: ${outcome.error ?? 'не выполнен'}`)
-        return
-      }
-      setScenarioStatus((current) => current.map((status, position) => position === index ? 'passed' : status))
-    }
-    setError(null)
-  }
-  // Исполнитель DOM-действий модели: постит команду в iframe и ждёт ответ.
-  // Пока страница не загружена (или грузится после open) — честная ошибка,
-  // модель повторит чтение позже.
-  useEffect(() => {
-    if (!onRegisterActionRunner) return
-    const runner: PreviewActionRunner = (action) => {
-      const frame = frameRef.current?.contentWindow
-      if (!loaded || !frame) {
-        return Promise.resolve({ ok: false, error: 'В панели превью нет загруженной страницы — сначала open.' })
-      }
-      const requestId = `pa-${++actionSeq.current}`
-      return new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          pendingActions.current.delete(requestId)
-          resolve({ ok: false, error: 'Страница превью не ответила — возможно, ещё загружается. Повтори действие.' })
-        }, PREVIEW_ACTION_UI_TIMEOUT_MS)
-        pendingActions.current.set(requestId, { resolve, timer })
-        frame.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId, action }, window.location.origin)
-      })
-    }
-    onRegisterActionRunner(runner)
-    return () => {
-      onRegisterActionRunner(null)
-      // Снятые ожидания закрываем ошибкой, чтобы ход модели не ждал таймаута сервера.
-      for (const [requestId, pending] of pendingActions.current) {
-        clearTimeout(pending.timer)
-        pendingActions.current.delete(requestId)
-        pending.resolve({ ok: false, error: 'Панель превью закрыта.' })
-      }
-    }
-  }, [onRegisterActionRunner, loaded, reloadKey])
-  useEffect(() => {
-    const ensure = window.session?.ensurePreview
-    if (!ensure) { setPreviewSession('ready'); return }
-    if (!loaded) return
-    let alive = true
-    setPreviewSession('pending')
-    void ensure().then(
-      (ok) => { if (alive) setPreviewSession(ok ? 'ready' : 'failed') },
-      () => { if (alive) setPreviewSession('failed') }
-    )
-    return () => { alive = false }
-  }, [loaded, reloadKey])
-  const submit = async (event: FormEvent): Promise<void> => {
-    event.preventDefault()
-    const raw = draft.trim()
-    const normalized = raw ? normalizeWebUrl(raw) : null
-    if (raw && !normalized) { setError('Введите адрес с протоколом http:// или https://'); return }
-    try {
-      sendInspectorState(false); setInspecting(false)
-      await onSave(normalized)
-      setDraft(normalized ?? projectUrl ?? '')
-      setLoaded(normalized ?? projectUrl)
-      setError(null)
-    } catch {
-      setError('Не удалось сохранить адрес превью')
-    }
-  }
-  return <section className="webpreview" aria-label="Web Reader">
-    <form className="webpreview-bar" onSubmit={(event) => void submit(event)}>
-      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" inputMode="url" value={draft} placeholder="https://example.com" aria-invalid={Boolean(error)} aria-describedby={error ? 'webpreview-error' : undefined} onChange={(event) => setDraft(event.target.value)} /></label>
-      <button className="vc-btn vc-btn--secondary" type="submit">Открыть</button>
-      <button className="vc-btn vc-btn--secondary" type="button" disabled={!loaded} aria-label="Обновить" title="Обновить" onClick={() => setReloadKey((value) => value + 1)}>↻</button>
-      <button className="vc-btn vc-btn--secondary" type="button" disabled={!loaded} aria-label="Открыть в новой вкладке" title="Открыть в новой вкладке" onClick={() => { if (loaded) window.open(loaded, '_blank', 'noopener,noreferrer') }}>↗</button>
-      <button className="vc-btn vc-btn--secondary webpreview-inspector-toggle" type="button" aria-pressed={inspecting} disabled={!loaded} title="Выбор элемента (Alt+I)" onClick={() => setInspecting((value) => !value)}>⌖ <span>Выбор элемента</span></button>
-      <button className="vc-btn vc-btn--secondary" type="button" aria-pressed={recording} disabled={!loaded} onClick={() => setRecording((value) => !value)}>{recording ? 'Остановить запись' : 'Записать сценарий'}</button>
-    </form>
-    {error && <p className="webpreview-error" id="webpreview-error" role="alert">{error}</p>}
-    {scenario.length > 0 && <section className="webpreview-scenario" aria-label="Сценарий автотеста">
-      <div className="webpreview-scenario-header"><strong>Сценарий: {scenario.length} шаг.</strong><button className="vc-btn vc-btn--secondary" type="button" onClick={() => void runScenario()}>Запустить</button><button className="vc-btn vc-btn--secondary" type="button" onClick={() => { setScenario([]); setScenarioStatus([]) }}>Очистить</button></div>
-      <ol>{scenario.map((step, index) => <li key={`${step.selector}-${index}`} data-status={scenarioStatus[index] ?? 'idle'}><span>{scenarioStatus[index] === 'passed' ? '✓' : scenarioStatus[index] === 'failed' ? '✕' : `${index + 1}.`}</span> <code>{step.kind}</code> <input aria-label={`Селектор шага ${index + 1}`} value={step.selector} onChange={(event) => setScenario((items) => items.map((item, position) => position === index ? { ...item, selector: event.target.value } as WebScenarioStep : item))} />{step.kind === 'type' && <input aria-label={`Значение шага ${index + 1}`} value={step.sensitive ? '••••••' : step.text} readOnly={step.sensitive} onChange={(event) => setScenario((items) => items.map((item, position) => position === index ? { ...item, text: event.target.value } as WebScenarioStep : item))} />}{step.kind === 'type' && step.sensitive && <em>секрет не сохранён</em>}</li>)}</ol>
-    </section>}
-    {loaded && previewSession === 'ready' && <iframe key={reloadKey} ref={frameRef} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(loaded)} title="Предпросмотр сайта" onLoad={() => sendInspectorState(inspecting)} onError={() => setError('Сайт недоступен или не разрешает загрузку')} />}
-    {loaded && previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение превью…</div>}
-    {loaded && previewSession === 'failed' && <div className="webpreview-empty" role="alert">Превью недоступно: войдите в приложение заново и обновите превью</div>}
-    {!loaded && <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
-  </section>
-}
-
-/** Совместимый экспорт для существующих интеграций. */
-export const WebPreview = PreviewPane
-
 /** Открывает независимое рабочее пространство, не меняя маршрут исходного чата. */
 export function openWebReaderWorkspace(): void {
   const url = new URL(window.location.href)
@@ -343,123 +129,6 @@ export function openWebReaderWorkspace(): void {
   window.open(url.toString(), '_blank', 'noopener,noreferrer')
 }
 
-/**
- * Host-side integration only. The recorder is a separately built application;
- * ChatAI communicates exclusively through @shared/webRecorder postMessage events.
- */
-export function WebReaderHost({ conversationUrl, projectUrl, onSave, onSelectElement, onRegisterActionRunner }: PreviewPaneProps): JSX.Element {
-  const frameRef = useRef<HTMLIFrameElement>(null)
-  const shellReady = useRef(false)
-  const pageStatus = useRef<'empty' | 'loading' | 'ready' | 'error'>('empty')
-  const pageError = useRef<string>()
-  const approvedUrl = useRef<string | null>(null)
-  const gateSequence = useRef(0)
-  const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
-  const [retryKey, setRetryKey] = useState(0)
-  const pending = useRef(new Map<string, { action: PreviewAction; sent: boolean; timer: ReturnType<typeof setTimeout>; resolve: (outcome: PreviewActionOutcome) => void }>())
-  const url = conversationUrl ?? projectUrl
-  const send = (message: object): void => frameRef.current?.contentWindow?.postMessage({ type: WEB_RECORDER_MESSAGE_TYPE, ...message }, '*')
-  const settle = (requestId: string, outcome: PreviewActionOutcome): void => {
-    const entry = pending.current.get(requestId)
-    if (!entry) return
-    clearTimeout(entry.timer)
-    pending.current.delete(requestId)
-    entry.resolve(outcome)
-  }
-  const flush = (): void => {
-    if (!shellReady.current || pageStatus.current !== 'ready') return
-    for (const [requestId, entry] of pending.current) {
-      if (entry.sent) continue
-      if (entry.action.kind === 'open') { settle(requestId, { ok: true, result: { url: entry.action.url } }); continue }
-      entry.sent = true
-      send({ kind: 'run-action', requestId, action: entry.action })
-    }
-  }
-  useEffect(() => {
-    const sequence = ++gateSequence.current
-    approvedUrl.current = null
-    pageStatus.current = url ? 'loading' : 'empty'
-    pageError.current = undefined
-    if (!url) {
-      setPreviewSession('ready')
-      send({ kind: 'set-url', url: null })
-      return
-    }
-    const ensure = window.session?.ensurePreview
-    if (!ensure) {
-      approvedUrl.current = url
-      setPreviewSession('ready')
-      if (shellReady.current) send({ kind: 'set-url', url })
-      return
-    }
-    setPreviewSession('pending')
-    if (shellReady.current) send({ kind: 'set-url', url: null })
-    let alive = true
-    void ensure().then(
-      (ok) => {
-        if (!alive || sequence !== gateSequence.current) return
-        if (!ok) { setPreviewSession('failed'); return }
-        approvedUrl.current = url
-        setPreviewSession('ready')
-        if (shellReady.current) send({ kind: 'set-url', url })
-      },
-      () => { if (alive && sequence === gateSequence.current) setPreviewSession('failed') }
-    )
-    return () => { alive = false }
-  }, [url, retryKey])
-  useEffect(() => {
-    const receive = (event: MessageEvent): void => {
-      if (event.source !== frameRef.current?.contentWindow || event.data?.type !== WEB_RECORDER_MESSAGE_TYPE) return
-      const message = event.data as WebRecorderClientMessage
-      if (message.kind === 'ready') { shellReady.current = true; send({ kind: 'set-url', url: approvedUrl.current }); return }
-      if (message.kind === 'page-status') {
-        pageStatus.current = message.status
-        pageError.current = message.error
-        if (message.status === 'ready') flush()
-        if (message.status === 'error') for (const requestId of [...pending.current.keys()]) settle(requestId, { ok: false, error: 'Сайт или страница недоступны: ' + (message.error ?? 'ошибка загрузки.') })
-        return
-      }
-      if (message.kind === 'save-url') { void onSave(message.url); return }
-      if (message.kind === 'element') { onSelectElement?.(message.element); return }
-      if (message.kind === 'action-result') settle(message.requestId, message.ok ? { ok: true, ...(message.result ? { result: message.result } : {}) } : { ok: false, error: message.error ?? 'Действие в превью не выполнено.' })
-    }
-    window.addEventListener('message', receive); return () => window.removeEventListener('message', receive)
-  }, [onSave, onSelectElement])
-  useEffect(() => {
-    if (!onRegisterActionRunner) return
-    onRegisterActionRunner((action) => {
-      if (!shellReady.current) return Promise.resolve({ ok: false, error: 'Панель Web Reader не открыта или ещё не подключена.' })
-      if (action.kind === 'open') {
-        pageStatus.current = 'loading'; pageError.current = undefined; approvedUrl.current = action.url
-        // Явный reset делает повторный open того же URL детерминированной перезагрузкой.
-        send({ kind: 'set-url', url: null }); queueMicrotask(() => send({ kind: 'set-url', url: action.url }))
-      }
-      if (pageStatus.current === 'empty' && action.kind !== 'open') return Promise.resolve({ ok: false, error: 'Панель открыта, но в ней нет страницы — сначала вызови open.' })
-      if (pageStatus.current === 'error' && action.kind !== 'open') return Promise.resolve({ ok: false, error: 'Сайт или страница недоступны: ' + (pageError.current ?? 'ошибка загрузки.') })
-      return new Promise((resolve) => {
-        const requestId = 'wr-' + browserId()
-        const timer = setTimeout(() => settle(requestId, {
-          ok: false,
-          error: pageStatus.current === 'loading'
-            ? 'Страница всё ещё загружается и не стала готова за время ожидания.'
-            : 'Клиентский мост Web Reader не ответил на команду при открытой панели.'
-        }), PREVIEW_ACTION_UI_TIMEOUT_MS)
-        pending.current.set(requestId, { action, sent: false, timer, resolve })
-        flush()
-      })
-    })
-    return () => {
-      onRegisterActionRunner(null)
-      for (const requestId of [...pending.current.keys()]) settle(requestId, { ok: false, error: 'Панель Web Reader закрыта.' })
-      shellReady.current = false
-    }
-  }, [onRegisterActionRunner])
-  return <section className="webpreview" aria-label="Web Reader">
-    {url && previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
-    {url && previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => setRetryKey((value) => value + 1)}>Повторить</button></div>}
-    <iframe ref={frameRef} className="webpreview-frame" src="/web-recorder/" title="Web Reader" aria-hidden={previewSession !== 'ready'} />
-  </section>
-}
 
 /**
  * Корень приложения. Тосты и подтверждения — провайдеры вокруг всего дерева:
@@ -583,20 +252,30 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
   })
   useEffect(() => { setPreviewElement(null) }, [chat.activeId])
-  // Действия модели в превью (mcp__browser__*): регистрация хранит не только
-  // runner, но и чат панели. Это не даёт переключившемуся чату обратиться к host,
-  // который ещё размонтируется, и делает Reader-маршруты единым источником истины.
-  const previewRunnerRef = useRef<{ conversationId: string; registrationId: string; runner: PreviewActionRunner } | null>(null)
+  // Действия модели в превью (mcp__browser__*): регистрацию iframe создаёт
+  // мост WebReaderFrame (registrationId ротируется на каждый boot Reader).
+  // Хранение её вместе с conversationId не даёт переключившемуся чату обратиться
+  // к host, который ещё размонтируется, и держит Reader-маршруты источником истины.
+  const previewRunnerRef = useRef<ReaderHostRegistration | null>(null)
+  // Платформенная привязка WebReaderFrame: пакет Reader не трогает window сам.
+  const readerPlatform = useMemo(() => ({
+    origin: window.location.origin,
+    subscribeMessages: (listener: (event: MessageEvent) => void) => {
+      window.addEventListener('message', listener)
+      return () => window.removeEventListener('message', listener)
+    }
+  }), [])
   const diagnosticsControllerRef = useRef<AbortController | null>(null)
   useEffect(() => () => diagnosticsControllerRef.current?.abort(), [])
   useEffect(() => { diagnosticsControllerRef.current?.abort(); diagnosticsControllerRef.current = null }, [chat.activeId])
-  const registerPreviewRunner = useCallback((runner: PreviewActionRunner | null) => {
-    if (runner && chat.activeId) {
-      const registrationId = browserId()
-      previewRunnerRef.current = { conversationId: chat.activeId, registrationId, runner }
-      globalThis.localStorage?.setItem(PREVIEW_ACTIVE_REGISTRATION_KEY, registrationId)
+  const registerReaderHost = useCallback((registration: ReaderHostRegistration | null) => {
+    if (registration && registration.conversationId === chat.activeId) {
+      previewRunnerRef.current = registration
+      globalThis.localStorage?.setItem(PREVIEW_ACTIVE_REGISTRATION_KEY, registration.registrationId)
     }
-    else if (!runner && previewRunnerRef.current?.conversationId === chat.activeId) previewRunnerRef.current = null
+    // Снятие регистрации размонтированным host не должно стирать регистрацию
+    // нового: обнуляем только запись собственного разговора.
+    else if (!registration && previewRunnerRef.current?.conversationId === chat.activeId) previewRunnerRef.current = null
   }, [chat.activeId])
   useEffect(() => {
     const claimActiveTab = (): void => {
@@ -630,12 +309,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           try {
             await chatActions.setConversationPreviewUrl(conversationId, action.url)
             setPreviewElement(null)
-            return registration.runner(action)
+            return registration.run(action)
           } catch {
             return { ok: false, error: 'Не удалось сохранить адрес превью.' }
           }
         }
-        return registration.runner(action)
+        return registration.run(action)
       })().then((outcome) => bridge.result({ conversationId, registrationId: previewRunnerRef.current?.registrationId, requestId, ...outcome }))
     })
   }, [chat.activeId, chatActions, inReader, inPlaywrightReader])
@@ -1176,13 +855,24 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const controller = new AbortController()
     diagnosticsControllerRef.current = controller
     setConversationSettingsOpen(false)
+    // diagnostics-start переводит Reader в режим прогресс-панели и глушит запись
+    // сценария на время проверок; finally гарантирует выключение режима.
+    registration.beginDiagnostics()
     void runWebReaderDiagnostics({
       origin: window.location.origin,
-      run: registration.runner,
+      run: registration.run,
+      handshake: {
+        conversationId: registration.conversationId,
+        registrationId: registration.registrationId,
+        capabilities: registration.capabilities,
+        expectedConversationId: conversationId,
+        claimedRegistrationId: globalThis.localStorage?.getItem(PREVIEW_ACTIVE_REGISTRATION_KEY) ?? null
+      },
       ensurePreview: window.session?.ensurePreview,
       signal: controller.signal,
       publish: (text) => chatActions.publishDiagnosticMessage(conversationId, text)
     }).finally(() => {
+      registration.endDiagnostics()
       if (diagnosticsControllerRef.current === controller) diagnosticsControllerRef.current = null
     })
   }, [activeConversation, chat.activeId, chatActions, inReader, toast])
@@ -1726,7 +1416,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       /> : <div className="chat-route-loading" role="status">Открываем выбранный Reader-разговор…</div>}
       </div>
       {(inReader || inPlaywrightReader) && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
-      {(inReader || inPlaywrightReader) && readerSurfaceReady && <WebReaderHost conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterActionRunner={registerPreviewRunner} />}
+      {(inReader || inPlaywrightReader) && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onRegisterHost={registerReaderHost} />}
       </div>
       )}
 

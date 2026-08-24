@@ -41,8 +41,13 @@ function finite(value: unknown): value is number { return typeof value === 'numb
 function bounded(value: unknown, max: number): value is string { return typeof value === 'string' && value.length <= max }
 
 export function isPreviewElementMessage(value: unknown): value is PreviewElementMessage {
-  if (!record(value) || value.type !== PREVIEW_INSPECTOR_MESSAGE_TYPE || !record(value.payload)) return false
-  const p = value.payload
+  return record(value) && value.type === PREVIEW_INSPECTOR_MESSAGE_TYPE && isPreviewElementPayload(value.payload)
+}
+
+/** Проверка полезной нагрузки выбранного элемента без конверта (реюз в webRecorder). */
+export function isPreviewElementPayload(value: unknown): value is PreviewElementPayload {
+  if (!record(value)) return false
+  const p = value
   if (!bounded(p.tag, 64) || !bounded(p.id, 256) || !bounded(p.selector, 2_000) || !bounded(p.pageUrl, 4_096) ||
       !bounded(p.outerHTML, PREVIEW_INSPECTOR_HTML_LIMIT) || !bounded(p.text, PREVIEW_INSPECTOR_TEXT_LIMIT)) return false
   if (!Array.isArray(p.classes) || p.classes.length > PREVIEW_INSPECTOR_ARRAY_LIMIT || !p.classes.every((x) => bounded(x, 256))) return false

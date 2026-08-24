@@ -128,6 +128,20 @@ describe('границы доменных хранилищ', () => {
     expect(violations).toEqual([])
   })
 
+  it('Reader-транспорт не возвращается в host: postMessage-контракт живёт в @voicechat/web-reader-app', () => {
+    // После выделения Web Reader в самостоятельное iframe-приложение host
+    // не общается с ним напрямую: ни импорта @shared/webRecorder, ни своего
+    // iframe /web-recorder/. Единственный вход — публичный WebReaderFrame.
+    const violations: string[] = []
+    for (const file of sourceFiles(SRC)) {
+      if (relative(SRC, file).startsWith('test/')) continue
+      const source = read(file)
+      if (imports(source).some((spec) => spec.includes('@shared/webRecorder'))) violations.push(relative(SRC, file))
+      if (/src=["']\/web-recorder\//.test(source)) violations.push(`${relative(SRC, file)} (свой iframe)`)
+    }
+    expect(violations).toEqual([])
+  })
+
   it('между доменами нет циклов через runtime-порты', () => {
     // Домен разговаривает с соседом только через порт, который выдаёт runtime:
     // ни один store не импортирует ни runtime, ни React-биндинг.

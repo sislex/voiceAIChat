@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-08-18
-checked: 68de33d
+updated: 2026-08-24
+checked: 79851eea
 areas:
   - apps/web
   - apps/desktop/src
@@ -23,6 +23,8 @@ Web и desktop продолжают монтировать общий legacy `@v
 Пакет состоит из Vite-конфига, HTML entry, `src/main.tsx` и определения server URL. `main.tsx` сначала устанавливает remote bridges, затем монтирует общий `App`. Это требование порядка: store обращается к `window.*` уже во время инициализации.
 
 `VITE_SERVER_URL` нужен, когда backend на другом origin. В dev пустой URL идёт через Vite proxy; в Docker production web собирается для same-origin. Backend с `VC_WEB_DIR` раздаёт `dist` и SPA fallback, поэтому browser refresh на клиентском route не должен давать 404.
+
+Dev-прокси Vite (порт 5273) — часть dev-контура Web Reader: `/web-recorder/` уходит на отдельный Reader dev server (порт 5274) c `ws: true`, чтобы HMR-сокет Reader тоже шёл same-origin путём и изменения `apps/web-recorder` применялись внутри iframe без пересборки `apps/web`; `/api` проксируется на Fastify **без** `changeOrigin` — previewProxy сверяет host диагностической страницы с Host запроса, и с переписанным Host самодиагностика в dev получала SSRF-отказ. Формы прокси зафиксированы тестом `apps/web/src/devProxy.test.ts`. `scripts/dev-web.sh` поднимает backend + оба Vite, ждёт готовности всех трёх портов (до 30 с) и завершает весь dev-сеанс с диагностикой, если любой обязательный процесс упал до готовности; production от dev-прокси не зависит — сервер раздаёт сборку Reader сам (`VC_WEB_RECORDER_DIR`).
 
 Здесь не размещают компоненты, состояние или fetch-логику. Исключения — host/bootstrap, Vite proxy, CSP/assets и выбор URL.
 

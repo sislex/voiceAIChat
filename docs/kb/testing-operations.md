@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-08-24
-checked: 20240427
+checked: 79851eea
 areas:
   - package.json
   - scripts
@@ -84,6 +84,15 @@ Electron main/preload код тестируется без запуска реа
 8. Agent/tray log — connection, shell, PTY и fs ошибки на удалённой машине.
 
 При «генерация пропала после refresh» проверять `claude.active` и TurnManager, а не только UI. При дублированных событиях — cleanup subscriptions после reconnect. При недоступном TTS/STT — capabilities и cgroup limit до проверки binary.
+
+## Известные дефекты dev-режима браузера (2026-08-24)
+
+Два независимых дефекта ломают вход в dev-режиме (`npm run dev:web`, Vite + React development build) и не проявляются в production-сборке; оба воспроизводятся на чистом main и не связаны с Web Reader:
+
+- **React StrictMode + одноразовый dispose runtime.** `useCreateAppRuntime` создаёт runtime в `useMemo`, а эффект на StrictMode-цикле mount → cleanup → mount вызывает `runtime.dispose()` и затем `start()` на уже необратимо disposed runtime: все `setState` доменных сторов молча блокируются, `check()`/`login()` не устанавливают `currentUser`, и приложение навсегда остаётся на экране «Вход», хотя сетевые запросы (login 200, bootstrap) проходят.
+- **Redux DevTools-обёртка зацикливает эффекты.** `createReduxDevToolsDiagnostics` оборачивает `store.actions` в Proxy, чей `get` создаёт новую функцию на каждый доступ; зависимость `useEffect(..., [path, setSidebarOpen])` в `App.tsx` меняется на каждом рендере, а `setState` без bail-out уведомляет подписчиков даже без изменения значения — при установленном расширении Redux DevTools рендер падает в «Maximum update depth exceeded» и экран пуст. Без расширения обёртка неактивна и дефект не виден.
+
+Обход для ручной live-проверки dev: временно монтировать `<App/>` без `<React.StrictMode>` и удалить `window.__REDUX_DEVTOOLS_EXTENSION__` до монтирования (см. `apps/web/src/main.tsx`); в репозиторий такие правки не коммитятся. Правильное лечение — переживаемый StrictMode dispose (или guard повторного `start`) и стабильные ссылки на action-функции в devtools Proxy.
 
 ## Docker
 
