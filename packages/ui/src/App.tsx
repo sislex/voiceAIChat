@@ -1589,6 +1589,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         }}
         onOpenConversationSettings={() => { setConversationSettingsOpen(true); void projectsActions.refreshProjects() }}
         permissionMode={activePermissionMode}
+        workspace={activeConversation?.workspace}
         onExecutePlan={(answerId) => void chatActions.executePlan(answerId)}
         canExecutePlan={!forcedPlan}
         state={voice.voice}

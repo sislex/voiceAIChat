@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createTurnManager } from './turns.js'
+import { createTurnManager, ProjectMainSnapshotCoordinator } from './turns.js'
 import { VoiceChatDb } from './db/database.js'
 import { DEFAULT_AGENT_POLICY, imageBlock } from '@voicechat/shared'
 import type { LlmClient, LlmRequest, LlmStreamHandlers } from './claude/types.js'
@@ -961,5 +961,38 @@ describe('turns: управляемая персистентная очеред�
       expect.objectContaining({ id: queued.id, text: 'Ожидающий вопрос' })
     ])
     db.close()
+  })
+})
+
+describe('ProjectMainSnapshotCoordinator', () => {
+  const identity = { projectId: 'p-1', machineId: 'm-1', storageId: 's-1' }
+  it('coalesces concurrent refresh and gives parallel readers one pinned SHA', async () => {
+    let resolve!: (value: { baseSha: string; path: string }) => void
+    let calls = 0
+    const manager = new ProjectMainSnapshotCoordinator({ refresh: async () => {
+      calls++
+      return await new Promise((done) => { resolve = done })
+    } })
+    const first = manager.acquireReadSnapshot(identity)
+    const second = manager.acquireReadSnapshot(identity)
+    await Promise.resolve()
+    expect(calls).toBe(1)
+    resolve({ baseSha: 'a'.repeat(40), path: '/storage/projects/p-1/worktree' })
+    const [a, b] = await Promise.all([first, second])
+    expect(a.baseSha).toBe(b.baseSha)
+    a.release(); b.release()
+  })
+
+  it('waits for active readers before refreshing', async () => {
+    const shas = ['a'.repeat(40), 'b'.repeat(40)]
+    let calls = 0
+    const manager = new ProjectMainSnapshotCoordinator({ refresh: async () => ({ baseSha: shas[calls++]!, path: '/worktree' }) })
+    const reader = await manager.acquireReadSnapshot(identity)
+    let updated = false
+    const update = manager.invalidateProjectMain(identity).then((value) => { updated = true; return value })
+    await Promise.resolve()
+    expect(updated).toBe(false)
+    reader.release(); reader.release()
+    expect((await update).baseSha).toBe(shas[1])
   })
 })
