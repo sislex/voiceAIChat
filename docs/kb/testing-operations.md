@@ -31,9 +31,9 @@ areas:
 
 ## Development
 
-`npm run dev:web` запускает Fastify :8787 и Vite совместно через `scripts/dev-web.sh`. Обычно этот процесс принадлежит пользователю; автоматизированный агент не должен оставлять второй server на том же порту. Для диагностического запуска использовать другой `PORT` и временный `VC_DATA_DIR`.
+`npm run dev:web` через `scripts/dev-web.sh` совместно запускает Fastify на `:8787`, основной Vite-клиент на `:5273` и standalone `@voicechat/web-recorder` на `:5274`. Скрипт регистрирует PID только этих трёх процессов; при штатном завершении любого из них, `EXIT`, `INT` или `TERM` он останавливает остальные. Обычно этот lifecycle принадлежит пользователю; автоматизированный агент не должен оставлять второй server на тех же портах. Для диагностического запуска использовать другой `PORT` и временный `VC_DATA_DIR`.
 
-Server запускает исходники через tsx. Web dev proxy сохраняет same-origin семантику API и WebSocket. Агент для разработки запускается `npx tsx apps/agent/src/index.ts --server ws://host:8787/agent --token ...`.
+Server запускает исходники через tsx. Основной Web dev proxy сохраняет same-origin семантику API и WebSocket и направляет весь prefix `/web-recorder/`, включая вложенные assets, на Vite recorder-а `http://127.0.0.1:5274`; поэтому recorder доступен через origin `:5273`. Агент для разработки запускается `npx tsx apps/agent/src/index.ts --server ws://host:8787/agent --token ...`.
 
 ## Матрица проверок
 
