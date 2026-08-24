@@ -56,6 +56,7 @@ import {
   type KanbanColumnSemanticType,
   type MachineStorage,
   type ChatStorageBinding,
+  type WorkspaceView,
   type ProjectMachineDirectoryAssignments,
   type ProjectMachineDirectoryKind,
   recommendedProjectMachineDirectories,
@@ -2676,6 +2677,47 @@ export class VoiceChatDb {
 
   // ---- helpers ----------------------------------------------------------
 
+  getConversationWorkspace(conversationId: string): WorkspaceView | null {
+    const row = this.db.prepare(`SELECT mode, base_sha, branch, repository_path, state, diagnostic
+      FROM conversation_workspaces WHERE conversation_id = ?`).get(conversationId) as {
+        mode: WorkspaceView['mode']; base_sha: string; branch: string; repository_path: string
+        state: WorkspaceView['state']; diagnostic: string | null
+      } | undefined
+    return row ? {
+      mode: row.mode,
+      baseSha: row.base_sha,
+      branch: row.branch,
+      path: row.repository_path,
+      readOnly: row.mode === 'shared_main',
+      state: row.state,
+      diagnostic: row.diagnostic
+    } : null
+  }
+
+  saveConversationWorkspace(binding: {
+    conversationId: string; projectId: string; machineId: string; storageId: string
+    mode: 'chat_workspace' | 'task_workspace'; baseSha: string; branch: string
+    repositoryPath: string; state: WorkspaceView['state']; diagnostic?: string | null
+  }): WorkspaceView {
+    if (!/^[0-9a-f]{40}$/i.test(binding.baseSha)) throw new Error('Некорректный baseSha workspace')
+    this.db.prepare(`INSERT INTO conversation_workspaces
+      (conversation_id,project_id,machine_id,storage_id,mode,base_sha,branch,repository_path,state,diagnostic,updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(conversation_id) DO UPDATE SET
+        project_id=excluded.project_id,machine_id=excluded.machine_id,storage_id=excluded.storage_id,
+        mode=excluded.mode,base_sha=excluded.base_sha,branch=excluded.branch,
+        repository_path=excluded.repository_path,state=excluded.state,
+        diagnostic=excluded.diagnostic,updated_at=excluded.updated_at`).run(
+          binding.conversationId,binding.projectId,binding.machineId,binding.storageId,binding.mode,
+          binding.baseSha,binding.branch,binding.repositoryPath,binding.state,binding.diagnostic ?? null,this.now()
+        )
+    return this.getConversationWorkspace(binding.conversationId)!
+  }
+
+  clearConversationWorkspace(conversationId: string): boolean {
+    return this.db.prepare('DELETE FROM conversation_workspaces WHERE conversation_id = ?').run(conversationId).changes > 0
+  }
+
   private mapConversation(row: ConversationRow, messageCount: number): Conversation {
     return {
       id: row.id,
@@ -2686,6 +2728,7 @@ export class VoiceChatDb {
       claudeSessionId: row.claude_session_id,
       execTarget: row.exec_target,
       workdir: row.workdir,
+      workspace: this.getConversationWorkspace(row.id),
       skillNames: (() => {
         try {
           const value = JSON.parse(row.skill_names ?? '[]') as unknown

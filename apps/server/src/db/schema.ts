@@ -168,6 +168,25 @@ CREATE TABLE IF NOT EXISTS chat_storage_bindings (
   FOREIGN KEY (storage_id) REFERENCES machine_storages(id) ON DELETE RESTRICT
 );
 
+-- Git workspace binding is deliberately separate from chat file storage and
+-- legacy conversations.workdir. Only verified managers may publish these rows.
+CREATE TABLE IF NOT EXISTS conversation_workspaces (
+  conversation_id TEXT PRIMARY KEY,
+  project_id      TEXT NOT NULL,
+  machine_id      TEXT NOT NULL,
+  storage_id      TEXT NOT NULL,
+  mode            TEXT NOT NULL,
+  base_sha        TEXT NOT NULL,
+  branch          TEXT NOT NULL,
+  repository_path TEXT NOT NULL UNIQUE,
+  state           TEXT NOT NULL,
+  diagnostic      TEXT,
+  updated_at      INTEGER NOT NULL,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+  FOREIGN KEY (machine_id) REFERENCES agents(id) ON DELETE RESTRICT,
+  FOREIGN KEY (storage_id) REFERENCES machine_storages(id) ON DELETE RESTRICT
+);
+
 CREATE TABLE IF NOT EXISTS generated_cleanup_retry (
   conversation_id TEXT PRIMARY KEY,
   user_id         TEXT NOT NULL,

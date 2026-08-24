@@ -367,6 +367,17 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           </> : <p className="convsettings-muted">Нет доступной машины или хранилища. Настройте хранилище в разделе машины.</p>}
           </section>
           {projectId && <p className="convsettings-muted">Доступны ваши личные машины и машины проекта; смена проекта предложит хранилище эффективной машины, но сохранённая привязка изменится только после сохранения.</p>}
+          {conversation.workspace && <section aria-labelledby="managed-workspace-title" data-testid="managed-workspace-view">
+            <div className="convsettings-sectionhead"><div><h2 id="managed-workspace-title">Git workspace</h2><p>Управляется сервером и не редактируется как произвольный cwd.</p></div></div>
+            <dl>
+              <dt>Режим</dt><dd>{conversation.workspace.mode}</dd>
+              <dt>Состояние</dt><dd>{conversation.workspace.state}</dd>
+              <dt>SHA</dt><dd title={conversation.workspace.baseSha ?? undefined}>{conversation.workspace.baseSha ?? '—'}</dd>
+              <dt>Ветка</dt><dd>{conversation.workspace.branch ?? '—'}</dd>
+              <dt>Путь</dt><dd>{conversation.workspace.path ?? '—'}</dd>
+            </dl>
+            {conversation.workspace.diagnostic && <p role="alert">{conversation.workspace.diagnostic}</p>}
+          </section>}
         </section>
 
         <section className="convsettings-card convsettings-llm-card">
@@ -416,14 +427,14 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
         </section>
 
         {selectedAgent && <>
-          <section className="convsettings-card">
+          {!conversation.workspace && <section className="convsettings-card">
             <div className="convsettings-sectionhead"><div><h2>Корневая директория</h2><p>Команды этого разговора будут начинаться в выбранной папке.</p></div><Button onClick={() => void loadDir(workdir ?? '')} loading={loadingDir} disabled={!selectedAgent.online}>Выбрать</Button></div>
             <div className="convsettings-path">{workdir || 'Корень машины'}</div>
             {(cwd || entries.length > 0 || loadingDir) && <div className="convsettings-picker">
               <div className="convsettings-pickerbar"><IconButton onClick={() => void loadDir(parentOf(cwd))} title="На уровень выше" aria-label="На уровень выше">↑</IconButton><span>{cwd}</span><Button onClick={() => { setWorkdir(cwd); setEntries([]) }}>Выбрать эту папку</Button></div>
               {loadingDir ? <p>Загрузка…</p> : entries.filter((entry) => entry.kind === 'dir').map((entry) => <button className="convsettings-dir" key={entry.name} onClick={() => void loadDir(joinPath(cwd, entry.name))}>📁 {entry.name}</button>)}
             </div>}
-          </section>
+          </section>}
 
           <section className="convsettings-card">
             <div className="convsettings-sectionhead"><div><h2>Навыки</h2><p>Отметьте навыки, доступные модели в этом разговоре.</p></div></div>
