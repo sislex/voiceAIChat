@@ -46,5 +46,7 @@ describe('ManagedEnvironmentResolver',()=>{
     expect(result.ok).toBe(true)
     expect(Object.keys(result.checks)).toEqual(['marker','manifest','origin','branch','write','freeSpace','deployCommand','healthCheckCommand'])
     expect(releases.runPreflight).toHaveBeenCalledOnce()
+    const command=vi.mocked(releases.runPreflight).mock.calls[0]![1]
+    expect(command).toContain("find '/data/ChatAI/projects/p1/environments/production/temporary/repository' -mindepth 1 -maxdepth 1 -print -quit")
   })
 })
