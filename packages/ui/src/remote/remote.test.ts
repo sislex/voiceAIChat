@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
 import { base64ToArrayBuffer } from './decode'
-import { makeClaudeBridge, makePreviewBridge, makeSessionBridge, migrateDesktopLegacy } from './index'
+import { makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeSessionBridge, migrateDesktopLegacy } from './index'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -108,6 +108,26 @@ describe('WsClient', () => {
     expect(ws.sent).toContain(JSON.stringify({ t: 'preview.result', requestId: 'r1', ok: true, result: { url: 'https://a.b' } }))
     bridge.result({ requestId: 'r2', ok: false, error: 'превью не открыто' })
     expect(ws.sent).toContain(JSON.stringify({ t: 'preview.result', requestId: 'r2', ok: false, error: 'превью не открыто' }))
+    c.close()
+  })
+
+  it('маршрутизирует preparation-run и отличает reconnect от первого подключения', async () => {
+    const c = new WsClient('ws://x/ws')
+    const first = FakeWebSocket.last!
+    const updates = vi.fn()
+    const reconnects = vi.fn()
+    const bridge = makeBoardBridge(c)
+    bridge.onPreparationRunUpdated(updates)
+    bridge.onReconnect(reconnects)
+    first._open()
+    await Promise.resolve()
+    expect(reconnects).not.toHaveBeenCalled()
+    first._emit({ t: 'preparation.run.updated', projectId: 'p1', taskId: 't1', runId: 'r1' })
+    expect(updates).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1', runId: 'r1' })
+
+    c.reconnect()
+    FakeWebSocket.last!._open()
+    expect(reconnects).toHaveBeenCalledOnce()
     c.close()
   })
 

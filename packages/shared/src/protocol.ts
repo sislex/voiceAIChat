@@ -486,6 +486,7 @@ export type ServerMessage =
   | { t: 'pty.exit'; ptyId: string; exitCode: number | null }
   | { t: 'pty.error'; ptyId: string; message: string }
   | { t: 'board.update'; projectId: string; board: Board }
+  | { t: 'preparation.run.updated'; projectId: string; taskId: string; runId: string }
   | { t: 'ci.snapshot'; runId: string; detail: CiRunDetail; log: CiLogLine[] }
   | { t: 'ci.run'; runId: string; run: CiRun }
   | { t: 'ci.step'; runId: string; step: CiRunStep }
@@ -574,6 +575,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'pty.exit',
   'pty.error',
   'board.update',
+  'preparation.run.updated',
   'ci.snapshot',
   'ci.run',
   'ci.step',

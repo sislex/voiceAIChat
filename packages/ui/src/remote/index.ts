@@ -139,11 +139,13 @@ export function makePreviewBridge(ws: WsClient): RendererPreviewBridge {
   }
 }
 
-function makeBoardBridge(ws: WsClient): RendererBoardBridge {
+export function makeBoardBridge(ws: WsClient): RendererBoardBridge {
   return {
     subscribe: (projectId, includeCompleted) => ws.send({ t: 'board.subscribe', projectId, includeCompleted }),
     unsubscribe: () => ws.send({ t: 'board.unsubscribe' }),
-    onUpdate: (cb) => ws.on('board.update', (m) => cb({ projectId: m.projectId, board: m.board }))
+    onUpdate: (cb) => ws.on('board.update', (m) => cb({ projectId: m.projectId, board: m.board })),
+    onPreparationRunUpdated: (cb) => ws.on('preparation.run.updated', (m) => cb({ projectId: m.projectId, taskId: m.taskId, runId: m.runId })),
+    onReconnect: (cb) => ws.onReconnect(cb)
   }
 }
 
