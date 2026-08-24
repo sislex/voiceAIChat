@@ -148,6 +148,7 @@ export const REST = {
   messagesSearch: '/api/search',
   conversation: (id: string) => `/api/conversations/${id}`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
+  conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
   conversationProject: (id: string) => `/api/conversations/${encodeURIComponent(id)}/project`,
   conversationStatus: (id: string) => `/api/conversations/${encodeURIComponent(id)}/status`,
   messages: (id: string) => `/api/conversations/${id}/messages`,

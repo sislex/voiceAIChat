@@ -710,6 +710,44 @@ export interface Settings {
 /** Поддерживаемые LLM-движки (CLI). */
 export type LlmProvider = 'claude' | 'codex'
 
+/** Авторизованный серверный снимок эффективного контекста следующего хода. */
+export interface ContextSnapshotItem {
+  id: string
+  type: string
+  source: string
+  scope: string
+  priority: string
+  title: string
+  description: string
+  explanation: string
+  configured: boolean
+  available: boolean
+  includedInNextTurn: boolean
+  details?: Record<string, string | number | boolean | string[] | null>
+}
+
+export interface ContextSnapshotGroup {
+  id: string
+  order: number
+  title: string
+  description: string
+  items: ContextSnapshotItem[]
+}
+
+export interface ConversationContextSnapshot {
+  schemaVersion: 1
+  conversationId: string
+  generatedAt: string
+  freshnessWarning: string
+  summary: {
+    provider: LlmProvider
+    model: string
+    permissionMode: { value: PermissionMode; displayName: string; explanation: string }
+    kbMode: { value: KbContextMode; displayName: string; explanation: string }
+  }
+  groups: ContextSnapshotGroup[]
+}
+
 /** Модель Codex для меню (id → в `codex exec -m`). */
 export interface CodexModelInfo {
   id: string
