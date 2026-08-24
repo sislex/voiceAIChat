@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-24
-checked: 6d8834e8
+checked: d9ed9768
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -34,6 +34,8 @@ areas:
 Оба Reader используют публичный `SplitChatWorkspace` из `@voicechat/chat-app`, но получают Chat только через узкий `ReaderChatPort`: пакет не импортирует `chatStore`, не хранит сообщения и не управляет LLM lifecycle. Платформенные эффекты также инъецируются: Web — через `WebReaderHostPort`, `WebRecorderPort` и `PreviewRelayPort`, Playwright — через `PlaywrightReaderHostPort` и `BrowserSessionPort`. Architecture tests запрещают imports host/другого Reader/chat internals, прямые transport и browser storage API, а также исходники recorder/browser-runner.
 
 Web Reader сохраняет iframe `/api/preview?url=...`; URL разговора имеет приоритет, а project preview служит только нематериализованным fallback. При активации store создаёт recorder для `conversationId`, передаёт ему URL и исполняет relay-запросы только для активной беседы. Generation token отбрасывает устаревшие async-ответы, смена беседы dispose-ит recorder, а общий `dispose()` снимает relay subscription, поэтому поздний результат не доставляется в другой чат. Безопасность конкретного `postMessage` остаётся обязанностью host adapter/существующего recorder-контракта, а пакет видит только transport-agnostic port.
+
+Самодиагностика доступна только в активном Web Reader-чате: её запускают кнопкой «Самодиагностика» в настройках разговора либо точной командой `самодиагностика Web Reader` или `/web-reader-diagnostics` в композере. Перед первым действием `packages/ui/src/webReaderDiagnostics.ts` сохраняет в чат полный перечень проверяемых возможностей, затем отдельными служебными AI-сообщениями публикует результат и длительность каждого шага, а при сбое — классифицированный проблемный слой. Эти сообщения записывает `publishDiagnosticMessage` без запуска LLM; повторный запуск и смена активного разговора отменяют прежний сценарий.
 
 Playwright Reader владеет отдельным `BrowserSessionState` и жизненным циклом start/subscribe/navigate/stop/dispose. Начальное состояние честно объявляет все capabilities выключенными; browser UI показывает недоступность Chromium и блокирует навигацию, пока adapter не вернул `navigate: true`. Это frontend-модель интеграции, не свидетельство готовой server orchestration Chromium.
 
