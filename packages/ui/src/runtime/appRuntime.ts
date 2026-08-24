@@ -7,7 +7,6 @@
 // публичные actions владельца.
 
 import type { AgentInfo } from '@shared/agentProtocol'
-import type { Board } from '@shared/projects'
 import type { CcItem } from '@shared/cc'
 import type { CxItem } from '@shared/codexSessions'
 import type { KbUsageQuery } from '@shared/kb'
@@ -56,7 +55,7 @@ export interface RealtimeHandlers {
   ccTail(items: CcItem[]): void
   cxTail(items: CxItem[]): void
   agents(list: AgentInfo[]): void
-  boardUpdate(projectId: string, board: Board): void
+  boardChanged(projectId: string): void
   ciSnapshot(runId: string, detail: CiRunDetail, log: CiLogLine[]): void
   ciRun(runId: string, run: CiRun): void
   ciStep(runId: string, step: CiRunStep): void
@@ -241,7 +240,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     ccTail: (items) => operations.actions.applyCcTailItems(items),
     cxTail: (items) => operations.actions.applyCxTailItems(items),
     agents: (list) => operations.actions.applyAgents(list),
-    boardUpdate: (projectId, board) => projects.actions.applyBoardUpdate(projectId, board),
+    boardChanged: (projectId) => projects.actions.applyBoardChanged(projectId),
     ciSnapshot: (runId, detail, log) => projects.actions.applyCiSnapshot(runId, detail, log),
     ciRun: (runId, run) => projects.actions.applyCiRun(runId, run),
     ciStep: (runId, step) => projects.actions.applyCiStep(runId, step),

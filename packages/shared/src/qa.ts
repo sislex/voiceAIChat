@@ -619,11 +619,6 @@ export function canCompleteQa(session: QaSession): QaCompletionCheck {
     if (result.commitSha !== session.commitSha || result.previewSha !== session.previewSha) reasons.push(`stale_result:${item.criterionId}`)
     else if (result.status !== 'passed') reasons.push(`${result.status}:${item.criterionId}`)
   }
-  for (const item of session.criteriaSnapshot) {
-    if (item.required) continue
-    const result = byCriterion.get(`${item.criterionId}:${item.version}`)
-    if (!result || !['passed', 'not_applicable'].includes(result.status)) reasons.push(`${result?.status ?? 'missing'}:${item.criterionId}`)
-  }
   if (session.results.some((result) => result.status === 'failed')) reasons.push('has_failed_tests')
   if (session.additionalIssues?.trim()) reasons.push('has_additional_issues')
   return { allowed: reasons.length === 0, reasons }

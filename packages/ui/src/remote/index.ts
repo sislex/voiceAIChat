@@ -14,6 +14,7 @@ import type {
   RendererFilesBridge,
   RendererFsBridge,
   RendererPreviewBridge,
+  RendererRealtimeBridge,
   RendererPtyBridge,
   RendererSessionBridge,
   RendererSttBridge,
@@ -139,13 +140,22 @@ export function makePreviewBridge(ws: WsClient): RendererPreviewBridge {
   }
 }
 
+export function makeRealtimeBridge(ws: WsClient): RendererRealtimeBridge {
+  return {
+    onConnected: (cb) => ws.onConnected(cb),
+    onTaskPreparationNotificationsInvalidated: (cb) =>
+      ws.on('task-preparation.notifications.invalidate', (m) => cb({ projectId: m.projectId }))
+  }
+}
+
 export function makeBoardBridge(ws: WsClient): RendererBoardBridge {
   return {
-    subscribe: (projectId, includeCompleted) => ws.send({ t: 'board.subscribe', projectId, includeCompleted }),
+    subscribe: (projectId) => ws.send({ t: 'board.subscribe', projectId }),
     unsubscribe: () => ws.send({ t: 'board.unsubscribe' }),
-    onUpdate: (cb) => ws.on('board.update', (m) => cb({ projectId: m.projectId, board: m.board })),
+    onChanged: (cb) => ws.on('board.changed', (m) => cb({ projectId: m.projectId })),
+    onConnected: (cb) => ws.onConnected(() => cb()),
     onPreparationRunUpdated: (cb) => ws.on('preparation.run.updated', (m) => cb({ projectId: m.projectId, taskId: m.taskId, runId: m.runId })),
-    onReconnect: (cb) => ws.onReconnect(cb)
+    onReconnect: (cb) => ws.onConnected((reconnected) => { if (reconnected) cb() })
   }
 }
 
@@ -369,6 +379,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   window.cc = makeCcBridge(ws)
   window.codex = makeCodexBridge(ws)
   window.agents = makeAgentsBridge(ws)
+  window.realtime = makeRealtimeBridge(ws)
   window.board = makeBoardBridge(ws)
   window.ci = makeCiBridge(httpBase, ws)
   window.kb = makeKbBridge(httpBase, ws)

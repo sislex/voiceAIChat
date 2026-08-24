@@ -1,11 +1,29 @@
 // Процесс-глобальный эмиттер изменений досок проектов. REST-мутации зовут
-// emit(projectId); WS-сессии подписчиков перечитывают доску и шлют board.update.
+// emit(projectId); WS-сессии подписчиков шлют лёгкую инвалидацию board.changed.
 // Не хранит состояние — только уведомляет (истина живёт в БД). Аналог
 // AgentRegistry.onChange для живого списка машин.
 
 export type BoardListener = (projectId: string) => void
 export interface PreparationRunUpdate { userId: string; projectId: string; taskId: string; runId: string }
 export type PreparationRunListener = (update: PreparationRunUpdate) => void
+
+export interface NotificationInvalidation {
+  projectId: string
+  userId?: string
+}
+
+export class NotificationHub {
+  private readonly listeners = new Set<(event: NotificationInvalidation) => void>()
+
+  emit(projectId: string, userId?: string): void {
+    for (const listener of this.listeners) listener({ projectId, ...(userId ? { userId } : {}) })
+  }
+
+  onChange(listener: (event: NotificationInvalidation) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+}
 
 export class BoardHub {
   private readonly listeners = new Set<BoardListener>()

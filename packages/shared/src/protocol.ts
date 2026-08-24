@@ -16,7 +16,6 @@ import type {
 import type { CcItem } from './cc'
 import type { CxItem } from './codexSessions'
 import type { AgentInfo } from './agentProtocol'
-import type { Board } from './projects'
 import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
 import type { KbUsageQuery } from './kb'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
@@ -440,7 +439,7 @@ export type ClientMessage =
   | { t: 'pty.input'; ptyId: string; data: string }
   | { t: 'pty.resize'; ptyId: string; cols: number; rows: number }
   | { t: 'pty.kill'; ptyId: string }
-  | { t: 'board.subscribe'; projectId: string; includeCompleted?: boolean }
+  | { t: 'board.subscribe'; projectId: string }
   | { t: 'board.unsubscribe' }
   | { t: 'ci.subscribe'; runId: string }
   | { t: 'ci.unsubscribe'; runId: string }
@@ -485,8 +484,10 @@ export type ServerMessage =
   | { t: 'pty.output'; ptyId: string; data: string }
   | { t: 'pty.exit'; ptyId: string; exitCode: number | null }
   | { t: 'pty.error'; ptyId: string; message: string }
-  | { t: 'board.update'; projectId: string; board: Board }
+  | { t: 'board.changed'; projectId: string }
   | { t: 'preparation.run.updated'; projectId: string; taskId: string; runId: string }
+  /** Снимок уведомлений подготовки изменился; содержимое читается только по HTTP. */
+  | { t: 'task-preparation.notifications.invalidate'; v: 1; projectId: string }
   | { t: 'ci.snapshot'; runId: string; detail: CiRunDetail; log: CiLogLine[] }
   | { t: 'ci.run'; runId: string; run: CiRun }
   | { t: 'ci.step'; runId: string; step: CiRunStep }
@@ -574,8 +575,9 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'pty.output',
   'pty.exit',
   'pty.error',
-  'board.update',
+  'board.changed',
   'preparation.run.updated',
+  'task-preparation.notifications.invalidate',
   'ci.snapshot',
   'ci.run',
   'ci.step',

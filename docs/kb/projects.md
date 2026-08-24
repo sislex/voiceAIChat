@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-08-22
-checked: 31ae0807
+updated: 2026-08-24
+checked: 82892b26
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -389,17 +389,32 @@ Done ставит её заново; перенос между done-колонк
 ## Реалтайм (BoardHub)
 
 Живые изменения доски рассылаются по WS: `apps/server/src/projects/boardHub.ts` —
-процесс-глобальный эмиттер (`emit(projectId)` из REST-мутаций, `onChange` для сессий),
-по образцу `AgentRegistry.onChange`. Per-connection подписка — в `session.ts`
-(`board.subscribe`/`board.unsubscribe` → снапшот `board.update` только участникам).
+процесс-глобальный stateless-эмиттер (`emit(projectId)` после успешных REST-, CI- и
+QA-мутаций, `onChange` для сессий), по образцу `AgentRegistry.onChange`.
+Per-connection подписка в `session.ts` принимает `board.subscribe`, проверяет членство
+через существующее чтение доски и затем отправляет только лёгкие
+`{t:'board.changed', projectId}`; полный `Board` по WebSocket не передаётся.
+`board.unsubscribe` и закрытие сокета снимают логическую подписку.
+
 Тот же hub имеет отдельный лёгкий канал `emitPreparationRun` /
 `onPreparationRunChange`: сессия фильтрует его по владельцу соединения и отправляет
 `preparation.run.updated` с `projectId`, `taskId`, `runId`, не перечитывая доску.
-Текстовые дельты подготовки используют только этот канал; `board.update` остаётся
-для содержательных переходов карточки, а не для каждого фрагмента лога.
-Клиентский мост `window.board` (`RendererBoardBridge`) — только web; он доставляет
-снапшоты доски, адресные preparation-run invalidation-события и отдельный сигнал
-успешного reconnect после первого соединения. В desktop живой синхронизации нет.
+Текстовые дельты подготовки используют только этот адресный канал и не создают
+`board.changed` для каждого фрагмента лога.
+
+Единственный источник полного снимка доски — `GET /api/projects/:projectId/board`.
+Web-клиент отправляет подписку до первоначального GET, игнорирует инвалидации других
+проектов и объединяет сигналы активного проекта окном 50 мс. Координатор в обоих
+projects store допускает один GET для текущей версии `projectId + includeCompleted`;
+сигнал во время загрузки ставит один pending-refetch, а generation-token не даёт
+запоздалому ответу старого проекта или фильтра заменить состояние. Успешный reconnect
+повторно отправляет только текущую логическую подписку и планирует одну синхронизацию.
+История открытой подготовки после reconnect выполняет ровно одну собственную
+контрольную синхронизацию. Смена проекта/фильтра, закрытие и dispose очищают
+debounce-таймер, pending-сигнал и подписку. Фоновая ошибка сохраняет последний
+успешный снимок. Клиентский мост `window.board` (`RendererBoardBridge`) — только web;
+он доставляет общие инвалидации доски, адресные preparation-run события и lifecycle
+подключения. В desktop живой синхронизации нет.
 
 ## Фронтенд
 
@@ -408,7 +423,7 @@ Done ставит её заново; перенос между done-колонк
 `TaskCard`, `TaskModal`, CI/QA/merge-панели, releases и `KanbanAssistant` — по-прежнему
 живут в `packages/ui` и работают на доменном `projectsStore` из `packages/ui/src/store/domains` (`projectsOpen`, `projects`,
 `projectsLoaded`, `projectDetail`, `activeProjectId`, `board`; оптимистичные
-`moveTask`/`reorderColumns`, мерж `applyBoardUpdate` из WS). Новый workspace-пакет
+`moveTask`/`reorderColumns`, управляемый REST-refetch после `applyBoardChanged` из WS). Новый workspace-пакет
 `packages/projects-app` (`@voicechat/projects-app`) содержит будущий фундамент этого
 раздела: контракты `ProjectsClient`/`ProjectsHost`/`ProjectsChatPort`, React-независимый
 `createProjectsStore`, `ProjectsProvider`, `ProjectsApp`, parser/builder всех `#/projects/*`

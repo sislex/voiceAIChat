@@ -48,19 +48,76 @@ export function createProjectsStore(client: ProjectsClient): ProjectsStore {
   let request = 0
   let unsubscribeBoard: (() => void) | null = null
   let disposed = false
+  const BOARD_CHANGE_DEBOUNCE_MS = 50
+  let syncGeneration = 0
+  let syncTimer: ReturnType<typeof setTimeout> | null = null
+  let syncFlight: { generation: number; promise: Promise<void> } | null = null
+  let syncPending = false
   const set = (patch: Partial<ProjectsState>): void => {
     if (disposed) return
     state = { ...state, ...patch }
     listeners.forEach((listener) => listener())
   }
   const message = (error: unknown): string => error instanceof Error ? error.message : String(error)
+  const clearSync = (): void => {
+    syncGeneration++
+    syncPending = false
+    if (syncTimer) clearTimeout(syncTimer)
+    syncTimer = null
+  }
+  const syncBoard = async (): Promise<void> => {
+    const projectId = state.activeProjectId
+    if (!projectId) return
+    const generation = syncGeneration
+    const includeCompleted = state.includeCompleted
+    if (syncFlight?.generation === generation) {
+      syncPending = true
+      return syncFlight.promise
+    }
+    if (syncTimer) clearTimeout(syncTimer)
+    syncTimer = null
+    let promise!: Promise<void>
+    promise = (async () => {
+      try {
+        const board = await client.getBoard(projectId, { includeCompleted })
+        if (generation === syncGeneration && state.activeProjectId === projectId && state.includeCompleted === includeCompleted) {
+          set({ board, error: null })
+        }
+      } catch (error) {
+        if (generation === syncGeneration && state.activeProjectId === projectId) set({ error: message(error) })
+      } finally {
+        if (syncFlight?.promise === promise) syncFlight = null
+        if (generation === syncGeneration && syncPending) {
+          syncPending = false
+          void syncBoard()
+        }
+      }
+    })()
+    syncFlight = { generation, promise }
+    return promise
+  }
+  const scheduleSync = (): void => {
+    if (!state.activeProjectId) return
+    if (state.loading) {
+      syncPending = true
+      return
+    }
+    if (syncFlight?.generation === syncGeneration) {
+      syncPending = true
+      return
+    }
+    if (syncTimer) clearTimeout(syncTimer)
+    syncTimer = setTimeout(() => {
+      syncTimer = null
+      void syncBoard()
+    }, BOARD_CHANGE_DEBOUNCE_MS)
+  }
   const subscribeCurrent = (projectId: string): void => {
     unsubscribeBoard?.()
-    const includeCompleted = state.includeCompleted
     unsubscribeBoard = client.subscribeBoard(projectId, (event) => {
       if (event.projectId !== state.activeProjectId) return
-      set({ board: event.board })
-    }, { includeCompleted })
+      scheduleSync()
+    })
   }
   const loadProjects = async (): Promise<ProjectSummary[]> => {
     const token = ++request
@@ -76,31 +133,30 @@ export function createProjectsStore(client: ProjectsClient): ProjectsStore {
   const openProject = async (projectId: string): Promise<void> => {
     const token = ++request
     unsubscribeBoard?.(); unsubscribeBoard = null
+    clearSync()
+    const generation = syncGeneration
     set({ activeProjectId: projectId, projectDetail: null, board: null, loading: true, error: null, openTaskId: null })
+    subscribeCurrent(projectId)
     try {
+      const includeCompleted = state.includeCompleted
       const [projectDetail, board] = await Promise.all([
         client.getProject(projectId),
-        client.getBoard(projectId, { includeCompleted: state.includeCompleted })
+        client.getBoard(projectId, { includeCompleted })
       ])
-      if (token !== request || state.activeProjectId !== projectId) return
+      if (token !== request || generation !== syncGeneration || state.activeProjectId !== projectId || state.includeCompleted !== includeCompleted) return
       if (!projectDetail) throw new Error('Project not found')
       set({ projectDetail, board, loading: false })
-      subscribeCurrent(projectId)
+      if (syncPending) { syncPending = false; void syncBoard() }
     } catch (error) {
-      if (token === request && state.activeProjectId === projectId) set({ loading: false, error: message(error) })
+      if (token === request && generation === syncGeneration && state.activeProjectId === projectId) set({ loading: false, error: message(error) })
     }
   }
   const reloadBoard = async (): Promise<void> => {
     const projectId = state.activeProjectId
     if (!projectId) return
-    const token = ++request
     set({ loading: true, error: null })
-    try {
-      const board = await client.getBoard(projectId, { includeCompleted: state.includeCompleted })
-      if (token === request && state.activeProjectId === projectId) set({ board, loading: false })
-    } catch (error) {
-      if (token === request && state.activeProjectId === projectId) set({ loading: false, error: message(error) })
-    }
+    await syncBoard()
+    if (state.activeProjectId === projectId) set({ loading: false })
   }
   const rollbackOrReload = async (snapshot: Board, error: unknown): Promise<void> => {
     if (state.activeProjectId && state.board) set({ board: snapshot, error: message(error) })
@@ -144,13 +200,13 @@ export function createProjectsStore(client: ProjectsClient): ProjectsStore {
   }
   const actions: ProjectsActions = {
     loadProjects, openProject,
-    closeProject: () => { ++request; unsubscribeBoard?.(); unsubscribeBoard = null; set({ activeProjectId: null, projectDetail: null, board: null, loading: false, error: null, openTaskId: null }) },
+    closeProject: () => { ++request; clearSync(); unsubscribeBoard?.(); unsubscribeBoard = null; set({ activeProjectId: null, projectDetail: null, board: null, loading: false, error: null, openTaskId: null }) },
     reloadBoard,
     setRoute: (route) => set({ route, openTaskId: 'taskId' in route ? route.taskId : null }),
     setOpenTask: (openTaskId) => set({ openTaskId }),
-    setIncludeCompleted: async (includeCompleted) => { if (state.includeCompleted === includeCompleted) return; set({ includeCompleted }); if (state.activeProjectId) { subscribeCurrent(state.activeProjectId); await reloadBoard() } },
+    setIncludeCompleted: async (includeCompleted) => { if (state.includeCompleted === includeCompleted) return; clearSync(); set({ includeCompleted, board: null }); if (state.activeProjectId) await reloadBoard() },
     moveTask, reorderColumns, updateTask,
-    dispose: () => { ++request; disposed = true; unsubscribeBoard?.(); unsubscribeBoard = null; listeners.clear() }
+    dispose: () => { ++request; clearSync(); disposed = true; unsubscribeBoard?.(); unsubscribeBoard = null; listeners.clear() }
   }
   return {
     getState: () => state,

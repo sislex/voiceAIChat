@@ -566,7 +566,7 @@ describe('интерактивная попытка, события и эксп�
     const dismissed = await inj(adminTok, { method: 'POST', url: `/api/task-preparation/notifications/${questionId}/dismiss` })
     expect(dismissed.json()).toEqual({ dismissed: true })
     expect((await inj(adminTok, { method: 'POST', url: `/api/task-preparation/notifications/${questionId}/dismiss` })).json()).toEqual({ dismissed: true })
-    expect((await inj(adminTok, { method: 'GET', url: '/api/task-preparation/notifications' })).json()).toMatchObject([{ questionId, dismissedAt: expect.any(Number) }])
+    expect((await inj(adminTok, { method: 'GET', url: '/api/task-preparation/notifications' })).json()).toEqual([])
 
     await inj(adminTok, { method: 'POST', url: `/api/task-preparation/questions/${questionId}/answer`, payload: { answer: 'REST v2' } })
     expect((await inj(adminTok, { method: 'GET', url: '/api/task-preparation/notifications' })).json()).toEqual([])

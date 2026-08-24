@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
 import { base64ToArrayBuffer } from './decode'
-import { makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeSessionBridge, migrateDesktopLegacy } from './index'
+import { makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeRealtimeBridge, makeSessionBridge, migrateDesktopLegacy } from './index'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -69,6 +69,22 @@ describe('WsClient', () => {
     off()
     ws._emit({ t: 'claude.token', conversationId: 'c1', delta: '!' })
     expect(tokens).toEqual(['Привет'])
+    c.close()
+  })
+
+  it('доставляет lifecycle подключения и invalidation уведомлений подготовки', async () => {
+    const c = new WsClient('ws://x/ws')
+    const ws = FakeWebSocket.last!
+    const connected = vi.fn()
+    const invalidated = vi.fn()
+    const bridge = makeRealtimeBridge(c)
+    bridge.onConnected(connected)
+    bridge.onTaskPreparationNotificationsInvalidated(invalidated)
+    ws._open()
+    await Promise.resolve()
+    ws._emit({ t: 'task-preparation.notifications.invalidate', v: 1, projectId: 'p1' })
+    expect(connected).toHaveBeenCalledTimes(1)
+    expect(invalidated).toHaveBeenCalledWith({ projectId: 'p1' })
     c.close()
   })
 

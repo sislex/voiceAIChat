@@ -115,7 +115,7 @@ export interface ProjectsActions {
   closeBoard(): void
   openProjectSettings(): void
   closeProjectSettings(): void
-  applyBoardUpdate(projectId: string, board: Board): void
+  applyBoardChanged(projectId: string): void
   setBoardIncludeCompleted(include: boolean): Promise<void>
   createColumn(name: string): Promise<void>
   updateColumn(columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<void>
@@ -245,8 +245,85 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     else if (run.status === 'failed') notify({ kind: 'error', text: `Merge ${run.sourceBranch} завершился с ошибкой: ${run.error ?? 'см. вкладку Merge задачи'}` })
   })
   if (unsubscribeMerge) core.onDispose(unsubscribeMerge)
+  const BOARD_CHANGE_DEBOUNCE_MS = 50
+  let boardGeneration = 0
+  let boardTimer: ReturnType<typeof setTimeout> | null = null
+  let boardFlight: { generation: number; promise: Promise<void> } | null = null
+  let boardPending = false
+
+  function clearBoardSync(): void {
+    boardGeneration++
+    boardPending = false
+    if (boardTimer) clearTimeout(boardTimer)
+    boardTimer = null
+  }
+
+  async function syncBoard(): Promise<void> {
+    const id = getState().activeProjectId
+    if (!id) return
+    const includeCompleted = getState().boardIncludeCompleted
+    const generation = boardGeneration
+    if (boardFlight?.generation === generation) {
+      boardPending = true
+      return boardFlight.promise
+    }
+    if (boardTimer) clearTimeout(boardTimer)
+    boardTimer = null
+    let promise!: Promise<void>
+    promise = (async () => {
+      try {
+        const board = await client['board:get']({ id, includeCompleted })
+        if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
+        const ciSummaries = { ...getState().ciSummaries }
+        for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
+        const prev = getState().board
+        setState({ board, ciSummaries, boardError: null })
+        if (prev && !sameTaskChatVisibility(prev, board)) deps.chat.scheduleConversationsRefresh()
+      } catch (err) {
+        if (generation === boardGeneration && getState().activeProjectId === id) fail(err, () => void syncBoard())
+      } finally {
+        if (boardFlight?.promise === promise) boardFlight = null
+        if (generation === boardGeneration && boardPending) {
+          boardPending = false
+          void syncBoard()
+        }
+      }
+    })()
+    boardFlight = { generation, promise }
+    return promise
+  }
+
+  function scheduleBoardSync(): void {
+    if (!getState().activeProjectId) return
+    if (getState().boardLoading) {
+      boardPending = true
+      return
+    }
+    if (boardFlight?.generation === boardGeneration) {
+      boardPending = true
+      return
+    }
+    if (boardTimer) clearTimeout(boardTimer)
+    boardTimer = setTimeout(() => {
+      boardTimer = null
+      void syncBoard()
+    }, BOARD_CHANGE_DEBOUNCE_MS)
+  }
+
+  const unsubscribeBoardChanged = boardBridge?.onChanged(({ projectId }) => {
+    if (projectId === getState().activeProjectId) scheduleBoardSync()
+  })
+  const unsubscribeBoardConnected = boardBridge?.onConnected(() => {
+    const id = getState().activeProjectId
+    if (!id) return
+    boardBridge.subscribe(id)
+    scheduleBoardSync()
+  })
   core.onDispose(() => {
+    clearBoardSync()
     if (getState().activeProjectId) boardBridge?.unsubscribe()
+    unsubscribeBoardChanged?.()
+    unsubscribeBoardConnected?.()
   })
 
   // --- Проекты --------------------------------------------------------------
@@ -258,51 +335,52 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   }
 
   async function refreshBoard(): Promise<void> {
-    const id = getState().activeProjectId
-    if (!id) return
-    setState({ board: await client['board:get']({ id, includeCompleted: getState().boardIncludeCompleted }) })
+    await syncBoard()
   }
 
   async function loadBoardForCompletedFilter(includeCompleted: boolean): Promise<void> {
     const id = getState().activeProjectId
     if (!id || getState().boardIncludeCompleted !== includeCompleted) return
-
-    // Смена состава снапшота — блокирующая загрузка: прежняя доска относится к
-    // другому фильтру и не должна оставаться на экране даже как stale content.
+    clearBoardSync()
+    const generation = boardGeneration
     setState({ board: null, boardLoading: true, boardError: null })
-    boardBridge?.subscribe(id, includeCompleted)
     try {
       const board = await client['board:get']({ id, includeCompleted })
-      if (getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
+      if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
       setState({ board, boardLoading: false, boardError: null })
+      if (boardPending) { boardPending = false; void syncBoard() }
     } catch (err) {
-      if (getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
+      if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
       setState({ boardLoading: false, boardError: err instanceof Error ? err.message : String(err) })
       fail(err, () => void loadBoardForCompletedFilter(includeCompleted))
     }
   }
 
   async function openBoard(id: string): Promise<void> {
-    setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectSettingsOpen: false })
+    if (getState().activeProjectId) boardBridge?.unsubscribe()
+    clearBoardSync()
+    const generation = boardGeneration
+    setState({ activeProjectId: id, boardLoading: true, boardError: null, board: null, projectDetail: null, projectSettingsOpen: false })
+    boardBridge?.subscribe(id)
     try {
       const includeCompleted = getState().boardIncludeCompleted
       const [board, detail] = await Promise.all([
         client['board:get']({ id, includeCompleted }),
         client['projects:get']({ id })
       ])
+      if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
       const ciSummaries = { ...getState().ciSummaries }
       for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
       setState({ board, projectDetail: detail, ciSummaries, boardLoading: false, boardError: null })
-      boardBridge?.subscribe(id, includeCompleted)
     } catch (err) {
-      // Ошибку видно и на странице, и тостом: тост живёт секунды, а пустая доска
-      // без объяснения — вечно.
+      if (generation !== boardGeneration || getState().activeProjectId !== id) return
       setState({ boardLoading: false, boardError: err instanceof Error ? err.message : String(err) })
       fail(err, () => void openBoard(id))
     }
   }
 
   function closeBoard(): void {
+    clearBoardSync()
     if (getState().activeProjectId) boardBridge?.unsubscribe()
     setState({ activeProjectId: null, projectSettingsOpen: false, board: null, boardLoading: false, boardError: null })
   }
@@ -618,22 +696,9 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       closeProjectSettings() {
         setState({ projectSettingsOpen: false })
       },
-      applyBoardUpdate(projectId, board) {
-        if (projectId !== getState().activeProjectId) {
-          // Чужую открытую доску не подменяем, но её задачи могут быть в текущем
-          // sidebar-фильтре: сервер безопасно пересчитает видимость разговоров.
-          deps.chat.scheduleConversationsRefresh()
-          return
-        }
-        // Во время блокирующей смены фильтра только соответствующий REST-ответ
-        // завершает загрузку; старый realtime-снимок не должен вернуть доску.
-        if (getState().boardLoading) return
-        const ciSummaries = { ...getState().ciSummaries }
-        for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
-        const prev = getState().board
-        setState({ board, ciSummaries })
-        // Изменение набора задач в done/cancelled меняет серверную видимость чатов.
-        if (prev && !sameTaskChatVisibility(prev, board)) deps.chat.scheduleConversationsRefresh()
+      applyBoardChanged(projectId) {
+        if (projectId !== getState().activeProjectId) return
+        scheduleBoardSync()
       },
       async setBoardIncludeCompleted(include) {
         if (getState().boardIncludeCompleted === include) return
