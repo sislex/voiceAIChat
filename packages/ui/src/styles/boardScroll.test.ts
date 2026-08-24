@@ -136,3 +136,19 @@ describe('app.css — скролл длинной колонки доски', ()
     expect(decl('.kanban-board', 'min-height')).toBeNull()
   })
 })
+
+describe('app.css — сетка настроек разговора', () => {
+  it('разделяет шапку, вкладки, прокручиваемое содержимое и футер', () => {
+    expect(decl('.convsettings', 'display')).toBe('grid')
+    expect(decl('.convsettings', 'grid-template-rows')).toBe(
+      'auto auto minmax(0, 1fr) auto',
+    )
+    expect(decl('.convsettings-body', 'overflow')).toBe('auto')
+  })
+
+  it('сохраняет естественную высоту и перенос вкладок', () => {
+    expect(decl('.proj-settings-tabs', 'display')).toBe('flex')
+    expect(decl('.proj-settings-tabs', 'flex-wrap')).toBe('wrap')
+    expect(decl('.proj-settings-tabs', 'height')).toBeNull()
+  })
+})
