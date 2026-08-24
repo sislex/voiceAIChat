@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import { expect, fn, userEvent, within } from '@storybook/test'
-import type { VoiceState } from '@shared/types'
+import type { PermissionMode, VoiceState } from '@shared/types'
 import { VoiceBar } from './VoiceBar'
 import { makeUpload } from '../test/fixtures'
 
@@ -145,6 +145,93 @@ export const WithAttachments: Story = {
     attachments: [
       makeUpload({ name: 'скриншот-падения.png' }),
       makeUpload({ name: 'ci-run-1934.log', mimeType: 'text/plain' })
+    ]
+  }
+}
+
+/** Пустой чат: композер по центру с приветствием. */
+export const EmptyCentered: Story = {
+  args: { layout: 'centered', draft: '' }
+}
+
+/** Разговор начат: композер закреплён внизу колонки. */
+export const ConversationDocked: Story = {
+  args: { layout: 'docked', draft: 'Следующее сообщение' }
+}
+
+/** Поле начинается с одной строки и растёт на каждую новую строку текста. */
+export const Multiline: Story = {
+  args: { draft: 'Первая строка\nВторая строка\nТретья строка' }
+}
+
+/** После четырёх строк высота ограничена, текст прокручивается внутри поля. */
+export const CappedScroll: Story = {
+  args: {
+    draft: Array.from({ length: 10 }, (_, index) => `Строка ${index + 1}: детали задачи`).join('\n')
+  }
+}
+
+/** Редактор раскрыт вручную; play оставляет story в раскрытом состоянии. */
+export const Expanded: Story = {
+  args: { draft: 'Первая строка\nВторая строка\nТретья строка' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByTestId('composer-size-toggle'))
+    await expect(canvas.getByLabelText('Поле ввода сообщения').closest('.voicebar')).toHaveClass('voicebar--expanded')
+  }
+}
+
+/** Изображение обрабатывается: плитка зарезервирована, отправка заблокирована. */
+export const AttachmentProcessing: Story = {
+  args: {
+    draft: 'Посмотри изображение',
+    attachments: [{
+      localId: 'processing-image',
+      status: 'processing',
+      name: 'большой-скриншот.png',
+      mimeType: 'image/png'
+    }]
+  }
+}
+
+/** Изображение готово и может быть отправлено. */
+export const AttachmentReady: Story = {
+  decorators: WithAttachments.decorators,
+  args: {
+    draft: 'Посмотри изображение',
+    attachments: [{
+      localId: 'ready-image',
+      status: 'ready',
+      name: 'готовый-скриншот.png',
+      mimeType: 'image/png'
+    }]
+  }
+}
+
+/** Ошибка изображения: плитка сохраняется, доступны повтор и удаление. */
+export const AttachmentError: Story = {
+  args: {
+    draft: 'Посмотри изображение',
+    onRetryAttachment: fn(),
+    attachments: [{
+      localId: 'error-image',
+      status: 'error',
+      name: 'сломанный-скриншот.png',
+      mimeType: 'image/png',
+      error: 'Не удалось загрузить'
+    }]
+  }
+}
+
+/** Смешанные статусы вложений явно блокируют отправку до устранения проблем. */
+export const AttachmentMixedStatuses: Story = {
+  args: {
+    draft: 'Три изображения',
+    onRetryAttachment: fn(),
+    attachments: [
+      { localId: 'processing', status: 'processing', name: 'обработка.png', mimeType: 'image/png' },
+      { localId: 'ready', status: 'ready', name: 'готово.png', mimeType: 'image/png' },
+      { localId: 'error', status: 'error', name: 'ошибка.png', mimeType: 'image/png', error: 'Сеть недоступна' }
     ]
   }
 }
@@ -321,6 +408,47 @@ function ControlledVoiceBar({ initial = '', state = 'idle' }: { initial?: string
       />
     </div>
   )
+}
+
+function PermissionModeFirstSendDemo(): JSX.Element {
+  const [draft, setDraft] = useState('Создай компонент')
+  const [mode, setMode] = useState<PermissionMode>('plan')
+  const [sentMode, setSentMode] = useState<PermissionMode | null>(null)
+
+  return (
+    <div>
+      {sentMode && <p role="status">Первая отправка: {sentMode === 'acceptEdits' ? 'Разработка' : 'План'}</p>}
+      <VoiceBar
+        defaultCollapsed={false}
+        state="idle"
+        draft={draft}
+        diarization
+        detectedSpeakers={[]}
+        attachments={[]}
+        permissionMode={mode}
+        onChangePermissionMode={setMode}
+        onDraftChange={setDraft}
+        onSubmitText={() => setSentMode(mode)}
+        onStartVoice={noop}
+        onStopVoice={noop}
+        onStopSpeak={noop}
+        onCancelRequest={noop}
+        onAddFiles={noop}
+        onRemoveAttachment={noop}
+      />
+    </div>
+  )
+}
+
+/** Выбранный режим разработки применяется уже к первой отправке. */
+export const PermissionModeOnFirstSend: Story = {
+  render: () => <PermissionModeFirstSendDemo />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Разработка' }))
+    await userEvent.click(canvas.getByLabelText('Отправить сообщение'))
+    await expect(canvas.getByRole('status')).toHaveTextContent('Первая отправка: Разработка')
+  }
 }
 
 /**
