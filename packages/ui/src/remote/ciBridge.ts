@@ -29,7 +29,9 @@ import type {
   CiTaskMachines,
   CiStageLlmSnapshot,
   TaskImprovement,
-  ImprovementStatus
+  ImprovementStatus,
+  CreateTaskFromImprovementInput,
+  CreateTaskFromImprovementResult
 } from '@shared/ci'
 import type { Message } from '@shared/types'
 import type { MergeRun, TaskRepository } from '@shared/merge'
@@ -124,6 +126,7 @@ export interface RendererCiRest {
   listTaskImprovements(projectId: string, taskId: string): Promise<TaskImprovement[]>
   listProjectImprovementTasks(projectId: string): Promise<Array<{ taskId: string; count: number; improvementId: string }>>
   updateImprovementStatus(id: string, status: ImprovementStatus): Promise<TaskImprovement>
+  createTaskFromImprovement(id: string, input: CreateTaskFromImprovementInput): Promise<CreateTaskFromImprovementResult>
   cancelRun(runId: string): Promise<{ ok: boolean }>
   /** Убрать только ожидающий ран; результат сообщает о гонке с его стартом. */
   dequeueRun(runId: string): Promise<CiQueueRemovalResult>

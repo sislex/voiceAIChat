@@ -14,7 +14,7 @@ const nf = (reply: FastifyReply): FastifyReply => reply.code(404).send({ error: 
 const forbid = (reply: FastifyReply): FastifyReply => reply.code(403).send({ error: 'forbidden' })
 const bad = (reply: FastifyReply, error: unknown): FastifyReply => reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
 
-export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRunManager, agents?: { isOnline(id: string): boolean }): void {
+export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRunManager, agents?: { isOnline(id: string): boolean }, boardChanged?: (projectId: string) => void): void {
   const isOwner = (req: FastifyRequest, projectId: string): boolean => db.getProject(uid(req), projectId)?.role === 'owner'
   const isAdmin = (req: FastifyRequest): boolean => req.user?.role === 'admin'
   const workflowGuard = { preHandler: requireProjectPermission('workflow:start') }
@@ -307,7 +307,19 @@ export function registerCiRoutes(app: FastifyInstance, db: VoiceChatDb, ci: CiRu
   app.patch<{ Params: { id: string }; Body: { status?: string } }>('/api/improvements/:id', async (req, reply) => {
     const status = req.body?.status
     if (status !== 'new' && status !== 'accepted' && status !== 'rejected' && status !== 'implemented') return reply.code(400).send({ error: 'Некорректный статус предложения' })
-    return db.updateTaskImprovementStatus(uid(req), req.params.id, status) ?? nf(reply)
+    try { return db.updateTaskImprovementStatus(uid(req), req.params.id, status) ?? nf(reply) }
+    catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
+  })
+  app.post<{ Params: { id: string }; Body: import('@voicechat/shared').CreateTaskFromImprovementInput }>('/api/improvements/:id/create-task', async (req, reply) => {
+    const body = req.body
+    if (!body?.columnId || !body?.title?.trim() || typeof body.description !== 'string' || typeof body.acceptanceCriteria !== 'string') return reply.code(400).send({ error: 'columnId, title, description and acceptanceCriteria required' })
+    try {
+      const result = db.createTaskFromImprovement(uid(req), req.params.id, body)
+      if (!result) return nf(reply)
+      boardChanged?.(result.task.projectId)
+      return result
+    }
+    catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
 
   app.post<{ Params: { runId: string } }>('/api/ci/runs/:runId/cancel', async (req, reply) => ({ ok: ci.cancel(uid(req), req.params.runId) }))

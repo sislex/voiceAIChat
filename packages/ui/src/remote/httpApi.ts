@@ -476,6 +476,7 @@ export function createCiRest(httpBase: string): RendererCiRest {
     listTaskImprovements: (projectId, taskId) => req<import('@shared/ci').TaskImprovement[]>(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/improvements`),
     listProjectImprovementTasks: (projectId) => req<Array<{ taskId: string; count: number; improvementId: string }>>(`/api/projects/${encodeURIComponent(projectId)}/improvements/tasks`),
     updateImprovementStatus: (id, status) => req<import('@shared/ci').TaskImprovement>(`/api/improvements/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+    createTaskFromImprovement: (id, input) => req<import('@shared/ci').CreateTaskFromImprovementResult>(`/api/improvements/${encodeURIComponent(id)}/create-task`, { method: 'POST', body: JSON.stringify(input) }),
     cancelRun: (runId) => req<{ ok: boolean }>(REST.ciRunCancel(runId), { method: 'POST' }),
     dequeueRun: (runId) => req<CiQueueRemovalResult>(REST.ciRunDequeue(runId), { method: 'POST' }),
     retryRun: (runId) => req<CiRun>(REST.ciRunRetry(runId), { method: 'POST' }),
