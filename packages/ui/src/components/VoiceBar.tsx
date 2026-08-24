@@ -152,6 +152,8 @@ export interface VoiceBarProps {
    */
   defaultCollapsed?: boolean
   layout?: 'centered' | 'docked'
+  /** Безопасное отображаемое имя текущего пользователя для приветствия. */
+  userDisplayName?: string | null
 }
 
 export function VoiceBar({
@@ -192,7 +194,8 @@ export function VoiceBar({
   onApplyPromptSuggestion,
   onClosePromptSuggestions,
   defaultCollapsed = true,
-  layout = 'docked'
+  layout = 'docked',
+  userDisplayName = null
 }: VoiceBarProps): JSX.Element {
   const isIdle = state === 'idle'
   const isListening = state === 'listening'
@@ -204,6 +207,9 @@ export function VoiceBar({
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [queueEditText, setQueueEditText] = useState('')
   const [draggedQueueId, setDraggedQueueId] = useState<string | null>(null)
+  const [modeOpen, setModeOpen] = useState(false)
+  const modeMenuRef = useRef<HTMLDivElement>(null)
+  const modeTriggerRef = useRef<HTMLButtonElement>(null)
   const requestWasActive = useRef(false)
   const cancelSent = useRef(false)
 
@@ -256,6 +262,7 @@ export function VoiceBar({
   const composerMode = !isListening
 
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  const isCollapsed = layout !== 'centered' && collapsed
   const focusAfterExpandRef = useRef(false)
   const collapse = (): void => setCollapsed(true)
   const expand = (): void => {
@@ -287,6 +294,25 @@ export function VoiceBar({
     generate: generateAiAssist ?? (async () => [])
   })
   const aiAssistEnabled = isIdle && !!generateAiAssist
+
+  useEffect(() => {
+    if (!modeOpen) return
+    const onPointerDown = (event: MouseEvent): void => {
+      if (!modeMenuRef.current?.contains(event.target as Node)) setModeOpen(false)
+    }
+    const onModeKey = (event: WindowEventMap['keydown']): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setModeOpen(false)
+      modeTriggerRef.current?.focus()
+    }
+    window.addEventListener('mousedown', onPointerDown)
+    window.addEventListener('keydown', onModeKey, true)
+    return () => {
+      window.removeEventListener('mousedown', onPointerDown)
+      window.removeEventListener('keydown', onModeKey, true)
+    }
+  }, [modeOpen])
 
   // Esc закрывает панель вариантов. Слушатель на фазе перехвата со stopPropagation,
   // чтобы не сработали глобальные хоткеи (как в ToolFrame).
@@ -435,7 +461,7 @@ export function VoiceBar({
         ? { onClick: stopRequest, label: 'Остановить ответ' }
         : null
 
-  if (collapsed) {
+  if (isCollapsed) {
     return (
       <div className="voicebar voicebar--collapsed">
         <div className="vinner">
@@ -478,7 +504,11 @@ export function VoiceBar({
 
   return (
     <div className={`voicebar voicebar--${layout}${editorExpanded ? ' voicebar--expanded' : ''}`} data-layout={layout}>
-      {layout === 'centered' && <h2 className="voicebar-greeting">Чем я могу помочь?</h2>}
+      {layout === 'centered' && (
+        <h2 className="voicebar-greeting">
+          {userDisplayName?.trim().replace(/\s+/g, ' ') ? `Привет, ${userDisplayName.trim().replace(/\s+/g, ' ')}` : 'Привет'}
+        </h2>
+      )}
       <div className="vinner">
         <div className="vhandle">
           <IconButton
@@ -605,6 +635,24 @@ export function VoiceBar({
         <div className="vrow" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
           {composerMode && (
             <>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                hidden
+                onChange={pickFiles}
+                data-testid="file-input"
+                aria-hidden="true"
+              />
+              <IconButton
+                className="vc-btn--circle composer-attach"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+                title="Прикрепить файл"
+                aria-label="Прикрепить файл"
+              >
+                📎
+              </IconButton>
               <textarea
                 ref={(element) => {
                   inputRef.current = element
@@ -625,15 +673,6 @@ export function VoiceBar({
                 aria-invalid={blockedAttachments.length > 0 || undefined}
                 data-ai-assist={aiAssistEnabled ? '' : undefined}
               />
-              <input
-                ref={fileRef}
-                type="file"
-                multiple
-                hidden
-                onChange={pickFiles}
-                data-testid="file-input"
-                aria-hidden="true"
-              />
               {aiAssistEnabled && (
                 <IconButton className="vc-btn--circle composer-wand" size="sm" {...aiAssist.triggerProps}><WandIcon /></IconButton>
               )}
@@ -650,38 +689,62 @@ export function VoiceBar({
                   <WandIcon />
                 </IconButton>
               )}
-              <IconButton
-                className="vc-btn--circle"
-                size="sm"
-                onClick={() => fileRef.current?.click()}
-                title="Прикрепить файл"
-                aria-label="Прикрепить файл"
-              >
-                📎
-              </IconButton>
-              {canSend ? (
-                  <IconButton
-                    className="vc-btn--circle"
-                    variant="primary"
-                    onClick={submitRequest}
-                    title={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
-                    aria-label={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
-                    disabled={!canSubmit}
-                    aria-describedby={blockedAttachments.length > 0 ? 'attachment-submit-error' : undefined}
+              {onChangePermissionMode && (
+                <div className="mode-menu" ref={modeMenuRef}>
+                  <button
+                    ref={modeTriggerRef}
+                    type="button"
+                    className="mode-menu__trigger"
+                    aria-label="Режим работы"
+                    aria-haspopup="listbox"
+                    aria-expanded={modeOpen}
+                    disabled={!isIdle}
+                    onClick={() => setModeOpen((open) => !open)}
                   >
-                    <SendIcon />
-                  </IconButton>
-                ) : isIdle && voiceInputEnabled ? (
-                  <IconButton
-                    className="vc-btn--circle"
-                    variant="primary"
-                    onClick={onStartVoice}
-                    title="Говорить"
-                    aria-label="Говорить"
-                  >
-                    <MicIcon />
-                  </IconButton>
-                ) : null}
+                    <span aria-hidden="true">{permissionMode === 'plan' ? '◇' : permissionMode === 'acceptEdits' ? '✎' : '⚡'}</span>
+                    <span className="mode-menu__label">{permissionMode === 'plan' ? 'План' : permissionMode === 'acceptEdits' ? 'Разработка' : 'Полный доступ'}</span>
+                    <span aria-hidden="true">⌄</span>
+                  </button>
+                  {modeOpen && (
+                    <div className="mode-menu__list" role="listbox" aria-label="Выберите режим работы">
+                      {([
+                        ['plan', '◇', 'План'],
+                        ['acceptEdits', '✎', 'Разработка'],
+                        ['bypassPermissions', '⚡', 'Полный доступ']
+                      ] as const).map(([mode, icon, label]) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          role="option"
+                          aria-selected={permissionMode === mode}
+                          className={permissionMode === mode ? 'mode-menu__option active' : 'mode-menu__option'}
+                          onClick={() => {
+                            onChangePermissionMode(mode)
+                            setModeOpen(false)
+                            modeTriggerRef.current?.focus()
+                          }}
+                        >
+                          <span aria-hidden="true">{icon}</span>
+                          <span>{label}</span>
+                          {permissionMode === mode && <span aria-hidden="true">✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {voiceInputEnabled && (
+                <IconButton
+                  className="vc-btn--circle composer-mic"
+                  size="sm"
+                  onClick={onStartVoice}
+                  title="Говорить"
+                  aria-label="Говорить"
+                  disabled={!isIdle}
+                >
+                  <MicIcon />
+                </IconButton>
+              )}
               {requestActive && (
                 <IconButton
                   className="vc-btn--circle composer-stop"
@@ -698,7 +761,8 @@ export function VoiceBar({
               )}
               {isSpeaking && (
                 <IconButton
-                  className="vc-btn--circle"
+                  className="vc-btn--circle composer-stop"
+                  size="sm"
                   variant="danger"
                   onClick={onStopSpeak}
                   title="Остановить озвучку"
@@ -707,6 +771,17 @@ export function VoiceBar({
                   <StopIcon />
                 </IconButton>
               )}
+              <IconButton
+                className="vc-btn--circle composer-send"
+                variant="primary"
+                onClick={submitRequest}
+                title={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
+                aria-label={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
+                disabled={!canSubmit}
+                aria-describedby={blockedAttachments.length > 0 ? 'attachment-submit-error' : undefined}
+              >
+                <SendIcon />
+              </IconButton>
             </>
           )}
 
@@ -735,35 +810,10 @@ export function VoiceBar({
           </span>
         )}
 
-        <div className="vbottom">
-          {onChangePermissionMode && (
-            <div className="mode-toggle" role="group" aria-label="Режим работы">
-              <button
-                className={permissionMode === 'plan' ? 'active' : ''}
-                aria-pressed={permissionMode === 'plan'}
-                disabled={!isIdle}
-                onClick={() => onChangePermissionMode('plan')}
-              >
-                План
-              </button>
-              <button
-                className={permissionMode !== 'plan' ? 'active' : ''}
-                aria-pressed={permissionMode !== 'plan'}
-                disabled={!isIdle}
-                onClick={() => onChangePermissionMode('acceptEdits')}
-              >
-                Разработка
-              </button>
-            </div>
-          )}
-          {/* Статус записи — скринридеру. Видимую .vstatus живой областью не
-              делаем: в простое там длинная подсказка про пробел и Esc, и
-              читалка зачитывала бы её после каждого ответа. Здесь — короткая
-              фраза о том, что происходит с микрофоном и запросом. */}
-          <p className="vc-sr-only" role="status" aria-live="polite" data-testid="voice-announce">
-            {voiceAnnouncement(state, aiLabel)}
-          </p>
-        </div>
+        {/* Статус записи — скринридеру. */}
+        <p className="vc-sr-only" role="status" aria-live="polite" data-testid="voice-announce">
+          {voiceAnnouncement(state, aiLabel)}
+        </p>
       </div>
       <PromptBuilder {...aiAssist.popupProps} />
     </div>
