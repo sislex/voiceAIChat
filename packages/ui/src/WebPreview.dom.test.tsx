@@ -266,6 +266,36 @@ describe('WebReaderHost action lifecycle', () => {
     await finish(read, 'read')
   })
 
+  it('без randomUUID отправляет параллельные команды с разными requestId', async () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+    let byte = 0
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => { bytes.fill(++byte); return bytes } })
+    try {
+      const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
+      render(<WebReaderHost conversationUrl="http://shop.example" projectUrl={null} onSave={vi.fn()} onRegisterActionRunner={register} />)
+      const frame = screen.getByTitle('Web Reader') as HTMLIFrameElement
+      const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+      hostMessage(frame, { kind: 'ready' })
+      hostMessage(frame, { kind: 'page-status', status: 'ready', url: 'http://shop.example' })
+      const runner = register.mock.calls.at(-1)?.[0]!
+      const first = runner({ kind: 'read' })
+      const second = runner({ kind: 'find', text: 'Купить' })
+      const commands = post.mock.calls
+        .map(([message]) => message as { kind?: string; requestId?: string })
+        .filter((message) => message.kind === 'run-action')
+      expect(commands).toHaveLength(2)
+      expect(commands.every((command) => command.requestId?.startsWith('wr-'))).toBe(true)
+      expect(commands[0]!.requestId).not.toBe(commands[1]!.requestId)
+      hostMessage(frame, { kind: 'action-result', requestId: commands[1]!.requestId, ok: true, result: { elements: [], total: 0 } })
+      hostMessage(frame, { kind: 'action-result', requestId: commands[0]!.requestId, ok: true, result: { text: '' } })
+      await expect(first).resolves.toMatchObject({ ok: true })
+      await expect(second).resolves.toMatchObject({ ok: true })
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'crypto', original)
+      else delete (globalThis as { crypto?: Crypto }).crypto
+    }
+  })
+
   it('различает ошибку сайта и очищает ожидания при закрытии', async () => {
     const register = vi.fn<(runner: PreviewActionRunner | null) => void>()
     const view = render(<WebReaderHost conversationUrl="https://broken.example" projectUrl={null} onSave={vi.fn()} onRegisterActionRunner={register} />)

@@ -12,6 +12,7 @@ import type { HealthResponse } from '@shared/protocol'
 import { PREVIEW_INSPECTOR_COMMAND_TYPE, isPreviewElementMessage, isPreviewInspectorCommand, type PreviewElementPayload } from '@shared/previewInspector'
 import { PREVIEW_ACTION_COMMAND_TYPE, isPreviewActionResultMessage, type PreviewAction, type PreviewActionResult } from '@shared/previewActions'
 import { WEB_RECORDER_MESSAGE_TYPE, type WebRecorderClientMessage } from '@shared/webRecorder'
+import { browserId } from '@shared/browserId'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -436,7 +437,7 @@ export function WebReaderHost({ conversationUrl, projectUrl, onSave, onSelectEle
       if (pageStatus.current === 'empty' && action.kind !== 'open') return Promise.resolve({ ok: false, error: 'Панель открыта, но в ней нет страницы — сначала вызови open.' })
       if (pageStatus.current === 'error' && action.kind !== 'open') return Promise.resolve({ ok: false, error: 'Сайт или страница недоступны: ' + (pageError.current ?? 'ошибка загрузки.') })
       return new Promise((resolve) => {
-        const requestId = 'wr-' + crypto.randomUUID()
+        const requestId = 'wr-' + browserId()
         const timer = setTimeout(() => settle(requestId, {
           ok: false,
           error: pageStatus.current === 'loading'
@@ -591,7 +592,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   useEffect(() => { diagnosticsControllerRef.current?.abort(); diagnosticsControllerRef.current = null }, [chat.activeId])
   const registerPreviewRunner = useCallback((runner: PreviewActionRunner | null) => {
     if (runner && chat.activeId) {
-      const registrationId = crypto.randomUUID()
+      const registrationId = browserId()
       previewRunnerRef.current = { conversationId: chat.activeId, registrationId, runner }
       globalThis.localStorage?.setItem(PREVIEW_ACTIVE_REGISTRATION_KEY, registrationId)
     }

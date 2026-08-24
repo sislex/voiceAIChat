@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE, type PreviewDomAction } from '@shared/previewActions'
 import { PREVIEW_INSPECTOR_MESSAGE_TYPE } from '@shared/previewInspector'
 import { WEB_RECORDER_MESSAGE_TYPE, type WebRecorderHostMessage } from '@shared/webRecorder'
+import { browserId } from '@shared/browserId'
 
 type Step = { kind: 'click' | 'type'; selector: string; text: string; sensitive?: boolean }
 const RECORD = 'voicechat.preview.record.v1'
@@ -30,7 +31,7 @@ export function Recorder(): JSX.Element {
     if (data?.type === RECORD && data.step && (data.step.kind === 'click' || data.step.kind === 'type') && typeof data.step.selector === 'string') setSteps((old) => [...old, { kind:data.step.kind, selector:data.step.selector, text:typeof data.step.text === 'string' ? data.step.text : '', sensitive:data.step.sensitive === true }])
   }; window.addEventListener('message', receive); return () => window.removeEventListener('message', receive) }, [])
   const open = (): void => { const next = validUrl(draft); if (draft && !next) { setError('Введите адрес с протоколом http:// или https://'); return }; setUrl(next); reply({ kind:'save-url', url:next }); setError(null) }
-  const run = async (): Promise<void> => { if (!frame.current?.contentWindow || !url) return; for (const step of steps) { if (step.sensitive) { setError('Чувствительное значение не сохранено'); return }; frame.current.contentWindow.postMessage({type:PREVIEW_ACTION_COMMAND_TYPE,requestId:'scenario-'+crypto.randomUUID(),action:step as PreviewDomAction},sameOrigin) } }
+  const run = async (): Promise<void> => { if (!frame.current?.contentWindow || !url) return; for (const step of steps) { if (step.sensitive) { setError('Чувствительное значение не сохранено'); return }; frame.current.contentWindow.postMessage({type:PREVIEW_ACTION_COMMAND_TYPE,requestId:'scenario-'+browserId(),action:step as PreviewDomAction},sameOrigin) } }
   return <section className="webpreview" aria-label="Web Reader">
     <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
       <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" value={draft} placeholder="https://example.com" onChange={(event) => setDraft(event.target.value)} /></label>

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { browserId } from './browserId'
 import {
   PREVIEW_ACTION_COMMAND_TYPE,
   PREVIEW_ACTION_LIMITS,
@@ -11,6 +12,41 @@ import {
   previewResultJson,
   previewToolHint
 } from './previewActions'
+
+const originalCryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  if (originalCryptoDescriptor) Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor)
+  else delete (globalThis as { crypto?: Crypto }).crypto
+})
+
+describe('browserId', () => {
+  it('prefers native randomUUID', () => {
+    const randomUUID = vi.fn(() => 'native-id')
+    const getRandomValues = vi.fn()
+    vi.stubGlobal('crypto', { randomUUID, getRandomValues })
+    expect(browserId()).toBe('native-id')
+    expect(randomUUID).toHaveBeenCalledOnce()
+    expect(getRandomValues).not.toHaveBeenCalled()
+  })
+
+  it('creates a UUID-compatible value with getRandomValues', () => {
+    const getRandomValues = vi.fn((bytes: Uint8Array) => { bytes.fill(7); return bytes })
+    vi.stubGlobal('crypto', { getRandomValues })
+    expect(browserId()).toBe('07070707-0707-4707-8707-070707070707')
+    expect(getRandomValues).toHaveBeenCalledOnce()
+  })
+
+  it('stays non-empty and unique without Web Crypto in the same millisecond', () => {
+    vi.stubGlobal('crypto', undefined)
+    vi.spyOn(Date, 'now').mockReturnValue(1234)
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    const ids = [browserId(), browserId(), browserId()]
+    expect(ids.every(Boolean)).toBe(true)
+    expect(new Set(ids)).toHaveLength(ids.length)
+  })
+})
 
 describe('isPreviewAction', () => {
   it('принимает все виды действий', () => {
