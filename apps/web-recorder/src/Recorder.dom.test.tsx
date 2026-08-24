@@ -1,70 +1,163 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { PREVIEW_ACTION_COMMAND_TYPE } from '@shared/previewActions'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_READY_TYPE } from '@shared/previewActions'
+import { PREVIEW_INSPECTOR_COMMAND_TYPE } from '@shared/previewInspector'
+import { WEB_RECORDER_MESSAGE_TYPE, WEB_RECORDER_PROTOCOL_VERSION } from '@shared/webRecorder'
 import { Recorder } from './Recorder'
 
-/*
-import { PREVIEW_ACTION_COMMAND_TYPE, PREVIEW_ACTION_RESULT_TYPE, PREVIEW_PAGE_LOADING_TYPE, PREVIEW_PAGE_READY_TYPE, type PreviewDomAction } from '@shared/previewActions'
-import { PREVIEW_INSPECTOR_MESSAGE_TYPE } from '@shared/previewInspector'
-import { WEB_RECORDER_MESSAGE_TYPE, type WebRecorderHostMessage } from '@shared/webRecorder'
-import { browserId } from '@shared/webRecorder'
+const type = WEB_RECORDER_MESSAGE_TYPE
+const ids = { conversationId: 'conv-1', registrationId: 'reg-1' }
+const init = { type, ...ids, kind: 'init', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, previewUrl: 'https://shop.example/', capabilities: ['mcp-actions'] }
 
-type Step = { kind: 'click' | 'type'; selector: string; text: string; sensitive?: boolean }
-const RECORD = 'voicechat.preview.record.v1'
-const sameOrigin = window.location.origin
-const validUrl = (value: string): string | null => { try { const url = new URL(value.trim()); return /^https?:$/.test(url.protocol) ? url.toString() : null } catch { return null } }
-
-/** Standalone recorder: its state and preview iframe never belong to ChatAI. * /
-export function Recorder(): JSX.Element {
-  const [url, setUrl] = useState<string | null>(null); const [draft, setDraft] = useState(''); const [recording, setRecording] = useState(false)
-  const [steps, setSteps] = useState<Step[]>([]); const [error, setError] = useState<string | null>(null); const frame = useRef<HTMLIFrameElement>(null); const pageReady = useRef(false); const currentUrl = useRef<string | null>(null)
-  const reply = (message: object): void => window.parent.postMessage({ type: WEB_RECORDER_MESSAGE_TYPE, ...message }, '*')
-  useEffect(() => { reply({ kind: 'ready' }); const receive = (event: MessageEvent) => {
-    if (event.source !== window.parent || event.data?.type !== WEB_RECORDER_MESSAGE_TYPE) return
-    const message = event.data as WebRecorderHostMessage
-    if (message.kind === 'set-url') { pageReady.current = false; currentUrl.current = message.url; setUrl(message.url); setDraft(message.url ?? ''); setError(null); reply({ kind:'page-status', status:message.url ? 'loading' : 'empty', url:message.url }) }
-    if (message.kind === 'run-action') { if (!pageReady.current || !frame.current?.contentWindow) { reply({ kind:'action-result', requestId:message.requestId, ok:false, error:'Страница ещё загружается.' }); return }; frame.current.contentWindow.postMessage({ type: PREVIEW_ACTION_COMMAND_TYPE, requestId: message.requestId, action: message.action }, sameOrigin) }
-  }; window.addEventListener('message', receive); return () => window.removeEventListener('message', receive) }, [])
-  useEffect(() => { frame.current?.contentWindow?.postMessage({ type: RECORD, enabled: recording }, sameOrigin) }, [recording, url])
-  useEffect(() => { const receive = (event: MessageEvent) => {
-    if (event.origin !== sameOrigin || event.source !== frame.current?.contentWindow) return
-    const data = event.data
-    if (data?.type === PREVIEW_PAGE_READY_TYPE) { pageReady.current = true; reply({ kind:'page-status', status:'ready', url:currentUrl.current }); return }
-    if (data?.type === PREVIEW_PAGE_LOADING_TYPE) { pageReady.current = false; reply({ kind:'page-status', status:'loading', url:currentUrl.current }); return }
-    if (data?.type === PREVIEW_ACTION_RESULT_TYPE) { reply({ kind: 'action-result', requestId:data.requestId, ok:data.ok, ...(data.result ? {result:data.result}:{ }), ...(data.error ? {error:data.error}:{ }) }); return }
-    if (data?.type === PREVIEW_INSPECTOR_MESSAGE_TYPE) { reply({ kind:'element', element:data.payload }); return }
-    if (data?.type === RECORD && data.step && (data.step.kind === 'click' || data.step.kind === 'type') && typeof data.step.selector === 'string') setSteps((old) => [...old, { kind:data.step.kind, selector:data.step.selector, text:typeof data.step.text === 'string' ? data.step.text : '', sensitive:data.step.sensitive === true }])
-  }; window.addEventListener('message', receive); return () => window.removeEventListener('message', receive) }, [])
-  const open = (): void => { const next = validUrl(draft); if (draft && !next) { setError('Введите адрес с протоколом http:// или https://'); return }; setUrl(next); reply({ kind:'save-url', url:next }); setError(null) }
-  const run = async (): Promise<void> => { if (!frame.current?.contentWindow || !url) return; for (const step of steps) { if (step.sensitive) { setError('Чувствительное значение не сохранено'); return }; frame.current.contentWindow.postMessage({type:PREVIEW_ACTION_COMMAND_TYPE,requestId:'scenario-'+browserId(),action:step as PreviewDomAction},sameOrigin) } }
-  return <section className="webpreview" aria-label="Web Reader">
-    <form className="webpreview-bar" onSubmit={(event) => { event.preventDefault(); open() }}>
-      <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" value={draft} placeholder="https://example.com" onChange={(event) => setDraft(event.target.value)} /></label>
-      <button className="vc-btn vc-btn--secondary">Открыть</button>
-      <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} onClick={() => setRecording((value) => !value)}>{recording ? 'Остановить запись' : 'Записать сценарий'}</button>
-    </form>
-    {error && <p className="webpreview-error" role="alert">{error}</p>}
-    {steps.length > 0 && <section className="webpreview-scenario" aria-label="Сценарий автотеста"><button className="vc-btn vc-btn--secondary" onClick={() => void run()}>Запустить</button><ol>
-      {steps.map((step, index) => <li key={index}><code>{step.kind}</code><input aria-label={'Селектор шага ' + (index + 1)} value={step.selector} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, selector: event.target.value } : item))} />
-        {step.kind === 'type' && <input aria-label={'Значение шага ' + (index + 1)} value={step.sensitive ? '••••••' : step.text} readOnly={step.sensitive} onChange={(event) => setSteps((all) => all.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} />}
-        {step.sensitive && <em>секрет не сохранён</em>}</li>)}
-    </ol></section>}
-    {url ? <iframe ref={frame} className="webpreview-frame" src={'/api/preview?url=' + encodeURIComponent(url)} title="Предпросмотр сайта" onLoad={() => { setTimeout(() => { if (pageReady.current) return; let message = 'Сайт недоступен или вернул страницу, которую Web Reader не может прочитать.'; try { const body = frame.current?.contentDocument?.body?.textContent?.trim(); if (body) { const parsed = JSON.parse(body) as { message?: unknown }; if (typeof parsed.message === 'string') message = parsed.message } } catch { /* не-JSON страница без клиентского моста * / }; reply({ kind:'page-status', status:'error', url, error:message }) }, 0) }} onError={() => { pageReady.current = false; reply({ kind:'page-status', status:'error', url, error:'Не удалось загрузить сайт: сетевая ошибка.' }) }} /> : <div className="webpreview-empty">Укажите http/https-адрес проекта</div>}
-  </section>
+/** Сообщение host → Reader; в jsdom parent === window, поэтому source: window. */
+function fromHost(data: object): void {
+  fireEvent(window, new MessageEvent('message', { origin: window.location.origin, source: window, data }))
 }
-*/
+function fromPage(data: object): void {
+  const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+  fireEvent(window, new MessageEvent('message', { origin: window.location.origin, source: frame.contentWindow, data }))
+}
+/** Отправленные Reader-ом сообщения контракта (parent === window в jsdom). */
+function sent(spy: ReturnType<typeof vi.spyOn>): Array<Record<string, unknown>> {
+  return spy.mock.calls.map(([message]) => message as Record<string, unknown>).filter((message) => message.type === type)
+}
 
 const originalCryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
 
 afterEach(() => {
+  cleanup()
   vi.restoreAllMocks()
   if (originalCryptoDescriptor) Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor)
   else delete (globalThis as { crypto?: Crypto }).crypto
 })
 
+describe('Recorder handshake', () => {
+  it('шлёт ready с версией протокола после установки listener и принимает init', async () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    const ready = sent(post).find((message) => message.kind === 'ready')!
+    expect(ready).toMatchObject({ protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: expect.arrayContaining(['read', 'diagnostics']) })
+    fromHost(init)
+    await waitFor(() => expect(screen.queryByTitle('Предпросмотр сайта')).toBeTruthy())
+    const status = sent(post).find((message) => message.kind === 'page-status')!
+    expect(status).toMatchObject({ ...ids, status: 'loading', url: 'https://shop.example/' })
+  })
+
+  it('повторный init той же регистрации не перезагружает страницу', async () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE })
+    post.mockClear()
+    fromHost(init)
+    const statuses = sent(post).filter((message) => message.kind === 'page-status')
+    expect(statuses).toEqual([expect.objectContaining({ status: 'ready', url: 'https://shop.example/' })])
+  })
+
+  it('игнорирует команды с чужими или устаревшими ID', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    post.mockClear()
+    fromHost({ type, conversationId: 'other-conv', registrationId: 'reg-1', kind: 'command', requestId: 'r1', action: { kind: 'read' } })
+    fromHost({ type, conversationId: 'conv-1', registrationId: 'stale-reg', kind: 'command', requestId: 'r2', action: { kind: 'read' } })
+    expect(sent(post).filter((message) => message.kind === 'result')).toHaveLength(0)
+  })
+
+  it('игнорирует сообщение host с чужим origin', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fireEvent(window, new MessageEvent('message', { origin: 'https://evil.test', source: window, data: init }))
+    expect(sent(post).filter((message) => message.kind === 'page-status')).toHaveLength(0)
+  })
+})
+
+describe('Recorder commands', () => {
+  it('command до готовности страницы получает строго определённую ошибку', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    fromHost({ type, ...ids, kind: 'command', requestId: 'r1', action: { kind: 'read' } })
+    expect(sent(post).find((message) => message.kind === 'result')).toMatchObject({ ...ids, requestId: 'r1', ok: false, error: 'Страница ещё загружается.' })
+  })
+
+  it('после page-ready пересылает command в iframe и возвращает result с ID', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const inner = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE })
+    expect(sent(post).some((message) => message.kind === 'page-status' && message.status === 'ready')).toBe(true)
+    fromHost({ type, ...ids, kind: 'command', requestId: 'r1', action: { kind: 'read' } })
+    expect(inner.mock.calls.some(([message]) => (message as { type?: string; requestId?: string }).type === PREVIEW_ACTION_COMMAND_TYPE && (message as { requestId?: string }).requestId === 'r1')).toBe(true)
+    const result = { page: { url: 'https://shop.example/', title: 'Shop' }, headings: [], links: [], buttons: [], inputs: [], text: 'Loaded' }
+    fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'r1', ok: true, result })
+    expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'r1')).toMatchObject({ ...ids, ok: true, result })
+  })
+
+  it('dispose отвечает disposed и перестаёт исполнять команды', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE })
+    fromHost({ type, ...ids, kind: 'dispose' })
+    expect(sent(post).some((message) => message.kind === 'disposed')).toBe(true)
+    expect(screen.getByRole('status').textContent).toContain('отключена')
+    post.mockClear()
+    fromHost({ type, ...ids, kind: 'command', requestId: 'r-late', action: { kind: 'read' } })
+    expect(sent(post)).toHaveLength(0)
+  })
+})
+
+describe('Recorder inspector и запись', () => {
+  it('inspector-state пересылается внутрь и включает тумблер', () => {
+    render(<Recorder />)
+    fromHost(init)
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    const inner = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    fromHost({ type, ...ids, kind: 'inspector-state', enabled: true })
+    expect(inner.mock.calls.some(([message]) => (message as { type?: string; enabled?: boolean }).type === PREVIEW_INSPECTOR_COMMAND_TYPE && (message as { enabled?: boolean }).enabled === true)).toBe(true)
+    expect(screen.getByRole('button', { name: /Выбор элемента/ }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('записанный шаг уходит host-у, секретное значение не покидает страницу', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#buy', text: 'Купить' } })
+    fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'type', selector: '#password', text: 'hunter2', sensitive: true } })
+    const steps = sent(post).filter((message) => message.kind === 'recording-step')
+    expect(steps[0]).toMatchObject({ step: { kind: 'click', selector: '#buy', text: 'Купить', sensitive: false } })
+    expect(steps[1]).toMatchObject({ step: { kind: 'type', selector: '#password', text: '', sensitive: true } })
+    expect(JSON.stringify(steps)).not.toContain('hunter2')
+    expect((screen.getByLabelText('Значение шага 2') as HTMLInputElement).value).toBe('••••••')
+    expect(screen.getByText('секрет не сохранён')).toBeTruthy()
+  })
+})
+
+describe('Recorder диагностика', () => {
+  it('в режиме диагностики шаги дают diagnostics-progress, не попадают в запись, а стоп — diagnostics-complete', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    fromPage({ type: PREVIEW_PAGE_READY_TYPE })
+    fromHost({ type, ...ids, kind: 'diagnostics-start', active: true })
+    fromHost({ type, ...ids, kind: 'command', requestId: 'diag-1', action: { kind: 'read', diagnostic: true } })
+    fromPage({ type: 'voicechat.preview.record.v1', step: { kind: 'click', selector: '#diag', text: 'x' } })
+    fromPage({ type: PREVIEW_ACTION_RESULT_TYPE, requestId: 'diag-1', ok: true, result: { text: 'ok' } })
+    const progress = sent(post).find((message) => message.kind === 'diagnostics-progress')!
+    expect(progress).toMatchObject({ ...ids, requestId: 'diag-1', action: 'read', ok: true, durationMs: expect.any(Number) })
+    expect(sent(post).filter((message) => message.kind === 'recording-step')).toHaveLength(0)
+    expect(screen.getByRole('region', { name: 'Диагностика Web Reader' }).textContent).toContain('read')
+    fromHost({ type, ...ids, kind: 'diagnostics-start', active: false })
+    expect(sent(post).find((message) => message.kind === 'diagnostics-complete')).toMatchObject({ ...ids, total: 1 })
+  })
+})
+
 describe('Recorder scenario', () => {
-  it('runs every step with a distinct requestId without randomUUID', () => {
+  it('запускает каждый шаг с уникальным локальным requestId без randomUUID', () => {
     let byte = 0
     vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => { bytes.fill(++byte); return bytes } })
     render(<Recorder />)
@@ -76,18 +169,14 @@ describe('Recorder scenario', () => {
       { kind: 'click', selector: '#buy', text: '' },
       { kind: 'type', selector: '#search', text: 'shoes' }
     ]) {
-      fireEvent(window, new MessageEvent('message', {
-        origin: window.location.origin,
-        source: frame.contentWindow,
-        data: { type: 'voicechat.preview.record.v1', step }
-      }))
+      fromPage({ type: 'voicechat.preview.record.v1', step })
     }
     fireEvent.click(screen.getByRole('button', { name: 'Запустить' }))
     const commands = postMessage.mock.calls
       .map(([message]) => message as { type?: string; requestId?: string })
       .filter((message) => message.type === PREVIEW_ACTION_COMMAND_TYPE)
     expect(commands).toHaveLength(2)
-    expect(commands.every((command) => command.requestId?.startsWith('scenario-'))).toBe(true)
+    expect(commands.every((command) => command.requestId?.startsWith('local-'))).toBe(true)
     expect(new Set(commands.map((command) => command.requestId))).toHaveLength(2)
   })
 })

@@ -47,8 +47,11 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5273,
     proxy: {
-      '/web-recorder/': { target: 'http://127.0.0.1:5274', changeOrigin: true },
-      '/api': { target: 'http://127.0.0.1:8787', changeOrigin: true },
+      // ws: true — HMR-сокет Reader тоже идёт через same-origin путь /web-recorder/.
+      '/web-recorder/': { target: 'http://127.0.0.1:5274', changeOrigin: true, ws: true },
+      // Host не переписываем: previewProxy сверяет host диагностической страницы
+      // с Host запроса — с changeOrigin=true самодиагностика в dev получала SSRF-отказ.
+      '/api': { target: 'http://127.0.0.1:8787' },
       '/ws': { target: 'ws://127.0.0.1:8787', ws: true },
       // Компаньон-агент подключается по /agent — в dev проксируем на бэкенд,
       // иначе строка подключения указывает на порт Vite, где такого маршрута нет.

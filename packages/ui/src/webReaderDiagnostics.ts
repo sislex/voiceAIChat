@@ -11,6 +11,7 @@ export type DiagnosticsLayer = 'route/active-chat' | 'host' | 'cookie/auth' | 'p
 export interface DiagnosticsStep { id: string; label: string; layer: DiagnosticsLayer; durationMs: number; ok: boolean; message: string }
 
 export const WEB_READER_DIAGNOSTICS_CAPABILITIES = [
+  'iframe handshake (ready/init), conversation and registration IDs',
   'active Reader conversation and registered tab', 'preview cookie/auth', '/api/preview proxy',
   'ready/loading lifecycle', 'open and DOM read', 'find by text and selector', 'computed styles',
   'type with input/change events', 'form submit', 'click and navigation',
@@ -27,9 +28,19 @@ const layerOf = (error: string, fallback: DiagnosticsLayer): DiagnosticsLayer =>
             : /requestId|мост/i.test(error) ? 'dom-bridge'
               : /тайм|timeout/i.test(error) ? 'timeout' : fallback
 
+/** Данные актуальной регистрации iframe для проверки handshake до DOM-шагов. */
+export interface DiagnosticsHandshake {
+  conversationId: string
+  registrationId: string
+  capabilities: readonly string[]
+  expectedConversationId: string
+  claimedRegistrationId: string | null
+}
+
 export interface DiagnosticsOptions {
   origin: string
   run: (action: PreviewAction) => Promise<PreviewActionOutcome>
+  handshake?: DiagnosticsHandshake
   ensurePreview?: () => Promise<boolean>
   signal: AbortSignal
   publish: (text: string) => Promise<void>
@@ -65,6 +76,12 @@ export async function runWebReaderDiagnostics(options: DiagnosticsOptions): Prom
     return outcome.result
   }
   try {
+    if (options.handshake) {
+      const handshake = options.handshake
+      await step('handshake', 'handshake iframe (ready/init, capabilities)', 'host', async () => handshake.capabilities, (capabilities) => capabilities.length > 0)
+      await step('conversation-id', 'conversationId регистрации совпадает с активным чатом', 'route/active-chat', async () => handshake, (value) => value.conversationId === value.expectedConversationId)
+      await step('registration-id', 'registrationId актуален для этой вкладки', 'host', async () => handshake, (value) => value.claimedRegistrationId === null || value.claimedRegistrationId === value.registrationId)
+    }
     await step('cookie', 'preview cookie/auth', 'cookie/auth', async () => options.ensurePreview ? options.ensurePreview() : true, Boolean)
     const url = new URL('/api/preview/diagnostics', options.origin).toString()
     await step('open', '/api/preview proxy, loading → ready и open', 'proxy/network', () => run({ kind: 'open', url, diagnostic: true }))
@@ -76,14 +93,20 @@ export async function runWebReaderDiagnostics(options: DiagnosticsOptions): Prom
     await step('events', 'проверка input/change', 'action', () => run({ kind: 'read', selector: '#event-status', diagnostic: true }), (r) => 'text' in r && /input:1 change:1/.test((r as PreviewReadResult).text))
     await step('submit', 'отправка формы', 'action', () => run({ kind: 'type', selector: '#diagnostic-input', text: 'diagnostic-input', submit: true, diagnostic: true }), (r) => 'submitted' in r && r.submitted)
     await step('submit-state', 'результат submit', 'action', () => run({ kind: 'read', selector: '#submit-status', diagnostic: true }), (r) => 'text' in r && (r as PreviewReadResult).text.includes('submitted:diagnostic-input'))
-    await step('navigation', 'click, navigation и повторный read из очереди', 'page-loading', async () => {
-      const click = options.run({ kind: 'click', selector: '#diagnostic-nav', diagnostic: true })
-      const queued = options.run({ kind: 'read', diagnostic: true })
-      const clicked = await click
+    await step('navigation', 'click, navigation и повторный read после перехода', 'page-loading', async () => {
+      const clicked = await options.run({ kind: 'click', selector: '#diagnostic-nav', diagnostic: true })
       if (!clicked.ok) throw new Error(clicked.error ?? 'Клик не выполнен.')
-      const read = await queued
-      if (!read.ok || !read.result || !('text' in read.result) || !read.result.text.includes('Diagnostics destination')) throw new Error(read.error ?? 'Навигация не подтверждена.')
-      return read.result
+      // Навигация начинается только после ответа клика, и host может ещё не знать
+      // о page-loading: перечитываем страницу, пока новый документ не станет готов.
+      // Постановку команд в очередь до ready проверяет связка open → read выше.
+      const deadline = performance.now() + 5_000
+      for (;;) {
+        if (options.signal.aborted) throw new DOMException('Диагностика отменена повторным запуском.', 'AbortError')
+        const read = await options.run({ kind: 'read', diagnostic: true })
+        if (read.ok && read.result && 'text' in read.result && read.result.text.includes('Diagnostics destination')) return read.result
+        if (performance.now() > deadline) throw new Error(read.error ?? 'Навигация не подтверждена.')
+        await new Promise((resolve) => setTimeout(resolve, 200))
+      }
     })
     await step('request-id', 'очередь и requestId correlation', 'dom-bridge', async () => true, Boolean)
     await options.publish(`Самодиагностика Web Reader завершена: ${results.length}/${results.length} проверок успешно.`)

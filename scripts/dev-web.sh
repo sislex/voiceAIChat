@@ -51,23 +51,32 @@ echo "[dev-web] стартую Web Recorder (http://127.0.0.1:5274/web-recorder/
 npm run -w @voicechat/web-recorder dev &
 PIDS+=("$!")
 
-# Ждём готовности backend (до ~20с), одновременно замечая ранний выход любого процесса.
-ready=false
-for _ in $(seq 1 20); do
-  for pid in "${PIDS[@]}"; do
-    kill -0 "$pid" 2>/dev/null || wait "$pid"
+# Ждём готовности всех трёх портов (до ~30с), одновременно замечая ранний выход
+# любого процесса: упавший обязательный процесс завершает весь dev-сеанс.
+wait_port() {
+  local name="$1" url="$2"
+  for _ in $(seq 1 30); do
+    for pid in "${PIDS[@]}"; do
+      if ! kill -0 "$pid" 2>/dev/null; then
+        wait "$pid"
+        local code=$?
+        echo "[dev-web] процесс $pid завершился с кодом $code до готовности $name — останавливаю dev-сеанс." >&2
+        exit 1
+      fi
+    done
+    if curl -s -o /dev/null "$url" 2>/dev/null; then
+      echo "[dev-web] $name готов: $url"
+      return 0
+    fi
+    sleep 1
   done
-  if curl -s http://127.0.0.1:8787/api/health >/dev/null 2>&1; then
-    ready=true
-    echo "[dev-web] все процессы запущены, сервер готов."
-    break
-  fi
-  sleep 1
-done
-if [ "$ready" != true ]; then
-  echo "[dev-web] сервер не стал готов за 20 секунд." >&2
+  echo "[dev-web] $name не стал готов за 30 секунд ($url)." >&2
   exit 1
-fi
+}
+wait_port "backend"      http://127.0.0.1:8787/api/health
+wait_port "web-клиент"   http://127.0.0.1:5273/
+wait_port "Web Reader"   http://127.0.0.1:5274/web-recorder/
+echo "[dev-web] все процессы запущены; Reader dev: http://127.0.0.1:5273/#/web-reader (HMR через прокси /web-recorder/)."
 
 # Системный Bash macOS не поддерживает wait -n: переносимо следим за каждым PID.
 while true; do

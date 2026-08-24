@@ -6,7 +6,7 @@ import App from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { PreviewAction } from '@shared/previewActions'
-import { WEB_RECORDER_MESSAGE_TYPE } from '@shared/webRecorder'
+import { WEB_RECORDER_MESSAGE_TYPE, WEB_RECORDER_PROTOCOL_VERSION } from '@shared/webRecorder'
 
 // Большие задержки пайплайна: асинхронные этапы не срабатывают за время теста,
 // а таймеры гасятся при размонтировании (dispose). Проверяем синхронные переходы
@@ -178,6 +178,19 @@ describe('App — действия модели в веб-превью (мост
     expect(bridge.results[0].ok).toBe(false)
   })
 
+  /** Reader-сообщение своему host: v2-конверт с origin и source своего iframe. */
+  const fromReader = (frame: HTMLIFrameElement, data: object): void => {
+    fireEvent(window, new MessageEvent('message', { origin: window.location.origin, source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, ...data } }))
+  }
+  /** Полный handshake v2: ready → ждём init и возвращаем выданные регистрационные ID. */
+  const handshakeReader = async (frame: HTMLIFrameElement) => {
+    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
+    fromReader(frame, { kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: ['read'] })
+    await waitFor(() => expect(post.mock.calls.some(([message]) => (message as { kind?: string }).kind === 'init')).toBe(true))
+    const init = post.mock.calls.map(([message]) => message as { kind?: string; conversationId?: string; registrationId?: string }).find((message) => message.kind === 'init')!
+    return { post, ids: { conversationId: init.conversationId!, registrationId: init.registrationId! } }
+  }
+
   it('Playwright Reader привязывает open/read к чату и восстанавливает панель после refresh', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
@@ -186,25 +199,62 @@ describe('App — действия модели в веб-превью (мост
     let bridge = installPreviewBridge()
     const view = render(<App api={api} delays={SLOW} />)
     let frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
-    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'ready' } }))
+    const first = await handshakeReader(frame)
     bridge.emit({ conversationId: chat.id, requestId: 'pw-open', action: { kind: 'open', url: 'https://shop.example/' } })
     await waitFor(() => expect(api._state.conversations.find((item) => item.id === chat.id)?.previewUrl).toBe('https://shop.example/'))
-    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'page-status', status: 'ready', url: 'https://shop.example/' } }))
+    fromReader(frame, { ...first.ids, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
     await waitFor(() => expect(bridge.results).toContainEqual(expect.objectContaining({ conversationId: chat.id, requestId: 'pw-open', ok: true, result: { url: 'https://shop.example/' } })))
 
     view.unmount()
     bridge = installPreviewBridge()
     render(<App api={api} delays={SLOW} />)
     frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
-    const post = vi.spyOn(frame.contentWindow as Window, 'postMessage')
-    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'ready' } }))
-    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'page-status', status: 'ready', url: 'https://shop.example/' } }))
+    const second = await handshakeReader(frame)
+    fromReader(frame, { ...second.ids, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
     bridge.emit({ conversationId: chat.id, requestId: 'pw-read', action: { kind: 'read' } })
-    await waitFor(() => expect(post.mock.calls.some(([message]) => (message as { kind?: string; action?: { kind: string } }).kind === 'run-action' && (message as { action?: { kind: string } }).action?.kind === 'read')).toBe(true))
-    const command = post.mock.calls.map(([message]) => message as { kind?: string; requestId?: string; action?: { kind: string } }).find((message) => message.kind === 'run-action' && message.action?.kind === 'read')!
+    await waitFor(() => expect(second.post.mock.calls.some(([message]) => (message as { kind?: string; action?: { kind: string } }).kind === 'command' && (message as { action?: { kind: string } }).action?.kind === 'read')).toBe(true))
+    const command = second.post.mock.calls.map(([message]) => message as { kind?: string; requestId?: string; action?: { kind: string } }).find((message) => message.kind === 'command' && message.action?.kind === 'read')!
     const result = { page: { url: 'https://shop.example/', title: 'Shop' }, headings: [], links: [], buttons: [], inputs: [], text: 'Loaded' }
-    fireEvent(window, new MessageEvent('message', { source: frame.contentWindow, data: { type: WEB_RECORDER_MESSAGE_TYPE, kind: 'action-result', requestId: command.requestId, ok: true, result } }))
+    fromReader(frame, { ...second.ids, kind: 'result', requestId: command.requestId, ok: true, result })
     await waitFor(() => expect(bridge.results).toContainEqual(expect.objectContaining({ conversationId: chat.id, requestId: 'pw-read', ok: true, result })))
+  })
+
+  it('поздний результат старой регистрации после reload iframe не доставляется', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const chat = await api['conversations:create']({ title: 'Reader A', assistantKind: 'playwright-reader' })
+    window.location.hash = `#/playwright-reader/${chat.id}`
+    const bridge = installPreviewBridge()
+    render(<App api={api} delays={SLOW} />)
+    const frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
+    const first = await handshakeReader(frame)
+    fromReader(frame, { ...first.ids, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+    bridge.emit({ conversationId: chat.id, requestId: 'late-read', action: { kind: 'read' } })
+    await waitFor(() => expect(first.post.mock.calls.some(([message]) => (message as { kind?: string }).kind === 'command')).toBe(true))
+    const command = first.post.mock.calls.map(([message]) => message as { kind?: string; requestId?: string }).find((message) => message.kind === 'command')!
+    // Reader перезагрузился (HMR/reload): новый ready ротирует регистрацию.
+    fromReader(frame, { kind: 'ready', protocolVersion: WEB_RECORDER_PROTOCOL_VERSION, conversationId: null, registrationId: null, capabilities: ['read'] })
+    await waitFor(() => expect(bridge.results).toContainEqual(expect.objectContaining({ requestId: 'late-read', ok: false, error: expect.stringContaining('перезагружен') })))
+    // Поздний результат старой регистрации отбрасывается валидатором моста.
+    fromReader(frame, { ...first.ids, kind: 'result', requestId: command.requestId, ok: true, result: { text: 'stale' } })
+    expect(bridge.results.filter((item) => item.requestId === 'late-read')).toHaveLength(1)
+  })
+
+  it('вкладка, потерявшая claim активной регистрации, отклоняет команду', async () => {
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const chat = await api['conversations:create']({ title: 'Reader A', assistantKind: 'playwright-reader' })
+    window.location.hash = `#/playwright-reader/${chat.id}`
+    const bridge = installPreviewBridge()
+    render(<App api={api} delays={SLOW} />)
+    const frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
+    const { ids } = await handshakeReader(frame)
+    fromReader(frame, { ...ids, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
+    // Вторая вкладка того же пользователя заявила свою регистрацию активной.
+    localStorage.setItem('voicechat:web-reader-active-registration:v1', 'other-tab-registration')
+    bridge.emit({ conversationId: chat.id, requestId: 'foreign-tab', action: { kind: 'read' } })
+    await waitFor(() => expect(bridge.results).toContainEqual(expect.objectContaining({ requestId: 'foreign-tab', ok: false })))
+    localStorage.removeItem('voicechat:web-reader-active-registration:v1')
   })
 
   it('при переключении Playwright Reader отклоняет команды панели другого чата', async () => {
