@@ -515,9 +515,14 @@ describe('VoiceBar — объявления для скринридера', () =
 })
 
 describe('VoiceBar — адаптивный композер', () => {
-  it('помечает центральный вариант нового чата', () => {
-    const { container } = render(<VoiceBar {...makeProps('idle', { layout: 'centered' })} />)
+  it('показывает приветствие только в центральном варианте нового чата', () => {
+    const { container, rerender } = render(<VoiceBar {...makeProps('idle', { layout: 'centered' })} />)
     expect(container.querySelector('.voicebar')).toHaveAttribute('data-layout', 'centered')
+    expect(screen.getByRole('heading', { name: 'Чем я могу помочь?' })).toBeInTheDocument()
+
+    rerender(<VoiceBar {...makeProps('idle', { layout: 'docked' })} />)
+    expect(container.querySelector('.voicebar')).toHaveAttribute('data-layout', 'docked')
+    expect(screen.queryByRole('heading', { name: 'Чем я могу помочь?' })).not.toBeInTheDocument()
   })
 
   it('блокирует отправку processing/error вложений и позволяет повтор', async () => {
@@ -539,6 +544,20 @@ describe('VoiceBar — адаптивный композер', () => {
     expect(screen.getByText(/Повторите загрузку/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
     expect(onRetryAttachment).toHaveBeenCalledWith('local-1')
+  })
+
+  it('объясняет одновременно обработку и ошибки нескольких вложений', () => {
+    setup('idle', {
+      draft: 'не потерять',
+      attachments: [
+        { id: 'processing', status: 'processing', name: 'one.png', mimeType: 'image/png' },
+        { id: 'error', status: 'error', name: 'two.png', mimeType: 'image/png', error: 'network' }
+      ]
+    })
+    const explanation = screen.getByText(/Обрабатывается файлов: 1/)
+    expect(explanation).toHaveTextContent('Обрабатывается файлов: 1')
+    expect(explanation).toHaveTextContent('Файлов с ошибкой: 1')
+    expect(screen.getByLabelText('Отправить сообщение')).toBeDisabled()
   })
 
   it('разворачивает тот же textarea с сохранением выделения и фокуса', async () => {
