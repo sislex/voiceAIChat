@@ -33,6 +33,8 @@ export interface ConversationSettingsProps {
   webReaderDiagnostics?: { running: boolean; onRun: () => void }
   /** Доступно только для активного Playwright Reader-разговора. */
   playwrightReaderDiagnostics?: { running: boolean; onRun: () => void }
+  /** Доступно только для активного чата «Консоль с ассистентом». */
+  consoleReaderDiagnostics?: { running: boolean; onRun: () => void }
   /** Сквозная самодиагностика чата (клиент→сервер→модель→БД) — в обычном чате. */
   chatDiagnostics?: { running: boolean; onRun: () => void }
   /** Загрузка деталей проекта (машины/папки/дефолт) для выбранного проекта. */
@@ -68,7 +70,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, chatDiagnostics, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, chatDiagnostics, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -327,6 +329,9 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
         </section>}
         {playwrightReaderDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика Playwright Reader">
           <div className="convsettings-sectionhead"><div><h2>Playwright Reader</h2><p>Проверяет браузерный мост, запуск изолированного Chromium, метаданные сессии, кадр screencast и команду reload. Проверки не уводят открытую страницу; результаты появятся в чате.</p></div><Button onClick={playwrightReaderDiagnostics.onRun} disabled={playwrightReaderDiagnostics.running}>{playwrightReaderDiagnostics.running ? 'Выполняется…' : 'Самодиагностика'}</Button></div>
+        </section>}
+        {consoleReaderDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика Консоли">
+          <div className="convsettings-sectionhead"><div><h2>Консоль с ассистентом</h2><p>Проверяет PTY-мост, наличие машины в сети и живой round-trip: команда, отправленная в общий терминал, выполняется в shell и её вывод возвращается. Результаты появятся в чате.</p></div><Button onClick={consoleReaderDiagnostics.onRun} disabled={consoleReaderDiagnostics.running}>{consoleReaderDiagnostics.running ? 'Выполняется…' : 'Самодиагностика'}</Button></div>
         </section>}
         {chatDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика чата">
           <div className="convsettings-sectionhead"><div><h2>Самодиагностика чата</h2><p>Сквозная проверка «клиент → сервер → модель → БД»: HTTP и WebSocket, вход CLI, MCP-серверы, реальный ход модели, запись и чтение сообщения. Результаты появятся в чате.</p></div><Button onClick={chatDiagnostics.onRun} disabled={chatDiagnostics.running}>{chatDiagnostics.running ? 'Выполняется…' : 'Самодиагностика'}</Button></div>

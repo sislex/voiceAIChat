@@ -119,6 +119,8 @@ export type AgentToServer =
   | { t: 'pty.output'; ptyId: string; data: string }
   | { t: 'pty.exit'; ptyId: string; exitCode: number | null; signal?: number }
   | { t: 'pty.error'; ptyId: string; message: string }
+  /** Живой контекст сессии (cwd/foreground/altScreen) — для консоли с ассистентом. */
+  | { t: 'pty.context'; ptyId: string; context: import('./types').PtyContext }
   | { t: 'fs.result'; opId: string; result: FsResult }
   | { t: 'fs.error'; opId: string; message: string; code?: string }
   | { t: 'git.access.result'; requestId: string; result: import('./gitAccess').GitAccessResult }

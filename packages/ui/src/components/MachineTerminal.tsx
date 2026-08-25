@@ -38,8 +38,9 @@ function tabLabel(tab: PtySessionTab, tabs: PtySessionTab[], agents: AgentInfo[]
   return `${name}${num}${dir}`
 }
 
-/** Представление одного присоединённого PTY-сеанса. */
-function TerminalView({ agentId, cwd, projectId, pty, ptyId }: { agentId: string; cwd?: string; projectId?: string; pty: RendererPtyBridge; ptyId: string }): JSX.Element {
+/** Представление одного присоединённого PTY-сеанса. Экспортируется для панели
+ *  «Консоль с ассистентом», где ptyId детерминирован по разговору. */
+export function TerminalView({ agentId, cwd, projectId, pty, ptyId }: { agentId: string; cwd?: string; projectId?: string; pty: RendererPtyBridge; ptyId: string }): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'live' | 'exited' | 'error'>('live')
   const [statusMsg, setStatusMsg] = useState('')

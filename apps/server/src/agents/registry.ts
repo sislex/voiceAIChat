@@ -47,6 +47,8 @@ interface PtySession {
   outputBytes: number
   /** Таймер простоя: тикает, пока к сеансу никто не подписан. */
   idleTimer: NodeJS.Timeout | null
+  /** Последний живой контекст сессии (cwd/foreground/altScreen) — для консоли с ассистентом. */
+  context: import('@voicechat/shared').PtyContext | null
 }
 
 /** Кап кольцевого буфера PTY: достаточно для восстановления экрана, но без роста памяти. */
@@ -550,7 +552,7 @@ export class AgentRegistry {
       emit({ t: 'pty.error', ptyId, message: ve.message })
       return
     }
-    this.ptys.set(ptyId, { agentId, emit, output: [], outputBytes: 0, idleTimer: null })
+    this.ptys.set(ptyId, { agentId, emit, output: [], outputBytes: 0, idleTimer: null, context: null })
     this.send(agentId, { t: 'pty.start', ptyId, cols, rows, ...(cwd ? { cwd } : {}) })
   }
 
@@ -596,6 +598,22 @@ export class AgentRegistry {
     this.ptys.delete(ptyId)
     if (sess.idleTimer) clearTimeout(sess.idleTimer)
     this.send(sess.agentId, { t: 'pty.kill', ptyId })
+  }
+
+  /** Есть ли живая PTY-сессия с таким id (для консольного MCP ассистента). */
+  ptyLive(ptyId: string): boolean {
+    return this.ptys.has(ptyId)
+  }
+
+  /** Сырой текст кольцевого буфера сессии (последние ~200 KiB вывода) или null. */
+  ptyBufferText(ptyId: string): string | null {
+    const sess = this.ptys.get(ptyId)
+    return sess ? sess.output.join('') : null
+  }
+
+  /** Последний известный контекст сессии (cwd/foreground/altScreen) или null. */
+  ptyContextOf(ptyId: string): import('@voicechat/shared').PtyContext | null {
+    return this.ptys.get(ptyId)?.context ?? null
   }
 
   createTunnel(id: string, sourceAgentId: string, targetAgentId: string, targetPort: number, authorize: () => boolean = () => true, onClose?: () => void): Promise<number> {
@@ -698,6 +716,11 @@ export class AgentRegistry {
       clearTimeout(pf.timer)
       if (msg.t === 'fs.result') pf.resolve(msg.result)
       else pf.reject(new AgentFsError(msg.message, msg.code))
+      return
+    }
+    if (msg.t === 'pty.context') {
+      const sess = this.ptys.get(msg.ptyId)
+      if (sess && sess.agentId === agentId) sess.context = msg.context
       return
     }
     if (msg.t === 'pty.output' || msg.t === 'pty.exit' || msg.t === 'pty.error') {

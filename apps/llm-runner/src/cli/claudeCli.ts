@@ -158,6 +158,20 @@ export function claudeArgs(req: LlmRequest): string[] {
     }
     systemHints.push(previewToolHint())
   }
+  if (req.consoleMcpUrl) {
+    // «Консоль с ассистентом»: инструменты пишут и читают ту же живую PTY-сессию,
+    // что открыта у пользователя справа. Работают независимо от машины хода.
+    mcpServers.console = { type: 'http', url: req.consoleMcpUrl }
+    allowed.push('mcp__console__console_read', 'mcp__console__console_context', 'mcp__console__console_run', 'mcp__console__console_input', 'mcp__console__console_keys')
+    systemHints.push(
+      'Инструмент «Консоль»: справа у пользователя открыт живой терминал, и ты работаешь В НЁМ вместе с ним. ' +
+      'Перед действием смотри console_context (cwd, процесс в фокусе, altScreen) и console_read (экран). ' +
+      'Если это обычный shell — выполняй команды через console_run (вернёт вывод и код выхода). ' +
+      'Если открыт полноэкранный TUI (nano/vim/less/top, altScreen=да) — не шли команды, управляй клавишами через console_keys, ' +
+      'а текст набирай через console_input. Задачи вида «найди в проекте папку» решай командой в console_run (find/ls/grep). ' +
+      'Необратимые команды (rm -rf, git push, sudo) выполняй только после явного согласия пользователя и с confirm=true.'
+    )
+  }
   // Выключенные пользователем MCP-инструменты: запрещаем и убираем из allow-list.
   if (req.disallowedTools?.length) disallowed.push(...req.disallowedTools)
   const finalAllowed = allowed.filter((tool) => !disallowed.includes(tool))

@@ -99,7 +99,22 @@ export type ConversationStatus =
   | 'done'             // закончено
 
 export const PLAYWRIGHT_READER_KIND = 'playwright-reader' as const
-export type AssistantKind = 'web-recorder' | 'playwright-reader' | 'kanban'
+export const CONSOLE_READER_KIND = 'console-reader' as const
+export type AssistantKind = 'web-recorder' | 'playwright-reader' | 'console-reader' | 'kanban'
+
+/**
+ * Живой контекст PTY-сессии консоли: агент периодически сообщает, где сейчас
+ * находится терминал, чтобы ассистент знал, слать shell-команды или клавиши.
+ * Всё best-effort: на не-Linux/Android-агентах поля могут быть неизвестны.
+ */
+export interface PtyContext {
+  /** Рабочий каталог shell в фокусе (из /proc/<pid>/cwd), если удалось прочитать. */
+  cwd: string | null
+  /** Имя процесса в фокусе терминала (shell/nano/vim/ssh/top), если определено. */
+  foreground: string | null
+  /** Активен ли альтернативный экран (полноэкранный TUI: nano/vim/less/top). */
+  altScreen: boolean
+}
 
 export type BrowserSessionState = 'idle' | 'starting' | 'ready' | 'reconnecting' | 'stopping' | 'stopped' | 'failed'
 
@@ -175,6 +190,16 @@ export interface BrowserCommandRequest {
 
 export function isPlaywrightReaderConversation(value: Pick<Conversation, 'assistantKind'>): boolean {
   return value.assistantKind === PLAYWRIGHT_READER_KIND
+}
+
+export function isConsoleReaderConversation(value: Pick<Conversation, 'assistantKind'>): boolean {
+  return value.assistantKind === CONSOLE_READER_KIND
+}
+
+/** Детерминированный ptyId сессии консоли разговора: и UI, и MCP-инструменты
+ *  ассистента адресуют один и тот же живой терминал без отдельной регистрации. */
+export function consolePtyId(conversationId: string): string {
+  return `console:${conversationId}`
 }
 
 export function shouldApplyBrowserFrame(current: Pick<BrowserSessionMetadata, 'incarnation' | 'activeTabId'>, lastSequence: number, frame: BrowserFrameMetadata): boolean {
