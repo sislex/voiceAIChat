@@ -33,6 +33,7 @@ import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '../../lib/loadState'
 import { useCommandSource } from '../../lib/useCommands'
+import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 import {
   autoScroll,
   nearestByCenterY,
@@ -309,36 +310,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const assigneeFilterRef = useRef<HTMLDivElement | null>(null)
   const drag = usePointerDrag()
 
-  useEffect(() => {
-    if (!colMenu) return
-    const closeOnOutsidePress = (event: PointerEvent): void => {
-      if (!colMenuRef.current?.contains(event.target as Node)) setColMenu(null)
-    }
-    const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setColMenu(null)
-    }
-    document.addEventListener('pointerdown', closeOnOutsidePress)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutsidePress)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [colMenu])
-  useEffect(() => {
-    if (!openAssigneeFilter) return
-    const closeOnOutsidePress = (event: PointerEvent): void => {
-      if (!assigneeFilterRef.current?.contains(event.target as Node)) setOpenAssigneeFilter(null)
-    }
-    const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setOpenAssigneeFilter(null)
-    }
-    document.addEventListener('pointerdown', closeOnOutsidePress)
-    document.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.removeEventListener('pointerdown', closeOnOutsidePress)
-      document.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [openAssigneeFilter])
+  useDismissibleMenu(Boolean(colMenu), colMenuRef, () => setColMenu(null))
+  useDismissibleMenu(Boolean(openAssigneeFilter), assigneeFilterRef, () => setOpenAssigneeFilter(null))
   useEffect(() => {
     if (!automationInfoColumn) return
     automationInfoCloseRef.current?.focus()
