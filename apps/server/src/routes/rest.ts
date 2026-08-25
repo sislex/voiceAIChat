@@ -73,14 +73,64 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const workdir = conversation.workdir ?? projectMachine?.path ?? settings.workdir
   const messages = db.listMessages(userId, conversationId)
   const selectedSkills = new Set(conversation.skillNames)
+
+  // Полная детализация для drill-in: те же данные и тот же текст, что реально
+  // уходят в промпт (см. turns.ts) — чтобы «провалиться» и увидеть всё.
+  const p = settings.personalization
+  const styleLabel: Record<string, string> = { brief: 'кратко', detailed: 'подробно', 'step-by-step': 'пошагово', normal: 'обычно' }
+  const toneLabel: Record<string, string> = { friendly: 'дружелюбный', business: 'деловой', plain: 'простой, без сложных терминов', neutral: 'нейтральный' }
+  const personalizationLines = [
+    p.preferredName ? `Обращение к пользователю: ${p.preferredName}.` : '',
+    p.responseLanguage ? `Обычный язык ответа: ${p.responseLanguage}; явная просьба в текущем сообщении имеет приоритет.` : '',
+    p.responseStyle !== 'normal' ? `Стиль ответа: ${styleLabel[p.responseStyle] ?? p.responseStyle}.` : '',
+    p.tone !== 'neutral' ? `Тон общения: ${toneLabel[p.tone] ?? p.tone}.` : '',
+    p.birthYear ? `Возраст пользователя учитывается (год рождения ${p.birthYear}).` : ''
+  ].filter(Boolean)
+  const personalizationDetails: Record<string, string | number | boolean | string[] | null> = {
+    'Обращение': p.preferredName || '—',
+    'Язык ответа': p.responseLanguage || '—',
+    'Стиль': styleLabel[p.responseStyle] ?? p.responseStyle,
+    'Тон': toneLabel[p.tone] ?? p.tone,
+    'Дата рождения': p.birthYear ? `${String(p.birthDay ?? 1).padStart(2, '0')}.${String(p.birthMonth ?? 1).padStart(2, '0')}.${p.birthYear}` : '—',
+    'Текст в промпте': personalizationLines.length ? personalizationLines.join('\n') : '(персонализация пуста — в промпт ничего не добавляется)'
+  }
+  const projectPromptLines = project
+    ? [
+        `ID проекта: ${project.id}`,
+        project.gitUrl ? `Git-репозиторий: ${project.gitUrl}` : '',
+        project.technologies.length ? `Технологии: ${project.technologies.join(', ')}` : '',
+        project.skills.length ? `Навыки/области: ${project.skills.join(', ')}` : '',
+        project.description ? project.description : ''
+      ].filter(Boolean)
+    : conversation.projectId ? [`ID проекта: ${conversation.projectId}`, 'Проект больше недоступен этому пользователю.'] : []
+  const projectDetails: Record<string, string | number | boolean | string[] | null> = project
+    ? {
+        'ID проекта': project.id,
+        'Git': project.gitUrl || '—',
+        'Технологии': project.technologies.join(', ') || '—',
+        'Навыки/области': project.skills.join(', ') || '—',
+        'Описание': project.description || '—',
+        'Текст в промпте': `## Контекст проекта «${project.name}»\n${projectPromptLines.join('\n')}`
+      }
+    : { 'Проект': 'Не выбран — проектный контекст в промпт не добавляется.' }
+  // Конфиг/описание каждого MCP-инструмента для drill-in.
+  const mcpToolDetails: Record<string, Record<string, string | number | boolean | string[] | null>> = {
+    'mcp-remote-machines': { 'Инструмент': 'mcp__remote__machines', 'Назначение': 'Список машин проекта и их онлайн-статус.', 'Параметры': ['machine'], 'Изменяет данные': false },
+    'mcp-remote-read': { 'Инструмент': 'mcp__remote__read', 'Назначение': 'Читает окно строк файла в рабочей директории машины.', 'Параметры': ['path', 'offset', 'limit', 'machine'], 'Изменяет данные': false },
+    'mcp-remote-edit': { 'Инструмент': 'mcp__remote__edit', 'Назначение': 'Точная замена текста в файле на машине.', 'Параметры': ['path', 'oldString', 'newString', 'machine'], 'Изменяет данные': true, 'Ограничение': 'Режим прав и политика машины.' },
+    'mcp-remote-bash': { 'Инструмент': 'mcp__remote__bash', 'Назначение': 'Выполняет shell-команду в рабочем каталоге машины.', 'Параметры': ['command', 'timeout_ms', 'machine'], 'Изменяет данные': true, 'Ограничение': 'Потенциально опасно; политика машины и режим прав.' },
+    'mcp-kb-search': { 'Инструмент': 'mcp__kb__search', 'Назначение': 'Поиск по доступным разделам базы знаний.', 'Параметры': ['query', 'limit'], 'Изменяет данные': false, 'Ограничение': 'Результаты фильтруются по пользователю и проекту.' },
+    'mcp-kb-document': { 'Инструмент': 'mcp__kb__document', 'Назначение': 'Чтение раздела БЗ по устойчивому id.', 'Параметры': ['documentId', 'anchor'], 'Изменяет данные': false },
+    'mcp-kb-topics': { 'Инструмент': 'mcp__kb__topics', 'Назначение': 'Список тем/разделов базы знаний.', 'Параметры': [], 'Изменяет данные': false }
+  }
   const groups: ContextSnapshotGroup[] = [
     { id: 'instructions', order: 1, title: 'Системные и прикладные инструкции', description: 'Закрытые тексты представлены безопасными метаданными.', items: [
       contextItem({ id: 'platform-instructions', type: 'Системная инструкция', source: 'Платформа', scope: 'Все ходы', priority: '1 · системный', title: 'Правила платформы', description: 'Безопасность, конфиденциальность и границы действий.', explanation: 'Применяются всегда; полный текст закрыт.', configured: true, available: true, includedInNextTurn: true }),
       contextItem({ id: 'application-instructions', type: 'Инструкция приложения', source: 'VoiceChat', scope: 'Текущий разговор', priority: '2 · приложение', title: 'Правила VoiceChat', description: 'Маршрутизация инструментов, машин и БЗ.', explanation: 'Сервер добавляет их к каждому ходу.', configured: true, available: true, includedInNextTurn: true }),
-      contextItem({ id: 'personalization', type: 'Персонализация', source: 'Настройки пользователя', scope: 'Ответы пользователю', priority: '3 · пользователь', title: 'Предпочтения ответа', description: settings.personalization.responseLanguage || settings.personalization.responseStyle, explanation: 'Учитываются при сборке прикладных инструкций.', configured: Object.values(settings.personalization).some(Boolean), available: true, includedInNextTurn: Object.values(settings.personalization).some(Boolean) })
+      contextItem({ id: 'personalization', type: 'Персонализация', source: 'Настройки пользователя', scope: 'Ответы пользователю', priority: '3 · пользователь', title: 'Предпочтения ответа', description: settings.personalization.responseLanguage || settings.personalization.responseStyle, explanation: 'Учитываются при сборке прикладных инструкций.', configured: Object.values(settings.personalization).some(Boolean), available: true, includedInNextTurn: Object.values(settings.personalization).some(Boolean), details: personalizationDetails })
     ] },
     { id: 'project', order: 2, title: 'Проект, директория и AGENTS.md', description: 'Эффективная рабочая область следующего хода.', items: [
-      contextItem({ id: 'project-binding', type: 'Проект', source: 'Настройки разговора', scope: project?.name ?? 'Без проекта', priority: '4 · проект', title: project?.name ?? 'Проект не выбран', description: project ? 'Проект доступен пользователю.' : 'Привязка отсутствует.', explanation: project ? 'Явная привязка разговора.' : 'Проектный контекст не включён.', configured: Boolean(conversation.projectId), available: Boolean(project), includedInNextTurn: Boolean(project) }),
+      contextItem({ id: 'project-binding', type: 'Проект', source: 'Настройки разговора', scope: project?.name ?? 'Без проекта', priority: '4 · проект', title: project?.name ?? 'Проект не выбран', description: project ? 'Проект доступен пользователю.' : 'Привязка отсутствует.', explanation: project ? 'Явная привязка разговора.' : 'Проектный контекст не включён.', configured: Boolean(conversation.projectId), available: Boolean(project), includedInNextTurn: Boolean(project), details: projectDetails }),
       contextItem({ id: 'working-directory', type: 'Рабочая директория', source: conversation.workdir ? 'Разговор' : projectMachine ? 'Проект' : 'Настройки пользователя', scope: workdir ?? 'Не задана', priority: '5 · рабочая область', title: 'Рабочая директория', description: workdir ?? 'Каталог не настроен.', explanation: workdir && machineAvailable ? 'Передаётся исполнителю как cwd.' : 'Каталог нельзя проверить без доступной машины.', configured: Boolean(workdir), available: Boolean(workdir && machineAvailable), includedInNextTurn: Boolean(workdir) }),
       contextItem({ id: 'agents-chain', type: 'AGENTS.md', source: 'Рабочая директория', scope: workdir ?? 'Не определена', priority: '6 · от общей к конкретной', title: 'Цепочка AGENTS.md', description: workdir ? 'Фактическую цепочку разрешает исполнитель в рабочей директории.' : 'Без директории цепочка не определяется.', explanation: workdir && machineAvailable ? 'Текст скрыт: снимок не раскрывает файл без отдельного подтверждённого чтения.' : 'Директория или машина недоступна.', configured: Boolean(workdir), available: Boolean(workdir && machineAvailable), includedInNextTurn: Boolean(workdir && machineAvailable), details: { hiddenReason: 'Содержимое не читалось сервером инспектора.' } })
     ] },
@@ -91,8 +141,8 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     ] },
     { id: 'skills', order: 4, title: 'Навыки', description: 'Выбор отделён от доступности и активации.', items: (agent?.policy.skills ?? []).map((skill) => contextItem({ id: `skill-${encodeURIComponent(skill.name)}`, type: 'Навык', source: 'Политика машины', scope: agent?.name ?? 'Машина', priority: '8 · навык', title: skill.name, description: skill.description || 'Инструкция навыка', explanation: selectedSkills.has(skill.name) ? 'Выбран; активация определяется текстом сообщения при отправке.' : 'Доступен, но не выбран.', configured: selectedSkills.has(skill.name), available: machineAvailable, includedInNextTurn: false, details: { activationReason: 'Текущее сообщение ещё не отправлено.' } })) },
     { id: 'capabilities', order: 5, title: 'MCP, приложения и плагины', description: 'Активный каталог вычислен сервером для текущего окружения.', items: [
-      ...(['machines', 'read', 'edit', 'bash'] as const).map((name) => contextItem({ id: `mcp-remote-${name}`, type: 'MCP-инструмент', source: 'MCP remote', scope: agent?.name ?? 'Удалённая машина', priority: 'Возможность', title: `remote:${name}`, description: 'Инструмент удалённой машины.', explanation: machineAvailable ? 'Подключается для эффективной машины.' : 'Машина недоступна.', configured: Boolean(resolution?.agentId), available: machineAvailable, includedInNextTurn: machineAvailable })),
-      ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: 'Инструмент базы знаний.', explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off' }))
+      ...(['machines', 'read', 'edit', 'bash'] as const).map((name) => contextItem({ id: `mcp-remote-${name}`, type: 'MCP-инструмент', source: 'MCP remote', scope: agent?.name ?? 'Удалённая машина', priority: 'Возможность', title: `remote:${name}`, description: String(mcpToolDetails[`mcp-remote-${name}`]?.['Назначение'] ?? 'Инструмент удалённой машины.'), explanation: machineAvailable ? 'Подключается для эффективной машины.' : 'Машина недоступна.', configured: Boolean(resolution?.agentId), available: machineAvailable, includedInNextTurn: machineAvailable, details: mcpToolDetails[`mcp-remote-${name}`] })),
+      ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: mcpToolDetails[`mcp-kb-${name}`] }))
     ] },
     { id: 'knowledge', order: 6, title: 'База знаний', description: 'Режим и фактически подготовленный автоматический контекст.', items: [
       contextItem({ id: 'knowledge-mode', type: 'База знаний', source: 'Настройки разговора', scope: 'Следующий ход', priority: '9 · дополнительный контекст', title: kbDisplay[kbMode].displayName, description: kbDisplay[kbMode].explanation, explanation: kbMode === 'auto' ? 'Документы ещё не выбраны: текущее сообщение не отправлено.' : kbDisplay[kbMode].explanation, configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { value: kbMode, autoContextDocuments: [] } })
