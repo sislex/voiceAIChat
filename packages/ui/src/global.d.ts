@@ -7,6 +7,7 @@ import type {
   RendererApi,
   RendererAudioBridge,
   RendererAuthBridge,
+  RendererBrowserBridge,
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
@@ -54,6 +55,8 @@ declare global {
     kb?: RendererKbBridge
     /** Действия модели в панели веб-превью (web); в desktop отсутствует. */
     preview?: RendererPreviewBridge
+    /** Изолированный Chromium Playwright Reader (web); в desktop отсутствует. */
+    browser?: RendererBrowserBridge
     /** Управляемое окружение feature-ветки задачи. */
     featurePreview?: RendererFeaturePreviewBridge
     /** Структурированные критерии и результаты ручного QA. */

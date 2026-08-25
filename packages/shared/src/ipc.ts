@@ -2,6 +2,9 @@
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
 import type {
+  BrowserCommand,
+  BrowserSessionMetadata,
+  BrowserViewport,
   ClaudeLogEntry,
   Conversation,
   ConversationStatus,
@@ -680,6 +683,33 @@ export interface RendererPreviewBridge {
  */
 export interface RendererAuthBridge {
   onStatus(cb: (status: import('./auth').LoginStatusMap) => void): () => void
+}
+
+/**
+ * Мост изолированного Chromium Playwright Reader (только web, поверх REST).
+ * Сервер держит сессию на разговор в browser-runner: `start` поднимает Chromium,
+ * `command` шлёт навигацию/ввод/вкладки/resize, `screenshot` тянет кадр (пиксели
+ * настоящей страницы, а не DOM-клон), `stop` закрывает. Screencast здесь —
+ * поллинг `screenshot`; incarnation из `start` защищает от команд мёртвой сессии.
+ * В desktop отсутствует.
+ */
+export type RendererBrowserCommand = Exclude<BrowserCommand, { type: 'screenshot' }>
+export interface RendererBrowserScreenshotOptions {
+  incarnation: string
+  tabId?: string
+  fullPage?: boolean
+  format?: 'png' | 'jpeg' | 'webp'
+  quality?: number
+}
+export interface RendererBrowserBridge {
+  /** Идемпотентно поднимает Chromium-сессию разговора и возвращает её метаданные. */
+  start(conversationId: string, viewport?: BrowserViewport): Promise<BrowserSessionMetadata>
+  /** Команда живой сессии (навигация, ввод, вкладки, resize). incarnation — из start. */
+  command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata>
+  /** Кадр текущей вкладки как data-URL (поллинг для screencast). */
+  screenshot(conversationId: string, req: RendererBrowserScreenshotOptions): Promise<{ dataUrl: string }>
+  /** Закрывает Chromium-сессию разговора. */
+  stop(conversationId: string): Promise<void>
 }
 
 export interface RendererSessionBridge {

@@ -66,6 +66,10 @@ export interface ServerConfig {
   llmRunnerToken?: string
   /** Таймаут ожидания заголовков /v1/run, мс (сам ход не ограничен). */
   llmRunnerConnectTimeoutMs?: number
+  /** Browser Runner (Playwright Reader): изолированный Chromium; сервер сам его не запускает. */
+  browserRunnerUrl?: string
+  /** Service-токен browser-runner (обязателен, если задан URL). */
+  browserRunnerToken?: string
   /** Внутренний TTS Runner; сервер никогда не запускает TTS-бинари сам. */
   ttsRunnerUrl?: string
   /** Обязательный Bearer-токен TTS Runner. */
@@ -175,6 +179,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     llmRunnerClaudeUrl: env.VC_LLM_RUNNER_CLAUDE_URL ?? env.VC_LLM_RUNNER_URL,
     llmRunnerCodexUrl: env.VC_LLM_RUNNER_CODEX_URL ?? env.VC_LLM_RUNNER_URL,
     llmRunnerToken: env.VC_LLM_RUNNER_TOKEN,
+    browserRunnerUrl: env.VC_BROWSER_RUNNER_URL,
+    browserRunnerToken: env.VC_BROWSER_RUNNER_TOKEN,
     llmRunnerConnectTimeoutMs: parsePositiveInt(env.VC_LLM_RUNNER_TIMEOUT_MS),
     ttsRunnerUrl: env.VC_TTS_RUNNER_URL,
     ttsRunnerToken: env.VC_TTS_RUNNER_TOKEN,

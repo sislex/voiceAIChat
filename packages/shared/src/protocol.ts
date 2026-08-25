@@ -163,6 +163,11 @@ export const REST = {
   serverFile: '/api/files/read',
   /** Same-origin прокси внешнего сайта для iframe-превью. */
   preview: (url: string) => `/api/preview?url=${encodeURIComponent(url)}`,
+  /** Playwright Reader: оркестрация изолированной Chromium-сессии разговора. */
+  browserSessionStart: (id: string) => `/api/browser/${encodeURIComponent(id)}/start`,
+  browserSessionCommand: (id: string) => `/api/browser/${encodeURIComponent(id)}/command`,
+  browserSessionScreenshot: (id: string) => `/api/browser/${encodeURIComponent(id)}/screenshot`,
+  browserSession: (id: string) => `/api/browser/${encodeURIComponent(id)}`,
   settings: '/api/settings',
   llmAccess: '/api/llm-access',
   /** Личные данные текущей сессии; uid никогда не передаётся клиентом. */

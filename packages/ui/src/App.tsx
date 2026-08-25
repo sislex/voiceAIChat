@@ -11,6 +11,7 @@ import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantComma
 import type { HealthResponse } from '@shared/protocol'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration, type WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
+import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -1435,7 +1436,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       /> : <div className="chat-route-loading" role="status">Открываем выбранный Reader-разговор…</div>}
       </div>
       {(inReader || inPlaywrightReader) && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
-      {(inReader || inPlaywrightReader) && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
+      {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview. */}
+      {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} />}
+      {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
       </div>
       )}
 
