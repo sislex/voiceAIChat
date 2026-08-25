@@ -307,6 +307,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectManagedProductionPreflight(projectId), { method: 'POST', body: JSON.stringify({ environment: 'production' }) }),
     'releases:managedConfirm': ({ projectId, confirmationToken }) =>
       req(REST.projectManagedProductionConfirm(projectId), { method: 'POST', body: JSON.stringify({ confirmationToken }) }),
+    'projects:bootstrapProduction': ({ id, agentId, storageId, deployCommand, healthCheckCommand }) =>
+      req(REST.projectProductionBootstrap(id), { method: 'POST', body: JSON.stringify({ agentId, storageId, deployCommand, healthCheckCommand }) }),
     'releases:delete': ({ projectId, releaseId, branch }) =>
       req(REST.projectRelease(projectId, releaseId), { method: 'DELETE', body: JSON.stringify({ branch }) }),
     'projects:update': ({ id, ...fields }) =>

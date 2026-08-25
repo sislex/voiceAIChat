@@ -40,7 +40,7 @@ export interface ProjectSettingsProps {
   onSetMachineSsh: (id: string, agentId: string, sshHost: string, sshUser: string) => void | Promise<void>
   onSetDefaultMachine: (id: string, agentId: string) => void | Promise<void>
   gitAccessApi?: Pick<RendererApi, 'projects:gitAccessStatus' | 'projects:configureGitAccess' | 'projects:verifyGitAccess' | 'projects:deleteGitAccess' | 'projects:gitAccessDiagnostics'>
-  managedProductionApi?: Pick<RendererApi, 'releases:managedPreflight' | 'releases:managedConfirm'>
+  managedProductionApi?: Pick<RendererApi, 'releases:managedPreflight' | 'releases:managedConfirm' | 'projects:bootstrapProduction' | 'projects:get'>
   onManagedProductionConfirmed?: (detail: ProjectDetail) => void | Promise<void>
 }
 
@@ -133,6 +133,21 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
       await props.onManagedProductionConfirmed?.(updated)
     } catch (error) { setManagedProductionError(error instanceof Error ? error.message : String(error)) }
     finally { setManagedProductionBusy(false) }
+  }
+  const [bootstrapBusy, setBootstrapBusy] = useState(false)
+  const [bootstrapError, setBootstrapError] = useState('')
+  const [bootstrapResult, setBootstrapResult] = useState<import('@shared/release').ProductionBootstrapResult | null>(null)
+  // Bootstrap прод-машины: одним запросом storage/привязка/каталоги/команды/managed.
+  const bootstrapProduction = async (): Promise<void> => {
+    if (!props.managedProductionApi || !detail.productionAgentId) return
+    setBootstrapBusy(true); setBootstrapError(''); setBootstrapResult(null)
+    try {
+      const result = await props.managedProductionApi['projects:bootstrapProduction']({ id: detail.id, agentId: detail.productionAgentId })
+      setBootstrapResult(result)
+      const updated = await props.managedProductionApi['projects:get']({ id: detail.id })
+      if (updated) await props.onManagedProductionConfirmed?.(updated)
+    } catch (error) { setBootstrapError(error instanceof Error ? error.message : String(error)) }
+    finally { setBootstrapBusy(false) }
   }
   // Порог скрытия завершённых: черновик строкой — пустое поле это «не скрывать»
   // (null), а не 0. Синхронизируем с ответом сервера.
@@ -313,6 +328,16 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
           </div>}
         </>}
         <label>Production-машина<select className="sel" disabled={!isOwner} value={detail.productionAgentId ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionAgentId: e.target.value || null })}><option value="">Не настроена</option>{detail.machines.map(machine=><option key={machine.agentId} value={machine.agentId}>{machine.name ?? machine.agentId}{machine.online===false?' · offline':''}</option>)}</select></label>
+        {isOwner&&props.managedProductionApi&&detail.productionAgentId&&<div className="proj-managed-production" data-testid="production-bootstrap">
+          <Button type="button" variant="secondary" disabled={bootstrapBusy} onClick={() => void bootstrapProduction()}>{bootstrapBusy?'Подготовка…':'Подготовить прод-машину'}</Button>
+          <p className="proj-muted">Создаст хранилище-привязку и каталоги, проставит deploy/health-команды, при необходимости назначит машину для CI/merge и включит Managed. Останется только войти в CLI (`claude login`/`codex login`) на машине.</p>
+          {bootstrapError&&<p role="alert" className="proj-error">{bootstrapError}</p>}
+          {bootstrapResult&&<div className="proj-managed-preflight" role="status">
+            <p>{bootstrapResult.ok?'Готово: Managed production включён.':'Подготовка выполнена, но Managed не включён — проверьте пункты ниже.'}{bootstrapResult.defaultMachineSet?' Машина назначена для CI/merge/тасков.':''}</p>
+            <ul>{Object.entries(bootstrapResult.preflight.checks).map(([name,check])=><li key={name}>{name}: {check.ok?'готово':check.message}</li>)}</ul>
+            <p className="proj-muted">{bootstrapResult.cliLoginHint}</p>
+          </div>}
+        </div>}
         <label>Production checkout<input className="login-input" disabled={!isOwner||detail.productionEnvironmentMode==='managed'} value={detail.productionCheckoutPath ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionCheckoutPath: e.target.value })} placeholder="/root/voiceAIChat" /></label>
         <label>Штатная команда production-деплоя<input className="login-input" disabled={!isOwner} value={detail.productionDeployCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionDeployCommand: e.target.value })} placeholder="voicechat-deploy" /></label>
         <label>Команда health-check<input className="login-input" disabled={!isOwner} value={detail.productionHealthCheckCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { productionHealthCheckCommand: e.target.value })} placeholder="curl -fsS http://127.0.0.1:8787/api/health" /></label>
