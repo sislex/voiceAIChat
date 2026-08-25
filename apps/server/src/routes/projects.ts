@@ -612,6 +612,12 @@ export function registerProjectRoutes(
     }
   })
 
+  // Полная задача по id: доска отдаёт лёгкие карточки без тяжёлых текстов, а
+  // TaskModal догружает описание/критерии/лог подготовки при открытии карточки.
+  app.get<{ Params: { id: string; taskId: string } }>('/api/projects/:id/tasks/:taskId', async (req, reply): Promise<Task | FastifyReply> =>
+    db.getTaskDetail(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+  )
+
   app.patch<{
     Params: { id: string; taskId: string }
     Body: { title?: string; description?: string; acceptanceCriteria?: string; type?: 'epic' | 'story' | 'task'; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }

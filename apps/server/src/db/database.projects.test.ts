@@ -191,6 +191,27 @@ describe('projects: миграция канонического workflow', () =>
   })
 })
 
+describe('projects: лёгкая доска и полная задача', () => {
+  it('board гасит тяжёлые тексты, а getTaskDetail отдаёт их полностью', () => {
+    const p = db.createProject('alice', { name: 'Light board' })
+    const col = db.getBoard('alice', p.id)!.columns[0]
+    const task = db.createTask('alice', p.id, { columnId: col.id, title: 'T' })!
+    db.updateTask('alice', p.id, task.id, { description: 'Длинное описание задачи', acceptanceCriteria: 'Критерии приёмки' })
+    const boardTask = db.getBoard('alice', p.id)!.tasks.find((t) => t.id === task.id)!
+    // Лёгкая карточка: тяжёлые тексты пустые, но поля для превью на месте.
+    expect(boardTask.description).toBe('')
+    expect(boardTask.acceptanceCriteria).toBe('')
+    expect(boardTask.taskPreparationLog).toBeNull()
+    expect(boardTask.title).toBe('T')
+    // Полная задача — по id.
+    const full = db.getTaskDetail('alice', p.id, task.id)!
+    expect(full.description).toBe('Длинное описание задачи')
+    expect(full.acceptanceCriteria).toBe('Критерии приёмки')
+    // Изоляция: не участник проекта не получает задачу.
+    expect(db.getTaskDetail('bob', p.id, task.id)).toBeNull()
+  })
+})
+
 describe('projects: создание и членство', () => {
   it('createProject сеет владельца и дефолтные колонки', () => {
     const p = db.createProject('alice', { name: 'P1', description: 'd', technologies: ['ts'], skills: ['db'] })

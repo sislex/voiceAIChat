@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-08-24
-checked: 2bf2e934
+updated: 2026-08-25
+checked: 90978733
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -223,6 +223,29 @@ tooltip рендерится portal-ом в `document.body`, поэтому го
 само предложение при этом не изменяет статус задачи. Текущий UI получает из API
 также `improvementId`, но не передаёт его в модальное окно и потому не раскрывает
 конкретный аккордеон автоматически.
+
+## Лёгкая доска и точечные обновления (производительность)
+
+Ответ `GET /api/projects/:id/board` (`db.getBoard`) намеренно **лёгкий**: карточке
+доски тяжёлые тексты не нужны, поэтому в board-задачах `description` и
+`acceptanceCriteria` пустые (`''`), `taskPreparationLog` — `null`, а подзапрос лога
+подготовки из board-SQL убран (`database.ts` `getBoard`). Полные данные задачи
+отдаёт `GET /api/projects/:id/tasks/:taskId` (`db.getTaskDetail`, мост `tasks:get`)
+— его при открытии карточки грузит `KanbanBoard` и накладывает `description`/
+`acceptanceCriteria` поверх живой карточки доски (`KanbanBoard.tsx`, состояние
+`fullTask`). Живые обновления доски остаются change-driven: WS `board.changed`
+(инвалидация, не снапшот) → дебаунс-рефетч теперь уже лёгкого board.
+
+Подготовка задачи: `preparation/runs` (весь список ранов, тяжёлый) грузится
+**один раз** при открытии панели; обновления идут по WS-событию
+`preparation.run.updated` точечно — `TaskPreparationTab` догружает только
+изменившийся ран (`tasks:getPreparationRun` / `GET /api/task-preparation/runs/:runId`)
+и патчит его локально, без перезапроса всего списка (коалесинг по runId, троттл
+500 мс). На сервере дельты стрим-лога коалесятся до ~1/с на ран
+(`preparationRunDelta` в `server.ts`) — WS больше не летит на каждый чанк, а
+переход рана сбрасывает окно троттла, чтобы значимое событие ушло сразу.
+Reconnect → полная сверка списка. Инцидент-фон: раньше `preparation/runs`
+дёргался по кругу (событие на каждую дельту → рефетч всего списка).
 
 ## Контракт (REST + WS + мост)
 

@@ -85,6 +85,7 @@ export interface TaskModalProps {
   onStartPreparation?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   initialTab?: TaskModalTab
   loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
+  loadPreparationRun?: (runId: string) => Promise<TaskPreparationRun | null>
   onRetryPreparation?: (runId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   llmAccess?: UserLlmAccess[]
   llmEngines?: LlmEngineOption[]
@@ -1008,7 +1009,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             })}
           </div>}
         </section>
-        <section className="task-tab-panel" data-testid="task-preparation-panel" hidden={activeTab !== 'preparation'}>{preparationVisible && activeTab === 'preparation' && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} onStart={props.onStartPreparation} onRetry={props.onRetryPreparation} llmAccess={props.llmAccess} llmEngines={props.llmEngines} onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation} />}</section>
+        <section className="task-tab-panel" data-testid="task-preparation-panel" hidden={activeTab !== 'preparation'}>{preparationVisible && activeTab === 'preparation' && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} loadRun={props.loadPreparationRun} onStart={props.onStartPreparation} onRetry={props.onRetryPreparation} llmAccess={props.llmAccess} llmEngines={props.llmEngines} onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation} />}</section>
         {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" hidden={activeTab !== stage}>{stage === 'component_qa'
           ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
           : <QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} />}</section>)}

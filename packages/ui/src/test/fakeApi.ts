@@ -857,6 +857,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       return { ...t }
     },
     'tasks:listPreparationRuns': async () => [],
+    'tasks:getPreparationRun': async () => null,
+    'tasks:get': async () => null,
     'tasks:cancelPreparationRun': async ({ runId }) => ({ id: runId, projectId: '', taskId: '', status: 'cancelled', attempt: 1, maxAttempts: 1, log: '', error: 'Подготовка отменена пользователем', readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: nowMs, canRetry: true, canCancel: false }),
     'tasks:startPreparationRun': async ({ projectId, taskId, selection }) => ({ id: `preparation-${taskId}`, projectId, taskId, status: 'running', attempt: 1, maxAttempts: 1, provider: selection?.provider, model: selection?.model, llmEngineId: selection?.llmEngineId, log: '', error: null, readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: null, canRetry: false, canCancel: true }),
     'tasks:retryPreparationRun': async ({ runId, selection }) => ({ id: `${runId}-retry`, projectId: '', taskId: '', status: 'running', attempt: 1, maxAttempts: 1, provider: selection?.provider, model: selection?.model, llmEngineId: selection?.llmEngineId, log: '', error: null, readiness: null, gateReasons: [], createdAt: nowMs, finishedAt: null, canRetry: false, canCancel: true }),

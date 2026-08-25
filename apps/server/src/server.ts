@@ -469,8 +469,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()
   const preparationRunUpdated = (userId: string, projectId: string, taskId: string, runId: string, boardChanged = true): void => {
+    preparationDeltaThrottle.delete(runId) // переход рана — сбрасываем окно троттла дельт, чтобы событие ушло сразу
     boardHub.emitPreparationRun({ userId, projectId, taskId, runId })
     if (boardChanged) boardHub.emit(projectId)
+  }
+  // Дельты стрим-лога сыплются часто; WS-уведомление о ране коалесим до ~1/с на ран
+  // (сам лог пишется в БД на каждый чанк, клиент догрузит текущее состояние рана).
+  const preparationDeltaThrottle = new Map<string, number>()
+  const PREPARATION_DELTA_WINDOW_MS = 1000
+  const preparationRunDelta = (userId: string, projectId: string, taskId: string, runId: string): void => {
+    const now = Date.now()
+    const last = preparationDeltaThrottle.get(runId) ?? 0
+    if (now - last < PREPARATION_DELTA_WINDOW_MS) return
+    preparationDeltaThrottle.set(runId, now)
+    boardHub.emitPreparationRun({ userId, projectId, taskId, runId }) // дельты карточку не меняют — board не трогаем
   }
   const notificationHub = new NotificationHub()
   // Модель Whisper — общий машинный ресурс (файлы моделей одни на сервер), поэтому
@@ -1178,7 +1190,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     const sendAttempt = (attempt: number, correction?: string): void => {
       const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
       const handle = client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, ...remote, ...kbFields }, {
-        onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); preparationRunUpdated(userId, projectId, taskId, run.id, false) },
+        onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); preparationRunDelta(userId, projectId, taskId, run.id) },
         onSession: () => {},
         onDone: (text) => {
           taskPreparationHandles.delete(run.id)

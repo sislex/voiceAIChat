@@ -151,8 +151,12 @@ describe('подготовка к разработке: движок из нас
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     const updates = messages.filter((message) => message.t === 'preparation.run.updated')
-    expect(updates.length).toBeGreaterThanOrEqual(5)
+    // Дельты стрим-лога коалесятся (троттл ~1/с), поэтому событий немного, но
+    // адресные события подготовки есть, и все они несут project/task/run.
+    expect(updates.length).toBeGreaterThanOrEqual(1)
     expect(updates.every((message) => message.projectId === project.id && message.taskId === task.id && message.runId === started.id)).toBe(true)
+    // Дельты доску не рассылают (board меняют только переходы рана), поэтому
+    // board-рассылок строго меньше, чем адресных событий подготовки.
     expect(messages.filter((message) => message.t === 'board.update').length).toBeLessThan(updates.length)
     await new Promise<void>((resolve) => { ws.once('close', () => resolve()); ws.close() })
   })

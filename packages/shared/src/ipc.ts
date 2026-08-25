@@ -373,6 +373,8 @@ export interface IpcInvokeMap {
   'columns:setHidden': { arg: { projectId: string; columnId: string; hidden: boolean }; result: void }
   'columns:reorder': { arg: { projectId: string; order: string[] }; result: void }
   'columns:delete': { arg: { projectId: string; columnId: string }; result: void }
+  /** Полная задача по id (тяжёлые поля, которых нет в лёгкой доске): грузит TaskModal. */
+  'tasks:get': { arg: { projectId: string; taskId: string }; result: Task | null }
   'tasks:create': {
     arg: {
       projectId: string
@@ -429,6 +431,8 @@ export interface IpcInvokeMap {
     result: Task
   }
   'tasks:listPreparationRuns': { arg: { projectId: string; taskId: string }; result: TaskPreparationRun[] }
+  /** Один ран по id: точечная догрузка по WS-событию preparation.run.updated (без перезапроса всего списка). */
+  'tasks:getPreparationRun': { arg: { runId: string }; result: TaskPreparationRun | null }
   'tasks:startPreparationRun': { arg: { projectId: string; taskId: string; selection?: import('./qa').TaskPreparationLlmSelection }; result: TaskPreparationRun }
   'tasks:cancelPreparationRun': { arg: { runId: string }; result: TaskPreparationRun }
   'tasks:retryPreparationRun': { arg: { runId: string; selection?: import('./qa').TaskPreparationLlmSelection }; result: TaskPreparationRun }
@@ -950,11 +954,13 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'columns:setHidden',
   'columns:reorder',
   'columns:delete',
+  'tasks:get',
   'tasks:create',
   'tasks:createFromProposalInPreparation',
   'tasks:update',
   'tasks:move',
   'tasks:listPreparationRuns',
+  'tasks:getPreparationRun',
   'tasks:cancelPreparationRun',
   'tasks:startPreparationRun',
   'tasks:retryPreparationRun',

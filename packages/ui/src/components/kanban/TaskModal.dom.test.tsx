@@ -1077,36 +1077,44 @@ describe('TaskModal — подготовка к разработке', () => {
       onReconnect: vi.fn((cb) => { reconnected = cb; return offReconnect })
     }
     const load = vi.fn(async () => [run('waiting_for_answer')])
+    const loadOne = vi.fn(async (id: string) => run('running', { id }))
     const view = render(<TaskModal {...props({
       board: preparationBoard,
       initialTab: 'preparation',
       task: mkTask({ taskPreparationRunId: 'prep-waiting_for_answer', taskPreparationStatus: 'waiting_for_answer' }),
-      loadPreparationRuns: load
+      loadPreparationRuns: load,
+      loadPreparationRun: loadOne
     })} />)
     await screen.findByText('Статус: ожидает ответа')
-    expect(load).toHaveBeenCalledTimes(1)
+    expect(load).toHaveBeenCalledTimes(1) // список — один раз при открытии
+    expect(loadOne).not.toHaveBeenCalled()
 
     vi.useFakeTimers()
     try {
+      // Чужие проект/задача игнорируются; события своего рана коалесятся в
+      // точечные догрузки (loadRun), а весь список НЕ перезапрашивается.
       act(() => {
         preparationUpdated?.({ projectId: 'other', taskId: 't1', runId: 'foreign-project' })
         preparationUpdated?.({ projectId: 'p1', taskId: 'other', runId: 'foreign-task' })
         preparationUpdated?.({ projectId: 'p1', taskId: 't1', runId: 'prep-1' })
         preparationUpdated?.({ projectId: 'p1', taskId: 't1', runId: 'prep-2' })
-        vi.advanceTimersByTime(100)
+        vi.advanceTimersByTime(500)
       })
       await act(async () => { await Promise.resolve() })
+      expect(load).toHaveBeenCalledTimes(1)
+      expect(loadOne).toHaveBeenCalledWith('prep-1')
+      expect(loadOne).toHaveBeenCalledWith('prep-2')
+
+      // Reconnect — полная сверка списка (мог пропустить события).
+      await act(async () => { reconnected?.(); await Promise.resolve() })
       expect(load).toHaveBeenCalledTimes(2)
 
-      await act(async () => { reconnected?.(); await Promise.resolve() })
-      expect(load).toHaveBeenCalledTimes(3)
-      act(() => vi.advanceTimersByTime(10_000))
-      expect(load).toHaveBeenCalledTimes(3)
-
+      // Позднее событие после unmount ничего не догружает, обработчики сняты.
       act(() => preparationUpdated?.({ projectId: 'p1', taskId: 't1', runId: 'late' }))
       view.unmount()
-      act(() => vi.advanceTimersByTime(100))
-      expect(load).toHaveBeenCalledTimes(3)
+      act(() => vi.advanceTimersByTime(500))
+      expect(loadOne).toHaveBeenCalledTimes(2)
+      expect(load).toHaveBeenCalledTimes(2)
       expect(offUpdate).toHaveBeenCalledOnce()
       expect(offReconnect).toHaveBeenCalledOnce()
     } finally {
