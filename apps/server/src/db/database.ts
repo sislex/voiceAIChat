@@ -3565,12 +3565,13 @@ export class VoiceChatDb {
              (SELECT r.source_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_source_sha,
              (SELECT p.id FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_run_id,
              (SELECT p.status FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_status,
-             (SELECT p.error FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_error,
-             (SELECT p.log FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_log
+             (SELECT p.error FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_error
            FROM tasks t WHERE t.project_id = ? ORDER BY t.column_id ASC, t.position ASC`
         )
         .all(userId, userId, userId, projectId) as TaskRow[]
-    ).map((row) => ({ ...mapTask(row), latestRunResult: this.latestTaskRunResult(row.id) }))
+      // Лёгкая карточка: тяжёлые тексты (лог подготовки, описание, критерии) в
+      // доску не кладём — их отдаёт `getTask` при открытии карточки (TaskModal).
+    ).map((row) => ({ ...mapTask(row), description: '', acceptanceCriteria: '', taskPreparationLog: null, latestRunResult: this.latestTaskRunResult(row.id) }))
     // Фильтруем на сервере: иначе payload доски рос бы бесконечно вместе с
     // колонкой «Готово». includeCompleted → порог null, скрывать нечего.
     const retention = opts?.includeCompleted ? null : this.doneRetentionDays(projectId)
@@ -3583,6 +3584,40 @@ export class VoiceChatDb {
     })
 
     return { columns, tasks: visible, ciRuns: this.latestCiRunSummaries(projectId) }
+  }
+
+  /**
+   * Полная задача по id (с тяжёлыми полями: описание, критерии, лог подготовки),
+   * которые доска намеренно не отдаёт. TaskModal грузит её при открытии карточки.
+   */
+  getTaskDetail(userId: string, projectId: string, taskId: string): Task | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const row = this.db
+      .prepare(
+        `SELECT t.*, (SELECT c.id FROM conversations c WHERE c.task_id = t.id AND c.user_id = ?
+                      ORDER BY c.created_at ASC LIMIT 1) AS chat_id,
+           (SELECT w.branch FROM ci_workspaces w WHERE w.task_id=t.id AND w.pushed=1 ORDER BY w.created_at DESC LIMIT 1) AS merge_source_branch,
+           (SELECT w.commit_sha FROM ci_workspaces w WHERE w.task_id=t.id AND w.pushed=1 ORDER BY w.created_at DESC LIMIT 1) AS merge_source_sha,
+           (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_run_id,
+           (SELECT r.id FROM merge_runs r WHERE r.task_id=t.id ORDER BY r.created_at DESC LIMIT 1) AS latest_merge_run_id,
+           (SELECT r.status FROM merge_runs r WHERE r.task_id=t.id AND r.status IN ('queued','checking','fetching','merging','resolving_conflicts','kb_update','testing','pushing') ORDER BY r.created_at DESC LIMIT 1) AS active_merge_status,
+           EXISTS(SELECT 1 FROM project_members pm WHERE pm.project_id=t.project_id AND pm.username=? AND pm.role='owner') AS merge_permitted,
+           EXISTS(
+             SELECT 1 FROM ci_workspaces w JOIN agents a ON a.id=w.agent_id
+             WHERE w.id=(SELECT latest.id FROM ci_workspaces latest WHERE latest.task_id=t.id AND latest.pushed=1 ORDER BY latest.created_at DESC LIMIT 1)
+               AND (a.user_id=? OR EXISTS(SELECT 1 FROM project_machines pm WHERE pm.project_id=t.project_id AND pm.agent_id=a.id))
+           ) AS merge_machine_bound,
+           (SELECT r.merge_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_sha,
+           (SELECT r.source_sha FROM merge_runs r WHERE r.task_id=t.id AND r.status='success' ORDER BY r.created_at DESC LIMIT 1) AS merged_source_sha,
+           (SELECT p.id FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_run_id,
+           (SELECT p.status FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_status,
+           (SELECT p.error FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_error,
+           (SELECT p.log FROM task_preparation_runs p WHERE p.task_id=t.id ORDER BY p.created_at DESC LIMIT 1) AS task_preparation_log
+         FROM tasks t WHERE t.id = ? AND t.project_id = ? LIMIT 1`
+      )
+      .get(userId, userId, userId, taskId, projectId) as TaskRow | undefined
+    if (!row) return null
+    return { ...mapTask(row), latestRunResult: this.latestTaskRunResult(row.id) }
   }
 
   /**

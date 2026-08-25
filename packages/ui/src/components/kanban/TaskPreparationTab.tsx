@@ -14,6 +14,8 @@ export interface TaskPreparationTabProps {
   liveRunId?: string | null
   liveStatus?: TaskPreparationRun['status'] | null
   loadRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
+  /** Догрузка одного рана по id: обновление по WS патчит локальный список без перезапроса всего. */
+  loadRun?: (runId: string) => Promise<TaskPreparationRun | null>
   onStart?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   onRetry?: (runId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   llmAccess?: UserLlmAccess[]
@@ -90,6 +92,18 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
     }
   }, [props.loadRuns, props.projectId, props.taskId])
 
+  // Патч одного рана в локальный список: WS-обновление приходит по одному рану,
+  // поэтому весь тяжёлый список (`preparation/runs`) больше не перезапрашивается.
+  const applyRun = useCallback((run: TaskPreparationRun | null): void => {
+    if (!run) return
+    setRuns((current) => {
+      const index = current.findIndex((item) => item.id === run.id)
+      if (index === -1) return [run, ...current]
+      const next = current.slice(); next[index] = run; return next
+    })
+    setSelectedId((current) => current ?? run.id)
+  }, [])
+
   useEffect(() => {
     const key = `${props.projectId}:${props.taskId}`
     identityRef.current = key
@@ -97,22 +111,33 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
     setSelectedId(liveRunIdRef.current ?? null)
     setLoading(Boolean(props.loadRuns))
     setError(null)
-    void refresh()
+    void refresh() // первичная загрузка списка — один раз при открытии
 
+    // Обновления по WS: догружаем только изменившиеся раны (коалесинг по runId,
+    // троттл 500мс). Без loadRun (старые тесты) — деградация к полному refresh.
+    const pendingRunIds = new Set<string>()
     let debounceTimer: number | null = null
-    const scheduleRefresh = (): void => {
-      if (debounceTimer !== null) window.clearTimeout(debounceTimer)
-      debounceTimer = window.setTimeout(() => {
-        debounceTimer = null
-        if (identityRef.current === key) void refresh()
-      }, 100)
+    const flush = async (): Promise<void> => {
+      debounceTimer = null
+      const ids = [...pendingRunIds]; pendingRunIds.clear()
+      const loadRun = props.loadRun
+      if (!loadRun) { if (identityRef.current === key) void refresh(); return }
+      for (const id of ids) {
+        try { const run = await loadRun(id); if (identityRef.current === key) applyRun(run) }
+        catch { /* один пропущенный ран не роняет панель; reconnect дозагрузит */ }
+      }
+    }
+    const scheduleRunPatch = (runId: string): void => {
+      pendingRunIds.add(runId)
+      if (debounceTimer !== null) return
+      debounceTimer = window.setTimeout(() => { void flush() }, 500)
     }
     const bridge = window.board
     const offUpdate = bridge?.onPreparationRunUpdated?.((event) => {
-      if (event.projectId === props.projectId && event.taskId === props.taskId) scheduleRefresh()
+      if (event.projectId === props.projectId && event.taskId === props.taskId) scheduleRunPatch(event.runId)
     })
     const offReconnect = bridge?.onReconnect?.(() => {
-      if (identityRef.current === key) void refresh()
+      if (identityRef.current === key) void refresh() // мог пропустить события — полная сверка
     })
     return () => {
       if (identityRef.current === key) identityRef.current = ''
@@ -120,7 +145,7 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
       offUpdate?.()
       offReconnect?.()
     }
-  }, [props.projectId, props.taskId, props.loadRuns, refresh])
+  }, [props.projectId, props.taskId, props.loadRuns, props.loadRun, refresh, applyRun])
   const loadMachines = useCallback(async (): Promise<void> => {
     setMachinesLoading(true)
     setMachinesError(null)

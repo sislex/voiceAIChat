@@ -215,6 +215,9 @@ export interface KanbanBoardProps {
   onDequeueCiRun?: (runId: string) => void
   onStartMerge?: (taskId: string, agentId?: string | null) => void
   loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
+  loadPreparationRun?: (runId: string) => Promise<TaskPreparationRun | null>
+  /** Полная задача (тяжёлые поля, которых нет в лёгкой доске) — грузится при открытии карточки. */
+  loadFullTask?: (taskId: string) => Promise<Task | null>
   onStartPreparation?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   onRetryPreparation?: (runId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   llmAccess?: UserLlmAccess[]
@@ -1235,7 +1238,22 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           ]
         : []
 
-  const openTask = openTaskId ? allTasks.find((t) => t.id === openTaskId) : undefined
+  const boardOpenTask = openTaskId ? allTasks.find((t) => t.id === openTaskId) : undefined
+  // Доска отдаёт лёгкую карточку без тяжёлых текстов; при открытии догружаем
+  // полную задачу и накладываем её тяжёлые поля поверх живой карточки доски.
+  const [fullTask, setFullTask] = useState<Task | null>(null)
+  useEffect(() => {
+    setFullTask(null)
+    const id = openTaskId
+    const load = props.loadFullTask
+    if (!id || !load) return
+    let alive = true
+    void load(id).then((t) => { if (alive && t && t.id === id) setFullTask(t) }).catch(() => { /* оставим лёгкую карточку */ })
+    return () => { alive = false }
+  }, [openTaskId, props.loadFullTask])
+  const openTask = boardOpenTask && fullTask && fullTask.id === boardOpenTask.id
+    ? { ...boardOpenTask, description: fullTask.description, acceptanceCriteria: fullTask.acceptanceCriteria }
+    : boardOpenTask
 
   // Скелетон повторяет геометрию доски: колонки 272px, шапка, карточки 70px
   // (высота минимальной .jcard — измерена в сториз UI/Skeleton).
@@ -1587,6 +1605,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onStartPreparation={props.onStartPreparation}
           initialTab={openTaskTab}
           loadPreparationRuns={props.loadPreparationRuns}
+          loadPreparationRun={props.loadPreparationRun}
           onRetryPreparation={props.onRetryPreparation}
           llmAccess={props.llmAccess}
           llmEngines={props.llmEngines}

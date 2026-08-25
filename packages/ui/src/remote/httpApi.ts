@@ -369,12 +369,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectTasks(projectId), { method: 'POST', body: JSON.stringify(b) }),
     'tasks:createFromProposalInPreparation': ({ projectId, ...b }) =>
       req(`/api/projects/${encodeURIComponent(projectId)}/task-launch/preparation`, { method: 'POST', body: JSON.stringify(b) }),
+    'tasks:get': ({ projectId, taskId }) =>
+      req(REST.projectTask(projectId, taskId)),
     'tasks:update': ({ projectId, taskId, ...b }) =>
       req(REST.projectTask(projectId, taskId), { method: 'PATCH', body: JSON.stringify(b) }),
     'tasks:move': ({ projectId, taskId, ...b }) =>
       req(REST.projectTaskMove(projectId, taskId), { method: 'POST', body: JSON.stringify(b) }),
     'tasks:listPreparationRuns': ({ projectId, taskId }) =>
       req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/preparation/runs`),
+    'tasks:getPreparationRun': ({ runId }) =>
+      req(`/api/task-preparation/runs/${encodeURIComponent(runId)}`),
     'tasks:startPreparationRun': ({ projectId, taskId, selection }) =>
       req(`/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/preparation/run`, { method: 'POST', body: JSON.stringify(selection ?? {}) }),
     'tasks:cancelPreparationRun': ({ runId }) =>

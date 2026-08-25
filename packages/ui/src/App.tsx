@@ -1605,6 +1605,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               onDequeueCiRun={(runId) => void projectsActions.dequeueCiRun(runId)}
               onStartMerge={(taskId, agentId) => { if (routeProjectId) void projectsActions.startMergeRun(routeProjectId, taskId, agentId) }}
               loadPreparationRuns={(taskId) => api['tasks:listPreparationRuns']({ projectId: routeProjectId!, taskId })}
+              loadPreparationRun={(runId) => api['tasks:getPreparationRun']({ runId })}
+              loadFullTask={(taskId) => api['tasks:get']({ projectId: routeProjectId!, taskId })}
               onStartPreparation={(taskId, selection) => api['tasks:startPreparationRun']({ projectId: routeProjectId!, taskId, selection })}
               onRetryPreparation={(runId, selection) => api['tasks:retryPreparationRun']({ runId, selection })}
               onCancelPreparation={(runId) => api['tasks:cancelPreparationRun']({ runId })}
