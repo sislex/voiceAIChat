@@ -274,3 +274,20 @@ describe('Recorder scenario', () => {
     expect(new Set(commands.map((command) => command.requestId))).toHaveLength(2)
   })
 })
+
+describe('Recorder viewport-команда', () => {
+  it('viewport исполняется самим Reader без загруженной страницы и сужает iframe', () => {
+    const post = vi.spyOn(window, 'postMessage')
+    render(<Recorder />)
+    fromHost(init)
+    fromHost({ type, ...ids, kind: 'command', requestId: 'v1', action: { kind: 'viewport', width: 414 } })
+    expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'v1')).toMatchObject({ ok: true, result: { width: 414 } })
+    const frame = screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement
+    expect(frame.style.width).toBe('414px')
+    const select = screen.getByLabelText('Ширина вьюпорта') as HTMLSelectElement
+    expect(select.value).toBe('414')
+    fromHost({ type, ...ids, kind: 'command', requestId: 'v2', action: { kind: 'viewport', width: 0 } })
+    expect(sent(post).find((message) => message.kind === 'result' && message.requestId === 'v2')).toMatchObject({ ok: true, result: { width: 0 } })
+    expect((screen.getByTitle('Предпросмотр сайта') as HTMLIFrameElement).style.width).toBe('')
+  })
+})

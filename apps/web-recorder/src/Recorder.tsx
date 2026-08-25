@@ -100,6 +100,13 @@ export function Recorder(): JSX.Element {
       if (!ids || message.conversationId !== ids.conversationId || message.registrationId !== ids.registrationId) return
       if (message.kind === 'set-url') { applyUrlRef(message.url); return }
       if (message.kind === 'command') {
+        // viewport исполняет сам Reader (ширина обёртки iframe) — страница не нужна.
+        if (message.action.kind === 'viewport') {
+          const width = Math.round(message.action.width)
+          setViewport(width > 0 ? String(width) : '')
+          reply({ kind: 'result', requestId: message.requestId, ok: true, result: { width: width > 0 ? width : 0 } })
+          return
+        }
         if (!pageReady.current || !frame.current?.contentWindow) {
           reply({ kind: 'result', requestId: message.requestId, ok: false, error: 'Страница ещё загружается.' })
           return
@@ -259,7 +266,7 @@ export function Recorder(): JSX.Element {
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-label="Вперёд" title="Вперёд" onClick={() => historyGo(1)}>›</button>
       <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" value={draft} placeholder="https://example.com" onChange={(event) => setDraft(event.target.value)} /></label>
       <button className="vc-btn vc-btn--secondary">Открыть</button>
-      <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>⟲ Сессия</button>
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={toggleInspector}>⌖ Выбор элемента</button>
       <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => setEditing((value) => !value)}>✎ Редактировать</button>

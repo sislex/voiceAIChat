@@ -239,15 +239,28 @@ const disable=()=>{active=false;selected=null;document.removeEventListener('poin
 const ACTION='voicechat.preview.action.v1', RESULT='voicechat.preview.action-result.v1', READY='voicechat.preview.page-ready.v1', LOADING='voicechat.preview.page-loading.v1', RECORD='voicechat.preview.record.v1';
 parent.postMessage({type:READY,url:location.href},location.origin);
 addEventListener('beforeunload',()=>parent.postMessage({type:LOADING,url:location.href},location.origin));
-// ---- Буфер ошибок страницы: модель проверяет их действием errors ----
+// ---- Буферы страницы: ошибки (errors), сеть (network) и консоль (console) ----
 const pageErrors=[];const ERRORS_CAP=100;
 const pushError=(entry)=>{entry.message=String(entry.message||'').slice(0,500);entry.at=Math.round(performance.now());pageErrors.push(entry);if(pageErrors.length>ERRORS_CAP)pageErrors.shift()};
+const pageNetwork=[];const NETWORK_CAP=200;
+const pushNetwork=(entry)=>{pageNetwork.push(entry);if(pageNetwork.length>NETWORK_CAP)pageNetwork.shift()};
+const pageConsole=[];const CONSOLE_CAP=300;
+const pushConsole=(level,args)=>{try{const message=Array.prototype.map.call(args,(a)=>a&&a.message||(typeof a==='object'?JSON.stringify(a):String(a))).join(' ').slice(0,500);pageConsole.push({level,message,at:Math.round(performance.now())});if(pageConsole.length>CONSOLE_CAP)pageConsole.shift()}catch{}};
 addEventListener('error',(e)=>{if(e instanceof ErrorEvent)pushError({kind:'error',message:e.message||'Ошибка скрипта'})},true);
 addEventListener('unhandledrejection',(e)=>pushError({kind:'unhandledrejection',message:e&&e.reason&&(e.reason.message||String(e.reason))||'unhandledrejection'}));
-try{const nativeConsoleError=console.error.bind(console);console.error=function(){try{pushError({kind:'console.error',message:Array.prototype.map.call(arguments,(a)=>a&&a.message||(typeof a==='object'?JSON.stringify(a):String(a))).join(' ')})}catch{}return nativeConsoleError.apply(null,arguments)}}catch{}
-// fetch уже переписан context-шимом на прокси — оборачиваем поверх для статусов.
-try{const shimFetch=window.fetch.bind(window);window.fetch=function(input,init){return shimFetch(input,init).then((res)=>{if(res&&res.status>=400)pushError({kind:'network',message:'HTTP '+res.status,url:(()=>{try{return unproxyLazy(res.url)}catch{return String(res.url).slice(0,300)}})(),status:res.status});return res},(err)=>{pushError({kind:'network',message:err&&err.message||'network error'});throw err})}}catch{}
-try{const xhrSend=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.send=function(){this.addEventListener('loadend',()=>{if(this.status>=400)pushError({kind:'network',message:'HTTP '+this.status,url:(()=>{try{return unproxyLazy(this.responseURL)}catch{return ''}})(),status:this.status})});return xhrSend.apply(this,arguments)}}catch{}
+for(const level of ['log','info','warn','error'])try{const nativeLog=console[level].bind(console);console[level]=function(){pushConsole(level,arguments);if(level==='error')try{pushError({kind:'console.error',message:Array.prototype.map.call(arguments,(a)=>a&&a.message||(typeof a==='object'?JSON.stringify(a):String(a))).join(' ')})}catch{}return nativeLog.apply(null,arguments)}}catch{}
+// fetch уже переписан context-шимом на прокси — оборачиваем поверх для журнала и статусов.
+try{const shimFetch=window.fetch.bind(window);window.fetch=function(input,init){
+  const started=performance.now();
+  const url=(()=>{try{return String(unproxyLazy(typeof input==='string'?input:(input&&input.url)||String(input))).slice(0,300)}catch{return String(input).slice(0,300)}})();
+  const method=String((init&&init.method)||(input&&typeof input==='object'&&input.method)||'GET').toUpperCase();
+  const entry={via:'fetch',method,url,at:Math.round(started)};pushNetwork(entry);
+  return shimFetch(input,init).then((res)=>{entry.ms=Math.round(performance.now()-started);if(res)entry.status=res.status;if(res&&res.status>=400)pushError({kind:'network',message:'HTTP '+res.status,url:(()=>{try{return unproxyLazy(res.url)}catch{return url}})(),status:res.status});return res},(err)=>{entry.ms=Math.round(performance.now()-started);entry.error=String(err&&err.message||'network error').slice(0,200);pushError({kind:'network',message:entry.error});throw err})
+}}catch{}
+try{const xhrOpen=XMLHttpRequest.prototype.open,xhrSend=XMLHttpRequest.prototype.send;
+XMLHttpRequest.prototype.open=function(method,url){this.__vcNet={method:String(method||'GET').toUpperCase(),url:(()=>{try{return String(unproxyLazy(String(url))).slice(0,300)}catch{return String(url).slice(0,300)}})()};return xhrOpen.apply(this,arguments)};
+XMLHttpRequest.prototype.send=function(){const started=performance.now();const meta=this.__vcNet||{method:'GET',url:''};const entry={via:'xhr',method:meta.method,url:meta.url,at:Math.round(started)};pushNetwork(entry);this.addEventListener('loadend',()=>{entry.ms=Math.round(performance.now()-started);entry.status=this.status;if(this.status>=400)pushError({kind:'network',message:'HTTP '+this.status,url:(()=>{try{return unproxyLazy(this.responseURL)}catch{return ''}})(),status:this.status})});return xhrSend.apply(this,arguments)}}catch{}
+if(typeof navigator.sendBeacon==='function')try{const shimBeacon=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(url,data){pushNetwork({via:'beacon',method:'POST',url:(()=>{try{return String(unproxyLazy(String(url))).slice(0,300)}catch{return String(url).slice(0,300)}})(),at:Math.round(performance.now())});return arguments.length>1?shimBeacon(url,data):shimBeacon(url)}}catch{}
 // unproxy объявлен ниже — ленивое обращение (ошибки случаются после инициализации).
 function unproxyLazy(value){return typeof unproxy==='function'?unproxy(value):String(value)}
 const EL_TEXT=200, SNIPPET=4000, FIND_MAX=30, HEADINGS=64, LINKS=100, BUTTONS=50, INPUTS=50;
@@ -297,7 +310,21 @@ const run=(action)=>{
     const el=clickTarget(found[0]);
     el.scrollIntoView&&el.scrollIntoView({block:'center'});
     const info=describe(el);
-    typeof el.click==='function'?el.click():el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+    const mods=Array.isArray(action.modifiers)?action.modifiers:[];
+    const fancy=action.button==='right'||action.dblclick===true||mods.length>0;
+    if(!fancy){typeof el.click==='function'?el.click():el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));return {page:pageInfo(),clicked:info}}
+    // el.click() не передаёт кнопку и модификаторы — полный событийный путь.
+    const r=el.getBoundingClientRect();
+    const base={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,shiftKey:mods.includes('shift'),ctrlKey:mods.includes('ctrl'),altKey:mods.includes('alt'),metaKey:mods.includes('meta'),button:action.button==='right'?2:0};
+    el.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerdown',Object.assign({pointerId:1,isPrimary:true},base)));
+    el.dispatchEvent(new MouseEvent('mousedown',base));
+    el.dispatchEvent(new (window.PointerEvent||MouseEvent)('pointerup',Object.assign({pointerId:1,isPrimary:true},base)));
+    el.dispatchEvent(new MouseEvent('mouseup',base));
+    if(action.button==='right'){el.dispatchEvent(new MouseEvent('contextmenu',base))}
+    else{
+      el.dispatchEvent(new MouseEvent('click',base));
+      if(action.dblclick){el.dispatchEvent(new MouseEvent('click',Object.assign({detail:2},base)));el.dispatchEvent(new MouseEvent('dblclick',Object.assign({detail:2},base)))}
+    }
     return {page:pageInfo(),clicked:info}
   }
   if(action.kind==='type'){
@@ -370,6 +397,169 @@ const run=(action)=>{
     const info=pageInfo();
     history.back();
     return {page:info,navigating:true}
+  }
+  if(action.kind==='forward'){
+    const info=pageInfo();
+    history.forward();
+    return {page:info,navigating:true}
+  }
+  if(action.kind==='network'){
+    const filter=typeof action.filter==='string'?action.filter.toLowerCase():'';
+    const all=filter?pageNetwork.filter((e)=>e.url.toLowerCase().includes(filter)):pageNetwork;
+    const limit=Math.max(1,Math.min(100,typeof action.limit==='number'?Math.floor(action.limit):50));
+    const requests=all.slice(-limit).map((e)=>Object.assign({},e));
+    const total=all.length;
+    if(action.clear)pageNetwork.length=0;
+    return {page:pageInfo(),requests,total}
+  }
+  if(action.kind==='console'){
+    const pattern=typeof action.pattern==='string'?action.pattern.toLowerCase():'';
+    const all=pageConsole.filter((e)=>(!action.level||e.level===action.level)&&(!pattern||e.message.toLowerCase().includes(pattern)));
+    const limit=Math.max(1,Math.min(100,typeof action.limit==='number'?Math.floor(action.limit):50));
+    const messages=all.slice(-limit).map((e)=>Object.assign({},e));
+    const total=all.length;
+    if(action.clear)pageConsole.length=0;
+    return {page:pageInfo(),messages,total}
+  }
+  if(action.kind==='evaluate'){
+    const finish=(v)=>{let s;try{s=v===undefined?'undefined':JSON.stringify(v)}catch{s=String(v)}if(s===undefined)s=String(v);return {page:pageInfo(),value:String(s).slice(0,8000)}};
+    const value=(0,eval)(action.code);
+    return value&&typeof value.then==='function'?value.then(finish):finish(value)
+  }
+  if(action.kind==='drag'){
+    // jsdom не реализует elementFromPoint — защищаемся, чтобы тесты и headless-страницы не падали.
+    const elAt=(x,y)=>{try{return document.elementFromPoint(x,y)||null}catch{return null}};
+    const pointOf=(p)=>{
+      if(p.selector){const found=bySelector(p.selector);if(!found.length)throw new Error('Элемент не найден: '+p.selector);const el=found[0];el.scrollIntoView&&el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect();return {el,x:r.left+r.width/2,y:r.top+r.height/2}}
+      return {el:elAt(p.x,p.y),x:p.x,y:p.y}
+    };
+    const src=pointOf(action.from),dst=pointOf(action.to);
+    if(!src.el)throw new Error('Источник перетаскивания не найден');
+    const to={x:Math.round(dst.x),y:Math.round(dst.y)};
+    const html5=src.el.closest('[draggable=true]');
+    if(html5&&window.DragEvent&&window.DataTransfer){
+      // HTML5 DnD: у элемента draggable — события dragstart/over/drop с общим DataTransfer.
+      const dt=new DataTransfer();
+      const fire=(type,tgt,x,y)=>tgt.dispatchEvent(new DragEvent(type,{bubbles:true,cancelable:true,clientX:x,clientY:y,dataTransfer:dt}));
+      fire('dragstart',html5,src.x,src.y);
+      const drop=elAt(dst.x,dst.y)||document.body;
+      fire('dragenter',drop,dst.x,dst.y);fire('dragover',drop,dst.x,dst.y);fire('drop',drop,dst.x,dst.y);fire('dragend',html5,dst.x,dst.y);
+      return {page:pageInfo(),dragged:describe(html5),to,via:'html5'}
+    }
+    // Pointer-механика (наш lib/dnd и большинство SPA): down → серия move → up.
+    // Паузы между шагами дают обработчикам сработать по порогу расстояния.
+    const firePointer=(type,tgt,x,y,buttons)=>{tgt.dispatchEvent(new (window.PointerEvent||MouseEvent)(type,{bubbles:true,cancelable:true,clientX:x,clientY:y,pointerId:1,isPrimary:true,button:0,buttons}));tgt.dispatchEvent(new MouseEvent(type.replace('pointer','mouse'),{bubbles:true,cancelable:true,clientX:x,clientY:y,button:0,buttons}))};
+    firePointer('pointerdown',src.el,src.x,src.y,1);
+    const el=src.el,steps=8;
+    return new Promise((ok)=>{
+      let i=0;
+      const tick=()=>{
+        i++;
+        const x=src.x+(dst.x-src.x)*i/steps,y=src.y+(dst.y-src.y)*i/steps;
+        const over=elAt(x,y)||document.body;
+        firePointer('pointermove',over,x,y,1);
+        if(i<steps){setTimeout(tick,30);return}
+        const drop=elAt(dst.x,dst.y)||document.body;
+        firePointer('pointerup',drop,dst.x,dst.y,0);
+        ok({page:pageInfo(),dragged:describe(el),to,via:'pointer'})
+      };
+      setTimeout(tick,30)
+    })
+  }
+  if(action.kind==='set'){
+    const found=bySelector(action.selector);
+    if(!found.length)throw new Error('Элемент не найден: '+action.selector);
+    const el=found[0];
+    el.scrollIntoView&&el.scrollIntoView({block:'center'});
+    if(el.localName==='select'){
+      const options=[...el.options];
+      const wanted=String(action.value??'');
+      const target=options.find((o)=>o.value===wanted)||options.find((o)=>textOf(o).toLowerCase()===wanted.toLowerCase());
+      if(!target)throw new Error('Опция не найдена: '+wanted);
+      el.value=target.value;
+      el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
+      return {page:pageInfo(),set:describe(el),value:el.value}
+    }
+    if(el.localName==='input'&&(el.type==='checkbox'||el.type==='radio')){
+      const want=action.checked!==undefined?action.checked:true;
+      // Нативный клик сам обновляет checked и шлёт input/change/click.
+      if(el.checked!==want)el.click();
+      return {page:pageInfo(),set:describe(el),value:String(el.checked)}
+    }
+    if(el.localName==='input'||el.localName==='textarea'){
+      setNativeValue(el,String(action.value??''));
+      el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
+      return {page:pageInfo(),set:describe(el),value:String(el.value).slice(0,EL_TEXT)}
+    }
+    throw new Error('Элемент не является контролом формы: '+action.selector)
+  }
+  if(action.kind==='upload'){
+    const found=bySelector(action.selector);
+    if(!found.length)throw new Error('Поле не найдено: '+action.selector);
+    const el=found[0];
+    if(!(el.localName==='input'&&el.type==='file'))throw new Error('Элемент не является input type=file: '+action.selector);
+    if(!window.DataTransfer)throw new Error('Браузер не поддерживает программную загрузку файлов');
+    const bin=atob(action.base64);
+    const bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    const file=new File([bytes],action.name,{type:action.mimeType||'application/octet-stream'});
+    const dt=new DataTransfer();dt.items.add(file);
+    el.files=dt.files;
+    el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));
+    return {page:pageInfo(),uploaded:{selector:uniqueSelector(el),name:action.name,size:bytes.length}}
+  }
+  if(action.kind==='a11y'){
+    let scope=document.body||document.documentElement;
+    if(action.selector){const found=bySelector(action.selector);if(!found.length)throw new Error('Элемент не найден: '+action.selector);scope=found[0]}
+    const roleOf=(el)=>{
+      const explicit=el.getAttribute('role');if(explicit)return explicit;
+      const tag=el.localName;
+      if(tag==='a'&&el.hasAttribute('href'))return 'link';
+      if(tag==='button')return 'button';
+      if(tag==='select')return 'combobox';
+      if(tag==='textarea')return 'textbox';
+      if(tag==='img')return 'img';
+      if(tag==='nav')return 'navigation';
+      if(tag==='main')return 'main';
+      if(tag==='header')return 'banner';
+      if(tag==='footer')return 'contentinfo';
+      if(tag==='form')return 'form';
+      if(tag==='table')return 'table';
+      if(tag==='li')return 'listitem';
+      if(tag==='ul'||tag==='ol')return 'list';
+      if(/^h[1-6]$/.test(tag))return 'heading';
+      if(tag==='input'){const t=el.type||'text';if(t==='checkbox'||t==='radio')return t;if(t==='submit'||t==='button')return 'button';if(t==='range')return 'slider';if(t==='hidden')return '';return 'textbox'}
+      return ''
+    };
+    const nameOf=(el)=>{
+      const aria=el.getAttribute('aria-label');if(aria)return aria;
+      const labelledBy=el.getAttribute('aria-labelledby');
+      if(labelledBy){const ref=document.getElementById(labelledBy.split(/\\s+/)[0]);if(ref)return textOf(ref)}
+      if(el.localName==='img')return el.getAttribute('alt')||'';
+      if(el.localName==='input'||el.localName==='select'||el.localName==='textarea'){
+        if(el.labels&&el.labels.length)return textOf(el.labels[0]);
+        return el.getAttribute('placeholder')||el.name||''
+      }
+      return textOf(el)
+    };
+    const visible=(el)=>typeof el.checkVisibility==='function'?el.checkVisibility():true;
+    const limit=Math.max(1,Math.min(200,typeof action.limit==='number'?Math.floor(action.limit):200));
+    const nodes=[];let total=0;
+    const walk=(el,level)=>{
+      for(const child of el.children){
+        if(child.closest('[data-voicechat-inspector]')||child.localName==='script'||child.localName==='style')continue;
+        const role=roleOf(child);
+        let next=level;
+        if(role&&visible(child)){
+          total++;
+          if(nodes.length<limit)nodes.push({role,name:nameOf(child).slice(0,EL_TEXT),selector:uniqueSelector(child),level});
+          next=level+1
+        }
+        walk(child,next)
+      }
+    };
+    walk(scope,0);
+    return {page:pageInfo(),nodes,total}
   }
   if(action.kind==='edits'){
     const edits=loadEdits();
@@ -762,9 +952,14 @@ export function previewDiagnosticsHtml(destination = false): string {
 <p id="event-status">input:0 change:0</p><p id="submit-status">not-submitted</p>
 <p id="hover-target">Diagnostic hover target</p><p id="hover-status">hover:0</p>
 <p id="key-status">key:none</p>
+<label for="diag-select">Diagnostic select</label><select id="diag-select"><option value="">—</option><option value="one">Первая опция</option></select>
+<input type="checkbox" id="diag-check" aria-label="Diagnostic checkbox">
+<input type="file" id="diag-file" aria-label="Diagnostic file"><p id="file-status">file:none</p>
+<p id="dbl-target">Diagnostic dblclick target</p><p id="dbl-status">dbl:0</p>
+<div id="drag-source" style="width:40px;height:40px">drag me</div><p id="drag-status">drag:idle</p>
 <a id="diagnostic-nav" href="/api/preview/diagnostics?page=destination">Diagnostic action navigation</a>
 <div id="diagnostic-tall" style="height:3000px"></div><p id="page-bottom">page bottom</p>
-<script>(()=>{let input=0,change=0,hover=0;const field=document.querySelector('#diagnostic-input'),events=document.querySelector('#event-status');field.addEventListener('input',()=>{input++;events.textContent='input:'+input+' change:'+change});field.addEventListener('change',()=>{change++;events.textContent='input:'+input+' change:'+change});document.querySelector('#diagnostic-form').addEventListener('submit',(event)=>{event.preventDefault();document.querySelector('#submit-status').textContent='submitted:'+field.value});document.querySelector('#hover-target').addEventListener('mouseover',()=>{hover++;document.querySelector('#hover-status').textContent='hover:'+hover});document.addEventListener('keydown',(event)=>{document.querySelector('#key-status').textContent='key:'+event.key})})()<\/script>
+<script>(()=>{let input=0,change=0,hover=0,dbl=0,moves=0,down=false;const field=document.querySelector('#diagnostic-input'),events=document.querySelector('#event-status');field.addEventListener('input',()=>{input++;events.textContent='input:'+input+' change:'+change});field.addEventListener('change',()=>{change++;events.textContent='input:'+input+' change:'+change});document.querySelector('#diagnostic-form').addEventListener('submit',(event)=>{event.preventDefault();document.querySelector('#submit-status').textContent='submitted:'+field.value});document.querySelector('#hover-target').addEventListener('mouseover',()=>{hover++;document.querySelector('#hover-status').textContent='hover:'+hover});document.addEventListener('keydown',(event)=>{document.querySelector('#key-status').textContent='key:'+event.key});document.querySelector('#dbl-target').addEventListener('dblclick',()=>{dbl++;document.querySelector('#dbl-status').textContent='dbl:'+dbl});document.querySelector('#diag-file').addEventListener('change',(event)=>{const f=event.target.files&&event.target.files[0];document.querySelector('#file-status').textContent='file:'+(f?f.name+':'+f.size:'none')});const dragStatus=document.querySelector('#drag-status');document.querySelector('#drag-source').addEventListener('pointerdown',()=>{down=true;moves=0;dragStatus.textContent='drag:down'});document.addEventListener('pointermove',()=>{if(down){moves++;dragStatus.textContent='drag:move:'+moves}});document.addEventListener('pointerup',()=>{if(down){down=false;dragStatus.textContent='drag:done:'+moves}})})()<\/script>
 </body></html>`
 }
 

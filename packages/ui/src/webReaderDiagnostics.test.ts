@@ -25,8 +25,23 @@ describe('Web Reader diagnostics', () => {
       if (action.kind === 'screenshot') return { ok: true, result: { page: { url: '', title: '' }, rect: { x: 0, y: 0, width: 100, height: 40 }, dataUrl: 'data:image/png;base64,AAAA' } }
       if (action.kind === 'wait') return { ok: true, result: { page: { url: '', title: '' }, found: { selector: '#page-bottom', tag: 'p', text: 'page bottom' }, waitedMs: 1 } }
       if (action.kind === 'errors') return { ok: true, result: { page: { url: '', title: '' }, errors: [], total: 0 } }
-      if (action.kind === 'back' || action.kind === 'edits') throw new Error('не участвуют в диагностике')
-      const text = action.selector === '#event-status' ? 'input:1 change:1' : action.selector === '#submit-status' ? 'submitted:diagnostic-input' : action.selector === '#hover-status' ? 'hover:1' : action.selector === '#key-status' ? 'key:Escape' : actions.includes('click') ? 'Diagnostics destination' : 'VoiceChat Web Reader Diagnostics'
+      if (action.kind === 'evaluate') return { ok: true, result: { page: { url: '', title: '' }, value: action.code === '2 + 2' ? '4' : '"ok"' } }
+      if (action.kind === 'console') return { ok: true, result: { page: { url: '', title: '' }, messages: [{ level: 'log', message: '[diag] ping', at: 1 }], total: 1 } }
+      if (action.kind === 'network') return { ok: true, result: { page: { url: '', title: '' }, requests: [{ via: 'fetch', method: 'GET', url: 'http://localhost/api/preview/diagnostics', status: 200, ms: 3, at: 1 }], total: 1 } }
+      if (action.kind === 'a11y') return { ok: true, result: { page: { url: '', title: '' }, nodes: [{ role: 'heading', name: 'VoiceChat Web Reader Diagnostics', selector: 'h1', level: 0 }], total: 1 } }
+      if (action.kind === 'set') return { ok: true, result: { page: { url: '', title: '' }, set: { selector: action.selector, tag: action.selector === '#diag-check' ? 'input' : 'select', text: '' }, value: action.selector === '#diag-check' ? 'true' : 'one' } }
+      if (action.kind === 'upload') return { ok: true, result: { page: { url: '', title: '' }, uploaded: { selector: '#diag-file', name: action.name, size: 2 } } }
+      if (action.kind === 'drag') return { ok: true, result: { page: { url: '', title: '' }, dragged: { selector: '#drag-source', tag: 'div', text: 'drag me' }, to: { x: 200, y: 240 }, via: 'pointer' } }
+      if (action.kind === 'viewport') return { ok: true, result: { width: action.width } }
+      if (action.kind === 'back' || action.kind === 'forward' || action.kind === 'edits') throw new Error('не участвуют в диагностике')
+      const text = action.selector === '#event-status' ? 'input:1 change:1'
+        : action.selector === '#submit-status' ? 'submitted:diagnostic-input'
+          : action.selector === '#hover-status' ? 'hover:1'
+            : action.selector === '#key-status' ? 'key:Escape'
+              : action.selector === '#file-status' ? 'file:diag.txt:2'
+                : action.selector === '#dbl-status' ? 'dbl:1'
+                  : action.selector === '#drag-status' ? 'drag:done:8'
+                    : actions.includes('click') ? 'Diagnostics destination' : 'VoiceChat Web Reader Diagnostics'
       return { ok: true, result: { page: { url: '', title: '' }, headings: [], links: [], buttons: [], inputs: [], text } }
     })
     const results = await runWebReaderDiagnostics({
@@ -37,7 +52,11 @@ describe('Web Reader diagnostics', () => {
       publish: async (text) => { published.push(text) }
     })
     expect(published[0]).toContain(WEB_READER_DIAGNOSTICS_CAPABILITIES[0])
-    expect(actions).toEqual(['open', 'read', 'find', 'find', 'styles', 'hover', 'read', 'scroll', 'press', 'read', 'screenshot', 'wait', 'errors', 'type', 'read', 'type', 'read', 'click', 'read'])
+    expect(actions).toEqual([
+      'open', 'read', 'find', 'find', 'styles', 'hover', 'read', 'scroll', 'press', 'read', 'screenshot', 'wait', 'errors',
+      'evaluate', 'evaluate', 'console', 'evaluate', 'network', 'a11y', 'set', 'set', 'upload', 'read', 'click', 'read',
+      'drag', 'read', 'viewport', 'viewport', 'type', 'read', 'type', 'read', 'click', 'read'
+    ])
     expect(results.every((step) => step.ok && step.durationMs >= 0)).toBe(true)
     expect(run.mock.calls.every(([action]) => action.diagnostic === true)).toBe(true)
   })
