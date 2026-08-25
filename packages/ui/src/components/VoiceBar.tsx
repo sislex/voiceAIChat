@@ -4,7 +4,7 @@
 // На мобильной ширине открывается свёрнутой, на десктопе — развёрнутой.
 // Состояние нигде не хранится и ручной выбор не меняется при resize.
 
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import type { PreviewElementPayload } from '@shared/previewInspector'
@@ -207,6 +207,7 @@ export function VoiceBar({
   const [requestPhase, setRequestPhase] = useState<RequestPhase | null>(null)
   const [queueExpanded, setQueueExpanded] = useState(false)
   const [editorExpanded, setEditorExpanded] = useState(false)
+  const [textareaOverflowing, setTextareaOverflowing] = useState(false)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [queueEditText, setQueueEditText] = useState('')
   const [draggedQueueId, setDraggedQueueId] = useState<string | null>(null)
@@ -275,7 +276,11 @@ export function VoiceBar({
 
   const fileRef = useRef<HTMLInputElement>(null)
   // Композер начинается с одной строки и растёт с текстом до четырёх, дальше — скролл.
-  const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS)
+  // Фактический overflow учитывает и визуальные переносы длинной строки, а не только \n.
+  const onDraftOverflowChange = useCallback((overflowing: boolean) => {
+    setTextareaOverflowing((current) => current === overflowing ? current : overflowing)
+  }, [])
+  const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS, onDraftOverflowChange)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const blockedAttachments = attachments.filter((item) => item.status && item.status !== 'ready')
   const processingAttachmentCount = blockedAttachments.filter((item) => item.status === 'processing').length
@@ -657,7 +662,7 @@ export function VoiceBar({
                   aria-invalid={blockedAttachments.length > 0 || undefined}
                   data-ai-assist={aiAssistEnabled ? '' : undefined}
                 />
-                {(editorExpanded || draft.includes('\n')) && (
+                {(editorExpanded || textareaOverflowing || draft.includes('\n')) && (
                   <button
                     className="composer-size-toggle"
                     type="button"
