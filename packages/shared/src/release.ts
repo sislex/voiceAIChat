@@ -31,6 +31,20 @@ export interface ManagedPreflightResult {
   checks: Record<'marker' | 'manifest' | 'origin' | 'branch' | 'write' | 'freeSpace' | 'deployCommand' | 'healthCheckCommand', { ok: boolean; message: string }>
 }
 export type ManagedPreflightConfirmation = ManagedPreflightResult & { confirmationToken: string }
+
+/** Итог авто-подготовки прод-машины (bootstrap): что сделано и что осталось руками. */
+export interface ProductionBootstrapResult {
+  /** Managed-режим включён (preflight пройден). */
+  ok: boolean
+  /** Итоговый режим production после bootstrap. */
+  mode: 'managed' | 'legacy'
+  /** Машина назначена и default (для CI/merge/тасков), т.к. валидной default не было. */
+  defaultMachineSet: boolean
+  /** Результат managed preflight (чек-лист). */
+  preflight: ManagedPreflightResult
+  /** Человекочитаемая подсказка про оставшийся ручной шаг (CLI login). */
+  cliLoginHint: string
+}
 export interface ReleaseStep {
   id: string
   kind: ReleaseStepKind

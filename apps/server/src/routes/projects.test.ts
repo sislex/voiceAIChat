@@ -98,6 +98,21 @@ describe('projects REST: доступ', () => {
     expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/releases/deploy`, payload: { branch: 'release/1.0.0' } })).statusCode).toBe(403)
   })
 
+  it('production bootstrap: owner-guard 403, и валидация машины/gitUrl до дорогих шагов', async () => {
+    const p = await createProject('Prod bootstrap')
+    await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })
+    // member (не owner) → 403
+    expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/production/bootstrap`, payload: { agentId: 'a1' } })).statusCode).toBe(403)
+    // owner без agentId → 400
+    const noAgent = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/production/bootstrap`, payload: {} })
+    expect(noAgent.statusCode).toBe(400)
+    expect(noAgent.json().error).toMatch(/машин/i)
+    // owner с agentId, но у проекта нет gitUrl → 400 с понятной причиной
+    const noGit = await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/production/bootstrap`, payload: { agentId: 'a1' } })
+    expect(noGit.statusCode).toBe(400)
+    expect(noGit.json().error).toMatch(/gitUrl/i)
+  })
+
   it('release branches объясняет неполную конфигурацию машины вместо ложного 404', async () => {
     const p = await createProject('Release target')
     const response = await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases/branches` })

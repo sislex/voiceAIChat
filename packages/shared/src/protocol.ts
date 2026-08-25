@@ -315,6 +315,8 @@ export const REST = {
   projectReleaseDeploy: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/deploy`,
   projectManagedProductionPreflight: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/managed/preflight`,
   projectManagedProductionConfirm: (id: string) => `/api/projects/${encodeURIComponent(id)}/releases/managed/confirm`,
+  /** Авто-подготовка прод-машины: storage/привязка/каталоги/команды/managed за один запрос. */
+  projectProductionBootstrap: (id: string) => `/api/projects/${encodeURIComponent(id)}/production/bootstrap`,
   projectRelease: (id: string, releaseId: string) => `/api/projects/${encodeURIComponent(id)}/releases/${encodeURIComponent(releaseId)}`,
   projectCi: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci`,
   projectCiLlm: (id: string) => `/api/projects/${encodeURIComponent(id)}/ci/llm`,

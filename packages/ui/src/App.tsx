@@ -1545,7 +1545,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 }}
                 managedProductionApi={{
                   'releases:managedPreflight': api['releases:managedPreflight'],
-                  'releases:managedConfirm': api['releases:managedConfirm']
+                  'releases:managedConfirm': api['releases:managedConfirm'],
+                  'projects:bootstrapProduction': api['projects:bootstrapProduction'],
+                  'projects:get': api['projects:get']
                 }}
                 onManagedProductionConfirmed={() => projectsActions.selectProject(routeProjectId)}
               />
