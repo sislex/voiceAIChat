@@ -200,6 +200,9 @@ cat > "$AGENT_DIR/run.sh" <<RUNEOF
 #!/usr/bin/env bash
 # Сервер может стоять за самоподписанным TLS — агент должен ему доверять.
 export VC_AGENT_INSECURE_TLS=1
+# systemd/launchd не наследуют shell-init NVM/Homebrew. Фиксируем PATH установщика,
+# предваряя его каталогом выбранного Node, чтобы дочерние команды видели node/npm.
+export PATH="$NODE_DIR:$PATH"
 cd "\\$HOME"
 exec "$NODE_BIN" "$AGENT_DIR/voicechat-agent.cjs" --connection "\\$(cat "$AGENT_DIR/connection")"
 RUNEOF

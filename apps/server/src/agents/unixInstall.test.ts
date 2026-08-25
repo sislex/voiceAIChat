@@ -93,6 +93,14 @@ describe('buildUnixInstallScript', () => {
     expect(linux).toContain('/proc/$1/cmdline')
   })
 
+  it('передаёт каталог выбранного Node в PATH агента и дочерних команд', () => {
+    for (const s of [linux, mac]) {
+      const runSh = s.slice(s.indexOf('cat > "$AGENT_DIR/run.sh"'), s.indexOf('RUNEOF\nchmod'))
+      expect(runSh).toContain('export PATH="$NODE_DIR:$PATH"')
+      expect(runSh.indexOf('export PATH=')).toBeLessThan(runSh.indexOf('exec "$NODE_BIN"'))
+    }
+  })
+
   it('доверяет самоподписанному TLS сервера в run.sh', () => {
     expect(linux).toContain('VC_AGENT_INSECURE_TLS=1')
   })
