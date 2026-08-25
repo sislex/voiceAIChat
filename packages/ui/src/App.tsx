@@ -77,6 +77,7 @@ import { useHotkeys, type HotkeyBinding } from './lib/useHotkeys'
 import { useCommandSource } from './lib/useCommands'
 import { buildAppCommands, buildHotkeyBindings } from './lib/appCommands'
 import { isWebReaderDiagnosticsCommand, runWebReaderDiagnostics } from './webReaderDiagnostics'
+import { isChatDiagnosticsCommand, runChatDiagnostics } from './chatDiagnostics'
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
 
 const UsersAdmin = lazy(async () => {
@@ -895,6 +896,45 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       if (diagnosticsControllerRef.current === controller) diagnosticsControllerRef.current = null
     })
   }, [activeConversation, chat.activeId, chatActions, inReader, toast])
+  // Самодиагностика чата: сквозная проверка «клиент → сервер → модель → БД»
+  // публикуется служебными AI-сообщениями в текущий чат (без запуска LLM).
+  // Пробы замыкают мосты window.* и стор; persistence идёт через api напрямую,
+  // чтобы эфемерный разговор не попал в сайдбар.
+  const startChatDiagnostics = useCallback((): void => {
+    const conversationId = chat.activeId
+    if (!conversationId) { toast.error('Откройте разговор, чтобы запустить самодиагностику чата.'); return }
+    diagnosticsControllerRef.current?.abort()
+    const controller = new AbortController()
+    diagnosticsControllerRef.current = controller
+    const engine = (): 'claude' | 'codex' => (activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'codex' : 'claude'
+    void runChatDiagnostics({
+      signal: controller.signal,
+      publish: (text) => chatActions.publishDiagnosticMessage(conversationId, text),
+      probes: {
+        engine,
+        ping: () => api['app:ping'](),
+        wsConnected: () => window.realtime?.connected() ?? false,
+        sessionMe: async () => (window.session ? window.session.me() : null),
+        capabilities: () => api['system:capabilities'](),
+        authStatus: () => api['auth:status'](),
+        mcpList: () => api['mcp:list'](),
+        modelRoundtrip: async () => {
+          const { variants } = await api['prompt:suggest']({ prompt: 'ping', modifiers: [] })
+          return variants.map((v) => v.text).join(' ')
+        },
+        createConversation: async () => (await api['conversations:create']({ title: 'Самодиагностика чата' })).id,
+        echoMessage: async (id, marker) => {
+          await api['messages:add']({ conversationId: id, role: 'u0', text: marker, time: new Date().toISOString() })
+          const loaded = await api['conversations:get']({ id })
+          return (loaded?.messages ?? []).some((m) => m.text === marker)
+        },
+        deleteConversation: (id) => api['conversations:delete']({ id }),
+        storeSnapshot: () => ({ conversations: chat.conversations.length, activeId: chat.activeId })
+      }
+    }).finally(() => {
+      if (diagnosticsControllerRef.current === controller) diagnosticsControllerRef.current = null
+    })
+  }, [activeConversation, api, chat.activeId, chat.conversations, chatActions, settingsState.settings.llmProvider, toast])
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
   const activeKbUsage = chat.activeId ? chat.kbUsage[chat.activeId] : undefined
@@ -1417,6 +1457,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             onDraftChange={chatActions.setDraft}
             onSubmitText={() => {
               if (inReader && isWebReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startWebReaderDiagnostics(); return }
+              if (isChatDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startChatDiagnostics(); return }
               void chatActions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) })
             }}
             onStartVoice={voiceActions.startVoice}

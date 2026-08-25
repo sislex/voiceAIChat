@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 19 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 7 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 3 коммит(ов) в areas после сверки: 557167a3 fix(server): resolve snapshot LLM from project defaults … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 605 коммит(ов) в areas после сверки: 0985f857 fix(releases): preserve managed preflight failures … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 606 коммит(ов) в areas после сверки: 46552c82 docs(kb): источник общего Codex-auth — профиль VC_CODEX_SHARED_AUTH_USER, не HOME … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 73 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 47 коммит(ов) в areas после сверки: 0985f857 fix(releases): preserve managed preflight failures … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 4 коммит(ов) в areas после сверки: a11f9ac2 feat(chat): make message submission feedback immediate … |
@@ -37,9 +37,9 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-24 | ⚠ 19 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 43 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-20 | ⚠ 2 коммит(ов) в areas после сверки: e91c96d4 web reader … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-25 | ⚠ 1 коммит(ов) в areas после сверки: dc38cd8d fix(prod): persist managed checkout path |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-25 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-20 | ⚠ 37 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-25 | ⚠ 1 коммит(ов) в areas после сверки: 557167a3 fix(server): resolve snapshot LLM from project defaults |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-25 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-25, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -57,7 +57,7 @@
 
 ## Журнал сессий
 
-Всего записей: 353. Последние:
+Всего записей: 354. Последние:
 
 - [2026-08-25-macbook-air-user-manual-qa-machine-labels.md](log/2026-08-25-macbook-air-user-manual-qa-machine-labels.md) — manual-qa-machine-labels
 - [2026-08-25-macbook-air-user-instant-submit.md](log/2026-08-25-macbook-air-user-instant-submit.md) — instant-submit

@@ -644,6 +644,8 @@ export interface RendererAgentsBridge {
 export interface RendererRealtimeBridge {
   /** Каждое успешное WS-подключение, включая reconnect. */
   onConnected(cb: () => void): () => void
+  /** Открыт ли WS прямо сейчас (для самодиагностики транспорта). */
+  connected(): boolean
   /** Invalidation-only событие; полный снимок читается по HTTP. */
   onTaskPreparationNotificationsInvalidated(cb: (m: { projectId: string }) => void): () => void
 }

@@ -147,6 +147,7 @@ export function makePreviewBridge(ws: WsClient): RendererPreviewBridge {
 export function makeRealtimeBridge(ws: WsClient): RendererRealtimeBridge {
   return {
     onConnected: (cb) => ws.onConnected(cb),
+    connected: () => ws.isConnected(),
     onTaskPreparationNotificationsInvalidated: (cb) =>
       ws.on('task-preparation.notifications.invalidate', (m) => cb({ projectId: m.projectId }))
   }
