@@ -92,6 +92,32 @@ describe('ChatColumn — экспорт разговора', () => {
     void menu
   })
 
+  it('закрывает меню экспорта по нажатию вне него', async () => {
+    renderCol({ onExport: vi.fn() })
+    await userEvent.click(screen.getByLabelText('Экспорт разговора'))
+    expect(screen.getByTestId('export-menu')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('Тест'))
+    expect(screen.queryByTestId('export-menu')).not.toBeInTheDocument()
+  })
+
+  it('открытие меню другого чата закрывает предыдущее', async () => {
+    render(
+      <>
+        <ChatColumn title="Первый" state="idle" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} onExport={vi.fn()} />
+        <ChatColumn title="Второй" state="idle" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} onExport={vi.fn()} />
+      </>
+    )
+    const triggers = screen.getAllByLabelText('Экспорт разговора')
+    await userEvent.click(triggers[0]!)
+    expect(screen.getAllByTestId('export-menu')).toHaveLength(1)
+
+    await userEvent.click(triggers[1]!)
+    expect(screen.getAllByTestId('export-menu')).toHaveLength(1)
+    expect(triggers[0]).toHaveAttribute('aria-expanded', 'false')
+    expect(triggers[1]).toHaveAttribute('aria-expanded', 'true')
+  })
+
   it('показывает мету хода под последним ответом ассистента', () => {
     renderCol({ turnMeta: { durationMs: 7200, numTurns: 2, costUsd: 0.0131 } })
     const meta = screen.getByTestId('turn-meta')

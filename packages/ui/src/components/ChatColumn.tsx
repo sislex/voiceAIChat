@@ -35,6 +35,7 @@ import {
 } from './MessageTimeline'
 import { copyText } from '../lib/clipboard'
 import { useAutoGrow } from '../lib/autoGrow'
+import { useDismissibleMenu } from '../lib/useDismissibleMenu'
 
 /** Сколько держим подсветку сообщения, к которому перешли из поиска. */
 const HIGHLIGHT_MS = 2000
@@ -256,6 +257,8 @@ export function ChatColumn({
   onOpenKbDocument
 }: ChatColumnProps): JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
+  const exportMenuRef = useRef<HTMLSpanElement>(null)
+  useDismissibleMenu(exportOpen, exportMenuRef, () => setExportOpen(false))
   const scrollRef = useRef<HTMLDivElement>(null)
   const conversationKey = conversationId ?? DEFAULT_CONVERSATION_KEY
   const activeConversationRef = useRef(conversationKey)
@@ -539,12 +542,13 @@ export function ChatColumn({
           )}
           <span className="badge">{statusBadge(state, aiLabel)}</span>
           {onExport && messages.length > 0 && (
-            <span className="exportwrap">
+            <span className="exportwrap" ref={exportMenuRef}>
               <IconButton
                 size="sm"
                 variant="secondary"
                 aria-label="Экспорт разговора"
                 title="Экспорт разговора"
+                aria-expanded={exportOpen}
                 onClick={() => setExportOpen((v) => !v)}
               >
                 ⇩

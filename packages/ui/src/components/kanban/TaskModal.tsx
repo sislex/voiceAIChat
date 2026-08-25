@@ -31,6 +31,7 @@ import { QaStageRunPanel } from '../qa/QaStageRunPanel'
 import type { AnyQaStageRun, QaRunStage } from '@shared/qa'
 import { ComponentQaPanel } from '../qa/ComponentQaPanel'
 import { KbUsageBrief } from '../kb/KbUsageBrief'
+import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 import { CiReport } from '../ci/CiReport'
 import { MergePanel } from '../ci/MergePanel'
 import { TaskRunFeed } from '../ci/TaskRunFeed'
@@ -314,17 +315,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [detailsOpen, setDetailsOpen] = useState(!mobile)
   useEffect(() => { setDetailsOpen(!mobile) }, [mobile])
 
-  // ⋯-меню действий в шапке (только на телефоне): закрывается кликом мимо него.
+  // ⋯-меню действий в шапке (только на телефоне).
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLSpanElement | null>(null)
-  useEffect(() => {
-    if (!menuOpen) return
-    const onDown = (e: MouseEvent): void => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [menuOpen])
+  useDismissibleMenu(menuOpen, menuRef, () => setMenuOpen(false))
   useEffect(() => { if (!mobile) setMenuOpen(false) }, [mobile])
 
   // Правка открылась — курсор в конец текста: описание обычно дописывают.

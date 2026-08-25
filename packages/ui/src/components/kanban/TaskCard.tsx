@@ -8,7 +8,7 @@
 // «⠿» (единственное место с touch-action: none — палец там не скроллит) или
 // удержанием самой карточки; с клавиатуры карточка фокусируется (tabIndex).
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { KanbanColumnSemanticType, Task } from '@shared/projects'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
@@ -20,6 +20,7 @@ import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey }
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
+import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 
 export interface TaskCardProps {
   task: Task
@@ -112,15 +113,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const menuRef = useRef<HTMLDivElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
 
-  // Меню закрывается кликом мимо него.
-  useEffect(() => {
-    if (!menuOpen) return
-    const onDown = (e: MouseEvent): void => {
-      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [menuOpen])
+  useDismissibleMenu(menuOpen, menuRef, () => setMenuOpen(false))
 
   const done = props.doneColumnIds.has(task.columnId)
   // Сервер выбирает состояние; helper сохраняет совместимость со stale payload.
