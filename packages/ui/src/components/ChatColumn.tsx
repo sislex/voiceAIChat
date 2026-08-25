@@ -117,6 +117,8 @@ export interface ChatColumnProps {
   onHighlightDone?: () => void
   liveSegments: LiveSegment[]
   diarization: boolean
+  /** Зарезервировать место ответа до первого непустого фрагмента. */
+  preparingReply?: boolean
   /** Стримящийся ответ Claude (растёт по токенам); пусто — нет активного стрима. */
   streamingReply?: string
   /** Активность текущего (незавершённого) хода — для живого статуса/секций. */
@@ -215,6 +217,7 @@ export function ChatColumn({
   onHighlightDone,
   liveSegments,
   diarization,
+  preparingReply,
   streamingReply = '',
   liveActivity = [],
   canSpeak = false,
@@ -429,7 +432,7 @@ export function ChatColumn({
 
   const isListening = state === 'listening'
   const hasStream = streamingReply.length > 0
-  const preparingReply = state === 'thinking' && !hasStream
+  const showPreparingReply = (preparingReply ?? state === 'thinking') && !hasStream
   // Картинки в ещё не завершённом ответе: блок вырезаем сразу, чтобы вместо
   // сырого JSON пользователь видел саму картинку, как только файл готов.
   const liveImages = parseImages(streamingReply)
@@ -860,7 +863,7 @@ export function ChatColumn({
             )
           })}
 
-          {preparingReply && (
+          {showPreparingReply && (
             <div className="reply-preparing" data-testid="reply-preparing" role="status" aria-live="polite">
               <Dots />
               <span>Готовим ответ…</span>
