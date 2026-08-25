@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-25
-checked: 90978733
+checked: 002a4e5d
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -22,6 +22,7 @@ areas:
   - packages/shared/src/widgetAssistant.ts
   - packages/shared/src/ipc.ts
   - packages/ui/src/lib/dnd.ts
+  - packages/ui/src/lib/useDismissibleMenu.ts
   - packages/ui/src/store/domains/projectsStore.ts
   - packages/ui/src/components/ConversationSettings.tsx
   - apps/server/src/turns.ts
@@ -100,6 +101,21 @@ areas:
 через `title` и accessibility label; на узком экране состояние занимает
 отдельную строку, а действия задачи собраны в компактное меню, при этом закрытие
 остаётся отдельным действием диалога.
+
+## Выпадающие меню чатов и канбана
+
+Общее поведение задаёт `packages/ui/src/lib/useDismissibleMenu.ts`. Открытое
+меню закрывается по `pointerdown` за пределами переданного контейнера и по
+Escape; нажатие внутри контейнера не закрывает его до выполнения обработчика
+выбранного действия. При открытии экземпляр отправляет document-событие
+`voicechat:menu-open`, по которому остальные открытые экземпляры закрываются,
+поэтому одновременно остаётся только последнее открытое меню.
+
+Хук подключён к меню экспорта в `ChatColumn`, меню действий карточки
+`TaskCard`, мобильному меню действий `TaskModal`, меню колонки и фильтру
+исполнителей в `KanbanBoard`. Кнопка экспорта дополнительно отражает состояние
+через `aria-expanded`; DOM-тест `ChatColumn.dom.test.tsx` фиксирует закрытие
+по внешнему нажатию и взаимное исключение меню разных чатов.
 
 ## Данные и доступ
 
