@@ -240,7 +240,9 @@ describe('VoiceBar — высота поля ввода', () => {
     Object.defineProperty(HTMLTextAreaElement.prototype, 'scrollHeight', {
       configurable: true,
       get(this: HTMLTextAreaElement) {
-        return Math.max(1, this.value.split('\n').length) * LINE + PAD
+        const visualRows = this.value.split('\n')
+          .reduce((rows, line) => rows + Math.max(1, Math.ceil(line.length / 20)), 0)
+        return visualRows * LINE + PAD
       }
     })
   })
@@ -275,6 +277,36 @@ describe('VoiceBar — высота поля ввода', () => {
   it('после четырёх строк не растёт — дальше скролл', () => {
     expect(heightOf('a\nb\nc\nd\ne')).toBe('92px')
     expect(heightOf('a\nb\nc\nd\ne\nf\ng\nh')).toBe('92px')
+  })
+
+  it('для визуально длинного текста показывает встроенный доступный переключатель и сохраняет выделение', async () => {
+    const draft = 'очень длинная непрерывная строка '.repeat(5)
+    setup('idle', { draft })
+
+    const input = screen.getByLabelText('Поле ввода сообщения') as HTMLTextAreaElement
+    const toggle = await screen.findByTestId('composer-size-toggle')
+    expect(toggle.parentElement).toHaveClass('composer-input')
+    expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+
+    input.focus()
+    input.setSelectionRange(2, 8)
+    await userEvent.click(toggle)
+    await waitFor(() => expect(input).toHaveFocus())
+    expect(input.selectionStart).toBe(2)
+    expect(input.selectionEnd).toBe(8)
+    expect(input.closest('.voicebar')).toHaveClass('voicebar--expanded')
+    expect(toggle).toHaveAccessibleName('Свернуть длинный текст')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+    toggle.focus()
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(input.closest('.voicebar')).not.toHaveClass('voicebar--expanded')
+      expect(input).toHaveFocus()
+    })
+    expect(input).toHaveValue(draft)
   })
 })
 
@@ -354,52 +386,35 @@ describe('VoiceBar — помощник промптов', () => {
 })
 
 describe('VoiceBar — сворачивание композера', () => {
-  it('панель открывается свёрнутой: поля ввода и микрофона нет, есть строка-заглушка', () => {
-    render(<VoiceBar {...makeProps('idle', { defaultCollapsed: undefined })} />)
-    expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Говорить')).not.toBeInTheDocument()
-    expect(screen.getByTestId('composer-expand')).toHaveTextContent('Показать поле ввода')
+  it('на десктопе не показывает общий collapse даже при defaultCollapsed', () => {
+    render(<VoiceBar {...makeProps('idle', { defaultCollapsed: true })} />)
+    expect(screen.getByLabelText('Поле ввода сообщения')).toBeInTheDocument()
+    expect(screen.queryByTestId('composer-collapse')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('composer-expand')).not.toBeInTheDocument()
   })
 
-  it('разворачивается с фокусом и сворачивается обратно без потери содержимого', async () => {
-    setup('idle', { draft: 'черновик', attachments: [{ id: 'a1', name: 'лог.txt' }] })
-    await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
-    expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
+  it('на мобильном разворачивается с фокусом и сворачивается без потери содержимого', async () => {
+    const props = makeProps('idle', {
+      allowCollapse: true,
+      defaultCollapsed: true,
+      draft: 'черновик',
+      attachments: [{ id: 'a1', name: 'лог.txt' }]
+    })
+    render(<VoiceBar {...props} />)
     expect(screen.getByTestId('composer-expand')).toHaveTextContent('черновик')
 
     await userEvent.click(screen.getByTestId('composer-expand'))
     expect(screen.getByLabelText('Поле ввода сообщения')).toHaveFocus()
     expect(screen.getByLabelText('Поле ввода сообщения')).toHaveValue('черновик')
     expect(screen.getByTestId('attachments')).toHaveTextContent('лог.txt')
+
+    await userEvent.click(screen.getByTestId('composer-collapse'))
+    expect(screen.getByTestId('composer-expand')).toHaveTextContent('черновик')
   })
 
-  it('в строке видно, что осталось в композере: черновик, иначе вложения', async () => {
-    const { unmount } = render(<VoiceBar {...makeProps('idle', { draft: 'проверь шаг npm test' })} />)
-    await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
-    expect(screen.getByTestId('composer-expand')).toHaveTextContent('проверь шаг npm test')
-    unmount()
-
-    render(<VoiceBar {...makeProps('idle', { defaultCollapsed: true, attachments: [{ id: 'a1', name: 'лог.txt' }] })} />)
-    expect(screen.getByTestId('composer-expand')).toHaveTextContent('Вложений: 1')
-  })
-
-  it('свёрнутая панель не прячет остановку хода и запись объявляет читалке', async () => {
-    const props = makeProps('thinking', {})
-    const { unmount } = render(<VoiceBar {...props} />)
-    await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
-    await userEvent.click(screen.getByLabelText('Остановить ответ'))
-    expect(props.onCancelRequest).toHaveBeenCalledOnce()
-    expect(screen.getByTestId('voice-announce')).toHaveTextContent('Запрос отправлен движку Claude, ждём ответ')
-    unmount()
-
-    const listening = makeProps('listening', {})
-    render(<VoiceBar {...listening} />)
-    await userEvent.click(screen.getByLabelText('Остановить запись'))
-    expect(listening.onStopVoice).toHaveBeenCalledOnce()
-  })
-
-  it('оставляет очередь и её действия доступными при свёрнутом композере', async () => {
+  it('на мобильном не прячет очередь и остановку активного ответа', async () => {
     const onSendQueuedNow = vi.fn()
+    const onCancelRequest = vi.fn()
     const queued = {
       id: 'q-mobile',
       conversationId: 'c1',
@@ -410,30 +425,20 @@ describe('VoiceBar — сворачивание композера', () => {
       status: 'queued' as const,
       createdAt: 1
     }
-    render(<VoiceBar {...makeProps('thinking', { defaultCollapsed: true, queuedTurns: [queued], onSendQueuedNow })} />)
+    render(<VoiceBar {...makeProps('thinking', {
+      allowCollapse: true,
+      defaultCollapsed: true,
+      queuedTurns: [queued],
+      onSendQueuedNow,
+      onCancelRequest
+    })} />)
 
     expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
     expect(screen.getByTestId('turn-queue')).toHaveTextContent('Сообщение с телефона')
     await userEvent.click(screen.getByRole('button', { name: 'Отправить сейчас сообщение № 1' }))
+    await userEvent.click(screen.getByLabelText('Остановить ответ'))
     expect(onSendQueuedNow).toHaveBeenCalledWith('q-mobile')
-  })
-
-  it('изменение defaultCollapsed после ручного выбора не перезаписывает состояние', async () => {
-    const { rerender } = render(<VoiceBar {...makeProps('idle', { defaultCollapsed: false })} />)
-    await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
-    rerender(<VoiceBar {...makeProps('idle', { defaultCollapsed: false })} />)
-    expect(screen.getByTestId('composer-expand')).toBeInTheDocument()
-  })
-
-  it('развёрнутое состояние не запоминается: следующее монтирование снова свёрнуто', async () => {
-    const { unmount } = render(<VoiceBar {...makeProps('idle', { defaultCollapsed: undefined })} />)
-    await userEvent.click(screen.getByTestId('composer-expand'))
-    expect(screen.getByLabelText('Поле ввода сообщения')).toBeInTheDocument()
-    unmount()
-
-    render(<VoiceBar {...makeProps('idle', { defaultCollapsed: undefined })} />)
-    expect(screen.getByTestId('composer-expand')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Поле ввода сообщения')).not.toBeInTheDocument()
+    expect(onCancelRequest).toHaveBeenCalledOnce()
   })
 })
 
@@ -444,9 +449,8 @@ describe('VoiceBar — доступность', () => {
     expectLabelledIconButtons()
   })
 
-  it('без нарушений axe: свёрнутый композер', async () => {
-    setup('thinking', { draft: 'привет' })
-    await userEvent.click(screen.getByLabelText('Свернуть поле ввода'))
+  it('без нарушений axe: мобильный свёрнутый композер', async () => {
+    setup('thinking', { draft: 'привет', allowCollapse: true, defaultCollapsed: true })
     await expectNoViolations()
     expectLabelledIconButtons()
   })
@@ -585,16 +589,34 @@ describe('VoiceBar — адаптивный композер', () => {
     expect(screen.getByLabelText('Отправить сообщение')).toBeDisabled()
   })
 
-  it('разворачивает тот же textarea с сохранением выделения и фокуса', async () => {
-    setup('idle', { draft: 'первая строка\nвторая строка' })
+  it('показывает переключатель только для длинного текста и размещает его внутри поля', async () => {
+    const { rerender } = render(<VoiceBar {...makeProps('idle', { draft: 'короткий текст' })} />)
+    expect(screen.queryByTestId('composer-size-toggle')).not.toBeInTheDocument()
+
+    rerender(<VoiceBar {...makeProps('idle', { draft: 'первая строка\nвторая строка' })} />)
     const input = screen.getByLabelText('Поле ввода сообщения') as HTMLTextAreaElement
+    const toggle = screen.getByTestId('composer-size-toggle')
+    expect(toggle.parentElement).toHaveClass('composer-input')
+    expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+
     input.focus()
     input.setSelectionRange(2, 8)
-    await userEvent.click(screen.getByTestId('composer-size-toggle'))
+    await userEvent.click(toggle)
     await waitFor(() => expect(input).toHaveFocus())
     expect(input.selectionStart).toBe(2)
     expect(input.selectionEnd).toBe(8)
     expect(input.closest('.voicebar')).toHaveClass('voicebar--expanded')
-    expect(screen.getByTestId('composer-size-toggle')).toHaveAccessibleName('Свернуть поле ввода')
+    expect(toggle).toHaveAccessibleName('Свернуть длинный текст')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+    toggle.focus()
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(input.closest('.voicebar')).not.toHaveClass('voicebar--expanded')
+      expect(input).toHaveFocus()
+    })
+    expect(input).toHaveValue('первая строка\nвторая строка')
   })
 })

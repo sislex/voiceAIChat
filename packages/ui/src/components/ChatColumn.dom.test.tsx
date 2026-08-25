@@ -372,9 +372,11 @@ describe('ChatColumn — загрузка сообщений', () => {
     expect(screen.queryByTestId('messages-loading')).not.toBeInTheDocument()
   })
 
-  it('пустая история объясняет следующий шаг', () => {
+  it('пустая история не показывает информационный блок', () => {
     renderCol({ loadingMessages: false, messages: [] })
-    expect(screen.getByTestId('messages-empty')).toHaveTextContent('Пока нет сообщений — задайте первый вопрос')
+    expect(screen.queryByTestId('messages-empty')).not.toBeInTheDocument()
+    expect(screen.queryByText('Пока нет сообщений — задайте первый вопрос')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Наберите текст в поле ниже/)).not.toBeInTheDocument()
   })
 })
 

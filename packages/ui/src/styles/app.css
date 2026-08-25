@@ -415,6 +415,7 @@
 
 /* ---- Основная колонка ---- */
 .main {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1226,7 +1227,7 @@
   padding: 10px 12px;
   border: 1px solid var(--border-soft);
   border-radius: 22px;
-  background: #fff;
+  background: var(--surface);
   box-shadow: 0 12px 32px rgba(31, 35, 48, .11);
 }
 .voicebar--centered {
@@ -1264,9 +1265,11 @@
   min-height: 0;
   align-items: flex-end;
 }
-.voicebar--expanded .tin {
+.voicebar--expanded .composer-input {
   align-self: stretch;
-  height: auto !important;
+}
+.voicebar--expanded .tin {
+  height: 100% !important;
   max-height: none;
 }
 .vinner {
@@ -1282,6 +1285,15 @@
   align-items: flex-end;
   gap: 8px;
   min-width: 0;
+}
+@media (min-width: 769px) {
+  .voicebar:not(.voicebar--expanded) .vrow {
+    align-items: center;
+  }
+  .voicebar:not(.voicebar--expanded) .tin {
+    padding-top: 18px;
+    padding-bottom: 2px;
+  }
 }
 .vrow > .vc-btn { flex: none; }
 .composer-send {
@@ -1367,25 +1379,62 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.composer-input {
+  position: relative;
+  flex: 1 1 auto;
+  align-self: stretch;
+  display: flex;
+  min-width: 80px;
+}
 .tin {
   flex: 1 1 auto;
-  min-width: 80px;
+  width: 100%;
+  min-width: 0;
   border: 0;
   border-radius: 0;
-  padding: 9px 6px;
+  padding: 12px 6px 8px;
   font-size: 14px;
   font-family: inherit;
   background: transparent;
   outline: none;
   color: var(--text);
   resize: none;
-  line-height: 1.4;
+  line-height: 20px;
   max-height: min(240px, 32dvh);
   overflow-y: auto;
   overscroll-behavior: contain;
   overflow-wrap: anywhere;
 }
 .tin:focus { outline: none; }
+.composer-input:has(.composer-size-toggle) .tin {
+  padding-right: 38px;
+}
+.composer-size-toggle {
+  position: absolute;
+  z-index: 2;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  cursor: pointer;
+}
+.composer-size-toggle:hover {
+  border-color: color-mix(in srgb, #1473e6 35%, transparent);
+  background: color-mix(in srgb, #1473e6 10%, var(--surface));
+}
+.composer-size-toggle:focus-visible {
+  outline: 2px solid #1473e6;
+  outline-offset: 1px;
+}
+.composer-size-toggle svg {
+  display: block;
+}
 /* Помощник промптов: круглая кнопка-палочка и всплывающий список вариантов.
    Пока панель раскрыта, кнопка подсвечена акцентом. */
 .composer-wand[aria-expanded='true'] {
