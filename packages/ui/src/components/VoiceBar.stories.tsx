@@ -305,7 +305,8 @@ export const MessageQueue: Story = {
 export const MessageQueueCollapsedComposer: Story = {
   args: {
     ...MessageQueue.args,
-    defaultCollapsed: true
+    defaultCollapsed: true,
+    allowCollapse: true
   },
   parameters: {
     viewport: { defaultViewport: 'mobile1' }
@@ -330,12 +331,14 @@ export const MessageQueuePausedAfterError: Story = {
  * отдаётся вся высота колонки.
  */
 export const Collapsed: Story = {
-  args: { defaultCollapsed: true, draft: 'Проверь, почему шаг npm test падает только в CI' }
+  args: { allowCollapse: true, defaultCollapsed: true, draft: 'Проверь, почему шаг npm test падает только в CI' },
+  parameters: { viewport: { defaultViewport: 'mobile1' } }
 }
 
 /** Свёрнут во время хода: кнопка остановки остаётся в строке, а не прячется. */
 export const CollapsedWhileThinking: Story = {
-  args: { defaultCollapsed: true, state: 'thinking' }
+  args: { allowCollapse: true, defaultCollapsed: true, state: 'thinking' },
+  parameters: { viewport: { defaultViewport: 'mobile1' } }
 }
 
 /** Переключатель режима: план / разработка (в простое активен, в ходе заблокирован). */
