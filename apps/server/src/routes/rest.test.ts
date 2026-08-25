@@ -527,6 +527,22 @@ describe('REST: conversations/messages/settings', () => {
     expect(byId('application-instructions')).toMatchObject({ toggleable: false, enabled: true })
     expect(byId('personalization').toggleable).toBe(true)
     expect(byId('knowledge-mode')).toMatchObject({ toggleable: true, enabled: true })
+    // Drill-in: у пунктов есть полная детализация.
+    const detailed = (id: string): { details?: Record<string, unknown> } => items.find((entry: { id: string }) => entry.id === id)
+    expect(Object.keys(detailed('personalization').details ?? {})).toEqual(expect.arrayContaining(['Обращение', 'Язык ответа', 'Стиль', 'Тон', 'Текст в промпте']))
+    expect(detailed('mcp-remote-bash').details).toMatchObject({ 'Инструмент': 'mcp__remote__bash', 'Изменяет данные': true })
+    expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
+  })
+
+  it('снимок проектного чата: пункт проекта несёт точный текст, уходящий в промпт', async () => {
+    const project = db.createProject(U, { name: 'Инспектор', gitUrl: 'https://example.com/repo.git', technologies: ['ts'] })
+    const conv = db.createConversation(U, 'Проектный')
+    db.setConversationProject(U, conv.id, project.id)
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json()
+    const item = snapshot.groups.flatMap((g: { items: { id: string; details?: Record<string, unknown> }[] }) => g.items).find((e: { id: string }) => e.id === 'project-binding')
+    expect(item.details).toMatchObject({ 'ID проекта': project.id, 'Git': 'https://example.com/repo.git', 'Технологии': 'ts' })
+    expect(String(item.details['Текст в промпте'])).toContain('## Контекст проекта «Инспектор»')
+    expect(String(item.details['Текст в промпте'])).toContain(`ID проекта: ${project.id}`)
   })
 
   it('тумблер контекста: выключает пункт, отражает в снимке и отказывает выключить безопасность', async () => {

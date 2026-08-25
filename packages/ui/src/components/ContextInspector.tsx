@@ -114,7 +114,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       <div><dt>Приоритет</dt><dd>{detail.priority}</dd></div><div><dt>Источник</dt><dd>{detail.source}</dd></div><div><dt>Область действия</dt><dd>{detail.scope}</dd></div>
       <div><dt>Настроено</dt><dd>{state(detail.configured)}</dd></div><div><dt>Доступно</dt><dd>{state(detail.available)}</dd></div><div><dt>Будет добавлено в следующий ход</dt><dd>{state(detail.includedInNextTurn)}</dd></div>
       <div><dt>Пояснение</dt><dd>{detail.explanation}</dd></div>
-      {detail.details && Object.entries(detail.details).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(', ') : String(value ?? '—')}</dd></div>)}
+      {detail.details && Object.entries(detail.details).map(([key, value]) => {
+        const text = Array.isArray(value) ? value.join(', ') : String(value ?? '—')
+        // Многострочные значения (напр. «Текст в промпте») показываем как есть.
+        return <div key={key} className={text.includes('\n') ? 'context-meta-block' : undefined}><dt>{key}</dt><dd>{text.includes('\n') ? <pre className="context-pre">{text}</pre> : text}</dd></div>
+      })}
     </dl>
   </section>
 
