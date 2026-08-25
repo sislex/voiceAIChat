@@ -3,6 +3,7 @@ import { Dialog } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import type { MessageRole, TurnMeta } from '@shared/types'
 import { estimateKbTokens } from '@shared/kb'
+import { messageCost } from '../lib/view'
 
 /** Человекочитаемая роль сообщения контекста. */
 function roleLabel(role: MessageRole): string {
@@ -19,11 +20,6 @@ function kilo(n: number): string {
 /** Длительность хода в секундах. */
 function seconds(ms: number): string {
   return `${(ms / 1000).toFixed(1)} с`
-}
-
-/** Стоимость: $0.0123 для мелких сумм, $0.12 для крупных. */
-function cost(usd: number): string {
-  return `$${usd.toFixed(usd < 0.1 ? 4 : 2)}`
 }
 
 /** Строка «label: value» для тултипа/панели (value скрывается, если пусто). */
@@ -94,6 +90,9 @@ export function MessageMeta({ meta, onOpenKbDocument }: MessageMetaProps): JSX.E
       ? `${kilo(meta.inputTokens)} → ${kilo(meta.outputTokens)}`
       : undefined
 
+  // Стоимость: реальную (costUsd от модели) или расчётную по тарифам — обе в тултипе.
+  const costLine = messageCost(meta)
+
   return (
     <span className="metawrap" onMouseEnter={openTip} onMouseLeave={scheduleClose}>
       <IconButton
@@ -114,7 +113,7 @@ export function MessageMeta({ meta, onOpenKbDocument }: MessageMetaProps): JSX.E
           <Row label="Размер запроса" value={req ? `${req.promptChars.toLocaleString('ru')} симв.` : undefined} />
           <Row label="База знаний" value={req?.kbContext ? `${req.kbContext.sections.length} раздел(а)` : undefined} />
           <Row label="Время ответа" value={typeof meta.durationMs === 'number' ? seconds(meta.durationMs) : undefined} />
-          <Row label="Стоимость" value={typeof meta.costUsd === 'number' ? cost(meta.costUsd) : undefined} />
+          <Row label={costLine?.estimated ? 'Стоимость (расчётная)' : 'Стоимость'} value={costLine?.text} />
           <button className="metamore" onClick={() => setOpen(true)}>
             Подробнее →
           </button>
@@ -141,7 +140,7 @@ export function MessageMeta({ meta, onOpenKbDocument }: MessageMetaProps): JSX.E
                 <Row label="Токены в кэш (запись)" value={typeof meta.cacheCreationTokens === 'number' ? meta.cacheCreationTokens.toLocaleString('ru') : undefined} />
                 <Row label="Время ответа" value={typeof meta.durationMs === 'number' ? seconds(meta.durationMs) : undefined} />
                 <Row label="Ходов агента" value={meta.numTurns} />
-                <Row label="Стоимость" value={typeof meta.costUsd === 'number' ? cost(meta.costUsd) : undefined} />
+                <Row label={costLine?.estimated ? 'Стоимость (расчётная)' : 'Стоимость'} value={costLine?.text} />
                 {req?.provider === 'codex' && meta.costUsd === undefined && (
                   <p className="metanote">Codex не сообщает стоимость хода.</p>
                 )}

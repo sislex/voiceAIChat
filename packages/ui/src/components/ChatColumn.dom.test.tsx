@@ -429,7 +429,7 @@ describe('ChatColumn — загрузка сообщений', () => {
 
 
 describe('ChatColumn — снимок машины сообщения', () => {
-  it('показывает машину вопроса и ответа без селекторов', () => {
+  it('показывает машину ответа в шапке; у ответа без машины — «Без машины»', () => {
     const machineMessages: Message[] = [
       makeUserMessage({ id: 'u', execTarget: 'm1' }),
       makeAiMessage({ id: 'a', execTarget: 'none' })
@@ -437,8 +437,10 @@ describe('ChatColumn — снимок машины сообщения', () => {
     const agent = { id: 'm1', name: 'MacBook', online: true } as AgentInfo
     renderCol({ messages: machineMessages, agents: [agent] })
 
-    expect(screen.getByText('Вопрос: MacBook')).toBeInTheDocument()
-    expect(screen.getByText('Ответ: Без машины')).toBeInTheDocument()
+    // Машина ответа — в шапке карточки ассистента, сразу за движком/моделью.
+    const head = document.querySelector('.msg.ai .msg-machine-head') as HTMLElement
+    expect(head.textContent).toBe('Без машины')
+    // Списка выбора машины в ленте нет.
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 })
@@ -476,12 +478,12 @@ describe('ChatColumn — активный стрим и прерванный о�
 })
 
 describe('ChatColumn — время сообщения в поясе зрителя', () => {
-  it('рендерит время из createdAt, а не запечённую серверную строку', () => {
-    const ts = new Date(2026, 6, 26, 14, 30).getTime() // локальные 14:30
+  it('рендерит время из createdAt в формате ЧЧ:ММ:СС, а не запечённую серверную строку', () => {
+    const ts = new Date(2026, 6, 26, 14, 30, 12).getTime() // локальные 14:30:12
     renderCol({
       messages: [makeAiMessage({ id: 'a3', time: '23:59', createdAt: ts })]
     })
-    expect(screen.getByText('14:30')).toBeInTheDocument()
+    expect(screen.getByText('14:30:12')).toBeInTheDocument()
     expect(screen.queryByText('23:59')).toBeNull()
   })
 })
@@ -504,11 +506,6 @@ describe('ChatColumn — режим работы', () => {
     expect(badge).toHaveTextContent('Разработка')
     await userEvent.click(badge)
     expect(onOpen).toHaveBeenCalledOnce()
-  })
-
-  it('показывает режим, сохранённый у конкретного ответа', () => {
-    renderCol({ messages: planMessages })
-    expect(screen.getByTestId('message-mode-a-plan')).toHaveTextContent('Планирование')
   })
 
   it('после планового ответа предлагает выполнить план', async () => {
@@ -733,7 +730,9 @@ describe('ChatColumn — подготовка ответа', () => {
     const { rerender } = render(<ChatColumn title="Тест" state="thinking" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} />)
     const preparing = screen.getByTestId('reply-preparing')
     expect(preparing).toHaveTextContent('Готовим ответ…')
-    expect(preparing).toHaveAttribute('role', 'status')
+    // Карточка ответа с шапкой видна сразу, «Готовим ответ…» — внутри пузыря (live-область).
+    expect(preparing.querySelector('.msg-head')).toBeTruthy()
+    expect(preparing.querySelector('[role="status"]')).toBeTruthy()
 
     rerender(<ChatColumn title="Тест" state="thinking" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} streamingReply="Первый фрагмент" />)
     expect(screen.queryByTestId('reply-preparing')).not.toBeInTheDocument()

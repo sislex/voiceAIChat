@@ -705,6 +705,31 @@
   background: var(--surface);
   border: 1px solid #eae8e0;
   border-bottom-left-radius: 4px;
+  position: relative; /* якорь для кнопки «Копировать ответ» в углу пузыря */
+}
+/* Копировать ответ — та же иконка и тот же угол, что у копии кода в блоке кода. */
+.copymsg {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  border: none;
+  background: var(--surface-hover);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.ai .bub:hover .copymsg,
+.copymsg:focus-visible {
+  opacity: 1;
+}
+.copymsg:hover {
+  color: var(--text);
 }
 
 /* ---- Markdown внутри пузыря ответа ---- */
@@ -838,8 +863,16 @@
   font-size: 11px;
   color: #a5a296;
   margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 .mfoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Правая группа подвала: озвучить/удалить и крайним правым — время окончания. */
+.mfoot-right {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -854,7 +887,11 @@
 .msg-view select { font-size: 12px; padding: 2px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 .msg-start, .msg-timer { font-size: 11px; color: #a5a296; font-variant-numeric: tabular-nums; }
 .msg-timer { font-weight: 600; }
-.msg-cost { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+/* Машина выполнения — в шапке, сразу за движком/моделью. */
+.msg-machine-head { font-size: 11px; color: var(--text-dim); }
+/* Стоимость хода — внутри блока токенов подвала. */
+.msgact-cost { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.msgact-sep { color: var(--text-dim); opacity: 0.6; }
 /* Мелкие действия под сообщением (копировать, озвучить, править, удалить) —
    .vc-btn ghost. Приглушены, пока на них не наведёшь: глифы-эмодзи цветом не
    управляются, поэтому тусклость даёт opacity, а не токен. */
@@ -3576,19 +3613,8 @@ button.conscmd:hover {
   margin: 4px 2px 0;
 }
 
-.msg-machine {
-  color: var(--text-dim);
-  font-size: 11px;
-  font-weight: 600;
-}
 .chat-last-machine {
   margin: 4px 0 0;
-  color: var(--text-dim);
-  font-size: 11px;
-  font-weight: 600;
-}
-.live-machine {
-  margin: 0 0 8px;
   color: var(--text-dim);
   font-size: 11px;
   font-weight: 600;
@@ -3935,11 +3961,6 @@ button.conscmd:hover {
 .mode-badge--bypassPermissions { color: #9a3528; background: #fcece9; border-color: #e8aaa1; }
 .mode-badge:disabled { cursor: default; opacity: 1; }
 
-.msg-mode {
-  color: var(--text-dim);
-  font-size: 11px;
-  font-weight: 700;
-}
 .execute-plan {
   border-color: var(--ci-success);
   background: var(--ci-success-bg);
