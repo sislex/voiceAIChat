@@ -160,9 +160,12 @@ export async function registerAgentRoutes(
     await writeJsonIfMissing(`${rel}/chat.json`, { formatVersion: MACHINE_STORAGE_FORMAT_VERSION, conversationId: conversation.id, createdAt: now })
     if (conversation.projectId) await writeJsonIfMissing(`projects/${conversation.projectId}/project.json`, { formatVersion: MACHINE_STORAGE_FORMAT_VERSION, projectId: conversation.projectId, createdAt: now })
     if (conversation.projectId && conversation.taskId) await writeJsonIfMissing(`projects/${conversation.projectId}/tasks/${conversation.taskId}/task.json`, { formatVersion: MACHINE_STORAGE_FORMAT_VERSION, projectId: conversation.projectId, taskId: conversation.taskId, createdAt: now })
-    for (const environment of environmentRoots) {
-      await writeJsonIfMissing(`${environment.path}/environment.json`, { formatVersion: MACHINE_STORAGE_FORMAT_VERSION, projectId: conversation.projectId, taskId: conversation.taskId ?? null, kind: environment.kind, createdAt: now })
-    }
+    // environment.json managed-окружений НЕ пишем здесь: его identity (machineId,
+    // storageId, canonical createdAt) знают только релиз- и preview-менеджеры,
+    // и они стамповывают манифест лениво. Заглушка bootstrap с другой формой
+    // (без machineId/storageId, taskId:null, createdAt=now) «отравляла» каталог —
+    // релиз-менеджер не перезаписывает существующий файл (if [ ! -e ]), и preflight
+    // деплоя падал на сравнении манифеста (400). Каталоги окружений создаются выше.
   }
 
   app.get<{ Params: { id: string } }>('/api/agents/:id/storages', async (req, reply) => {

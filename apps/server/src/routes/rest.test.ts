@@ -154,6 +154,23 @@ describe('REST: хранилище машины', () => {
     expect(response.json().error).toMatch(/Нет прав/)
     expect(db.listMachineStorages(U, machine.id)).toEqual([])
   })
+
+  it('bootstrap проектного чата создаёт каталоги окружений, но не пишет environment.json (иначе poisoned manifest → деплой 400)', async () => {
+    const machine = db.createAgent(U, 'Мак')
+    const fs = connectFs(machine.id)
+    const storage = (await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })).json()
+    const project = db.createProject(U, { name: 'ChatAI', gitUrl: 'https://example.com/repo.git' })
+    const conv = db.createConversation(U, 'C')
+    db.setConversationProject(U, conv.id, project.id)
+    const res = await inj({ method: 'PUT', url: `/api/conversations/${conv.id}/storage`, payload: { machineId: machine.id, storageId: storage.id } })
+    expect(res.statusCode).toBe(200)
+    const written = [...fs.files.keys()]
+    // Каталоги managed-окружений создаются, а манифест — нет (его пишут релиз/preview-менеджеры).
+    expect([...fs.directories].some((d) => d.includes('/environments/production/'))).toBe(true)
+    expect(written.some((p) => p.endsWith('/environment.json'))).toBe(false)
+    // Обычные маркеры хранилища при этом на месте.
+    expect(written.some((p) => p.endsWith('/project.json'))).toBe(true)
+  })
 })
 
 describe('REST: аутентификация', () => {
