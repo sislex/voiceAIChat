@@ -98,6 +98,12 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 Termux:Boot). Поэтому **отдельной «команды обновления» нет** — это та же команда,
 и UI показывает её же, когда агент устарел.
 
+Linux/macOS wrapper `run.sh` фиксирует PATH установщика, предваряя его каталогом
+фактически выбранного `NODE_BIN`. Это обязательно для `systemd --user` и launchd:
+они не читают shell-init NVM/Homebrew, поэтому агент мог запускаться абсолютным
+путём к Node, но дочерние команды release/CI падали с `npm: not found`. Тест
+`unixInstall.test.ts` закрепляет наличие PATH до запуска агента.
+
 Linux/macOS-установщик определяет свежую портативную Node.js по первой записи
 `https://nodejs.org/dist/index.json`. Конвейер в
 `apps/server/src/agents/unixInstall.ts` сохраняет первое совпадение через `awk`,
