@@ -15,8 +15,10 @@ export const WEB_READER_DIAGNOSTICS_CAPABILITIES = [
   'active Reader conversation and registered tab', 'preview cookie/auth', '/api/preview proxy',
   'ready/loading lifecycle', 'open and DOM read', 'find by text and selector', 'computed styles',
   'hover events', 'scroll position', 'key press', 'element screenshot', 'wait for element', 'page errors buffer',
-  'type with input/change events', 'form submit', 'click and navigation',
-  'queued read after navigation', 'requestId correlation'
+  'type with input/change events', 'form submit',
+  'evaluate JS', 'console log buffer', 'network log buffer', 'a11y tree',
+  'select/checkbox via set', 'file upload', 'double click', 'pointer drag', 'viewport width',
+  'click and navigation', 'queued read after navigation', 'requestId correlation'
 ] as const
 
 const redact = (value: string): string => value.replace(/(cookie|authorization|token|password)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]').slice(0, 500)
@@ -102,6 +104,35 @@ export async function runWebReaderDiagnostics(options: DiagnosticsOptions): Prom
     await step('screenshot', 'screenshot: снимок элемента', 'action', () => run({ kind: 'screenshot', selector: '#diagnostic-style', diagnostic: true }), (r) => 'dataUrl' in r && (r as { dataUrl: string }).dataUrl.startsWith('data:image/'))
     await step('wait', 'wait: ожидание элемента', 'action', () => run({ kind: 'wait', selector: '#page-bottom', timeoutMs: 3_000, diagnostic: true }), (r) => 'found' in r)
     await step('errors', 'errors: буфер ошибок страницы пуст', 'action', () => run({ kind: 'errors', diagnostic: true }), (r) => 'total' in r && 'errors' in r && (r as { total: number }).total === 0)
+    await step('evaluate', 'evaluate: JS в контексте страницы', 'action', () => run({ kind: 'evaluate', code: '2 + 2', diagnostic: true }), (r) => 'value' in r && (r as { value: string }).value === '4')
+    await step('console', 'console: журнал сообщений', 'action', async () => {
+      await run({ kind: 'evaluate', code: 'console.log("[diag] ping")', diagnostic: true })
+      return run({ kind: 'console', pattern: '[diag]', level: 'log', diagnostic: true })
+    }, (r) => 'messages' in r && (r as { total: number }).total >= 1)
+    await step('network', 'network: журнал запросов', 'action', async () => {
+      await run({ kind: 'evaluate', code: 'fetch("/api/preview/diagnostics").then(() => "ok")', diagnostic: true })
+      return run({ kind: 'network', filter: 'diagnostics', diagnostic: true })
+    }, (r) => 'requests' in r && (r as { total: number }).total >= 1)
+    await step('a11y', 'a11y: дерево доступности', 'action', () => run({ kind: 'a11y', diagnostic: true }), (r) => 'nodes' in r && (r as { nodes: { role: string }[] }).nodes.some((n) => n.role === 'heading'))
+    await step('set-select', 'set: select по value', 'action', () => run({ kind: 'set', selector: '#diag-select', value: 'one', diagnostic: true }), (r) => 'value' in r && (r as { value: string }).value === 'one')
+    await step('set-checkbox', 'set: checkbox', 'action', () => run({ kind: 'set', selector: '#diag-check', checked: true, diagnostic: true }), (r) => 'value' in r && (r as { value: string }).value === 'true')
+    await step('upload', 'upload: файл в input type=file', 'action', async () => {
+      await run({ kind: 'upload', selector: '#diag-file', name: 'diag.txt', mimeType: 'text/plain', base64: 'aGk=', diagnostic: true })
+      return run({ kind: 'read', selector: '#file-status', diagnostic: true })
+    }, (r) => 'text' in r && (r as PreviewReadResult).text.includes('file:diag.txt:2'))
+    await step('dblclick', 'click: двойной клик', 'action', async () => {
+      await run({ kind: 'click', selector: '#dbl-target', dblclick: true, diagnostic: true })
+      return run({ kind: 'read', selector: '#dbl-status', diagnostic: true })
+    }, (r) => 'text' in r && /dbl:[1-9]/.test((r as PreviewReadResult).text))
+    await step('drag', 'drag: pointer-перетаскивание', 'action', async () => {
+      await run({ kind: 'drag', from: { selector: '#drag-source' }, to: { x: 200, y: 240 }, diagnostic: true })
+      return run({ kind: 'read', selector: '#drag-status', diagnostic: true })
+    }, (r) => 'text' in r && /drag:done:[1-9]/.test((r as PreviewReadResult).text))
+    await step('viewport', 'viewport: ширина превью', 'host', async () => {
+      const applied = await run({ kind: 'viewport', width: 375, diagnostic: true })
+      if (!('width' in applied) || (applied as { width: number }).width !== 375) throw new Error('Ширина 375 не применилась.')
+      return run({ kind: 'viewport', width: 0, diagnostic: true })
+    }, (r) => 'width' in r && (r as { width: number }).width === 0)
     await step('type', 'type, input и change', 'action', () => run({ kind: 'type', selector: '#diagnostic-input', text: 'diagnostic-input', diagnostic: true }))
     await step('events', 'проверка input/change', 'action', () => run({ kind: 'read', selector: '#event-status', diagnostic: true }), (r) => 'text' in r && /input:1 change:1/.test((r as PreviewReadResult).text))
     await step('submit', 'отправка формы', 'action', () => run({ kind: 'type', selector: '#diagnostic-input', text: 'diagnostic-input', submit: true, diagnostic: true }), (r) => 'submitted' in r && r.submitted)

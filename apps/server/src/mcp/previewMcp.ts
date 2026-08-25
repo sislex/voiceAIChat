@@ -391,6 +391,140 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       )
 
       server.registerTool(
+        'forward',
+        {
+          description: 'Вперёд по истории открытой в превью страницы (после back). После перехода перечитай страницу read.',
+          inputSchema: {}
+        },
+        async () => run({ kind: 'forward' })
+      )
+
+      server.registerTool(
+        'network',
+        {
+          description:
+            'Журнал сетевых запросов открытой в превью страницы (fetch/XHR/beacon): метод, реальный URL, статус, ' +
+            'длительность. filter — подстрока URL. Проверяй, какие запросы ушли и с какими статусами.',
+          inputSchema: {
+            filter: z.string().max(300).optional().describe('Подстрока URL для фильтрации'),
+            clear: z.boolean().optional().describe('Очистить журнал после чтения'),
+            limit: z.number().positive().max(L.logMax).optional().describe(`Максимум записей (по умолчанию ${L.logDefault})`)
+          }
+        },
+        async ({ filter, clear, limit }) => run({ kind: 'network', ...(filter ? { filter } : {}), ...(clear !== undefined ? { clear } : {}), ...(typeof limit === 'number' ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'console',
+        {
+          description:
+            'Журнал консоли открытой в превью страницы: console.log/info/warn/error. pattern — подстрока сообщения, ' +
+            'level — только один уровень. Используй для отладки: добавь console.log в код и читай его здесь.',
+          inputSchema: {
+            pattern: z.string().max(300).optional().describe('Подстрока сообщения для фильтрации'),
+            level: z.enum(['log', 'info', 'warn', 'error']).optional().describe('Только этот уровень'),
+            clear: z.boolean().optional().describe('Очистить журнал после чтения'),
+            limit: z.number().positive().max(L.logMax).optional().describe(`Максимум записей (по умолчанию ${L.logDefault})`)
+          }
+        },
+        async ({ pattern, level, clear, limit }) => run({ kind: 'console', ...(pattern ? { pattern } : {}), ...(level ? { level } : {}), ...(clear !== undefined ? { clear } : {}), ...(typeof limit === 'number' ? { limit } : {}) })
+      )
+
+      server.registerTool(
+        'evaluate',
+        {
+          description:
+            'Выполнить JavaScript в контексте открытой в превью страницы и получить JSON результата (await для промисов). ' +
+            'Для чтения состояния приложения, вызова функций страницы и нестандартных контролов, недоступных click/type.',
+          inputSchema: { code: z.string().min(1).max(L.evaluateCode).describe('JS-выражение или код; результат сериализуется JSON') }
+        },
+        async ({ code }) => run({ kind: 'evaluate', code })
+      )
+
+      const dragPoint = z.object({
+        selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента (центр)'),
+        x: z.number().optional().describe('Координата X вьюпорта'),
+        y: z.number().optional().describe('Координата Y вьюпорта')
+      })
+      server.registerTool(
+        'drag',
+        {
+          description:
+            'Перетащить элемент открытой в превью страницы (канбан, сортировка, слайдеры): pointer-события ' +
+            'от from к to (или HTML5 DnD у draggable-элементов). Точка — {selector} или {x, y}.',
+          inputSchema: { from: dragPoint.describe('Откуда'), to: dragPoint.describe('Куда') }
+        },
+        async ({ from, to }) => {
+          const valid = (p: { selector?: string; x?: number; y?: number }): boolean => Boolean(p.selector) || (typeof p.x === 'number' && typeof p.y === 'number')
+          if (!valid(from) || !valid(to)) {
+            return { content: [{ type: 'text', text: 'У from и to укажи selector либо пару x и y.' }], isError: true }
+          }
+          return run({ kind: 'drag', from, to })
+        }
+      )
+
+      server.registerTool(
+        'set',
+        {
+          description:
+            'Установить значение сложного контрола формы на открытой в превью странице: select (value или видимая подпись option), ' +
+            'checkbox/radio (checked), date/range/текстовые поля (value). События input/change диспатчатся как при живом вводе.',
+          inputSchema: {
+            selector: z.string().max(L.selector).describe('CSS-селектор контрола'),
+            value: z.string().max(L.text).optional().describe('Значение (для select — value или подпись option)'),
+            checked: z.boolean().optional().describe('Для checkbox/radio')
+          }
+        },
+        async ({ selector, value, checked }) => {
+          if (value === undefined && checked === undefined) {
+            return { content: [{ type: 'text', text: 'Укажи value или checked.' }], isError: true }
+          }
+          return run({ kind: 'set', selector, ...(value !== undefined ? { value } : {}), ...(checked !== undefined ? { checked } : {}) })
+        }
+      )
+
+      server.registerTool(
+        'upload',
+        {
+          description:
+            'Загрузить файл в input type=file открытой в превью страницы: содержимое передаётся base64 (до ~1 МБ). ' +
+            'Диспатчит input/change как при выборе файла пользователем.',
+          inputSchema: {
+            selector: z.string().max(L.selector).describe('CSS-селектор input type=file'),
+            name: z.string().min(1).max(255).describe('Имя файла (например report.csv)'),
+            base64: z.string().min(1).max(L.uploadBase64).describe('Содержимое файла в base64'),
+            mimeType: z.string().max(100).optional().describe('MIME-тип (по умолчанию application/octet-stream)')
+          }
+        },
+        async ({ selector, name, base64, mimeType }) => run({ kind: 'upload', selector, name, base64, ...(mimeType ? { mimeType } : {}) })
+      )
+
+      server.registerTool(
+        'viewport',
+        {
+          description:
+            'Ширина вьюпорта превью в пикселях — проверка мобильной и планшетной вёрстки (375, 768, 1024…). ' +
+            '0 — вернуть адаптив (по ширине панели). Исполняет Reader, страница просто переверстается.',
+          inputSchema: { width: z.number().min(0).max(10_000).describe('Ширина в px; 0 — адаптив') }
+        },
+        async ({ width }) => run({ kind: 'viewport', width })
+      )
+
+      server.registerTool(
+        'a11y',
+        {
+          description:
+            'Дерево доступности открытой в превью страницы: роли и имена элементов, как их видит скринридер ' +
+            '(button «Сохранить», textbox «Пароль»), с селекторами для click/type. Компактнее read для навигации по UI.',
+          inputSchema: {
+            selector: z.string().max(L.selector).optional().describe('CSS-селектор поддерева (без него — вся страница)'),
+            limit: z.number().positive().max(L.a11yNodes).optional().describe(`Максимум узлов (по умолчанию ${L.a11yNodes})`)
+          }
+        },
+        async ({ selector, limit }) => run({ kind: 'a11y', ...(selector ? { selector } : {}), ...(typeof limit === 'number' ? { limit } : {}) })
+      )
+
+      server.registerTool(
         'edits',
         {
           description:
@@ -496,17 +630,28 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         {
           description:
             'Клик по элементу открытой в превью страницы: по CSS-селектору или по видимому тексту ' +
-            '(кликается ближайший кликабельный элемент). Нужен selector или text.',
+            '(кликается ближайший кликабельный элемент). Нужен selector или text. ' +
+            'dblclick — двойной, button: right — контекстное меню, modifiers — клик с зажатыми клавишами.',
           inputSchema: {
             selector: z.string().max(L.selector).optional().describe('CSS-селектор элемента'),
-            text: z.string().max(L.text).optional().describe('Видимый текст элемента')
+            text: z.string().max(L.text).optional().describe('Видимый текст элемента'),
+            button: z.enum(['left', 'right']).optional().describe('Кнопка мыши (right — contextmenu)'),
+            dblclick: z.boolean().optional().describe('Двойной клик'),
+            modifiers: z.array(z.enum(['shift', 'ctrl', 'alt', 'meta'])).max(4).optional().describe('Зажатые модификаторы')
           }
         },
-        async ({ selector, text }) => {
+        async ({ selector, text, button, dblclick, modifiers }) => {
           if (!text && !selector) {
             return { content: [{ type: 'text', text: 'Укажи selector или text.' }], isError: true }
           }
-          return run({ kind: 'click', ...(selector ? { selector } : {}), ...(text ? { text } : {}) })
+          return run({
+            kind: 'click',
+            ...(selector ? { selector } : {}),
+            ...(text ? { text } : {}),
+            ...(button ? { button } : {}),
+            ...(dblclick !== undefined ? { dblclick } : {}),
+            ...(modifiers?.length ? { modifiers } : {})
+          })
         }
       )
 

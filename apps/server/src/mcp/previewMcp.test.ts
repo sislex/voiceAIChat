@@ -143,7 +143,7 @@ describe('previewMcp — инструменты browser', () => {
       payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' }
     })
     const body = res.json() as { result: { tools: Array<{ name: string }> } }
-    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['back', 'click', 'edits', 'environment', 'errors', 'find', 'hover', 'open', 'press', 'read', 'reset-session', 'screenshot', 'scroll', 'test-users', 'type', 'wait'])
+    expect(body.result.tools.map((t) => t.name).sort()).toEqual(['a11y', 'back', 'click', 'console', 'drag', 'edits', 'environment', 'errors', 'evaluate', 'find', 'forward', 'hover', 'network', 'open', 'press', 'read', 'reset-session', 'screenshot', 'scroll', 'set', 'test-users', 'type', 'upload', 'viewport', 'wait'])
   })
 
   it('errors, wait, back и edits доходят до клиента как действия', async () => {
@@ -335,5 +335,58 @@ describe('previewMcp — инструменты browser', () => {
     const result = await call('type', { selector: '#q', text: 'ноутбук', submit: true })
     expect(seen).toEqual({ kind: 'type', selector: '#q', text: 'ноутбук', submit: true })
     expect(JSON.parse(result.text).submitted).toBe(true)
+  })
+
+  it('network/console/evaluate/forward/a11y доходят до клиента как действия', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'https://a.b', title: '' }, value: '4' } })
+    }
+    await call('network', { filter: '/api/', limit: 20 })
+    await call('console', { pattern: '[App]', level: 'warn', clear: true })
+    await call('evaluate', { code: '2 + 2' })
+    await call('forward')
+    await call('a11y', { selector: 'main', limit: 50 })
+    expect(seen).toEqual([
+      { kind: 'network', filter: '/api/', limit: 20 },
+      { kind: 'console', pattern: '[App]', level: 'warn', clear: true },
+      { kind: 'evaluate', code: '2 + 2' },
+      { kind: 'forward' },
+      { kind: 'a11y', selector: 'main', limit: 50 }
+    ])
+  })
+
+  it('drag/set/upload/viewport и click с модификаторами собирают действие целиком', async () => {
+    await makeApp()
+    const seen: unknown[] = []
+    client = (m) => {
+      seen.push(m.action)
+      relay.resolve(U, m.requestId, { ok: true, result: { width: 375 } })
+    }
+    await call('drag', { from: { selector: '#card' }, to: { x: 10, y: 20 } })
+    await call('set', { selector: '#lang', value: 'ru' })
+    await call('upload', { selector: '#attach', name: 'a.txt', base64: 'aGk=', mimeType: 'text/plain' })
+    await call('viewport', { width: 375 })
+    await call('click', { selector: '#row', button: 'right', modifiers: ['shift'] })
+    expect(seen).toEqual([
+      { kind: 'drag', from: { selector: '#card' }, to: { x: 10, y: 20 } },
+      { kind: 'set', selector: '#lang', value: 'ru' },
+      { kind: 'upload', selector: '#attach', name: 'a.txt', base64: 'aGk=', mimeType: 'text/plain' },
+      { kind: 'viewport', width: 375 },
+      { kind: 'click', selector: '#row', button: 'right', modifiers: ['shift'] }
+    ])
+  })
+
+  it('drag без точки и set без значения — ошибка аргументов без похода к клиенту', async () => {
+    await makeApp()
+    let touched = false
+    client = () => { touched = true }
+    const drag = await call('drag', { from: {}, to: { selector: '#col' } })
+    expect(drag.isError).toBe(true)
+    const set = await call('set', { selector: '#lang' })
+    expect(set.isError).toBe(true)
+    expect(touched).toBe(false)
   })
 })

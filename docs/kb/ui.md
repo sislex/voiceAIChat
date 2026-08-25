@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-25
-checked: bba3b601
+checked: 472f0b11
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -974,6 +974,12 @@ Reader hash-маршрут служит источником истины и д�
 Пользовательский Reader: кнопки ‹ › (история внутренней страницы), «⟲ Сессия» (POST `/api/preview/reset-cookies`, авторизуется preview-cookie — путь добавлен в исключение auth рядом с точным `/api/preview`), селект «Адаптив» (ширина iframe 375/768/1024), `target=_blank` вырезается rewrite-ом, а `window.open` страницы шим переводит в навигацию того же окна. Сценарии сохраняются в localStorage браузера по origin+path страницы и восстанавливаются при открытии; секретные шаги воспроизводятся значением, введённым в поле шага перед запуском (не сохраняется); «Экспорт в Playwright» скачивает spec-файл (`apps/web-recorder/src/playwrightExport.ts`: goto/click/fill/press, секреты — `process.env.SCENARIO_SECRET_N`). В карточке задачи feature-preview есть «Тестировать в Web Reader»: создаёт Reader-чат с machine.internal-адресом окружения и открывает его в новой вкладке.
 
 Починены оба дефекта dev-режима из testing-operations: dispose runtime в `useCreateAppRuntime` откладывается на тик и отменяется повторным StrictMode-mount; Proxy-обёртки actions в `devtools.ts` кэшируются (стабильные ссылки для deps эффектов). `WebReaderFrame` создаёт мост в эффекте (пересоздаваемо), а не в useMemo — иначе StrictMode оставлял его необратимо disposed; cookie-гейт гоняется по generation моста. Dev-вход работает без обходов, живой прогон диагностики в StrictMode — 21/21.
+
+### Паритет с браузерным плагином: журналы, evaluate, drag, формы, viewport, a11y
+
+Пакет действий, закрывающий разрыв с Claude in Chrome (MCP-инструментов «browser» стало 25): `network {filter?, clear?, limit?}` — журнал всех fetch/XHR/beacon (метод, реальный URL, статус, длительность; кольцевой буфер 200); `console {pattern?, level?, clear?, limit?}` — журнал console.log/info/warn/error (буфер 300; console.error по-прежнему дублируется в errors); `evaluate {code}` — произвольный JS в контексте страницы, результат JSON-ом (await промисов, кап значения 8 КБ, кап кода 4 КБ); `drag {from, to}` — перетаскивание (точка — `{selector}` или `{x,y}`): у `[draggable=true]` — HTML5 DnD с общим DataTransfer, иначе pointer-механика down → 8 move с паузами 30 мс → up (совместима с `lib/dnd.ts`); `set {selector, value|checked}` — select по value или подписи option, checkbox/radio нативным кликом до нужного состояния (идемпотентно), date/range/текст через setNativeValue; `upload {selector, name, base64, mimeType?}` — File+DataTransfer в input type=file (кап base64 ~1 МБ, jsdom без DataTransfer отвечает понятной ошибкой); `forward` — history.forward; `a11y {selector?, limit?}` — плоское дерево доступности (роль из role-атрибута или семантики тега, имя из aria-label/label/alt/placeholder/текста, selector, level; кап 200 узлов); `viewport {width}` — единственное действие, которое исполняет сам Recorder, не пересылая в iframe (ширина обёртки; 0 — адаптив, нестандартная ширина добавляется в селект временной опцией). `click` расширен: `dblclick`, `button: right` (contextmenu вместо click), `modifiers: [shift|ctrl|alt|meta]` — любой из них переключает исполнение с `el.click()` на полный событийный путь pointer/mouse down→up. Диагностическая страница обзавелась select/checkbox/file/dblclick/drag-целями, самодиагностика — 31 шаг (живой прогон 31/31). Тесты новых действий — `previewProxy.actions2.test.ts` (jsdom), инструментов — `previewMcp.test.ts`, viewport — `Recorder.dom.test.tsx`.
+
+Осознанно не переносится из плагина: пиксельные скриншоты (наш снимок — DOM-клон; настоящие пиксели — ниша playwright-reader), WebSocket/service workers чужих окружений через прокси, мультивкладки и GIF-запись (замена — сценарии + Playwright-экспорт).
 
 ### Тестовые окружения проекта в Web Reader
 

@@ -195,3 +195,59 @@ describe('isPreviewAction: errors, wait, back, edits', () => {
     expect(isPreviewAction({ kind: 'edits' })).toBe(true)
   })
 })
+
+describe('isPreviewAction: network, console, evaluate', () => {
+  it('журналы принимают фильтры и ограничивают limit', () => {
+    expect(isPreviewAction({ kind: 'network' })).toBe(true)
+    expect(isPreviewAction({ kind: 'network', filter: '/api/', clear: true, limit: 20 })).toBe(true)
+    expect(isPreviewAction({ kind: 'network', limit: PREVIEW_ACTION_LIMITS.logMax + 1 })).toBe(false)
+    expect(isPreviewAction({ kind: 'console', pattern: '[App]', level: 'warn' })).toBe(true)
+    expect(isPreviewAction({ kind: 'console', level: 'debug' })).toBe(false)
+  })
+
+  it('evaluate требует код в пределах капа', () => {
+    expect(isPreviewAction({ kind: 'evaluate', code: '2 + 2' })).toBe(true)
+    expect(isPreviewAction({ kind: 'evaluate' })).toBe(false)
+    expect(isPreviewAction({ kind: 'evaluate', code: 'x'.repeat(PREVIEW_ACTION_LIMITS.evaluateCode + 1) })).toBe(false)
+  })
+})
+
+describe('isPreviewAction: drag, set, upload, viewport, a11y, forward', () => {
+  it('drag требует selector или координаты у обеих точек', () => {
+    expect(isPreviewAction({ kind: 'drag', from: { selector: '#card' }, to: { x: 10, y: 20 } })).toBe(true)
+    expect(isPreviewAction({ kind: 'drag', from: {}, to: { selector: '#col' } })).toBe(false)
+    expect(isPreviewAction({ kind: 'drag', from: { x: 1 }, to: { selector: '#col' } })).toBe(false)
+  })
+
+  it('set требует value или checked', () => {
+    expect(isPreviewAction({ kind: 'set', selector: 'select', value: 'ru' })).toBe(true)
+    expect(isPreviewAction({ kind: 'set', selector: '#agree', checked: true })).toBe(true)
+    expect(isPreviewAction({ kind: 'set', selector: 'select' })).toBe(false)
+  })
+
+  it('upload валидирует имя и кап base64', () => {
+    expect(isPreviewAction({ kind: 'upload', selector: 'input[type=file]', name: 'a.txt', base64: 'aGk=' })).toBe(true)
+    expect(isPreviewAction({ kind: 'upload', selector: 'input', name: '', base64: 'aGk=' })).toBe(false)
+    expect(isPreviewAction({ kind: 'upload', selector: 'input', name: 'a.bin', base64: 'x'.repeat(PREVIEW_ACTION_LIMITS.uploadBase64 + 1) })).toBe(false)
+  })
+
+  it('viewport — конечная неотрицательная ширина', () => {
+    expect(isPreviewAction({ kind: 'viewport', width: 375 })).toBe(true)
+    expect(isPreviewAction({ kind: 'viewport', width: 0 })).toBe(true)
+    expect(isPreviewAction({ kind: 'viewport', width: -1 })).toBe(false)
+    expect(isPreviewAction({ kind: 'viewport' })).toBe(false)
+  })
+
+  it('a11y и forward валидны без аргументов', () => {
+    expect(isPreviewAction({ kind: 'a11y' })).toBe(true)
+    expect(isPreviewAction({ kind: 'a11y', selector: 'main', limit: 50 })).toBe(true)
+    expect(isPreviewAction({ kind: 'forward' })).toBe(true)
+  })
+
+  it('click с расширениями: кнопка, двойной, модификаторы', () => {
+    expect(isPreviewAction({ kind: 'click', selector: '#a', button: 'right' })).toBe(true)
+    expect(isPreviewAction({ kind: 'click', selector: '#a', dblclick: true, modifiers: ['shift', 'meta'] })).toBe(true)
+    expect(isPreviewAction({ kind: 'click', selector: '#a', button: 'middle' })).toBe(false)
+    expect(isPreviewAction({ kind: 'click', selector: '#a', modifiers: ['hyper'] })).toBe(false)
+  })
+})
