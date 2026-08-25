@@ -102,6 +102,50 @@ describe.skipIf(!hasBash)('установщики: синтаксис bash', () 
   })
 })
 
+describe.skipIf(!hasBash)('Unix-установщик: определение свежей версии Node.js', () => {
+  const scripts = [
+    buildUnixInstallScript('https://host.example', 'linux'),
+    buildUnixInstallScript('https://host.example', 'macos')
+  ]
+
+  it.each(scripts)('дочитывает index.json при pipefail и выбирает первую версию', (script) => {
+    const assignment = script.match(/^  NVER="\$\((.+)\)"$/m)?.[1]
+    expect(assignment, 'команда определения NVER не найдена').toBeDefined()
+    expect(assignment).not.toContain('head -1')
+    expect(assignment).not.toContain('head -n 1')
+
+    const dir = mkdtempSync(join(tmpdir(), 'vc-node-version-'))
+    const producer = join(dir, 'index.cjs')
+    writeFileSync(
+      producer,
+      [
+        "const { writeSync } = require('node:fs')",
+        `writeSync(1, '{"version":"v24.7.0"}\\n')`,
+        `for (let i = 0; i < 100000; i++) writeSync(1, '{"version":"v23.11.1"}\\n')`
+      ].join('\n')
+    )
+
+    try {
+      const pipeline = assignment!.replace(
+        'curl -fsSL https://nodejs.org/dist/index.json',
+        'node "$1"'
+      )
+      const result = spawnSync(
+        'bash',
+        ['-c', `set -euo pipefail
+NVER="$(${pipeline})"
+printf '%s' "$NVER"`, 'bash', producer],
+        { encoding: 'utf8' }
+      )
+      expect(result.stderr).toBe('')
+      expect(result.status).toBe(0)
+      expect(result.stdout).toBe('v24.7.0')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe.skipIf(!hasPython)('prod deploy API: синтаксис Python', () => {
   it('встроенный в install.sh host API компилируется', () => {
     const match = /cat >\/usr\/local\/lib\/voicechat\/deploy-api\.py <<'PY'\n([\s\S]*?)\nPY\n/.exec(prodInstall)
