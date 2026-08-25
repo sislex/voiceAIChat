@@ -15,6 +15,10 @@ import {
   formatLiveUsage,
   formatTurnMeta,
   messageTime,
+  clockTime,
+  dateTimeTooltip,
+  formatElapsed,
+  messageCost,
   speakerName,
   statusBadge,
   type LiveSegment
@@ -28,8 +32,7 @@ import { SidebarToggle } from './ui/IconButton'
 import { MessageMeta } from './MessageMeta'
 import {
   MessageTimeline,
-  nextTimelineMode,
-  timelineModeButtonLabel,
+  TIMELINE_MODES,
   TIMELINE_MODE_LABEL,
   type TimelineMode
 } from './MessageTimeline'
@@ -278,15 +281,16 @@ export function ChatColumn({
   // Режим отображения хода по каждому сообщению (дефолт — minimal) и отдельный
   // режим для живого (стримящегося) хода (дефолт — brief).
   const [modeById, setModeById] = useState<Map<string, TimelineMode>>(new Map())
-  const [liveMode] = useState<TimelineMode>('brief')
+  const [liveMode, setLiveMode] = useState<TimelineMode>('brief')
 
   const modeOf = (id: string): TimelineMode => modeById.get(id) ?? 'minimal'
-  const cycleMode = (id: string): void =>
-    setModeById((prev) => {
-      const next = new Map(prev)
-      next.set(id, nextTimelineMode(prev.get(id) ?? 'minimal'))
-      return next
-    })
+  const setModeFor = (id: string, mode: TimelineMode): void =>
+    setModeById((prev) => { const next = new Map(prev); next.set(id, mode); return next })
+
+  // Живой таймер ответа: момент старта фиксируем при появлении стрима, значение
+  // «сколько уже отвечает» обновляем раз в секунду (эффект — ниже, после hasStream).
+  const streamStartRef = useRef<number | null>(null)
+  const [liveNow, setLiveNow] = useState<number>(() => Date.now())
 
   const startTitleEdit = (): void => {
     if (!onRenameTitle) return
@@ -449,6 +453,13 @@ export function ChatColumn({
     if (hasStream) setReplyAnnounce(`${aiLabel} отвечает…`)
     else setReplyAnnounce((prev) => (prev === '' ? '' : 'Ответ получен'))
   }, [hasStream, aiLabel])
+  useEffect(() => {
+    if (!hasStream) { streamStartRef.current = null; return }
+    if (streamStartRef.current === null) streamStartRef.current = Date.now()
+    setLiveNow(Date.now())
+    const timer = window.setInterval(() => setLiveNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [hasStream])
 
   return (
     <main className={messages.length === 0 ? 'main main--empty' : 'main main--conversation'} data-chat-layout={messages.length === 0 ? 'centered' : 'docked'}>
@@ -662,9 +673,36 @@ export function ChatColumn({
                   .filter(Boolean)
                   .join(' ')}
               >
-                <span className={chipClass(m.role, diarization, isAi ? m.engine : undefined)}>
-                  {speakerName(m.role, diarization, isAi ? engineLabel(m.engine) : aiLabel)}
-                </span>
+                {isAi ? (() => {
+                  const msgModel = m.meta?.model ?? m.meta?.request?.model
+                  const startMs = typeof m.meta?.durationMs === 'number' ? m.createdAt - m.meta.durationMs : null
+                  const hasActivity = Boolean(m.meta?.activity && m.meta.activity.length > 0)
+                  return (
+                    <div className="msg-head">
+                      {/* Движок; используемая модель скрыта и появляется при наведении. */}
+                      <span className={`${chipClass(m.role, diarization, m.engine)} msg-engine`} title={msgModel ? `Модель: ${msgModel}` : undefined}>
+                        {engineLabel(m.engine)}
+                        {msgModel && <span className="msg-model"> · {msgModel}</span>}
+                      </span>
+                      {hasActivity && (
+                        <label className="msg-view">
+                          <span className="vc-sr-only">Вид ответа</span>
+                          <select aria-label="Вид ответа" value={modeOf(m.id)} onChange={(event) => setModeFor(m.id, event.target.value as TimelineMode)}>
+                            {TIMELINE_MODES.map((mode) => <option key={mode} value={mode}>{TIMELINE_MODE_LABEL[mode]}</option>)}
+                          </select>
+                        </label>
+                      )}
+                      <span className="msg-head-right">
+                        {startMs !== null && <span className="msg-start" title={`Начало ответа: ${dateTimeTooltip(startMs)}`}>{clockTime(startMs)}</span>}
+                        <IconButton size="sm" aria-label="Копировать ответ" title="Копировать ответ" onClick={() => copyMessage(m)}>{copiedId === m.id ? '✓' : '📋'}</IconButton>
+                      </span>
+                    </div>
+                  )
+                })() : (
+                  <span className={chipClass(m.role, diarization)}>
+                    {speakerName(m.role, diarization, aiLabel)}
+                  </span>
+                )}
                 {isEditing ? (
                   <div className="editwrap">
                     <textarea
@@ -793,36 +831,16 @@ export function ChatColumn({
                         {modeLabel(m.meta?.request?.permissionMode)}
                       </span>
                     )}
-                    <p className="mtime">{messageTime(m)}</p>
+                    {/* Время конца ответа с тултипом полной даты. */}
+                    <p className="mtime" title={isAi ? `Конец ответа: ${dateTimeTooltip(m.createdAt)}` : dateTimeTooltip(m.createdAt)}>{messageTime(m)}</p>
                     {isAi && m.meta && formatLiveUsage(m.meta) && (
                       <span className="msgact-count msgact-tokens" data-testid={`message-tokens-${m.id}`}>
                         {formatLiveUsage(m.meta)}
                       </span>
                     )}
+                    {isAi && m.meta && (() => { const cost = messageCost(m.meta); return cost && <span className="msg-cost" data-testid={`message-cost-${m.id}`} title={cost.title}>{cost.text}</span> })()}
                     {isAi && m.meta && (
                       <MessageMeta meta={m.meta} {...(onOpenKbDocument ? { onOpenKbDocument } : {})} />
-                    )}
-                    {isAi && m.meta?.activity && m.meta.activity.length > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="msgact-mode"
-                        aria-label="Переключить вид действий"
-                        title={`Вид: ${TIMELINE_MODE_LABEL[modeOf(m.id)]}`}
-                        onClick={() => cycleMode(m.id)}
-                      >
-                        {timelineModeButtonLabel(modeOf(m.id))}
-                      </Button>
-                    )}
-                    {isAi && (
-                      <IconButton
-                        size="sm"
-                        aria-label="Копировать ответ"
-                        title="Копировать ответ"
-                        onClick={() => copyMessage(m)}
-                      >
-                        {copiedId === m.id ? '✓' : '📋'}
-                      </IconButton>
                     )}
                     {isAi && isLast && m.meta?.request?.permissionMode === 'plan' && onExecutePlan && canExecutePlan && state === 'idle' && (
                       <Button size="sm" className="execute-plan" onClick={() => onExecutePlan(m.id)}>
@@ -904,9 +922,20 @@ export function ChatColumn({
 
           {hasStream && (
             <div className="msg ai" data-testid="streaming">
-              <span className={chipClass('ai', diarization, aiLabel === 'Codex' ? 'codex' : 'claude')}>
-                {speakerName('ai', diarization, aiLabel)}
-              </span>
+              <div className="msg-head">
+                <span className={`${chipClass('ai', diarization, aiLabel === 'Codex' ? 'codex' : 'claude')} msg-engine`}>
+                  {speakerName('ai', diarization, aiLabel)}
+                </span>
+                <label className="msg-view">
+                  <span className="vc-sr-only">Вид ответа</span>
+                  <select aria-label="Вид ответа" value={liveMode} onChange={(event) => setLiveMode(event.target.value as TimelineMode)}>
+                    {TIMELINE_MODES.map((mode) => <option key={mode} value={mode}>{TIMELINE_MODE_LABEL[mode]}</option>)}
+                  </select>
+                </label>
+                <span className="msg-head-right">
+                  {streamStartRef.current !== null && <span className="msg-start" title={`Начало ответа: ${dateTimeTooltip(streamStartRef.current)}`}>{clockTime(streamStartRef.current)}</span>}
+                </span>
+              </div>
               <div className="bub">
                 <div className="live-machine" data-testid="live-machine">
                   Машина: {execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === execTarget)?.name ?? 'Сервер'}
@@ -932,6 +961,12 @@ export function ChatColumn({
                       live
                     />
                   ))}
+              </div>
+              {/* Таймер: сколько модель уже отвечает, обновляется раз в секунду. */}
+              <div className="mfoot">
+                <span className="msg-timer" data-testid="live-timer" role="timer" aria-live="off">
+                  Отвечает: {formatElapsed(liveNow - (streamStartRef.current ?? liveNow))}
+                </span>
               </div>
             </div>
           )}

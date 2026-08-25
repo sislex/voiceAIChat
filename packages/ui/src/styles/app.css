@@ -844,6 +844,17 @@
   align-items: center;
   gap: 8px;
 }
+/* Шапка ответа ассистента: движок слева, «Вид ответа» рядом, копия/время справа. */
+.msg-head { display: flex; align-items: center; gap: 10px; }
+.msg-head-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.msg-engine { cursor: default; }
+/* Используемая модель скрыта по умолчанию, показывается при наведении на движок. */
+.msg-model { display: none; color: var(--text-dim); font-weight: 500; }
+.msg-engine:hover .msg-model, .msg-engine:focus-within .msg-model { display: inline; }
+.msg-view select { font-size: 12px; padding: 2px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.msg-start, .msg-timer { font-size: 11px; color: #a5a296; font-variant-numeric: tabular-nums; }
+.msg-timer { font-weight: 600; }
+.msg-cost { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 /* Мелкие действия под сообщением (копировать, озвучить, править, удалить) —
    .vc-btn ghost. Приглушены, пока на них не наведёшь: глифы-эмодзи цветом не
    управляются, поэтому тусклость даёт opacity, а не токен. */

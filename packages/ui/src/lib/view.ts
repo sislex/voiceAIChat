@@ -7,6 +7,7 @@ import type {
   TurnUsage,
   VoiceState
 } from '@shared/types'
+import { estimateCostUsd } from '@shared/pricing'
 
 export const ACCENT = '#3D64C8'
 
@@ -131,6 +132,42 @@ export function formatTurnMeta(meta: TurnMeta): string {
 
 function kilo(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+}
+
+/** Часы:минуты:секунды по epoch ms в поясе зрителя (для времени начала/конца ответа). */
+export function clockTime(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+/** Полная дата-время для тултипа над временем. */
+export function dateTimeTooltip(ms: number): string {
+  return new Date(ms).toLocaleString('ru-RU')
+}
+
+/** Прошедшее время «мм:сс» для живого таймера ответа. */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+/**
+ * Ориентировочная стоимость ответа: реальную (costUsd от модели) показываем как
+ * есть, иначе — расчётную по прайс-таблице (estimateCostUsd); null — оценить нельзя.
+ */
+export function messageCost(meta: TurnMeta): { text: string; estimated: boolean; title: string } | null {
+  const real = typeof meta.costUsd === 'number' ? meta.costUsd : undefined
+  const value = real ?? estimateCostUsd(meta.model, meta)
+  if (typeof value !== 'number') return null
+  const text = `$${value.toFixed(value < 0.1 ? 4 : 2)}`
+  return {
+    text: real !== undefined ? text : `≈ ${text}`,
+    estimated: real === undefined,
+    title: real !== undefined ? 'Стоимость из ответа модели' : 'Расчётная стоимость по тарифам (модель не сообщила цену)'
+  }
 }
 
 /** Живой счётчик токенов стримящегося ответа: «↓ 1.2k · ↑ 356 · кэш 89.1k». */
