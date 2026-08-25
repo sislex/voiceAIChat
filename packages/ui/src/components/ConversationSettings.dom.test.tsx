@@ -42,6 +42,14 @@ describe('ConversationSettings', () => {
     expect(onRun).toHaveBeenCalledOnce()
   })
 
+  it('показывает кнопку самодиагностики Консоли и запускает её', () => {
+    const onRun = vi.fn()
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} consoleReaderDiagnostics={{ running: false, onRun }} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    const card = screen.getByLabelText('Самодиагностика Консоли')
+    fireEvent.click(within(card).getByRole('button', { name: 'Самодиагностика' }))
+    expect(onRun).toHaveBeenCalledOnce()
+  })
+
   it('показывает кнопку самодиагностики Playwright Reader (и disabled во время прогона)', () => {
     const onRun = vi.fn()
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} playwrightReaderDiagnostics={{ running: true, onRun }} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)

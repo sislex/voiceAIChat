@@ -12,6 +12,7 @@ import type { HealthResponse } from '@shared/protocol'
 import type { PreviewElementPayload } from '@shared/previewInspector'
 import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration, type WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
 import { BrowserSessionPane } from './components/BrowserSessionPane'
+import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -79,6 +80,8 @@ import { buildAppCommands, buildHotkeyBindings } from './lib/appCommands'
 import { isWebReaderDiagnosticsCommand, runWebReaderDiagnostics } from './webReaderDiagnostics'
 import { isChatDiagnosticsCommand, runChatDiagnostics } from './chatDiagnostics'
 import { isPlaywrightReaderDiagnosticsCommand, runPlaywrightReaderDiagnostics } from './playwrightReaderDiagnostics'
+import { isConsoleReaderDiagnosticsCommand, runConsoleReaderDiagnostics } from './consoleReaderDiagnostics'
+import { consolePtyId } from '@shared/types'
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
 
 const UsersAdmin = lazy(async () => {
@@ -150,7 +153,7 @@ export default function App(props: AppProps = {}): JSX.Element {
 function initialChatIdFromPath(path: string, segments: string[]): string | null {
   const chatRoute = parseChatRoute(path)
   if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item') return chatRoute.conversationId
-  if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader') {
+  if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader' || segments[0] === 'console-reader') {
     return segments[1] ?? null
   }
   const route = parseProjectsRoute(path)
@@ -208,8 +211,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const routeReaderChatId = inReader ? (segments[1] ?? null) : null
   const inPlaywrightReader = segments[0] === 'playwright-reader'
   const routePlaywrightReaderChatId = inPlaywrightReader ? (segments[1] ?? null) : null
+  const inConsoleReader = segments[0] === 'console-reader'
+  const routeConsoleReaderChatId = inConsoleReader ? (segments[1] ?? null) : null
+  // Любой полноэкранный split-режим «чат | панель справа».
+  const inSplit = inReader || inPlaywrightReader || inConsoleReader
   const inTaskChat = routeTaskChatId !== null
-  const inChat = (!inProjects && !onUtilityPage && !inReader && !inPlaywrightReader) || inTaskChat
+  const inChat = (!inProjects && !onUtilityPage && !inSplit) || inTaskChat
   const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
   // Каждый домен — своя подписка: обновление аудио или админских данных не
   // тянет за собой перерисовку соседних экранов.
@@ -674,7 +681,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // адрес (клик по чату, «Назад», ссылка извне) — грузим чат из адреса;
   // изменился активный чат в сторе (создание, удаление, resume, автосоздание
   // первой репликой) — переписываем адрес без новой записи в истории.
-  const syncedChatId = useRef<string | null>(routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId)
+  const syncedChatId = useRef<string | null>(routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId ?? routeConsoleReaderChatId)
   useEffect(() => {
     if (!authed || !inChat) return
     if (routeChatId && routeChatId !== syncedChatId.current) {
@@ -759,6 +766,29 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     createPlaywrightReaderChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inPlaywrightReader, routePlaywrightReaderChatId, chat.activeId, chat.playwrightReaderConversations, chat.conversationsStatus, chatActions, navigate])
+
+  const consoleReaderCreating = useRef(false)
+  const createConsoleReaderChat = (replace = false): void => {
+    if (consoleReaderCreating.current) return
+    consoleReaderCreating.current = true
+    void chatActions.newConversation('console-reader')
+      .then((id) => { if (id) navigate(`/console-reader/${id}`, { replace }) })
+      .catch(() => { /* store owns the visible error */ })
+      .finally(() => { consoleReaderCreating.current = false })
+  }
+  useEffect(() => {
+    if (!authed || !inConsoleReader || chat.conversationsStatus !== 'ready' || consoleReaderCreating.current) return
+    const chats = chat.consoleReaderConversations
+    const routed = chats.find((item) => item.id === routeConsoleReaderChatId)
+    if (routed) {
+      if (routed.id !== chat.activeId) void chatActions.selectConversation(routed.id)
+      return
+    }
+    const fallback = chats[0]
+    if (fallback) { navigate(`/console-reader/${fallback.id}`, { replace: true }); return }
+    createConsoleReaderChat(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inConsoleReader, routeConsoleReaderChatId, chat.activeId, chat.consoleReaderConversations, chat.conversationsStatus, chatActions, navigate])
 
   // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
@@ -848,6 +878,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // ссылке): подсвечивать вместо него первый пункт селектора нельзя — покажем плейсхолдер.
   const readerActiveListed = chat.readerConversations.some((c) => c.id === chat.activeId)
   const playwrightReaderActiveListed = chat.playwrightReaderConversations.some((c) => c.id === chat.activeId)
+  const consoleReaderActiveListed = chat.consoleReaderConversations.some((c) => c.id === chat.activeId)
   // Reader route is authoritative. While its asynchronous conversation selection is
   // pending, the previous ChatColumn must not remain interactive: otherwise a user
   // can submit a turn for the old activeId while already seeing the new Reader URL.
@@ -859,7 +890,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     (routePlaywrightReaderChatId !== null &&
       chat.activeId === routePlaywrightReaderChatId &&
       playwrightReaderActiveListed)
-  const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady
+  const consoleReaderRouteReady =
+    !inConsoleReader ||
+    (routeConsoleReaderChatId !== null &&
+      chat.activeId === routeConsoleReaderChatId &&
+      consoleReaderActiveListed)
+  const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady && consoleReaderRouteReady
   const activeConversation = chat.conversations.find((c) => c.id === chat.activeId)
   const startWebReaderDiagnostics = useCallback((): void => {
     const conversationId = chat.activeId
@@ -977,6 +1013,49 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       if (diagnosticsControllerRef.current === controller) diagnosticsControllerRef.current = null
     })
   }, [chat.activeId, chatActions, inPlaywrightReader, toast])
+  // Самодиагностика Консоли: проверяет живой разделяемый PTY — мост, машину и
+  // round-trip команды в shell (маркер, который не совпадает с эхом ввода).
+  const startConsoleReaderDiagnostics = useCallback((): void => {
+    const conversationId = chat.activeId
+    if (!inConsoleReader || !conversationId) {
+      toast.error('Самодиагностика доступна только в активном чате Консоли.')
+      return
+    }
+    const pty = window.pty
+    diagnosticsControllerRef.current?.abort()
+    const controller = new AbortController()
+    diagnosticsControllerRef.current = controller
+    setConversationSettingsOpen(false)
+    const ptyId = consolePtyId(conversationId)
+    void runConsoleReaderDiagnostics({
+      signal: controller.signal,
+      publish: (text) => chatActions.publishDiagnosticMessage(conversationId, text),
+      probes: {
+        bridgePresent: () => Boolean(pty),
+        machineOnline: () => operations.agents.some((a) => a.online),
+        ptyRoundtrip: (marker) => new Promise<boolean>((resolve) => {
+          if (!pty) { resolve(false); return }
+          // Маркер бьётся так, чтобы эхо введённой строки (`echo VC''DIAGX`) не
+          // содержало непрерывный маркер, а вывод (`VCDIAGX`) — содержал: значит
+          // shell реально выполнил команду, а не просто отобразил ввод.
+          const half = Math.ceil(marker.length / 2)
+          const typed = `echo ${marker.slice(0, half)}''${marker.slice(half)}\r`
+          let buffer = ''
+          let done = false
+          const finish = (ok: boolean): void => { if (done) return; done = true; off(); clearTimeout(timer); resolve(ok) }
+          const off = pty.onOutput((m) => {
+            if (m.ptyId !== ptyId) return
+            buffer += m.data
+            if (buffer.includes(marker)) finish(true)
+          })
+          const timer = setTimeout(() => finish(false), 6000)
+          pty.input({ ptyId, data: typed })
+        })
+      }
+    }).finally(() => {
+      if (diagnosticsControllerRef.current === controller) diagnosticsControllerRef.current = null
+    })
+  }, [chat.activeId, chatActions, inConsoleReader, operations.agents, toast])
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
   const activeKbUsage = chat.activeId ? chat.kbUsage[chat.activeId] : undefined
@@ -1218,7 +1297,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         showConsole && 'app--console',
         collapsed && 'app--sidebar-collapsed',
         inReader && 'app--web-reader',
-        inPlaywrightReader && 'app--playwright-reader'
+        inPlaywrightReader && 'app--playwright-reader',
+        inConsoleReader && 'app--console-reader'
       ].filter(Boolean).join(' ')}
       data-theme={settingsState.settings.theme}
     >
@@ -1238,7 +1318,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           </footer>
         )
       })()}
-      {!inReader && !inPlaywrightReader && <>
+      {!inSplit && <>
       {createChatOpen && <PopupFrame title="Создание разговора" onClose={() => setCreateChatOpen(false)} testId="create-conversation-overlay" panelClassName="convsettings">
         <header className="convsettings-head"><div><h1>Новый разговор</h1><p>Настройте разговор и его файловое хранилище</p></div></header>
         <main className="convsettings-body">
@@ -1330,6 +1410,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenConsole={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('console')) : undefined}
         onOpenWebReader={session.authRequired ? menu(openWebReaderWorkspace) : undefined}
         onOpenPlaywrightReader={session.authRequired ? menu(() => navigate('/playwright-reader')) : undefined}
+        onOpenConsoleReader={session.authRequired ? menu(() => navigate('/console-reader')) : undefined}
         onOpenUsers={session.authRequired ? menu(() => navigate('/users')) : undefined}
         onOpenMachines={session.authRequired ? menu(() => navigate('/machines')) : undefined}
         onOpenCi={session.authRequired ? menu(() => navigate('/ci')) : undefined}
@@ -1384,15 +1465,16 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
       </>}
 
-      {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inReader || inPlaywrightReader) && (
-      <div className={(inReader || inPlaywrightReader) ? `chat-split chat-split--${chatView}` : 'chat-page'} style={(inReader || inPlaywrightReader) ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
-      {(inReader || inPlaywrightReader) && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>Сайт</button></div></nav>}
+      {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && (
+      <div className={inSplit ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inSplit ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
+      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : 'Сайт'}</button></div></nav>}
       <div className="chat-split-chat">
       {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
+      {inConsoleReader && <header className="web-recorder-selector console-reader-selector"><strong>Консоль</strong><label><span className="vc-sr-only">Разговор Консоли</span><select aria-label="Разговор Консоли" value={consoleReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/console-reader/${event.target.value}`) }}>{!consoleReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.consoleReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createConsoleReaderChat()}>+ Новый</button></header>}
       {readerSurfaceReady ? <ChatColumn
         conversationId={chat.activeId}
-        onToggleSidebar={(inReader || inPlaywrightReader) ? undefined : toggleSidebar}
+        onToggleSidebar={inSplit ? undefined : toggleSidebar}
         sidebarExpanded={sidebarExpanded}
         title={activeTitle}
         onRenameTitle={(t) => {
@@ -1500,6 +1582,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             onSubmitText={() => {
               if (inReader && isWebReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startWebReaderDiagnostics(); return }
               if (inPlaywrightReader && isPlaywrightReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startPlaywrightReaderDiagnostics(); return }
+              if (inConsoleReader && isConsoleReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startConsoleReaderDiagnostics(); return }
               if (isChatDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startChatDiagnostics(); return }
               void chatActions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) })
             }}
@@ -1521,9 +1604,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         }
       /> : <div className="chat-route-loading" role="status">Открываем выбранный Reader-разговор…</div>}
       </div>
-      {(inReader || inPlaywrightReader) && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
-      {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview. */}
+      {inSplit && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
+      {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} />}
+      {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
       {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
       </div>
       )}
@@ -1873,7 +1957,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           projects={projects.projects}
           webReaderDiagnostics={inReader ? { running: diagnosticsControllerRef.current !== null, onRun: startWebReaderDiagnostics } : undefined}
           playwrightReaderDiagnostics={inPlaywrightReader ? { running: diagnosticsControllerRef.current !== null, onRun: startPlaywrightReaderDiagnostics } : undefined}
-          chatDiagnostics={!inReader && !inPlaywrightReader ? { running: diagnosticsControllerRef.current !== null, onRun: startChatDiagnostics } : undefined}
+          consoleReaderDiagnostics={inConsoleReader ? { running: diagnosticsControllerRef.current !== null, onRun: startConsoleReaderDiagnostics } : undefined}
+          chatDiagnostics={!inSplit ? { running: diagnosticsControllerRef.current !== null, onRun: startChatDiagnostics } : undefined}
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}
           onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {

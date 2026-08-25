@@ -85,6 +85,15 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
     prompt = `${previewToolHint()}\n\n${prompt}`
   }
 
+  // «Консоль с ассистентом»: живой PTY-терминал пользователя как MCP-инструменты.
+  if (req.consoleMcpUrl) {
+    args.push('-c', `mcp_servers.console.url="${req.consoleMcpUrl}"`)
+    prompt =
+      'Инструмент «Консоль»: справа открыт живой терминал пользователя, работай в нём. Смотри console_context и console_read, ' +
+      'в обычном shell выполняй console_run, в полноэкранном TUI (altScreen) — console_keys/console_input. ' +
+      'Необратимые команды — только с согласия пользователя и confirm=true.\n\n' + prompt
+  }
+
   if (req.remote && req.permissionMode !== 'plan') {
     // В режиме разработки пробрасываем команды на агента через MCP. Для remote
     // нужен bypass: иначе codex exec отменяет вызовы инструментов как user cancelled.

@@ -84,6 +84,8 @@ export interface TurnManagerDeps {
    * разговора: действия транслируются подключённым клиентам пользователя.
    */
   previewMcpBaseUrl?: string
+  /** База URL MCP-эндпоинта консоли (с секретом k); ход адресуется query `conv`. */
+  consoleMcpBaseUrl?: string
   /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
   previewTool?: {
     register(token: string, entry: { userId: string; conversationId: string }): void
@@ -657,6 +659,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(previewToolToken)}`
       deps.previewTool.register(previewToolToken, { userId, conversationId })
     }
+    // Консоль с ассистентом: инструменты mcp__console__* пишут в живую PTY-сессию
+    // разговора (ptyId `console:<conv>`). Только у чата этого вида.
+    let consoleMcpUrl: string | undefined
+    if (conv?.assistantKind === 'console-reader' && deps.consoleMcpBaseUrl) {
+      consoleMcpUrl = `${deps.consoleMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}`
+    }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
     if (target && deps.agents && deps.mcpBaseUrl) {
@@ -757,7 +765,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(attachments.length ? { attachments } : {}),
         ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
-        ...(previewMcpUrl ? { previewMcpUrl } : {})
+        ...(previewMcpUrl ? { previewMcpUrl } : {}),
+        // В режиме «План» консоль read-only: ввод в терминал блокируется (&ro=1).
+        ...(consoleMcpUrl ? { consoleMcpUrl: permissionMode === 'plan' ? `${consoleMcpUrl}&ro=1` : consoleMcpUrl } : {})
       },
       {
         onSession: (sid) => deps.db.setClaudeSession(userId, conversationId, `${provider}:${sid}`),

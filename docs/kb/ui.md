@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-26
-checked: 46a07886
+checked: 466b7a27
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -382,6 +382,18 @@ USD за 1M токенов, источник и дату тарифа; форм�
 Обычный сайдбар эти чаты пока не прячет: он фильтрует список условием «не `web-recorder` и без `previewUrl`», под которое Playwright-чаты не попадают, — «Playwright Reader N» видны в общем списке бесед. Привязка Playwright-чата к проекту **разрешена** (прежний серверный запрет в `setConversationProject` снят): смена проекта в настройках сохраняется штатно, а `chatStore.setConversationProject` обновляет запись сразу в `conversations`, `readerConversations` и `playwrightReaderConversations`, чтобы селектор ридера не показывал устаревшее.
 
 Самодиагностика Playwright Reader (`packages/ui/src/playwrightReaderDiagnostics.ts`) — аналог web-reader-диагностики для пути изолированного Chromium: кнопка «Самодиагностика» в настройках разговора (проп `playwrightReaderDiagnostics`, только при `inPlaywrightReader`) или команда `самодиагностика Playwright Reader` / `/playwright-reader-diagnostics`. Обработчик `startPlaywrightReaderDiagnostics` в `App.tsx` замыкает мост `window.browser`; 6 проверок по слоям `bridge` (мост подключён), `session` (идемпотентный `start` поднимает/переиспользует Chromium, метаданные вкладки/вьюпорта), `frame` (кадр `screenshot`) и `command` (`reload`). Проверки не уводят открытую страницу; результаты публикуются служебными AI-сообщениями через `publishDiagnosticMessage` (без LLM). Модуль чистый, тест — `playwrightReaderDiagnostics.test.ts`.
+
+## Отдельный режим «Консоль с ассистентом»
+
+Третий полноэкранный split-режим (маршруты `#/console-reader` и `#/console-reader/<conversationId>`, `assistantKind: 'console-reader'`, kind-константа `CONSOLE_READER_KIND` в `@shared/types`). Устроен по той же схеме, что Playwright Reader: `inConsoleReader` в `App.tsx` даёт корню `app--console-reader`, прячет `Sidebar` (общий флаг `inSplit = inReader || inPlaywrightReader || inConsoleReader`), рендерит ту же `chat-split`. Отличие — **правая панель и второй таб называется «Консоль», а не «Сайт»**. Список — `consoleReaderConversations` в `chatStore` (предикат `isConsoleReaderConversation`), пункт меню «Консоль с ассистентом» (иконка `▮`) в `Sidebar`, имя нового чата «Консоль N». Пункт меню и селектор — `console-reader-selector`.
+
+Правая панель — `ConsoleSessionPane` (`packages/ui/src/components/ConsoleSessionPane.tsx`): живой PTY-терминал разговора поверх `window.pty`, переиспользует экспортированный `TerminalView` из `MachineTerminal` (xterm). **Ключевая идея — разделяемый терминал: пользователь и ассистент пишут в одну сессию.** ptyId детерминирован — `consolePtyId(conversationId)` = `console:<id>` (общий хелпер в `@shared/types`), поэтому и панель, и серверные инструменты ассистента адресуют одну живую PTY. Машину-хост выбирает шапка панели; смена машины перезапускает сессию (`key` по agentId).
+
+Инструменты ассистента — MCP-набор `mcp__console__*` (сервер `apps/server/src/mcp/consoleMcp.ts`, путь `/mcp/console`, query `conv`): `console_read` (экран без ANSI из кольцевого буфера сессии), `console_context` (cwd/foreground/altScreen), `console_run` (команда в shell + Enter, ждёт строку-сентинел `__VCEND_<id>_<code>__`, возвращает вывод и код выхода), `console_input` (текст как есть), `console_keys` (спец-клавиши для TUI — nano/vim: `ctrl+o`, `enter`, `ctrl+x`, стрелки…). Все — через `registry.ptyInput`/`ptyBufferText` той же сессии (НЕ через одноразовый `exec`, как remote-bash). Гейт по режиму прав: в «Плане» ход получает `&ro=1` и write-инструменты отклоняются; необратимые команды (`rm -rf`, `git push`, `sudo`) требуют `confirm=true`. URL подключается в `turns.ts` (`consoleMcpUrl` только у console-reader), CLI-регистрация `mcpServers.console` — в `claudeCli.ts`/`codexCli.ts` с системным хинтом «работай в общем терминале: смотри context/read, в shell — run, в TUI — keys».
+
+Живой контекст терминала (cwd/foreground/altScreen) приносит агент сообщением `pty.context` (`agentProtocol.ts`, `AGENT_VERSION 0.14.0`): для PTY с префиксом `console:` и только на Linux он раз в секунду читает `/proc/<pid>/cwd`, tpgid из `/proc/<pid>/stat` → имя процесса, а альтернативный экран ловит по `?1049h/l` в потоке. Сервер хранит последний контекст в `PtySession.context`, отдаёт его через `registry.ptyContextOf`. На не-Linux/старых агентах поля остаются `null` — ожидаемая деградация.
+
+Самодиагностика (`packages/ui/src/consoleReaderDiagnostics.ts`, тест — рядом): кнопка «Самодиагностика» в настройках (проп `consoleReaderDiagnostics` при `inConsoleReader`) или команда `самодиагностика консоли` / `/console-reader-diagnostics`. 3 проверки: `bridge` (window.pty), `machine` (агент в сети), `session` (round-trip — пишет `echo <marker>` в общий PTY и ждёт маркер в выводе; маркер бьётся `<h1>''<h2>`, чтобы эхо ввода не совпадало с ним и подтверждало реальное исполнение shell). Тест MCP — `apps/server/src/mcp/consoleMcp.test.ts`.
 
 ## Разговор и ход модели
 

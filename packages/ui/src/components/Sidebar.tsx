@@ -254,6 +254,8 @@ export interface SidebarProps {
   onOpenWebReader?: () => void
   /** Открыть изолированный Playwright Reader. */
   onOpenPlaywrightReader?: () => void
+  /** Открыть инструмент «Консоль с ассистентом». */
+  onOpenConsoleReader?: () => void
   /** Открыть админ-страницу пользователей (только admin). */
   onOpenUsers?: () => void
   /** Открыть меню «Машины» (статус агентских машин; web). */
@@ -318,6 +320,7 @@ export function Sidebar({
   onOpenConsole,
   onOpenWebReader,
   onOpenPlaywrightReader,
+  onOpenConsoleReader,
   onOpenUsers,
   onOpenMachines,
   onOpenCi,
@@ -781,6 +784,12 @@ export function Sidebar({
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenPlaywrightReader)}>
                     <span className="footico">▣</span>
                     Playwright Reader
+                  </Button>
+                )}
+                {onOpenConsoleReader && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenConsoleReader)}>
+                    <span className="footico">▮</span>
+                    Консоль с ассистентом
                   </Button>
                 )}
                 <div className="acct-sep" aria-hidden />

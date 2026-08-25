@@ -5,7 +5,7 @@
 // при добавлении возможностей. Тулы объявляют минимальную версию агента; если
 // подключённый агент старее — тула не выполняется (просим обновиться).
 
-export const AGENT_VERSION = '0.13.0'
+export const AGENT_VERSION = '0.14.0'
 
 /**
  * Минимальная версия агента для тула. 0.1.0 — базовый агент (умеет exec/bash);
@@ -21,7 +21,8 @@ export const AGENT_VERSION = '0.13.0'
  * 0.11.1 — команды в Termux получают окружение для сборки нативных npm-модулей;
  * 0.11.2 — безопасный файловый Git credential helper для headless Linux;
  * 0.12.0 — листинг различает симлинки и добавлено безопасное удаление обычного файла;
- * 0.13.0 — loopback HTTP-мост тестовых окружений Web Reader (http.request).
+ * 0.13.0 — loopback HTTP-мост тестовых окружений Web Reader (http.request);
+ * 0.14.0 — консоль с ассистентом: агент шлёт живой контекст PTY (cwd/foreground/altScreen).
  */
 export const TOOL_MIN_VERSION: Record<string, string> = {
   exec: '0.1.0',

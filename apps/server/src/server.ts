@@ -39,6 +39,7 @@ import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
+import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
@@ -376,6 +377,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     (token) => remoteFileBroker.get(token)
   )
   registerCiCommandsMcp(app, mcpSecret)
+  // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
+  // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.
+  registerConsoleMcp(app, agentRegistry, mcpSecret)
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
   registerKbMcp(app, {
@@ -447,6 +451,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
   const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
   const previewMcpBaseUrl = buildPublicMcpUrl(opts.config, PREVIEW_MCP_PATH, mcpSecret)
+  const consoleMcpBaseUrl = buildPublicMcpUrl(opts.config, CONSOLE_MCP_PATH, mcpSecret)
 
   // «Исследовать проект»: модель на машине проекта сверяет статьи раздела
   // «Разработка проекта» с кодом. Живёт рядом с MCP-мостом — ей нужен тот же
@@ -827,6 +832,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     mcpBaseUrl: remoteBashMcpBaseUrl,
     kbMcpBaseUrl,
     previewMcpBaseUrl,
+    consoleMcpBaseUrl,
     previewTool: previewToolBroker,
     remoteFileTool: remoteFileBroker,
     onAuthError: (userId, provider, message) => { authStatus.reportRunError(userId, provider, message) }

@@ -9,8 +9,13 @@
 
 import { createRequire } from 'node:module'
 import { spawn } from 'node:child_process'
-import type { AgentToServer } from '@voicechat/shared'
+import { readFileSync, readlinkSync } from 'node:fs'
+import type { AgentToServer, PtyContext } from '@voicechat/shared'
+import { consolePtyId } from '@voicechat/shared'
 import { commandEnv, isWindows, resolveShell } from './platform.js'
+
+/** Префикс ptyId консоли с ассистентом — только у них отслеживаем контекст. */
+const CONSOLE_PTY_PREFIX = consolePtyId('')
 
 // Минимальная форма node-pty, которая нам нужна (без зависимости от типов пакета).
 interface IPty {
@@ -19,6 +24,8 @@ interface IPty {
   write(data: string): void
   resize(cols: number, rows: number): void
   kill(signal?: string): void
+  /** pid shell-процесса — нужен для чтения контекста из /proc (Linux). */
+  pid?: number
 }
 interface PtyModule {
   spawn(file: string, args: string[], opts: Record<string, unknown>): IPty
@@ -51,6 +58,81 @@ function clampDim(v: number, fallback: number): number {
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : fallback
 }
 
+// --- Контекст консоли (cwd/foreground/altScreen) ---------------------------
+// Только для PTY консоли-с-ассистентом и только на Linux (через /proc). На других
+// платформах поля остаются неизвестны — это ожидаемая деградация.
+
+const ctxTimers = new Map<string, NodeJS.Timeout>()
+const altScreenState = new Map<string, boolean>()
+const lastCtxSent = new Map<string, string>()
+
+function isConsolePty(ptyId: string): boolean {
+  return ptyId.startsWith(CONSOLE_PTY_PREFIX)
+}
+
+/** Отслеживаем вход/выход из альтернативного экрана (полноэкранный TUI). */
+function scanAltScreen(ptyId: string, data: string): void {
+  if (data.includes('\x1b[?1049h') || data.includes('\x1b[?47h')) altScreenState.set(ptyId, true)
+  if (data.includes('\x1b[?1049l') || data.includes('\x1b[?47l')) altScreenState.set(ptyId, false)
+}
+
+/** Рабочий каталог shell из /proc/<pid>/cwd (Linux); null — не удалось. */
+function readCwd(pid: number): string | null {
+  try {
+    return readlinkSync(`/proc/${pid}/cwd`)
+  } catch {
+    return null
+  }
+}
+
+/** Процесс в фокусе терминала: tpgid из /proc/<pid>/stat → имя из comm. */
+function readForeground(pid: number): string | null {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+    // comm может содержать пробелы/скобки — берём всё после последней ')'.
+    const rest = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/)
+    // rest: state ppid pgrp session tty_nr tpgid ...
+    const tpgid = Number(rest[5])
+    if (!Number.isFinite(tpgid) || tpgid <= 0) return null
+    const comm = readFileSync(`/proc/${tpgid}/comm`, 'utf8').trim()
+    return comm || null
+  } catch {
+    return null
+  }
+}
+
+function computeContext(ptyId: string, pid: number): PtyContext {
+  return {
+    cwd: readCwd(pid),
+    foreground: readForeground(pid),
+    altScreen: altScreenState.get(ptyId) ?? false
+  }
+}
+
+/** Раз в секунду шлём контекст сессии серверу — только при изменении. */
+function startContextTracking(ptyId: string, pid: number | undefined, emit: (msg: AgentToServer) => void): void {
+  if (!isConsolePty(ptyId) || process.platform !== 'linux' || !pid) return
+  const tick = (): void => {
+    const context = computeContext(ptyId, pid)
+    const serialized = JSON.stringify(context)
+    if (lastCtxSent.get(ptyId) === serialized) return
+    lastCtxSent.set(ptyId, serialized)
+    emit({ t: 'pty.context', ptyId, context })
+  }
+  tick()
+  const timer = setInterval(tick, 1000)
+  timer.unref?.()
+  ctxTimers.set(ptyId, timer)
+}
+
+function stopContextTracking(ptyId: string): void {
+  const timer = ctxTimers.get(ptyId)
+  if (timer) clearInterval(timer)
+  ctxTimers.delete(ptyId)
+  altScreenState.delete(ptyId)
+  lastCtxSent.delete(ptyId)
+}
+
 /** Нативный терминал (node-pty). Кидает, если модуль недоступен. */
 function startNative(ptyId: string, cols: number, rows: number, cwd: string, emit: (msg: AgentToServer) => void): void {
   const shell = resolveShell()
@@ -62,11 +144,16 @@ function startNative(ptyId: string, cols: number, rows: number, cwd: string, emi
     env: { ...commandEnv(), TERM: 'xterm-256color' }
   })
   sessions.set(ptyId, term)
-  term.onData((data) => emit({ t: 'pty.output', ptyId, data }))
+  term.onData((data) => {
+    scanAltScreen(ptyId, data)
+    emit({ t: 'pty.output', ptyId, data })
+  })
   term.onExit(({ exitCode, signal }) => {
     sessions.delete(ptyId)
+    stopContextTracking(ptyId)
     emit({ t: 'pty.exit', ptyId, exitCode, signal })
   })
+  startContextTracking(ptyId, term.pid, emit)
 }
 
 /**
@@ -155,6 +242,7 @@ export function killPty(ptyId: string): void {
   const term = sessions.get(ptyId)
   if (!term) return
   sessions.delete(ptyId)
+  stopContextTracking(ptyId)
   try {
     term.kill()
   } catch {

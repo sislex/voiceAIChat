@@ -1262,7 +1262,7 @@ export class VoiceChatDb {
 
   // ---- Conversations ----------------------------------------------------
 
-  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | null = null): Conversation {
+  createConversation(userId: string, title = 'Новый разговор', assistantKind: 'web-recorder' | 'playwright-reader' | 'console-reader' | null = null): Conversation {
     const id = this.newId()
     const ts = this.now()
     this.db
@@ -1359,7 +1359,7 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader'))
+           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader', 'console-reader'))
            AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
          ORDER BY c.updated_at DESC`
@@ -1410,7 +1410,7 @@ export class VoiceChatDb {
                  ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_exec_target
          FROM conversations c
          WHERE c.user_id = ?
-           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader'))
+           AND (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader', 'console-reader'))
            AND ${NOT_CANCELLED_TASK_CHAT}
            AND (? = 1 OR ${NOT_DONE_TASK_CHAT})
            AND (ulower(c.title) LIKE ? ESCAPE '\\'
@@ -2814,7 +2814,7 @@ export class VoiceChatDb {
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
       disabledContext: parseJsonValue<string[]>(row.disabled_context_json, []).filter((item): item is string => typeof item === 'string'),
       projectId: row.project_id ?? null,
-      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' ? row.assistant_kind : null,
+      assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' || row.assistant_kind === 'console-reader' ? row.assistant_kind : null,
       previewUrl: row.preview_url ?? null,
       projectPreviewUrl: row.project_id ? ((this.db.prepare(`SELECT preview_url FROM projects WHERE id = ?`).get(row.project_id) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,

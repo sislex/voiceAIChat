@@ -213,9 +213,9 @@ export async function registerRest(
     return db.importDesktopData(uid(req), req.body)
   })
 
-  app.post<{ Body: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' } }>(REST.conversations, async (req) => {
+  app.post<{ Body: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' } }>(REST.conversations, async (req) => {
     const kind = req.body?.assistantKind
-    return db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' ? kind : null)
+    return db.createConversation(uid(req), req.body?.title, kind === 'web-recorder' || kind === 'playwright-reader' || kind === 'console-reader' ? kind : null)
   })
 
   app.get<{ Params: { projectId: string }; Querystring: { conversationId?: string } }>('/api/projects/:projectId/kanban-assistant', async (req, reply) => {
