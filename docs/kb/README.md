@@ -14,7 +14,7 @@
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-24 | ⚠ 2 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 11 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 52 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-24 | ⚠ 4 коммит(ов) в areas после сверки: dc38cd8d fix(prod): persist managed checkout path … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-25 | ✓ |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 5 коммит(ов) в areas после сверки: a11f9ac2 feat(chat): make message submission feedback immediate … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ⚠ 14 коммит(ов) в areas после сверки: 2e436ec7 feat(reader): пакет тестирования — errors/wait/back/edits, сессии, сценарии … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 104 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
@@ -22,9 +22,9 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 19 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 7 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 3 коммит(ов) в areas после сверки: 557167a3 fix(server): resolve snapshot LLM from project defaults … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 603 коммит(ов) в areas после сверки: f15e8c6d fix(agent): expose npm to supervised commands … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 605 коммит(ов) в areas после сверки: 0985f857 fix(releases): preserve managed preflight failures … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 73 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 46 коммит(ов) в areas после сверки: a11f9ac2 feat(chat): make message submission feedback immediate … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 47 коммит(ов) в areas после сверки: 0985f857 fix(releases): preserve managed preflight failures … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 4 коммит(ов) в areas после сверки: a11f9ac2 feat(chat): make message submission feedback immediate … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 34 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 5 коммит(ов) в areas после сверки: 2198e7a9 fix: auto-resolve merge conflicts with model step … |
@@ -33,7 +33,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 32 коммит(ов) в areas после сверки: a11f9ac2 feat(chat): make message submission feedback immediate … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-24 | ⚠ 23 коммит(ов) в areas после сверки: 557167a3 fix(server): resolve snapshot LLM from project defaults … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-25 | ⚠ 2 коммит(ов) в areas после сверки: 557167a3 fix(server): resolve snapshot LLM from project defaults … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-25 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-25 | ⚠ 1 коммит(ов) в areas после сверки: 0985f857 fix(releases): preserve managed preflight failures |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-24 | ⚠ 19 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 43 коммит(ов) в areas после сверки: 92e42b00 feat(playwright-reader): связка панели с browser-runner (оркестрация + Chromium) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-20 | ⚠ 2 коммит(ов) в areas после сверки: e91c96d4 web reader … |
@@ -57,7 +57,7 @@
 
 ## Журнал сессий
 
-Всего записей: 352. Последние:
+Всего записей: 353. Последние:
 
 - [2026-08-25-macbook-air-user-manual-qa-machine-labels.md](log/2026-08-25-macbook-air-user-manual-qa-machine-labels.md) — manual-qa-machine-labels
 - [2026-08-25-macbook-air-user-instant-submit.md](log/2026-08-25-macbook-air-user-instant-submit.md) — instant-submit

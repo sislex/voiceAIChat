@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-08-24
-checked: f819c6ac
+updated: 2026-08-25
+checked: 0985f857
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -73,8 +73,33 @@ areas:
 
 Для осознанного общего сервисного аккаунта Codex включите у исполнителя
 `VC_CODEX_SHARED_AUTH=true`. Тогда `.codex/auth.json` каждого пользовательского
-профиля синхронизируется из общего `HOME/.codex/auth.json`; истории, сессии и
-рабочие каталоги остаются раздельными. По умолчанию режим выключен.
+профиля перезаписывается общим источником при каждом запуске (`seedFile(..., overwrite=true)`
+в `cliProfiles.ts`); истории, сессии и рабочие каталоги остаются раздельными.
+По умолчанию режим выключен.
+
+**Источник общего auth зависит от `VC_CODEX_SHARED_AUTH_USER`, и это ловушка при
+`codex login`.** Если переменная задана (напр. `admin`), источник — не `HOME/.codex/
+auth.json`, а профиль этого пользователя: `<dataDir>/cli-users/<base64url(логин)>/.codex/
+auth.json` (в проде `/data/cli-users/YWRtaW4/.codex/auth.json` для `admin`; `YWRtaW4`
+= base64url `admin`). Пустая переменная — источник действительно `HOME/.codex/auth.json`.
+Поэтому обычный `codex login` внутри `runner-work` пишет в `HOME` (`/home/node/.codex`)
+и **не вступает в силу**: раздаётся всем по-прежнему старый токен из профиля админа,
+а ходы Codex падают с `401 invalid_refresh_token` (токены ChatGPT-логина протухают).
+Логиниться нужно в профиль-источник:
+
+```bash
+docker exec -it -e CODEX_HOME=/data/cli-users/YWRtaW4/.codex \
+  voiceaichat-runner-work-1 codex login
+```
+
+либо, залогинившись в дефолтный HOME, скопировать результат в профиль-источник
+(`cp -f /home/node/.codex/auth.json /data/cli-users/YWRtaW4/.codex/auth.json`).
+После этого фикс расходится на остальных сам — профили пересеиваются на следующем
+ходе, перезапуск контейнеров не нужен. Codex установлен только в `runner-work`
+(в `runner-personal` он выключен через `VC_CODEX_BIN=/bin/false`). Проверка
+живого токена: `codex login status` говорит «Logged in» и на протухшем токене —
+доверяй не ему, а реальному прогону `echo … | codex exec --json --skip-git-repo-check -`
+(инцидент 2026-08-25).
 
 Практическое следствие: при проблемах с проводником CC/Codex, `imageRelocate` или
 `/api/auth/status` смотреть нужно не файловую систему контейнера сервера, а
