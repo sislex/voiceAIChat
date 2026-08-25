@@ -1387,7 +1387,10 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     const agentId = project?.productionAgentId
     const linked = agentId ? project?.machines.some(machine => machine.agentId === agentId) : false
     if (!project || !agentId || !linked || !project.productionDeployCommand || !project.productionHealthCheckCommand || !project.gitUrl) return null
-    if(project.productionEnvironmentMode==='managed'){try{return managedEnvironments.resolve(release.triggeredBy,release.projectId,'production').target}catch{return null}}
+    // requireOnline:false — target resolvable даже если companion-агент прод-машины
+    // ещё не переподключился после рестарта; monitorHealth сам дождётся онлайна и
+    // корректной версии в пределах health-check бюджета, а не падает мгновенно.
+    if(project.productionEnvironmentMode==='managed'){try{return managedEnvironments.resolve(release.triggeredBy,release.projectId,'production',{requireOnline:false}).target}catch{return null}}
     if(!project.productionCheckoutPath)return null
     return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl, mode:'legacy' }
   })
