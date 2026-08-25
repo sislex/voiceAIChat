@@ -240,7 +240,9 @@ describe('VoiceBar — высота поля ввода', () => {
     Object.defineProperty(HTMLTextAreaElement.prototype, 'scrollHeight', {
       configurable: true,
       get(this: HTMLTextAreaElement) {
-        return Math.max(1, this.value.split('\n').length) * LINE + PAD
+        const visualRows = this.value.split('\n')
+          .reduce((rows, line) => rows + Math.max(1, Math.ceil(line.length / 20)), 0)
+        return visualRows * LINE + PAD
       }
     })
   })
@@ -275,6 +277,36 @@ describe('VoiceBar — высота поля ввода', () => {
   it('после четырёх строк не растёт — дальше скролл', () => {
     expect(heightOf('a\nb\nc\nd\ne')).toBe('92px')
     expect(heightOf('a\nb\nc\nd\ne\nf\ng\nh')).toBe('92px')
+  })
+
+  it('для визуально длинного текста показывает встроенный доступный переключатель и сохраняет выделение', async () => {
+    const draft = 'очень длинная непрерывная строка '.repeat(5)
+    setup('idle', { draft })
+
+    const input = screen.getByLabelText('Поле ввода сообщения') as HTMLTextAreaElement
+    const toggle = await screen.findByTestId('composer-size-toggle')
+    expect(toggle.parentElement).toHaveClass('composer-input')
+    expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+
+    input.focus()
+    input.setSelectionRange(2, 8)
+    await userEvent.click(toggle)
+    await waitFor(() => expect(input).toHaveFocus())
+    expect(input.selectionStart).toBe(2)
+    expect(input.selectionEnd).toBe(8)
+    expect(input.closest('.voicebar')).toHaveClass('voicebar--expanded')
+    expect(toggle).toHaveAccessibleName('Свернуть длинный текст')
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+    toggle.focus()
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => {
+      expect(input.closest('.voicebar')).not.toHaveClass('voicebar--expanded')
+      expect(input).toHaveFocus()
+    })
+    expect(input).toHaveValue(draft)
   })
 })
 
