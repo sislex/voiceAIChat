@@ -117,7 +117,7 @@ else
     *) echo "Неизвестная архитектура $ARCH — поставьте Node.js 22+ вручную и повторите."; exit 1 ;;
   esac
   # Первая запись в index.json — самая свежая версия.
-  NVER="$(curl -fsSL https://nodejs.org/dist/index.json | grep -o '"version":"v[0-9.]*"' | head -1 | sed 's/.*"v/v/;s/"//')"
+  NVER="$(curl -fsSL https://nodejs.org/dist/index.json | grep -o '"version":"v[0-9.]*"' | awk 'NR == 1 { first = $0 } END { print first }' | sed 's/.*"v/v/;s/"//')"
   [ -n "$NVER" ] || { echo "не удалось узнать версию Node.js"; exit 1; }
   echo "  $NVER ($NARCH)"
   curl -fsSL "https://nodejs.org/dist/$NVER/node-$NVER-${nodePlatform}-$NARCH.tar.gz" -o "$AGENT_DIR/node.tar.gz"
