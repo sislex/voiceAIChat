@@ -225,26 +225,47 @@ describe('ChatColumn — простой/подробный вид ответа',
     expect(screen.getByText('Ответ')).toBeInTheDocument()
   })
 
-  it('кнопка по кругу: минимально → кратко → подробно → минимально', async () => {
+  it('«Вид ответа» — список: минимально → кратко → подробно, переключается', async () => {
     renderCol({ messages: withActivity })
-    const btn = screen.getByLabelText('Переключить вид действий')
+    const select = screen.getByLabelText('Вид ответа') as HTMLSelectElement
     // Кратко: появляется счётчик действий, секций ещё нет.
-    await userEvent.click(btn)
+    await userEvent.selectOptions(select, 'brief')
     expect(screen.getByTestId('activity-count').textContent).toContain('2 действия')
     expect(screen.queryByTestId('activity-sections')).toBeNull()
     // Подробно: секции по каждому действию.
-    await userEvent.click(btn)
+    await userEvent.selectOptions(select, 'detailed')
     expect(screen.getByTestId('activity-sections')).toBeInTheDocument()
     expect(screen.getAllByTestId('activity-section')).toHaveLength(2)
-    // Снова минимально.
-    await userEvent.click(btn)
+    // Обратно минимально.
+    await userEvent.selectOptions(select, 'minimal')
     expect(screen.queryByTestId('activity-sections')).toBeNull()
     expect(screen.queryByTestId('activity-count')).toBeNull()
   })
 
-  it('без активности кнопки переключения нет', () => {
+  it('без активности списка «Вид ответа» нет', () => {
     renderCol()
-    expect(screen.queryByLabelText('Переключить вид действий')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Вид ответа')).not.toBeInTheDocument()
+  })
+
+  it('шапка ответа: копирование, модель на ховере движка, время старта; стоимость в подвале', () => {
+    const msg = makeAiMessage({ id: 'ai-head', engine: 'claude', meta: { model: 'opus', durationMs: 5000, costUsd: 0.1234, activity: [] } })
+    renderCol({ messages: [msg] })
+    // Копировать — в шапке ответа.
+    expect(screen.getByLabelText('Копировать ответ')).toBeInTheDocument()
+    // Движок с моделью: title и скрытый спан модели.
+    const engine = document.querySelector('.msg-engine') as HTMLElement
+    expect(engine.getAttribute('title')).toContain('opus')
+    expect(engine.querySelector('.msg-model')?.textContent).toContain('opus')
+    // Время начала ответа присутствует.
+    expect(document.querySelector('.msg-start')).toBeTruthy()
+    // Реальная стоимость из ответа модели.
+    expect(screen.getByTestId('message-cost-ai-head').textContent).toBe('$0.12')
+  })
+
+  it('расчётная стоимость (модель не назвала цену) помечается «≈»', () => {
+    const msg = makeAiMessage({ id: 'ai-est', engine: 'claude', meta: { model: 'opus', inputTokens: 1000, outputTokens: 2000 } })
+    renderCol({ messages: [msg] })
+    expect(screen.getByTestId('message-cost-ai-est').textContent).toContain('≈ $')
   })
 })
 

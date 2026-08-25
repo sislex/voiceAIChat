@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ClaudeLogEntry } from '@shared/types'
-import { activityLocation, activityStatus, chipClass, composerPeek, formatDuration, formatLiveUsage, messageTime, pluralActions } from './view'
+import { activityLocation, activityStatus, chipClass, clockTime, composerPeek, formatDuration, formatElapsed, formatLiveUsage, messageCost, messageTime, pluralActions } from './view'
 
 const log = (kind: ClaudeLogEntry['kind'], summary: string): ClaudeLogEntry => ({
   kind,
@@ -131,5 +131,37 @@ describe('composerPeek — подпись свёрнутого композер�
     expect(composerPeek('', 0, 'idle')).toBe('Показать поле ввода')
     expect(composerPeek('', 0, 'listening')).toBe('Идёт запись, говорите')
     expect(composerPeek('', 0, 'thinking', 'Codex')).toBe('Запрос отправлен движку Codex, ждём ответ')
+  })
+})
+
+describe('clockTime / formatElapsed / messageCost — тайминги и стоимость', () => {
+  it('clockTime отдаёт часы:минуты:секунды', () => {
+    const ts = Date.UTC(2026, 0, 2, 9, 5, 7)
+    // Зависит от пояса зрителя; проверяем формат HH:MM:SS.
+    expect(clockTime(ts)).toMatch(/^\d{2}:\d{2}:\d{2}$/)
+  })
+
+  it('formatElapsed — мм:сс, не уходит в минус', () => {
+    expect(formatElapsed(0)).toBe('00:00')
+    expect(formatElapsed(65_000)).toBe('01:05')
+    expect(formatElapsed(-1000)).toBe('00:00')
+    expect(formatElapsed(3_599_000)).toBe('59:59')
+  })
+
+  it('messageCost: реальная цена из ответа модели показывается как есть', () => {
+    const cost = messageCost({ costUsd: 0.1234, model: 'opus' })
+    expect(cost).toMatchObject({ estimated: false, text: '$0.12' })
+    expect(cost?.title).toMatch(/из ответа модели/)
+  })
+
+  it('messageCost: без цены модели — расчётная по тарифам с «≈»', () => {
+    const cost = messageCost({ model: 'opus', inputTokens: 1000, outputTokens: 2000 })
+    expect(cost?.estimated).toBe(true)
+    expect(cost?.text.startsWith('≈ $')).toBe(true)
+    expect(cost?.title).toMatch(/по тарифам/)
+  })
+
+  it('messageCost: модель неизвестна и цены нет → null', () => {
+    expect(messageCost({ inputTokens: 100 })).toBeNull()
   })
 })

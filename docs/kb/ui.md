@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-25
-checked: aecf49ec
+checked: ba2d6042
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -485,6 +485,8 @@ Partial STT обновляет живые сегменты; final формиру
 ## Компоненты и поверхности
 
 `App.tsx` соединяет основной layout и глобальные popup-поверхности. `Sidebar` показывает разговоры, поиск, фильтр проекта и режим работы чата; его карточки только открывают или удаляют разговор, а не переименовывают его. Переименование доступно только из шапки открытого чата через `ChatColumn.onRenameTitle`. Пункт «История LLM» открывает объединённый `EnginesObserver` по неизменному `#/claude-code`; он показывает сессии Claude/Codex, их модель, токены и оценку стоимости, а его `ToolFrame` носит то же название. `ChatColumn` рендерит timeline, streaming response, activity/usage и edit/delete действия. `VoiceBar` содержит композер, вложения, микрофон и cancel.
+
+**Шапка и подвал ответа ассистента (`ChatColumn`, класс `.msg-head`).** Слева — движок (`engineLabel`), за ним селект «Вид ответа» (список `TIMELINE_MODES` вместо прежней циклической кнопки; переключается и во время ответа — для живого хода это `liveMode`, для завершённого — `modeById`). Используемая модель (`meta.model ?? meta.request.model`) по умолчанию скрыта (`.msg-model { display:none }`) и появляется при наведении на движок (плюс `title`). Справа сверху — время начала ответа (`clockTime(createdAt − durationMs)` с тултипом полной даты) и иконка «Копировать ответ» (перенесена сюда из подвала). В подвале (`.mfoot`): время конца ответа (`messageTime`, тултип полной даты), токены, **ориентировочная стоимость** (`messageCost` из `lib/view.ts`: реальная `meta.costUsd` из ответа модели показывается как есть, иначе расчётная по `estimateCostUsd`/прайс-таблице `packages/shared/src/pricing.ts` с пометкой «≈»), и «Подробнее» (`MessageMeta`). У живого (стримящегося) хода в подвале — таймер «Отвечает: мм:сс» (`formatElapsed`), обновляется раз в секунду (эффект по `hasStream`, старт фиксируется в `streamStartRef`). Чистые хелпера — `clockTime`/`dateTimeTooltip`/`formatElapsed`/`messageCost` в `packages/ui/src/lib/view.ts` (тесты — `view.test.ts`, разметка/поведение — `ChatColumn.dom.test.tsx`).
 
 ### Адаптивный композер `VoiceBar`
 
