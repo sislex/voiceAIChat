@@ -4,7 +4,7 @@
 // На мобильной ширине открывается свёрнутой, на десктопе — развёрнутой.
 // Состояние нигде не хранится и ручной выбор не меняется при resize.
 
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import type { ModifierPrompt, PermissionMode, VoiceState } from '@shared/types'
 import type { UploadInfo } from '@shared/ipc'
 import type { PreviewElementPayload } from '@shared/previewInspector'
@@ -151,6 +151,8 @@ export interface VoiceBarProps {
    * а проп также позволяет витрине и изолированным тестам выбрать нужный вид.
    */
   defaultCollapsed?: boolean
+  /** Разрешить мобильный сценарий сворачивания всей панели. */
+  allowCollapse?: boolean
   layout?: 'centered' | 'docked'
   /** Безопасное отображаемое имя текущего пользователя для приветствия. */
   userDisplayName?: string | null
@@ -194,6 +196,7 @@ export function VoiceBar({
   onApplyPromptSuggestion,
   onClosePromptSuggestions,
   defaultCollapsed = true,
+  allowCollapse = false,
   layout = 'docked',
   userDisplayName = null
 }: VoiceBarProps): JSX.Element {
@@ -204,6 +207,7 @@ export function VoiceBar({
   const [requestPhase, setRequestPhase] = useState<RequestPhase | null>(null)
   const [queueExpanded, setQueueExpanded] = useState(false)
   const [editorExpanded, setEditorExpanded] = useState(false)
+  const [textareaOverflowing, setTextareaOverflowing] = useState(false)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [queueEditText, setQueueEditText] = useState('')
   const [draggedQueueId, setDraggedQueueId] = useState<string | null>(null)
@@ -262,7 +266,7 @@ export function VoiceBar({
   const composerMode = !isListening
 
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
-  const isCollapsed = layout !== 'centered' && collapsed
+  const isCollapsed = allowCollapse && layout !== 'centered' && collapsed
   const focusAfterExpandRef = useRef(false)
   const collapse = (): void => setCollapsed(true)
   const expand = (): void => {
@@ -272,7 +276,11 @@ export function VoiceBar({
 
   const fileRef = useRef<HTMLInputElement>(null)
   // Композер начинается с одной строки и растёт с текстом до четырёх, дальше — скролл.
-  const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS)
+  // Фактический overflow учитывает и визуальные переносы длинной строки, а не только \n.
+  const onDraftOverflowChange = useCallback((overflowing: boolean) => {
+    setTextareaOverflowing((current) => current === overflowing ? current : overflowing)
+  }, [])
+  const draftRef = useAutoGrow(draft, DRAFT_MIN_ROWS, DRAFT_MAX_ROWS, onDraftOverflowChange)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const blockedAttachments = attachments.filter((item) => item.status && item.status !== 'ready')
   const processingAttachmentCount = blockedAttachments.filter((item) => item.status === 'processing').length
@@ -510,41 +518,21 @@ export function VoiceBar({
         </h2>
       )}
       <div className="vinner">
-        <div className="vhandle">
-          <IconButton
-            className="vhandle-btn"
-            size="sm"
-            aria-expanded
-            aria-label="Свернуть поле ввода"
-            title="Свернуть поле ввода"
-            data-testid="composer-collapse"
-            onClick={collapse}
-          >
-            ⌄
-          </IconButton>
-          {(editorExpanded || draft.includes('\n')) && (
+        {allowCollapse && (
+          <div className="vhandle">
             <IconButton
               className="vhandle-btn"
               size="sm"
-              aria-expanded={editorExpanded}
-              aria-label={editorExpanded ? 'Свернуть поле ввода' : 'Развернуть поле ввода'}
-              title={editorExpanded ? 'Свернуть поле ввода' : 'Развернуть поле ввода'}
-              data-testid="composer-size-toggle"
-              onClick={() => {
-                const element = inputRef.current
-                const selection = element ? [element.selectionStart, element.selectionEnd] as const : null
-                setEditorExpanded((value) => !value)
-                requestAnimationFrame(() => {
-                  if (!element) return
-                  element.focus()
-                  if (selection) element.setSelectionRange(selection[0], selection[1])
-                })
-              }}
+              aria-expanded
+              aria-label="Свернуть поле ввода"
+              title="Свернуть поле ввода"
+              data-testid="composer-collapse"
+              onClick={collapse}
             >
-              <DiagonalResizeIcon expanded={editorExpanded} />
+              ⌄
             </IconButton>
-          )}
-        </div>
+          </div>
+        )}
         {helper.open && (
           <div className="prompt-helper" data-testid="prompt-helper" role="group" aria-label="Варианты формулировки запроса">
             <div className="prompt-helper-head">
@@ -653,26 +641,50 @@ export function VoiceBar({
               >
                 📎
               </IconButton>
-              <textarea
-                ref={(element) => {
-                  inputRef.current = element
-                  draftRef(element)
-                  if (element && focusAfterExpandRef.current) {
-                    focusAfterExpandRef.current = false
-                    element.focus()
-                  }
-                }}
-                className={`tin${editorExpanded ? ' tin--expanded' : ''}`}
-                placeholder="Напишите сообщение (Shift+Enter — новая строка)…"
-                value={draft}
-                rows={DRAFT_MIN_ROWS}
-                onChange={(e) => onDraftChange(e.target.value)}
-                onKeyDown={onKey}
-                onPaste={onPaste}
-                aria-label="Поле ввода сообщения"
-                aria-invalid={blockedAttachments.length > 0 || undefined}
-                data-ai-assist={aiAssistEnabled ? '' : undefined}
-              />
+              <div className="composer-input">
+                <textarea
+                  ref={(element) => {
+                    inputRef.current = element
+                    draftRef(element)
+                    if (element && focusAfterExpandRef.current) {
+                      focusAfterExpandRef.current = false
+                      element.focus()
+                    }
+                  }}
+                  className={`tin${editorExpanded ? ' tin--expanded' : ''}`}
+                  placeholder="Напишите сообщение (Shift+Enter — новая строка)…"
+                  value={draft}
+                  rows={DRAFT_MIN_ROWS}
+                  onChange={(e) => onDraftChange(e.target.value)}
+                  onKeyDown={onKey}
+                  onPaste={onPaste}
+                  aria-label="Поле ввода сообщения"
+                  aria-invalid={blockedAttachments.length > 0 || undefined}
+                  data-ai-assist={aiAssistEnabled ? '' : undefined}
+                />
+                {(editorExpanded || textareaOverflowing || draft.includes('\n')) && (
+                  <button
+                    className="composer-size-toggle"
+                    type="button"
+                    aria-expanded={editorExpanded}
+                    aria-label={editorExpanded ? 'Свернуть длинный текст' : 'Развернуть длинный текст'}
+                    title={editorExpanded ? 'Свернуть длинный текст' : 'Развернуть длинный текст'}
+                    data-testid="composer-size-toggle"
+                    onClick={() => {
+                      const element = inputRef.current
+                      const selection = element ? [element.selectionStart, element.selectionEnd] as const : null
+                      setEditorExpanded((value) => !value)
+                      requestAnimationFrame(() => {
+                        if (!element) return
+                        element.focus()
+                        if (selection) element.setSelectionRange(selection[0], selection[1])
+                      })
+                    }}
+                  >
+                    <DiagonalResizeIcon expanded={editorExpanded} />
+                  </button>
+                )}
+              </div>
               {aiAssistEnabled && (
                 <IconButton className="vc-btn--circle composer-wand" size="sm" {...aiAssist.triggerProps}><WandIcon /></IconButton>
               )}

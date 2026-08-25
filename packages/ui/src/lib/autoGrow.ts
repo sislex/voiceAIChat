@@ -48,20 +48,23 @@ function sum(...values: string[]): number {
   }, 0)
 }
 
-function fitToText(el: HTMLTextAreaElement, minRows: number, maxRows: number): void {
+function fitToText(el: HTMLTextAreaElement, minRows: number, maxRows: number): boolean | null {
   const cs = getComputedStyle(el)
   const lineHeight = resolveLineHeight(cs)
-  if (lineHeight === 0) return // стили ещё не применились — оставляем высоту от rows
+  if (lineHeight === 0) return null // стили ещё не применились — оставляем высоту от rows
+  const paddingY = sum(cs.paddingTop, cs.paddingBottom)
   // Сброс перед замером: иначе scrollHeight не даст полю уменьшиться.
   el.style.height = 'auto'
+  const contentHeight = el.scrollHeight
   el.style.height = `${autoGrowHeight({
-    contentHeight: el.scrollHeight,
+    contentHeight,
     lineHeight,
-    paddingY: sum(cs.paddingTop, cs.paddingBottom),
+    paddingY,
     borderY: sum(cs.borderTopWidth, cs.borderBottomWidth),
     minRows,
     maxRows
   })}px`
+  return contentHeight > maxRows * lineHeight + paddingY
 }
 
 /**
@@ -73,13 +76,16 @@ function fitToText(el: HTMLTextAreaElement, minRows: number, maxRows: number): v
 export function useAutoGrow(
   value: string,
   minRows: number,
-  maxRows: number
+  maxRows: number,
+  onOverflowChange?: (overflowing: boolean) => void
 ): (el: HTMLTextAreaElement | null) => void {
   const ref = useRef<HTMLTextAreaElement | null>(null)
 
   const fit = useCallback(() => {
-    if (ref.current) fitToText(ref.current, minRows, maxRows)
-  }, [minRows, maxRows])
+    if (!ref.current) return
+    const overflowing = fitToText(ref.current, minRows, maxRows)
+    if (overflowing !== null) onOverflowChange?.(overflowing)
+  }, [minRows, maxRows, onOverflowChange])
 
   useLayoutEffect(fit, [value, fit])
 
