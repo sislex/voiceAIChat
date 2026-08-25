@@ -32,10 +32,10 @@ export class ManagedEnvironmentResolver {
     const script=[
       `test ! -L ${quote(storageRoot)} && test ! -L ${quote(paths.root)}`,
       `test -r ${quote(marker)} && grep -F ${quote(storageId)} ${quote(marker)} >/dev/null`,
-      `if [ -e ${quote(paths.manifest)} ]; then test \"$(tr -d '\\n\\r ' < ${quote(paths.manifest)})\" = ${quote(manifest)}; fi`,
-      `if [ -e ${quote(paths.repository)} ]; then if [ -d ${quote(paths.repository+'/.'+'git')} ]; then test \"$(git -C ${quote(paths.repository)} config --get remote.origin.url)\" = ${quote(target.gitUrl)} && test -z \"$(git -C ${quote(paths.repository)} status --porcelain)\"; else test -d ${quote(paths.repository)} && test -z \"$(find ${quote(paths.repository)} -mindepth 1 -maxdepth 1 -print -quit)\"; fi; fi`,
-      `p=${quote(storageRoot+'/.voicechat-managed-probe-$')}; : > \"$p\" && rm -f \"$p\"`,
-      `available=$(df -Pk ${quote(storageRoot)} | awk 'NR==2 {print $4*1024}'); test \"\${available:-0}\" -ge ${this.minimumFreeBytes}`
+      `if [ -e ${quote(paths.manifest)} ]; then test "$(tr -d '\\n\\r ' < ${quote(paths.manifest)})" = ${quote(manifest)}; fi`,
+      `if [ -e ${quote(paths.repository)} ]; then if [ -d ${quote(paths.repository+'/.'+'git')} ]; then test "$(git -C ${quote(paths.repository)} config --get remote.origin.url)" = ${quote(target.gitUrl)} && test -z "$(git -C ${quote(paths.repository)} status --porcelain)"; else test -d ${quote(paths.repository)} && test -z "$(find ${quote(paths.repository)} -mindepth 1 -maxdepth 1 -print -quit)"; fi; fi`,
+      `p=${quote(storageRoot+'/.voicechat-managed-probe')} && : > "$p" && rm -f "$p"`,
+      `available=$(df -Pk ${quote(storageRoot)} | awk 'NR==2 {print $4*1024}'); test "\${available:-0}" -ge ${this.minimumFreeBytes}`
     ].join(' && ')
     const result=await this.releases.runPreflight(target,script)
     const ok=result.exitCode===0&&!result.timedOut

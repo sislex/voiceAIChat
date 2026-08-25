@@ -1,3 +1,7 @@
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { VoiceChatDb } from '../db/database.js'
 import type { ReleaseManager } from './releaseManager.js'
@@ -15,8 +19,8 @@ const machine = {
     staging:{path:'/data/ChatAI/projects/p1/environments/staging',override:false}
   }
 }
-const deps=(online=true,exitCode=0)=>{
-  const db={getProject:()=>project,getProjectMachine:()=>machine} as unknown as VoiceChatDb
+const deps=(online=true,exitCode=0,machineValue=machine)=>{
+  const db={getProject:()=>project,getProjectMachine:()=>machineValue} as unknown as VoiceChatDb
   const releases={isOnline:()=>online,runPreflight:vi.fn(async()=>({exitCode,output:exitCode?'failed':'ok'}))} as unknown as ReleaseManager
   return {db,releases}
 }
@@ -48,5 +52,34 @@ describe('ManagedEnvironmentResolver',()=>{
     expect(releases.runPreflight).toHaveBeenCalledOnce()
     const command=vi.mocked(releases.runPreflight).mock.calls[0]![1]
     expect(command).toContain("find '/data/ChatAI/projects/p1/environments/production/temporary/repository' -mindepth 1 -maxdepth 1 -print -quit")
+  })
+
+  it('executes the generated POSIX preflight without treating quotes as filename characters',async()=>{
+    const root=mkdtempSync(join(tmpdir(),'voicechat-managed-preflight-'))
+    try{
+      mkdirSync(join(root,'.voicechat'),{recursive:true})
+      writeFileSync(join(root,'.voicechat','storage.json'),JSON.stringify({id:'s1'}))
+      const environmentRoot=join(root,'projects','p1','environments','production')
+      const machineValue={...machine,storageRoot:root,directories:{
+        ...machine.directories,
+        production:{path:environmentRoot,override:false}
+      }}
+      const {db,releases}=deps(true,0,machineValue)
+      vi.mocked(releases.runPreflight).mockImplementation(async(_target,command)=>{
+        const executed=spawnSync('/bin/sh',['-c',command],{encoding:'utf8'})
+        return {exitCode:executed.status??1,output:`${executed.stdout}${executed.stderr}`}
+      })
+      const result=await new ManagedEnvironmentResolver(db,releases,()=>[root],1).preflight('owner','p1')
+      expect(result.ok).toBe(true)
+      expect(readdirSync(root).some(name=>name.startsWith('.voicechat-managed-probe-'))).toBe(false)
+
+      mkdirSync(environmentRoot,{recursive:true})
+      writeFileSync(join(environmentRoot,'environment.json'),'{}\\n')
+      const rejected=await new ManagedEnvironmentResolver(db,releases,()=>[root],1).preflight('owner','p1')
+      expect(rejected.ok).toBe(false)
+      expect(rejected.checks.manifest.message).not.toContain('cannot create')
+    }finally{
+      rmSync(root,{recursive:true,force:true})
+    }
   })
 })
