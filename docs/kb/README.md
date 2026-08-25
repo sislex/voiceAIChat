@@ -21,8 +21,8 @@
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 41 коммит(ов) в areas после сверки: 2e436ec7 feat(reader): пакет тестирования — errors/wait/back/edits, сессии, сценарии … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 18 коммит(ов) в areas после сверки: 37c682f4 fix(ui): isolate manual QA criterion forms … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 6 коммит(ов) в areas после сверки: 2e436ec7 feat(reader): пакет тестирования — errors/wait/back/edits, сессии, сценарии … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-19 | ⚠ 53 коммит(ов) в areas после сверки: 98d842f0 Simplify desktop chat composer … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 596 коммит(ов) в areas после сверки: 4068b68d Merge task 2c15180f-065f-41a3-b7ba-3dd15bec4e69 … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 1 коммит(ов) в areas после сверки: 98d842f0 Simplify desktop chat composer |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 597 коммит(ов) в areas после сверки: c2df46cb docs(kb): update after merge 2c15180f-065f-41a3-b7ba-3dd15bec4e69 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 72 коммит(ов) в areas после сверки: 0bbd39e4 fix(ui): align desktop composer content … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-23 | ⚠ 44 коммит(ов) в areas после сверки: 0bbd39e4 fix(ui): align desktop composer content … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 2 коммит(ов) в areas после сверки: 4068b68d Merge task 2c15180f-065f-41a3-b7ba-3dd15bec4e69 … |
@@ -57,7 +57,7 @@
 
 ## Журнал сессий
 
-Всего записей: 348. Последние:
+Всего записей: 349. Последние:
 
 - [2026-08-25-macbook-air-user-manual-qa-machine-labels.md](log/2026-08-25-macbook-air-user-manual-qa-machine-labels.md) — manual-qa-machine-labels
 - [2026-08-25-macbook-air-user-desktop-composer.md](log/2026-08-25-macbook-air-user-desktop-composer.md) — desktop-composer
@@ -67,8 +67,8 @@
 - [2026-08-25-alexeys-macbook-air-2-web-reader-instagram-limits.md](log/2026-08-25-alexeys-macbook-air-2-web-reader-instagram-limits.md) — web-reader-instagram-limits
 - [2026-08-25-alexeys-macbook-air-2-web-reader-hover-scroll-press-capture.md](log/2026-08-25-alexeys-macbook-air-2-web-reader-hover-scroll-press-capture.md) — web-reader-hover-scroll-press-capture
 - [2026-08-25-alexeys-macbook-air-2-unix-installer-node-pipefail.md](log/2026-08-25-alexeys-macbook-air-2-unix-installer-node-pipefail.md) — Безопасное определение версии Node.js в Unix-установщике
+- [2026-08-25-alexeys-macbook-air-2-browser-runner-instagram-live.md](log/2026-08-25-alexeys-macbook-air-2-browser-runner-instagram-live.md) — browser-runner-instagram-live
 - [2026-08-24-macbook-air-user-server-data-volume-migration.md](log/2026-08-24-macbook-air-user-server-data-volume-migration.md) — server-data-volume-migration
-- [2026-08-24-macbook-air-user-queue-reorder-and-atomic-merge.md](log/2026-08-24-macbook-air-user-queue-reorder-and-atomic-merge.md) — queue-reorder-and-atomic-merge
 
 ## Исторические планы
 

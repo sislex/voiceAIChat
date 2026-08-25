@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
-updated: 2026-08-19
-checked: 0a645e99
+updated: 2026-08-25
+checked: 8db94ee2
 areas:
   - apps/browser-runner/src
   - packages/shared/src/types.ts
@@ -124,6 +124,17 @@ newTab/selectTab/closeTab/resize/input/screenshot).
 `POST /v1/sessions/:id/commands`, `DELETE /v1/sessions/:id`. Health сейчас
 формальный — `browser.present` и `launch.ok` захардкожены, реально считается
 только число живых сессий.
+
+Живой прогон 2026-08-25 (macOS): раннеру достаточно `npx playwright install
+chromium` — качается только Chrome Headless Shell (~95 МБ), полный Chromium для
+`headless: true` не нужен. Цепочка start → navigate → input(click) → screenshot
+работает end-to-end: instagram.com (который через `/api/preview` зависает на
+сплэше — см. server-internals) в Chromium рендерится полностью, включая форму
+логина и cookie-баннер Meta; координатный клик закрывает баннер, screenshot
+отдаёт PNG вьюпорта бинарным телом. SSRF-роут `context.route` внешним CDN
+(static.cdninstagram.com) не мешает. Сам вход не проверялся: UI-панель Playwright
+Reader к раннеру ещё не подключена (см. «Что реализовано, а что нет»), а логин с
+паролем — действие пользователя, не ассистента.
 
 Идемпотентность старта держится на том, что в `Map` кладётся **промис** сессии, а
 не готовый объект: параллельные вкладки получают один Chromium, упавший старт
