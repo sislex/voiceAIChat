@@ -415,6 +415,7 @@
 
 /* ---- Основная колонка ---- */
 .main {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1285,6 +1286,15 @@
   gap: 8px;
   min-width: 0;
 }
+@media (min-width: 769px) {
+  .voicebar:not(.voicebar--expanded) .vrow {
+    align-items: center;
+  }
+  .voicebar:not(.voicebar--expanded) .tin {
+    padding-top: 18px;
+    padding-bottom: 2px;
+  }
+}
 .vrow > .vc-btn { flex: none; }
 .composer-send {
   width: 40px;
@@ -1382,14 +1392,14 @@
   min-width: 0;
   border: 0;
   border-radius: 0;
-  padding: 9px 6px;
+  padding: 12px 6px 8px;
   font-size: 14px;
   font-family: inherit;
   background: transparent;
   outline: none;
   color: var(--text);
   resize: none;
-  line-height: 1.4;
+  line-height: 20px;
   max-height: min(240px, 32dvh);
   overflow-y: auto;
   overscroll-behavior: contain;
