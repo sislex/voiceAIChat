@@ -2,8 +2,8 @@
 id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
-updated: 2026-08-24
-checked: 2bf2e934
+updated: 2026-08-25
+checked: 17fc5379
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -691,13 +691,14 @@ default. Ошибка запроса отображается через `ErrorS
 закрытие возвращает `#/projects/:id`. Дальнейшее ручное переключение вкладок
 внутри модалки адрес не меняет.
 
-`TaskPreparationTab` грузит все попытки задачи одним `loadRuns` (свежие первыми) и
-отдельно получает effective LLM-настройку через `getTaskPreparationLlm`. Машинного
-селектора у вкладки нет: `TaskPreparationLlmSelection` содержит только
-`llmEngineId`, `provider` и `model`, причём `launchTaskPreparation` намеренно не
-использует переданный selection, фиксирует effective-настройку проекта и выбирает
-машину на сервере — пользовательский project default, затем project default, затем
-первую настроенную машину. После загрузки история выбирает активную
+`TaskPreparationTab` грузит все попытки задачи одним `loadRuns` (свежие первыми),
+отдельно получает effective LLM-настройку через `getTaskPreparationLlm` и каталог
+`CiTaskMachines`. До первого запуска селектор «Машина подготовки» хранит в value
+`agentId`, а подпись option строит из непустого trim-имени с fallback на `agentId`;
+записи с пустым `agentId` не отображаются. Вкладка выбирает effective project
+machine либо первую доступную online-машину и показывает явное сообщение о
+fallback. Выбранные `machineId`, `llmEngineId`, `provider` и `model` передаются в
+launch-selection и фиксируются в новой попытке. После загрузки история выбирает активную
 (`task.taskPreparationRunId`) либо первую в списке и даёт
 открыть ленту любой прошлой попытки кнопками списка «Предыдущие попытки»
 (`data-testid="task-preparation-history"`, подпись «Попытка N · дата · статус»).
