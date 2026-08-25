@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Ставит на прод-хост деплой-скрипт и сторожа. Идемпотентно, запускать под root:
-#   cd /root/voiceAIChat && bash scripts/prod/install.sh
+#   cd /path/to/production/checkout && bash scripts/prod/install.sh
+# Либо: VC_REPO_DIR=/path/to/production/checkout bash scripts/prod/install.sh
 #
 # Установленный launcher остаётся стабильным, а при каждом запуске делает неизменяемую
 # content-addressed копию актуального deploy.sh из checkout. Так исправления метаданных
@@ -9,18 +10,29 @@
 set -Eeuo pipefail
 
 SRC=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO=$(readlink -f "${VC_REPO_DIR:-$SRC/../..}")
+[[ -d "$REPO/.git" && -f "$REPO/scripts/prod/deploy.sh" ]] || {
+  echo "production checkout не найден: $REPO" >&2
+  exit 1
+}
+install -d -m 755 /etc/voicechat
+printf 'VC_REPO_DIR=%q\n' "$REPO" >/etc/voicechat/production.env
+chmod 644 /etc/voicechat/production.env
 
 install -d -m 755 /usr/local/lib/voicechat
 cat >/usr/local/bin/voicechat-deploy <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-REPO=${VC_REPO_DIR:-/root/voiceAIChat}
+[[ -r /etc/voicechat/production.env ]] || { echo "нет /etc/voicechat/production.env" >&2; exit 1; }
+source /etc/voicechat/production.env
+: "${VC_REPO_DIR:?VC_REPO_DIR не задан}"
+REPO=$VC_REPO_DIR
 source="$REPO/scripts/prod/deploy.sh"
 digest=$(sha256sum "$source" | awk '{print $1}')
 runtime="/usr/local/lib/voicechat/deploy-$digest.sh"
 if [[ ! -x $runtime ]]; then install -m 755 "$source" "$runtime"; fi
 # Зафиксировать metadata на границе стабильного launcher.
-exec env VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" VC_RELEASE_VERSION_SOURCE="${VC_RELEASE_VERSION_SOURCE-}" "$runtime" "$@"
+exec env VC_REPO_DIR="$REPO" VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" VC_RELEASE_VERSION_SOURCE="${VC_RELEASE_VERSION_SOURCE-}" "$runtime" "$@"
 EOF
 chmod 755 /usr/local/bin/voicechat-deploy
 install -m 755 "$SRC/watchdog.sh" /usr/local/bin/voicechat-watchdog
@@ -117,6 +129,7 @@ Requires=docker.service
 
 [Service]
 Type=simple
+EnvironmentFile=/etc/voicechat/production.env
 RuntimeDirectory=voicechat
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=restart
@@ -135,6 +148,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
+EnvironmentFile=/etc/voicechat/production.env
 ExecStart=/usr/local/bin/voicechat-watchdog
 EOF
 

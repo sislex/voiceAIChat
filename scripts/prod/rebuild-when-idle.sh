@@ -16,7 +16,11 @@
 
 set -Eeuo pipefail
 
-REPO=${VC_REPO_DIR:-/root/voiceAIChat}
+if [[ -z ${VC_REPO_DIR:-} && -r /etc/voicechat/production.env ]]; then
+  source /etc/voicechat/production.env
+fi
+: "${VC_REPO_DIR:?VC_REPO_DIR не задан; переустановите scripts/prod/install.sh}"
+REPO=$VC_REPO_DIR
 LOCK=${VC_REBUILD_LOCK:-/var/lock/voicechat-prod-rebuild.lock}
 LOCK_WAIT=${VC_REBUILD_LOCK_WAIT:-7200}
 BUILD_SERVICES=${VC_REBUILD_BUILD_SERVICES:-"voicechat runner-work runner-personal"}

@@ -9,11 +9,15 @@
 #
 # Чего сторож НЕ делает: не поднимает контейнер из `exited`/`paused` — это состояние
 # после намеренного `docker compose stop`. Полностью выключить сторож на время работ:
-# `touch /root/voiceAIChat/.deploy-paused` (убрать файл — снова включён).
+# `touch "$VC_REPO_DIR/.deploy-paused"` (убрать файл — снова включён).
 
 set -Eeuo pipefail
 
-REPO=${VC_REPO_DIR:-/root/voiceAIChat}
+if [[ -z ${VC_REPO_DIR:-} && -r /etc/voicechat/production.env ]]; then
+  source /etc/voicechat/production.env
+fi
+: "${VC_REPO_DIR:?VC_REPO_DIR не задан; переустановите scripts/prod/install.sh}"
+REPO=$VC_REPO_DIR
 LOG=${VC_WATCHDOG_LOG:-/var/log/voicechat-watchdog.log}
 LOCK=${VC_DEPLOY_LOCK:-/var/lock/voicechat-deploy.lock}
 PROJECT=${VC_COMPOSE_PROJECT:-voiceaichat}

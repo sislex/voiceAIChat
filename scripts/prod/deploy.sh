@@ -12,7 +12,11 @@
 
 set -Eeuo pipefail
 
-REPO=${VC_REPO_DIR:-/root/voiceAIChat}
+if [[ -z ${VC_REPO_DIR:-} && -r /etc/voicechat/production.env ]]; then
+  source /etc/voicechat/production.env
+fi
+: "${VC_REPO_DIR:?VC_REPO_DIR не задан; переустановите scripts/prod/install.sh}"
+REPO=$VC_REPO_DIR
 LOG=${VC_DEPLOY_LOG:-/var/log/voicechat-deploy.log}
 LOCK=${VC_DEPLOY_LOCK:-/var/lock/voicechat-deploy.lock}
 HEALTH_URL=${VC_HEALTH_URL:-http://127.0.0.1:8787/api/health}
