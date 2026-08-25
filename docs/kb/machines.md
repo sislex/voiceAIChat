@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-25
-checked: 19cdf216
+checked: 06539dc4
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -97,6 +97,16 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 новый и стартуют с автозапуском (systemd --user / launchd / реестр HKCU /
 Termux:Boot). Поэтому **отдельной «команды обновления» нет** — это та же команда,
 и UI показывает её же, когда агент устарел.
+
+Linux/macOS-установщик определяет свежую портативную Node.js по первой записи
+`https://nodejs.org/dist/index.json`. Конвейер в
+`apps/server/src/agents/unixInstall.ts` сохраняет первое совпадение через `awk`,
+но дочитывает вход до EOF: при `set -euo pipefail` нельзя возвращать `head -1`,
+потому что раннее закрытие pipe заставляет `curl` завершиться с кодом 23
+(`Failure writing output to destination`). Исполняемый тест для обоих вариантов
+скрипта в `apps/server/src/agents/installSyntax.test.ts` подаёт длинный поток,
+проверяет успешное завершение под `pipefail` и сохранение первой версии. Остальной
+протокол установки portable Node.js и последующие этапы не меняются.
 
 **Android/Termux дополнительно готовит нативную сборку npm-модулей.**
 Установщик `apps/server/src/agents/androidInstall.ts` ставит `clang`, `make`,
