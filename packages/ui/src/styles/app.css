@@ -428,12 +428,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   background: var(--bg);
 }
+/* В Reader-сплите колонка узкая — ужимаем горизонтальные поля шапки и композера. */
+.chat-split .mhead { padding-inline: 14px; }
 .mtitle {
   font-size: 14px;
   font-weight: 800;
   margin: 0;
+  /* Одна строка с многоточием: без этого длинное название разговора распирало
+     шапку и переносилось на 2–3 строки в узкой колонке Reader-сплита. */
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .burger {
   display: inline-flex;
@@ -1270,6 +1280,9 @@
   border-top: 0;
   background: var(--bg);
   padding: 14px 28px 20px;
+  /* Контейнер для компакт-режима композера: когда узкая сама колонка чата
+     (Reader-сплит, узкий виджет), а не только вьюпорт. */
+  container: composer / inline-size;
 }
 .voicebar .vinner {
   padding: 10px 12px;
@@ -4034,6 +4047,20 @@ button.conscmd:hover {
   .mode-menu__list { right: -84px; max-width: calc(100vw - 24px); }
 }
 
+/* Тот же компакт-режим композера, но по ширине САМОГО композера, а не вьюпорта:
+   в Reader-сплите колонка чата узкая при широком экране, и без этого текстовое
+   поле схлопывалось до ~80px, а подпись «Полный доступ» распирала ряд. */
+@container composer (max-width: 560px) {
+  .voicebar { padding-inline: 10px; }
+  .voicebar .vinner { padding-inline: 8px; }
+  .vrow { gap: 4px; }
+  .mode-menu__trigger { max-width: 40px; padding-inline: 7px; }
+  .mode-menu__label, .mode-menu__trigger > span:last-child { display: none; }
+  .composer-attach, .composer-mic, .composer-wand { width: 34px; height: 34px; padding: 0; }
+  .composer-send { width: 38px; height: 38px; }
+  .mode-menu__list { right: 0; max-width: calc(100cqw - 24px); }
+}
+
 /* ===== Проекты + канбан-доска ===== */
 .cc-main { flex: 1; overflow: auto; padding: 12px 16px; }
 
@@ -5987,7 +6014,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .app--web-reader, .app--playwright-reader { grid-template-columns: minmax(0, 1fr); height: 100%; }
 .app--playwright-reader > .chat-split { grid-column: 1; }
 .playwright-reader-selector > strong { white-space: nowrap; }
-.playwright-browser-pane { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
+.playwright-browser-pane { flex: 0 1 var(--preview-width); min-width: 260px; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
 .playwright-reader-header { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .playwright-reader-header [role='status'] { margin-left: auto; color: var(--text-dim); }
 .playwright-reader-header input[type='url'] { flex: 1 1 auto; min-width: 0; }
@@ -5995,7 +6022,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .playwright-browser-input { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); }
 .playwright-browser-input input[type='text'] { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 768px) {
-  .chat-split-chat, .playwright-browser-pane { flex: 1 1 auto; width: 100%; min-height: 0; }
+  .chat-split-chat, .playwright-browser-pane { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
   .chat-split--chat .playwright-browser-pane, .chat-split--preview .chat-split-chat { display: none; }
 }
 .chat-page > .chat-split-chat, .chat-page > .chat-split-chat > .main { height: 100%; }
@@ -6005,12 +6032,22 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Сплит чата и браузерного превью. Процент хранится в localStorage. */
 .chat-split { grid-column: 2; display: flex; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
 .app--web-reader > .chat-split { grid-column: 1; }
-.chat-split-chat { flex: 1 1 auto; min-width: 0; min-height: 0; }
+/* min-width удерживает колонку чата достаточно широкой, чтобы композер и шапка не
+   схлопывались; превью-панель ниже сжимаема, поэтому общая ширина не переполняется. */
+.chat-split-chat { flex: 1 1 auto; min-width: 360px; min-height: 0; }
 .chat-split-chat > .main { height: 100%; }
 .chat-split-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
 .chat-split-divider:hover, .chat-split-divider:focus { background: var(--accent); }
-.webpreview { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
-.webpreview-bar { display: flex; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
+.webpreview { flex: 0 1 var(--preview-width); min-width: 260px; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
+.webpreview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
+/* Свёрнутое меню инструментов страницы Web Reader (Сессия, инспектор, правка,
+   область, запись сценария) — чтобы тулбар не переполнял узкую панель превью. */
+.webpreview-tools { position: relative; flex: none; }
+.webpreview-tools > summary { list-style: none; cursor: pointer; user-select: none; }
+.webpreview-tools > summary::-webkit-details-marker { display: none; }
+.webpreview-tools > summary[data-active] { border-color: var(--accent); color: var(--accent); }
+.webpreview-tools__menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: flex; flex-direction: column; gap: 4px; min-width: 200px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 32px rgba(31, 35, 48, .16); }
+.webpreview-tools__menu .vc-btn { justify-content: flex-start; text-align: left; }
 .webpreview-address { flex: 1; min-width: 0; }
 .webpreview-inspector-toggle[aria-pressed='true'] { border-color: var(--accent); background: var(--surface-selected); color: var(--accent); }
 .previewchip { max-width: min(100%, 520px); }
@@ -6038,7 +6075,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .chat-split-tabs button { padding: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); font: inherit; }
   .chat-split-tabs button[aria-selected='true'] { background: var(--surface-selected); color: var(--text); font-weight: 700; }
   .chat-split-divider { display: none; }
-  .chat-split-chat, .webpreview { flex: 1 1 auto; width: 100%; min-height: 0; }
+  .chat-split-chat, .webpreview { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
   .chat-split--chat .webpreview, .chat-split--preview .chat-split-chat { display: none; }
 }
 

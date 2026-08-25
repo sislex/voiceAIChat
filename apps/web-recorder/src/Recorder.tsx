@@ -267,11 +267,18 @@ export function Recorder(): JSX.Element {
       <label className="webpreview-address"><span className="vc-sr-only">Адрес превью</span><input type="url" value={draft} placeholder="https://example.com" onChange={(event) => setDraft(event.target.value)} /></label>
       <button className="vc-btn vc-btn--secondary">Открыть</button>
       <label><span className="vc-sr-only">Ширина вьюпорта</span><select aria-label="Ширина вьюпорта" value={viewport} onChange={(event) => setViewport(event.target.value)}>{VIEWPORTS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}{viewport && !VIEWPORTS.some(([value]) => value === viewport) ? <option value={viewport}>{viewport} px</option> : null}</select></label>
-      <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>⟲ Сессия</button>
-      <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={toggleInspector}>⌖ Выбор элемента</button>
-      <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => setEditing((value) => !value)}>✎ Редактировать</button>
-      <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={capturing} onClick={() => setCapturing((value) => !value)}>📸 Область</button>
-      <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} onClick={() => setRecording((value) => !value)}>{recording ? 'Остановить запись' : 'Записать сценарий'}</button>
+      {/* Инструменты страницы собраны в свёрнутое меню, чтобы тулбар не переполнял
+          узкую панель превью. Активные режимы подсвечивают саму сводку меню. */}
+      <details className="webpreview-tools">
+        <summary className="vc-btn vc-btn--secondary" aria-label="Инструменты страницы" data-active={(inspecting || editing || capturing || recording) || undefined}>Инструменты ▾</summary>
+        <div className="webpreview-tools__menu" role="group" aria-label="Инструменты страницы">
+          <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} title="Сбросить cookie-сессии окружений (перелогиниться)" onClick={resetSession}>⟲ Сессия</button>
+          <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={inspecting} onClick={toggleInspector}>⌖ Выбор элемента</button>
+          <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={editing} onClick={() => setEditing((value) => !value)}>✎ Редактировать</button>
+          <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} aria-pressed={capturing} onClick={() => setCapturing((value) => !value)}>📸 Область</button>
+          <button className="vc-btn vc-btn--secondary" type="button" disabled={!url} onClick={() => setRecording((value) => !value)}>{recording ? 'Остановить запись' : 'Записать сценарий'}</button>
+        </div>
+      </details>
     </form>
     {error && <p className="webpreview-error" role="alert">{error}</p>}
     {diagnostics && <section className="webpreview-scenario" aria-label="Диагностика Web Reader">

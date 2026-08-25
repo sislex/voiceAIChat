@@ -34,6 +34,21 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ title: 'Новый чат', execTarget: 'm1', workdir: '/home/u/project', skillNames: ['build'], llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null }))
   })
 
+  it('показывает кнопку самодиагностики чата и запускает её', async () => {
+    const onRun = vi.fn()
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} chatDiagnostics={{ running: false, onRun }} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    const card = screen.getByLabelText('Самодиагностика чата')
+    fireEvent.click(within(card).getByRole('button', { name: 'Самодиагностика' }))
+    expect(onRun).toHaveBeenCalledOnce()
+  })
+
+  it('показывает кнопку самодиагностики Playwright Reader (и disabled во время прогона)', () => {
+    const onRun = vi.fn()
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} playwrightReaderDiagnostics={{ running: true, onRun }} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    const card = screen.getByLabelText('Самодиагностика Playwright Reader')
+    expect(within(card).getByRole('button', { name: 'Выполняется…' })).toBeDisabled()
+  })
+
   it('добавляет новый навык выбранной машине', async () => {
     const onAddSkill = vi.fn().mockResolvedValue(undefined)
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={onAddSkill} onClose={vi.fn()} />)

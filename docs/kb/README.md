@@ -15,23 +15,23 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 11 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 54 коммит(ов) в areas после сверки: ba2d6042 feat(context): тумблеры инспектора контекста с реальным гейтингом … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-25 | ⚠ 3 коммит(ов) в areas после сверки: aecf49ec perf(kanban): лёгкая доска + точечные WS-обновления подготовки … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 14 коммит(ов) в areas после сверки: ac0f6d6a feat(context): полный drill-in пунктов инспектора (персонализация/проект/MCP) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 15 коммит(ов) в areas после сверки: 46a07886 feat(chat): перекомпоновка шапки и подвала ответа … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ⚠ 17 коммит(ов) в areas после сверки: ba2d6042 feat(context): тумблеры инспектора контекста с реальным гейтингом … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 108 коммит(ов) в areas после сверки: ba2d6042 feat(context): тумблеры инспектора контекста с реальным гейтингом … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 46 коммит(ов) в areas после сверки: ba2d6042 feat(context): тумблеры инспектора контекста с реальным гейтингом … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 23 коммит(ов) в areas после сверки: ba2d6042 feat(context): тумблеры инспектора контекста с реальным гейтингом … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 14 коммит(ов) в areas после сверки: ba2d6042 feat(context): тумблеры инспектора контекста с реальным гейтингом … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 8 коммит(ов) в areas после сверки: ac0f6d6a feat(context): полный drill-in пунктов инспектора (персонализация/проект/MCP) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 614 коммит(ов) в areas после сверки: ac0f6d6a feat(context): полный drill-in пунктов инспектора (персонализация/проект/MCP) … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 81 коммит(ов) в areas после сверки: ac0f6d6a feat(context): полный drill-in пунктов инспектора (персонализация/проект/MCP) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 5 коммит(ов) в areas после сверки: ac0f6d6a feat(context): полный drill-in пунктов инспектора (персонализация/проект/MCP) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 615 коммит(ов) в areas после сверки: 46a07886 feat(chat): перекомпоновка шапки и подвала ответа … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 82 коммит(ов) в areas после сверки: 46a07886 feat(chat): перекомпоновка шапки и подвала ответа … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 6 коммит(ов) в areas после сверки: 46a07886 feat(chat): перекомпоновка шапки и подвала ответа … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 9 коммит(ов) в areas после сверки: ba2d6042 feat(context): тумблеры инспектора контекста с реальным гейтингом … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 39 коммит(ов) в areas после сверки: ba2d6042 feat(context): тумблеры инспектора контекста с реальным гейтингом … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 5 коммит(ов) в areas после сверки: 2198e7a9 fix: auto-resolve merge conflicts with model step … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-23 | ⚠ 17 коммит(ов) в areas после сверки: ba2d6042 feat(context): тумблеры инспектора контекста с реальным гейтингом … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-25 | ⚠ 13 коммит(ов) в areas после сверки: ac0f6d6a feat(context): полный drill-in пунктов инспектора (персонализация/проект/MCP) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 35 коммит(ов) в areas после сверки: aecf49ec perf(kanban): лёгкая доска + точечные WS-обновления подготовки … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 3 коммит(ов) в areas после сверки: ac0f6d6a feat(context): полный drill-in пунктов инспектора (персонализация/проект/MCP) … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 4 коммит(ов) в areas после сверки: 46a07886 feat(chat): перекомпоновка шапки и подвала ответа … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-25 | ⚠ 8 коммит(ов) в areas после сверки: ac0f6d6a feat(context): полный drill-in пунктов инспектора (персонализация/проект/MCP) … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-25 | ⚠ 7 коммит(ов) в areas после сверки: ac0f6d6a feat(context): полный drill-in пунктов инспектора (персонализация/проект/MCP) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-24 | ⚠ 23 коммит(ов) в areas после сверки: ba2d6042 feat(context): тумблеры инспектора контекста с реальным гейтингом … |
@@ -57,8 +57,9 @@
 
 ## Журнал сессий
 
-Всего записей: 361. Последние:
+Всего записей: 362. Последние:
 
+- [2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics.md](log/2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics.md) — 2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics
 - [2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign.md](log/2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign.md) — 2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign
 - [2026-08-25-macbook-air-user-manual-qa-machine-labels.md](log/2026-08-25-macbook-air-user-manual-qa-machine-labels.md) — manual-qa-machine-labels
 - [2026-08-25-macbook-air-user-instant-submit.md](log/2026-08-25-macbook-air-user-instant-submit.md) — instant-submit
@@ -68,7 +69,6 @@
 - [2026-08-25-alexeys-macbook-air-2-web-reader-testing-pack.md](log/2026-08-25-alexeys-macbook-air-2-web-reader-testing-pack.md) — web-reader-testing-pack
 - [2026-08-25-alexeys-macbook-air-2-web-reader-self-preview-hash-and-cache.md](log/2026-08-25-alexeys-macbook-air-2-web-reader-self-preview-hash-and-cache.md) — web-reader-self-preview-hash-and-cache
 - [2026-08-25-alexeys-macbook-air-2-web-reader-parity-pack.md](log/2026-08-25-alexeys-macbook-air-2-web-reader-parity-pack.md) — web-reader-parity-pack
-- [2026-08-25-alexeys-macbook-air-2-web-reader-instagram-limits.md](log/2026-08-25-alexeys-macbook-air-2-web-reader-instagram-limits.md) — web-reader-instagram-limits
 
 ## Исторические планы
 

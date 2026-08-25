@@ -78,6 +78,7 @@ import { useCommandSource } from './lib/useCommands'
 import { buildAppCommands, buildHotkeyBindings } from './lib/appCommands'
 import { isWebReaderDiagnosticsCommand, runWebReaderDiagnostics } from './webReaderDiagnostics'
 import { isChatDiagnosticsCommand, runChatDiagnostics } from './chatDiagnostics'
+import { isPlaywrightReaderDiagnosticsCommand, runPlaywrightReaderDiagnostics } from './playwrightReaderDiagnostics'
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
 
 const UsersAdmin = lazy(async () => {
@@ -935,6 +936,47 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       if (diagnosticsControllerRef.current === controller) diagnosticsControllerRef.current = null
     })
   }, [activeConversation, api, chat.activeId, chat.conversations, chatActions, settingsState.settings.llmProvider, toast])
+  // Самодиагностика Playwright Reader: проверяет путь изолированного Chromium
+  // (мост window.browser) — старт сессии идемпотентен, поэтому переиспользует
+  // живую панель, а reload не уводит открытую страницу.
+  const startPlaywrightReaderDiagnostics = useCallback((): void => {
+    const conversationId = chat.activeId
+    if (!inPlaywrightReader || !conversationId) {
+      toast.error('Самодиагностика доступна только в активном Playwright Reader-чате.')
+      return
+    }
+    const browser = window.browser
+    diagnosticsControllerRef.current?.abort()
+    const controller = new AbortController()
+    diagnosticsControllerRef.current = controller
+    setConversationSettingsOpen(false)
+    let incarnation: string | null = null
+    void runPlaywrightReaderDiagnostics({
+      signal: controller.signal,
+      publish: (text) => chatActions.publishDiagnosticMessage(conversationId, text),
+      probes: {
+        bridgePresent: () => Boolean(browser),
+        start: async () => {
+          const meta = await browser!.start(conversationId, { width: 1280, height: 800, deviceScaleFactor: 1 })
+          incarnation = meta.incarnation
+          return meta
+        },
+        screenshot: async () => {
+          if (!browser || !incarnation) throw new Error('сессия не поднята')
+          const shot = await browser.screenshot(conversationId, { incarnation, format: 'jpeg', quality: 60 })
+          return shot.dataUrl
+        },
+        reload: async () => {
+          if (!browser || !incarnation) throw new Error('сессия не поднята')
+          const meta = await browser.command(conversationId, { incarnation, command: { type: 'reload' } })
+          incarnation = meta.incarnation
+          return meta
+        }
+      }
+    }).finally(() => {
+      if (diagnosticsControllerRef.current === controller) diagnosticsControllerRef.current = null
+    })
+  }, [chat.activeId, chatActions, inPlaywrightReader, toast])
   const activeTitle = activeConversation?.title ?? 'Новый разговор'
   const activeExecTarget = activeConversation?.execTarget ?? null
   const activeKbUsage = chat.activeId ? chat.kbUsage[chat.activeId] : undefined
@@ -1457,6 +1499,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             onDraftChange={chatActions.setDraft}
             onSubmitText={() => {
               if (inReader && isWebReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startWebReaderDiagnostics(); return }
+              if (inPlaywrightReader && isPlaywrightReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startPlaywrightReaderDiagnostics(); return }
               if (isChatDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startChatDiagnostics(); return }
               void chatActions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) })
             }}
@@ -1829,6 +1872,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           defaultAgentId={settingsState.settings.defaultAgentId}
           projects={projects.projects}
           webReaderDiagnostics={inReader ? { running: diagnosticsControllerRef.current !== null, onRun: startWebReaderDiagnostics } : undefined}
+          playwrightReaderDiagnostics={inPlaywrightReader ? { running: diagnosticsControllerRef.current !== null, onRun: startPlaywrightReaderDiagnostics } : undefined}
+          chatDiagnostics={!inReader && !inPlaywrightReader ? { running: diagnosticsControllerRef.current !== null, onRun: startChatDiagnostics } : undefined}
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}
           onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {

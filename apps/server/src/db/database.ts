@@ -3500,8 +3500,6 @@ export class VoiceChatDb {
   setConversationProject(userId: string, convId: string, projectId: string | null): Conversation | null {
     const current = this.getConversation(userId, convId)
     if (!current) return null
-    // Playwright Reader is a non-project product mode by contract.
-    if (current.assistantKind === 'playwright-reader' && projectId !== null) return null
     if (projectId === null) {
       this.db.prepare(`UPDATE conversations SET project_id = NULL WHERE id = ? AND user_id = ?`).run(convId, userId)
       return this.getConversation(userId, convId)
