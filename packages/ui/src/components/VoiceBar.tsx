@@ -125,6 +125,8 @@ export interface VoiceBarProps {
   onRemovePreviewElement?: () => void
   /** Имя движка ответа (Claude / Codex) — для подписей статуса. */
   aiLabel?: string
+  /** Отправка ждёт подтверждения публикации в ленте либо очереди. */
+  submitPending?: boolean
   /** Ответ уже начал стримиться (пошли токены) — держим поле ввода доступным для черновика. */
   replyStarted?: boolean
   /** Ошибка активного хода; нужна для краткого итогового состояния строки. */
@@ -183,6 +185,7 @@ export function VoiceBar({
   readServerFile,
   onRemovePreviewElement,
   aiLabel = 'Claude',
+  submitPending = false,
   replyStarted = false,
   requestError = null,
   permissionMode = 'plan',
@@ -237,10 +240,8 @@ export function VoiceBar({
   }, [state, replyStarted, requestError])
 
   const submitRequest = (): void => {
-    if (state === 'idle') {
-      cancelSent.current = false
-      setRequestPhase('sending')
-    }
+    if (submitPending) return
+    if (state === 'idle') cancelSent.current = false
     onSubmitText()
   }
 
@@ -251,7 +252,7 @@ export function VoiceBar({
     onCancelRequest()
   }
 
-  const requestStatus = requestPhase ? {
+  const requestStatus = submitPending ? 'Запрос отправляется…' : requestPhase ? {
     sending: 'Запрос отправляется…',
     processing: 'Готовим ответ…',
     streaming: `${aiLabel} формирует ответ…`,
@@ -287,7 +288,7 @@ export function VoiceBar({
   const errorAttachmentCount = blockedAttachments.filter((item) => item.status === 'error').length
   const readyAttachments = attachments.filter((item) => !item.status || item.status === 'ready')
   const canSend = draft.trim().length > 0 || readyAttachments.length > 0 || previewElement !== null
-  const canSubmit = canSend && blockedAttachments.length === 0
+  const canSubmit = canSend && blockedAttachments.length === 0 && !submitPending
   const helper = promptHelper ?? { open: false, loading: false, variants: [], error: null }
   // Палочку показываем в idle, когда есть что переформулировать.
   const canSuggest = isIdle && draft.trim().length > 0 && !!onSuggestPrompts
@@ -790,9 +791,10 @@ export function VoiceBar({
                 title={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
                 aria-label={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
                 disabled={!canSubmit}
+                aria-busy={submitPending || undefined}
                 aria-describedby={blockedAttachments.length > 0 ? 'attachment-submit-error' : undefined}
               >
-                <SendIcon />
+                {submitPending ? <Dots /> : <SendIcon />}
               </IconButton>
             </>
           )}

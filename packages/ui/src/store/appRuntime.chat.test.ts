@@ -120,6 +120,52 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(api._state.messages.filter((message) => message.role === 'u1' && message.text === 'Один раз')).toHaveLength(1)
   })
 
+  it('обычная отправка остаётся pending до события ленты и резервирует место ответа', async () => {
+    const { store } = makeStore()
+    await store.actions.init()
+    store.actions.setDraft('Подтверди меня')
+
+    await expect(store.actions.submitText()).resolves.toBe(true)
+    const message = store.getState().messages.find((item) => item.role === 'u1')!
+    expect(store.getState().pendingSubmit?.messageId).toBe(message.id)
+    expect(store.getState().preparingReply).toBe(true)
+
+    store.actions.applyChatMessage(message.conversationId, message)
+    expect(store.getState().pendingSubmit).toBeNull()
+    expect(store.getState().preparingReply).toBe(true)
+    store.actions.applyClaudeToken('Ответ', message.conversationId)
+    expect(store.getState().preparingReply).toBe(false)
+  })
+
+  it('во время активного ответа синхронно показывает реплику только в оптимистичной очереди', async () => {
+    const { store } = makeStore()
+    await store.actions.init()
+    store.actions.setDraft('Первый')
+    await store.actions.submitText()
+    const first = store.getState().messages.find((item) => item.role === 'u1')!
+    store.actions.applyChatMessage(first.conversationId, first)
+
+    store.actions.setDraft('Следующий вопрос')
+    const sending = store.actions.submitText()
+    expect(store.getState().messages.some((item) => item.text === 'Следующий вопрос')).toBe(false)
+    expect(store.getState().queuedTurns[first.conversationId]).toEqual([
+      expect.objectContaining({ text: 'Следующий вопрос', status: 'queued' })
+    ])
+    expect(store.getState().pendingSubmit?.queueOnly).toBe(true)
+
+    await expect(sending).resolves.toBe(true)
+    const pending = store.getState().pendingSubmit!
+    const confirmed = {
+      ...store.getState().queuedTurns[first.conversationId]![0],
+      id: 'server-q1',
+      messageId: pending.messageId!
+    }
+    store.actions.applyClaudeQueue(first.conversationId, [confirmed], false)
+    expect(store.getState().pendingSubmit).toBeNull()
+    expect(store.getState().messages.some((item) => item.text === 'Следующий вопрос')).toBe(false)
+    expect(store.getState().queuedTurns[first.conversationId]).toEqual([confirmed])
+  })
+
   it('submitText: создаёт разговор, персистит реплику и проходит thinking → speaking → idle', async () => {
     const { store, api } = makeStore()
     const spyAdd = vi.spyOn(api, 'conversations:createDraft')
@@ -696,9 +742,13 @@ describe('voiceStore — реальный Claude (claudeEnabled)', () => {
     await store.actions.init()
     store.actions.setDraft('x')
     await store.actions.submitText()
+    expect(store.getState().pendingSubmit).not.toBeNull()
+    expect(store.getState().preparingReply).toBe(true)
     store.actions.applyClaudeError('Claude CLI не найден')
     expect(store.getState().voice).toBe('idle')
     expect(store.getState().error).toBe('Claude CLI не найден')
+    expect(store.getState().pendingSubmit).toBeNull()
+    expect(store.getState().preparingReply).toBe(false)
 
     store.actions.dismissError()
     expect(store.getState().error).toBeNull()
