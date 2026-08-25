@@ -185,14 +185,64 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kbContextMode: 'manual' })))
   })
 
-  it('показывает загруженный серверный снимок, timestamp и предупреждение', async () => {
-    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [] }) } as never
+  it('показывает понятную сводку, источники и пять пользовательских статусов', async () => {
+    const item = (id: string, title: string, configured: boolean, available: boolean, includedInNextTurn: boolean, source = 'Настройки пользователя') => ({
+      id, title, type: 'Контекст', source, scope: 'Следующий ход', priority: '1', description: `Описание ${title}`, explanation: `Причина ${title}`, configured, available, includedInNextTurn
+    })
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({
+      schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Штатное пояснение актуальности.',
+      summary: { provider: 'claude' as const, model: 'opus', permissionMode: { value: 'plan' as const, displayName: 'Только чтение', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } },
+      groups: [
+        { id: 'conversation', order: 1, title: 'Настройки', description: '', items: [
+          item('llm', 'Модель', true, true, true, 'Разговор'), item('machine', 'Машина', true, true, true, 'Проект'),
+          { ...item('working-directory', 'Рабочая папка', true, true, true, 'Проект'), scope: '/very/long/project/path' },
+          item('permission-mode', 'Режим', true, true, true, 'Настройки пользователя')
+        ] },
+        { id: 'knowledge', order: 2, title: 'Знания', description: '', items: [
+          item('platform-instructions', 'Правила', true, true, true),
+          item('personalization', 'Персональные инструкции', false, true, false),
+          item('project-binding', 'Проект', true, false, false),
+          item('conversation-history', 'История', true, true, false),
+          item('knowledge-mode', 'База знаний', true, true, true),
+          item('current-message', 'Текущее сообщение', false, false, false)
+        ] },
+        { id: 'skills', order: 3, title: 'Навыки', description: '', items: [item('skill-review', 'Review', true, true, false)] }
+      ]
+    }) } as never
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
-    expect(await screen.findByText('Снимок следующего хода')).toBeInTheDocument()
-    expect(screen.getByText('Снимок может измениться')).toBeInTheDocument()
-    expect(screen.getByText(/Сформирован:/)).toBeInTheDocument()
-    expect(screen.queryByText(/GitHub · Figma/)).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Что получит ИИ в следующем сообщении' })).toBeInTheDocument()
+    const launch = screen.getByRole('heading', { name: 'Как будет запущен ответ' }).closest('section')
+    expect(launch).toHaveTextContent('claude')
+    expect(launch).toHaveTextContent('opus')
+    expect(launch).toHaveTextContent('Настройки проекта')
+    expect(launch).toHaveTextContent('Переопределение чата')
+    expect(launch).toHaveTextContent('Общие настройки')
+    const knowledge = screen.getByRole('heading', { name: 'Что ИИ будет знать' }).closest('section')
+    for (const status of ['Будет использовано', 'Доступно при необходимости', 'Не настроено', 'Недоступно', 'Определится после отправки']) expect(knowledge).toHaveTextContent(status)
+    expect(knowledge).toHaveTextContent('Почему:')
+    const extra = screen.getByText('Дополнительные возможности').closest('details')
+    const technical = screen.getByText('Технические сведения').closest('details')
+    expect(extra).not.toHaveAttribute('open')
+    expect(technical).not.toHaveAttribute('open')
+    expect(screen.queryByText('Машина недоступна')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Технические сведения'))
+    expect(screen.getByText('Штатное пояснение актуальности.')).toBeInTheDocument()
+    expect(screen.getAllByText(/configured:/).length).toBeGreaterThan(0)
+  })
+
+  it('показывает действие только для настроенной недоступной машины', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({
+      schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Не ошибка.',
+      summary: { provider: 'codex' as const, model: '', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'off' as const, displayName: 'Отключено', explanation: 'Тест' } },
+      groups: [{ id: 'conversation', order: 1, title: 'Настройки', description: '', items: [{ id: 'machine', title: 'Машина', type: 'Настройка', source: 'Разговор', scope: 'offline', priority: '1', description: '10e', explanation: 'Машина отключена от сети.', configured: true, available: false, includedInNextTurn: false }] }]
+    }) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+    expect((await screen.findByText('Машина недоступна')).closest('aside')).toHaveTextContent('Машина отключена от сети.')
+    expect(screen.getByText('Модель из конфигурации CLI')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Перейти к настройкам разговора' }))
+    expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('показывает контролируемое состояние неизвестной карточки и сохраняет канонический URL', async () => {

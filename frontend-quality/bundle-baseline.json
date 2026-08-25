@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "measurement": "Vite minified JavaScript bytes",
-  "measuredAt": "2026-08-25 after desktop composer simplification",
+  "measuredAt": "2026-08-25 after context inspector projection",
   "headroom": "12% rounded up; budgets must be re-baselined explicitly",
   "maxBytes": {
-    "index-": 852000,
+    "index-": 970000,
     "react-": 160000,
     "markdown-": 375000,
     "terminal-": 327000,
