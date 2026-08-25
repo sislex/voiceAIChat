@@ -130,6 +130,11 @@ export class WsClient {
     }
   }
 
+  /** Сокет открыт прямо сейчас (для самодиагностики транспорта). */
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN
+  }
+
   /** Подписка на каждое успешное соединение, включая reconnect. */
   onConnected(cb: (reconnected: boolean) => void): () => void {
     this.connectedListeners.add(cb)
