@@ -12,15 +12,30 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
   const [additionalIssues, setAdditionalIssues] = useState('')
   const [pendingResults, setPendingResults] = useState<Record<string, (() => Promise<boolean>) | null>>({})
   const actionInFlight = useRef(false)
+  const identityRef = useRef('')
   const [draft, setDraft] = useState<AcceptanceCriterionSnapshot>({
     title: '', description: '', preconditions: '', steps: '', testData: '', expectedResult: '', required: true, testType: 'manual'
   })
   const load = async (): Promise<void> => {
     if (!window.qa) return
-    try { setState(await window.qa.get(props.projectId, props.taskId)); setError('') }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    const key = `${props.projectId}:${props.taskId}`
+    try {
+      const next = await window.qa.get(props.projectId, props.taskId)
+      if (identityRef.current !== key) return
+      setState(next)
+      setError('')
+    } catch (cause) {
+      if (identityRef.current === key) setError(cause instanceof Error ? cause.message : String(cause))
+    }
   }
-  useEffect(() => { void load() }, [props.projectId, props.taskId])
+  useEffect(() => {
+    identityRef.current = `${props.projectId}:${props.taskId}`
+    setState(null)
+    setOpen(null)
+    setPendingResults({})
+    setError('')
+    void load()
+  }, [props.projectId, props.taskId])
   useEffect(() => { setAdditionalIssues(state?.activeSession?.additionalIssues ?? '') }, [state?.activeSession?.id])
   useEffect(() => { if (state?.preparation?.status === 'success') setPreparationOpen(false); else if (state?.preparation) setPreparationOpen(true) }, [state?.preparation?.status, state?.preparation?.id])
   useEffect(() => {
@@ -148,7 +163,7 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
       {state.preparation?.status !== 'running' && (!state.criteria.length ? <p className="muted">Структурированные критерии ещё не добавлены.</p> :
         <div className="manual-qa-list" role="list">
           {state.criteria.filter((criterion) => criterion.active).map((criterion) =>
-            <CriterionCard key={criterion.id} criterion={criterion} result={session?.results.find((result) => result.criterionId === criterion.id) ?? null}
+            <CriterionCard key={`${props.taskId}:${criterion.id}`} criterion={criterion} result={session?.results.find((result) => result.criterionId === criterion.id) ?? null}
               open={open === criterion.id} onToggle={() => setOpen(open === criterion.id ? null : criterion.id)}
               onUpdate={update} onPendingChange={(save) => setPendingResults((current) => ({ ...current, [criterion.id]: save }))} onAttach={async (result, file) => {
                 if (!window.qa || !['image/png','image/jpeg','image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) { setError('Допустимы PNG, JPEG и WebP до 10 МБ'); return }

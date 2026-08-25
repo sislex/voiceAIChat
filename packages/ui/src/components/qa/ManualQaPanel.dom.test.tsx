@@ -125,6 +125,41 @@ describe('ManualQaPanel', () => {
     expect(within(group).queryByRole('button', { name:'Пропустить' })).toBeNull()
   })
 
+  it('retries a failed save without losing the selected result or comment', async () => {
+    const saved = { ...qaState('failed').activeSession!.results[0], comment:'Кнопка не отвечает', revision:2 }
+    const saveResult = vi.fn().mockRejectedValueOnce(new Error('Сеть недоступна')).mockResolvedValueOnce(saved)
+    window.qa={get:vi.fn().mockResolvedValue(qaState()),saveResult,addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
+    render(<ManualQaPanel projectId="p1" taskId="t1" />)
+    fireEvent.click(await screen.findByRole('button',{name:'Не работает'}))
+    fireEvent.change(screen.getByLabelText('Комментарий (обязательно)'), { target:{ value:'Кнопка не отвечает' } })
+    fireEvent.click(screen.getByRole('button',{name:'Сохранить результат'}))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Сеть недоступна')
+    expect(screen.getByRole('button',{name:'Не работает'})).toHaveAttribute('aria-pressed','true')
+    expect(screen.getByLabelText('Комментарий (обязательно)')).toHaveValue('Кнопка не отвечает')
+    fireEvent.click(screen.getByRole('button',{name:'Повторить сохранение'}))
+    await waitFor(()=>expect(saveResult).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('Сохранено: Не работает')).toBeTruthy()
+  })
+
+  it('restores saved values after reopening and does not carry a draft to another task', async () => {
+    const first = qaState()
+    const second = qaState('passed')
+    second.criteria[0].taskId = 't2'
+    second.activeSession!.taskId = 't2'
+    second.activeSession!.results[0].comment = 'Сохранено для второй задачи'
+    second.sessions[0] = second.activeSession!
+    const get = vi.fn((_projectId:string, taskId:string) => Promise.resolve(taskId === 't1' ? first : second))
+    window.qa={get,saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn()}
+    const view = render(<ManualQaPanel projectId="p1" taskId="t1" />)
+    fireEvent.change(await screen.findByLabelText('Комментарий'), { target:{ value:'Несохранённый черновик первой задачи' } })
+    view.rerender(<ManualQaPanel projectId="p1" taskId="t2" />)
+    expect(await screen.findByLabelText('Комментарий')).toHaveValue('Сохранено для второй задачи')
+    expect(screen.getByRole('button',{name:'Работает'})).toHaveAttribute('aria-pressed','true')
+    view.unmount()
+    render(<ManualQaPanel projectId="p1" taskId="t2" />)
+    expect(await screen.findByLabelText('Комментарий')).toHaveValue('Сохранено для второй задачи')
+  })
+
   it('saves dirty results before completing and guards a double click', async () => {
     const initial = qaState()
     const passed = qaState('passed')
