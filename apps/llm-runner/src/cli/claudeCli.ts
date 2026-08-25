@@ -72,9 +72,12 @@ export function claudeArgs(req: LlmRequest): string[] {
   // их надо в одном месте.
   const mcpServers: Record<string, { type: 'http'; url: string }> = {}
   const allowed: string[] = []
+  // Единый список запрещённых инструментов: `--disallowedTools` CLI принимает один
+  // раз, поэтому Bash и выключенные пользователем MCP-инструменты собираем сюда.
+  const disallowed: string[] = []
   const systemHints: string[] = []
   if (req.executionDisabled) {
-    args.push('--disallowedTools', 'Bash')
+    disallowed.push('Bash')
     systemHints.push(
       'Для этого сообщения машина не выбрана. Не выполняй shell-команды и не пытайся запускать их каким-либо инструментом.'
     )
@@ -110,7 +113,7 @@ export function claudeArgs(req: LlmRequest): string[] {
         `\n\nДоступны именованные команды CI-справочника: инструмент mcp__ci__run_command ` +
         `(аргумент name), список — mcp__ci__list_commands.`
     }
-    args.push('--disallowedTools', 'Bash')
+    disallowed.push('Bash')
     systemHints.push(
       `Встроенный Bash отключён: команды выполняй только mcp__remote__bash на машине «${req.remote.agentName}». ` +
         `Для долгих команд передавай timeout_ms (120000 по умолчанию, максимум 300000). ` +
@@ -155,8 +158,12 @@ export function claudeArgs(req: LlmRequest): string[] {
     }
     systemHints.push(previewToolHint())
   }
+  // Выключенные пользователем MCP-инструменты: запрещаем и убираем из allow-list.
+  if (req.disallowedTools?.length) disallowed.push(...req.disallowedTools)
+  const finalAllowed = allowed.filter((tool) => !disallowed.includes(tool))
   if (Object.keys(mcpServers).length) args.push('--mcp-config', JSON.stringify({ mcpServers }))
-  if (allowed.length) args.push('--allowedTools', allowed.join(','))
+  if (finalAllowed.length) args.push('--allowedTools', finalAllowed.join(','))
+  if (disallowed.length) args.push('--disallowedTools', disallowed.join(','))
   if (systemHints.length) args.push('--append-system-prompt', systemHints.join('\n\n'))
   return args
 }

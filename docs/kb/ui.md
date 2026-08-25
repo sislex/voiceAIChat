@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-25
-checked: 46552c82
+checked: aecf49ec
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -228,6 +228,25 @@ AGENTS.md, эффективные настройки разговора, выб�
 явного возврата, а «Ко всем источникам» нормализует маршрут до разговора.
 Разметка в `packages/ui/src/styles/app.css` ограничивает ширину и переносит
 длинные серверные метаданные без горизонтального переполнения.
+
+**Тумблеры контекста (гейтинг).** Каждый пункт снимка несёт `toggleable`/`enabled`
+(`ContextSnapshotItem` в `types.ts`). Выключаемы всё, кроме безопасности и чистой
+информации — правила задаёт `isContextToggleable` в `packages/shared/src/contextGating.ts`
+(`SAFETY_CONTEXT_IDS` = platform/application-instructions; `INFO_CONTEXT_IDS` =
+working-directory, agents-chain, llm, machine, permission-mode, conversation-history,
+current-message). `ContextInspector` рисует чекбокс у выключаемого пункта (у
+неотключаемого — замок 🔒) и переключатель в detail; клик шлёт
+`conversations:setContextItem` → `POST /api/conversations/:id/context/:itemId`, сервер
+пишет id в `conversations.disabled_context_json` (метод `setConversationContextEnabled`,
+безопасность выключить отказывается) и возвращает свежий снимок. **Применение** — в
+`apps/server/src/turns.ts`: выключенные `personalization`/`project-binding`/`knowledge-mode`
+убирают соответствующий блок промпта (kb → режим off), выключенные `skill-<name>` уходят
+из `effectiveSkills`, а выключенные `mcp-remote-*`/`mcp-kb-*` через `toolNameForContextId`
+попадают в `LlmRequest.disallowedTools` → claudeCli добавляет их в единый `--disallowedTools`
+и убирает из allow-list (`claudeCli.ts`, `disallowed`-массив). `includedInNextTurn`
+у выключенного пункта в снимке становится `false`. AGENTS.md читает CLI из cwd, сервер
+его не вставляет — пункт информационный (текст не раскрывается). Тесты: `contextGating.test.ts`,
+тумблер и снимок в `rest.test.ts`, применение — `turns.test.ts`, `--disallowedTools` — `claudeCli.test.ts`.
 
 Состояние разложено по доменным хранилищам (таблица выше); ниже — что в каких
 областях лежит:

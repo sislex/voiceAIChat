@@ -223,7 +223,8 @@ import {
   type ReleaseTimeouts,
   DEFAULT_RELEASE_TIMEOUTS,
   validateReleaseTimeouts,
-  releaseStepLimit
+  releaseStepLimit,
+  isContextToggleable
 } from '@voicechat/shared'
 import { hashPassword, verifyPassword } from '../users/passwords.js'
 
@@ -254,6 +255,7 @@ interface ConversationRow {
   llm_model: string | null
   permission_mode: string | null
   kb_context_mode: string | null
+  disabled_context_json: string | null
   project_id: string | null
   preview_url: string | null
   task_id: string | null
@@ -771,6 +773,9 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'kb_context_mode')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN kb_context_mode TEXT NOT NULL DEFAULT 'auto'`)
     }
+    if (!convCols.some((c) => c.name === 'disabled_context_json')) {
+      this.db.exec(`ALTER TABLE conversations ADD COLUMN disabled_context_json TEXT NOT NULL DEFAULT '[]'`)
+    }
     if (!convCols.some((c) => c.name === 'project_id')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN project_id TEXT`)
     }
@@ -1266,7 +1271,7 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, ?, NULL, ?)`
       )
       .run(id, title, ts, ts, userId, assistantKind)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', projectId: null, assistantKind, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext: [], projectId: null, assistantKind, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
   }
 
   /**
@@ -1517,6 +1522,21 @@ export class VoiceChatDb {
 
   setConversationKbContextMode(userId: string, id: string, mode: 'auto' | 'manual' | 'off'): Conversation | null {
     this.db.prepare(`UPDATE conversations SET kb_context_mode = ? WHERE id = ? AND user_id = ?`).run(mode, id, userId)
+    return this.getConversation(userId, id)
+  }
+
+  /**
+   * Включить/выключить пункт контекста инспектора. Правила безопасности выключить
+   * нельзя (тихо игнорируем). Выключенные id хранятся в disabled_context_json и
+   * применяются при сборке хода (turns.ts).
+   */
+  setConversationContextEnabled(userId: string, id: string, itemId: string, enabled: boolean): Conversation | null {
+    const conversation = this.getConversation(userId, id)
+    if (!conversation) return null
+    if (!isContextToggleable(itemId)) return conversation // безопасность/информация не выключается
+    const disabled = new Set(conversation.disabledContext ?? [])
+    if (enabled) disabled.delete(itemId); else disabled.add(itemId)
+    this.db.prepare(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`).run(JSON.stringify([...disabled]), id, userId)
     return this.getConversation(userId, id)
   }
 
@@ -2792,6 +2812,7 @@ export class VoiceChatDb {
           ? row.permission_mode
           : null,
       kbContextMode: row.kb_context_mode === 'manual' || row.kb_context_mode === 'off' ? row.kb_context_mode : 'auto',
+      disabledContext: parseJsonValue<string[]>(row.disabled_context_json, []).filter((item): item is string => typeof item === 'string'),
       projectId: row.project_id ?? null,
       assistantKind: row.assistant_kind === 'kanban' || row.assistant_kind === 'web-recorder' || row.assistant_kind === 'playwright-reader' ? row.assistant_kind : null,
       previewUrl: row.preview_url ?? null,

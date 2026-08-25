@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   llm_provider      TEXT,
   llm_model         TEXT,
   kb_context_mode   TEXT NOT NULL DEFAULT 'auto',
+  disabled_context_json TEXT NOT NULL DEFAULT '[]',
   project_id        TEXT,
   preview_url       TEXT,
   task_id           TEXT,
