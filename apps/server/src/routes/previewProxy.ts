@@ -178,6 +178,9 @@ try{const hrefDescriptor=Object.getOwnPropertyDescriptor(location,'href');if(hre
 if(window.history)try{const nativePush=history.pushState.bind(history),nativeReplaceState=history.replaceState.bind(history);
 history.pushState=(state,title,url)=>nativePush(state,title,url==null?url:toProxy(String(url)));
 history.replaceState=(state,title,url)=>nativeReplaceState(state,title,url==null?url:toProxy(String(url)))}catch{}
+// Deep-link: фрагмент реального адреса (#/machines) не доезжает до iframe-документа
+// (он живёт внутри query ?url=...) — восстанавливаем его для hash-роутеров SPA.
+try{const target=new URL(currentBase());if(target.hash&&!location.hash)location.hash=target.hash}catch{}
 })();<\/script>`
 }
 
@@ -669,8 +672,11 @@ export function rewritePreviewBody(body: Buffer, type: string, base: URL): Buffe
  * авторизация/сессия ChatAI (cookie, authorization) отбрасываются; заголовок
  * x-preview-authorization — так context shim передаёт Authorization самой
  * страницы, не задевая Bearer-гейт ChatAI, — возвращается апстриму как authorization.
+ * Conditional-заголовки (if-none-match и т.п.) тоже: браузер шлёт валидаторы
+ * переписанного тела, апстрим отвечал бы 304 по своему неизменному телу, и
+ * старый инъецированный HTML залипал бы в кэше браузера после обновления шимов.
  */
-const DROPPED_REQUEST_HEADERS = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'keep-alive', 'upgrade', 'te', 'trailer', 'expect', 'cookie', 'authorization', 'proxy-authorization', 'accept-encoding', 'origin', 'referer', 'via', 'priority'])
+const DROPPED_REQUEST_HEADERS = new Set(['host', 'connection', 'content-length', 'transfer-encoding', 'keep-alive', 'upgrade', 'te', 'trailer', 'expect', 'cookie', 'authorization', 'proxy-authorization', 'accept-encoding', 'origin', 'referer', 'via', 'priority', 'if-none-match', 'if-modified-since', 'if-match', 'if-unmodified-since', 'if-range'])
 
 export function upstreamRequestHeaders(incoming: NodeJS.Dict<string | string[]>): Record<string, string | string[]> {
   const headers: Record<string, string | string[]> = {}
@@ -833,6 +839,14 @@ export function clearPreviewCookies(userId: string, host?: string): number {
   return cookies.length - kept.length
 }
 
+/**
+ * Заголовки ответа апстрима, которые не возвращаются браузеру: фрейм-политики
+ * мешают iframe, cookie живут в серверном контейнере, а валидаторы кэша
+ * (etag/last-modified) описывают апстримное тело — после инъекций оно другое,
+ * и ревалидация по ним оставляла бы в кэше браузера устаревшие шимы.
+ */
+const DROPPED_RESPONSE_HEADERS = new Set(['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding', 'etag', 'last-modified'])
+
 export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDeps = {}): void {
   // Сброс сессий окружений: удобно перелогиниться под другим тестовым
   // пользователем. Авторизуется preview-cookie (кнопка «Сессия» в Reader) или Bearer.
@@ -876,7 +890,7 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
             : machine.body
           reply.code(machine.status)
           for (const [name, value] of Object.entries(machine.headers)) {
-            if (value === undefined || ['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding', 'location'].includes(name.toLowerCase())) continue
+            if (value === undefined || DROPPED_RESPONSE_HEADERS.has(name.toLowerCase()) || name.toLowerCase() === 'location') continue
             reply.header(name, value)
           }
           reply.header('content-type', machineType)
@@ -890,7 +904,7 @@ export function registerPreviewProxy(app: FastifyInstance, deps: PreviewProxyDep
         const rewritten = /text\/(html|css)|application\/xhtml\+xml/i.test(responseType) ? rewritePreviewBody(responseBody, responseType, finalUrl) : responseBody
         reply.code(response.statusCode ?? 502)
         for (const [name, value] of Object.entries(response.headers)) {
-          if (value === undefined || ['x-frame-options', 'content-security-policy', 'set-cookie', 'content-length', 'connection', 'transfer-encoding'].includes(name.toLowerCase())) continue
+          if (value === undefined || DROPPED_RESPONSE_HEADERS.has(name.toLowerCase())) continue
           reply.header(name, value)
         }
         reply.header('content-type', responseType)

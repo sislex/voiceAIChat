@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-08-23
-checked: 3756df1e
+updated: 2026-08-25
+checked: 19cdf216
 areas:
   - apps/server/src
 ---
@@ -83,7 +83,11 @@ XHTML и CSS прокси переписывает URL ресурсов, ссы�
 SPA-навигацию держит перехват History API и серверное переписывание ссылок.
 `Authorization`, выставленный самой страницей, шим переименовывает в
 `x-preview-authorization` (иначе Bearer-гейт ChatAI принял бы его за токен ChatAI и
-ответил 401), а роут возвращает его апстриму как `authorization`.
+ответил 401), а роут возвращает его апстриму как `authorization`. Deep-link:
+фрагмент целевого адреса (`http://…/#/machines`) живёт внутри query `?url=` и в
+`location` iframe-документа не попадает — в конце context-шима он восстанавливается
+(`location.hash = target.hash`, только если у документа hash ещё пуст), поэтому
+hash-роутеры вложенных SPA открывают нужный маршрут.
 
 Роут принимает тело запроса любого content-type сырым буфером (JSON, multipart,
 бинарь) — парсеры остального API не затронуты: внутри `registerPreviewProxy()` свой
@@ -91,7 +95,12 @@ fastify-scope с `removeAllContentTypeParsers()` и catch-all `'*'`-парсер
 входящего запроса пробрасываются апстриму через `upstreamRequestHeaders()`, кроме
 hop-by-hop, адресации и авторизации/сессии ChatAI: `cookie`, `authorization`,
 `host`, `origin`, `referer`, `accept-encoding`, `sec-*`, `x-forwarded-*` и т.п.
-наружу не уходят; `content-type` уходит как есть. SSRF-проверка (`assertPublicHost`
+наружу не уходят; `content-type` уходит как есть. Conditional-заголовки
+(`if-none-match`, `if-modified-since` и родня) тоже отбрасываются, а из ответа
+вырезаются `etag`/`last-modified` (`DROPPED_RESPONSE_HEADERS`): валидаторы описывают
+апстримное тело, после инъекций оно другое, и 304 от апстрима залипал бы в кэше
+браузера как HTML с устаревшими шимами — Vite-окружения с их `etag` на `index.html`
+воспроизводили это стабильно. SSRF-проверка (`assertPublicHost`
 плюс кастомный DNS-lookup) выполняется в `get()` на каждый проксируемый запрос —
 включая переписанные fetch/XHR/beacon и каждый redirect-хоп, исключений нет.
 

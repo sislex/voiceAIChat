@@ -149,3 +149,28 @@ describe('https-окружения и сброс cookie', () => {
     await app.close()
   })
 })
+
+describe('кэш переписанного тела', () => {
+  it('conditional-заголовки браузера не уходят апстриму, а его валидаторы не возвращаются', async () => {
+    // Валидаторы описывают апстримное тело; после инъекций оно другое, и 304
+    // от апстрима оставлял бы в кэше браузера HTML с устаревшими шимами.
+    const bridge = makeBridge(() => ({
+      status: 200,
+      headers: { 'content-type': 'text/html', etag: 'W/"345-upstream"', 'last-modified': 'Mon, 24 Aug 2026 00:00:00 GMT' },
+      bodyBase64: Buffer.from('<h1>Dev</h1>').toString('base64')
+    }))
+    const app = await makeApp(bridge)
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/preview?url=' + encodeURIComponent('http://agent-1.machine.internal:5173/'),
+      headers: { 'if-none-match': 'W/"345-upstream"', 'if-modified-since': 'Mon, 24 Aug 2026 00:00:00 GMT' }
+    })
+    expect(res.statusCode).toBe(200)
+    const sent = bridge.calls[0]!.request.headers ?? {}
+    expect(Object.keys(sent)).not.toContain('if-none-match')
+    expect(Object.keys(sent)).not.toContain('if-modified-since')
+    expect(res.headers.etag).toBeUndefined()
+    expect(res.headers['last-modified']).toBeUndefined()
+    await app.close()
+  })
+})
