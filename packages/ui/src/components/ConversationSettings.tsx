@@ -31,6 +31,10 @@ export interface ConversationSettingsProps {
   projects: ProjectSummary[]
   /** Доступно только для активного Web Reader-разговора. */
   webReaderDiagnostics?: { running: boolean; onRun: () => void }
+  /** Доступно только для активного Playwright Reader-разговора. */
+  playwrightReaderDiagnostics?: { running: boolean; onRun: () => void }
+  /** Сквозная самодиагностика чата (клиент→сервер→модель→БД) — в обычном чате. */
+  chatDiagnostics?: { running: boolean; onRun: () => void }
   /** Загрузка деталей проекта (машины/папки/дефолт) для выбранного проекта. */
   fetchProjectDetail: (id: string) => Promise<ProjectDetail | null>
   /** Серверный список машин с тем же правилом доступа, что используется при сохранении. */
@@ -64,7 +68,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, chatDiagnostics, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -320,6 +324,12 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
         />}
         {webReaderDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика Web Reader">
           <div className="convsettings-sectionhead"><div><h2>Web Reader</h2><p>Проверяет cookie, proxy, загрузку, DOM-мост, события, навигацию, очередь и requestId на внутренней странице. Полный перечень и результаты появятся в чате.</p></div><Button onClick={webReaderDiagnostics.onRun} disabled={webReaderDiagnostics.running}>{webReaderDiagnostics.running ? 'Выполняется…' : 'Самодиагностика'}</Button></div>
+        </section>}
+        {playwrightReaderDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика Playwright Reader">
+          <div className="convsettings-sectionhead"><div><h2>Playwright Reader</h2><p>Проверяет браузерный мост, запуск изолированного Chromium, метаданные сессии, кадр screencast и команду reload. Проверки не уводят открытую страницу; результаты появятся в чате.</p></div><Button onClick={playwrightReaderDiagnostics.onRun} disabled={playwrightReaderDiagnostics.running}>{playwrightReaderDiagnostics.running ? 'Выполняется…' : 'Самодиагностика'}</Button></div>
+        </section>}
+        {chatDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика чата">
+          <div className="convsettings-sectionhead"><div><h2>Самодиагностика чата</h2><p>Сквозная проверка «клиент → сервер → модель → БД»: HTTP и WebSocket, вход CLI, MCP-серверы, реальный ход модели, запись и чтение сообщения. Результаты появятся в чате.</p></div><Button onClick={chatDiagnostics.onRun} disabled={chatDiagnostics.running}>{chatDiagnostics.running ? 'Выполняется…' : 'Самодиагностика'}</Button></div>
         </section>}
         <section className="convsettings-card">
           <label className="convsettings-field"><span>Название разговора</span><input value={title} onChange={(e) => setTitle(e.target.value)} /></label>

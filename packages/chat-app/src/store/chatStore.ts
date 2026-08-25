@@ -1414,7 +1414,13 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       setConversationExecTarget,
       async setConversationProject(id, projectId) {
         const conversation = await client['conversations:setProject']({ id, projectId })
-        setState({ conversations: getState().conversations.map((c) => (c.id === id ? conversation : c)) })
+        // Смена проекта не меняет assistantKind, но обновляет саму запись — правим
+        // её и в reader-/playwright-списках, иначе селектор ридера показывал бы старое.
+        setState({
+          conversations: getState().conversations.map((c) => (c.id === id ? conversation : c)),
+          readerConversations: getState().readerConversations.map((c) => (c.id === id ? conversation : c)),
+          playwrightReaderConversations: getState().playwrightReaderConversations.map((c) => (c.id === id ? conversation : c))
+        })
       },
       async setConversationPreviewUrl(id, previewUrl) {
         const conversation = await client['conversations:setPreviewUrl']({ id, previewUrl })
