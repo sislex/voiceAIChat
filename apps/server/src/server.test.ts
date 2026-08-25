@@ -110,10 +110,18 @@ describe('docker-compose: runtime-метаданные и адрес испол�
     }
   })
 
-  it('launcher и detached-процесс явно переносят release metadata', () => {
+  it('launcher и detached-процесс явно переносят checkout и release metadata', () => {
     const install = readFileSync(new URL('../../../scripts/prod/install.sh', import.meta.url), 'utf8')
     const deploy = readFileSync(new URL('../../../scripts/prod/deploy.sh', import.meta.url), 'utf8')
-    expect(install).toContain('exec env VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" VC_RELEASE_VERSION_SOURCE="${VC_RELEASE_VERSION_SOURCE-}" "$runtime" "$@"')
+    expect(install).toContain("printf 'VC_REPO_DIR=%q\\n' \"$REPO\" >/etc/voicechat/production.env")
+    expect(install).toContain('EnvironmentFile=/etc/voicechat/production.env')
+    expect(install).toContain('exec env VC_REPO_DIR="$REPO" VC_RELEASE_VERSION="${VC_RELEASE_VERSION-}" VC_RELEASE_VERSION_SOURCE="${VC_RELEASE_VERSION_SOURCE-}" "$runtime" "$@"')
+    expect(deploy).toContain(': "${VC_REPO_DIR:?VC_REPO_DIR не задан; переустановите scripts/prod/install.sh}"')
+    for (const script of ['deploy.sh', 'watchdog.sh', 'rebuild-when-idle.sh']) {
+      const source = readFileSync(new URL(`../../../scripts/prod/${script}`, import.meta.url), 'utf8')
+      expect(source).toContain('source /etc/voicechat/production.env')
+      expect(source).not.toContain('VC_REPO_DIR:-/root/voiceAIChat')
+    }
     expect(deploy).toContain('--release-version "$release_version"')
     expect(deploy).toContain('--release-version-source "$release_version_source"')
     expect(deploy).toContain('export VC_RELEASE_VERSION=$2')
