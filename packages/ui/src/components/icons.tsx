@@ -66,16 +66,17 @@ export function StopIcon(): JSX.Element {
 
 export function DiagonalResizeIcon({ expanded = false }: { expanded?: boolean } = {}): JSX.Element {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      {expanded ? (
-        <>
-          <path d="M6.5 6.5 3 3M3 3h3M3 3v3M9.5 9.5 13 13M13 13h-3M13 13v-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </>
-      ) : (
-        <>
-          <path d="M2.5 2.5 6 6M6 6V3M6 6H3M13.5 13.5 10 10M10 10v3M10 10h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </>
-      )}
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      data-expanded={expanded || undefined}
+    >
+      <rect x="2" y="10" width="4" height="4" rx="0.75" fill="#1473E6" />
+      <rect x="6" y="6" width="4" height="4" rx="0.75" fill="#1473E6" />
+      <rect x="10" y="2" width="4" height="4" rx="0.75" fill="#1473E6" />
     </svg>
   )
 }

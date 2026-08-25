@@ -23,7 +23,6 @@ import { Dots } from './animations'
 import { QuestionsForm } from './QuestionsForm'
 import { Button } from '@voicechat/ui-kit'
 import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
-import { EmptyState } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { SidebarToggle } from './ui/IconButton'
 import { MessageMeta } from './MessageMeta'
@@ -632,14 +631,6 @@ export function ChatColumn({
             <div className="msgrefresh">
               <RefreshIndicator label="Обновляем историю…" />
             </div>
-          )}
-          {!loadingMessages && messages.length === 0 && liveSegments.length === 0 && !streamingReply && (
-            <EmptyState
-              testId="messages-empty"
-              icon="💬"
-              title="Пока нет сообщений — задайте первый вопрос"
-              description="Наберите текст в поле ниже или нажмите микрофон: и вопрос, и ответ модели появятся здесь."
-            />
           )}
           {messages.map((m) => {
             const isAi = m.role === 'ai'

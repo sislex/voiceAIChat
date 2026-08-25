@@ -1392,6 +1392,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         voiceBar={
           <VoiceBar
             defaultCollapsed={compactChat && chat.messages.length > 0}
+            allowCollapse={compactChat && chat.messages.length > 0}
             layout={chat.messages.length === 0 ? 'centered' : 'docked'}
             userDisplayName={session.currentUser?.name}
             state={voice.voice}
