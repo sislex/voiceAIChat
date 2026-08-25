@@ -14,7 +14,6 @@ import {
   engineLabel,
   formatLiveUsage,
   formatTurnMeta,
-  messageTime,
   clockTime,
   dateTimeTooltip,
   formatElapsed,
@@ -290,6 +289,9 @@ export function ChatColumn({
   // Живой таймер ответа: момент старта фиксируем при появлении стрима, значение
   // «сколько уже отвечает» обновляем раз в секунду (эффект — ниже, после hasStream).
   const streamStartRef = useRef<number | null>(null)
+  // Момент, когда карточка ответа появилась (ещё до первого фрагмента) — для
+  // времени в шапке карточки «Готовим ответ…».
+  const prepStartRef = useRef<number | null>(null)
   const [liveNow, setLiveNow] = useState<number>(() => Date.now())
 
   const startTitleEdit = (): void => {
@@ -460,6 +462,11 @@ export function ChatColumn({
     const timer = window.setInterval(() => setLiveNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [hasStream])
+  // Фиксируем момент появления карточки ожидания и сбрасываем, когда ответа уже нет.
+  useEffect(() => {
+    if (showPreparingReply && prepStartRef.current === null) prepStartRef.current = Date.now()
+    if (!showPreparingReply && !hasStream) prepStartRef.current = null
+  }, [showPreparingReply, hasStream])
 
   return (
     <main className={messages.length === 0 ? 'main main--empty' : 'main main--conversation'} data-chat-layout={messages.length === 0 ? 'centered' : 'docked'}>
@@ -677,6 +684,7 @@ export function ChatColumn({
                   const msgModel = m.meta?.model ?? m.meta?.request?.model
                   const startMs = typeof m.meta?.durationMs === 'number' ? m.createdAt - m.meta.durationMs : null
                   const hasActivity = Boolean(m.meta?.activity && m.meta.activity.length > 0)
+                  const machineLabel = m.execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === m.execTarget)?.name ?? 'Сервер'
                   return (
                     <div className="msg-head">
                       {/* Движок; используемая модель скрыта и появляется при наведении. */}
@@ -684,6 +692,8 @@ export function ChatColumn({
                         {engineLabel(m.engine)}
                         {msgModel && <span className="msg-model"> · {msgModel}</span>}
                       </span>
+                      {/* Машина выполнения — сразу за движком/моделью. */}
+                      <span className="msg-machine-head" title="Машина выполнения этого ответа">{machineLabel}</span>
                       {hasActivity && (
                         <label className="msg-view">
                           <span className="vc-sr-only">Вид ответа</span>
@@ -692,9 +702,9 @@ export function ChatColumn({
                           </select>
                         </label>
                       )}
+                      {/* Крайнее правое сверху — время начала ответа (тот же формат ЧЧ:ММ:СС). */}
                       <span className="msg-head-right">
                         {startMs !== null && <span className="msg-start" title={`Начало ответа: ${dateTimeTooltip(startMs)}`}>{clockTime(startMs)}</span>}
-                        <IconButton size="sm" aria-label="Копировать ответ" title="Копировать ответ" onClick={() => copyMessage(m)}>{copiedId === m.id ? '✓' : '📋'}</IconButton>
                       </span>
                     </div>
                   )
@@ -733,6 +743,15 @@ export function ChatColumn({
                   </div>
                 ) : isAi ? (
                   <div className="bub">
+                    {/* Копировать ответ — той же иконкой и в том же углу, что копия кода. */}
+                    <button
+                      className="copymsg"
+                      aria-label="Копировать ответ"
+                      title="Копировать ответ"
+                      onClick={() => copyMessage(m)}
+                    >
+                      {copiedId === m.id ? '✓' : '⧉'}
+                    </button>
                     {m.meta?.interrupted && (
                       <p className="msg-interrupted" data-testid="msg-interrupted">
                         ⚠️ Ответ прерван перезапуском сервера — сохранена набранная часть.
@@ -823,74 +842,92 @@ export function ChatColumn({
                 )}
                 {!isEditing && (
                   <div className="mfoot">
-                    <span className="msg-machine" title="Снимок машины в момент выполнения">
-                      {isAi ? 'Ответ' : 'Вопрос'}: {m.execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === m.execTarget)?.name ?? 'Сервер'}
-                    </span>
-                    {isAi && (
-                      <span className="msg-mode" data-testid={`message-mode-${m.id}`} title="Режим этого ответа">
-                        {modeLabel(m.meta?.request?.permissionMode)}
-                      </span>
-                    )}
-                    {/* Время конца ответа с тултипом полной даты. */}
-                    <p className="mtime" title={isAi ? `Конец ответа: ${dateTimeTooltip(m.createdAt)}` : dateTimeTooltip(m.createdAt)}>{messageTime(m)}</p>
-                    {isAi && m.meta && formatLiveUsage(m.meta) && (
-                      <span className="msgact-count msgact-tokens" data-testid={`message-tokens-${m.id}`}>
-                        {formatLiveUsage(m.meta)}
-                      </span>
-                    )}
-                    {isAi && m.meta && (() => { const cost = messageCost(m.meta); return cost && <span className="msg-cost" data-testid={`message-cost-${m.id}`} title={cost.title}>{cost.text}</span> })()}
+                    {/* Слева: сведения (ℹ), затем токены со стоимостью хода. */}
                     {isAi && m.meta && (
                       <MessageMeta meta={m.meta} {...(onOpenKbDocument ? { onOpenKbDocument } : {})} />
                     )}
+                    {isAi && m.meta && (() => {
+                      const usage = formatLiveUsage(m.meta)
+                      const cost = messageCost(m.meta)
+                      if (!usage && !cost) return null
+                      return (
+                        <span className="msgact-count msgact-tokens" data-testid={`message-tokens-${m.id}`}>
+                          {usage && <span className="msgact-usage">{usage}</span>}
+                          {usage && cost && <span className="msgact-sep"> · </span>}
+                          {cost && <span className="msgact-cost" data-testid={`message-cost-${m.id}`} title={cost.title}>{cost.text}</span>}
+                        </span>
+                      )
+                    })()}
                     {isAi && isLast && m.meta?.request?.permissionMode === 'plan' && onExecutePlan && canExecutePlan && state === 'idle' && (
                       <Button size="sm" className="execute-plan" onClick={() => onExecutePlan(m.id)}>
                         Выполнить план
                       </Button>
                     )}
-                    {isAi && canSpeak && onSpeakMessage && (
-                      <IconButton
-                        size="sm"
-                        aria-label={
-                          speakingMessageId === m.id ? 'Остановить озвучку' : 'Озвучить ответ'
-                        }
-                        title={speakingMessageId === m.id ? 'Остановить' : 'Озвучить'}
-                        onClick={() => onSpeakMessage(m.id, aiText)}
-                      >
-                        {speakingMessageId === m.id ? '⏹' : '🔊'}
-                      </IconButton>
-                    )}
-                    {!isAi && canEdit && onEditMessage && (
-                      <IconButton
-                        size="sm"
-                        aria-label="Изменить сообщение"
-                        title="Изменить и переспросить"
-                        onClick={() => startEdit(m)}
-                      >
-                        ✏️
-                      </IconButton>
-                    )}
-                    {onDeleteMessage && (
-                      <IconButton
-                        size="sm"
-                        aria-label="Удалить сообщение"
-                        title="Удалить из истории"
-                        onClick={() => onDeleteMessage(m.id)}
-                      >
-                        🗑
-                      </IconButton>
-                    )}
+                    {/* Справа: озвучить, удалить и — крайним правым — время окончания (ЧЧ:ММ:СС). */}
+                    <span className="mfoot-right">
+                      {isAi && canSpeak && onSpeakMessage && (
+                        <IconButton
+                          size="sm"
+                          aria-label={
+                            speakingMessageId === m.id ? 'Остановить озвучку' : 'Озвучить ответ'
+                          }
+                          title={speakingMessageId === m.id ? 'Остановить' : 'Озвучить'}
+                          onClick={() => onSpeakMessage(m.id, aiText)}
+                        >
+                          {speakingMessageId === m.id ? '⏹' : '🔊'}
+                        </IconButton>
+                      )}
+                      {!isAi && canEdit && onEditMessage && (
+                        <IconButton
+                          size="sm"
+                          aria-label="Изменить сообщение"
+                          title="Изменить и переспросить"
+                          onClick={() => startEdit(m)}
+                        >
+                          ✏️
+                        </IconButton>
+                      )}
+                      {onDeleteMessage && (
+                        <IconButton
+                          size="sm"
+                          aria-label="Удалить сообщение"
+                          title="Удалить из истории"
+                          onClick={() => onDeleteMessage(m.id)}
+                        >
+                          🗑
+                        </IconButton>
+                      )}
+                      <p className="mtime" title={isAi ? `Конец ответа: ${dateTimeTooltip(m.createdAt)}` : dateTimeTooltip(m.createdAt)}>{clockTime(m.createdAt)}</p>
+                    </span>
                   </div>
                 )}
               </div>
             )
           })}
 
-          {showPreparingReply && (
-            <div className="reply-preparing" data-testid="reply-preparing" role="status" aria-live="polite">
-              <Dots />
-              <span>Готовим ответ…</span>
-            </div>
-          )}
+          {showPreparingReply && (() => {
+            const machineLabel = execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === execTarget)?.name ?? 'Сервер'
+            const prepStart = prepStartRef.current ?? liveNow
+            return (
+              <div className="msg ai" data-testid="reply-preparing">
+                <div className="msg-head">
+                  <span className={`${chipClass('ai', diarization, aiLabel === 'Codex' ? 'codex' : 'claude')} msg-engine`}>
+                    {speakerName('ai', diarization, aiLabel)}
+                  </span>
+                  <span className="msg-machine-head" title="Машина выполнения этого ответа">{machineLabel}</span>
+                  <span className="msg-head-right">
+                    <span className="msg-start" title={`Начало ответа: ${dateTimeTooltip(prepStart)}`}>{clockTime(prepStart)}</span>
+                  </span>
+                </div>
+                <div className="bub" role="status" aria-live="polite">
+                  <span className="reply-preparing" data-testid="reply-preparing-inner">
+                    <Dots />
+                    <span>Готовим ответ…</span>
+                  </span>
+                </div>
+              </div>
+            )
+          })()}
 
           {turnMeta && !hasStream && messages.length > 0 && messages[messages.length - 1].role === 'ai' && (
             <p className="turnmeta" data-testid="turn-meta">
@@ -926,6 +963,9 @@ export function ChatColumn({
                 <span className={`${chipClass('ai', diarization, aiLabel === 'Codex' ? 'codex' : 'claude')} msg-engine`}>
                   {speakerName('ai', diarization, aiLabel)}
                 </span>
+                <span className="msg-machine-head" data-testid="live-machine" title="Машина выполнения этого ответа">
+                  {execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === execTarget)?.name ?? 'Сервер'}
+                </span>
                 <label className="msg-view">
                   <span className="vc-sr-only">Вид ответа</span>
                   <select aria-label="Вид ответа" value={liveMode} onChange={(event) => setLiveMode(event.target.value as TimelineMode)}>
@@ -937,9 +977,6 @@ export function ChatColumn({
                 </span>
               </div>
               <div className="bub">
-                <div className="live-machine" data-testid="live-machine">
-                  Машина: {execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === execTarget)?.name ?? 'Сервер'}
-                </div>
                 <MessageTimeline
                   live
                   voice={state}
@@ -962,10 +999,12 @@ export function ChatColumn({
                     />
                   ))}
               </div>
-              {/* Таймер: сколько модель уже отвечает, обновляется раз в секунду. */}
+              {/* Таймер: сколько модель уже отвечает, обновляется раз в секунду; крайним правым. */}
               <div className="mfoot">
-                <span className="msg-timer" data-testid="live-timer" role="timer" aria-live="off">
-                  Отвечает: {formatElapsed(liveNow - (streamStartRef.current ?? liveNow))}
+                <span className="mfoot-right">
+                  <span className="msg-timer" data-testid="live-timer" role="timer" aria-live="off">
+                    Отвечает: {formatElapsed(liveNow - (streamStartRef.current ?? liveNow))}
+                  </span>
                 </span>
               </div>
             </div>
