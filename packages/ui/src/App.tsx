@@ -1328,6 +1328,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onHighlightDone={chatActions.clearMessageHighlight}
         liveSegments={voice.liveSegments}
         diarization={settingsState.settings.diarization}
+        preparingReply={chat.preparingReply}
         streamingReply={chat.streamingReply}
         liveActivity={chat.liveActivity}
         liveUsage={chat.liveUsage}
@@ -1397,6 +1398,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             layout={chat.messages.length === 0 ? 'centered' : 'docked'}
             userDisplayName={session.currentUser?.name}
             state={voice.voice}
+            submitPending={chat.pendingSubmit?.conversationId === chat.activeId || (chat.pendingSubmit !== null && chat.activeId === null)}
             replyStarted={chat.streamingReply.length > 0}
             requestError={shell.error}
             draft={chat.draft}

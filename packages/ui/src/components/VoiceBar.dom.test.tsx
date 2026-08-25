@@ -97,10 +97,13 @@ describe('VoiceBar — состояния', () => {
     expect(props.onSubmitText).toHaveBeenCalledOnce()
   })
 
-  it('отправка сразу показывает начальный этап', async () => {
-    setup('idle', { draft: 'привет' })
-    await userEvent.click(screen.getByLabelText('Отправить сообщение'))
+  it('pending подтверждения показывает loader и блокирует повторную отправку', async () => {
+    const props = setup('idle', { draft: 'привет', submitPending: true })
+    const submit = screen.getByLabelText('Отправить сообщение')
+    expect(submit).toBeDisabled()
     expect(screen.getByTestId('request-status')).toHaveTextContent('Запрос отправляется…')
+    await userEvent.click(submit)
+    expect(props.onSubmitText).not.toHaveBeenCalled()
   })
 
   it('повторные realtime-события обновляют единственную строку без дублей', () => {

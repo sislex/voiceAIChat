@@ -132,6 +132,14 @@ export interface LocalAttachment {
   upload: UploadInfo | null
 }
 
+export interface PendingSubmit {
+  operationId: string
+  conversationId: string | null
+  messageId: string | null
+  queueOnly: boolean
+  text: string
+}
+
 export interface ChatState {
   conversations: Conversation[]
   /** Все reader-чаты пользователя — без фильтра сайдбара по проекту. */
@@ -157,6 +165,10 @@ export interface ChatState {
   /** Активность текущего (незавершённого) хода активного разговора. */
   liveActivity: ClaudeLogEntry[]
   streamingReply: string
+  /** Единственная отправка, ожидающая авторитетного события ленты либо очереди. */
+  pendingSubmit: PendingSubmit | null
+  /** Под активной пользовательской репликой зарезервировано место ответа. */
+  preparingReply: boolean
   /** Незавершённые ходы модели по разговорам: id → накопленный частичный текст. */
   activeTurns: Record<string, string>
   queuedTurns: Record<string, QueuedTurn[]>
@@ -316,6 +328,8 @@ function initialState(sidebarProjectId: string | null, showDoneTaskChats: boolea
     consoleLog: [],
     liveActivity: [],
     streamingReply: '',
+    pendingSubmit: null,
+    preparingReply: false,
     activeTurns: {},
     queuedTurns: {},
     queuePaused: {},
@@ -393,6 +407,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       consoleLog: [],
       liveActivity: [],
       streamingReply: '',
+      pendingSubmit: null,
+      preparingReply: false,
       lastTurnMeta: null,
       liveUsage: null
     }
@@ -680,6 +696,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     core.clearTimers()
     voice.cancelTimers()
     cancelReply()
+    clearPendingSubmit(undefined, true)
+    setState({ preparingReply: false })
     voice.dispatch('reset') // thinking/speaking → idle
   }
 
@@ -935,6 +953,26 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     const persisted = created
       ? [...getState().messages].reverse().find((message) => message.role !== 'ai')
       : await persistMessage('u1', messageText, undefined, messageMeta, execTarget, messageAttachments)
+    const pendingSubmit = getState().pendingSubmit
+    if (pendingSubmit && persisted) {
+      const conversationId = getState().activeId
+      const patch: Partial<ChatState> = {
+        pendingSubmit: { ...pendingSubmit, conversationId, messageId: persisted.id },
+        ...(!pendingSubmit.queueOnly ? { preparingReply: true } : {})
+      }
+      if (pendingSubmit.queueOnly && conversationId) {
+        patch.messages = getState().messages.filter((message) => message.id !== persisted.id)
+        patch.queuedTurns = {
+          ...getState().queuedTurns,
+          [conversationId]: (getState().queuedTurns[conversationId] ?? []).map((item) =>
+            item.id === pendingSubmit.operationId
+              ? { ...item, conversationId, messageId: persisted.id, attachmentDetails: messageAttachments }
+              : item
+          )
+        }
+      }
+      setState(patch)
+    }
     // Текст и вложения чистим только после успешной отправки.
     for (const attachment of atts) {
       if (attachment.previewUrl && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(attachment.previewUrl)
@@ -942,8 +980,14 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     setState({ draft: '', attachments: [] })
     await refreshConversations()
     // Команда «открой консоль/проводник» → виджет в ответе, без обращения к LLM.
-    if (!queueOnly && ready.length === 0 && !previewElement && (await maybeOpenUtility(text))) return true
-    if (!queueOnly && !voice.dispatch('submit_text')) return false // idle → thinking
+    if (!queueOnly && ready.length === 0 && !previewElement && (await maybeOpenUtility(text))) {
+      setState({ preparingReply: false })
+      return true
+    }
+    if (!queueOnly && !voice.dispatch('submit_text')) {
+      setState({ preparingReply: false })
+      return false // idle → thinking
+    }
     const segments = [
       { speakerId: 1, text: withPreviewElementContext(text || 'См. приложенные файлы.', previewElement) }
     ]
@@ -963,16 +1007,63 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   let submitTextInFlight: Promise<boolean> | null = null
 
+  function clearPendingSubmit(operationId?: string, restoreDraft = false): void {
+    const state = getState()
+    const pending = state.pendingSubmit
+    if (!pending || (operationId && pending.operationId !== operationId)) return
+    const patch: Partial<ChatState> = { pendingSubmit: null }
+    if (restoreDraft && !state.draft && pending.text) patch.draft = pending.text
+    if (pending.conversationId) {
+      patch.queuedTurns = {
+        ...state.queuedTurns,
+        [pending.conversationId]: (state.queuedTurns[pending.conversationId] ?? []).filter((item) => item.id !== pending.operationId)
+      }
+    }
+    setState(patch)
+  }
+
   function submitText(previewElement?: PreviewElementPayload): Promise<boolean> {
-    // Два keydown/click до первого ответа API видят один и тот же черновик.
-    // Выполняем только первый вызов; после его завершения следующий ввод снова доступен.
-    if (submitTextInFlight) return Promise.resolve(false)
+    // Два keydown/click до первого ответа API видят одну наблюдаемую операцию.
+    if (submitTextInFlight || getState().pendingSubmit) return Promise.resolve(false)
+    const state = getState()
+    const text = state.draft.trim()
+    const ready = state.attachments.filter((item) => item.status === 'ready' && item.upload)
+    if ((!text && ready.length === 0 && !previewElement) || state.attachments.some((item) => item.status !== 'ready' || !item.upload)) {
+      return performSubmitText(previewElement)
+    }
+    const queueOnly = voice.state() === 'thinking' || voice.state() === 'speaking' || voice.state() === 'transcribing'
+    const operationId = globalThis.crypto?.randomUUID?.() ?? `pending-${now()}-${Math.random()}`
+    const pendingSubmit: PendingSubmit = { operationId, conversationId: state.activeId, messageId: null, queueOnly, text }
+    const patch: Partial<ChatState> = { pendingSubmit }
+    if (queueOnly && state.activeId) {
+      const items = state.queuedTurns[state.activeId] ?? []
+      patch.queuedTurns = {
+        ...state.queuedTurns,
+        [state.activeId]: [...items, {
+          id: operationId,
+          conversationId: state.activeId,
+          messageId: operationId,
+          text: composeUserText(text, ready.flatMap((item) => item.upload ? [item.upload] : [])),
+          attachments: ready.flatMap((item) => item.upload ? [item.upload.id] : []),
+          position: items.length + 1,
+          status: 'queued',
+          createdAt: now()
+        }]
+      }
+    }
+    setState(patch)
     const pending = performSubmitText(previewElement)
     submitTextInFlight = pending
-    const clear = (): void => {
+    const clearFlight = (): void => {
       if (submitTextInFlight === pending) submitTextInFlight = null
     }
-    void pending.then(clear, clear)
+    void pending.then((sent) => {
+      clearFlight()
+      if (!sent && getState().pendingSubmit?.operationId === operationId) clearPendingSubmit(operationId, true)
+    }, () => {
+      clearFlight()
+      clearPendingSubmit(operationId, true)
+    })
     return pending
   }
 
@@ -1032,6 +1123,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       })
     }
     if (convId !== getState().activeId) return // фоновый разговор — в ленту не рисуем
+    if (delta.trim()) setState({ preparingReply: false })
     // Снапшот claude.active мог быть пропущен (гонка подписки WS) — поднимаем
     // стрим из накопленного и выходим (delta уже учтён выше).
     if (convId && voice.state() === 'idle' && (getState().activeTurns[convId] ?? '') !== '') {
@@ -1069,6 +1161,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       if (message) await refreshConversations()
       return
     }
+    clearPendingSubmit()
+    setState({ preparingReply: false })
     if (getState().liveActivity.length) setState({ liveActivity: [] })
     if (getState().liveUsage) setState({ liveUsage: null }) // итог хода — в meta
     if (meta && Object.keys(meta).length > 0) setState({ lastTurnMeta: meta })
@@ -1124,7 +1218,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       return
     }
     voice.cancelSpeech()
-    setState({ streamingReply: '', liveActivity: [], liveUsage: null })
+    clearPendingSubmit(undefined, true)
+    setState({ streamingReply: '', preparingReply: false, liveActivity: [], liveUsage: null })
     setError(message)
     const v = voice.state()
     if (v === 'thinking' || v === 'speaking') voice.dispatch('error')
@@ -1147,6 +1242,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     const patch: Partial<ChatState> = {
       queuedTurns: { ...state.queuedTurns, [conversationId]: items },
       queuePaused: { ...state.queuePaused, [conversationId]: paused }
+    }
+    const pending = state.pendingSubmit
+    if (pending?.queueOnly && pending.conversationId === conversationId && pending.messageId) {
+      patch.pendingSubmit = null
     }
     if (conversationId === state.activeId) {
       const removedIds = new Set(removedMessageIds)
@@ -1182,6 +1281,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   }
 
   function applyChatMessage(conversationId: string, message: Message): void {
+    const pending = getState().pendingSubmit
+    if (pending?.conversationId === conversationId && pending.messageId === message.id) clearPendingSubmit(pending.operationId)
     if (conversationId !== getState().activeId) {
       scheduleConversationsRefresh()
       return
