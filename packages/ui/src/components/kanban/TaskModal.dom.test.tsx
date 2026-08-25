@@ -967,6 +967,23 @@ describe('TaskModal — подготовка к разработке', () => {
     expect(await screen.findByTestId('task-preparation-feed')).toHaveTextContent('Уточняю критерии')
   })
 
+  it('показывает имя машины и использует agentId для пустого имени', async () => {
+    window.ci!.getTaskMachines = vi.fn(async () => ({
+      machines: [
+        { agentId: 'm1', name: 'MacBook', online: true, canUse: true, personal: true, project: true, projectDefault: true },
+        { agentId: 'm2', name: '', online: true, canUse: true, personal: true, project: true, projectDefault: false },
+        { agentId: 'm3', name: '   ', online: true, canUse: true, personal: true, project: true, projectDefault: false }
+      ],
+      selectedAgentId: null, unavailableSelection: null, effectiveAgentId: 'm1'
+    }))
+    render(<TaskModal {...props({ board: preparationBoard, initialTab: 'preparation', onStartPreparation: vi.fn() })} llmAccess={[]} llmEngines={[]} />)
+
+    const select = await screen.findByLabelText('Машина подготовки')
+    const options = within(select).getAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual(['MacBook', 'm2', 'm3'])
+    expect(options.map((option) => option.getAttribute('value'))).toEqual(['m1', 'm2', 'm3'])
+  })
+
   it.each([
     ['running', 'выполняется'],
     ['success', 'успешно'],

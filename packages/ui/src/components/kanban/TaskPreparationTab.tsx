@@ -207,7 +207,7 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
         <h4>Исполнитель подготовки</h4>
         {machinesLoading ? <p aria-live="polite">Загрузка списка машин…</p> : machinesError ? <div role="alert"><p>Не удалось загрузить машины: {machinesError}</p><Button size="sm" onClick={() => void loadMachines()}>Повторить загрузку машин</Button></div> : (machines?.machines.length ?? 0) === 0 ? <p role="status">В проекте нет доступных машин.</p> : <label>Машина
           <select aria-label="Машина подготовки" value={selection.machineId} onChange={(event) => setSelection((current) => ({ ...current, machineId: event.target.value }))}>
-            {(machines?.machines ?? []).map((machine) => <option key={machine.agentId} value={machine.agentId} disabled={!machine.online || machine.canUse === false}>{machine.name}{machine.online ? '' : ' (offline)'}</option>)}
+            {(machines?.machines ?? []).filter((machine) => machine.agentId.trim()).map((machine) => <option key={machine.agentId} value={machine.agentId} disabled={!machine.online || machine.canUse === false}>{machine.name?.trim() || machine.agentId}{machine.online ? '' : ' (offline)'}</option>)}
           </select>
         </label>}
         {machineFallback && <p role="status">Машина проекта по умолчанию недоступна — выбрана первая доступная online-машина.</p>}
