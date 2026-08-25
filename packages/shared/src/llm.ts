@@ -52,6 +52,11 @@ export interface LlmRequest {
    */
   readOnlyRemote?: boolean
   /**
+   * MCP-инструменты, выключенные пользователем в инспекторе контекста
+   * (напр. `mcp__kb__search`): уходят в `--disallowedTools`, ассистент их не видит.
+   */
+  disallowedTools?: string[]
+  /**
    * URL MCP-эндпоинта базы знаний (инструменты mcp__kb__*) с секретом и токеном
    * хода. Передаётся и БЕЗ `remote`: БЗ read-only и от машины не зависит.
    */

@@ -48,3 +48,4 @@ export * from './widgetAssistant'
 
 export * from './kb'
 export * from './kbGaps'
+export * from './contextGating'

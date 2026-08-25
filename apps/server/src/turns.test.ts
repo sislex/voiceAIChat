@@ -117,6 +117,32 @@ describe('turns: персонализация', () => {
   })
 })
 
+describe('turns: инспектор контекста — выключенное не попадает ассистенту', () => {
+  it('выключенная персонализация не идёт в промпт, выключенный MCP-инструмент уходит в disallowedTools', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    db.saveSettings(U, { ...db.getSettings(U), personalization: { ...db.getSettings(U).personalization, preferredName: 'Лёша', responseStyle: 'brief', tone: 'friendly', responseLanguage: 'ru' } })
+    // По умолчанию персонализация была бы в промпте — выключаем её и один инструмент.
+    db.setConversationContextEnabled(U, conv.id, 'personalization', false)
+    db.setConversationContextEnabled(U, conv.id, 'mcp-remote-bash', false)
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+    expect(rec.last()?.prompt).not.toContain('## Персонализация пользователя')
+    expect(rec.last()?.disallowedTools ?? []).toContain('mcp__remote__bash')
+    db.close()
+  })
+
+  it('включённая персонализация остаётся в промпте (контроль)', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    db.saveSettings(U, { ...db.getSettings(U), personalization: { ...db.getSettings(U).personalization, preferredName: 'Лёша' } })
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+    expect(rec.last()?.prompt).toContain('## Персонализация пользователя')
+    db.close()
+  })
+})
+
 describe('turns: рабочий каталог разговора принадлежит машине, а не серверу', () => {
   it('серверный settings.workdir уходит исполнителю как желаемый cwd без локальной проверки', async () => {
     const db = new VoiceChatDb(':memory:')

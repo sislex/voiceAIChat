@@ -521,6 +521,28 @@ describe('REST: conversations/messages/settings', () => {
     for (const entry of items) expect(entry).toEqual(expect.objectContaining({ id: expect.any(String), type: expect.any(String), source: expect.any(String), scope: expect.any(String), priority: expect.any(String), configured: expect.any(Boolean), available: expect.any(Boolean), includedInNextTurn: expect.any(Boolean) }))
     expect(items.find((entry: { id: string }) => entry.id === 'current-message')).toMatchObject({ configured: false, available: false, includedInNextTurn: false })
     expect(items.find((entry: { id: string }) => entry.id === 'knowledge-mode').details.autoContextDocuments).toEqual([])
+    // Тумблеры: безопасность не выключается, персонализация/kb — можно; по умолчанию всё включено.
+    const byId = (id: string): { toggleable: boolean; enabled: boolean } => items.find((entry: { id: string }) => entry.id === id)
+    expect(byId('platform-instructions')).toMatchObject({ toggleable: false, enabled: true })
+    expect(byId('application-instructions')).toMatchObject({ toggleable: false, enabled: true })
+    expect(byId('personalization').toggleable).toBe(true)
+    expect(byId('knowledge-mode')).toMatchObject({ toggleable: true, enabled: true })
+  })
+
+  it('тумблер контекста: выключает пункт, отражает в снимке и отказывает выключить безопасность', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Toggle' } })).json()
+    // Выключаем knowledge-mode.
+    const off = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: false } })
+    expect(off.statusCode).toBe(200)
+    const kbItem = off.json().groups.flatMap((g: { items: { id: string; enabled: boolean; includedInNextTurn: boolean }[] }) => g.items).find((e: { id: string }) => e.id === 'knowledge-mode')
+    expect(kbItem).toMatchObject({ enabled: false, includedInNextTurn: false })
+    expect(db.getConversation(U, created.id)?.disabledContext).toContain('knowledge-mode')
+    // Включаем обратно.
+    const on = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: true } })
+    expect(on.json().groups.flatMap((g: { items: { id: string; enabled: boolean }[] }) => g.items).find((e: { id: string }) => e.id === 'knowledge-mode').enabled).toBe(true)
+    // Безопасность выключить нельзя.
+    expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/platform-instructions`, payload: { enabled: false } })).statusCode).toBe(400)
+    expect(db.getConversation(U, created.id)?.disabledContext).not.toContain('platform-instructions')
   })
 
   it('снимок проектного чата наследует LLM проекта', async () => {

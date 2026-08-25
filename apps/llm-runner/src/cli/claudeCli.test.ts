@@ -223,6 +223,32 @@ describe('ClaudeCli', () => {
     expect(hint).toContain('mcp__kb__search')
   })
 
+  it('disallowedTools: выключенные пользователем инструменты уходят в --disallowedTools одним флагом и убираются из allow-list', () => {
+    const { child } = fakeChild()
+    const spawn = vi.fn(() => child as never) as unknown as SpawnFn
+    new ClaudeCli({ spawn }).send(
+      {
+        prompt: 'x', sessionId: null, model: 'opus', kbMcpUrl: 'http://127.0.0.1:8787/mcp/kb?k=s&turn=t1',
+        remote: { mcpUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=s&agent=a1', agentName: 'Мак' },
+        disallowedTools: ['mcp__remote__edit', 'mcp__kb__search']
+      },
+      makeHandlers()
+    )
+    const args = (spawn as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1] as string[]
+    // Единственный флаг --disallowedTools содержит Bash (remote) + выключенные инструменты.
+    expect(args.filter((a) => a === '--disallowedTools')).toHaveLength(1)
+    const disallowed = args[args.indexOf('--disallowedTools') + 1]
+    expect(disallowed).toContain('Bash')
+    expect(disallowed).toContain('mcp__remote__edit')
+    expect(disallowed).toContain('mcp__kb__search')
+    // Выключенные не остаются в allow-list; невыключенные — остаются.
+    const allowed = args[args.indexOf('--allowedTools') + 1]
+    expect(allowed).not.toContain('mcp__remote__edit')
+    expect(allowed).not.toContain('mcp__kb__search')
+    expect(allowed).toContain('mcp__remote__bash')
+    expect(allowed).toContain('mcp__kb__document')
+  })
+
   it('previewMcpUrl: сервер browser в --mcp-config и хинт про панель превью без машины', () => {
     const { child } = fakeChild()
     const spawn = vi.fn(() => child as never) as unknown as SpawnFn

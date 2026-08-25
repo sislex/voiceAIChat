@@ -33,7 +33,8 @@ import {
   type TurnUsage,
   type LlmAttachment,
   type LlmProvider,
-  type WidgetAssistantContext
+  type WidgetAssistantContext,
+  toolNameForContextId
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
@@ -482,7 +483,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     //   auto   — авто-инъекция контекста ДА + инструменты mcp__kb__* ДА;
     //   manual — авто-инъекции НЕТ, инструменты ДА (усиленный хинт «сначала БЗ»);
     //   off    — ничего.
-    const kbMode = conv?.kbContextMode ?? 'auto'
+    // Инспектор контекста: пункты, выключенные пользователем, не попадают ассистенту.
+    const disabledContext = new Set(conv?.disabledContext ?? [])
+    const kbMode = disabledContext.has('knowledge-mode') ? 'off' : (conv?.kbContextMode ?? 'auto')
+    // Навыки: выключенные (skill-<encoded>) убираем из выбранных для этого хода.
+    const effectiveSkills = (conv?.skillNames ?? []).filter((name) => !disabledContext.has(`skill-${encodeURIComponent(name)}`))
+    // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
+    const disallowedTools = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
     const turnId = randomUUID()
     if (deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
@@ -522,7 +529,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // у проекта ещё нет описания или репозитория: модель не должна угадывать,
     // к какому проекту относится разговор.
     const projectContext = conv?.projectId ? deps.db.getProject(userId, conv.projectId) : null
-    if (conv?.projectId) {
+    if (conv?.projectId && !disabledContext.has('project-binding')) {
       const lines = projectContext
         ? [
             `ID проекта: ${projectContext.id}`,
@@ -536,7 +543,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     // Контекст задачи, к которой привязан чат: иерархия, этап воркфлоу, папка и
     // ветка разработки. Без этого чат «знает» только проект, хотя task_id есть.
-    if (conv?.taskId) {
+    if (conv?.taskId && !disabledContext.has('project-binding')) {
       const tc = deps.db.getTaskChatContext(userId, conversationId, deps.agents ? (agentId) => deps.agents!.isOnline(agentId) : undefined)
       if (tc) {
         const lines = [
@@ -565,7 +572,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       personalization.tone !== 'neutral' ? `Тон общения: ${{ friendly: 'дружелюбный', business: 'деловой', plain: 'простой, без сложных терминов', neutral: 'нейтральный' }[personalization.tone]}.` : '',
       personalization.birthYear ? `Возраст пользователя: ${Math.max(0, new Date().getUTCFullYear() - personalization.birthYear - ((personalization.birthMonth ?? 1) > new Date().getUTCMonth() + 1 || ((personalization.birthMonth ?? 1) === new Date().getUTCMonth() + 1 && (personalization.birthDay ?? 1) > new Date().getUTCDate()) ? 1 : 0))} лет; адаптируй сложность только когда это уместно.` : ''
     ].filter(Boolean)
-    if (personalizationLines.length) basePrompt = `${basePrompt}\n\n## Персонализация пользователя\n${personalizationLines.join('\n')}\nЭти предпочтения уступают явной инструкции текущего сообщения и настройкам разговора/проекта.`
+    if (personalizationLines.length && !disabledContext.has('personalization')) basePrompt = `${basePrompt}\n\n## Персонализация пользователя\n${personalizationLines.join('\n')}\nЭти предпочтения уступают явной инструкции текущего сообщения и настройкам разговора/проекта.`
     const prompt = appendChangeAuthorizationHint(appendImageHint(appendToolHint(appendQuestionsHint(basePrompt))))
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
@@ -677,7 +684,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           `${(conv?.workdir ?? (conv?.projectId ? projectMachines.find((m) => m.agentId === target)?.path : null)) ? `&cwd=${encodeURIComponent((conv?.workdir ?? projectMachines.find((m) => m.agentId === target)?.path)!)}` : ''}` +
           `${conv?.projectId && otherMachines.length ? `&project=${encodeURIComponent(conv.projectId)}` : ''}`,
         agentName: deps.agents.nameOf(target) ?? target,
-        policySummary: policy ? policySummary(policy, conv?.skillNames ?? []) : undefined,
+        policySummary: policy ? policySummary(policy, effectiveSkills) : undefined,
         ...(otherMachines.length ? { projectMachines: otherMachines } : {})
       }
     }
@@ -748,6 +755,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         userId, prompt, sessionId, model, permissionMode: executionPermissionMode, cwd,
         remote: executionRemote, readOnlyRemote, executionDisabled,
         ...(attachments.length ? { attachments } : {}),
+        ...(disallowedTools.length ? { disallowedTools } : {}),
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
         ...(previewMcpUrl ? { previewMcpUrl } : {})
       },

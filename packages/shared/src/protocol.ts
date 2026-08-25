@@ -149,6 +149,8 @@ export const REST = {
   conversation: (id: string) => `/api/conversations/${id}`,
   conversationMachines: (id: string) => `/api/conversations/${encodeURIComponent(id)}/machines`,
   conversationContextSnapshot: (id: string) => `/api/conversations/${encodeURIComponent(id)}/context-snapshot`,
+  /** Включить/выключить пункт контекста разговора (тумблер инспектора). */
+  conversationContextItem: (id: string, itemId: string) => `/api/conversations/${encodeURIComponent(id)}/context/${encodeURIComponent(itemId)}`,
   conversationProject: (id: string) => `/api/conversations/${encodeURIComponent(id)}/project`,
   conversationStatus: (id: string) => `/api/conversations/${encodeURIComponent(id)}/status`,
   messages: (id: string) => `/api/conversations/${id}/messages`,

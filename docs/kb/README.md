@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 22 коммит(ов) в areas после сверки: aecf49ec perf(kanban): лёгкая доска + точечные WS-обновления подготовки … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 13 коммит(ов) в areas после сверки: 002a4e5d Merge task 00329756-6f21-4fe8-8251-9823a6f5337d … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 6 коммит(ов) в areas после сверки: aecf49ec perf(kanban): лёгкая доска + точечные WS-обновления подготовки … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 610 коммит(ов) в areas после сверки: aecf49ec perf(kanban): лёгкая доска + точечные WS-обновления подготовки … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 611 коммит(ов) в areas после сверки: 2c254924 docs(kb): update after merge 00329756-6f21-4fe8-8251-9823a6f5337d … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 78 коммит(ов) в areas после сверки: 002a4e5d Merge task 00329756-6f21-4fe8-8251-9823a6f5337d … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 2 коммит(ов) в areas после сверки: aecf49ec perf(kanban): лёгкая доска + точечные WS-обновления подготовки … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 8 коммит(ов) в areas после сверки: aecf49ec perf(kanban): лёгкая доска + точечные WS-обновления подготовки … |
@@ -39,7 +39,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-20 | ⚠ 2 коммит(ов) в areas после сверки: e91c96d4 web reader … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-25 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-20 | ⚠ 40 коммит(ов) в areas после сверки: aecf49ec perf(kanban): лёгкая доска + точечные WS-обновления подготовки … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-25 | ⚠ 5 коммит(ов) в areas после сверки: 002a4e5d Merge task 00329756-6f21-4fe8-8251-9823a6f5337d … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-25 | ⚠ 2 коммит(ов) в areas после сверки: 002a4e5d Merge task 00329756-6f21-4fe8-8251-9823a6f5337d … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-25, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -57,7 +57,7 @@
 
 ## Журнал сессий
 
-Всего записей: 358. Последние:
+Всего записей: 359. Последние:
 
 - [2026-08-25-macbook-air-user-manual-qa-machine-labels.md](log/2026-08-25-macbook-air-user-manual-qa-machine-labels.md) — manual-qa-machine-labels
 - [2026-08-25-macbook-air-user-instant-submit.md](log/2026-08-25-macbook-air-user-instant-submit.md) — instant-submit

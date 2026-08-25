@@ -218,6 +218,8 @@ export interface Conversation {
   permissionMode: PermissionMode | null
   /** Использование базы знаний только в этом разговоре. */
   kbContextMode?: KbContextMode
+  /** id пунктов контекста, выключенных пользователем в инспекторе: не попадают ассистенту. */
+  disabledContext?: string[]
   /** Проект, к которому привязан чат (null/undefined — не привязан). */
   projectId?: string | null
   /** Служебный приватный чат виджета; его строковое имя становится лейблом источника в селекторах. */
@@ -725,6 +727,10 @@ export interface ContextSnapshotItem {
   configured: boolean
   available: boolean
   includedInNextTurn: boolean
+  /** Можно ли выключить пункт (безопасность и чистая информация — нельзя). */
+  toggleable: boolean
+  /** Включён ли пункт пользователем. Выключенный не попадает ассистенту в следующих ходах. */
+  enabled: boolean
   details?: Record<string, string | number | boolean | string[] | null>
 }
 

@@ -90,6 +90,16 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const openDetail = (id: string): void => { window.location.hash = `/chat/${encodeURIComponent(props.conversationId)}/context/${encodeURIComponent(id)}`; setDetailId(id) }
   const closeDetail = (): void => { window.location.hash = `/chat/${encodeURIComponent(props.conversationId)}`; setDetailId(null) }
   const state = (value: boolean): string => value ? 'Да' : 'Нет'
+  const [toggling, setToggling] = useState<string | null>(null)
+  // Включить/выключить пункт: выключенный не попадёт ассистенту в следующих ходах.
+  const toggleItem = async (itemId: string, enabled: boolean): Promise<void> => {
+    setToggling(itemId)
+    try {
+      const next = await window.api['conversations:setContextItem']({ id: props.conversationId, itemId, enabled })
+      if (next) setSnapshot(next)
+    } catch (error) { setSnapshotError(error instanceof Error ? error.message : String(error)) }
+    finally { setToggling(null) }
+  }
 
   if (snapshotError) return <section className="context-inspector" role="alert"><h2>Не удалось загрузить снимок</h2><p>{snapshotError}</p><Button size="sm" onClick={() => setReload((value) => value + 1)}>Повторить</Button></section>
   if (!snapshot) return <section className="context-inspector" aria-busy="true"><h2>Формируем снимок контекста…</h2></section>
@@ -97,6 +107,9 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   if (detail) return <section className="context-detail" aria-labelledby="context-detail-title">
     <Button size="sm" onClick={closeDetail}>← Ко всем источникам</Button>
     <header><span className="context-type">{detail.type}</span><h2 id="context-detail-title">{detail.title}</h2><p>{detail.description}</p></header>
+    {detail.toggleable
+      ? <label className="context-toggle"><input type="checkbox" checked={detail.enabled} disabled={toggling === detail.id} onChange={(event) => void toggleItem(detail.id, event.target.checked)} /> Включено для ассистента {detail.enabled ? '' : '· выключено: не попадает в следующие ходы'}</label>
+      : <p className="context-muted">Этот пункт нельзя выключить (правило безопасности или служебная информация).</p>}
     <dl className="context-metadata">
       <div><dt>Приоритет</dt><dd>{detail.priority}</dd></div><div><dt>Источник</dt><dd>{detail.source}</dd></div><div><dt>Область действия</dt><dd>{detail.scope}</dd></div>
       <div><dt>Настроено</dt><dd>{state(detail.configured)}</dd></div><div><dt>Доступно</dt><dd>{state(detail.available)}</dd></div><div><dt>Будет добавлено в следующий ход</dt><dd>{state(detail.includedInNextTurn)}</dd></div>
@@ -110,6 +123,10 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   return <section className="context-inspector" aria-labelledby="context-inspector-title">
     <div className="context-summary"><div><span className="context-eyebrow">Снимок следующего хода</span><h2 id="context-inspector-title">{snapshot.summary.provider} · {snapshot.summary.model || 'модель из конфигурации'}</h2><p>Режим прав: {snapshot.summary.permissionMode.displayName}. БЗ: {snapshot.summary.kbMode.displayName}.</p><small>Сформирован: {new Date(snapshot.generatedAt).toLocaleString('ru-RU')}</small></div><dl><div><dt>Источники</dt><dd>{allItems.length}</dd></div><div><dt>Доступно</dt><dd>{available}</dd></div><div><dt>В следующем ходе</dt><dd>{included}</dd></div></dl></div>
     <aside className="context-conflicts"><b>Снимок может измениться</b><p>{snapshot.freshnessWarning}</p></aside>
-    <div className="context-groups">{snapshotGroups.map((group) => <details className="context-group" key={group.id} open={group.order <= 3}><summary><span className="context-level">{group.order}</span><span><b>{group.title}</b><small>{group.description}</small></span><span className="context-count">{group.items.length}</span></summary><div className="context-items" role="list">{group.items.map((entry) => <div role="listitem" key={entry.id}><button type="button" className="context-item" onClick={() => openDetail(entry.id)}><span className="context-item-main"><span className="context-type">{entry.type}</span><b>{entry.title}</b><small>{entry.description}</small></span><span className="context-item-meta"><span>{entry.source}</span><span>{entry.scope}</span><span className="context-status">{entry.includedInNextTurn ? 'Будет добавлено' : entry.available ? 'Доступно' : entry.configured ? 'Недоступно' : 'Не настроено'}</span></span><span aria-hidden="true">→</span></button></div>)}</div></details>)}</div>
+    <div className="context-groups">{snapshotGroups.map((group) => <details className="context-group" key={group.id} open={group.order <= 3}><summary><span className="context-level">{group.order}</span><span><b>{group.title}</b><small>{group.description}</small></span><span className="context-count">{group.items.length}</span></summary><div className="context-items" role="list">{group.items.map((entry) => <div role="listitem" key={entry.id} className={entry.toggleable && !entry.enabled ? 'context-row context-row--off' : 'context-row'}>
+      {entry.toggleable
+        ? <label className="context-check" title={entry.enabled ? 'Выключить для ассистента' : 'Включить для ассистента'}><input type="checkbox" aria-label={`Включить «${entry.title}» для ассистента`} checked={entry.enabled} disabled={toggling === entry.id} onChange={(event) => void toggleItem(entry.id, event.target.checked)} /></label>
+        : <span className="context-check context-check--locked" title="Нельзя выключить" aria-hidden="true">🔒</span>}
+      <button type="button" className="context-item" onClick={() => openDetail(entry.id)}><span className="context-item-main"><span className="context-type">{entry.type}</span><b>{entry.title}</b><small>{entry.description}</small></span><span className="context-item-meta"><span>{entry.source}</span><span>{entry.scope}</span><span className="context-status">{entry.toggleable && !entry.enabled ? 'Выключено' : entry.includedInNextTurn ? 'Будет добавлено' : entry.available ? 'Доступно' : entry.configured ? 'Недоступно' : 'Не настроено'}</span></span><span aria-hidden="true">→</span></button></div>)}</div></details>)}</div>
   </section>
 }

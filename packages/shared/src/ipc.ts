@@ -150,6 +150,7 @@ export interface IpcInvokeMap {
   'widget:action': { arg: import('./widgetAssistant').WidgetToolActionRequest; result: import('./widgetAssistant').WidgetToolActionResult }
   'conversations:get': { arg: { id: string }; result: ConversationWithMessages | null }
   'conversations:contextSnapshot': { arg: { id: string }; result: import('./types').ConversationContextSnapshot | null }
+  'conversations:setContextItem': { arg: { id: string; itemId: string; enabled: boolean }; result: import('./types').ConversationContextSnapshot | null }
   /** Доступные текущему пользователю машины в контексте разговора/проекта. */
   'conversations:listMachines': { arg: { id: string; projectId?: string | null }; result: import('./agentProtocol').AgentInfo[] }
   /**
@@ -859,6 +860,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'conversations:createDraft',
   'conversations:get',
   'conversations:contextSnapshot',
+  'conversations:setContextItem',
   'conversations:listMachines',
   'conversations:search',
   'messages:search',

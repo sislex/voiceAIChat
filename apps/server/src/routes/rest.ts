@@ -15,7 +15,8 @@ import {
   type AddMessageArgs,
   type DesktopMigrationBundle,
   type Settings,
-  type UsageUnit
+  type UsageUnit,
+  isContextToggleable
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
@@ -35,10 +36,17 @@ const kbDisplay: Record<KbContextMode, { displayName: string; explanation: strin
   manual: { displayName: 'По запросу', explanation: 'Автоматической вставки нет, инструменты поиска доступны.' },
   off: { displayName: 'Отключено', explanation: 'Автоматический контекст и инструменты БЗ не подключаются.' }
 }
-function contextItem(value: ContextSnapshotItem): ContextSnapshotItem { return value }
 function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, isOnline?: (id: string) => boolean): ConversationContextSnapshot | null {
   const conversation = db.getConversation(userId, conversationId)
   if (!conversation) return null
+  // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
+  // не считается включённым в следующий ход (includedInNextTurn=false).
+  const disabled = new Set(conversation.disabledContext ?? [])
+  const contextItem = (value: Omit<ContextSnapshotItem, 'toggleable' | 'enabled'>): ContextSnapshotItem => {
+    const toggleable = isContextToggleable(value.id)
+    const enabled = toggleable ? !disabled.has(value.id) : true
+    return { ...value, toggleable, enabled, includedInNextTurn: value.includedInNextTurn && enabled }
+  }
   const settings = db.getSettings(userId)
   const role = db.getUser(userId)?.role ?? 'developer'
   const resolution = db.resolveConversationMachine(userId, conversationId, { isOnline })
@@ -232,6 +240,15 @@ export async function registerRest(
     const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline)
     if (!snapshot) return reply.code(404).send({ error: 'not found' })
     return snapshot
+  })
+  // Включить/выключить пункт контекста: выключенный не попадает ассистенту в
+  // следующих ходах (turns.ts). Правила безопасности сервер выключить не даёт.
+  app.post<{ Params: { id: string; itemId: string }; Body: { enabled?: boolean } }>('/api/conversations/:id/context/:itemId', async (req, reply) => {
+    if (!isContextToggleable(req.params.itemId)) return reply.code(400).send({ error: 'Этот пункт нельзя выключить' })
+    const updated = db.setConversationContextEnabled(uid(req), req.params.id, req.params.itemId, req.body?.enabled !== false)
+    if (!updated) return reply.code(404).send({ error: 'not found' })
+    const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline)
+    return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 
   app.patch<{
