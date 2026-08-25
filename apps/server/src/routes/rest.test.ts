@@ -506,6 +506,71 @@ describe('REST: conversations/messages/settings', () => {
     expect(items.find((entry: { id: string }) => entry.id === 'knowledge-mode').details.autoContextDocuments).toEqual([])
   })
 
+  it('снимок проектного чата наследует LLM проекта', async () => {
+    const settings = db.getSettings(U)
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, llmProvider: 'claude', model: 'default' } })
+    const project = db.createProject(U, { name: 'Codex project' })
+    db.setCiLlmConfig('project', project.id, {
+      provider: 'codex',
+      model: 'gpt-5.6-sol',
+      mode: 'development',
+      clarifyLevel: 'few',
+      clarifyMax: 3
+    })
+    const conversation = db.createConversation(U, 'Project context')
+    db.setConversationProject(U, conversation.id, project.id)
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/context-snapshot` })).json()
+    const llm = snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items).find((item: { id: string }) => item.id === 'llm')
+
+    expect(snapshot.summary).toMatchObject({ provider: 'codex', model: 'gpt-5.6-sol' })
+    expect(llm).toMatchObject({
+      source: 'Проект',
+      description: 'codex · gpt-5.6-sol',
+      explanation: 'Унаследовано из настроек проекта.'
+    })
+  })
+
+  it('LLM override разговора имеет приоритет над проектом', async () => {
+    const project = db.createProject(U, { name: 'Project defaults' })
+    db.setCiLlmConfig('project', project.id, {
+      provider: 'codex',
+      model: 'gpt-5.6-sol',
+      mode: 'development',
+      clarifyLevel: 'few',
+      clarifyMax: 3
+    })
+    const conversation = db.createConversation(U, 'Conversation override')
+    db.setConversationProject(U, conversation.id, project.id)
+    db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, 'claude', 'haiku')
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/context-snapshot` })).json()
+    const llm = snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items).find((item: { id: string }) => item.id === 'llm')
+
+    expect(snapshot.summary).toMatchObject({ provider: 'claude', model: 'haiku' })
+    expect(llm).toMatchObject({
+      source: 'Разговор',
+      description: 'claude · haiku',
+      explanation: 'Явное переопределение.'
+    })
+  })
+
+  it('снимок непривязанного чата наследует пользовательскую LLM-пару', async () => {
+    const settings = db.getSettings(U)
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' } })
+    const conversation = db.createConversation(U, 'Personal context')
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/context-snapshot` })).json()
+    const llm = snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items).find((item: { id: string }) => item.id === 'llm')
+
+    expect(snapshot.summary).toMatchObject({ provider: 'codex', model: 'gpt-5.6-luna' })
+    expect(llm).toMatchObject({
+      source: 'Настройки пользователя',
+      description: 'codex · gpt-5.6-luna',
+      explanation: 'Унаследовано из настроек пользователя.'
+    })
+  })
+
   it('не раскрывает снимок чужого или отсутствующего разговора', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Чужой' } })).json()
     db.createUser('other', 'password', 'developer')
