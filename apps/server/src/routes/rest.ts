@@ -44,11 +44,23 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const resolution = db.resolveConversationMachine(userId, conversationId, { isOnline })
   const agent = resolution?.agentId ? db.listUsableAgents(userId, conversation.projectId).find((a) => a.id === resolution.agentId) : undefined
   const machineAvailable = Boolean(resolution?.agentId && !resolution.error)
-  const provider = conversation.llmProvider ?? settings.llmProvider
-  const model = conversation.llmProvider ? (conversation.llmModel ?? (provider === 'codex' ? settings.codexModel : settings.model)) : (provider === 'codex' ? settings.codexModel : settings.model)
+  const project = conversation.projectId ? db.getProject(userId, conversation.projectId) : null
+  const projectLlm = project && conversation.llmProvider === null
+    ? db.getCiLlmConfig('project', project.id)
+    : null
+  const provider = conversation.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
+  const selectedModel = conversation.llmProvider === provider
+    ? conversation.llmModel
+    : (projectLlm?.provider === provider ? projectLlm.model : null)
+  const model = selectedModel ?? (provider === 'codex' ? settings.codexModel : settings.model)
+  const llmSource = conversation.llmProvider ? 'Разговор' : projectLlm ? 'Проект' : 'Настройки пользователя'
+  const llmExplanation = conversation.llmProvider
+    ? 'Явное переопределение.'
+    : projectLlm
+      ? 'Унаследовано из настроек проекта.'
+      : 'Унаследовано из настроек пользователя.'
   const permissionMode: PermissionMode = conversation.execTarget === 'none' || (role !== 'admin' && !machineAvailable) ? 'plan' : (conversation.permissionMode ?? settings.permissionMode)
   const kbMode = conversation.kbContextMode ?? 'auto'
-  const project = conversation.projectId ? db.getProject(userId, conversation.projectId) : null
   const projectMachine = project?.machines.find((entry) => entry.agentId === resolution?.agentId)
   const workdir = conversation.workdir ?? projectMachine?.path ?? settings.workdir
   const messages = db.listMessages(userId, conversationId)
@@ -65,7 +77,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       contextItem({ id: 'agents-chain', type: 'AGENTS.md', source: 'Рабочая директория', scope: workdir ?? 'Не определена', priority: '6 · от общей к конкретной', title: 'Цепочка AGENTS.md', description: workdir ? 'Фактическую цепочку разрешает исполнитель в рабочей директории.' : 'Без директории цепочка не определяется.', explanation: workdir && machineAvailable ? 'Текст скрыт: снимок не раскрывает файл без отдельного подтверждённого чтения.' : 'Директория или машина недоступна.', configured: Boolean(workdir), available: Boolean(workdir && machineAvailable), includedInNextTurn: Boolean(workdir && machineAvailable), details: { hiddenReason: 'Содержимое не читалось сервером инспектора.' } })
     ] },
     { id: 'conversation', order: 3, title: 'Настройки разговора', description: 'Эффективные значения с учётом наследования.', items: [
-      contextItem({ id: 'llm', type: 'Настройка разговора', source: conversation.llmProvider ? 'Разговор' : 'Настройки пользователя', scope: 'Следующий ход', priority: '7 · конфигурация', title: 'Модель и провайдер', description: `${provider} · ${model || 'модель из конфигурации CLI'}`, explanation: conversation.llmProvider ? 'Явное переопределение.' : 'Унаследовано.', configured: true, available: true, includedInNextTurn: true }),
+      contextItem({ id: 'llm', type: 'Настройка разговора', source: llmSource, scope: 'Следующий ход', priority: '7 · конфигурация', title: 'Модель и провайдер', description: `${provider} · ${model || 'модель из конфигурации CLI'}`, explanation: llmExplanation, configured: true, available: true, includedInNextTurn: true }),
       contextItem({ id: 'machine', type: 'Настройка разговора', source: resolution?.source === 'explicit' ? 'Разговор' : 'Резолвер сервера', scope: agent?.name ?? resolution?.agentId ?? 'Сервер', priority: '7 · конфигурация', title: 'Машина выполнения', description: agent?.name ?? 'Доступной машины нет', explanation: resolution?.error ? `Недоступна: ${resolution.error}.` : `Источник: ${resolution?.source ?? 'none'}.`, configured: conversation.execTarget !== null, available: machineAvailable, includedInNextTurn: machineAvailable }),
       contextItem({ id: 'permission-mode', type: 'Режим разрешений', source: conversation.permissionMode ? 'Разговор' : 'Эффективная политика сервера', scope: 'Инструменты и изменения', priority: '7 · конфигурация', title: permissionDisplay[permissionMode].displayName, description: permissionDisplay[permissionMode].explanation, explanation: permissionMode === 'plan' && conversation.permissionMode !== 'plan' ? 'Сервер безопасно форсировал режим.' : 'Выбранное или унаследованное значение.', configured: true, available: true, includedInNextTurn: true, details: { value: permissionMode } })
     ] },
