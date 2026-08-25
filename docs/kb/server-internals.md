@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-25
-checked: 23b7bbc6
+checked: 6480ffef
 areas:
   - apps/server/src
 ---
@@ -35,6 +35,12 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 | projects | Проекты, участники, машины, default machine, канбан columns/tasks. |
 | KB | Status, topics, lexical/semantic search, context и чтение документа. |
 | preview | Same-origin прокси внешнего HTTP/HTTPS-сайта для iframe. |
+
+### Серверный снимок контекста разговора
+
+Защищённый `GET /api/conversations/:id/context-snapshot` в `apps/server/src/routes/rest.ts` формирует preview сохранённого контекста следующего хода. Effective LLM разрешается атомарно по цепочке: явные provider/model разговора → собственная `ci_llm_config` привязанного проекта → пользовательские настройки. Проектная конфигурация читается только при отсутствии override provider разговора; если выбранный уровень не задаёт модель, fallback берётся из пользовательской модели соответствующего provider.
+
+Одна вычисленная пара попадает и в `summary`, и в элемент `llm` группы `conversation`. Для элемента сервер ставит `source` соответственно «Разговор», «Проект» или «Настройки пользователя», а `explanation` различает явное переопределение и наследование с конкретного уровня. Контрактные сценарии приоритета и наследования закреплены в `apps/server/src/routes/rest.test.ts`.
 
 ## Граница отдельного Make-подобного продукта
 
