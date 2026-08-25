@@ -44,6 +44,16 @@ describe('ManagedEnvironmentResolver',()=>{
     expect(releases.runPreflight).not.toHaveBeenCalled()
   })
 
+  it('requireOnline:false резолвит target при offline-машине (reconcile после рестарта)',()=>{
+    const {db,releases}=deps(false)
+    const resolver=new ManagedEnvironmentResolver(db,releases)
+    // По умолчанию бросает offline, а с requireOnline:false — отдаёт target из БД.
+    expect(()=>resolver.resolve('owner','p1','production')).toThrow(/offline/)
+    const {target}=resolver.resolve('owner','p1','production',{requireOnline:false})
+    expect(target.mode).toBe('managed')
+    expect(target.deployCommand).toBeTruthy()
+  })
+
   it('returns a structured mandatory checklist',async()=>{
     const {db,releases}=deps()
     const result=await new ManagedEnvironmentResolver(db,releases).preflight('owner','p1')

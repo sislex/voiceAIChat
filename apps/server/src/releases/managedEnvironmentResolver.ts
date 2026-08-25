@@ -8,12 +8,17 @@ const platformFor=(root:string):string=>/^(?:[A-Za-z]:[\\/]|\\\\)/.test(root)?'w
 export class ManagedEnvironmentResolver {
   constructor(private readonly db:VoiceChatDb,private readonly releases:ReleaseManager,private readonly allowedDirsOf:(agentId:string)=>string[]=()=>[],private readonly minimumFreeBytes=512*1024*1024){}
 
-  resolve(userId:string,projectId:string,kind:'production'|'staging'){
+  // requireOnline=false нужен reconcile после рестарта сервера: identity target-а
+  // (storage, каталоги, команды) стабильна и берётся из БД, а онлайн машины —
+  // транзиентное состояние (companion-агент переподключается через секунды).
+  // Иначе managed-релиз, доживший до health_check, ложно падал «Production-
+  // конфигурация недоступна после рестарта», хотя деплой уже применён.
+  resolve(userId:string,projectId:string,kind:'production'|'staging',opts:{requireOnline?:boolean}={}){
     const project=this.db.getProject(userId,projectId)
     if(!project?.productionAgentId||!project.gitUrl)throw new Error('Managed-машина или gitUrl не настроены')
     const machine=this.db.getProjectMachine(projectId,project.productionAgentId)
     if(!machine?.storageId||!machine.storageRoot)throw new Error('Для managed-окружения не настроено MachineStorage выбранной машины')
-    if(!this.releases.isOnline(machine.agentId))throw new Error('Managed-машина offline')
+    if(opts.requireOnline!==false&&!this.releases.isOnline(machine.agentId))throw new Error('Managed-машина offline')
     const platform=platformFor(machine.storageRoot)
     const paths=managedEnvironmentPaths(machine.storageRoot,projectId,kind,platform)
     if(!isMachineStoragePathAllowed(paths.root,this.allowedDirsOf(machine.agentId),platform))throw new Error('Managed-окружение находится вне разрешённых директорий машины')
