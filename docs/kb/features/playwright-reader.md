@@ -1,12 +1,17 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-08-25
-checked: 8db94ee2
+checked: 95d24260
 areas:
   - apps/browser-runner/src
+  - apps/server/src/browser
+  - apps/server/src/routes/browser.ts
   - packages/shared/src/types.ts
+  - packages/shared/src/ipc.ts
   - packages/playwright-reader-app
   - packages/ui/src/App.tsx
+  - packages/ui/src/components/BrowserSessionPane.tsx
+  - packages/ui/src/remote
   - packages/ui/src/store/domains/chatStore.ts
   - apps/server/src/db/database.ts
   - apps/server/src/routes/rest.ts
@@ -30,17 +35,43 @@ Playwright Reader — отдельный продуктовый режим: сл
 нет ничего, кроме переиспользованных React-компонентов чата и split-раскладки;
 `projectId` у Playwright Reader всегда `null`, проектный контекст не применяется.
 
-## Что реализовано, а что нет
+## Связка «оркестрация + панель» (2026-08-25)
 
-Полной интеграции с изолированным Chromium ещё нет. Реализованы тип разговора,
-маршрут с левой панелью чата, shared-контракты браузерной сессии и отдельный
-сервис `apps/browser-runner`. Для рабочей панели превью маршрут Playwright Reader
-пока монтирует общий `WebReaderHost`: поэтому `mcp__browser__*` доступны в этом
-режиме и привязаны к активному `conversationId`, но исполняются существующим
-iframe-рекордером, а не `browser-runner`. URL хранится в разговоре, поэтому host
-и его привязка восстанавливаются после refresh. При переключении чатов
-регистрация runner-а пересоздаётся с новым `conversationId`; команда старого
-чата отклоняется до обращения к панели.
+Панель Playwright Reader подключена к реальному browser-runner. На маршруте
+`#/playwright-reader` `App.tsx` монтирует не `WebReaderFrame` (iframe поверх
+`/api/preview`), а `BrowserSessionPane` (`packages/ui/src/components`) поверх
+изолированного Chromium; `WebReaderFrame` остался только у Web Reader. Живой
+прогон 2026-08-25: instagram.com (который прокси не поднимает) открылся в панели,
+клик по кадру закрыл cookie-баннер Meta.
+
+Слои связки:
+- **Контракт** (`packages/shared`): REST-пути `browserSessionStart/Command/
+  Screenshot` и `browserSession` (`protocol.ts`), тип `BrowserCommand` и мост
+  `RendererBrowserBridge` (`ipc.ts`, `window.browser`); screenshot вынесен из
+  union команды моста (`RendererBrowserCommand`) — у него отдельный роут.
+- **Сервер**: `apps/server/src/browser/runnerClient.ts` — HTTP-клиент раннера
+  (Bearer, маппинг статусов в `BrowserRunnerError`: 404/409/503/502, screenshot —
+  бинарь). `apps/server/src/routes/browser.ts` — REST-оркестрация: `guard`
+  проверяет владение разговором (`db.getConversation(uid)`) и что это
+  playwright-reader; `sessionId = conversationId`, `userKey = uid`; screenshot
+  собирается в data-URL; без раннера — 501. Wiring в `server.ts`: клиент
+  создаётся из `config.browserRunnerUrl`+`browserRunnerToken`
+  (`VC_BROWSER_RUNNER_URL`/`VC_BROWSER_RUNNER_TOKEN`), инъекция —
+  `BuildOptions.browserRunner`.
+- **UI**: `makeBrowserBridge` в `remote/index.ts` ставит `window.browser`;
+  `BrowserSessionPane` при монтировании зовёт `start` (incarnation хранит в ref),
+  тянет кадры поллингом `screenshot` (screencast, 1.2 c), навигация/back/forward/
+  reload/ввод идут `command`, клик по кадру пересчитывается
+  `scaleBrowserCoordinates` в координаты вьюпорта, `stop` — на размонтировании.
+  Деградация: нет моста или 501 → «Chromium недоступен».
+
+Тесты: `runnerClient.test.ts`, `routes/browser.test.ts` (server),
+`BrowserSessionPane.dom.test.tsx` и ветка Playwright в `App.dom.test.tsx` (UI).
+Для реального запуска раннеру нужен `npx playwright install chromium`.
+
+Не подключено к раннеру: инструменты модели `mcp__browser__*` в этом режиме
+по-прежнему идут через `PreviewActionRelay`/iframe (управление настоящим Chromium
+моделью — следующий шаг). Пользовательская навигация и ввод в Chromium — работают.
 
 Механика привязки одна на оба Reader-режима и живёт в `AppBody`
 (`packages/ui/src/App.tsx`): `previewRunnerRef` хранит не голый runner, а пару
@@ -60,11 +91,12 @@ routePlaywrightReaderChatId`, поэтому `#/playwright-reader/<id>` сраз
 монтирование после refresh, отказ команде прежнего чата при переключении) и в
 `packages/ui/src/WebPreview.dom.test.tsx` (жизненный цикл find/click/type).
 
-Не реализованы: серверная оркестрация сессий browser-runner (REST/WS, проверка
-владения разговором, service-токен раннера), screencast и передача кадров,
-пользовательский ввод в Chromium, DOM/accessibility snapshot Chromium,
-highlight, confirmation gates опасных действий, метрики и настоящий
-health-probe, idle-timeout и retention профилей.
+Реализовано связкой выше: серверная оркестрация сессий (REST, проверка владения,
+service-токен), screencast (поллинг кадров) и пользовательский ввод в Chromium.
+Ещё не реализованы: WS-транспорт кадров вместо поллинга, инструменты модели
+`mcp__browser__*` поверх раннера, DOM/accessibility snapshot Chromium, highlight,
+confirmation gates опасных действий, метрики и настоящий health-probe,
+idle-timeout и retention профилей.
 
 ## Тип разговора и сервер
 

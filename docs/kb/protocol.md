@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-08-24
-checked: f4bf5157
+updated: 2026-08-25
+checked: 95d24260
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -82,6 +82,16 @@ URL руками. Параметризованные пути — функции
 Это транспортный маршрут, а не bridge `window.*`: `WebPreview` использует его как
 `src` iframe. Ограничения загрузки и преобразование тела описаны в
 [server-internals.md](server-internals.md).
+
+Playwright Reader (изолированный Chromium) добавляет REST-оркестрацию под общим
+Bearer-гейтом: `POST /api/browser/:id/start` (идемпотентно поднимает сессию
+разговора → `BrowserSessionMetadata`), `POST /api/browser/:id/command` (навигация/
+ввод/вкладки/resize; screenshot запрещён — для него отдельный роут),
+`POST /api/browser/:id/screenshot` (кадр как data-URL), `DELETE /api/browser/:id`
+(остановка). Все проверяют владение разговором и тип `playwright-reader`; без
+сконфигурированного browser-runner отвечают `501`, ошибки раннера пробрасываются
+статусами 404/409/503/502. Мост `window.browser` (`RendererBrowserBridge`) и
+серверная связка — [features/playwright-reader.md](features/playwright-reader.md).
 
 `GET /api/search` (`REST.messagesSearch`) — полнотекстовый поиск по сообщениям:
 `q` (ввод пользователя, экранируется на сервере), `projectId` (`none` или пусто —

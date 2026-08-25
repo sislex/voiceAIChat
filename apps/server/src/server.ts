@@ -74,6 +74,8 @@ import { LlmKbReranker } from './kb/reranker.js'
 import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
 import { registerPreviewMcp, previewToolBroker, PreviewActionRelay, PREVIEW_MCP_PATH } from './mcp/previewMcp.js'
+import { registerBrowserRoutes } from './routes/browser.js'
+import { createBrowserRunnerClient, type BrowserRunnerClient } from './browser/runnerClient.js'
 import { readUserFile } from './serverFiles.js'
 import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
 import { AuthStatusState } from './auth/statusState.js'
@@ -127,6 +129,8 @@ export interface BuildOptions {
   imageRetouchGenerator?: RetouchGenerator
   /** Sink структурированного итога TTL-очистки. */
   generatedCleanupLog?: (result: GeneratedCleanupCounters) => void
+  /** Клиент browser-runner (Playwright Reader). По умолчанию — HTTP, если задан config.browserRunnerUrl. */
+  browserRunner?: BrowserRunnerClient
 }
 
 export interface BuiltServer {
@@ -433,6 +437,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       clearCookies: ({ userId }, host) => clearPreviewCookies(userId, host)
     }
   })
+  // Playwright Reader: REST-оркестрация изолированного Chromium в browser-runner.
+  // Клиент создаётся, только если задан адрес раннера; иначе роуты отвечают 501.
+  const browserRunner = opts.browserRunner ?? (opts.config.browserRunnerUrl && opts.config.browserRunnerToken
+    ? createBrowserRunnerClient({ baseUrl: opts.config.browserRunnerUrl, token: opts.config.browserRunnerToken })
+    : undefined)
+  registerBrowserRoutes(app, { db, ...(browserRunner ? { runner: browserRunner } : {}) })
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
   const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)

@@ -156,7 +156,7 @@ describe('App — действия модели в веб-превью (мост
     return { emit: (m) => onAction?.(m), results }
   }
 
-  afterEach(() => { delete (window as { preview?: unknown }).preview; window.location.hash = '' })
+  afterEach(() => { delete (window as { preview?: unknown }).preview; delete (window as { browser?: unknown }).browser; window.location.hash = '' })
 
   it('браузерное действие из обычного чата отклоняется: рекордер доступен только на отдельной странице', async () => {
     const bridge = installPreviewBridge()
@@ -202,11 +202,13 @@ describe('App — действия модели в веб-превью (мост
     return { post, ids: { conversationId: init.conversationId!, registrationId: init.registrationId! } }
   }
 
-  it('Playwright Reader привязывает open/read к чату и восстанавливает панель после refresh', async () => {
+  // WebReaderFrame + preview-мост живут на маршруте web-reader; Playwright Reader
+  // теперь монтирует BrowserSessionPane поверх browser-runner (см. BrowserSessionPane.dom.test).
+  it('Web Reader привязывает open/read к чату и восстанавливает панель после refresh', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
-    const chat = await api['conversations:create']({ title: 'Reader A', assistantKind: 'playwright-reader' })
-    window.location.hash = `#/playwright-reader/${chat.id}`
+    const chat = await api['conversations:create']({ title: 'Reader A', assistantKind: 'web-recorder' })
+    window.location.hash = `#/web-reader/${chat.id}`
     let bridge = installPreviewBridge()
     const view = render(<App api={api} delays={SLOW} />)
     let frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
@@ -233,8 +235,8 @@ describe('App — действия модели в веб-превью (мост
   it('поздний результат старой регистрации после reload iframe не доставляется', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
-    const chat = await api['conversations:create']({ title: 'Reader A', assistantKind: 'playwright-reader' })
-    window.location.hash = `#/playwright-reader/${chat.id}`
+    const chat = await api['conversations:create']({ title: 'Reader A', assistantKind: 'web-recorder' })
+    window.location.hash = `#/web-reader/${chat.id}`
     const bridge = installPreviewBridge()
     render(<App api={api} delays={SLOW} />)
     const frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
@@ -254,8 +256,8 @@ describe('App — действия модели в веб-превью (мост
   it('вкладка, потерявшая claim активной регистрации, отклоняет команду', async () => {
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
-    const chat = await api['conversations:create']({ title: 'Reader A', assistantKind: 'playwright-reader' })
-    window.location.hash = `#/playwright-reader/${chat.id}`
+    const chat = await api['conversations:create']({ title: 'Reader A', assistantKind: 'web-recorder' })
+    window.location.hash = `#/web-reader/${chat.id}`
     const bridge = installPreviewBridge()
     render(<App api={api} delays={SLOW} />)
     const frame = await screen.findByTitle('Web Reader') as HTMLIFrameElement
@@ -268,21 +270,40 @@ describe('App — действия модели в веб-превью (мост
     localStorage.removeItem('voicechat:web-reader-active-registration:v1')
   })
 
-  it('при переключении Playwright Reader отклоняет команды панели другого чата', async () => {
+  it('при переключении Web Reader отклоняет команды панели другого чата', async () => {
     const bridge = installPreviewBridge()
     const api = createFakeApi([])
     await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
-    const first = await api['conversations:create']({ title: 'Reader A', assistantKind: 'playwright-reader' })
-    const second = await api['conversations:create']({ title: 'Reader B', assistantKind: 'playwright-reader' })
-    window.location.hash = `#/playwright-reader/${first.id}`
+    const first = await api['conversations:create']({ title: 'Reader A', assistantKind: 'web-recorder' })
+    const second = await api['conversations:create']({ title: 'Reader B', assistantKind: 'web-recorder' })
+    window.location.hash = `#/web-reader/${first.id}`
     render(<App api={api} delays={SLOW} />)
     await screen.findByTitle('Web Reader')
-    await userEvent.selectOptions(screen.getByLabelText('Разговор Playwright Reader'), second.id)
-    await waitFor(() => expect(window.location.hash).toBe(`#/playwright-reader/${second.id}`))
-    await waitFor(() => expect(screen.getByLabelText('Разговор Playwright Reader')).toHaveValue(second.id))
+    await userEvent.selectOptions(screen.getByLabelText('Разговор Web Reader'), second.id)
+    await waitFor(() => expect(window.location.hash).toBe(`#/web-reader/${second.id}`))
+    await waitFor(() => expect(screen.getByLabelText('Разговор Web Reader')).toHaveValue(second.id))
     bridge.emit({ conversationId: first.id, requestId: 'old-chat', action: { kind: 'read' } })
     await waitFor(() => expect(bridge.results).toHaveLength(1))
     expect(bridge.results[0]).toMatchObject({ requestId: 'old-chat', ok: false, error: expect.stringContaining('не открыт') })
+  })
+
+  it('Playwright Reader монтирует browser-панель (Chromium), а не iframe веб-превью', async () => {
+    const started: string[] = []
+    ;(window as { browser?: unknown }).browser = {
+      start: async (conversationId: string) => { started.push(conversationId); return { id: conversationId, conversationId, incarnation: 'inc', state: 'ready', activeTabId: 't', tabs: [], viewport: { width: 1280, height: 800, deviceScaleFactor: 1 }, currentUrl: null, title: null } },
+      command: async () => { throw new Error('unused') },
+      screenshot: async () => ({ dataUrl: 'data:image/jpeg;base64,QQ==' }),
+      stop: async () => {}
+    }
+    const api = createFakeApi([])
+    await api['settings:save']({ ...DEFAULT_SETTINGS, onboarded: true })
+    const chat = await api['conversations:create']({ title: 'PW A', assistantKind: 'playwright-reader' })
+    window.location.hash = `#/playwright-reader/${chat.id}`
+    render(<App api={api} delays={SLOW} />)
+    // Настоящий Chromium: панель Browser session, без iframe «Web Reader».
+    await screen.findByLabelText('Browser session')
+    expect(screen.queryByTitle('Web Reader')).toBeNull()
+    await waitFor(() => expect(started).toContain(chat.id))
   })
 })
 

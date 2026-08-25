@@ -7,6 +7,7 @@ import type {
   RendererApi,
   RendererAudioBridge,
   RendererAuthBridge,
+  RendererBrowserBridge,
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
@@ -43,6 +44,8 @@ declare global {
     kb?: RendererKbBridge
     /** Действия модели в панели веб-превью (web). */
     preview?: RendererPreviewBridge
+    /** Изолированный Chromium Playwright Reader (web). */
+    browser?: RendererBrowserBridge
     featurePreview?: RendererFeaturePreviewBridge
     qa?: RendererQaBridge
   }

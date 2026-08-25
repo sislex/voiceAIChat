@@ -8,6 +8,7 @@ import type {
   RendererBoardBridge,
   RendererAudioBridge,
   RendererAuthBridge,
+  RendererBrowserBridge,
   RendererCcBridge,
   RendererClaudeBridge,
   RendererCodexBridge,
@@ -259,6 +260,36 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
   }
 }
 
+/**
+ * Мост изолированного Chromium Playwright Reader (REST). Оркестрацию держит
+ * сервер: start/command/stop проксируются в browser-runner, screenshot тянет
+ * кадр (поллинг = screencast). Bearer из localStorage; incarnation даёт start.
+ */
+export function makeBrowserBridge(httpBase: string): RendererBrowserBridge {
+  const authJson = (): Record<string, string> => {
+    const t = getToken()
+    return { 'content-type': 'application/json', ...(t ? { authorization: `Bearer ${t}` } : {}) }
+  }
+  const post = async <T>(path: string, body: unknown): Promise<T> => {
+    const res = await fetch(httpBase + path, { method: 'POST', headers: authJson(), body: JSON.stringify(body) })
+    if (!res.ok) {
+      let message = `Browser Runner: ${res.status}`
+      try { const data = await res.json() as { message?: string }; if (data.message) message = data.message } catch { /* не JSON */ }
+      throw new Error(message)
+    }
+    return res.json() as Promise<T>
+  }
+  return {
+    start: (conversationId, viewport) => post(REST.browserSessionStart(conversationId), viewport ? { viewport } : {}),
+    command: (conversationId, req) => post(REST.browserSessionCommand(conversationId), req),
+    screenshot: (conversationId, req) => post(REST.browserSessionScreenshot(conversationId), req),
+    stop: async (conversationId) => {
+      const t = getToken()
+      await fetch(httpBase + REST.browserSession(conversationId), { method: 'DELETE', headers: t ? { authorization: `Bearer ${t}` } : {} })
+    }
+  }
+}
+
 /** Мост чтения файлов с диска сервера (картинки, созданные самим CLI). */
 function makeFilesBridge(httpBase: string): RendererFilesBridge {
   return {
@@ -392,6 +423,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   window.files = makeFilesBridge(httpBase)
   window.pty = makePtyBridge(ws)
   window.preview = makePreviewBridge(ws)
+  window.browser = makeBrowserBridge(httpBase)
   window.featurePreview = createFeaturePreviewRest(httpBase, localAgentId)
   window.qa = createQaRest(httpBase)
 }

@@ -156,19 +156,21 @@ export type BrowserInputAction =
   | { type: 'keyDown'; key: string }
   | { type: 'keyUp'; key: string }
 
+export type BrowserCommand =
+  | { type: 'navigate'; url: string }
+  | { type: 'back' | 'forward' | 'reload' | 'stop' }
+  | { type: 'newTab'; url?: string }
+  | { type: 'selectTab' | 'closeTab'; tabId: string }
+  | { type: 'resize'; viewport: BrowserViewport }
+  | { type: 'input'; action: BrowserInputAction }
+  | { type: 'screenshot'; fullPage?: boolean; format?: 'png' | 'jpeg' | 'webp'; quality?: number }
+
 export interface BrowserCommandRequest {
   requestId: string
   incarnation: string
   tabId?: string
   actor: 'user' | 'assistant'
-  command:
-    | { type: 'navigate'; url: string }
-    | { type: 'back' | 'forward' | 'reload' | 'stop' }
-    | { type: 'newTab'; url?: string }
-    | { type: 'selectTab' | 'closeTab'; tabId: string }
-    | { type: 'resize'; viewport: BrowserViewport }
-    | { type: 'input'; action: BrowserInputAction }
-    | { type: 'screenshot'; fullPage?: boolean; format?: 'png' | 'jpeg' | 'webp'; quality?: number }
+  command: BrowserCommand
 }
 
 export function isPlaywrightReaderConversation(value: Pick<Conversation, 'assistantKind'>): boolean {
