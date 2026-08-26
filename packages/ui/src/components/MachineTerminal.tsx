@@ -89,7 +89,9 @@ export function TerminalView({ agentId, cwd, projectId, pty, ptyId }: { agentId:
     ro.observe(host)
     const offConnected = pty.onConnected(attach)
     attach()
-    term.focus()
+    // Не term.focus(): фокус textarea xterm заставляет браузер прокрутить предков с
+    // overflow:hidden (в сплите Консоли колонка чата уезжала вверх на сотни px).
+    term.textarea?.focus({ preventScroll: true })
     return () => {
       ro.disconnect()
       onData.dispose()

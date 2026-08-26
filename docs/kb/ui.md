@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-26
-checked: ee1d422f
+checked: 3f8d036f
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -943,6 +943,8 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 ## AI-помощник формулировки
 
 Переиспользуемые `PromptBuilder` и `useAiAssist` живут в `packages/ui/src/components/prompt-builder/` и экспортируются из `@voicechat/ui`. Компонент транспорт-нейтрален: генератор, модификаторы, применение и персистентность приходят через props. Builder собирает результат из вариантов и сохраняет работу при переходе в настройки; закрытие сбрасывает сессию. Генерация запускается только вручную кнопкой-палочкой справа в поле промпта: сам ввод текста и изменение модификаторов сетевой запрос не выполняют. `applyNativeInputValue` использует нативный setter и bubbling `input`, поэтому интеграция совместима с управляемыми полями и библиотеками форм. Композер `VoiceBar` — первая production-интеграция.
+
+**Сплит чата (Reader/Консоль) уезжал вверх.** Две причины: `.vc-sr-only` (absolute) внутри сообщений позиционировались от `.main` и раздували `scrollHeight` колонки до высоты всей ленты, а `term.focus()` xterm в правой панели заставлял браузер прокрутить `overflow:hidden`-контейнер `.chat-split` (hidden не запрещает программную прокрутку). Лечение: `.scroll { position: relative }`, `.chat-split { overflow: clip }`, в `MachineTerminal` фокус через `term.textarea.focus({ preventScroll: true })`.
 
 Раздел «Инструкции» `SettingsModal` — компонент `ChatInstructionsSettings`: список `Settings.chatInstructions` с чекбоксами, инлайн-редактор (название/описание/текст, «Сбросить к стандартному» у встроенных), дублирование, добавление, удаление через `useConfirm` и «Восстановить стандартные»; патч уходит целым списком в `Settings.chatInstructions`, сервер по нему собирает подсказки ([llm.md](llm.md)). Per-чат тумблеры — группа «Инструкции чата» в инспекторе контекста.
 
