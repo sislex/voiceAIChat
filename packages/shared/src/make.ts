@@ -393,6 +393,109 @@ export const WithoutTitle = { args: { title: undefined } }
     }
   }
 
+  ,{
+    id: 'react-ts',
+    title: 'React + TypeScript + Storybook',
+    description: 'То же, что React-шаблон, но на TSX: типизированные пропсы компонентов, сториз *.stories.tsx. TSX транспилируется на сервере (типы не проверяются в рантайме).',
+    files: {
+      'index.html': `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>React + TypeScript</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">${JSON.stringify({ imports: MAKE_REACT_IMPORT_MAP }, null, 2)}</script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="src/main.tsx"></script>
+</body>
+</html>
+`,
+      'styles.css': `:root { --bg: #f6f7fb; --fg: #1a1d23; --accent: #4f7cff; --card: #fff; font-family: system-ui, sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--fg); }
+.app { max-width: 720px; margin: 0 auto; padding: 32px 20px; display: grid; gap: 20px; }
+.card { background: var(--card); border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgb(0 0 0 / .08); }
+.btn { border: 0; border-radius: 8px; padding: 10px 16px; font: inherit; cursor: pointer; background: var(--accent); color: #fff; }
+.btn--secondary { background: #e7eaf3; color: var(--fg); }
+.btn--sm { padding: 6px 10px; font-size: 13px; }
+.counter { display: flex; align-items: center; gap: 12px; }
+`,
+      'src/main.tsx': `import { createRoot } from 'react-dom/client'
+import { App } from './App.tsx'
+
+createRoot(document.getElementById('root')!).render(<App />)
+`,
+      'src/App.tsx': `import { useState } from 'react'
+import { Button } from './components/Button.tsx'
+import { Card } from './components/Card.tsx'
+
+export function App() {
+  const [count, setCount] = useState(0)
+  return (
+    <main className="app">
+      <Card title="Счётчик">
+        <div className="counter">
+          <Button onClick={() => setCount((c) => c - 1)} variant="secondary">−</Button>
+          <strong>{count}</strong>
+          <Button onClick={() => setCount((c) => c + 1)}>+</Button>
+        </div>
+      </Card>
+      <Card title="TypeScript без сборки">
+        <p>Файлы .tsx транспилируются сервером при отдаче: типы помогают в редакторе, в рантайме их нет. Компоненты — в <code>src/components</code>, их сториз — во вкладке «Компоненты».</p>
+      </Card>
+    </main>
+  )
+}
+`,
+      'src/components/Button.tsx': `import type { ButtonHTMLAttributes, ReactNode } from 'react'
+
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  children: ReactNode
+  variant?: 'primary' | 'secondary'
+  size?: 'sm' | 'md'
+}
+
+export function Button({ children, variant = 'primary', size = 'md', ...rest }: ButtonProps) {
+  const cls = ['btn', variant === 'secondary' && 'btn--secondary', size === 'sm' && 'btn--sm'].filter(Boolean).join(' ')
+  return <button type="button" className={cls} {...rest}>{children}</button>
+}
+`,
+      'src/components/Button.stories.tsx': `import { Button, type ButtonProps } from './Button.tsx'
+
+export default { title: 'Button', component: Button, args: { children: 'Кнопка', variant: 'primary', size: 'md' } satisfies { title: string; component: typeof Button; args: ButtonProps } }
+
+export const Primary = {}
+export const Secondary = { args: { variant: 'secondary' } }
+export const Small = { args: { size: 'sm', children: 'Маленькая' } }
+`,
+      'src/components/Card.tsx': `import type { ReactNode } from 'react'
+
+export interface CardProps {
+  title?: string
+  children: ReactNode
+}
+
+export function Card({ title, children }: CardProps) {
+  return (
+    <section className="card">
+      {title && <h2 style={{ marginTop: 0 }}>{title}</h2>}
+      {children}
+    </section>
+  )
+}
+`,
+      'src/components/Card.stories.tsx': `import { Card } from './Card.tsx'
+
+export default { title: 'Card', component: Card, args: { title: 'Заголовок', children: 'Содержимое карточки' } }
+
+export const Default = {}
+export const WithoutTitle = { args: { title: undefined } }
+`
+    }
+  }
+
 ]
 
 /** Стартовый промпт — как «идеи» на главной Figma Make: клик вставляет текст в композер. */

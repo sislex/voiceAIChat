@@ -7,17 +7,19 @@ import css from 'highlight.js/lib/languages/css'
 import javascript from 'highlight.js/lib/languages/javascript'
 import json from 'highlight.js/lib/languages/json'
 import markdown from 'highlight.js/lib/languages/markdown'
+import typescript from 'highlight.js/lib/languages/typescript'
 
 hljs.registerLanguage('xml', xml)
 hljs.registerLanguage('css', css)
 hljs.registerLanguage('javascript', javascript)
 hljs.registerLanguage('json', json)
 hljs.registerLanguage('markdown', markdown)
+hljs.registerLanguage('typescript', typescript)
 
 const BY_EXT: Record<string, string> = {
   html: 'xml', htm: 'xml', svg: 'xml', xml: 'xml',
   css: 'css',
-  js: 'javascript', mjs: 'javascript', cjs: 'javascript', ts: 'javascript',
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', ts: 'typescript', tsx: 'typescript',
   json: 'json', webmanifest: 'json',
   md: 'markdown', markdown: 'markdown'
 }

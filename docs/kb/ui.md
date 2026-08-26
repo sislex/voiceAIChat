@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: ae463945
+checked: aecf9613
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -445,6 +445,19 @@ xml/css/javascript/json/markdown по расширению, лимит `HIGHLIGH
 лежит поверх `<pre class="make-highlight">` с теми же шрифтом/отступами (`.make-editor-body`), скролл
 синхронизируется в `onScroll`; хвостовой `\n` дополняется пробелом, иначе высоты расходятся. Фон
 редактора тёмный в обеих темах — под палитру `github-dark`, которую уже грузит `Markdown`.
+
+**Редактор — Monaco** (движок VS Code): `components/CodeEditor.tsx` лениво грузит
+`code/MonacoCodeEditor.tsx` (`@monaco-editor/react` + `monaco-editor/esm/vs/editor/editor.api` с выборочными
+contribution-модулями — полный пакет тянул 4 МБ; воркеры собираются Vite через `?worker`, тип в
+`vite-worker.d.ts`), а в jsdom (`navigator.userAgent` содержит jsdom — тесты и axe-прогон сториз) рисует
+`FallbackEditor` — textarea с подсветкой highlight.js поверх `<pre>` (то же aria-label «Содержимое <файл>»).
+Настройки Monaco — `code/monacoSetup.ts`: тема vs-dark, JSX automatic, семантическая проверка TS выключена
+(типов React в браузере нет), Ctrl/Cmd+S → `onSave`, **автозакрытие JSX-тегов** — `attachJsxAutoClose`
+(в VS Code это делает TS-сервер, здесь — своё: после `>` у `<Tag …>` вставляем `</Tag>`; правило
+`jsxClosingTagFor` в `code/monacoLang.ts`, без импорта Monaco — тестируется в vitest). Контейнеру
+`.make-monaco` нужна явная высота (обёртка `@monaco-editor/react` — height:100%), поэтому `> section`
+позиционируется абсолютно. Чанк `monaco` выделен в `apps/web/vite.config.ts` (`manualChunks`).
+Подсветка фолбэка знает `jsx`→javascript, `tsx`→typescript.
 
 **Поиск** в дереве (`make-search-input`): по мере ввода фильтрует файлы по пути; Enter — поиск по
 содержимому через `make:search` (`make-matches`, клик по строке открывает файл), Esc сбрасывает.
