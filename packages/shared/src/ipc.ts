@@ -1,7 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeProjectState } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeProjectState, MakeSearchMatch, MakeStoryFile } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -149,6 +149,8 @@ export interface IpcInvokeMap {
   'make:template': { arg: { conversationId: string; templateId: string }; result: MakeProjectState }
   /** Загрузка бинарного файла (картинка, шрифт) — содержимое в base64. */
   'make:upload': { arg: { conversationId: string; path: string; dataBase64: string }; result: MakeProjectState }
+  'make:search': { arg: { conversationId: string; query: string }; result: { matches: MakeSearchMatch[] } }
+  'make:stories': { arg: { conversationId: string }; result: { files: MakeStoryFile[] } }
   'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' }; result: Conversation }
   /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
   'conversations:createDraft': {
@@ -894,6 +896,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:check',
   'make:template',
   'make:upload',
+  'make:search',
+  'make:stories',
   'conversations:create',
   'conversations:createDraft',
   'conversations:get',

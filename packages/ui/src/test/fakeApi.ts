@@ -233,6 +233,19 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (content === undefined) throw new Error(`Файл «${path}» не найден`)
       return { path, size: content.length, updatedAt: 1, content }
     },
+    'make:search': async ({ conversationId, query }) => {
+      const needle = query.trim().toLocaleLowerCase()
+      const matches: { path: string; line: number; text: string }[] = []
+      for (const [path, content] of makeFiles(conversationId)) content.split('\n').forEach((text, i) => { if (needle && text.toLocaleLowerCase().includes(needle)) matches.push({ path, line: i + 1, text: text.trim() }) })
+      return { matches }
+    },
+    'make:stories': async ({ conversationId }) => ({
+      files: [...makeFiles(conversationId)].filter(([path]) => /\.stories\.(jsx|tsx)$/.test(path)).map(([path, content]) => ({
+        path,
+        title: content.match(/title\s*:\s*['"]([^'"]+)['"]/)?.[1] ?? path,
+        stories: [...content.matchAll(/^export\s+const\s+(\w+)/gm)].map((m) => m[1]!)
+      }))
+    }),
     'make:upload': async ({ conversationId, path, dataBase64 }) => { makeFiles(conversationId).set(path, `<binary ${dataBase64.length}>`); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
     'make:write': async ({ conversationId, path, content }) => { makeFiles(conversationId).set(path, content); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
     'make:delete': async ({ conversationId, path }) => { makeFiles(conversationId).delete(path); return makeState(conversationId) },

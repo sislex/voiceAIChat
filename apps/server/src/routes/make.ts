@@ -6,7 +6,9 @@
 // разговор принадлежит пользователю; изменения рассылаются владельцу `make.changed`.
 
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { MAKE_PUBLIC_PREFIX, makeMimeType, normalizeMakePath } from '@voicechat/shared'
+import { MAKE_PUBLIC_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath } from '@voicechat/shared'
+import { transpileForPreview } from '../make/transpile.js'
+import { renderStoriesPage } from '../make/stories.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { MakeError, MakeWorkspaces } from '../make/workspace.js'
 import type { MakeHub } from '../make/hub.js'
@@ -177,6 +179,23 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
+  app.get<{ Params: { id: string }; Querystring: { q?: string } }>('/api/make/:id/search', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { await workspaces.ensure(req.params.id); return { matches: await workspaces.search(req.params.id, req.query.q ?? '') } } catch (error) { return sendError(reply, error) }
+  })
+
+  app.get<{ Params: { id: string } }>('/api/make/:id/stories', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { await workspaces.ensure(req.params.id); return { files: await workspaces.stories(req.params.id) } } catch (error) { return sendError(reply, error) }
+  })
+
+  /** Тело файла для отдачи: JSX/TS — через esbuild, остальное как есть. */
+  const previewBody = async (conversationId: string, file: { path: string; data: Buffer }): Promise<Buffer | string> => {
+    if (!isMakeTranspiledPath(file.path)) return file.data
+    const paths = new Set((await workspaces.list(conversationId)).map((f) => f.path))
+    return transpileForPreview(conversationId, file.path, file.data.toString('utf8'), workspaces.rev(conversationId), (p) => paths.has(p))
+  }
+
   // ---- Публикация: /p/<token>/… — вне /api, без авторизации; знание ссылки = доступ ----
 
   app.get<{ Params: { token: string; '*': string } }>(`${MAKE_PUBLIC_PREFIX}:token/*`, async (req, reply) => {
@@ -193,7 +212,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       .header('x-content-type-options', 'nosniff')
       .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:")
       .header('x-robots-tag', 'noindex')
-      .send(file.data)
+      .send(await previewBody(conversationId, file))
   })
   app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
   app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token/`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
@@ -217,6 +236,15 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (!own(uid(req), req.params.id, reply)) return reply
     await workspaces.ensure(req.params.id)
     const raw = req.params['*'] || 'index.html'
+    if (raw === MAKE_STORIES_PAGE) {
+      const q = req.query as { file?: string; story?: string }
+      const index = await workspaces.readBuffer(req.params.id, 'index.html').catch(() => null)
+      return reply
+        .header('content-type', 'text/html; charset=utf-8')
+        .header('cache-control', 'no-store')
+        .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'")
+        .send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null))
+    }
     const path = raw.endsWith('/') ? `${raw}index.html` : raw
     let file
     try { file = await workspaces.readBuffer(req.params.id, path) } catch (error) { return sendError(reply, error) }
@@ -233,7 +261,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       const injected = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${MAKE_INSPECTOR_SCRIPT}</body>`) : `${html}${MAKE_INSPECTOR_SCRIPT}`
       return reply.send(injected)
     }
-    return reply.send(file.data)
+    return reply.send(await previewBody(req.params.id, file))
   })
 
   app.get<{ Params: { id: string } }>('/api/preview/make/:id/', async (req, reply) => {

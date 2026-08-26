@@ -11,8 +11,9 @@ import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile
 import { dirname, join, resolve, sep } from 'node:path'
 import {
   MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, makePublicUrl, normalizeMakePath,
-  type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot
-} from '@voicechat/shared'
+  type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath } from '@voicechat/shared'
+import { parseStoryFile } from './stories.js'
+import type { MakeSearchMatch, MakeStoryFile } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists'
@@ -267,6 +268,36 @@ export class MakeWorkspaces {
       if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE) continue
       await rm(join(root, entry), { recursive: true, force: true })
     }
+  }
+
+  /** Поиск по содержимому текстовых файлов: без регистра, до `limit` совпадений, строки обрезаны. */
+  async search(conversationId: string, query: string, limit = 200): Promise<MakeSearchMatch[]> {
+    const needle = query.trim().toLocaleLowerCase()
+    if (!needle) return []
+    const matches: MakeSearchMatch[] = []
+    for (const file of await this.list(conversationId)) {
+      if (!isMakeTextPath(file.path)) continue
+      const { content } = await this.read(conversationId, file.path)
+      const lines = content.split('\n')
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i]!.toLocaleLowerCase().includes(needle)) {
+          matches.push({ path: file.path, line: i + 1, text: lines[i]!.trim().slice(0, 200) })
+          if (matches.length >= limit) return matches
+        }
+      }
+    }
+    return matches
+  }
+
+  /** Файлы сториз проекта с именами стори. */
+  async stories(conversationId: string): Promise<MakeStoryFile[]> {
+    const result: MakeStoryFile[] = []
+    for (const file of await this.list(conversationId)) {
+      if (!isMakeStoriesPath(file.path)) continue
+      const { content } = await this.read(conversationId, file.path)
+      result.push(parseStoryFile(file.path, content))
+    }
+    return result
   }
 
   async state(conversationId: string): Promise<MakeProjectState> {

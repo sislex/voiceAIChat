@@ -50,6 +50,39 @@ export interface MakeCheckIssue {
 }
 
 /** Состояние проекта для панели: список файлов, ревизии и счётчик изменений. */
+/** Совпадение поиска по содержимому файлов проекта. */
+export interface MakeSearchMatch {
+  path: string
+  /** Номер строки с 1. */
+  line: number
+  /** Строка целиком, обрезана до 200 символов. */
+  text: string
+}
+
+/** Файл `*.stories.(jsx|tsx)` и имена его стори (именованные экспорты). */
+export interface MakeStoryFile {
+  path: string
+  /** `title` из default-экспорта или имя файла без суффикса. */
+  title: string
+  stories: string[]
+}
+
+/** Файлы, которые сервер транспилирует esbuild при отдаче превью (JSX/TS → ESM). */
+export const MAKE_TRANSPILED_EXTENSIONS = new Set(['jsx', 'tsx', 'ts'])
+export const isMakeTranspiledPath = (path: string): boolean => MAKE_TRANSPILED_EXTENSIONS.has(path.slice(path.lastIndexOf('.') + 1).toLowerCase())
+export const isMakeStoriesPath = (path: string): boolean => /\.stories\.(jsx|tsx)$/i.test(path)
+
+/** Страница-раннер сториз внутри превью проекта: `?file=<stories>&story=<name>`. */
+export const MAKE_STORIES_PAGE = '__stories__'
+
+/** Import map по умолчанию для React-проектов: React из esm.sh, версии закреплены. */
+export const MAKE_REACT_IMPORT_MAP: Record<string, string> = {
+  react: 'https://esm.sh/react@18.3.1',
+  'react/jsx-runtime': 'https://esm.sh/react@18.3.1/jsx-runtime',
+  'react-dom': 'https://esm.sh/react-dom@18.3.1?deps=react@18.3.1',
+  'react-dom/client': 'https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1'
+}
+
 export interface MakeProjectState {
   conversationId: string
   files: MakeFileInfo[]
@@ -84,7 +117,7 @@ export function makeMimeType(path: string): string {
   const ext = path.split('.').pop()?.toLowerCase() ?? ''
   const table: Record<string, string> = {
     html: 'text/html; charset=utf-8', htm: 'text/html; charset=utf-8', css: 'text/css; charset=utf-8',
-    js: 'text/javascript; charset=utf-8', mjs: 'text/javascript; charset=utf-8', json: 'application/json; charset=utf-8',
+    js: 'text/javascript; charset=utf-8', mjs: 'text/javascript; charset=utf-8', jsx: 'text/javascript; charset=utf-8', tsx: 'text/javascript; charset=utf-8', ts: 'text/javascript; charset=utf-8', json: 'application/json; charset=utf-8',
     svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
     ico: 'image/x-icon', txt: 'text/plain; charset=utf-8', md: 'text/markdown; charset=utf-8', xml: 'application/xml',
     woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', webmanifest: 'application/manifest+json', mp3: 'audio/mpeg', wav: 'audio/wav'
@@ -272,4 +305,92 @@ document.getElementById('orders').innerHTML = orders.map((row) => '<tr><td>' + r
 `
     }
   }
+  ,{
+    id: 'react',
+    title: 'React-приложение + Storybook',
+    description: 'React 18 из esm.sh без сборки: JSX транспилируется на сервере. Компоненты в src/components, сториз рядом (*.stories.jsx) — вкладка «Компоненты».',
+    files: {
+      'index.html': `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>React-приложение</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">${JSON.stringify({ imports: MAKE_REACT_IMPORT_MAP }, null, 2)}</script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="src/main.jsx"></script>
+</body>
+</html>
+`,
+      'styles.css': `:root { --bg: #f6f7fb; --fg: #1a1d23; --accent: #4f7cff; --card: #fff; font-family: system-ui, sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--fg); }
+.app { max-width: 720px; margin: 0 auto; padding: 32px 20px; display: grid; gap: 20px; }
+.card { background: var(--card); border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgb(0 0 0 / .08); }
+.btn { border: 0; border-radius: 8px; padding: 10px 16px; font: inherit; cursor: pointer; background: var(--accent); color: #fff; }
+.btn--secondary { background: #e7eaf3; color: var(--fg); }
+.btn--sm { padding: 6px 10px; font-size: 13px; }
+.counter { display: flex; align-items: center; gap: 12px; }
+`,
+      'src/main.jsx': `import { createRoot } from 'react-dom/client'
+import { App } from './App.jsx'
+
+createRoot(document.getElementById('root')).render(<App />)
+`,
+      'src/App.jsx': `import { useState } from 'react'
+import { Button } from './components/Button.jsx'
+import { Card } from './components/Card.jsx'
+
+export function App() {
+  const [count, setCount] = useState(0)
+  return (
+    <main className="app">
+      <Card title="Счётчик">
+        <div className="counter">
+          <Button onClick={() => setCount((c) => c - 1)} variant="secondary">−</Button>
+          <strong>{count}</strong>
+          <Button onClick={() => setCount((c) => c + 1)}>+</Button>
+        </div>
+      </Card>
+      <Card title="Как это устроено">
+        <p>React загружается из esm.sh, JSX превращается в JS на сервере при отдаче файла. Компоненты — в <code>src/components</code>, их сториз — во вкладке «Компоненты».</p>
+      </Card>
+    </main>
+  )
+}
+`,
+      'src/components/Button.jsx': `export function Button({ children, variant = 'primary', size = 'md', ...rest }) {
+  const cls = ['btn', variant === 'secondary' && 'btn--secondary', size === 'sm' && 'btn--sm'].filter(Boolean).join(' ')
+  return <button type="button" className={cls} {...rest}>{children}</button>
+}
+`,
+      'src/components/Button.stories.jsx': `import { Button } from './Button.jsx'
+
+export default { title: 'Button', component: Button, args: { children: 'Кнопка' } }
+
+export const Primary = {}
+export const Secondary = { args: { variant: 'secondary' } }
+export const Small = { args: { size: 'sm', children: 'Маленькая' } }
+`,
+      'src/components/Card.jsx': `export function Card({ title, children }) {
+  return (
+    <section className="card">
+      {title && <h2 style={{ marginTop: 0 }}>{title}</h2>}
+      {children}
+    </section>
+  )
+}
+`,
+      'src/components/Card.stories.jsx': `import { Card } from './Card.jsx'
+
+export default { title: 'Card', component: Card, args: { title: 'Заголовок', children: 'Содержимое карточки' } }
+
+export const Default = {}
+export const WithoutTitle = { args: { title: undefined } }
+`
+    }
+  }
+
 ]

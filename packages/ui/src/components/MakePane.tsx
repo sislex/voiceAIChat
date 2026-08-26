@@ -3,7 +3,7 @@ import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@v
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import { REST } from '@shared/protocol'
 import { highlightCode } from '../lib/codeHighlight'
-import { MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState } from '@shared/make'
+import { MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -21,7 +21,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -34,7 +34,8 @@ export interface MakePaneProps {
   ensurePreview?: () => Promise<boolean>
 }
 
-type Mode = 'preview' | 'code' | 'history'
+type Mode = 'preview' | 'code' | 'stories' | 'history'
+const MODE_LABEL: Record<Mode, string> = { preview: 'Превью', code: 'Код', stories: 'Компоненты', history: 'История' }
 type Device = 'desktop' | 'tablet' | 'mobile'
 const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, mobile: 390 }
 const DEVICE_LABEL: Record<Device, string> = { desktop: 'Десктоп', tablet: 'Планшет', mobile: 'Телефон' }
@@ -81,6 +82,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   const [publishOpen, setPublishOpen] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [issues, setIssues] = useState<MakeCheckIssue[] | null>(null)
+  // Поиск: фильтр дерева по пути — мгновенно; по содержимому — запросом на Enter.
+  const [query, setQuery] = useState('')
+  const [matches, setMatches] = useState<MakeSearchMatch[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  // Сториз: список файлов *.stories.* и выбранная стори; раннер — отдельная страница превью.
+  const [storyFiles, setStoryFiles] = useState<MakeStoryFile[] | null>(null)
+  const [story, setStory] = useState<{ file: string; name: string } | null>(null)
   const [checking, setChecking] = useState(false)
   const openAsk = (title: string, label: string, initial: string, submit: string, onSubmit: (value: string) => void): void => { setAskValue(initial); setAsk({ title, label, initial, submit, onSubmit }) }
   const frameRef = useRef<HTMLIFrameElement | null>(null)
@@ -353,6 +361,30 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
     } catch (e) { toast.error(describeError(e)) }
   }
 
+  const runSearch = async (): Promise<void> => {
+    const q = query.trim()
+    if (!q) { setMatches(null); return }
+    setSearching(true)
+    try { setMatches((await api['make:search']({ conversationId, query: q })).matches) } catch (e) { toast.error(describeError(e)) } finally { setSearching(false) }
+  }
+  const loadStories = useCallback(async (): Promise<void> => {
+    try {
+      const { files } = await api['make:stories']({ conversationId })
+      setStoryFiles(files)
+      setStory((current) => {
+        if (current && files.some((f) => f.path === current.file && f.stories.includes(current.name))) return current
+        const first = files.find((f) => f.stories.length > 0)
+        return first ? { file: first.path, name: first.stories[0]! } : null
+      })
+    } catch (e) { toast.error(describeError(e)) }
+  }, [api, conversationId, toast])
+  useEffect(() => { if (mode === 'stories') void loadStories() }, [mode, loadStories, state?.rev])
+  const sendStoryToChat = (): void => {
+    if (!story || !onInsertToChat) return
+    const component = story.file.slice(story.file.lastIndexOf('/') + 1).replace(/\.stories\.(jsx|tsx)$/i, '')
+    onInsertToChat(`Работаем только над компонентом ${component} (${story.file.replace(/\.stories\./, '.')}, стори «${story.name}» в ${story.file}); другие файлы не трогай. `)
+  }
+
   const sendSelectedToChat = (): void => {
     if (!selected || !onInsertToChat) return
     const text = `Измени элемент ${selected.selector}${selected.text ? ` («${selected.text.slice(0, 80)}»)` : ''}: `
@@ -367,9 +399,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   const header = (
     <div className="make-head" role="toolbar" aria-label="Панель проекта">
       <div className="make-tabs" role="tablist" aria-label="Режим панели">
-        {(['preview', 'code', 'history'] as Mode[]).map((m) => (
+        {(['preview', 'code', 'stories', 'history'] as Mode[]).map((m) => (
           <button key={m} type="button" role="tab" aria-selected={mode === m} className={mode === m ? 'make-tab on' : 'make-tab'} onClick={() => setMode(m)}>
-            {m === 'preview' ? 'Превью' : m === 'code' ? 'Код' : 'История'}
+            {MODE_LABEL[m]}
           </button>
         ))}
       </div>
@@ -398,6 +430,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
         </>
       )}
       {mode === 'history' && <Button size="sm" variant="secondary" onClick={takeSnapshot}>+ Снимок</Button>}
+      {mode === 'stories' && story && onInsertToChat && <Button size="sm" variant="primary" onClick={sendStoryToChat}>Работать над компонентом</Button>}
       <IconButton size="sm" aria-label="Шаблоны проекта" title="Начать с шаблона" onClick={() => setTemplatesOpen(true)}>▤</IconButton>
       <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>
       <IconButton size="sm" aria-label="Скачать проект (ZIP)" title="Скачать проект (ZIP)" onClick={() => window.open(REST.makeExport(conversationId), '_blank', 'noopener')}>⇩</IconButton>
@@ -439,9 +472,32 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
       {mode === 'code' && (
         <div className={dropActive ? 'make-code make-code--drop' : 'make-code'} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code">
           <nav className="make-tree" aria-label="Файлы проекта">
+            <div className="make-search">
+              <input
+                type="search"
+                className="make-search-input"
+                aria-label="Поиск по файлам проекта"
+                placeholder="Имя файла или текст… (Enter — по содержимому)"
+                value={query}
+                onChange={(e) => { setQuery(e.target.value); if (!e.target.value.trim()) setMatches(null) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runSearch() } if (e.key === 'Escape') { setQuery(''); setMatches(null) } }}
+              />
+              {searching && <span className="make-search-state">ищу…</span>}
+            </div>
+            {matches !== null && (
+              <div className="make-matches" role="region" aria-label="Результаты поиска" data-testid="make-matches">
+                <p className="make-tree-dir">{matches.length === 0 ? 'Ничего не найдено' : `Найдено: ${matches.length}`}</p>
+                {matches.map((m, i) => (
+                  <button key={`${m.path}:${m.line}:${i}`} type="button" className="make-match" onClick={() => void openFile(m.path)} title={`${m.path}:${m.line}`}>
+                    <span className="make-match-path">{m.path}<span className="make-match-line">:{m.line}</span></span>
+                    <code className="make-match-text">{m.text}</code>
+                  </button>
+                ))}
+              </div>
+            )}
             {dropActive && <p className="make-drop-hint" role="status">Отпустите, чтобы загрузить файлы в проект</p>}
             {groups.length === 0 && <EmptyState title="Файлов пока нет" description="Создайте файл, перетащите его сюда или попросите ассистента." />}
-            {groups.map((group) => (
+            {groups.map((group) => ({ ...group, files: group.files.filter((f) => !query.trim() || f.path.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) })).filter((g) => g.files.length > 0).map((group) => (
               <div className="make-tree-group" key={group.dir || '/'}>
                 {group.dir && <p className="make-tree-dir">📁 {group.dir}</p>}
                 {group.files.map((file) => (
@@ -503,6 +559,51 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
             ) : (
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />
             )}
+          </div>
+        </div>
+      )}
+
+      {mode === 'stories' && (
+        <div className="make-stories" data-testid="make-stories">
+          <nav className="make-tree make-stories-list" aria-label="Компоненты и стори">
+            {storyFiles === null && <p className="make-tree-dir">Загружаю…</p>}
+            {storyFiles !== null && storyFiles.length === 0 && (
+              <EmptyState
+                title="Сториз пока нет"
+                description="Добавьте рядом с компонентом файл <Имя>.stories.jsx (CSF: default { title, component, args } и именованные экспорты) или начните с шаблона «React-приложение + Storybook»."
+                actionLabel="Шаблоны"
+                onAction={() => setTemplatesOpen(true)}
+              />
+            )}
+            {storyFiles?.map((file) => (
+              <div className="make-tree-group" key={file.path}>
+                <p className="make-tree-dir" title={file.path}>▣ {file.title}</p>
+                {file.stories.map((name) => {
+                  const on = story?.file === file.path && story.name === name
+                  return (
+                    <div className={on ? 'make-tree-item on' : 'make-tree-item'} key={name}>
+                      <button type="button" className="make-tree-file" aria-current={on ? 'true' : undefined} onClick={() => setStory({ file: file.path, name })}>{name}</button>
+                    </div>
+                  )
+                })}
+                <div className="make-tree-item">
+                  <button type="button" className="make-tree-file make-tree-file--dim" onClick={() => { void openFile(file.path); setMode('code') }}>✎ открыть сториз</button>
+                </div>
+              </div>
+            ))}
+          </nav>
+          <div className="make-story-host">
+            {story && previewReady ? (
+              <iframe
+                key={`${story.file}:${story.name}:${previewRev}`}
+                className="make-story-frame"
+                title={`Стори ${story.name}`}
+                sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"
+                src={`${base}__stories__?file=${encodeURIComponent(story.file)}&story=${encodeURIComponent(story.name)}&rev=${previewRev}`}
+              />
+            ) : storyFiles && storyFiles.length > 0 ? (
+              <EmptyState title="Выберите стори" description="Слева — компоненты проекта и их состояния." />
+            ) : null}
           </div>
         </div>
       )}
