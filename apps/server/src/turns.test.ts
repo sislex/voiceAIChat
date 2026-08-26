@@ -128,6 +128,17 @@ describe('turns: инструкции чата', () => {
     db.close()
   })
 
+  it('у «Консоли с ассистентом» подсказки про tool-блок console нет, проводник остаётся', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Консоль', 'console-reader')
+    db.addMessage(U, conv.id, 'u0', 'открой консоль', '10:00')
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+    expect(rec.last()?.prompt).not.toContain('"kind": "console"')
+    expect(rec.last()?.prompt).toContain('"kind": "explorer"')
+    db.close()
+  })
+
   it('инструкция, выключенная в инспекторе разговора, не попадает в промпт при включённой настройке', async () => {
     const db = freshDb()
     const conv = db.createConversation(U, 'Чат')

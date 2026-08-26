@@ -722,6 +722,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
    * tool-блоком (виджет прямо в ответе) и возвращает true (в LLM не идём).
    */
   async function maybeOpenUtility(text: string): Promise<boolean> {
+    // В «Консоли с ассистентом» терминал уже открыт справа — второй виджет не нужен,
+    // фраза уходит модели как обычная реплика.
+    const conv = activeConversation()
+    if (conv && isConsoleReaderConversation(conv)) return false
     const agents = deps.listAgents()
     const tool = detectOpenUtility(text, agents)
     if (!tool) return false

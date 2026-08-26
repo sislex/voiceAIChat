@@ -1581,7 +1581,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             diarization={settingsState.settings.diarization}
             detectedSpeakers={detectedSpeakers}
             aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
-            liveTarget={chat.liveTarget}
             attachments={chat.attachments}
             readServerFile={operationsActions.readServerFile}
             previewElement={previewElement}

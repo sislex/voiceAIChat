@@ -1851,6 +1851,18 @@ describe('voiceStore — машинные утилиты', () => {
     expect(store.getState().utility).toEqual({ kind: 'explorer', agentId: 'm1', path: '/work', dir: true })
   })
 
+  it('в «Консоли с ассистентом» «открой консоль» не открывает второй виджет, а уходит модели', async () => {
+    const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
+    await store.actions.init()
+    await store.actions.newConversation('console-reader')
+    store.actions.setDraft('открой консоль')
+    await store.actions.submitText()
+    const msgs = store.getState().messages
+    expect(msgs.some((m) => m.text.includes('```tool'))).toBe(false)
+    // Реплика ушла как обычный ход — стор не остался в idle.
+    expect(store.getState().voice).not.toBe('idle')
+  })
+
   it('команда «открой консоль» создаёт ai-сообщение с tool-блоком (без LLM)', async () => {
     const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
     await store.actions.init()
