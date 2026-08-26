@@ -152,6 +152,7 @@ describe('ход модели через исполнителя по HTTP', () =
       const local = await turnEvents(localClaude(LINES))
       expect(normalize(remote)).toEqual(normalize(local))
       expect(remote.map((m) => m.t)).toEqual([
+        'claude.start',
         'claude.usage',
         'claude.token',
         'claude.usage',

@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-26
-checked: 5a60255e
+checked: ee1d422f
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -244,6 +244,16 @@ Usage нормализуется в `TurnUsage` и рассылается как
 результат в БД. Клиент при подключении получает `claude.active` со списком
 незакрытых ходов и накопленным частичным текстом — так восстанавливается стрим
 после F5. Модель хода зажимается по роли пользователя (`clampModelForRole`).
+
+## Старт хода: `claude.start`
+
+Сразу после регистрации хода сервер шлёт `claude.start {conversationId, provider, model,
+execTarget}` (`turns.ts`, рядом с `turns.set`); те же поля несёт `ActiveTurn` в
+`claude.active`. Клиент (`chatStore.applyClaudeStart`, `liveTarget`/`activeTargets`) рисует
+по ним шапку «Готовим ответ…»/стрима — движок, модель по наведению и машину — вместо
+догадки по `aiLabel`/`execTarget` разговора, которая не знает наследования от проекта.
+По той же причине `POST /api/conversations/:id/messages` для роли `ai` без `engine`/`execTarget`
+(так пишут самодиагностики) подставляет эффективные движок и машину разговора.
 
 ## Договорённости в тексте ответа (fenced-блоки)
 

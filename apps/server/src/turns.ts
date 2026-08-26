@@ -576,7 +576,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     if (personalizationLines.length && !disabledContext.has('personalization')) basePrompt = `${basePrompt}\n\n## Персонализация пользователя\n${personalizationLines.join('\n')}\nЭти предпочтения уступают явной инструкции текущего сообщения и настройкам разговора/проекта.`
     // Инструкции чата (терминал/проводник, вопросы, картинки, task-launch, свои) —
     // включённые в настройках и не выключенные в инспекторе этого разговора.
+    // У «Консоли с ассистентом» терминал уже открыт справа: подсказка «вставь
+    // tool-блок console» модели не даётся, а такой блок из ответа вырезается.
     const instructions = effectiveChatInstructions(settings.chatInstructions, disabledContext)
+      .filter((item) => !(conv?.assistantKind === 'console-reader' && item.kind === 'console'))
     const prompt = appendChatInstructionHints(basePrompt, instructions)
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
