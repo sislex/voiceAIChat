@@ -145,8 +145,13 @@ export class MakeWorkspaces {
   }
 
   async write(conversationId: string, rawPath: string, content: string): Promise<MakeProjectState> {
+    return this.writeBuffer(conversationId, rawPath, Buffer.from(content, 'utf8'))
+  }
+
+  /** Бинарная запись (картинки, шрифты из загрузки пользователя) — те же лимиты, что у текста. */
+  async writeBuffer(conversationId: string, rawPath: string, content: Buffer): Promise<MakeProjectState> {
     const { path, abs } = await this.resolveFile(conversationId, rawPath)
-    if (Buffer.byteLength(content, 'utf8') > MAKE_LIMITS.maxFileBytes) {
+    if (content.byteLength > MAKE_LIMITS.maxFileBytes) {
       throw new MakeError('too_large', `Файл «${path}» больше ${Math.round(MAKE_LIMITS.maxFileBytes / 1024)} КБ`)
     }
     const files = await this.list(conversationId)
@@ -154,7 +159,7 @@ export class MakeWorkspaces {
       throw new MakeError('too_many_files', `В проекте уже ${MAKE_LIMITS.maxFiles} файлов`)
     }
     await mkdir(dirname(abs), { recursive: true })
-    await writeFile(abs, content, 'utf8')
+    await writeFile(abs, content)
     this.bump(conversationId)
     return this.state(conversationId)
   }

@@ -104,4 +104,22 @@ describe('MakePane', () => {
     await userEvent.click(screen.getAllByRole('button', { name: 'Применить' }).at(-1)!)
     await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toBe('<h1>landing</h1>'))
   })
+
+  it('загрузка с диска: картинка уходит бинарно в img/, текст — как текст', async () => {
+    const { api } = renderPane()
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const input = screen.getByTestId('make-upload-input') as HTMLInputElement
+    await userEvent.upload(input, [
+      new File([new Uint8Array([1, 2, 3])], 'My Logo.png', { type: 'image/png' }),
+      new File(['body{}'], 'theme.css', { type: 'text/css' })
+    ])
+    await waitFor(async () => {
+      const paths = (await api['make:state']({ conversationId: CONV })).files.map((f) => f.path)
+      expect(paths).toEqual(expect.arrayContaining(['img/My-Logo.png', 'theme.css']))
+    })
+    expect((await api['make:read']({ conversationId: CONV, path: 'theme.css' })).content).toBe('body{}')
+    await userEvent.click((await screen.findAllByRole('button', { name: /My-Logo\.png/ }))[0]!)
+    expect(await screen.findByTestId('make-binary')).toContainElement(screen.getByRole('img', { name: 'Просмотр img/My-Logo.png' }))
+  })
 })

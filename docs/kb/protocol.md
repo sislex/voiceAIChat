@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-26
-checked: 472310fb
+checked: b734ec79
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -278,3 +278,5 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 (`GET …/check` → `MakeCheckIssue[]`), `REST.makeTemplate` (POST `…/template {template}`), мосты
 `make:publish/unpublish/check/template`; `MakeProjectState.published: MakePublication|null`.
 Публичная раздача — `GET /p/<token>/*` (`MAKE_PUBLIC_PREFIX`, вне `/api`, без auth и без инспектора).
+`REST.makeUpload` (POST `/api/make/:id/upload {path, dataBase64}`, bodyLimit 4 МБ) → мост `make:upload` —
+бинарники из панели; на сервере `MakeWorkspaces.writeBuffer` (общие лимиты с `write`).

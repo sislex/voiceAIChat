@@ -233,6 +233,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (content === undefined) throw new Error(`Файл «${path}» не найден`)
       return { path, size: content.length, updatedAt: 1, content }
     },
+    'make:upload': async ({ conversationId, path, dataBase64 }) => { makeFiles(conversationId).set(path, `<binary ${dataBase64.length}>`); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
     'make:write': async ({ conversationId, path, content }) => { makeFiles(conversationId).set(path, content); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
     'make:delete': async ({ conversationId, path }) => { makeFiles(conversationId).delete(path); return makeState(conversationId) },
     'make:rename': async ({ conversationId, from, to }) => { const files = makeFiles(conversationId); const c = files.get(from) ?? ''; files.delete(from); files.set(to, c); return makeState(conversationId) },

@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-26
-checked: 472310fb
+checked: b734ec79
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -435,6 +435,10 @@ USD за 1M токенов, источник и дату тарифа; форм�
 шаги REST → превью с cookie → round-trip записи файла → событие `make.changed`; пишет в чат
 через `publishDiagnosticMessage`, как Консоль и Reader. У текстовых кнопок панели `title` не
 ставим — он попадает в доступное имя и ломает `getByRole('button', {name})`.
+«Загрузить» в режиме «Код» — скрытый `<input type=file multiple>` (`make-upload-input`): текстовые
+файлы уходят `make:write`, остальное — `make:upload` (base64), картинки складываются в `img/`. Чтение
+через `FileReader`, а не `Blob.text()/arrayBuffer()` — их нет в jsdom. Клик по бинарному файлу в дереве
+открывает просмотр (`make-binary`: `<img>` для картинок, иначе `EmptyState`) вместо редактора.
 
 ## Разговор и ход модели
 
