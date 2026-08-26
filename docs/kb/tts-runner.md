@@ -1,7 +1,7 @@
 ---
 title: TTS Runner: ресурсный API, движки и жизненный цикл WAV
-updated: 2026-08-20
-checked: 25fcd3a3
+updated: 2026-08-26
+checked: 1de46edc
 areas:
   - apps/tts-runner
   - apps/server/src/tts
@@ -40,6 +40,17 @@ areas:
 Публичные маршруты голосов проксируются через `TtsClient`, поэтому сервер не вычисляет пути и не удаляет файлы сам. Если URL или токен runner не настроены, `capabilities.tts` становится недоступной независимо от STT и текстового чата.
 
 ## Конфигурация и контейнер
+
+**Piper и голос по умолчанию в образе.** Стадия `piper-assets` в `Dockerfile` скачивает
+бинарный релиз Piper по `TARGETARCH` (amd64→x86_64, arm64→aarch64) в `/opt/piper` и голос
+`ru_RU-ruslan-medium` (HuggingFace `rhasspy/piper-voices`) в `/opt/piper-voices-seed`;
+`tts-runner-runtime` получает `VC_PIPER_BIN=/opt/piper/piper` и
+`VC_PIPER_SEED_VOICES_DIR`. На старте `seedVoices` (`engines/seedVoices.ts`) копирует
+полные пары `.onnx`+`.onnx.json` из seed-каталога в пустой `voicesDir`; непустой каталог
+не трогается (пользователь мог удалить голос). До этого образ Piper не содержал, том
+голосов был пуст, и любая озвучка в Docker падала с `No TTS engine available`, а UI
+эту ошибку не показывал (теперь `voiceStore.applyTtsError` → баннер оболочки).
+
 
 Runner требует `VC_TTS_RUNNER_TOKEN`; остальные пределы и пути собраны в `apps/tts-runner/src/config.ts`. Docker target `tts-runner-runtime` слушает 8791, использует отдельные persistent data и temp volumes, CPU/RAM limits и token-authenticated healthcheck. Сервер получает только внутренние `VC_TTS_RUNNER_URL` и `VC_TTS_RUNNER_TOKEN`. Workspace включён в корневые npm scripts и карту affected-check.
 
