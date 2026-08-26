@@ -30,17 +30,35 @@ export interface ParsedTool {
 export const TOOL_FENCE = 'tool'
 const FENCE_RE = /```tool[^\S\n]*\n([\s\S]*?)```[^\S\n]*/
 
-/** Инструкция модели о формате открытия утилиты (добавляется к промпту). */
-export const TOOL_HINT = [
-  'Если пользователь просит открыть консоль или файловый проводник на его машине,',
-  'добавь в самом конце ответа блок с JSON:',
-  '```tool',
-  '{"kind":"console"}',
-  '```',
-  '"kind": "console" — терминал, "explorer" — файловый проводник. Можно указать',
-  '"agentId" конкретной машины. Не описывай этот блок словами; если открывать',
-  'ничего не нужно — не добавляй блок.'
-].join('\n')
+/**
+ * Инструкция модели о формате открытия утилиты для заданного набора видов.
+ * Виды приходят из настроек «Инструкции чата»: выключенный вид в текст не попадает,
+ * и модель не знает, как его открыть. Пустой набор → пустая строка.
+ */
+export function toolHint(kinds: readonly ToolSpec['kind'][]): string {
+  const allowed = TOOL_KINDS.filter((kind) => kinds.includes(kind))
+  if (allowed.length === 0) return ''
+  const names = allowed.map((kind) => TOOL_KIND_TITLES[kind])
+  const list = names.length === 2 ? `${names[0]} или ${names[1]}` : names[0]
+  const legend = allowed.map((kind) => `"kind": "${kind}" — ${TOOL_KIND_TITLES[kind]}`).join(', ')
+  return [
+    `Если пользователь просит открыть ${list} на его машине,`,
+    'добавь в самом конце ответа блок с JSON:',
+    '```tool',
+    `{"kind":"${allowed[0]}"}`,
+    '```',
+    `${legend}. Можно указать`,
+    '"agentId" конкретной машины. Не описывай этот блок словами; если открывать',
+    'ничего не нужно — не добавляй блок.'
+  ].join('\n')
+}
+
+/** Порядок видов в подсказке; названия — как их произносит пользователь. */
+export const TOOL_KINDS: readonly ToolSpec['kind'][] = ['console', 'explorer']
+const TOOL_KIND_TITLES: Record<ToolSpec['kind'], string> = { console: 'терминал', explorer: 'файловый проводник' }
+
+/** Инструкция модели о формате открытия утилиты (оба вида; добавляется к промпту). */
+export const TOOL_HINT = toolHint(TOOL_KINDS)
 
 /** Дописывает к промпту инструкцию про tool-блок (пустой промпт не трогает). */
 export function appendToolHint(prompt: string): string {

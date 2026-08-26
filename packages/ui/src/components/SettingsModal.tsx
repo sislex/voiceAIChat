@@ -18,6 +18,7 @@ import type { LoginStatusMap } from '@shared/auth'
 import type { LlmEngineOption } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
+import { CHAT_INSTRUCTIONS, isChatInstructionEnabled } from '@shared/chatInstructions'
 import { LlmSettingsEditor } from './LlmSettingsEditor'
 
 export interface MicOption {
@@ -33,7 +34,7 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'storage' | 'ui'
+type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'instructions' | 'storage' | 'ui'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'llm', label: 'LLM' },
   { id: 'aiAssist', label: 'AI-помощник' },
@@ -41,6 +42,7 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'stt', label: 'Распознавание' },
   { id: 'tts', label: 'Озвучка' },
   { id: 'dialog', label: 'Голосовой диалог' },
+  { id: 'instructions', label: 'Инструкции' },
   { id: 'storage', label: 'Хранилище' },
   { id: 'ui', label: 'Интерфейс' }
 ]
@@ -544,6 +546,36 @@ export function SettingsModal({
                     aria-label="Перебивание голосом" title="Перебивание голосом"
                   />
                 </div>
+              </>
+            )}
+
+            {section === 'instructions' && (
+              <>
+                <p className="fsub">
+                  Служебные подсказки, которые модель получает с каждым сообщением. Снятая галочка — модель не знает,
+                  как выполнить такую просьбу: например, без «Открывать терминал» на «открой консоль» она ответит текстом.
+                </p>
+                <ul className="instr-list" aria-label="Инструкции чата">
+                  {CHAT_INSTRUCTIONS.map((item) => {
+                    const enabled = isChatInstructionEnabled(settings.chatInstructions, item.id)
+                    return (
+                      <li className="instr-item" key={item.id}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={enabled}
+                            aria-label={item.title}
+                            onChange={(e) => onChange({ chatInstructions: { ...settings.chatInstructions, [item.id]: e.target.checked } })}
+                          />
+                          <span>
+                            <p className="flab">{item.title}</p>
+                            <p className="fsub">{item.description}</p>
+                          </span>
+                        </label>
+                      </li>
+                    )
+                  })}
+                </ul>
               </>
             )}
 

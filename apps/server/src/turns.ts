@@ -8,11 +8,8 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import {
-  appendImageHint,
-  appendChangeAuthorizationHint,
+  appendChatInstructionHints,
   parseTaskLaunchRequest,
-  appendQuestionsHint,
-  appendToolHint,
   buildConversationPrompt,
   buildPrompt,
   clampModel,
@@ -575,7 +572,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       personalization.birthYear ? `Возраст пользователя: ${Math.max(0, new Date().getUTCFullYear() - personalization.birthYear - ((personalization.birthMonth ?? 1) > new Date().getUTCMonth() + 1 || ((personalization.birthMonth ?? 1) === new Date().getUTCMonth() + 1 && (personalization.birthDay ?? 1) > new Date().getUTCDate()) ? 1 : 0))} лет; адаптируй сложность только когда это уместно.` : ''
     ].filter(Boolean)
     if (personalizationLines.length && !disabledContext.has('personalization')) basePrompt = `${basePrompt}\n\n## Персонализация пользователя\n${personalizationLines.join('\n')}\nЭти предпочтения уступают явной инструкции текущего сообщения и настройкам разговора/проекта.`
-    const prompt = appendChangeAuthorizationHint(appendImageHint(appendToolHint(appendQuestionsHint(basePrompt))))
+    // Служебные подсказки (терминал/проводник, вопросы, картинки, task-launch) —
+    // только те, что пользователь не выключил в настройках «Инструкции».
+    const prompt = appendChatInstructionHints(basePrompt, settings.chatInstructions)
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
     const machine = deps.db.resolveConversationMachine(userId, conversationId, {

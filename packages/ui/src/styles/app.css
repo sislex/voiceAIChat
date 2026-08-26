@@ -2095,6 +2095,11 @@
 }
 
 /* ---- Экран входа (многопользовательский режим web) ---- */
+/* Настройки → «Инструкции»: чекбокс + заголовок/описание в одну строку. */
+.instr-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.instr-item label { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.instr-item input[type='checkbox'] { margin-top: 3px; flex: 0 0 auto; }
+.instr-item .flab, .instr-item .fsub { margin: 0; }
 /* Проверка сохранённой сессии при старте: тот же фон, что у экрана входа, чтобы
    переход в форму или в приложение не мигал. */
 .auth-loading { align-items: center; justify-content: center; }

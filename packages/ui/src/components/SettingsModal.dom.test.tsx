@@ -35,6 +35,21 @@ function renderModal(role: UserRole, overrides: Partial<SettingsModalProps> = {}
   render(<SettingsModal {...props} />)
 }
 
+describe('SettingsModal · Инструкции', () => {
+  it('показывает чекбоксы всех инструкций чата и отправляет патч при снятии галочки', async () => {
+    const onChange = vi.fn()
+    renderModal('admin', { onChange })
+    await userEvent.click(screen.getByRole('button', { name: 'Инструкции' }))
+    const list = screen.getByRole('list', { name: 'Инструкции чата' })
+    expect(within(list).getAllByRole('checkbox')).toHaveLength(5)
+    const console = within(list).getByRole('checkbox', { name: 'Открывать терминал в чате' })
+    expect(console).toBeChecked()
+    await userEvent.click(console)
+    expect(onChange).toHaveBeenCalledWith({ chatInstructions: expect.objectContaining({ console: false, explorer: true }) })
+    await expectNoViolations()
+  })
+})
+
 describe('PersonalizationPage', () => {
   it('валидирует полные даты и допускает частичные', () => {
     expect(isValidPersonalizationDate({ ...DEFAULT_SETTINGS.personalization, birthDay: 31, birthMonth: 2 })).toBe(false)

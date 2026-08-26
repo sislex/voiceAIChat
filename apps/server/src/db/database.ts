@@ -2117,7 +2117,7 @@ export class VoiceChatDb {
       const generatedFilesTtlDays = Number.isInteger(parsed.generatedFilesTtlDays) && parsed.generatedFilesTtlDays! >= 1 && parsed.generatedFilesTtlDays! <= 3650
         ? parsed.generatedFilesTtlDays!
         : DEFAULT_SETTINGS.generatedFilesTtlDays
-      return { ...DEFAULT_SETTINGS, ...parsed, generatedFilesTtlDays, personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization } }
+      return { ...DEFAULT_SETTINGS, ...parsed, generatedFilesTtlDays, personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization }, chatInstructions: { ...DEFAULT_SETTINGS.chatInstructions, ...parsed.chatInstructions } }
     } catch {
       return { ...DEFAULT_SETTINGS }
     }

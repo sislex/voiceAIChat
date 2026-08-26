@@ -690,6 +690,16 @@ export const DEFAULT_PERSONALIZATION: UserPersonalization = {
 }
 
 /** Пользовательские настройки приложения. */
+/** Идентификаторы служебных инструкций чата; каталог и сборка подсказок — `chatInstructions.ts`. */
+export const CHAT_INSTRUCTION_IDS = ['console', 'explorer', 'questions', 'image', 'taskLaunch'] as const
+export type ChatInstructionId = (typeof CHAT_INSTRUCTION_IDS)[number]
+/** Включённость инструкций; отсутствующий ключ трактуется как включённый. */
+export type ChatInstructionSettings = Partial<Record<ChatInstructionId, boolean>>
+/** Все инструкции включены — значение по умолчанию и поведение до появления настройки. */
+export const DEFAULT_CHAT_INSTRUCTIONS: Record<ChatInstructionId, boolean> = {
+  console: true, explorer: true, questions: true, image: true, taskLaunch: true
+}
+
 export interface Settings {
   model: ClaudeModel
   whisperModel: WhisperModel
@@ -734,6 +744,8 @@ export interface Settings {
   generatedFilesTtlDays: number
   /** Централизованные предпочтения общения с моделью. */
   personalization: UserPersonalization
+  /** Какие служебные инструкции чата (терминал, вопросы, картинки…) получает модель. */
+  chatInstructions: ChatInstructionSettings
 }
 
 /** Поддерживаемые LLM-движки (CLI). */
@@ -829,8 +841,8 @@ export const DEFAULT_SETTINGS: Settings = {
   aiAssistModel: 'haiku',
   aiAssistPrompts: DEFAULT_AI_ASSIST_PROMPTS,
   generatedFilesTtlDays: 30,
-  personalization: DEFAULT_PERSONALIZATION
-
+  personalization: DEFAULT_PERSONALIZATION,
+  chatInstructions: { ...DEFAULT_CHAT_INSTRUCTIONS }
 }
 
 /** Один сегмент распознанной речи (speakerId=1 до диаризации). */
