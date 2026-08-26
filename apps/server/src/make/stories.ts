@@ -61,10 +61,14 @@ export function renderStoriesPage(file: string, story: string, indexHtml: string
       const args = { ...(meta.args ?? {}), ...(story.args ?? {}) };
       const render = story.render ?? meta.render;
       const component = story.component ?? meta.component;
-      const element = render ? render(args) : component ? React.createElement(component, args) : null;
-      if (!element) throw new Error('У стори «' + name + '» нет component или render');
-      createRoot(document.getElementById('root')).render(element);
-      window.parent.postMessage({ type: 'vc-make.story', file: ${JSON.stringify(file)}, story: name, stories: names }, '*');
+      if (!render && !component) throw new Error('У стори «' + name + '» нет component или render');
+      const root = createRoot(document.getElementById('root'));
+      // Панель controls родителя присылает переопределения args; функции в args сериализовать нельзя — отдаём метку.
+      const draw = (overrides) => { const merged = { ...args, ...overrides }; root.render(render ? render(merged) : React.createElement(component, merged)); };
+      draw({});
+      const serializable = Object.fromEntries(Object.entries(args).map(([k, v]) => [k, typeof v === 'function' ? '[function]' : (v !== null && typeof v === 'object' && !Array.isArray(v) && v.$$typeof) ? '[element]' : v]));
+      window.addEventListener('message', (e) => { const d = e.data; if (d && d.type === 'vc-make.args') { try { draw(d.args || {}); } catch (error) { fail(String(error && error.message || error)); } } });
+      window.parent.postMessage({ type: 'vc-make.story', file: ${JSON.stringify(file)}, story: name, stories: names, args: serializable }, '*');
     } catch (error) { fail(String(error && error.message || error)); }
   </script>
 </body>

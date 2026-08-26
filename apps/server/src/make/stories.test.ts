@@ -18,5 +18,6 @@ describe('make stories', () => {
     expect(page).toContain('"./src/A.stories.jsx"')
     expect(page).toContain('"Primary"')
     expect(page).toContain('vc-make.story')
+    expect(page).toContain('vc-make.args')
   })
 })

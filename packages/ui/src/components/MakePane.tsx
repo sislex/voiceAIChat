@@ -89,6 +89,31 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   // Сториз: список файлов *.stories.* и выбранная стори; раннер — отдельная страница превью.
   const [storyFiles, setStoryFiles] = useState<MakeStoryFile[] | null>(null)
   const [story, setStory] = useState<{ file: string; name: string } | null>(null)
+  // Controls: args, которые раннер разрешил для стори, и переопределения из панели (в файл не пишутся).
+  const [storyArgs, setStoryArgs] = useState<Record<string, unknown> | null>(null)
+  const [argOverrides, setArgOverrides] = useState<Record<string, unknown>>({})
+  const storyFrameRef = useRef<HTMLIFrameElement | null>(null)
+  useEffect(() => {
+    const onMessage = (e: MessageEvent): void => {
+      const d = e.data as { type?: string; args?: Record<string, unknown> } | null
+      if (d?.type === 'vc-make.story' && e.source === storyFrameRef.current?.contentWindow) { setStoryArgs(d.args ?? {}); setArgOverrides({}) }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+  const setArg = (key: string, value: unknown): void => {
+    const next = { ...argOverrides, [key]: value }
+    setArgOverrides(next)
+    storyFrameRef.current?.contentWindow?.postMessage({ type: 'vc-make.args', args: next }, '*')
+  }
+  const resetArgs = (): void => {
+    setArgOverrides({})
+    storyFrameRef.current?.contentWindow?.postMessage({ type: 'vc-make.args', args: {} }, '*')
+  }
+  const sendArgsToChat = (): void => {
+    if (!story || !onInsertToChat || Object.keys(argOverrides).length === 0) return
+    onInsertToChat(`В стори «${story.name}» (${story.file}) сделай args по умолчанию такими: ${JSON.stringify(argOverrides)}. `)
+  }
   const [checking, setChecking] = useState(false)
   const openAsk = (title: string, label: string, initial: string, submit: string, onSubmit: (value: string) => void): void => { setAskValue(initial); setAsk({ title, label, initial, submit, onSubmit }) }
   const frameRef = useRef<HTMLIFrameElement | null>(null)
@@ -595,6 +620,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
           <div className="make-story-host">
             {story && previewReady ? (
               <iframe
+                ref={storyFrameRef}
                 key={`${story.file}:${story.name}:${previewRev}`}
                 className="make-story-frame"
                 title={`Стори ${story.name}`}
@@ -604,6 +630,37 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
             ) : storyFiles && storyFiles.length > 0 ? (
               <EmptyState title="Выберите стори" description="Слева — компоненты проекта и их состояния." />
             ) : null}
+            {story && storyArgs && (
+              <section className="make-controls" aria-label="Controls: args стори" data-testid="make-controls">
+                <div className="make-controls-head">
+                  <strong>Controls</strong>
+                  <span className="make-controls-actions">
+                    {Object.keys(argOverrides).length > 0 && <Button size="sm" variant="ghost" onClick={resetArgs}>Сбросить</Button>}
+                    {onInsertToChat && Object.keys(argOverrides).length > 0 && <Button size="sm" variant="secondary" onClick={sendArgsToChat}>Сохранить через ассистента</Button>}
+                  </span>
+                </div>
+                {Object.keys(storyArgs).length === 0 ? (
+                  <p className="make-controls-empty">У стори нет args — добавьте их в default-экспорт или в саму стори.</p>
+                ) : (
+                  <div className="make-controls-grid">
+                    {Object.entries(storyArgs).map(([key, base]) => {
+                      const value = key in argOverrides ? argOverrides[key] : base
+                      const id = `make-arg-${key}`
+                      if (typeof base === 'boolean') {
+                        return <label key={key} className="make-control" htmlFor={id}><span>{key}</span><input id={id} type="checkbox" checked={Boolean(value)} onChange={(e) => setArg(key, e.target.checked)} /></label>
+                      }
+                      if (typeof base === 'number') {
+                        return <label key={key} className="make-control" htmlFor={id}><span>{key}</span><input id={id} type="number" value={Number(value)} onChange={(e) => setArg(key, Number(e.target.value))} /></label>
+                      }
+                      if (typeof base === 'string' && !/^\[(function|element)\]$/.test(base)) {
+                        return <label key={key} className="make-control" htmlFor={id}><span>{key}</span><input id={id} type="text" value={String(value)} onChange={(e) => setArg(key, e.target.value)} /></label>
+                      }
+                      return <div key={key} className="make-control make-control--ro"><span>{key}</span><code>{typeof base === 'string' ? base : JSON.stringify(base)}</code></div>
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
           </div>
         </div>
       )}
