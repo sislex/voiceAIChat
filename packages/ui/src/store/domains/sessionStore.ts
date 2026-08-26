@@ -14,7 +14,8 @@ export interface SessionState {
   currentUser: SessionUser | null
   /** Ошибка последнего логина (для формы). */
   authError: string | null
-  /** Идёт ли проверка сохранённой сессии (`/me`). */
+  /** Идёт ли проверка сохранённой сессии (`/me`). В web стартует как true: до
+   *  ответа `/me` нельзя показывать форму логина — она мигнёт у уже вошедшего. */
   checking: boolean
 }
 
@@ -46,7 +47,7 @@ export interface SessionDeps {
 }
 
 function initialState(authRequired: boolean): SessionState {
-  return { authRequired, currentUser: null, authError: null, checking: false }
+  return { authRequired, currentUser: null, authError: null, checking: authRequired }
 }
 
 export function createSessionStore(deps: SessionDeps = {}): SessionStore {
@@ -76,7 +77,7 @@ export function createSessionStore(deps: SessionDeps = {}): SessionStore {
         // Без клиента сессии (desktop) вход не нужен: полный доступ.
         if (!client) {
           const user: SessionUser = { name: '', role: 'admin' }
-          setState({ authRequired: false, currentUser: user })
+          setState({ authRequired: false, checking: false, currentUser: user })
           emit({ type: 'session.authenticated', user })
           return user
         }
@@ -103,12 +104,12 @@ export function createSessionStore(deps: SessionDeps = {}): SessionStore {
       async logout() {
         await client?.logout()
         if (core.disposed()) return
-        core.resetState(initialState(!!client))
+        core.resetState({ ...initialState(!!client), checking: false })
         emit({ type: 'session.signedOut' })
       },
       expire() {
         if (!getState().currentUser) return
-        core.resetState(initialState(!!client))
+        core.resetState({ ...initialState(!!client), checking: false })
         emit({ type: 'session.expired' })
       },
       onEvent(listener) {

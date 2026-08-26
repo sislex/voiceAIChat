@@ -91,6 +91,30 @@ describe('sessionStore', () => {
     expect(events).toEqual(['session.authenticated'])
   })
 
+  it('в web checking=true до ответа /me, после logout/expire форма показывается сразу', async () => {
+    let resolveMe: (u: SessionUser | null) => void = () => {}
+    const session = {
+      me: vi.fn(() => new Promise<SessionUser | null>((r) => { resolveMe = r })),
+      login: vi.fn(async () => user),
+      logout: vi.fn(async () => {})
+    }
+    const store = createSessionStore({ session: session as never })
+    // До вызова check() и во время него — проверка идёт, форму логина показывать рано.
+    expect(store.getState()).toMatchObject({ authRequired: true, checking: true, currentUser: null })
+    const pending = store.actions.check()
+    expect(store.getState().checking).toBe(true)
+    resolveMe(user)
+    await pending
+    expect(store.getState()).toMatchObject({ checking: false, currentUser: user })
+
+    await store.actions.logout()
+    expect(store.getState()).toMatchObject({ checking: false, currentUser: null, authRequired: true })
+
+    await store.actions.login('ann', 'x')
+    store.actions.expire()
+    expect(store.getState()).toMatchObject({ checking: false, currentUser: null })
+  })
+
   it('успех, ошибка входа и выход публикуют события домена', async () => {
     const session = {
       me: vi.fn(async () => null),

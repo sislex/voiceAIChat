@@ -2095,6 +2095,11 @@
 }
 
 /* ---- Экран входа (многопользовательский режим web) ---- */
+/* Проверка сохранённой сессии при старте: тот же фон, что у экрана входа, чтобы
+   переход в форму или в приложение не мигал. */
+.auth-loading { align-items: center; justify-content: center; }
+.auth-loading__spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: auth-spin 0.8s linear infinite; }
+@keyframes auth-spin { to { transform: rotate(360deg); } }
 .login-screen {
   position: fixed;
   inset: 0;
