@@ -3,7 +3,7 @@ import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@v
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import { REST } from '@shared/protocol'
 import { highlightCode } from '../lib/codeHighlight'
-import { MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile } from '@shared/make'
+import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -92,11 +92,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   // Controls: args, которые раннер разрешил для стори, и переопределения из панели (в файл не пишутся).
   const [storyArgs, setStoryArgs] = useState<Record<string, unknown> | null>(null)
   const [argOverrides, setArgOverrides] = useState<Record<string, unknown>>({})
+  const [argOptions, setArgOptions] = useState<Record<string, string[]>>({})
+  const [ideasOpen, setIdeasOpen] = useState(false)
   const storyFrameRef = useRef<HTMLIFrameElement | null>(null)
   useEffect(() => {
     const onMessage = (e: MessageEvent): void => {
-      const d = e.data as { type?: string; args?: Record<string, unknown> } | null
-      if (d?.type === 'vc-make.story' && e.source === storyFrameRef.current?.contentWindow) { setStoryArgs(d.args ?? {}); setArgOverrides({}) }
+      const d = e.data as { type?: string; args?: Record<string, unknown>; options?: Record<string, string[]> } | null
+      if (d?.type === 'vc-make.story' && e.source === storyFrameRef.current?.contentWindow) { setStoryArgs(d.args ?? {}); setArgOptions(d.options ?? {}); setArgOverrides({}) }
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -418,6 +420,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   }
 
   const groups = useMemo(() => groupFiles(state?.files ?? []), [state])
+  // «Свежий» проект — только файлы заготовки без правок: показываем стартовые идеи, как главная Figma Make.
+  const isFresh = useMemo(() => {
+    const files = state?.files
+    if (!files || files.length === 0) return false
+    const enc = new TextEncoder()
+    return files.every((f) => f.path in MAKE_SCAFFOLD && f.size === enc.encode(MAKE_SCAFFOLD[f.path]!).length)
+  }, [state])
+  const useStarter = (prompt: string): void => { onInsertToChat?.(prompt); setIdeasOpen(false) }
   const frameWidth = DEVICE_WIDTH[device]
   const previewSrc = `${base}index.html?rev=${previewRev}`
 
@@ -456,6 +466,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
       )}
       {mode === 'history' && <Button size="sm" variant="secondary" onClick={takeSnapshot}>+ Снимок</Button>}
       {mode === 'stories' && story && onInsertToChat && <Button size="sm" variant="primary" onClick={sendStoryToChat}>Работать над компонентом</Button>}
+      {onInsertToChat && <IconButton size="sm" aria-label="Идеи для старта" title="Идеи: готовые промпты для приложений и сайтов" onClick={() => setIdeasOpen(true)}>✦</IconButton>}
       <IconButton size="sm" aria-label="Шаблоны проекта" title="Начать с шаблона" onClick={() => setTemplatesOpen(true)}>▤</IconButton>
       <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>
       <IconButton size="sm" aria-label="Скачать проект (ZIP)" title="Скачать проект (ZIP)" onClick={() => window.open(REST.makeExport(conversationId), '_blank', 'noopener')}>⇩</IconButton>
@@ -479,6 +490,22 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
                 <IconButton size="sm" aria-label="Снять выбор" title="Снять выбор" onClick={() => setSelected(null)}>✕</IconButton>
               </span>
             </div>
+          )}
+          {isFresh && onInsertToChat && (
+            <section className="make-starters" aria-label="Идеи для старта" data-testid="make-starters">
+              <div className="make-starters-head">
+                <strong>С чего начать</strong>
+                <Button size="sm" variant="ghost" onClick={() => setIdeasOpen(true)}>Все идеи</Button>
+              </div>
+              <div className="make-starters-grid">
+                {MAKE_STARTER_PROMPTS.slice(0, 6).map((item) => (
+                  <button key={item.id} type="button" className="make-starter" onClick={() => useStarter(item.prompt)} title={item.prompt}>
+                    <span className="make-starter-title">{item.title}</span>
+                    <span className="make-starter-group">{MAKE_STARTER_GROUPS[item.group]}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
           <div className={`make-frame-host make-frame-host--${device}`}>
             {previewReady && <iframe
@@ -652,6 +679,18 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
                       if (typeof base === 'number') {
                         return <label key={key} className="make-control" htmlFor={id}><span>{key}</span><input id={id} type="number" value={Number(value)} onChange={(e) => setArg(key, Number(e.target.value))} /></label>
                       }
+                      if (typeof base === 'string' && argOptions[key] && argOptions[key]!.length >= 2) {
+                        const opts = argOptions[key]!
+                        const current = String(value)
+                        return (
+                          <label key={key} className="make-control" htmlFor={id}><span>{key}</span>
+                            <select id={id} value={current} onChange={(e) => setArg(key, e.target.value)}>
+                              {!opts.includes(current) && <option value={current}>{current}</option>}
+                              {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          </label>
+                        )
+                      }
                       if (typeof base === 'string' && !/^\[(function|element)\]$/.test(base)) {
                         return <label key={key} className="make-control" htmlFor={id}><span>{key}</span><input id={id} type="text" value={String(value)} onChange={(e) => setArg(key, e.target.value)} /></label>
                       }
@@ -688,6 +727,22 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
         </div>
       )}
 
+      {ideasOpen && (
+        <Dialog title="Идеи для старта" ariaLabel="Идеи для старта" size="md" onClose={() => setIdeasOpen(false)} testId="make-ideas">
+          <p className="make-ideas-lead">Готовые промпты в духе Figma Make: клик вставляет текст в композер, дальше можно отредактировать и отправить.</p>
+          {(Object.keys(MAKE_STARTER_GROUPS) as Array<keyof typeof MAKE_STARTER_GROUPS>).map((group) => (
+            <section key={group} className="make-ideas-group">
+              <h3>{MAKE_STARTER_GROUPS[group]}</h3>
+              {MAKE_STARTER_PROMPTS.filter((i) => i.group === group).map((item) => (
+                <button key={item.id} type="button" className="make-idea" onClick={() => useStarter(item.prompt)}>
+                  <strong>{item.title}</strong>
+                  <span>{item.prompt}</span>
+                </button>
+              ))}
+            </section>
+          ))}
+        </Dialog>
+      )}
       {publishOpen && (
         <Dialog title="Публикация проекта" ariaLabel="Публикация проекта" size="sm" onClose={() => setPublishOpen(false)} testId="make-publish">
           {state?.published ? (

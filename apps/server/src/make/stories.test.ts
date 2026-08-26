@@ -19,5 +19,6 @@ describe('make stories', () => {
     expect(page).toContain('"Primary"')
     expect(page).toContain('vc-make.story')
     expect(page).toContain('vc-make.args')
+    expect(page).toContain('enumOptions')
   })
 })
