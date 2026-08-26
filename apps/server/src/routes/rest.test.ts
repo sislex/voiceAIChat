@@ -534,6 +534,37 @@ describe('REST: conversations/messages/settings', () => {
     expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
   })
 
+  it('Make: REST проекта, превью через cookie-путь, публикация /p/<token>/ без авторизации, чужой проект — 404', async () => {
+    const conv = db.createConversation(U, 'Проект', 'make')
+    const state = (await inj({ method: 'GET', url: `/api/make/${conv.id}` })).json() as { files: Array<{ path: string }>; published: unknown }
+    expect(state.files.map((f) => f.path)).toContain('index.html')
+    expect(state.published).toBeNull()
+    // Превью без Bearer и без cookie — 401; с Bearer — отдаёт HTML с инспектором.
+    const noAuth = await app.inject({ method: 'GET', url: `/api/preview/make/${conv.id}/index.html` })
+    expect(noAuth.statusCode).toBe(401)
+    const withAuth = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/index.html` })
+    expect(withAuth.statusCode).toBe(200)
+    expect(withAuth.headers['content-type']).toMatch(/text\/html/)
+    expect(withAuth.body).toContain('data-vc-make-inspector')
+    // Публикация: ссылка открывается без авторизации и без инспектора; после снятия — 404.
+    const published = (await inj({ method: 'POST', url: `/api/make/${conv.id}/publish` })).json() as { published: { url: string } }
+    expect(published.published.url).toMatch(/^\/p\//)
+    const pub = await app.inject({ method: 'GET', url: `${published.published.url}index.html` })
+    expect(pub.statusCode).toBe(200)
+    expect(pub.body).not.toContain('data-vc-make-inspector')
+    expect(pub.headers['x-robots-tag']).toBe('noindex')
+    await inj({ method: 'DELETE', url: `/api/make/${conv.id}/publish` })
+    expect((await app.inject({ method: 'GET', url: `${published.published.url}index.html` })).statusCode).toBe(404)
+    // Обычный (не make) разговор для маршрутов Make — 404.
+    const plain = db.createConversation(U, 'Чат')
+    expect((await inj({ method: 'GET', url: `/api/make/${plain.id}` })).statusCode).toBe(404)
+    // Проверка и шаблон.
+    const check = (await inj({ method: 'GET', url: `/api/make/${conv.id}/check` })).json() as { issues: unknown[] }
+    expect(check.issues).toEqual([])
+    const templated = (await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'landing' } })).json() as { snapshots: Array<{ label: string }> }
+    expect(templated.snapshots[0]?.label).toContain('Лендинг')
+  })
+
   it('POST /messages для ответа без engine/execTarget подставляет эффективные движок и машину разговора', async () => {
     const conv = db.createConversation(U, 'Диагностика')
     db.saveSettings(U, { ...db.getSettings(U), llmProvider: 'codex' })

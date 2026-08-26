@@ -32,6 +32,23 @@ export interface MakeSnapshot {
   files: number
 }
 
+/** Публикация проекта: непубличная ссылка без авторизации (как «Publish» в Figma Make). */
+export interface MakePublication {
+  /** Случайный токен в URL — знание ссылки и есть доступ. */
+  token: string
+  publishedAt: number
+  /** Относительный URL страницы публикации (`/p/<token>/`). */
+  url: string
+}
+
+/** Замечание статической проверки проекта (битые ссылки, отсутствующие файлы…). */
+export interface MakeCheckIssue {
+  /** Файл, где найдено. */
+  path: string
+  kind: 'missing-file' | 'no-index' | 'external-script' | 'empty-file'
+  message: string
+}
+
 /** Состояние проекта для панели: список файлов, ревизии и счётчик изменений. */
 export interface MakeProjectState {
   conversationId: string
@@ -39,7 +56,12 @@ export interface MakeProjectState {
   snapshots: MakeSnapshot[]
   /** Монотонный номер изменения — UI перезагружает превью, когда он растёт. */
   rev: number
+  published: MakePublication | null
 }
+
+/** Публичный префикс публикаций: маршрут вне `/api/`, поэтому без Bearer/cookie. */
+export const MAKE_PUBLIC_PREFIX = '/p/'
+export const makePublicUrl = (token: string): string => `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(token)}/`
 
 export const MAKE_LIMITS = {
   /** Максимальный размер одного файла (байты). */
@@ -131,3 +153,123 @@ p { margin: 0; line-height: 1.5; color: #5b6170; }
 console.log('Make: проект загружен');
 `
 }
+
+/** Шаблон проекта: набор файлов, с которого удобно начинать вместо пустой заготовки. */
+export interface MakeTemplate {
+  id: string
+  title: string
+  description: string
+  files: Record<string, string>
+}
+
+const TEMPLATE_CSS_BASE = `:root { color-scheme: light; --bg: #f6f7f9; --fg: #1c1f26; --muted: #5b6170; --accent: #2f6df6; --card: #fff; --line: #e3e6ec; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); line-height: 1.5; }
+.container { width: min(1100px, 92vw); margin: 0 auto; }
+`
+
+export const MAKE_TEMPLATES: readonly MakeTemplate[] = [
+  { id: 'blank', title: 'Пустая страница', description: 'Стартовая заготовка: index.html, styles.css, app.js.', files: MAKE_SCAFFOLD },
+  {
+    id: 'landing',
+    title: 'Лендинг',
+    description: 'Шапка с меню, герой-блок, три карточки преимуществ, форма и подвал.',
+    files: {
+      'index.html': `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Продукт — лендинг</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar"><div class="container topbar__in"><a class="brand" href="#">Продукт</a><nav class="menu"><a href="#features">Возможности</a><a href="#pricing">Цены</a><a href="#contact">Контакты</a></nav></div></header>
+  <section class="hero"><div class="container"><h1>Заголовок, который продаёт</h1><p class="lead">Одно предложение о том, какую проблему решает продукт и для кого.</p><a class="btn" href="#contact">Попробовать бесплатно</a></div></section>
+  <section id="features" class="features container">
+    <article class="card"><h3>Быстро</h3><p>Короткое описание преимущества.</p></article>
+    <article class="card"><h3>Надёжно</h3><p>Короткое описание преимущества.</p></article>
+    <article class="card"><h3>Просто</h3><p>Короткое описание преимущества.</p></article>
+  </section>
+  <section id="contact" class="contact container"><h2>Оставьте заявку</h2><form class="form" id="lead-form"><input type="text" name="name" placeholder="Имя" required><input type="email" name="email" placeholder="Почта" required><button class="btn" type="submit">Отправить</button></form><p class="form__note" id="form-note" hidden>Спасибо! Мы свяжемся с вами.</p></section>
+  <footer class="footer"><div class="container">© Продукт, 2026</div></footer>
+  <script src="app.js"></script>
+</body>
+</html>
+`,
+      'styles.css': TEMPLATE_CSS_BASE + `.topbar { background: var(--card); border-bottom: 1px solid var(--line); }
+.topbar__in { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+.brand { font-weight: 800; text-decoration: none; color: var(--fg); }
+.menu a { margin-left: 20px; color: var(--muted); text-decoration: none; }
+.hero { padding: 80px 0; text-align: center; }
+.hero h1 { font-size: clamp(32px, 5vw, 52px); margin: 0 0 12px; }
+.lead { color: var(--muted); font-size: 18px; max-width: 560px; margin: 0 auto 24px; }
+.btn { display: inline-block; background: var(--accent); color: #fff; padding: 12px 22px; border-radius: 10px; text-decoration: none; border: 0; font: inherit; cursor: pointer; }
+.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; padding: 20px 0 60px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+.contact { padding: 40px 0 80px; text-align: center; }
+.form { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.form input { padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; font: inherit; min-width: 220px; }
+.footer { border-top: 1px solid var(--line); padding: 24px 0; color: var(--muted); text-align: center; }
+`,
+      'app.js': `document.getElementById('lead-form')?.addEventListener('submit', (event) => {
+  event.preventDefault();
+  event.currentTarget.hidden = true;
+  document.getElementById('form-note').hidden = false;
+});
+`
+    }
+  },
+  {
+    id: 'dashboard',
+    title: 'Дашборд',
+    description: 'Боковое меню, карточки метрик, таблица и простая диаграмма на SVG.',
+    files: {
+      'index.html': `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Дашборд</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="layout">
+  <aside class="side"><div class="brand">Панель</div><nav><a class="active" href="#">Обзор</a><a href="#">Заказы</a><a href="#">Клиенты</a><a href="#">Настройки</a></nav></aside>
+  <main class="main">
+    <h1>Обзор</h1>
+    <section class="kpis" id="kpis"></section>
+    <section class="panel"><h2>Продажи за неделю</h2><svg id="chart" viewBox="0 0 700 220" role="img" aria-label="Диаграмма продаж"></svg></section>
+    <section class="panel"><h2>Последние заказы</h2><table class="table"><thead><tr><th>№</th><th>Клиент</th><th>Сумма</th><th>Статус</th></tr></thead><tbody id="orders"></tbody></table></section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
+`,
+      'styles.css': TEMPLATE_CSS_BASE + `.layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+.side { background: #141821; color: #dfe4ee; padding: 20px 14px; }
+.side .brand { font-weight: 800; margin-bottom: 20px; }
+.side nav a { display: block; padding: 10px 12px; border-radius: 8px; color: inherit; text-decoration: none; }
+.side nav a.active, .side nav a:hover { background: rgba(255,255,255,.1); }
+.main { padding: 28px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.kpi b { display: block; font-size: 26px; }
+.kpi span { color: var(--muted); font-size: 13px; }
+.panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 20px; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+.status { padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #e8f3ff; color: #1f5fd0; }
+@media (max-width: 720px) { .layout { grid-template-columns: 1fr; } .side { display: flex; gap: 8px; align-items: center; } .side nav { display: flex; gap: 4px; } }
+`,
+      'app.js': `const kpis = [['Выручка', '1 240 000 ₽'], ['Заказы', '318'], ['Средний чек', '3 900 ₽'], ['Конверсия', '4.2%']];
+document.getElementById('kpis').innerHTML = kpis.map(([label, value]) => '<div class="kpi"><b>' + value + '</b><span>' + label + '</span></div>').join('');
+const sales = [42, 58, 51, 77, 69, 90, 84];
+const chart = document.getElementById('chart');
+const max = Math.max(...sales);
+chart.innerHTML = sales.map((v, i) => { const h = Math.round((v / max) * 170); const x = 30 + i * 95; return '<rect x="' + x + '" y="' + (200 - h) + '" width="60" height="' + h + '" rx="6" fill="#2f6df6"></rect><text x="' + (x + 30) + '" y="215" text-anchor="middle" font-size="12" fill="#5b6170">' + ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'][i] + '</text>'; }).join('');
+const orders = [[1041, 'Анна К.', '5 200 ₽', 'Оплачен'], [1040, 'ООО «Ромашка»', '48 000 ₽', 'В доставке'], [1039, 'Игорь П.', '1 350 ₽', 'Оплачен'], [1038, 'Мария С.', '2 990 ₽', 'Возврат']];
+document.getElementById('orders').innerHTML = orders.map((row) => '<tr><td>' + row[0] + '</td><td>' + row[1] + '</td><td>' + row[2] + '</td><td><span class="status">' + row[3] + '</span></td></tr>').join('');
+`
+    }
+  }
+]

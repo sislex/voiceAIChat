@@ -10,8 +10,8 @@ import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  MAKE_LIMITS, MAKE_SCAFFOLD, isMakeTextPath, normalizeMakePath,
-  type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakeSnapshot
+  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, makePublicUrl, normalizeMakePath,
+  type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot
 } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
@@ -25,9 +25,29 @@ export class MakeError extends Error {
 }
 
 const SNAPSHOTS_DIR = '.snapshots'
+/** Файл публикации проекта (в его корне) и индекс токен → разговор (общий каталог). */
+const PUBLISH_FILE = '.publish.json'
+const PUBLISHED_INDEX_DIR = '.published'
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/
 
 interface SnapshotMeta { id: string; createdAt: number; label: string; files: number }
+
+/**
+ * Путь файла проекта, на который указывает ссылка из файла в каталоге `dir`:
+ * `.`/`..` сворачиваются, абсолютный `/x` — от корня. null — ссылка выходит за
+ * корень проекта или битая; undefined — пустая после нормализации (не проверяем).
+ */
+function resolveRelativeRef(dir: string, value: string): string | null | undefined {
+  const raw = value.startsWith('/') ? value.slice(1) : dir ? `${dir}/${value}` : value
+  const out: string[] = []
+  for (const part of raw.split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..') { if (out.length === 0) return null; out.pop(); continue }
+    out.push(part)
+  }
+  if (out.length === 0) return undefined
+  return normalizeMakePath(out.join('/'))
+}
 
 export class MakeWorkspaces {
   private readonly revs = new Map<string, number>()
@@ -239,14 +259,114 @@ export class MakeWorkspaces {
   private async clearFiles(conversationId: string): Promise<void> {
     const root = this.dirOf(conversationId)
     for (const entry of await readdir(root)) {
-      if (entry === SNAPSHOTS_DIR) continue
+      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE) continue
       await rm(join(root, entry), { recursive: true, force: true })
     }
   }
 
   async state(conversationId: string): Promise<MakeProjectState> {
-    const [files, snapshots] = await Promise.all([this.list(conversationId), this.snapshots(conversationId)])
-    return { conversationId, files, snapshots, rev: this.rev(conversationId) }
+    const [files, snapshots, published] = await Promise.all([this.list(conversationId), this.snapshots(conversationId), this.publication(conversationId)])
+    return { conversationId, files, snapshots, rev: this.rev(conversationId), published }
+  }
+
+  // ---- Публикация: непубличная ссылка /p/<token>/ без авторизации -------------
+
+  async publication(conversationId: string): Promise<MakePublication | null> {
+    try {
+      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), PUBLISH_FILE), 'utf8')) as { token?: string; publishedAt?: number }
+      if (!raw.token || !ID_RE.test(raw.token)) return null
+      return { token: raw.token, publishedAt: raw.publishedAt ?? 0, url: makePublicUrl(raw.token) }
+    } catch {
+      return null
+    }
+  }
+
+  /** Публикует проект (повторный вызов возвращает ту же ссылку). */
+  async publish(conversationId: string): Promise<MakeProjectState> {
+    const existing = await this.publication(conversationId)
+    if (!existing) {
+      const token = randomUUID().replace(/-/g, '')
+      const indexDir = join(this.rootDir, 'make', PUBLISHED_INDEX_DIR)
+      await mkdir(indexDir, { recursive: true })
+      await writeFile(join(indexDir, `${token}.json`), JSON.stringify({ conversationId }), 'utf8')
+      await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify({ token, publishedAt: Date.now() }), 'utf8')
+    }
+    return this.state(conversationId)
+  }
+
+  async unpublish(conversationId: string): Promise<MakeProjectState> {
+    const existing = await this.publication(conversationId)
+    if (existing) {
+      await rm(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `${existing.token}.json`), { force: true })
+      await rm(join(this.dirOf(conversationId), PUBLISH_FILE), { force: true })
+    }
+    return this.state(conversationId)
+  }
+
+  /** Разговор, опубликованный под токеном; null — ссылка недействительна или снята. */
+  async publishedTarget(token: string): Promise<string | null> {
+    if (!ID_RE.test(token)) return null
+    try {
+      const raw = JSON.parse(await readFile(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `${token}.json`), 'utf8')) as { conversationId?: string }
+      if (!raw.conversationId) return null
+      // Индекс мог остаться от удалённого проекта — сверяем с файлом публикации.
+      const current = await this.publication(raw.conversationId)
+      return current?.token === token ? raw.conversationId : null
+    } catch {
+      return null
+    }
+  }
+
+  // ---- Статическая проверка проекта ----------------------------------------
+
+  /**
+   * Ищет типовые ошибки, из-за которых превью «молча» ломается: нет index.html,
+   * ссылки href/src на несуществующие файлы проекта, пустые файлы, внешние скрипты
+   * не по https. Не парсер HTML — регулярки по атрибутам, этого хватает для статики.
+   */
+  async check(conversationId: string): Promise<MakeCheckIssue[]> {
+    const files = await this.list(conversationId)
+    const paths = new Set(files.map((f) => f.path))
+    const issues: MakeCheckIssue[] = []
+    if (!paths.has('index.html')) issues.push({ path: 'index.html', kind: 'no-index', message: 'Нет index.html — превью открывать нечего' })
+    for (const file of files) {
+      if (file.size === 0) issues.push({ path: file.path, kind: 'empty-file', message: 'Файл пустой' })
+      if (!/\.(html?|css)$/i.test(file.path)) continue
+      const text = (await readFile(join(this.dirOf(conversationId), ...file.path.split('/')), 'utf8')).slice(0, 512 * 1024)
+      const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''
+      const refs = new Set<string>()
+      for (const m of text.matchAll(/(?:href|src)\s*=\s*["']([^"'#?]+)/gi)) refs.add(m[1]!)
+      for (const m of text.matchAll(/url\(\s*["']?([^"')]+?)["']?\s*\)/gi)) refs.add(m[1]!)
+      for (const ref of refs) {
+        const value = ref.trim()
+        // Якоря (#top) и ссылки на SVG-элементы (url(#shadow)) — не файлы.
+        if (!value || value.startsWith('#') || value.startsWith('data:') || value.startsWith('mailto:') || value.startsWith('tel:') || value.startsWith('javascript:') || value.startsWith('//')) continue
+        if (/^https?:/i.test(value)) {
+          if (/^http:/i.test(value) && /\.js$/i.test(value)) issues.push({ path: file.path, kind: 'external-script', message: `Внешний скрипт не по https: ${value}` })
+          continue
+        }
+        const target = resolveRelativeRef(dir, value)
+        if (target === undefined) continue // не файл проекта (например, «..» выше корня разрешается как отсутствующий)
+        if (target === null || !paths.has(target)) issues.push({ path: file.path, kind: 'missing-file', message: `Ссылка на отсутствующий файл: ${value}` })
+      }
+    }
+    return issues
+  }
+
+  /** Заменяет файлы проекта шаблоном (текущее состояние — в снимок). */
+  async applyTemplate(conversationId: string, templateId: string): Promise<MakeProjectState> {
+    const template = MAKE_TEMPLATES.find((t) => t.id === templateId)
+    if (!template) throw new MakeError('not_found', `Шаблон «${templateId}» не найден`)
+    await this.ensure(conversationId)
+    await this.snapshot(conversationId, `Перед шаблоном «${template.title}»`)
+    await this.clearFiles(conversationId)
+    for (const [path, content] of Object.entries(template.files)) {
+      const abs = join(this.dirOf(conversationId), ...path.split('/'))
+      await mkdir(dirname(abs), { recursive: true })
+      await writeFile(abs, content, 'utf8')
+    }
+    this.bump(conversationId)
+    return this.state(conversationId)
   }
 
   /** ZIP всех файлов проекта (без снимков) — «Скачать код». */

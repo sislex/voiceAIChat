@@ -80,4 +80,28 @@ describe('MakePane', () => {
     await userEvent.click(screen.getByRole('button', { name: 'В чат' }))
     expect(onInsertToChat).toHaveBeenCalledWith(expect.stringContaining('main > h1'))
   })
+
+  it('публикация: ссылка появляется в диалоге, снятие требует подтверждения', async () => {
+    renderPane()
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }))
+    await userEvent.click(within(screen.getByTestId('make-publish')).getByRole('button', { name: 'Опубликовать' }))
+    expect((await screen.findByTestId('make-public-url')).textContent).toContain('/p/tok123/')
+    await userEvent.click(screen.getByRole('button', { name: 'Снять с публикации' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Снять' }))
+    await waitFor(() => expect(screen.queryByTestId('make-public-url')).not.toBeInTheDocument())
+  })
+
+  it('проверка проекта показывает результат; шаблон применяется после подтверждения', async () => {
+    const { api } = renderPane()
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить' }))
+    expect(await screen.findByTestId('make-issues')).toHaveTextContent('Проверка пройдена')
+    await userEvent.click(screen.getByRole('button', { name: 'Шаблоны проекта' }))
+    await userEvent.click(within(screen.getByTestId('make-templates')).getAllByRole('button', { name: 'Применить' })[1]!)
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Применить' }).length).toBeGreaterThan(3))
+    await userEvent.click(screen.getAllByRole('button', { name: 'Применить' }).at(-1)!)
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toBe('<h1>landing</h1>'))
+  })
 })

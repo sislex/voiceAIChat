@@ -82,6 +82,8 @@ import { isWebReaderDiagnosticsCommand, runWebReaderDiagnostics } from './webRea
 import { isChatDiagnosticsCommand, runChatDiagnostics } from './chatDiagnostics'
 import { isPlaywrightReaderDiagnosticsCommand, runPlaywrightReaderDiagnostics } from './playwrightReaderDiagnostics'
 import { isConsoleReaderDiagnosticsCommand, runConsoleReaderDiagnostics } from './consoleReaderDiagnostics'
+import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
+import { REST as REST_PATHS } from '@shared/protocol'
 import { consolePtyId } from '@shared/types'
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
 
@@ -1045,6 +1047,45 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [chat.activeId, chatActions, inPlaywrightReader, toast])
   // Самодиагностика Консоли: проверяет живой разделяемый PTY — мост, машину и
   // round-trip команды в shell (маркер, который не совпадает с эхом ввода).
+  const startMakeDiagnostics = useCallback((): void => {
+    const conversationId = chat.activeId
+    if (!inMake || !conversationId || !window.api) {
+      toast.error('Самодиагностика доступна только в активном проекте Make.')
+      return
+    }
+    const api = window.api
+    diagnosticsControllerRef.current?.abort()
+    const controller = new AbortController()
+    diagnosticsControllerRef.current = controller
+    setConversationSettingsOpen(false)
+    void runMakeDiagnostics({
+      signal: controller.signal,
+      publish: (text) => chatActions.publishDiagnosticMessage(conversationId, text),
+      probes: {
+        state: async () => { const s = await api['make:state']({ conversationId }); return { files: s.files.length, snapshots: s.snapshots.length } },
+        previewStatus: async () => {
+          await window.session?.ensurePreview?.()
+          const res = await fetch(`${REST_PATHS.makePreview(conversationId)}index.html`, { credentials: 'include', cache: 'no-store' })
+          return res.status
+        },
+        writeReadDelete: async (path, content) => {
+          await api['make:write']({ conversationId, path, content })
+          const read = await api['make:read']({ conversationId, path })
+          await api['make:delete']({ conversationId, path })
+          return read.content
+        },
+        waitChanged: (path, timeoutMs) => new Promise<boolean>((resolve) => {
+          const bridge = window.make
+          if (!bridge) { resolve(false); return }
+          const timer = setTimeout(() => { off(); resolve(false) }, timeoutMs)
+          const off = bridge.onChanged((m) => { if (m.conversationId === conversationId && m.paths.includes(path)) { clearTimeout(timer); off(); resolve(true) } })
+        })
+      }
+    }).finally(() => {
+      if (diagnosticsControllerRef.current === controller) diagnosticsControllerRef.current = null
+    })
+  }, [chat.activeId, chatActions, inMake, toast])
+
   const startConsoleReaderDiagnostics = useCallback((): void => {
     const conversationId = chat.activeId
     if (!inConsoleReader || !conversationId) {
@@ -1627,6 +1668,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               if (inReader && isWebReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startWebReaderDiagnostics(); return }
               if (inPlaywrightReader && isPlaywrightReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startPlaywrightReaderDiagnostics(); return }
               if (inConsoleReader && isConsoleReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startConsoleReaderDiagnostics(); return }
+              if (inMake && isMakeDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startMakeDiagnostics(); return }
               if (isChatDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startChatDiagnostics(); return }
               void chatActions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) })
             }}
@@ -2003,6 +2045,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           webReaderDiagnostics={inReader ? { running: diagnosticsControllerRef.current !== null, onRun: startWebReaderDiagnostics } : undefined}
           playwrightReaderDiagnostics={inPlaywrightReader ? { running: diagnosticsControllerRef.current !== null, onRun: startPlaywrightReaderDiagnostics } : undefined}
           consoleReaderDiagnostics={inConsoleReader ? { running: diagnosticsControllerRef.current !== null, onRun: startConsoleReaderDiagnostics } : undefined}
+          makeDiagnostics={inMake ? { running: diagnosticsControllerRef.current !== null, onRun: startMakeDiagnostics } : undefined}
           chatDiagnostics={!inSplit ? { running: diagnosticsControllerRef.current !== null, onRun: startChatDiagnostics } : undefined}
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}

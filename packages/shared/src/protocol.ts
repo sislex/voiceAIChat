@@ -149,6 +149,9 @@ export const REST = {
   makeSnapshots: (id: string) => `/api/make/${encodeURIComponent(id)}/snapshots`,
   makeRestore: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/restore`,
   makeReset: (id: string) => `/api/make/${encodeURIComponent(id)}/reset`,
+  makePublish: (id: string) => `/api/make/${encodeURIComponent(id)}/publish`,
+  makeCheck: (id: string) => `/api/make/${encodeURIComponent(id)}/check`,
+  makeTemplate: (id: string) => `/api/make/${encodeURIComponent(id)}/template`,
   /** Превью и ZIP-экспорт живут под /api/preview/…: там действует preview-cookie для iframe и ссылок. */
   makePreview: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/`,
   makeExport: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/export.zip`,

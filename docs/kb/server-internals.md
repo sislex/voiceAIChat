@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-26
-checked: c4d5ae60
+checked: 472310fb
 areas:
   - apps/server/src
 ---
@@ -59,6 +59,12 @@ REST (`routes/make.ts`): `GET/PUT/DELETE /api/make/:id[/file]`, `/rename`, `/sna
 ZIP — собственный писатель без сжатия (`make/zip.ts`). События — `MakeHub` (`make/hub.ts`),
 сессия подписывается через `deps.make.subscribe` (как relay превью); владельца разговора для
 MCP даёт `db.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
+Публикация: `.publish.json` в папке проекта + индекс `make/.published/<token>.json` → маршрут
+`/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен).
+`check()` — статика: нет `index.html`, битые `href/src/url()` на файлы проекта (относительно файла,
+`..` учитывается через `resolveRelativeRef`; якоря `#id`, `data:`, `mailto:`, `//` пропускаются),
+пустые файлы, `http://`-скрипты. `applyTemplate(id)` заменяет файлы шаблоном `MAKE_TEMPLATES`
+со снимком «Перед шаблоном «…»».
 
 Текущий `/api/preview` нельзя считать файловым или artifact-preview сервером: это аутентифицированный same-origin прокси внешнего HTTP/HTTPS. Его SSRF-ограничения и механизм iframe описаны ниже; отдельному продукту понадобятся собственные storage, ревизии, builder и изолированный runtime, которых сейчас в сервере нет.
 

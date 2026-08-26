@@ -6493,3 +6493,16 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-ask { display: grid; gap: 10px; }
 .make-ask-field { display: grid; gap: 4px; font-size: 12px; color: var(--text-dim); }
 .make-ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.make-issues { display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; font-size: 12px; background: #eef7ee; border-bottom: 1px solid var(--border-soft); }
+.make-issues--bad { background: #fdf1ec; }
+.make-issues ul { margin: 0; padding-left: 16px; flex: 1 1 auto; display: grid; gap: 2px; }
+.make-issues > span { flex: 1 1 auto; }
+.make-issue-path { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 600; color: var(--accent); cursor: pointer; }
+.make-publish { display: grid; gap: 10px; }
+.make-publish-link { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.make-publish-link code { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.make-templates { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.make-template { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
+.make-template-meta { display: grid; gap: 2px; }
+.make-template-meta small { color: var(--text-dim); }
+.make-head .vc-btn--icon { color: var(--text); }

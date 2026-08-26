@@ -84,4 +84,16 @@ describe('makeMcp', () => {
     expect(ro.isError).toBe(true)
     expect(ro.text).toMatch(/План/)
   })
+
+  it('make_check сообщает о проблемах и об их отсутствии', async () => {
+    await setup()
+    await rpc(INIT)
+    await rpc(call('make_write_file', { path: 'index.html', content: '<script src="missing.js"></script>' }))
+    const bad = resultText((await rpc(call('make_check'))).json())
+    expect(bad.isError).toBe(true)
+    expect(bad.text).toContain('missing.js')
+    await rpc(call('make_write_file', { path: 'missing.js', content: '1' }))
+    const ok = resultText((await rpc(call('make_check'))).json())
+    expect(ok.isError).toBe(false)
+  })
 })

@@ -1,7 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeFileContent, MakeProjectState } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeProjectState } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -143,6 +143,10 @@ export interface IpcInvokeMap {
   'make:snapshot': { arg: { conversationId: string; label?: string }; result: MakeProjectState }
   'make:restore': { arg: { conversationId: string; snapshotId: string }; result: MakeProjectState }
   'make:reset': { arg: { conversationId: string }; result: MakeProjectState }
+  'make:publish': { arg: { conversationId: string }; result: MakeProjectState }
+  'make:unpublish': { arg: { conversationId: string }; result: MakeProjectState }
+  'make:check': { arg: { conversationId: string }; result: { issues: MakeCheckIssue[] } }
+  'make:template': { arg: { conversationId: string; templateId: string }; result: MakeProjectState }
   'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' }; result: Conversation }
   /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
   'conversations:createDraft': {
@@ -883,6 +887,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:snapshot',
   'make:restore',
   'make:reset',
+  'make:publish',
+  'make:unpublish',
+  'make:check',
+  'make:template',
   'conversations:create',
   'conversations:createDraft',
   'conversations:get',

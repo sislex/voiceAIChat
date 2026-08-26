@@ -6,7 +6,7 @@
 // разговор принадлежит пользователю; изменения рассылаются владельцу `make.changed`.
 
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { makeMimeType, normalizeMakePath } from '@voicechat/shared'
+import { MAKE_PUBLIC_PREFIX, makeMimeType, normalizeMakePath } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { MakeError, MakeWorkspaces } from '../make/workspace.js'
 import type { MakeHub } from '../make/hub.js'
@@ -136,6 +136,53 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       return state
     } catch (error) { return sendError(reply, error) }
   })
+
+  app.post<{ Params: { id: string } }>('/api/make/:id/publish', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id) } catch (error) { return sendError(reply, error) }
+  })
+
+  app.delete<{ Params: { id: string } }>('/api/make/:id/publish', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { return await workspaces.unpublish(req.params.id) } catch (error) { return sendError(reply, error) }
+  })
+
+  app.get<{ Params: { id: string } }>('/api/make/:id/check', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { await workspaces.ensure(req.params.id); return { issues: await workspaces.check(req.params.id) } } catch (error) { return sendError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { templateId?: string } }>('/api/make/:id/template', async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    if (typeof req.body?.templateId !== 'string') return reply.code(400).send({ error: 'templateId обязателен' })
+    try {
+      const state = await workspaces.applyTemplate(req.params.id, req.body.templateId)
+      hub.changed(userId, req.params.id, state.rev, state.files.map((f) => f.path))
+      return state
+    } catch (error) { return sendError(reply, error) }
+  })
+
+  // ---- Публикация: /p/<token>/… — вне /api, без авторизации; знание ссылки = доступ ----
+
+  app.get<{ Params: { token: string; '*': string } }>(`${MAKE_PUBLIC_PREFIX}:token/*`, async (req, reply) => {
+    const conversationId = await workspaces.publishedTarget(req.params.token)
+    if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
+    const raw = req.params['*'] || 'index.html'
+    const path = raw.endsWith('/') ? `${raw}index.html` : raw
+    let file
+    try { file = await workspaces.readBuffer(conversationId, path) } catch { file = null }
+    if (!file) return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
+    return reply
+      .header('content-type', makeMimeType(file.path))
+      .header('cache-control', 'no-store')
+      .header('x-content-type-options', 'nosniff')
+      .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:")
+      .header('x-robots-tag', 'noindex')
+      .send(file.data)
+  })
+  app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
+  app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token/`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
 
   // ---- Превью и экспорт (cookie-аутентификация, см. users/auth.ts) ----------
 

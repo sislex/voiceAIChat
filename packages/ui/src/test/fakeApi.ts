@@ -31,6 +31,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const makeStore = new Map<string, Map<string, string>>()
   const makeSnapStore = new Map<string, Array<{ id: string; createdAt: number; label: string; files: number }>>()
   const makeRev = new Map<string, number>()
+  const makePub = new Map<string, { token: string; publishedAt: number; url: string }>()
   const makeFiles = (id: string): Map<string, string> => {
     let files = makeStore.get(id)
     if (!files) { files = new Map([['index.html', '<h1>Новый проект</h1>'], ['styles.css', 'body{}'], ['app.js', '']]); makeStore.set(id, files) }
@@ -45,7 +46,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     conversationId: id,
     files: [...makeFiles(id).entries()].map(([path, content]) => ({ path, size: content.length, updatedAt: 1 })).sort((x, y) => x.path.localeCompare(y.path)),
     snapshots: [...makeSnaps(id)],
-    rev: makeRev.get(id) ?? 0
+    rev: makeRev.get(id) ?? 0,
+    published: makePub.get(id) ?? null
   })
 
   let idCounter = 0
@@ -236,6 +238,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:rename': async ({ conversationId, from, to }) => { const files = makeFiles(conversationId); const c = files.get(from) ?? ''; files.delete(from); files.set(to, c); return makeState(conversationId) },
     'make:snapshot': async ({ conversationId, label }) => { makeSnaps(conversationId).unshift({ id: `s${Date.now()}`, createdAt: Date.now(), label: label ?? 'Снимок', files: makeFiles(conversationId).size }); return makeState(conversationId) },
     'make:restore': async ({ conversationId }) => makeState(conversationId),
+    'make:publish': async ({ conversationId }) => { makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/' }); return makeState(conversationId) },
+    'make:unpublish': async ({ conversationId }) => { makePub.delete(conversationId); return makeState(conversationId) },
+    'make:check': async ({ conversationId }) => ({ issues: makeFiles(conversationId).has('index.html') ? [] : [{ path: 'index.html', kind: 'no-index' as const, message: 'Нет index.html' }] }),
+    'make:template': async ({ conversationId, templateId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', `<h1>${templateId}</h1>`); return makeState(conversationId) },
     'make:reset': async ({ conversationId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', '<h1>Новый проект</h1>'); return makeState(conversationId) },
     'conversations:create': async ({ title, assistantKind } = {}) => {
       const conv = { ...makeConversation(title ?? 'Новый разговор'), ...(assistantKind ? { assistantKind } : {}) }
