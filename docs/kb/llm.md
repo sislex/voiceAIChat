@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-26
-checked: 472310fb
+checked: a6eea46e
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -249,8 +249,11 @@ Usage нормализуется в `TurnUsage` и рассылается как
 
 У разговора `assistantKind: 'make'` ход получает `makeMcpUrl` (`turns.ts`: база `MAKE_MCP_PATH`
 + `conv` + `turn`; в режиме «План» — `&ro=1`). Раннеры подключают MCP-сервер `make`
-(`claudeCli.ts`: allow-list `mcp__make__make_list_files|read_file|write_file|delete_file|rename_file`
-+ системный хинт; `codexCli.ts`: `mcp_servers.make.url` + хинт в промпт). Хинт: проект — статический
+(`claudeCli.ts`: allow-list `mcp__make__make_list_files|read_file|write_file|delete_file|rename_file|check`
++ системный хинт; `codexCli.ts`: `mcp_servers.make.url` + хинт в промпт). Текст хинта один —
+`MAKE_ASSISTANT_HINT` в `@voicechat/shared/llm` (Codex без фразы «отвечай на языке пользователя»
+отвечал по-английски; хинт также велит вызывать `make_check` после правок и использовать загруженные
+пользователем файлы из `img/`). Хинт: проект — статический
 сайт без сборки, `index.html` — точка входа, писать файлы целиком через `make_write_file`, превью
 обновится само, полный код в ответ не вставлять. Из инструкций чата для Make сервер убирает
 `taskLaunch` (правка проекта — и есть задача, спрашивать «завести задачу» бессмысленно) и `console`.

@@ -9,7 +9,8 @@ import {
   kbToolHint,
   parseStreamJsonActivity,
   parseStreamJsonLine,
-  previewToolHint
+  previewToolHint,
+  MAKE_ASSISTANT_HINT
 } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '@voicechat/shared'
 import { cliProfileEnv } from './cliProfiles.js'
@@ -176,10 +177,8 @@ export function claudeArgs(req: LlmRequest): string[] {
   if (req.makeMcpUrl) {
     // Make: инструменты читают и пишут файлы проекта разговора, превью которого открыто справа.
     mcpServers.make = { type: 'http', url: req.makeMcpUrl }
-    allowed.push('mcp__make__make_list_files', 'mcp__make__make_read_file', 'mcp__make__make_write_file', 'mcp__make__make_delete_file', 'mcp__make__make_rename_file')
-    systemHints.push(
-      'Инструмент «Make»: справа у пользователя открыт проект — статический сайт (index.html + css + js, без сборки и npm), его превью и редактор кода. Ты собираешь и меняешь этот проект ТОЛЬКО инструментами make_*: сначала make_list_files и make_read_file, затем make_write_file с ПОЛНЫМ содержимым файла (не diff). index.html — точка входа; стили и скрипты — отдельными файлами с относительными путями; картинки — inline SVG или data URI, внешние ресурсы — только по https. Делай интерфейс аккуратным и адаптивным, без внешних фреймворков, если пользователь не просил. После записи превью обновляется само — не проси пользователя обновлять страницу. В ответе коротко перечисли, какие файлы изменил и что теперь умеет проект; не вставляй в ответ полный код файлов. Если пользователь прислал выбранный элемент (селектор и HTML), меняй именно его. '
-    )
+    allowed.push('mcp__make__make_list_files', 'mcp__make__make_read_file', 'mcp__make__make_write_file', 'mcp__make__make_delete_file', 'mcp__make__make_rename_file', 'mcp__make__make_check')
+    systemHints.push(MAKE_ASSISTANT_HINT)
   }
   // Выключенные пользователем MCP-инструменты: запрещаем и убираем из allow-list.
   if (req.disallowedTools?.length) disallowed.push(...req.disallowedTools)
