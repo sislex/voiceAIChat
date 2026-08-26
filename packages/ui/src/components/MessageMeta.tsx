@@ -55,6 +55,10 @@ export interface MessageMetaProps {
   meta: TurnMeta
   /** id сообщения — для data-testid блока токенов и стоимости. */
   messageId?: string
+  /** Управляемое открытие позволяет вынести trigger в меню действий сообщения. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  hideTrigger?: boolean
   /** Открыть раздел базы знаний (чипсы «База знаний» ведут в #/kb/:documentId). */
   onOpenKbDocument?: (documentId: string, anchor: string) => void
 }
@@ -65,9 +69,14 @@ export interface MessageMetaProps {
  * панель «Что было отправлено модели». Отдельной иконки ℹ нет: один элемент
  * вместо двух, а цифры и так подсказывают, что за ними стоит подробность.
  */
-export function MessageMeta({ meta, messageId, onOpenKbDocument }: MessageMetaProps): JSX.Element {
+export function MessageMeta({ meta, messageId, open: controlledOpen, onOpenChange, hideTrigger = false, onOpenKbDocument }: MessageMetaProps): JSX.Element {
   const [hover, setHover] = useState(false)
-  const [open, setOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const open = controlledOpen ?? internalOpen
+  const setOpen = (next: boolean): void => {
+    if (controlledOpen === undefined) setInternalOpen(next)
+    onOpenChange?.(next)
+  }
   const req = meta.request
 
   // Задержка закрытия тултипа: пока курсор идёт от иконки к тултипу (через зазор),
@@ -99,7 +108,7 @@ export function MessageMeta({ meta, messageId, onOpenKbDocument }: MessageMetaPr
 
   return (
     <span className="metawrap" onMouseEnter={openTip} onMouseLeave={scheduleClose}>
-      <button
+      {!hideTrigger && <button
         type="button"
         className="msgact-count msgact-tokens"
         aria-label="Сведения об ответе"
@@ -114,9 +123,9 @@ export function MessageMeta({ meta, messageId, onOpenKbDocument }: MessageMetaPr
         {usage && costLine && <span className="msgact-sep"> · </span>}
         {costLine && <span className="msgact-cost" data-testid={messageId ? `message-cost-${messageId}` : 'message-cost'}>{costLine.text}</span>}
         {!usage && !costLine && <span aria-hidden="true">ⓘ</span>}
-      </button>
+      </button>}
 
-      {hover && !open && (
+      {!hideTrigger && hover && !open && (
         <span className="metatip" role="tooltip" data-testid="meta-tip">
           <Row label="Модель" value={meta.model ?? req?.model} />
           <Row label="Статус" value={meta.interrupted ? 'прерван перезапуском сервера' : undefined} />
