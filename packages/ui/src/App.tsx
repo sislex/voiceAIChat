@@ -1279,7 +1279,16 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     fn()
   }
 
-  // Многопользовательский режим (web): пока не вошли — показываем экран логина.
+  // Многопользовательский режим (web): пока `/me` не ответил — лоадер, иначе форма
+  // логина мигает у уже вошедшего пользователя; не вошли — экран логина.
+  if (session.authRequired && !session.currentUser && session.checking) {
+    return (
+      <div className="login-screen auth-loading" data-theme={settingsState.settings.theme} role="status" aria-live="polite" data-testid="auth-loading">
+        <span className="auth-loading__spinner" aria-hidden="true" />
+        <span className="vc-sr-only">Проверка сессии…</span>
+      </div>
+    )
+  }
   if (session.authRequired && !session.currentUser) {
     return (
       <LoginScreen
@@ -1541,7 +1550,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenKbDocument={(documentId) => navigate(`/kb/${encodeURIComponent(documentId)}`)}
         error={shell.error}
         onDismissError={shellActions.dismissError}
-        modelMissing={!settingsState.modelPresent}
+        modelMissing={VOICE_INPUT_ENABLED && !settingsState.modelPresent}
         modelLabel={settingsState.settings.whisperModel}
         downloading={settingsState.downloading}
         downloadPercent={settingsState.downloadPercent}
