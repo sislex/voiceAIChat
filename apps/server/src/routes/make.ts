@@ -81,6 +81,20 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
+  // Загрузка бинарника из панели (картинка, шрифт): base64 раздувает на треть — лимит тела с запасом.
+  app.post<{ Params: { id: string }; Body: { path?: string; dataBase64?: string } }>('/api/make/:id/upload', { bodyLimit: 4 * 1024 * 1024 }, async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    const { path, dataBase64 } = req.body ?? {}
+    if (typeof path !== 'string' || typeof dataBase64 !== 'string') return reply.code(400).send({ error: 'path и dataBase64 обязательны' })
+    try {
+      await workspaces.ensure(req.params.id)
+      const state = await workspaces.writeBuffer(req.params.id, path, Buffer.from(dataBase64, 'base64'))
+      hub.changed(userId, req.params.id, state.rev, [normalizeMakePath(path) ?? path])
+      return state
+    } catch (error) { return sendError(reply, error) }
+  })
+
   app.delete<{ Params: { id: string }; Querystring: { path?: string } }>('/api/make/:id/file', async (req, reply) => {
     const userId = uid(req)
     if (!own(userId, req.params.id, reply)) return reply

@@ -147,6 +147,8 @@ export interface IpcInvokeMap {
   'make:unpublish': { arg: { conversationId: string }; result: MakeProjectState }
   'make:check': { arg: { conversationId: string }; result: { issues: MakeCheckIssue[] } }
   'make:template': { arg: { conversationId: string; templateId: string }; result: MakeProjectState }
+  /** Загрузка бинарного файла (картинка, шрифт) — содержимое в base64. */
+  'make:upload': { arg: { conversationId: string; path: string; dataBase64: string }; result: MakeProjectState }
   'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' }; result: Conversation }
   /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
   'conversations:createDraft': {
@@ -891,6 +893,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:unpublish',
   'make:check',
   'make:template',
+  'make:upload',
   'conversations:create',
   'conversations:createDraft',
   'conversations:get',

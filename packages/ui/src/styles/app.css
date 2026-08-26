@@ -6482,6 +6482,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-editor { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .make-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border-soft); font-size: 12px; }
 .make-editor-state { color: var(--text-dim); }
+.make-binary { display: grid; place-items: center; gap: 10px; padding: 20px; overflow: auto; background: repeating-conic-gradient(var(--surface-hover) 0 25%, transparent 0 50%) 0 0 / 20px 20px; }
+.make-binary img { max-width: 100%; max-height: 60vh; image-rendering: auto; box-shadow: 0 1px 6px rgb(0 0 0 / 0.15); }
+.make-binary-ref { font-size: 12px; color: var(--text-dim); }
 .make-editor-state.dirty { color: #b26a00; }
 .make-textarea { flex: 1 1 auto; min-height: 0; width: 100%; resize: none; border: 0; outline: none; padding: 10px 12px; font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.5; tab-size: 2; background: var(--panel); color: var(--text); white-space: pre; overflow: auto; }
 .make-history { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }

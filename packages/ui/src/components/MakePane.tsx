@@ -20,7 +20,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -102,7 +102,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   }, [api, conversationId])
 
   const openFile = useCallback(async (path: string): Promise<void> => {
-    if (!isMakeTextPath(path)) { toast.info('Этот файл не текстовый — он виден в превью.'); return }
+    // Бинарник (картинка, шрифт) редактировать нельзя — показываем его просмотр вместо текста.
+    if (!isMakeTextPath(path)) { setSelectedPath(path); setContent(''); setSavedContent(''); return }
     try {
       const file = await api['make:read']({ conversationId, path })
       setSelectedPath(path)
@@ -210,6 +211,42 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
       await openFile(path)
       setMode('code')
     } catch (e) { toast.error(describeError(e)) }
+  }
+
+  // Загрузка файлов с диска: текст пишем как текст (его можно править в редакторе),
+  // остальное — бинарно в base64. Картинки складываем в img/, чтобы корень не засорялся.
+  const uploadInputRef = useRef<HTMLInputElement>(null)
+  // FileReader, а не Blob.text()/arrayBuffer(): их нет в jsdom, а поведение одно.
+  const readAs = <T extends string | ArrayBuffer>(file: File, mode: 'text' | 'buffer'): Promise<T> => new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as T)
+    reader.onerror = () => reject(reader.error ?? new Error('Не удалось прочитать файл'))
+    if (mode === 'text') reader.readAsText(file); else reader.readAsArrayBuffer(file)
+  })
+  const uploadFiles = async (list: FileList | null): Promise<void> => {
+    if (!list || list.length === 0) return
+    let last: MakeProjectState | null = null
+    let uploaded = 0
+    for (const file of Array.from(list)) {
+      const name = file.name.replace(/\s+/g, '-')
+      const isText = isMakeTextPath(name)
+      const path = normalizeMakePath(isText || !/^image\//.test(file.type) ? name : `img/${name}`)
+      if (!path) { toast.error(`Недопустимое имя файла: ${file.name}`); continue }
+      try {
+        if (isText) {
+          last = await api['make:write']({ conversationId, path, content: await readAs<string>(file, 'text') })
+        } else {
+          const bytes = new Uint8Array(await readAs<ArrayBuffer>(file, 'buffer'))
+          let binary = ''
+          for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+          last = await api['make:upload']({ conversationId, path, dataBase64: btoa(binary) })
+        }
+        uploaded += 1
+      } catch (e) { toast.error(`${file.name}: ${describeError(e)}`) }
+    }
+    if (last) { setState(last); setPreviewRev(last.rev) }
+    if (uploaded > 0) toast.success(uploaded === 1 ? 'Файл загружен' : `Загружено файлов: ${uploaded}`)
+    if (uploadInputRef.current) uploadInputRef.current.value = ''
   }
 
   const renameFile = (path: string): void => openAsk('Переименовать файл', 'Новый путь файла', path, 'Переименовать', (raw) => void renameFileTo(path, raw))
@@ -335,6 +372,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
         <>
           <Button size="sm" variant="ghost" onClick={() => void runCheck()} loading={checking}>Проверить</Button>
           <Button size="sm" variant="secondary" onClick={createFile}>+ Файл</Button>
+          <Button size="sm" variant="ghost" onClick={() => uploadInputRef.current?.click()}>Загрузить</Button>
+          <input ref={uploadInputRef} type="file" multiple hidden aria-label="Загрузить файлы в проект" data-testid="make-upload-input" onChange={(e) => void uploadFiles(e.target.files)} />
           <Button size="sm" variant="primary" disabled={!dirty || saving} onClick={() => void save()} title="Сохранить (Ctrl/Cmd+S)">{saving ? 'Сохраняю…' : 'Сохранить'}</Button>
         </>
       )}
@@ -407,7 +446,20 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
                 <IconButton size="sm" aria-label="Скрыть результат проверки" title="Скрыть" onClick={() => setIssues(null)}>✕</IconButton>
               </div>
             )}
-            {selectedPath ? (
+            {selectedPath && !isMakeTextPath(selectedPath) ? (
+              <>
+                <div className="make-editor-head">
+                  <code>{selectedPath}</code>
+                  <span className="make-editor-state">{formatSize(state?.files.find((f) => f.path === selectedPath)?.size ?? 0)} · бинарный файл</span>
+                </div>
+                <div className="make-binary" data-testid="make-binary">
+                  {/\.(png|jpe?g|gif|webp|svg|ico|avif|bmp)$/i.test(selectedPath)
+                    ? <img src={`${base}${selectedPath}?rev=${previewRev}`} alt={`Просмотр ${selectedPath}`} />
+                    : <EmptyState title="Файл не текстовый" description="Его нельзя править в редакторе, но он доступен в превью и в ZIP." />}
+                  <code className="make-binary-ref">{selectedPath}</code>
+                </div>
+              </>
+            ) : selectedPath ? (
               <>
                 <div className="make-editor-head">
                   <code>{selectedPath}</code>

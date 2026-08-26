@@ -563,6 +563,13 @@ describe('REST: conversations/messages/settings', () => {
     expect(check.issues).toEqual([])
     const templated = (await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'landing' } })).json() as { snapshots: Array<{ label: string }> }
     expect(templated.snapshots[0]?.label).toContain('Лендинг')
+    // Загрузка бинарника: base64 → байты, отдаётся превью с image/png.
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3])
+    const uploaded = (await inj({ method: 'POST', url: `/api/make/${conv.id}/upload`, payload: { path: 'img/logo.png', dataBase64: png.toString('base64') } })).json() as { files: Array<{ path: string }> }
+    expect(uploaded.files.map((f) => f.path)).toContain('img/logo.png')
+    const img = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/img/logo.png` })
+    expect(img.headers['content-type']).toMatch(/image\/png/)
+    expect(img.rawPayload.equals(png)).toBe(true)
   })
 
   it('POST /messages для ответа без engine/execTarget подставляет эффективные движок и машину разговора', async () => {
