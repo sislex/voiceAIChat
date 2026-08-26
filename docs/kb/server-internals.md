@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-27
-checked: a9a1aed3
+checked: aecf9613
 areas:
   - apps/server/src
 ---
@@ -70,7 +70,8 @@ MCP даёт `db.conversationOwner(id)`. Старый исследователь
 расширения дополняются существующим файлом (`rewriteRelativeImports`), ошибка компиляции отдаётся
 модулем `throw new Error('Ошибка компиляции …')` — превью живо, текст виден в консоли/раннере. Кэш
 `(conv, path) → {rev, code}` на 500 записей. React берётся из esm.sh через import map в index.html
-(`MAKE_REACT_IMPORT_MAP`, шаблон `react`). **Сториз** (`make/stories.ts`): `parseStoryFile` — имена
+(`MAKE_REACT_IMPORT_MAP`, шаблоны `react` и `react-ts` — второй на TSX с типизированными пропсами и
+`*.stories.tsx`). **Сториз** (`make/stories.ts`): `parseStoryFile` — имена
 стори регуляркой по экспортам (код не исполняется на сервере), `renderStoriesPage` — HTML раннера
 для `GET /api/preview/make/:id/__stories__?file=&story=`; `GET /api/make/:id/stories` и
 `GET /api/make/:id/search?q=` (`MakeWorkspaces.stories/search`, поиск без регистра, ≤200 совпадений).

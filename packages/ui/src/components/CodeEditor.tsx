@@ -1,0 +1,62 @@
+// Редактор кода панели Make. В браузере — Monaco (движок VS Code), лениво; в jsdom (тесты и
+// axe-прогон сториз) Monaco не поднимается — там textarea с подсветкой highlight.js поверх <pre>.
+// Оба варианта держат один контракт: value/onChange/onSave и aria-label «Содержимое <файл>».
+import { Suspense, lazy, useMemo, useRef, type KeyboardEvent } from 'react'
+import { highlightCode } from '../lib/codeHighlight'
+
+export interface CodeEditorProps {
+  path: string
+  value: string
+  onChange: (next: string) => void
+  onSave?: () => void
+  ariaLabel: string
+}
+
+const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)
+const MonacoCodeEditor = lazy(() => import('./code/MonacoCodeEditor'))
+
+export function CodeEditor(props: CodeEditorProps): JSX.Element {
+  if (isJsdom) return <FallbackEditor {...props} />
+  return (
+    <Suspense fallback={<FallbackEditor {...props} />}>
+      <MonacoCodeEditor {...props} />
+    </Suspense>
+  )
+}
+
+/** Textarea + подсветка: прозрачный textarea поверх <pre> с теми же метриками, скролл синхронизирован. */
+export function FallbackEditor({ path, value, onChange, onSave, ariaLabel }: CodeEditorProps): JSX.Element {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const highlightRef = useRef<HTMLPreElement | null>(null)
+  const highlighted = useMemo(() => highlightCode(value, path), [value, path])
+  const syncScroll = (): void => {
+    const ta = textareaRef.current, pre = highlightRef.current
+    if (ta && pre) { pre.scrollTop = ta.scrollTop; pre.scrollLeft = ta.scrollLeft }
+  }
+  const onKey = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); onSave?.(); return }
+    if (event.key === 'Tab') {
+      event.preventDefault()
+      const el = event.currentTarget
+      const start = el.selectionStart, end = el.selectionEnd
+      const next = value.slice(0, start) + '  ' + value.slice(end)
+      onChange(next)
+      requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 2 })
+    }
+  }
+  return (
+    <div className="make-editor-body">
+      <pre ref={highlightRef} className="make-highlight" aria-hidden="true"><code dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
+      <textarea
+        ref={textareaRef}
+        className="make-textarea"
+        aria-label={ariaLabel}
+        value={value}
+        spellCheck={false}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKey}
+        onScroll={syncScroll}
+      />
+    </div>
+  )
+}

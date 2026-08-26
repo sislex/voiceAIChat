@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@voicechat/ui-kit'
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import { REST } from '@shared/protocol'
-import { highlightCode } from '../lib/codeHighlight'
+import { CodeEditor } from './CodeEditor'
 import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
@@ -119,14 +119,6 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   const [checking, setChecking] = useState(false)
   const openAsk = (title: string, label: string, initial: string, submit: string, onSubmit: (value: string) => void): void => { setAskValue(initial); setAsk({ title, label, initial, submit, onSubmit }) }
   const frameRef = useRef<HTMLIFrameElement | null>(null)
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  // Подсветка: прозрачный textarea поверх <pre> с тем же шрифтом и отступами; скролл синхронизируем руками.
-  const highlightRef = useRef<HTMLPreElement | null>(null)
-  const highlighted = useMemo(() => (selectedPath ? highlightCode(content, selectedPath) : ''), [content, selectedPath])
-  const syncHighlightScroll = (): void => {
-    const ta = textareaRef.current, pre = highlightRef.current
-    if (ta && pre) { pre.scrollTop = ta.scrollTop; pre.scrollLeft = ta.scrollLeft }
-  }
   // Перетаскивание файлов с рабочего стола в дерево — та же загрузка, что и кнопкой.
   const [dropActive, setDropActive] = useState(false)
   const onDragOver = (e: DragEvent): void => {
@@ -237,23 +229,6 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   }, [api, conversationId, selectedPath, content, dirty, saving, toast])
 
   // Ctrl/Cmd+S в редакторе — сохранить; Tab — отступ, а не переход фокуса.
-  const onEditorKey = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-      event.preventDefault()
-      void save()
-      return
-    }
-    if (event.key === 'Tab') {
-      event.preventDefault()
-      const el = event.currentTarget
-      const start = el.selectionStart
-      const end = el.selectionEnd
-      const next = `${content.slice(0, start)}  ${content.slice(end)}`
-      setContent(next)
-      requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 2 })
-    }
-  }
-
   const createFile = (): void => openAsk('Новый файл', 'Путь файла (например, about.html или css/theme.css)', '', 'Создать', (raw) => void createFileAt(raw))
   const createFileAt = async (raw: string): Promise<void> => {
     const path = normalizeMakePath(raw)
@@ -594,19 +569,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
                   <code>{selectedPath}</code>
                   <span className={dirty ? 'make-editor-state dirty' : 'make-editor-state'}>{dirty ? 'не сохранено' : 'сохранено'}</span>
                 </div>
-                <div className="make-editor-body">
-                  <pre ref={highlightRef} className="make-highlight" aria-hidden="true"><code dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
-                  <textarea
-                    ref={textareaRef}
-                    className="make-textarea"
-                    aria-label={`Содержимое ${selectedPath}`}
-                    value={content}
-                    spellCheck={false}
-                    onChange={(e) => setContent(e.target.value)}
-                    onKeyDown={onEditorKey}
-                    onScroll={syncHighlightScroll}
-                  />
-                </div>
+                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} />
               </>
             ) : (
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />

@@ -7,6 +7,8 @@ describe('codeHighlight', () => {
     expect(languageForPath('css/app.css')).toBe('css')
     expect(languageForPath('app.js')).toBe('javascript')
     expect(languageForPath('logo.png')).toBeNull()
+    expect(languageForPath('src/App.jsx')).toBe('javascript')
+    expect(languageForPath('src/App.tsx')).toBe('typescript')
   })
 
   it('подсвечивает известный язык спанами hljs и экранирует остальное', () => {
