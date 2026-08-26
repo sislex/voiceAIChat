@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@voicechat/ui-kit'
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import { REST } from '@shared/protocol'
+import { highlightCode } from '../lib/codeHighlight'
 import { MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
@@ -84,6 +85,25 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   const openAsk = (title: string, label: string, initial: string, submit: string, onSubmit: (value: string) => void): void => { setAskValue(initial); setAsk({ title, label, initial, submit, onSubmit }) }
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  // Подсветка: прозрачный textarea поверх <pre> с тем же шрифтом и отступами; скролл синхронизируем руками.
+  const highlightRef = useRef<HTMLPreElement | null>(null)
+  const highlighted = useMemo(() => (selectedPath ? highlightCode(content, selectedPath) : ''), [content, selectedPath])
+  const syncHighlightScroll = (): void => {
+    const ta = textareaRef.current, pre = highlightRef.current
+    if (ta && pre) { pre.scrollTop = ta.scrollTop; pre.scrollLeft = ta.scrollLeft }
+  }
+  // Перетаскивание файлов с рабочего стола в дерево — та же загрузка, что и кнопкой.
+  const [dropActive, setDropActive] = useState(false)
+  const onDragOver = (e: DragEvent): void => {
+    if (!Array.from(e.dataTransfer.types).includes('Files')) return
+    e.preventDefault(); e.dataTransfer.dropEffect = 'copy'
+    if (!dropActive) setDropActive(true)
+  }
+  const onDrop = (e: DragEvent): void => {
+    if (!Array.from(e.dataTransfer.types).includes('Files')) return
+    e.preventDefault(); setDropActive(false)
+    void uploadFiles(e.dataTransfer.files)
+  }
   const dirty = content !== savedContent
   const base = previewBase ?? REST.makePreview(conversationId)
 
@@ -417,9 +437,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
       )}
 
       {mode === 'code' && (
-        <div className="make-code">
+        <div className={dropActive ? 'make-code make-code--drop' : 'make-code'} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code">
           <nav className="make-tree" aria-label="Файлы проекта">
-            {groups.length === 0 && <EmptyState title="Файлов пока нет" description="Создайте файл или попросите ассистента." />}
+            {dropActive && <p className="make-drop-hint" role="status">Отпустите, чтобы загрузить файлы в проект</p>}
+            {groups.length === 0 && <EmptyState title="Файлов пока нет" description="Создайте файл, перетащите его сюда или попросите ассистента." />}
             {groups.map((group) => (
               <div className="make-tree-group" key={group.dir || '/'}>
                 {group.dir && <p className="make-tree-dir">📁 {group.dir}</p>}
@@ -465,15 +486,19 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
                   <code>{selectedPath}</code>
                   <span className={dirty ? 'make-editor-state dirty' : 'make-editor-state'}>{dirty ? 'не сохранено' : 'сохранено'}</span>
                 </div>
-                <textarea
-                  ref={textareaRef}
-                  className="make-textarea"
-                  aria-label={`Содержимое ${selectedPath}`}
-                  value={content}
-                  spellCheck={false}
-                  onChange={(e) => setContent(e.target.value)}
-                  onKeyDown={onEditorKey}
-                />
+                <div className="make-editor-body">
+                  <pre ref={highlightRef} className="make-highlight" aria-hidden="true"><code dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
+                  <textarea
+                    ref={textareaRef}
+                    className="make-textarea"
+                    aria-label={`Содержимое ${selectedPath}`}
+                    value={content}
+                    spellCheck={false}
+                    onChange={(e) => setContent(e.target.value)}
+                    onKeyDown={onEditorKey}
+                    onScroll={syncHighlightScroll}
+                  />
+                </div>
               </>
             ) : (
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />

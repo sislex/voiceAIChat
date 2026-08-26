@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-08-26
-checked: b734ec79
+updated: 2026-08-27
+checked: 7859c831
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -439,6 +439,12 @@ USD за 1M токенов, источник и дату тарифа; форм�
 файлы уходят `make:write`, остальное — `make:upload` (base64), картинки складываются в `img/`. Чтение
 через `FileReader`, а не `Blob.text()/arrayBuffer()` — их нет в jsdom. Клик по бинарному файлу в дереве
 открывает просмотр (`make-binary`: `<img>` для картинок, иначе `EmptyState`) вместо редактора.
+Файлы можно **перетащить** в режим «Код» (`make-code`, `onDragOver/onDrop` → тот же `uploadFiles`;
+подсказка `make-drop-hint`). **Подсветка синтаксиса** — `lib/codeHighlight.ts` (highlight.js core +
+xml/css/javascript/json/markdown по расширению, лимит `HIGHLIGHT_MAX_CHARS`): прозрачный `textarea`
+лежит поверх `<pre class="make-highlight">` с теми же шрифтом/отступами (`.make-editor-body`), скролл
+синхронизируется в `onScroll`; хвостовой `\n` дополняется пробелом, иначе высоты расходятся. Фон
+редактора тёмный в обеих темах — под палитру `github-dark`, которую уже грузит `Markdown`.
 
 ## Разговор и ход модели
 
