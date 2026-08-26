@@ -6036,7 +6036,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .chat-split-chat, .playwright-browser-pane { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
   .chat-split--chat .playwright-browser-pane, .chat-split--preview .chat-split-chat { display: none; }
 }
-.chat-page > .chat-split-chat, .chat-page > .chat-split-chat > .main { height: 100%; }
+.chat-page > .chat-split-chat { height: 100%; }
 .web-recorder-selector { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .web-recorder-selector label { flex: 1; min-width: 0; }
 .web-recorder-selector select { box-sizing: border-box; width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
@@ -6045,8 +6045,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .app--web-reader > .chat-split { grid-column: 1; }
 /* min-width удерживает колонку чата достаточно широкой, чтобы композер и шапка не
    схлопывались; превью-панель ниже сжимаема, поэтому общая ширина не переполняется. */
-.chat-split-chat { flex: 1 1 auto; min-width: 360px; min-height: 0; }
-.chat-split-chat > .main { height: 100%; }
+/* Колонка: шапка-селектор (Reader/Консоль) + .main. Без flex-колонки .main с height:100%
+   складывался с высотой шапки и колонка вылезала за вьюпорт. */
+.chat-split-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 360px; min-height: 0; }
+.chat-split-chat > .web-recorder-selector { flex: 0 0 auto; }
+.chat-split-chat > .main { flex: 1 1 auto; min-height: 0; height: auto; }
 .chat-split-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
 .chat-split-divider:hover, .chat-split-divider:focus { background: var(--accent); }
 .webpreview { flex: 0 1 var(--preview-width); min-width: 260px; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
