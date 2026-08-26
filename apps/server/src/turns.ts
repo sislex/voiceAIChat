@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import {
   appendChatInstructionHints,
+  effectiveChatInstructions,
   stripDisabledInstructionBlocks,
   parseTaskLaunchRequest,
   buildConversationPrompt,
@@ -573,9 +574,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       personalization.birthYear ? `Возраст пользователя: ${Math.max(0, new Date().getUTCFullYear() - personalization.birthYear - ((personalization.birthMonth ?? 1) > new Date().getUTCMonth() + 1 || ((personalization.birthMonth ?? 1) === new Date().getUTCMonth() + 1 && (personalization.birthDay ?? 1) > new Date().getUTCDate()) ? 1 : 0))} лет; адаптируй сложность только когда это уместно.` : ''
     ].filter(Boolean)
     if (personalizationLines.length && !disabledContext.has('personalization')) basePrompt = `${basePrompt}\n\n## Персонализация пользователя\n${personalizationLines.join('\n')}\nЭти предпочтения уступают явной инструкции текущего сообщения и настройкам разговора/проекта.`
-    // Служебные подсказки (терминал/проводник, вопросы, картинки, task-launch) —
-    // только те, что пользователь не выключил в настройках «Инструкции».
-    const prompt = appendChatInstructionHints(basePrompt, settings.chatInstructions)
+    // Инструкции чата (терминал/проводник, вопросы, картинки, task-launch, свои) —
+    // включённые в настройках и не выключенные в инспекторе этого разговора.
+    const instructions = effectiveChatInstructions(settings.chatInstructions, disabledContext)
+    const prompt = appendChatInstructionHints(basePrompt, instructions)
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
     const machine = deps.db.resolveConversationMachine(userId, conversationId, {
@@ -824,7 +826,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           const answerText = text.trim() ? text : turn.partial
           // Блоки выключенных в настройках инструкций вырезаем до разбора: модель
           // могла выдать их по памяти сессии, а виджет открываться не должен.
-          const allowedText = stripDisabledInstructionBlocks(answerText, settings.chatInstructions)
+          const allowedText = stripDisabledInstructionBlocks(answerText, instructions)
           const rawText = engineNotice ? `${engineNotice}\n\n${allowedText}` : allowedText
           // Модель явно запрашивает выбор через структурированный блок. Сам блок
           // служебный: в историю и видимый ответ он не попадает.

@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-26
-checked: 7056ce02
+checked: 5a60255e
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -248,13 +248,20 @@ Usage нормализуется в `TurnUsage` и рассылается как
 ## Договорённости в тексте ответа (fenced-блоки)
 
 Модель может завершить ответ fenced-блоком, который клиент вырезает и рендерит
-виджетом. Подсказки о блоках — **инструкции чата**, каждую пользователь может
-выключить в «Настройки → Инструкции» (`Settings.chatInstructions`, каталог и сборка —
-`packages/shared/src/chatInstructions.ts`, точка подмешивания — `appendChatInstructionHints`
-в `apps/server/src/turns.ts`). Выключенная инструкция просто не попадает в промпт:
-на «открой консоль» без пункта «Открывать терминал» модель отвечает текстом. Терминал
-и проводник — раздельные пункты одной tool-подсказки (`toolHint(kinds)`); отсутствующий
-ключ в настройках = включено, поэтому старые конфиги ведут себя как раньше. Сервер дополнительно
+виджетом. Подсказки о блоках — **инструкции чата**: список `Settings.chatInstructions`
+(`ChatInstruction { id, title, description, enabled, kind?, text? }` в `types.ts`).
+Пять встроенных (`kind`: console/explorer/questions/image/taskLaunch) без `text` дают
+стандартный текст своего вида (`standardInstructionText`), `text` — правка пользователя;
+инструкция без `kind` — своя, просто текст без ответного блока. «Настройки → Инструкции»
+(`ChatInstructionsSettings`) умеют включать/выключать, править текст, дублировать
+(копия встроенной становится своей), добавлять, удалять и «Восстановить стандартные»
+(`missingBuiltinInstructions`). Per-чат: в инспекторе контекста группа «Инструкции чата»
+(`chat-instructions`, пункты `instruction-<id>`, `instructionContextId`), тумблер пишет
+в `disabledContext`. Сервер (`turns.ts`) берёт `effectiveChatInstructions(settings,
+disabledContext)` и подмешивает `appendChatInstructionHints`; стандартные консоль и
+проводник без правок склеиваются в одну tool-подсказку. Старый формат настройки
+(`Record<kind, boolean>`) и отсутствие поля приводит `normalizeChatInstructions`
+(в `database.getSettings`). На «открой консоль» без инструкции модель отвечает текстом. Сервер дополнительно
 вырезает блоки выключенных инструкций из готового ответа (`stripDisabledInstructionBlocks`
 в `onDone` до `parseTaskLaunchRequest`): модель помнит формат по сессии и может выдать
 блок сама — в БД и `claude.done` он не попадает. Парсеры блоков включённость не проверяют.

@@ -1,54 +1,72 @@
 import { describe, expect, it } from 'vitest'
-import { appendChatInstructionHints, chatInstructionHints, stripDisabledInstructionBlocks } from './chatInstructions'
-import { DEFAULT_CHAT_INSTRUCTIONS } from './types'
+import {
+  appendChatInstructionHints, chatInstructionHints, effectiveChatInstructions, instructionContextId,
+  instructionIdForContextId, instructionText, missingBuiltinInstructions, stripDisabledInstructionBlocks
+} from './chatInstructions'
 import { IMAGE_HINT } from './images'
 import { CHANGE_AUTHORIZATION_HINT } from './prompt'
 import { QUESTIONS_HINT } from './questions'
 import { TOOL_HINT, toolHint } from './tools'
+import { DEFAULT_CHAT_INSTRUCTIONS, normalizeChatInstructions, type ChatInstruction } from './types'
+
+const all = DEFAULT_CHAT_INSTRUCTIONS
+const without = (...ids: string[]): ChatInstruction[] => all.filter((item) => !ids.includes(item.id))
 
 describe('chatInstructions', () => {
-  it('по умолчанию (и без настройки) в промпт идут все четыре подсказки в прежнем порядке', () => {
-    const expected = [QUESTIONS_HINT, TOOL_HINT, IMAGE_HINT, CHANGE_AUTHORIZATION_HINT]
-    expect(chatInstructionHints(undefined)).toEqual(expected)
-    expect(chatInstructionHints(DEFAULT_CHAT_INSTRUCTIONS)).toEqual(expected)
-    expect(appendChatInstructionHints('Привет', undefined)).toBe(`Привет\n\n${expected.join('\n\n')}`)
+  it('стандартный набор даёт четыре подсказки в прежнем порядке: консоль+проводник склеены', () => {
+    expect(chatInstructionHints(all)).toEqual([TOOL_HINT, QUESTIONS_HINT, IMAGE_HINT, CHANGE_AUTHORIZATION_HINT])
+    expect(appendChatInstructionHints('Привет', all)).toBe(`Привет\n\n${[TOOL_HINT, QUESTIONS_HINT, IMAGE_HINT, CHANGE_AUTHORIZATION_HINT].join('\n\n')}`)
+    expect(appendChatInstructionHints('  ', all)).toBe('  ')
   })
 
-  it('выключенная консоль убирает её из tool-подсказки, проводник остаётся', () => {
-    const hints = chatInstructionHints({ console: false })
-    expect(hints).toContain(toolHint(['explorer']))
-    expect(hints.join('\n')).not.toContain('"kind": "console"')
-    expect(hints.join('\n')).toContain('"kind": "explorer"')
+  it('без консоли остаётся отдельная подсказка проводника; без обоих tool-подсказки нет', () => {
+    const one = chatInstructionHints(without('console'))
+    expect(one[0]).toBe(toolHint(['explorer']))
+    expect(one.join('\n')).not.toContain('"kind": "console"')
+    expect(chatInstructionHints(without('console', 'explorer')).join('\n')).not.toContain('```tool')
   })
 
-  it('оба вида утилит выключены — tool-подсказки нет вовсе', () => {
-    const hints = chatInstructionHints({ console: false, explorer: false })
-    expect(hints.join('\n')).not.toContain('```tool')
-    expect(hints).toEqual([QUESTIONS_HINT, IMAGE_HINT, CHANGE_AUTHORIZATION_HINT])
+  it('правка текста встроенной и своя инструкция идут как есть, в порядке списка', () => {
+    const list: ChatInstruction[] = [
+      { id: 'custom', title: 'Своя', description: '', enabled: true, text: 'Отвечай стихами.' },
+      { ...all[0], text: 'Мой текст про консоль' },
+      all[1]
+    ]
+    expect(chatInstructionHints(list)).toEqual(['Отвечай стихами.', 'Мой текст про консоль', toolHint(['explorer'])])
+    expect(instructionText({ id: 'x', title: 'x', description: '', enabled: true })).toBe('')
   })
 
-  it('все инструкции выключены — промпт не меняется; пустой промпт не трогаем', () => {
-    const off = { console: false, explorer: false, questions: false, image: false, taskLaunch: false }
-    expect(appendChatInstructionHints('Привет', off)).toBe('Привет')
-    expect(appendChatInstructionHints('   ', undefined)).toBe('   ')
+  it('эффективные = включённые в настройках и не выключенные в чате', () => {
+    const list = all.map((item) => item.id === 'image' ? { ...item, enabled: false } : item)
+    const eff = effectiveChatInstructions(list, [instructionContextId('console')])
+    expect(eff.map((item) => item.id)).toEqual(['explorer', 'questions', 'taskLaunch'])
+    expect(instructionIdForContextId(instructionContextId('a b'))).toBe('a b')
+    expect(instructionIdForContextId('skill-x')).toBeNull()
+  })
+
+  it('normalizeChatInstructions принимает старый формат флагов и отсутствие значения', () => {
+    expect(normalizeChatInstructions(undefined)).toEqual(all)
+    expect(normalizeChatInstructions({ console: false }).find((item) => item.id === 'console')?.enabled).toBe(false)
+    expect(normalizeChatInstructions([{ id: 'c', title: 'C' }])).toEqual([{ id: 'c', title: 'C', enabled: true, description: '' }])
+    expect(normalizeChatInstructions([])).toEqual([])
+    expect(missingBuiltinInstructions(without('image', 'questions')).map((item) => item.id)).toEqual(['questions', 'image'])
   })
 
   describe('stripDisabledInstructionBlocks', () => {
     const answer = 'Открываю.\n\n```tool\n{"kind":"console"}\n```\n\n```questions\n[{"q":"Дальше?","options":["Да","Нет"]}]\n```\n\n```image\n{"path":"/tmp/a.png"}\n```\n\n```task-launch\n{"title":"t","description":"d","acceptanceCriteria":"a"}\n```'
 
-    it('при включённых инструкциях текст не меняется', () => {
-      expect(stripDisabledInstructionBlocks(answer, undefined)).toBe(answer)
+    it('при полном наборе текст не меняется', () => {
+      expect(stripDisabledInstructionBlocks(answer, all)).toBe(answer)
     })
 
-    it('вырезает только блоки выключенных инструкций', () => {
-      const out = stripDisabledInstructionBlocks(answer, { questions: false, image: false, taskLaunch: false })
-      expect(out).toBe('Открываю.\n\n```tool\n{"kind":"console"}\n```')
+    it('вырезает только блоки отсутствующих видов', () => {
+      expect(stripDisabledInstructionBlocks(answer, without('questions', 'image', 'taskLaunch'))).toBe('Открываю.\n\n```tool\n{"kind":"console"}\n```')
     })
 
-    it('tool-блок убирается только если выключен именно его kind', () => {
+    it('tool-блок убирается только если нет именно его kind', () => {
       const tool = 'Вот.\n\n```tool\n{"kind":"console"}\n```'
-      expect(stripDisabledInstructionBlocks(tool, { explorer: false })).toBe(tool)
-      expect(stripDisabledInstructionBlocks(tool, { console: false })).toBe('Вот.')
+      expect(stripDisabledInstructionBlocks(tool, without('explorer'))).toBe(tool)
+      expect(stripDisabledInstructionBlocks(tool, without('console'))).toBe('Вот.')
     })
   })
 })

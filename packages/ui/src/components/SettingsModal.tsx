@@ -18,7 +18,7 @@ import type { LoginStatusMap } from '@shared/auth'
 import type { LlmEngineOption } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import { CHAT_INSTRUCTIONS, isChatInstructionEnabled } from '@shared/chatInstructions'
+import { ChatInstructionsSettings } from './ChatInstructionsSettings'
 import { LlmSettingsEditor } from './LlmSettingsEditor'
 
 export interface MicOption {
@@ -550,33 +550,7 @@ export function SettingsModal({
             )}
 
             {section === 'instructions' && (
-              <>
-                <p className="fsub">
-                  Служебные подсказки, которые модель получает с каждым сообщением. Снятая галочка — модель не знает,
-                  как выполнить такую просьбу: например, без «Открывать терминал» на «открой консоль» она ответит текстом.
-                </p>
-                <ul className="instr-list" aria-label="Инструкции чата">
-                  {CHAT_INSTRUCTIONS.map((item) => {
-                    const enabled = isChatInstructionEnabled(settings.chatInstructions, item.id)
-                    return (
-                      <li className="instr-item" key={item.id}>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={enabled}
-                            aria-label={item.title}
-                            onChange={(e) => onChange({ chatInstructions: { ...settings.chatInstructions, [item.id]: e.target.checked } })}
-                          />
-                          <span>
-                            <p className="flab">{item.title}</p>
-                            <p className="fsub">{item.description}</p>
-                          </span>
-                        </label>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </>
+              <ChatInstructionsSettings items={settings.chatInstructions} onChange={(chatInstructions) => onChange({ chatInstructions })} />
             )}
 
             {section === 'storage' && (

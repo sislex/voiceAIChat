@@ -6,6 +6,7 @@ import { calculateKbHit, filesReadFromCiLog } from '../ci/kbHit.js'
 import { testStages } from '../ci/testStages.js'
 import {
   DEFAULT_SETTINGS,
+  normalizeChatInstructions,
   DEFAULT_AGENT_POLICY,
   DEFAULT_CODEX_MODEL,
   isProviderAllowed,
@@ -2117,7 +2118,7 @@ export class VoiceChatDb {
       const generatedFilesTtlDays = Number.isInteger(parsed.generatedFilesTtlDays) && parsed.generatedFilesTtlDays! >= 1 && parsed.generatedFilesTtlDays! <= 3650
         ? parsed.generatedFilesTtlDays!
         : DEFAULT_SETTINGS.generatedFilesTtlDays
-      return { ...DEFAULT_SETTINGS, ...parsed, generatedFilesTtlDays, personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization }, chatInstructions: { ...DEFAULT_SETTINGS.chatInstructions, ...parsed.chatInstructions } }
+      return { ...DEFAULT_SETTINGS, ...parsed, generatedFilesTtlDays, personalization: { ...DEFAULT_SETTINGS.personalization, ...parsed.personalization }, chatInstructions: normalizeChatInstructions(parsed.chatInstructions) }
     } catch {
       return { ...DEFAULT_SETTINGS }
     }

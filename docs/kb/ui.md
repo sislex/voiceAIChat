@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-26
-checked: 43994ac8
+checked: 5a60255e
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -234,7 +234,7 @@ AGENTS.md, эффективные настройки разговора, выб�
 информации — правила задаёт `isContextToggleable` в `packages/shared/src/contextGating.ts`
 (`SAFETY_CONTEXT_IDS` = platform/application-instructions; `INFO_CONTEXT_IDS` =
 working-directory, agents-chain, llm, machine, permission-mode, conversation-history,
-current-message). `ContextInspector` рисует чекбокс у выключаемого пункта (у
+current-message; пункты `instruction-<id>` группы «Инструкции чата» выключаемы). `ContextInspector` рисует чекбокс у выключаемого пункта (у
 неотключаемого — замок 🔒) и переключатель в detail; клик шлёт
 `conversations:setContextItem` → `POST /api/conversations/:id/context/:itemId`, сервер
 пишет id в `conversations.disabled_context_json` (метод `setConversationContextEnabled`,
@@ -944,7 +944,7 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 
 Переиспользуемые `PromptBuilder` и `useAiAssist` живут в `packages/ui/src/components/prompt-builder/` и экспортируются из `@voicechat/ui`. Компонент транспорт-нейтрален: генератор, модификаторы, применение и персистентность приходят через props. Builder собирает результат из вариантов и сохраняет работу при переходе в настройки; закрытие сбрасывает сессию. Генерация запускается только вручную кнопкой-палочкой справа в поле промпта: сам ввод текста и изменение модификаторов сетевой запрос не выполняют. `applyNativeInputValue` использует нативный setter и bubbling `input`, поэтому интеграция совместима с управляемыми полями и библиотеками форм. Композер `VoiceBar` — первая production-интеграция.
 
-Раздел «Инструкции» `SettingsModal` — чекбоксы по каталогу `CHAT_INSTRUCTIONS` (терминал, проводник, вопросы, картинки, task-launch); патч уходит в `Settings.chatInstructions`, сервер по нему собирает подсказки модели ([llm.md](llm.md)).
+Раздел «Инструкции» `SettingsModal` — компонент `ChatInstructionsSettings`: список `Settings.chatInstructions` с чекбоксами, инлайн-редактор (название/описание/текст, «Сбросить к стандартному» у встроенных), дублирование, добавление, удаление через `useConfirm` и «Восстановить стандартные»; патч уходит целым списком в `Settings.chatInstructions`, сервер по нему собирает подсказки ([llm.md](llm.md)). Per-чат тумблеры — группа «Инструкции чата» в инспекторе контекста.
 
 Настройки AI-помощника (`aiAssistProvider`, `aiAssistModel`, `aiAssistPrompts`) хранятся в общих per-user `Settings`. В `SettingsModal` им соответствует отдельный раздел «AI-помощник»; настройки внутри `PromptBuilder` могут временно редактироваться локально или сохраняться через `onPromptsChange`. Storybook содержит состояния builder/settings и интеграции с input/textarea; DOM-тесты дополнительно запускают axe в обоих режимах.
 
