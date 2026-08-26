@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
 import { createFakeApi } from '../test/fakeApi'
@@ -121,5 +121,21 @@ describe('MakePane', () => {
     expect((await api['make:read']({ conversationId: CONV, path: 'theme.css' })).content).toBe('body{}')
     await userEvent.click((await screen.findAllByRole('button', { name: /My-Logo\.png/ }))[0]!)
     expect(await screen.findByTestId('make-binary')).toContainElement(screen.getByRole('img', { name: 'Просмотр img/My-Logo.png' }))
+  })
+
+  it('drag-and-drop файлов в дерево загружает их; редактор подсвечивает синтаксис', async () => {
+    const { api } = renderPane()
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const zone = screen.getByTestId('make-code')
+    const file = new File(['h1{color:red}'], 'drop.css', { type: 'text/css' })
+    const dataTransfer = { types: ['Files'], files: [file], dropEffect: 'none' }
+    fireEvent.dragOver(zone, { dataTransfer })
+    expect(await screen.findByRole('status')).toHaveTextContent('Отпустите')
+    fireEvent.drop(zone, { dataTransfer })
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'drop.css' })).content).toBe('h1{color:red}'))
+    await userEvent.click((await screen.findAllByRole('button', { name: /drop\.css/ }))[0]!)
+    await screen.findByLabelText('Содержимое drop.css')
+    expect(document.querySelector('.make-highlight .hljs-selector-tag')?.textContent).toBe('h1')
   })
 })
