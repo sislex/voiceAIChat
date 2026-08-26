@@ -690,14 +690,49 @@ export const DEFAULT_PERSONALIZATION: UserPersonalization = {
 }
 
 /** Пользовательские настройки приложения. */
-/** Идентификаторы служебных инструкций чата; каталог и сборка подсказок — `chatInstructions.ts`. */
-export const CHAT_INSTRUCTION_IDS = ['console', 'explorer', 'questions', 'image', 'taskLaunch'] as const
-export type ChatInstructionId = (typeof CHAT_INSTRUCTION_IDS)[number]
-/** Включённость инструкций; отсутствующий ключ трактуется как включённый. */
-export type ChatInstructionSettings = Partial<Record<ChatInstructionId, boolean>>
-/** Все инструкции включены — значение по умолчанию и поведение до появления настройки. */
-export const DEFAULT_CHAT_INSTRUCTIONS: Record<ChatInstructionId, boolean> = {
-  console: true, explorer: true, questions: true, image: true, taskLaunch: true
+/**
+ * Встроенные виды инструкций чата: у каждого — стандартный текст подсказки и парсер
+ * ответного fenced-блока (сборка и вырезание — `chatInstructions.ts`).
+ */
+export const CHAT_INSTRUCTION_KINDS = ['console', 'explorer', 'questions', 'image', 'taskLaunch'] as const
+export type ChatInstructionKind = (typeof CHAT_INSTRUCTION_KINDS)[number]
+
+/**
+ * Инструкция чата — текст, который сервер дописывает к каждому промпту. Встроенная
+ * (`kind` задан) без `text` использует стандартный текст своего вида; `text` — правка
+ * пользователя. Пользовательская (без `kind`) — просто текст, блоков в ответе у неё нет.
+ */
+export interface ChatInstruction {
+  id: string
+  title: string
+  description: string
+  enabled: boolean
+  kind?: ChatInstructionKind
+  text?: string
+}
+
+/** Стандартный набор: пять встроенных, все включены, текст — стандартный. */
+export const DEFAULT_CHAT_INSTRUCTIONS: ChatInstruction[] = [
+  { id: 'console', kind: 'console', enabled: true, title: 'Открывать терминал в чате', description: 'По просьбе «открой консоль» модель вставляет в ответ живой терминал машины.' },
+  { id: 'explorer', kind: 'explorer', enabled: true, title: 'Открывать проводник в чате', description: 'По просьбе «открой проводник» модель вставляет файловый проводник машины.' },
+  { id: 'questions', kind: 'questions', enabled: true, title: 'Уточняющие вопросы с вариантами', description: 'Модель может закончить ответ вопросами с кнопками-вариантами ответа.' },
+  { id: 'image', kind: 'image', enabled: true, title: 'Показывать созданные изображения', description: 'Файл-картинку, созданный на машине, модель показывает прямо в сообщении.' },
+  { id: 'taskLaunch', kind: 'taskLaunch', enabled: true, title: 'Спрашивать разрешение перед изменением проекта', description: 'Перед правкой файлов модель предлагает завести задачу в канбан или работать в чате.' }
+]
+
+/**
+ * Приводит сохранённое значение к списку. Принимает и первый формат настройки —
+ * `Record<kind, boolean>` (тогда это стандартный набор с флагами), и отсутствие
+ * значения (стандартный набор). Пустой массив — осознанный выбор «ни одной».
+ */
+export function normalizeChatInstructions(raw: unknown): ChatInstruction[] {
+  if (Array.isArray(raw)) {
+    return raw.filter((item): item is ChatInstruction =>
+      !!item && typeof item === 'object' && typeof (item as ChatInstruction).id === 'string' && typeof (item as ChatInstruction).title === 'string'
+    ).map((item) => ({ ...item, enabled: item.enabled !== false, description: item.description ?? '' }))
+  }
+  const flags = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+  return DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item, enabled: flags[item.id] !== false }))
 }
 
 export interface Settings {
@@ -744,8 +779,8 @@ export interface Settings {
   generatedFilesTtlDays: number
   /** Централизованные предпочтения общения с моделью. */
   personalization: UserPersonalization
-  /** Какие служебные инструкции чата (терминал, вопросы, картинки…) получает модель. */
-  chatInstructions: ChatInstructionSettings
+  /** Инструкции чата (терминал, вопросы, картинки, свои тексты): что получает модель с каждым ходом. */
+  chatInstructions: ChatInstruction[]
 }
 
 /** Поддерживаемые LLM-движки (CLI). */
@@ -842,7 +877,7 @@ export const DEFAULT_SETTINGS: Settings = {
   aiAssistPrompts: DEFAULT_AI_ASSIST_PROMPTS,
   generatedFilesTtlDays: 30,
   personalization: DEFAULT_PERSONALIZATION,
-  chatInstructions: { ...DEFAULT_CHAT_INSTRUCTIONS }
+  chatInstructions: DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item }))
 }
 
 /** Один сегмент распознанной речи (speakerId=1 до диаризации). */

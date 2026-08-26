@@ -2097,9 +2097,17 @@
 /* ---- Экран входа (многопользовательский режим web) ---- */
 /* Настройки → «Инструкции»: чекбокс + заголовок/описание в одну строку. */
 .instr-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.instr-item label { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.instr-item { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.instr-item > label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; min-width: 0; }
 .instr-item input[type='checkbox'] { margin-top: 3px; flex: 0 0 auto; }
 .instr-item .flab, .instr-item .fsub { margin: 0; }
+.instr-badge { margin-left: 6px; font-size: 10px; font-weight: 500; padding: 1px 6px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border); color: var(--text-dim); vertical-align: middle; }
+.instr-actions { display: inline-flex; gap: 2px; }
+.instr-editor { grid-column: 1 / -1; display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border-soft); }
+.instr-field { display: grid; gap: 4px; font-size: 12px; color: var(--text-dim); }
+.instr-text { font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 12px; resize: vertical; }
+.instr-editor-actions, .instr-footer { display: flex; gap: 8px; flex-wrap: wrap; }
+.instr-footer { margin-top: 10px; }
 /* Проверка сохранённой сессии при старте: тот же фон, что у экрана входа, чтобы
    переход в форму или в приложение не мигал. */
 .auth-loading { align-items: center; justify-content: center; }

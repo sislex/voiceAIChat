@@ -96,7 +96,7 @@ describe('turns: инструкции чата', () => {
     expect(rec.last()?.prompt).toContain('"kind": "console"')
     expect(rec.last()?.prompt).toContain('```questions')
 
-    db.saveSettings(U, { ...db.getSettings(U), chatInstructions: { console: false, questions: false } })
+    db.saveSettings(U, { ...db.getSettings(U), chatInstructions: db.getSettings(U).chatInstructions.map((item) => ['console', 'questions'].includes(item.id) ? { ...item, enabled: false } : item) })
     await runTurn(rec.client, db, conv.id)
     expect(rec.last()?.prompt).not.toContain('"kind": "console"')
     expect(rec.last()?.prompt).not.toContain('```questions')
@@ -106,11 +106,23 @@ describe('turns: инструкции чата', () => {
     db.close()
   })
 
+  it('инструкция, выключенная в инспекторе разговора, не попадает в промпт при включённой настройке', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    db.addMessage(U, conv.id, 'u0', 'открой консоль', '10:00')
+    db.setConversationContextEnabled(U, conv.id, 'instruction-console', false)
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+    expect(rec.last()?.prompt).not.toContain('"kind": "console"')
+    expect(rec.last()?.prompt).toContain('"kind": "explorer"')
+    db.close()
+  })
+
   it('tool-блок выключенной консоли вырезается из сохранённого ответа', async () => {
     const db = freshDb()
     const conv = db.createConversation(U, 'Чат')
     db.addMessage(U, conv.id, 'u0', 'открой консоль', '10:00')
-    db.saveSettings(U, { ...db.getSettings(U), chatInstructions: { console: false } })
+    db.saveSettings(U, { ...db.getSettings(U), chatInstructions: db.getSettings(U).chatInstructions.map((item) => item.id === 'console' ? { ...item, enabled: false } : item) })
     const client: LlmClient = {
       send(_req, h) {
         h.onDone('Открываю.\n\n```tool\n{"kind":"console"}\n```')

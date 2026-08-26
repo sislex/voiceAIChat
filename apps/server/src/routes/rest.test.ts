@@ -534,6 +534,21 @@ describe('REST: conversations/messages/settings', () => {
     expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
   })
 
+  it('снимок содержит группу «Инструкции чата»; тумблер выключает инструкцию только в разговоре', async () => {
+    const conv = db.createConversation(U, 'Чат')
+    const groupOf = (json: { groups: Array<{ id: string; items: Array<{ id: string; enabled: boolean; includedInNextTurn: boolean; toggleable: boolean; details?: Record<string, unknown> }> }> }) => json.groups.find((g) => g.id === 'chat-instructions')!
+    const first = groupOf((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json())
+    expect(first.items.map((item) => item.id)).toEqual(['instruction-console', 'instruction-explorer', 'instruction-questions', 'instruction-image', 'instruction-taskLaunch'])
+    const consoleItem = first.items.find((item) => item.id === 'instruction-console')!
+    expect(consoleItem).toMatchObject({ toggleable: true, enabled: true, includedInNextTurn: true })
+    expect(String(consoleItem.details?.['Текст'])).toContain('```tool')
+
+    await inj({ method: 'POST', url: `/api/conversations/${conv.id}/context/instruction-console`, payload: { enabled: false } })
+    const second = groupOf((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json())
+    expect(second.items.find((item) => item.id === 'instruction-console')).toMatchObject({ enabled: false, includedInNextTurn: false })
+    expect(second.items.find((item) => item.id === 'instruction-explorer')).toMatchObject({ enabled: true, includedInNextTurn: true })
+  })
+
   it('снимок проектного чата: пункт проекта несёт точный текст, уходящий в промпт', async () => {
     const project = db.createProject(U, { name: 'Инспектор', gitUrl: 'https://example.com/repo.git', technologies: ['ts'] })
     const conv = db.createConversation(U, 'Проектный')

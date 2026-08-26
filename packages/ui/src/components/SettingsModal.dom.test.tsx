@@ -36,17 +36,65 @@ function renderModal(role: UserRole, overrides: Partial<SettingsModalProps> = {}
 }
 
 describe('SettingsModal · Инструкции', () => {
-  it('показывает чекбоксы всех инструкций чата и отправляет патч при снятии галочки', async () => {
-    const onChange = vi.fn()
+  /** Список инструкций из последнего вызова onChange. */
+  const last = (onChange: ReturnType<typeof vi.fn>): Array<{ id: string; title?: string; enabled?: boolean; text?: string; kind?: string }> =>
+    (onChange.mock.calls[onChange.mock.calls.length - 1]?.[0] as { chatInstructions: never[] }).chatInstructions
+  const open = async (onChange = vi.fn()) => {
     renderModal('admin', { onChange })
     await userEvent.click(screen.getByRole('button', { name: 'Инструкции' }))
-    const list = screen.getByRole('list', { name: 'Инструкции чата' })
+    return { onChange, list: screen.getByRole('list', { name: 'Инструкции чата' }) }
+  }
+
+  it('показывает чекбоксы всех инструкций и отправляет список с выключенной', async () => {
+    const { onChange, list } = await open()
     expect(within(list).getAllByRole('checkbox')).toHaveLength(5)
-    const console = within(list).getByRole('checkbox', { name: 'Открывать терминал в чате' })
-    expect(console).toBeChecked()
-    await userEvent.click(console)
-    expect(onChange).toHaveBeenCalledWith({ chatInstructions: expect.objectContaining({ console: false, explorer: true }) })
+    await userEvent.click(within(list).getByRole('checkbox', { name: 'Открывать терминал в чате' }))
+    const sent = last(onChange)
+    expect(sent.find((it: { id: string }) => it.id === 'console')?.enabled).toBe(false)
+    expect(sent.find((it: { id: string }) => it.id === 'explorer')?.enabled).toBe(true)
     await expectNoViolations()
+  })
+
+  it('редактор: правка текста встроенной сохраняется как text, стандартный текст — без text', async () => {
+    const { onChange, list } = await open()
+    await userEvent.click(within(list).getByRole('button', { name: 'Изменить: Открывать терминал в чате' }))
+    const editor = screen.getByTestId('instruction-editor')
+    const text = within(editor).getByLabelText('Текст инструкции') as HTMLTextAreaElement
+    expect(text.value).toContain('```tool')
+    // Сохранение без правок — text не появляется.
+    await userEvent.click(within(editor).getByRole('button', { name: 'Сохранить' }))
+    expect(last(onChange).find((it: { id: string }) => it.id === 'console')?.text).toBeUndefined()
+    // С правкой — появляется.
+    await userEvent.click(within(list).getByRole('button', { name: 'Изменить: Открывать терминал в чате' }))
+    await userEvent.clear(screen.getByLabelText('Текст инструкции'))
+    await userEvent.type(screen.getByLabelText('Текст инструкции'), 'Мой текст')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    expect(last(onChange).find((it: { id: string }) => it.id === 'console')?.text).toBe('Мой текст')
+  })
+
+  it('дублирование делает свою инструкцию с текстом оригинала; добавление создаёт пустую', async () => {
+    const { onChange, list } = await open()
+    await userEvent.click(within(list).getByRole('button', { name: 'Дублировать: Уточняющие вопросы с вариантами' }))
+    const dup = last(onChange)
+    expect(dup).toHaveLength(6)
+    expect(dup[3]).toMatchObject({ title: 'Уточняющие вопросы с вариантами (копия)', enabled: true })
+    expect(dup[3].kind).toBeUndefined()
+    expect(dup[3].text).toContain('```questions')
+    await userEvent.click(screen.getByRole('button', { name: '+ Добавить инструкцию' }))
+    const added = last(onChange)
+    expect(added.at(-1)).toMatchObject({ title: 'Новая инструкция', enabled: true, text: '' })
+  })
+
+  it('удаление встроенной — через подтверждение; после него доступно «Восстановить стандартные»', async () => {
+    const onChange = vi.fn()
+    const items = DEFAULT_SETTINGS.chatInstructions.filter((it) => it.id !== 'image')
+    renderModal('admin', { onChange, settings: { ...DEFAULT_SETTINGS, chatInstructions: items } })
+    await userEvent.click(screen.getByRole('button', { name: 'Инструкции' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Восстановить стандартные (1)' }))
+    expect(last(onChange).map((it: { id: string }) => it.id)).toContain('image')
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить: Открывать проводник в чате' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить' }))
+    expect(last(onChange).map((it: { id: string }) => it.id)).not.toContain('explorer')
   })
 })
 
