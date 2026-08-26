@@ -48,3 +48,14 @@ export const Mobile: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Телефон' }))
   }
 }
+
+/** Бинарный файл в дереве (загруженная картинка) открывается просмотром, а не редактором. */
+export const BinaryFile: Story = {
+  play: async ({ canvasElement }) => {
+    await api['make:upload']({ conversationId: 'story-make', path: 'img/logo.png', dataBase64: 'iVBORw0KGgo=' })
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('tab', { name: 'Код' }))
+    await userEvent.click((await canvas.findAllByRole('button', { name: /logo\.png/ }))[0]!)
+    await expect(await canvas.findByTestId('make-binary')).toBeInTheDocument()
+  }
+}
