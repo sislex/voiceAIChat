@@ -1,3 +1,4 @@
+import { MAKE_SCAFFOLD } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
@@ -34,7 +35,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const makePub = new Map<string, { token: string; publishedAt: number; url: string }>()
   const makeFiles = (id: string): Map<string, string> => {
     let files = makeStore.get(id)
-    if (!files) { files = new Map([['index.html', '<h1>Новый проект</h1>'], ['styles.css', 'body{}'], ['app.js', '']]); makeStore.set(id, files) }
+    if (!files) { files = new Map(Object.entries(MAKE_SCAFFOLD)); makeStore.set(id, files) }
     return files
   }
   const makeSnaps = (id: string): Array<{ id: string; createdAt: number; label: string; files: number }> => {
@@ -44,7 +45,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   }
   const makeState = (id: string) => ({
     conversationId: id,
-    files: [...makeFiles(id).entries()].map(([path, content]) => ({ path, size: content.length, updatedAt: 1 })).sort((x, y) => x.path.localeCompare(y.path)),
+    files: [...makeFiles(id).entries()].map(([path, content]) => ({ path, size: new TextEncoder().encode(content).length, updatedAt: 1 })).sort((x, y) => x.path.localeCompare(y.path)),
     snapshots: [...makeSnaps(id)],
     rev: makeRev.get(id) ?? 0,
     published: makePub.get(id) ?? null
@@ -231,7 +232,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:read': async ({ conversationId, path }) => {
       const content = makeFiles(conversationId).get(path)
       if (content === undefined) throw new Error(`Файл «${path}» не найден`)
-      return { path, size: content.length, updatedAt: 1, content }
+      return { path, size: new TextEncoder().encode(content).length, updatedAt: 1, content }
     },
     'make:search': async ({ conversationId, query }) => {
       const needle = query.trim().toLocaleLowerCase()
@@ -256,7 +257,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:unpublish': async ({ conversationId }) => { makePub.delete(conversationId); return makeState(conversationId) },
     'make:check': async ({ conversationId }) => ({ issues: makeFiles(conversationId).has('index.html') ? [] : [{ path: 'index.html', kind: 'no-index' as const, message: 'Нет index.html' }] }),
     'make:template': async ({ conversationId, templateId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', `<h1>${templateId}</h1>`); return makeState(conversationId) },
-    'make:reset': async ({ conversationId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', '<h1>Новый проект</h1>'); return makeState(conversationId) },
+    'make:reset': async ({ conversationId }) => { const files = makeFiles(conversationId); files.clear(); for (const [k, v] of Object.entries(MAKE_SCAFFOLD)) files.set(k, v); return makeState(conversationId) },
     'conversations:create': async ({ title, assistantKind } = {}) => {
       const conv = { ...makeConversation(title ?? 'Новый разговор'), ...(assistantKind ? { assistantKind } : {}) }
       conversations.push(conv)

@@ -67,8 +67,12 @@ export function renderStoriesPage(file: string, story: string, indexHtml: string
       const draw = (overrides) => { const merged = { ...args, ...overrides }; root.render(render ? render(merged) : React.createElement(component, merged)); };
       draw({});
       const serializable = Object.fromEntries(Object.entries(args).map(([k, v]) => [k, typeof v === 'function' ? '[function]' : (v !== null && typeof v === 'object' && !Array.isArray(v) && v.$$typeof) ? '[element]' : v]));
+      // Enum-подобные args: строковые значения одного ключа во всех стори файла (variant: primary|secondary…).
+      const options = {};
+      for (const n of names) { const a = (mod[n] && mod[n].args) || {}; for (const [k, v] of Object.entries({ ...(meta.args ?? {}), ...a })) { if (typeof v === 'string' && k !== 'children' && v.length <= 32) { (options[k] = options[k] || new Set()).add(v); } } }
+      const enumOptions = Object.fromEntries(Object.entries(options).filter(([, set]) => set.size >= 2).map(([k, set]) => [k, [...set]]));
       window.addEventListener('message', (e) => { const d = e.data; if (d && d.type === 'vc-make.args') { try { draw(d.args || {}); } catch (error) { fail(String(error && error.message || error)); } } });
-      window.parent.postMessage({ type: 'vc-make.story', file: ${JSON.stringify(file)}, story: name, stories: names, args: serializable }, '*');
+      window.parent.postMessage({ type: 'vc-make.story', file: ${JSON.stringify(file)}, story: name, stories: names, args: serializable, options: enumOptions }, '*');
     } catch (error) { fail(String(error && error.message || error)); }
   </script>
 </body>

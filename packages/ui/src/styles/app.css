@@ -6556,3 +6556,19 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-control input[type='text'], .make-control input[type='number'] { min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text); }
 .make-control input[type='checkbox'] { justify-self: start; width: 16px; height: 16px; }
 .make-control--ro code { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Make: стартовые идеи (как главная Figma Make) и диалог «Идеи». */
+.make-starters { padding: 10px 14px 6px; border-bottom: 1px solid var(--border-soft); }
+.make-starters-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 13px; }
+.make-starters-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.make-starter { display: grid; gap: 2px; text-align: left; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--surface); font: inherit; color: var(--text); cursor: pointer; }
+.make-starter:hover { background: var(--surface-hover); border-color: var(--accent); }
+.make-starter-title { font-size: 13px; font-weight: 600; }
+.make-starter-group { font-size: 11px; color: var(--text-dim); }
+.make-ideas-lead { margin: 0 0 10px; color: var(--text-dim); font-size: 13px; }
+.make-ideas-group h3 { margin: 12px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-dim); }
+.make-idea { display: grid; gap: 3px; width: 100%; text-align: left; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 6px; background: var(--surface); font: inherit; color: var(--text); cursor: pointer; }
+.make-idea:hover { background: var(--surface-hover); border-color: var(--accent); }
+.make-idea strong { font-size: 13px; }
+.make-idea span { font-size: 12px; color: var(--text-dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.make-control select { min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text); }

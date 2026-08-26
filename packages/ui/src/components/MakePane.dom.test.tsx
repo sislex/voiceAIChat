@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
 import { createFakeApi } from '../test/fakeApi'
+import { MAKE_SCAFFOLD } from '@shared/make'
 import { MakePane } from './MakePane'
 
 const CONV = 'make-1'
@@ -34,7 +35,7 @@ describe('MakePane', () => {
     const tree = screen.getByRole('navigation', { name: 'Файлы проекта' })
     expect(within(tree).getByRole('button', { name: /^index\.html/ })).toBeInTheDocument()
     const editor = await screen.findByLabelText('Содержимое index.html') as HTMLTextAreaElement
-    expect(editor.value).toBe('<h1>Новый проект</h1>')
+    expect(editor.value).toBe(MAKE_SCAFFOLD['index.html'])
     expect(screen.getByText('сохранено')).toBeInTheDocument()
     await userEvent.clear(editor)
     await userEvent.type(editor, '<h1>Привет</h1>')
@@ -47,7 +48,7 @@ describe('MakePane', () => {
     const css = await screen.findByLabelText('Содержимое styles.css')
     await userEvent.type(css, 'h1{{')
     await userEvent.keyboard('{Control>}s{/Control}')
-    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'styles.css' })).content).toBe('body{}h1{'))
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'styles.css' })).content).toBe(MAKE_SCAFFOLD['styles.css'] + 'h1{'))
   })
 
   it('make.changed перезагружает превью и содержимое файла, если редактор не грязный', async () => {
@@ -191,5 +192,35 @@ describe('MakePane', () => {
     await userEvent.click(within(controls).getByRole('button', { name: 'Сбросить' }))
     expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.args', args: {} }, '*')
     expect((within(controls).getByLabelText('disabled') as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('enum-подобный arg рисуется селектом с вариантами из других стори', async () => {
+    const { api, emit } = renderPane()
+    await screen.findByTitle('Превью проекта')
+    const next = await api['make:write']({ conversationId: CONV, path: 'src/C.stories.jsx', content: "export default { title: 'C' }\nexport const A = {}" })
+    emit({ conversationId: CONV, rev: next.rev, paths: ['src/C.stories.jsx'] })
+    await userEvent.click(screen.getByRole('tab', { name: 'Компоненты' }))
+    const frame = await screen.findByTitle('Стори A') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage')
+    fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.story', story: 'A', args: { variant: 'primary' }, options: { variant: ['primary', 'secondary', 'danger'] } }, source: frame.contentWindow }))
+    const select = await screen.findByLabelText('variant') as HTMLSelectElement
+    expect(select.tagName).toBe('SELECT')
+    expect([...select.options].map((o) => o.value)).toEqual(['primary', 'secondary', 'danger'])
+    await userEvent.selectOptions(select, 'danger')
+    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.args', args: { variant: 'danger' } }, '*')
+  })
+
+  it('свежий проект показывает стартовые идеи; клик вставляет промпт в чат; диалог «Идеи» группирует все', async () => {
+    const { onInsertToChat } = renderPane()
+    await screen.findByTitle('Превью проекта')
+    const starters = await screen.findByTestId('make-starters')
+    await userEvent.click(within(starters).getByRole('button', { name: /Лендинг SaaS/ }))
+    expect(onInsertToChat).toHaveBeenCalledWith(expect.stringContaining('лендинг для SaaS'))
+    await userEvent.click(screen.getByRole('button', { name: 'Идеи для старта' }))
+    const dialog = await screen.findByTestId('make-ideas')
+    expect(within(dialog).getByRole('heading', { name: 'React и компоненты' })).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: /Игра 2048/ }))
+    expect(onInsertToChat).toHaveBeenLastCalledWith(expect.stringContaining('2048'))
+    await waitFor(() => expect(screen.queryByTestId('make-ideas')).not.toBeInTheDocument())
   })
 })
