@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendChatInstructionHints, chatInstructionHints } from './chatInstructions'
+import { appendChatInstructionHints, chatInstructionHints, stripDisabledInstructionBlocks } from './chatInstructions'
 import { DEFAULT_CHAT_INSTRUCTIONS } from './types'
 import { IMAGE_HINT } from './images'
 import { CHANGE_AUTHORIZATION_HINT } from './prompt'
@@ -31,5 +31,24 @@ describe('chatInstructions', () => {
     const off = { console: false, explorer: false, questions: false, image: false, taskLaunch: false }
     expect(appendChatInstructionHints('Привет', off)).toBe('Привет')
     expect(appendChatInstructionHints('   ', undefined)).toBe('   ')
+  })
+
+  describe('stripDisabledInstructionBlocks', () => {
+    const answer = 'Открываю.\n\n```tool\n{"kind":"console"}\n```\n\n```questions\n[{"q":"Дальше?","options":["Да","Нет"]}]\n```\n\n```image\n{"path":"/tmp/a.png"}\n```\n\n```task-launch\n{"title":"t","description":"d","acceptanceCriteria":"a"}\n```'
+
+    it('при включённых инструкциях текст не меняется', () => {
+      expect(stripDisabledInstructionBlocks(answer, undefined)).toBe(answer)
+    })
+
+    it('вырезает только блоки выключенных инструкций', () => {
+      const out = stripDisabledInstructionBlocks(answer, { questions: false, image: false, taskLaunch: false })
+      expect(out).toBe('Открываю.\n\n```tool\n{"kind":"console"}\n```')
+    })
+
+    it('tool-блок убирается только если выключен именно его kind', () => {
+      const tool = 'Вот.\n\n```tool\n{"kind":"console"}\n```'
+      expect(stripDisabledInstructionBlocks(tool, { explorer: false })).toBe(tool)
+      expect(stripDisabledInstructionBlocks(tool, { console: false })).toBe('Вот.')
+    })
   })
 })

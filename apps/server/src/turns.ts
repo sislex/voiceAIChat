@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import {
   appendChatInstructionHints,
+  stripDisabledInstructionBlocks,
   parseTaskLaunchRequest,
   buildConversationPrompt,
   buildPrompt,
@@ -821,7 +822,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
           }
           // Ответ сохраняет сервер: клиент мог обновить страницу или уйти.
           const answerText = text.trim() ? text : turn.partial
-          const rawText = engineNotice ? `${engineNotice}\n\n${answerText}` : answerText
+          // Блоки выключенных в настройках инструкций вырезаем до разбора: модель
+          // могла выдать их по памяти сессии, а виджет открываться не должен.
+          const allowedText = stripDisabledInstructionBlocks(answerText, settings.chatInstructions)
+          const rawText = engineNotice ? `${engineNotice}\n\n${allowedText}` : allowedText
           // Модель явно запрашивает выбор через структурированный блок. Сам блок
           // служебный: в историю и видимый ответ он не попадает.
           const taskLaunch = parseTaskLaunchRequest(rawText)

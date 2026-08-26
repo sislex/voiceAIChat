@@ -7,7 +7,7 @@
 import { IMAGE_HINT } from './images'
 import { CHANGE_AUTHORIZATION_HINT } from './prompt'
 import { QUESTIONS_HINT } from './questions'
-import { toolHint, type ToolSpec } from './tools'
+import { parseToolBlock, toolHint, type ToolSpec } from './tools'
 import type { ChatInstructionId, ChatInstructionSettings } from './types'
 
 export interface ChatInstructionInfo {
@@ -49,4 +49,30 @@ export function appendChatInstructionHints(prompt: string, settings: ChatInstruc
   if (!prompt.trim()) return prompt
   const hints = chatInstructionHints(settings)
   return hints.length ? `${prompt}\n\n${hints.join('\n\n')}` : prompt
+}
+
+/** Все блоки данного fence-языка (с хвостовым переводом строки) → пусто. */
+function stripFence(text: string, lang: string): string {
+  const re = new RegExp('\\n?```' + lang + '[^\\S\\n]*\\n[\\s\\S]*?```[^\\S\\n]*', 'g')
+  return text.replace(re, '')
+}
+
+/**
+ * Вырезает из ответа блоки выключенных инструкций. Убрать подсказку из промпта
+ * недостаточно: модель помнит формат по истории сессии и может выдать блок сама —
+ * тогда виджет открылся бы вопреки настройке. Включённые блоки не трогаем,
+ * tool-блок с разрешённым kind тоже остаётся.
+ */
+export function stripDisabledInstructionBlocks(text: string, settings: ChatInstructionSettings | undefined): string {
+  let out = text
+  const on = (id: ChatInstructionId): boolean => isChatInstructionEnabled(settings, id)
+  if (!on('questions')) out = stripFence(out, 'questions')
+  if (!on('image')) out = stripFence(out, 'image')
+  if (!on('taskLaunch')) out = stripFence(out, 'task-launch')
+  if (!on('console') || !on('explorer')) {
+    const parsed = parseToolBlock(out)
+    // Битый JSON parseToolBlock не разбирает — такой блок UI и так не откроет.
+    if (parsed && !on(parsed.tool.kind)) out = parsed.body
+  }
+  return out.trimEnd()
 }
