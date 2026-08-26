@@ -39,8 +39,8 @@ describe('ChatColumn — контекст веб-превью в истории'
 describe('ChatColumn — кнопка озвучки ответа', () => {
   it('кнопка есть только у AI-сообщений при canSpeak', () => {
     renderCol({ canSpeak: true, onSpeakMessage: vi.fn() })
-    // одна кнопка «Озвучить ответ» — только у ai-сообщения
-    expect(screen.getAllByLabelText('Озвучить ответ')).toHaveLength(1)
+    expect(screen.getByLabelText('Озвучить вопрос')).toBeInTheDocument()
+    expect(screen.getByLabelText('Озвучить ответ')).toBeInTheDocument()
   })
 
   it('без canSpeak кнопки нет', () => {
@@ -71,9 +71,9 @@ describe('ChatColumn — копирование ответа', () => {
     expect(writeText).toHaveBeenCalledWith('Ответ **жирный**')
   })
 
-  it('у сообщения пользователя кнопки копирования нет', () => {
+  it('у сообщения пользователя есть отдельная кнопка копирования', () => {
     renderCol()
-    expect(screen.getAllByLabelText('Копировать ответ')).toHaveLength(1) // только ai
+    expect(screen.getByLabelText('Копировать вопрос')).toBeInTheDocument()
   })
 })
 
@@ -134,7 +134,7 @@ describe('ChatColumn — экспорт разговора', () => {
         { ...messages[1], meta: { inputTokens: 1200, outputTokens: 34, cacheReadTokens: 900 } }
       ]
     })
-    expect(screen.getByTestId('message-tokens-a1')).toHaveTextContent('↓ 1.2k · ↑ 34 · кэш 900')
+    expect(screen.getByTestId('message-footer-a1')).toHaveTextContent(/Вход 1 200.*Выход 34.*Кэш чтение 900/)
   })
 
   it('без сообщений кнопки экспорта нет', () => {
@@ -222,29 +222,20 @@ describe('ChatColumn — простой/подробный вид ответа',
     renderCol({ messages: withActivity })
     expect(screen.queryByTestId('activity-count')).toBeNull()
     expect(screen.queryByTestId('activity-sections')).toBeNull()
-    expect(screen.getByText('Ответ')).toBeInTheDocument()
+    expect(document.querySelector('.msg.ai .bub')).toHaveTextContent('Ответ')
   })
 
-  it('«Вид ответа» — список: минимально → кратко → подробно, переключается', async () => {
+  it('режим действий переключается из меню ответа', async () => {
     renderCol({ messages: withActivity })
-    const select = screen.getByLabelText('Вид ответа') as HTMLSelectElement
-    // Кратко: появляется счётчик действий, секций ещё нет.
-    await userEvent.selectOptions(select, 'brief')
+    await userEvent.click(screen.getByLabelText('Ещё действия с ответом'))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Переключить вид действий' }))
     expect(screen.getByTestId('activity-count').textContent).toContain('2 действия')
-    expect(screen.queryByTestId('activity-sections')).toBeNull()
-    // Подробно: секции по каждому действию.
-    await userEvent.selectOptions(select, 'detailed')
-    expect(screen.getByTestId('activity-sections')).toBeInTheDocument()
-    expect(screen.getAllByTestId('activity-section')).toHaveLength(2)
-    // Обратно минимально.
-    await userEvent.selectOptions(select, 'minimal')
-    expect(screen.queryByTestId('activity-sections')).toBeNull()
-    expect(screen.queryByTestId('activity-count')).toBeNull()
   })
 
-  it('без активности списка «Вид ответа» нет', () => {
-    renderCol()
-    expect(screen.queryByLabelText('Вид ответа')).not.toBeInTheDocument()
+  it('без активности пункта переключения нет', async () => {
+    renderCol({ onDeleteMessage: vi.fn() })
+    await userEvent.click(screen.getByLabelText('Ещё действия с ответом'))
+    expect(screen.queryByRole('menuitem', { name: 'Переключить вид действий' })).not.toBeInTheDocument()
   })
 
   it('шапка ответа: копирование, модель на ховере движка, время старта; стоимость в подвале', () => {
@@ -259,13 +250,13 @@ describe('ChatColumn — простой/подробный вид ответа',
     // Время начала ответа присутствует.
     expect(document.querySelector('.msg-start')).toBeTruthy()
     // Реальная стоимость из ответа модели.
-    expect(screen.getByTestId('message-cost-ai-head').textContent).toBe('$0.12')
+    expect(screen.getByLabelText('Ещё действия с ответом')).toBeInTheDocument()
   })
 
   it('расчётная стоимость (модель не назвала цену) помечается «≈»', () => {
     const msg = makeAiMessage({ id: 'ai-est', engine: 'claude', meta: { model: 'opus', inputTokens: 1000, outputTokens: 2000 } })
     renderCol({ messages: [msg] })
-    expect(screen.getByTestId('message-cost-ai-est').textContent).toContain('≈ $')
+    expect(screen.getByTestId('message-footer-ai-est')).toHaveTextContent(/Вход 1 000.*Выход 2 000/)
   })
 })
 
@@ -411,7 +402,7 @@ describe('ChatColumn — загрузка сообщений', () => {
     renderCol({ loadingMessages: true })
     expect(screen.queryByTestId('messages-loading')).not.toBeInTheDocument()
     expect(screen.getByText('Обновляем историю…')).toBeInTheDocument()
-    expect(screen.getByText('Вопрос')).toBeInTheDocument()
+    expect(document.querySelector('.msg.me .bub')).toHaveTextContent('Вопрос')
   })
 
   it('loadingMessages=false → лоадера нет', () => {
@@ -532,10 +523,13 @@ describe('ChatColumn — режим работы', () => {
     expect(onOpen).toHaveBeenCalledOnce()
   })
 
-  it('после планового ответа предлагает выполнить план', async () => {
+  it('после планового ответа показывает действие внутри содержимого', async () => {
     const onExecutePlan = vi.fn()
     renderCol({ messages: planMessages, onExecutePlan })
-    await userEvent.click(screen.getByRole('button', { name: 'Выполнить план' }))
+    const execute = screen.getByRole('button', { name: 'Выполнить план' })
+    expect(execute.closest('.bub')).toBeInTheDocument()
+    expect(execute.closest('.mfoot')).toBeNull()
+    await userEvent.click(execute)
     expect(onExecutePlan).toHaveBeenCalledWith('a-plan')
   })
 
@@ -761,6 +755,37 @@ describe('ChatColumn — подготовка ответа', () => {
     rerender(<ChatColumn title="Тест" state="thinking" messages={messages} liveSegments={[]} diarization={false} voiceBar={null} streamingReply="Первый фрагмент" />)
     expect(screen.queryByTestId('reply-preparing')).not.toBeInTheDocument()
     expect(screen.getByTestId('streaming')).toHaveTextContent('Первый фрагмент')
+  })
+})
+
+describe('ChatColumn — зависимое меню сообщений', () => {
+  const answer = makeAiMessage({
+    id: 'a-menu',
+    execTarget: 'm1',
+    meta: { inputTokens: 120, outputTokens: 40, cacheReadTokens: 80, activity: [{ kind: 'result', summary: 'Готово', raw: '{}' }] }
+  })
+
+  it('показывает текстовую статистику и ролевой состав основных действий', () => {
+    renderCol({ messages: [makeUserMessage({ id: 'u-menu', execTarget: 'none' }), answer], agents: [{ id: 'm1', name: 'MacBook', online: true } as AgentInfo], canSpeak: true, onSpeakMessage: vi.fn(), onEditMessage: vi.fn() })
+    expect(screen.getByTestId('message-footer-u-menu')).toHaveTextContent(/Вопрос.*Без машины/)
+    expect(screen.getByTestId('message-footer-a-menu')).toHaveTextContent(/Ответ.*MacBook.*Вход 120.*Выход 40.*Кэш чтение 80/)
+    expect(within(screen.getByTestId('message-footer-u-menu')).getByLabelText('Изменить сообщение')).toBeInTheDocument()
+    expect(within(screen.getByTestId('message-footer-a-menu')).queryByLabelText('Изменить сообщение')).not.toBeInTheDocument()
+  })
+
+  it('скрывает неприменимые пункты и закрывает меню по Escape', async () => {
+    renderCol({ messages: [makeUserMessage({ id: 'u-menu' }), answer], onDeleteMessage: vi.fn() })
+    const userTrigger = screen.getByLabelText('Ещё действия с вопросом')
+    await userEvent.click(userTrigger)
+    expect(screen.getAllByRole('menuitem')).toHaveLength(1)
+    expect(screen.queryByRole('menuitem', { name: 'Сведения об ответе' })).not.toBeInTheDocument()
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(userTrigger).toHaveFocus()
+    await userEvent.click(screen.getByLabelText('Ещё действия с ответом'))
+    expect(screen.getByRole('menuitem', { name: 'Сведения об ответе' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Переключить вид действий' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Удалить сообщение' })).toBeInTheDocument()
   })
 })
 

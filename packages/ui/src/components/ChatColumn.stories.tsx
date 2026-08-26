@@ -236,16 +236,31 @@ export const EditingMessage: Story = {
   }
 }
 
+/** Ручное озвучивание вопроса: активная кнопка показывает остановку. */
+export const SpeakingQuestion: Story = {
+  args: { speakingMessageId: 'u1' }
+}
+
+/** Открытое зависимое меню ответа с метаданными, activity и удалением. */
+export const OpenAnswerMenu: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByLabelText('Ещё действия с ответом'))
+    await expect(canvas.getByRole('menu')).toBeVisible()
+    await expect(canvas.getByRole('menuitem', { name: 'Сведения об ответе' })).toBeVisible()
+    await expect(canvas.getByRole('menuitem', { name: 'Переключить вид действий' })).toBeVisible()
+  }
+}
+
 /** Переключение вида действий у ответа: минимально → кратко → подробно. */
 export const ActivityModeSwitch: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    const button = canvas.getByLabelText('Переключить вид действий')
-    await userEvent.click(button)
-    // Секций действий в ответе две (по обе стороны абзацев) — обе сворачиваются
-    // в свою строку-сводку, поэтому здесь `getAllBy`, а не `getBy`.
+    await userEvent.click(canvas.getByLabelText('Ещё действия с ответом'))
+    await userEvent.click(canvas.getByRole('menuitem', { name: 'Переключить вид действий' }))
     await expect(canvas.getAllByTestId('activity-brief')).toHaveLength(2)
-    await userEvent.click(button)
+    await userEvent.click(canvas.getByLabelText('Ещё действия с ответом'))
+    await userEvent.click(canvas.getByRole('menuitem', { name: 'Переключить вид действий' }))
     await expect(canvas.getAllByTestId('activity-section').length).toBeGreaterThan(1)
   }
 }
