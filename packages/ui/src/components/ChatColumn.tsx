@@ -12,12 +12,10 @@ import type { ConsoleHistoryStore, MachineOps, SwitchUtility } from './machine'
 import {
   chipClass,
   engineLabel,
-  formatLiveUsage,
   formatTurnMeta,
   clockTime,
   dateTimeTooltip,
   formatElapsed,
-  messageCost,
   speakerName,
   statusBadge,
   type LiveSegment
@@ -842,22 +840,11 @@ export function ChatColumn({
                 )}
                 {!isEditing && (
                   <div className="mfoot">
-                    {/* Слева: сведения (ℹ), затем токены со стоимостью хода. */}
+                    {/* Слева: токены со стоимостью хода — наведение даёт сводку, клик открывает
+                        «Что было отправлено модели». */}
                     {isAi && m.meta && (
-                      <MessageMeta meta={m.meta} {...(onOpenKbDocument ? { onOpenKbDocument } : {})} />
+                      <MessageMeta meta={m.meta} messageId={m.id} {...(onOpenKbDocument ? { onOpenKbDocument } : {})} />
                     )}
-                    {isAi && m.meta && (() => {
-                      const usage = formatLiveUsage(m.meta)
-                      const cost = messageCost(m.meta)
-                      if (!usage && !cost) return null
-                      return (
-                        <span className="msgact-count msgact-tokens" data-testid={`message-tokens-${m.id}`}>
-                          {usage && <span className="msgact-usage">{usage}</span>}
-                          {usage && cost && <span className="msgact-sep"> · </span>}
-                          {cost && <span className="msgact-cost" data-testid={`message-cost-${m.id}`} title={cost.title}>{cost.text}</span>}
-                        </span>
-                      )
-                    })()}
                     {isAi && isLast && m.meta?.request?.permissionMode === 'plan' && onExecutePlan && canExecutePlan && state === 'idle' && (
                       <Button size="sm" className="execute-plan" onClick={() => onExecutePlan(m.id)}>
                         Выполнить план
