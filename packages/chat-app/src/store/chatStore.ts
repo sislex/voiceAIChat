@@ -11,7 +11,7 @@
 
 import type { SttSegmentWire, UploadInfo } from '@shared/ipc'
 import type { TaskChatBadge, TaskChatContext } from '@shared/projects'
-import type { ActiveTurn, QueuedTurn } from '@shared/protocol'
+import type { ActiveTurn, QueuedTurn, TurnTarget } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { KbStatus, KbUsageQuery } from '@shared/kb'
 import type { PreviewElementPayload } from '@shared/previewInspector'
@@ -183,6 +183,10 @@ export interface ChatState {
   lastTurnMeta: TurnMeta | null
   liveUsage: TurnUsage | null
   activeUsage: Record<string, TurnUsage>
+  /** Движок/модель/машина идущих ходов (по claude.start) — для шапки живого ответа. */
+  activeTargets: Record<string, TurnTarget>
+  /** То же для активного разговора; null — ход не идёт или сервер ещё не сообщил. */
+  liveTarget: TurnTarget | null
   /** Проект сайдбара (null — «Без проекта»); фильтрует список/поиск чатов. */
   sidebarProjectId: string | null
   showDoneTaskChats: boolean
@@ -257,6 +261,7 @@ export interface ChatActions {
   applyClaudeActive(turns: ActiveTurn[]): void
   applyClaudeQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message, removedMessageIds?: string[]): void
   applyClaudeUsage(usage: TurnUsage, conversationId?: string): void
+  applyClaudeStart(target: TurnTarget, conversationId: string): void
   applyClaudeLog(entry: ClaudeLogEntry, conversationId?: string): void
   editQueued(id: string, text: string): void
   deleteQueued(id: string): void
@@ -344,6 +349,8 @@ function initialState(sidebarProjectId: string | null, showDoneTaskChats: boolea
     lastTurnMeta: null,
     liveUsage: null,
     activeUsage: {},
+    activeTargets: {},
+    liveTarget: null,
     sidebarProjectId,
     showDoneTaskChats,
     pinnedConversation: null,
@@ -644,7 +651,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       lastTurnMeta: null,
       // Счётчики действий и токенов продолжаются с накопленного, а не с нуля.
       liveActivity: state.activeActivity[id] ?? [],
-      liveUsage: state.activeUsage[id] ?? null
+      liveUsage: state.activeUsage[id] ?? null,
+      liveTarget: state.activeTargets[id] ?? null
     })
   }
 
@@ -659,7 +667,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   ): void {
     const activeId = getState().activeId
     if (turn.enabled && turn.send && activeId) {
-      setState({ streamingReply: '', lastTurnMeta: null, liveActivity: [], liveUsage: null })
+      setState({ streamingReply: '', lastTurnMeta: null, liveActivity: [], liveUsage: null, liveTarget: null })
       voice.beginTurn()
       // verbose=true всегда: активность нужна для живого статуса и подробного вида.
       if (messageId) turn.send(activeId, segments, attachments, true, execTarget, messageId)
@@ -1166,7 +1174,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       const { [convId]: _done, ...rest } = state.activeTurns
       const { [convId]: _act, ...restActivity } = state.activeActivity
       const { [convId]: _usage, ...restUsage } = state.activeUsage
-      setState({ activeTurns: rest, activeActivity: restActivity, activeUsage: restUsage })
+      const { [convId]: _target, ...restTargets } = state.activeTargets
+      setState({ activeTurns: rest, activeActivity: restActivity, activeUsage: restUsage, activeTargets: restTargets, ...(convId === state.activeId ? { liveTarget: null } : {}) })
       statusUpdate = bumpTurnStatus(convId, meta).catch((error: unknown) => {
         console.warn('[conversation] не удалось обновить статус завершённого хода:', error)
       })
@@ -1223,7 +1232,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       const { [convId]: _failed, ...rest } = state.activeTurns
       const { [convId]: _act, ...restActivity } = state.activeActivity
       const { [convId]: _usage, ...restUsage } = state.activeUsage
-      setState({ activeTurns: rest, activeActivity: restActivity, activeUsage: restUsage })
+      const { [convId]: _target, ...restTargets } = state.activeTargets
+      setState({ activeTurns: rest, activeActivity: restActivity, activeUsage: restUsage, activeTargets: restTargets, ...(convId === state.activeId ? { liveTarget: null } : {}) })
     }
     if (convId !== getState().activeId) return // ошибка фонового хода — UI не трогаем
     const warning = message.startsWith('WARNING:')
@@ -1235,7 +1245,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
     voice.cancelSpeech()
     clearPendingSubmit(undefined, true)
-    setState({ streamingReply: '', preparingReply: false, liveActivity: [], liveUsage: null })
+    setState({ streamingReply: '', preparingReply: false, liveActivity: [], liveUsage: null, liveTarget: null })
     setError(message)
     const v = voice.state()
     if (v === 'thinking' || v === 'speaking') voice.dispatch('error')
@@ -1247,7 +1257,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       activeActivity: Object.fromEntries(
         turns.filter((t) => t.activity && t.activity.length > 0).map((t) => [t.conversationId, t.activity ?? []])
       ),
-      activeUsage: Object.fromEntries(turns.flatMap((t) => (t.usage ? [[t.conversationId, t.usage] as const] : [])))
+      activeUsage: Object.fromEntries(turns.flatMap((t) => (t.usage ? [[t.conversationId, t.usage] as const] : []))),
+      activeTargets: Object.fromEntries(turns.flatMap((t) => (t.provider ? [[t.conversationId, { provider: t.provider, model: t.model ?? '', execTarget: t.execTarget ?? null }] as const] : [])))
     })
     restoreStreamIfActive()
   }
@@ -1282,6 +1293,14 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       }
     }
     setState(patch)
+  }
+
+  function applyClaudeStart(target: TurnTarget, conversationId: string): void {
+    const state = getState()
+    setState({
+      activeTargets: { ...state.activeTargets, [conversationId]: target },
+      ...(conversationId === state.activeId ? { liveTarget: target } : {})
+    })
   }
 
   function applyClaudeUsage(usage: TurnUsage, conversationId?: string): void {
@@ -1710,6 +1729,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       applyClaudeActive,
       applyClaudeQueue,
       applyClaudeUsage,
+      applyClaudeStart,
       applyClaudeLog,
       editQueued(id, text) {
         const activeId = getState().activeId

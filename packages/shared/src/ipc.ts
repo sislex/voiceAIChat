@@ -26,7 +26,7 @@ import type {
   WhisperModel,
   WhisperModelInfo
 } from './types'
-import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities } from './protocol'
+import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities, TurnTarget, ActiveTurn } from './protocol'
 import type { GitAccessDiagnostics, GitAccessResult } from './gitAccess'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
 import type {
@@ -552,6 +552,7 @@ export interface IpcEventMap {
   'stt:final': SttUpdate
   'stt:error': { message: string }
   /** Очередной фрагмент ответа Claude. */
+  'claude:start': { conversationId: string } & TurnTarget
   'claude:token': { conversationId: string; delta: string }
   /** Ответ Claude завершён (полный текст + метаданные хода + движок ответа). */
   'claude:done': {
@@ -570,7 +571,7 @@ export interface IpcEventMap {
   /** Живые счётчики токенов текущего хода (кумулятивные). */
   'claude:usage': { conversationId: string; usage: TurnUsage }
   /** Снапшот активных ходов при (пере)подключении — восстановление стрима. */
-  'claude:active': { turns: Array<{ conversationId: string; partial: string; activity?: ClaudeLogEntry[]; usage?: TurnUsage }> }
+  'claude:active': { turns: ActiveTurn[] }
   'claude:queue': { conversationId: string; items: QueuedTurn[]; paused: boolean; published?: Message; removedMessageIds?: string[] }
   /** Прогресс скачивания модели Whisper (0–100). */
   'stt:downloadProgress': { percent: number }
@@ -601,6 +602,7 @@ export const IPC_EVENT_CHANNELS: IpcEventChannel[] = [
   'stt:partial',
   'stt:final',
   'stt:error',
+  'claude:start',
   'claude:token',
   'claude:done',
   'claude:error',
@@ -790,6 +792,8 @@ export interface RendererClaudeBridge {
   reorderQueued?(payload: { conversationId: string; ids: string[] }): void
   sendQueuedNow?(payload: { conversationId: string; id: string }): void
   onToken(cb: (msg: IpcEventPayload<'claude:token'>) => void): () => void
+  /** Старт хода: движок/модель/машина для шапки живого ответа (только remote-мост). */
+  onStart?(cb: (msg: IpcEventPayload<'claude:start'>) => void): () => void
   onDone(cb: (msg: IpcEventPayload<'claude:done'>) => void): () => void
   onError(cb: (msg: IpcEventPayload<'claude:error'>) => void): () => void
   /** Подписка на активность агента (режим консоли). */

@@ -747,6 +747,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     starting.delete(conversationId)
     turns.set(conversationId, turn)
+    // Клиент рисует шапку ответа сразу: движок/модель/машина известны здесь, а не
+    // только в claude.done (иначе до конца хода он показывал бы свои догадки).
+    broadcast({ t: 'claude.start', conversationId, provider, model, execTarget: requestedTarget }, userId)
     const finish = (): void => {
       turn.done = true
       releaseTurnTools(turn)
@@ -1209,6 +1212,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         .map(([conversationId, t]) => ({
           conversationId,
           partial: t.partial,
+          provider: t.provider,
+          model: t.model,
+          execTarget: t.execTarget,
           ...(t.activity.length ? { activity: t.activity } : {}),
           ...(t.usage ? { usage: t.usage } : {})
         }))

@@ -42,6 +42,7 @@ export const createBrowserRealtime = (): RealtimeConnect => (handlers) => {
     unsubs.push(claude.onDone((m) => handlers.turnDone(m.text, m.meta, m.engine, m.message, m.conversationId)))
     unsubs.push(claude.onError((m) => handlers.turnError(m.message, m.conversationId)))
     if (claude.onActive) unsubs.push(claude.onActive((m) => handlers.turnActive(m.turns)))
+    if (claude.onStart) unsubs.push(claude.onStart((m) => handlers.turnStart({ provider: m.provider, model: m.model, execTarget: m.execTarget }, m.conversationId)))
     if (claude.onQueue) {
       unsubs.push(claude.onQueue((m) => handlers.turnQueue(m.conversationId, m.items, m.paused, m.published, m.removedMessageIds)))
     }

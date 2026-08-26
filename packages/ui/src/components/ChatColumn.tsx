@@ -4,7 +4,7 @@ import type { WorkspaceView } from '@shared/projects'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages, isImagePath } from '@shared/images'
-import type { ServerFileInfo } from '@shared/protocol'
+import type { ServerFileInfo, TurnTarget } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import { MachineUtility } from './MachineUtility'
 import { MessageImage } from './MessageImage'
@@ -126,6 +126,8 @@ export interface ChatColumnProps {
   liveActivity?: ClaudeLogEntry[]
   /** Живые счётчики токенов текущего хода — счётчик под стрим-сообщением. */
   liveUsage?: TurnUsage | null
+  /** Движок/модель/машина идущего хода (claude.start); null — сервер ещё не сообщил. */
+  liveTarget?: TurnTarget | null
   /** Текст ошибки для баннера (null/undefined — нет баннера). */
   error?: string | null
   /** Закрыть баннер ошибки. */
@@ -244,6 +246,7 @@ export function ChatColumn({
   execTarget = null,
   onChangeExecTarget,
   aiLabel = 'Claude',
+  liveTarget = null,
   onAnswerQuestions,
   onAnswerCiInteraction,
   answeredCiInteractions,
@@ -290,6 +293,20 @@ export function ChatColumn({
   // Момент, когда карточка ответа появилась (ещё до первого фрагмента) — для
   // времени в шапке карточки «Готовим ответ…».
   const prepStartRef = useRef<number | null>(null)
+
+  // Шапка живого ответа: пока ход идёт, движок/модель/машину сообщает сервер
+  // (claude.start) — он один знает наследование от проекта. Без сообщения —
+  // догадка клиента (aiLabel/execTarget разговора), как раньше.
+  const liveHead = (): { engine: 'claude' | 'codex'; label: string; model: string | undefined; machineLabel: string } => {
+    const engine: 'claude' | 'codex' = liveTarget?.provider ?? (aiLabel === 'Codex' ? 'codex' : 'claude')
+    const target = liveTarget ? liveTarget.execTarget : execTarget
+    return {
+      engine,
+      label: engine === 'codex' ? 'Codex' : 'Claude',
+      model: liveTarget?.model || undefined,
+      machineLabel: target === 'none' ? 'Без машины' : target ? (agents.find((a) => a.id === target)?.name ?? target) : 'Сервер'
+    }
+  }
   const [liveNow, setLiveNow] = useState<number>(() => Date.now())
 
   const startTitleEdit = (): void => {
@@ -893,15 +910,16 @@ export function ChatColumn({
           })}
 
           {showPreparingReply && (() => {
-            const machineLabel = execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === execTarget)?.name ?? 'Сервер'
+            const live = liveHead()
             const prepStart = prepStartRef.current ?? liveNow
             return (
               <div className="msg ai" data-testid="reply-preparing">
                 <div className="msg-head">
-                  <span className={`${chipClass('ai', diarization, aiLabel === 'Codex' ? 'codex' : 'claude')} msg-engine`}>
-                    {speakerName('ai', diarization, aiLabel)}
+                  <span className={`${chipClass('ai', diarization, live.engine)} msg-engine`} title={live.model ? `Модель: ${live.model}` : undefined}>
+                    {speakerName('ai', diarization, live.label)}
+                    {live.model && <span className="msg-model"> · {live.model}</span>}
                   </span>
-                  <span className="msg-machine-head" title="Машина выполнения этого ответа">{machineLabel}</span>
+                  <span className="msg-machine-head" title="Машина выполнения этого ответа">{live.machineLabel}</span>
                   <span className="msg-head-right">
                     <span className="msg-start" title={`Начало ответа: ${dateTimeTooltip(prepStart)}`}>{clockTime(prepStart)}</span>
                   </span>
@@ -947,11 +965,12 @@ export function ChatColumn({
           {hasStream && (
             <div className="msg ai" data-testid="streaming">
               <div className="msg-head">
-                <span className={`${chipClass('ai', diarization, aiLabel === 'Codex' ? 'codex' : 'claude')} msg-engine`}>
-                  {speakerName('ai', diarization, aiLabel)}
+                <span className={`${chipClass('ai', diarization, liveHead().engine)} msg-engine`} data-testid="live-engine" title={liveHead().model ? `Модель: ${liveHead().model}` : undefined}>
+                  {speakerName('ai', diarization, liveHead().label)}
+                  {liveHead().model && <span className="msg-model"> · {liveHead().model}</span>}
                 </span>
                 <span className="msg-machine-head" data-testid="live-machine" title="Машина выполнения этого ответа">
-                  {execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === execTarget)?.name ?? 'Сервер'}
+                  {liveHead().machineLabel}
                 </span>
                 <label className="msg-view">
                   <span className="vc-sr-only">Вид ответа</span>

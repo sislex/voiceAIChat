@@ -459,6 +459,30 @@ describe('ChatColumn — машина активного чата в загол�
 })
 
 describe('ChatColumn — активный стрим и прерванный ответ', () => {
+  it('шапка живого ответа берёт движок/модель/машину из claude.start, а не из догадок клиента', () => {
+    const agent = { id: 'm1', name: 'Prod', online: true } as never
+    renderCol({
+      state: 'thinking',
+      streamingReply: 'Отвечаю…',
+      aiLabel: 'Claude',
+      execTarget: null,
+      agents: [agent],
+      liveTarget: { provider: 'codex', model: 'gpt-5.6-sol', execTarget: 'm1' }
+    })
+    const engine = screen.getByTestId('live-engine')
+    expect(engine).toHaveTextContent('Codex')
+    expect(engine).toHaveTextContent('gpt-5.6-sol')
+    expect(engine).toHaveAttribute('title', 'Модель: gpt-5.6-sol')
+    expect(screen.getByTestId('live-machine')).toHaveTextContent('Prod')
+  })
+
+  it('без claude.start шапка живого ответа — из aiLabel/execTarget разговора', () => {
+    renderCol({ state: 'thinking', streamingReply: 'Отвечаю…', aiLabel: 'Codex', execTarget: null })
+    expect(screen.getByTestId('live-engine')).toHaveTextContent('Codex')
+    expect(screen.getByTestId('live-engine')).not.toHaveAttribute('title')
+    expect(screen.getByTestId('live-machine')).toHaveTextContent('Сервер')
+  })
+
   it('не дублирует lifecycle-статус в ленте', () => {
     renderCol({
       state: 'thinking',
