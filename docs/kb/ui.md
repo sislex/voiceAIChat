@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-26
-checked: 466b7a27
+checked: c97bf9ec
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -943,6 +943,8 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 ## AI-помощник формулировки
 
 Переиспользуемые `PromptBuilder` и `useAiAssist` живут в `packages/ui/src/components/prompt-builder/` и экспортируются из `@voicechat/ui`. Компонент транспорт-нейтрален: генератор, модификаторы, применение и персистентность приходят через props. Builder собирает результат из вариантов и сохраняет работу при переходе в настройки; закрытие сбрасывает сессию. Генерация запускается только вручную кнопкой-палочкой справа в поле промпта: сам ввод текста и изменение модификаторов сетевой запрос не выполняют. `applyNativeInputValue` использует нативный setter и bubbling `input`, поэтому интеграция совместима с управляемыми полями и библиотеками форм. Композер `VoiceBar` — первая production-интеграция.
+
+Раздел «Инструкции» `SettingsModal` — чекбоксы по каталогу `CHAT_INSTRUCTIONS` (терминал, проводник, вопросы, картинки, task-launch); патч уходит в `Settings.chatInstructions`, сервер по нему собирает подсказки модели ([llm.md](llm.md)).
 
 Настройки AI-помощника (`aiAssistProvider`, `aiAssistModel`, `aiAssistPrompts`) хранятся в общих per-user `Settings`. В `SettingsModal` им соответствует отдельный раздел «AI-помощник»; настройки внутри `PromptBuilder` могут временно редактироваться локально или сохраняться через `onPromptsChange`. Storybook содержит состояния builder/settings и интеграции с input/textarea; DOM-тесты дополнительно запускают axe в обоих режимах.
 

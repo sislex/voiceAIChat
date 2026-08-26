@@ -85,6 +85,28 @@ describe('turns: канбан-ассистент', () => {
   })
 })
 
+describe('turns: инструкции чата', () => {
+  it('по умолчанию модель получает подсказку про терминал; выключенная в настройках — нет', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    // Подсказки дописываются только к непустому промпту — нужна реплика в истории.
+    db.addMessage(U, conv.id, 'u0', 'открой консоль', '10:00')
+    const rec = recorder()
+    await runTurn(rec.client, db, conv.id)
+    expect(rec.last()?.prompt).toContain('"kind": "console"')
+    expect(rec.last()?.prompt).toContain('```questions')
+
+    db.saveSettings(U, { ...db.getSettings(U), chatInstructions: { console: false, questions: false } })
+    await runTurn(rec.client, db, conv.id)
+    expect(rec.last()?.prompt).not.toContain('"kind": "console"')
+    expect(rec.last()?.prompt).not.toContain('```questions')
+    // Проводник и картинки не трогали — остаются.
+    expect(rec.last()?.prompt).toContain('"kind": "explorer"')
+    expect(rec.last()?.prompt).toContain('```image')
+    db.close()
+  })
+})
+
 describe('turns: персонализация', () => {
   it('добавляет короткие предпочтения и возраст, но не полную дату рождения', async () => {
     const db = freshDb()
