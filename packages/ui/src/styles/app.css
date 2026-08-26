@@ -6460,7 +6460,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-device { border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 3px 8px; cursor: pointer; font: inherit; font-size: 12px; color: var(--text-dim); }
 .make-device.on { color: var(--text); }
 .make-device.on { border-color: var(--border); background: var(--surface); }
-.make-inspect.on { color: var(--accent); border-color: var(--accent); }
+.make-inspect.on { background: var(--accent); color: var(--accent-fg) !important; }
 .make-error { margin: 0; padding: 8px 12px; color: #b3261e; background: #fdecea; font-size: 13px; }
 .make-preview { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: #e9ecf1; }
 .make-selected { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 12px; }
@@ -6505,4 +6505,4 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-template { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
 .make-template-meta { display: grid; gap: 2px; }
 .make-template-meta small { color: var(--text-dim); }
-.make-head .vc-btn--icon { color: var(--text); }
+.make-head .vc-btn--icon { color: var(--text); font-size: 17px; line-height: 1; min-width: 30px; }
