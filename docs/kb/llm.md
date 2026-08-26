@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-26
-checked: c4d5ae60
+checked: 472310fb
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -255,7 +255,9 @@ Usage нормализуется в `TurnUsage` и рассылается как
 обновится само, полный код в ответ не вставлять. Из инструкций чата для Make сервер убирает
 `taskLaunch` (правка проекта — и есть задача, спрашивать «завести задачу» бессмысленно) и `console`.
 Сервер `apps/server/src/mcp/makeMcp.ts`: один снимок «До правок ассистента» на ход (по `turn`),
-после каждой мутации — `MakeHub.changed` → WS `make.changed` владельцу.
+после каждой мутации — `MakeHub.changed` → WS `make.changed` владельцу. Инструмент `make_check`
+(в allow-list раннеров) возвращает список проблем как ошибку инструмента — модели предлагается
+вызывать его после правок вместо попыток открыть страницу браузером.
 
 ## Старт хода: `claude.start`
 

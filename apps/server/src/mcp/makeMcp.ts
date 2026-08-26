@@ -130,6 +130,17 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           } catch (error) { return text(describeError(error), true) }
         })
 
+        server.registerTool('make_check', {
+          description: 'Статическая проверка проекта: нет ли index.html, битых ссылок href/src/url() на отсутствующие файлы, пустых файлов и http-скриптов. Вызывай после правок вместо попыток открыть страницу.',
+          inputSchema: {}
+        }, async () => {
+          try {
+            const issues = await workspaces.check(conv)
+            if (issues.length === 0) return text('Проверка пройдена: index.html есть, все ссылки на файлы проекта разрешаются.')
+            return text(issues.map((i) => `${i.path}: ${i.message}`).join('\n'), true)
+          } catch (error) { return text(describeError(error), true) }
+        })
+
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
         reply.raw.on('close', () => { void transport.close(); void server.close() })
         await server.connect(transport)

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@voicechat/ui-kit'
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import { REST } from '@shared/protocol'
-import { isMakeTextPath, normalizeMakePath, type MakeFileInfo, type MakeProjectState } from '@shared/make'
+import { MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -20,7 +20,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -77,6 +77,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   /** Диалог ввода имени (новый файл / переименование / подпись снимка) — вместо window.prompt. */
   const [ask, setAsk] = useState<{ title: string; label: string; initial: string; submit: string; onSubmit: (value: string) => void } | null>(null)
   const [askValue, setAskValue] = useState('')
+  const [publishOpen, setPublishOpen] = useState(false)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [issues, setIssues] = useState<MakeCheckIssue[] | null>(null)
+  const [checking, setChecking] = useState(false)
   const openAsk = (title: string, label: string, initial: string, submit: string, onSubmit: (value: string) => void): void => { setAskValue(initial); setAsk({ title, label, initial, submit, onSubmit }) }
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -263,6 +267,35 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
     } catch (e) { toast.error(describeError(e)) }
   }
 
+  const publish = async (): Promise<void> => {
+    try { setState(await api['make:publish']({ conversationId })); toast.success('Проект опубликован') } catch (e) { toast.error(describeError(e)) }
+  }
+  const unpublish = async (): Promise<void> => {
+    const ok = await confirm({ title: 'Снять проект с публикации?', message: 'Ссылка перестанет открываться.', variant: 'danger', confirmLabel: 'Снять' })
+    if (!ok) return
+    try { setState(await api['make:unpublish']({ conversationId })); toast.success('Публикация снята') } catch (e) { toast.error(describeError(e)) }
+  }
+  const copyPublicLink = async (): Promise<void> => {
+    if (!state?.published) return
+    try { await navigator.clipboard.writeText(new URL(state.published.url, window.location.origin).toString()); toast.success('Ссылка скопирована') } catch { toast.error('Не удалось скопировать') }
+  }
+  const runCheck = async (): Promise<void> => {
+    setChecking(true)
+    try { setIssues((await api['make:check']({ conversationId })).issues) } catch (e) { toast.error(describeError(e)) } finally { setChecking(false) }
+  }
+  const applyTemplate = async (templateId: string, title: string): Promise<void> => {
+    const ok = await confirm({ title: `Применить шаблон «${title}»?`, message: 'Файлы проекта заменятся файлами шаблона; текущее состояние сохранится снимком.', confirmLabel: 'Применить' })
+    if (!ok) return
+    try {
+      const next = await api['make:template']({ conversationId, templateId })
+      setState(next)
+      setPreviewRev(next.rev)
+      setTemplatesOpen(false)
+      await openFile('index.html')
+      toast.success(`Шаблон «${title}» применён`)
+    } catch (e) { toast.error(describeError(e)) }
+  }
+
   const sendSelectedToChat = (): void => {
     if (!selected || !onInsertToChat) return
     const text = `Измени элемент ${selected.selector}${selected.text ? ` («${selected.text.slice(0, 80)}»)` : ''}: `
@@ -300,11 +333,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
       )}
       {mode === 'code' && (
         <>
+          <Button size="sm" variant="ghost" onClick={() => void runCheck()} loading={checking}>Проверить</Button>
           <Button size="sm" variant="secondary" onClick={createFile}>+ Файл</Button>
           <Button size="sm" variant="primary" disabled={!dirty || saving} onClick={() => void save()} title="Сохранить (Ctrl/Cmd+S)">{saving ? 'Сохраняю…' : 'Сохранить'}</Button>
         </>
       )}
       {mode === 'history' && <Button size="sm" variant="secondary" onClick={takeSnapshot}>+ Снимок</Button>}
+      <IconButton size="sm" aria-label="Шаблоны проекта" title="Начать с шаблона" onClick={() => setTemplatesOpen(true)}>▤</IconButton>
+      <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>
       <IconButton size="sm" aria-label="Скачать проект (ZIP)" title="Скачать проект (ZIP)" onClick={() => window.open(REST.makeExport(conversationId), '_blank', 'noopener')}>⇩</IconButton>
       <IconButton size="sm" aria-label={fullscreen ? 'Свернуть панель' : 'На весь экран'} title={fullscreen ? 'Свернуть панель' : 'На весь экран'} aria-pressed={fullscreen} onClick={() => setFullscreen((v) => !v)}>⛶</IconButton>
     </div>
@@ -363,6 +399,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
             ))}
           </nav>
           <div className="make-editor">
+            {issues !== null && (
+              <div className={issues.length ? 'make-issues make-issues--bad' : 'make-issues'} role="status" data-testid="make-issues">
+                {issues.length === 0 ? <span>✓ Проверка пройдена: index.html есть, ссылки на файлы проекта разрешаются.</span> : (
+                  <ul>{issues.map((issue, i) => <li key={i}><button type="button" className="make-issue-path" onClick={() => void openFile(issue.path)}>{issue.path}</button> — {issue.message}</li>)}</ul>
+                )}
+                <IconButton size="sm" aria-label="Скрыть результат проверки" title="Скрыть" onClick={() => setIssues(null)}>✕</IconButton>
+              </div>
+            )}
             {selectedPath ? (
               <>
                 <div className="make-editor-head">
@@ -407,6 +451,40 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
             <Button size="sm" variant="danger" onClick={() => void resetProject()}>Сбросить проект</Button>
           </div>
         </div>
+      )}
+
+      {publishOpen && (
+        <Dialog title="Публикация проекта" ariaLabel="Публикация проекта" size="sm" onClose={() => setPublishOpen(false)} testId="make-publish">
+          {state?.published ? (
+            <div className="make-publish">
+              <p className="fsub">Ссылка открывается без входа — у всех, кто её знает. Файлы отдаются текущие: изменения видны сразу.</p>
+              <div className="make-publish-link">
+                <code data-testid="make-public-url">{typeof window !== 'undefined' ? new URL(state.published.url, window.location.origin).toString() : state.published.url}</code>
+                <Button size="sm" variant="secondary" onClick={() => void copyPublicLink()}>Копировать</Button>
+                <Button size="sm" variant="ghost" onClick={() => window.open(state.published!.url, '_blank', 'noopener')}>Открыть</Button>
+              </div>
+              <div className="make-ask-actions"><Button size="sm" variant="danger" onClick={() => void unpublish()}>Снять с публикации</Button></div>
+            </div>
+          ) : (
+            <div className="make-publish">
+              <p className="fsub">Проект получит непубличную ссылку вида <code>/p/&lt;токен&gt;/</code>: открывается без входа, поисковикам не индексируется, снять можно в любой момент.</p>
+              <div className="make-ask-actions"><Button size="sm" variant="primary" onClick={() => void publish()}>Опубликовать</Button></div>
+            </div>
+          )}
+        </Dialog>
+      )}
+
+      {templatesOpen && (
+        <Dialog title="Шаблоны проекта" ariaLabel="Шаблоны проекта" size="md" onClose={() => setTemplatesOpen(false)} testId="make-templates">
+          <ul className="make-templates" aria-label="Шаблоны">
+            {MAKE_TEMPLATES.map((t) => (
+              <li key={t.id} className="make-template">
+                <span className="make-template-meta"><strong>{t.title}</strong><small>{t.description}</small></span>
+                <Button size="sm" variant="secondary" onClick={() => void applyTemplate(t.id, t.title)}>Применить</Button>
+              </li>
+            ))}
+          </ul>
+        </Dialog>
       )}
 
       {ask && (

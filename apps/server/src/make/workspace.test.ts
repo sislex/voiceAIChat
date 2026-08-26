@@ -81,4 +81,44 @@ describe('MakeWorkspaces', () => {
     expect(zip.toString('latin1')).toContain('index.html')
     expect(zip.readUInt32LE(zip.length - 22)).toBe(0x06054b50)
   })
+
+  it('публикация: токен, индекс токен→разговор, снятие; файл публикации переживает reset', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const pub = await ws.publish(CONV)
+    expect(pub.published?.url).toMatch(/^\/p\/[0-9a-f]{32}\/$/)
+    const token = pub.published!.token
+    expect(await ws.publishedTarget(token)).toBe(CONV)
+    expect(await ws.publishedTarget('nope')).toBeNull()
+    // Повторная публикация не меняет ссылку.
+    expect((await ws.publish(CONV)).published?.token).toBe(token)
+    await ws.reset(CONV)
+    expect((await ws.state(CONV)).published?.token).toBe(token)
+    const off = await ws.unpublish(CONV)
+    expect(off.published).toBeNull()
+    expect(await ws.publishedTarget(token)).toBeNull()
+  })
+
+  it('check находит отсутствующий index, битые ссылки, пустые файлы и http-скрипты', async () => {
+    const ws = await fresh()
+    await ws.write(CONV, 'about.html', '<link href="css/x.css"><script src="http://cdn/x.js"></script><a href="#top">a</a><img src="data:image/png;base64,xx">')
+    await ws.write(CONV, 'empty.js', '')
+    const issues = await ws.check(CONV)
+    expect(issues.map((i) => i.kind).sort()).toEqual(['empty-file', 'external-script', 'missing-file', 'no-index'])
+    await ws.write(CONV, 'index.html', '<link rel="stylesheet" href="css/x.css">')
+    await ws.write(CONV, 'css/x.css', 'body{background:url(../img/bg.png)} .f{filter:url(#shadow)}')
+    const again = await ws.check(CONV)
+    expect(again.some((i) => i.kind === 'no-index')).toBe(false)
+    expect(again.filter((i) => i.kind === 'missing-file').map((i) => i.message)).toContain('Ссылка на отсутствующий файл: ../img/bg.png')
+  })
+
+  it('applyTemplate заменяет файлы шаблоном и сохраняет снимок; неизвестный шаблон — not_found', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const state = await ws.applyTemplate(CONV, 'dashboard')
+    expect(state.files.map((f) => f.path)).toEqual(['app.js', 'index.html', 'styles.css'])
+    expect((await ws.read(CONV, 'index.html')).content).toContain('Дашборд')
+    expect(state.snapshots.map((s) => s.label)).toContain('Перед шаблоном «Дашборд»')
+    await expect(ws.applyTemplate(CONV, 'nope')).rejects.toMatchObject({ code: 'not_found' })
+  })
 })

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-26
-checked: c4d5ae60
+checked: 472310fb
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -274,3 +274,7 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 {conversationId, rev, paths}` (`SERVER_MESSAGE_TYPES`), мост `window.make.onChanged`
 (`RendererMakeBridge`, `remote/index.ts`). `LlmRunBody.makeMcpUrl` — MCP-эндпоинт `/mcp/make`.
 `AssistantKind` дополнен `'make'`; `conversations:create` принимает его.
+Вторая итерация: `REST.makePublish` (POST/DELETE `/api/make/:id/publish`), `REST.makeCheck`
+(`GET …/check` → `MakeCheckIssue[]`), `REST.makeTemplate` (POST `…/template {template}`), мосты
+`make:publish/unpublish/check/template`; `MakeProjectState.published: MakePublication|null`.
+Публичная раздача — `GET /p/<token>/*` (`MAKE_PUBLIC_PREFIX`, вне `/api`, без auth и без инспектора).

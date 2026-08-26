@@ -102,6 +102,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:snapshot': ({ conversationId, label }) => req(REST.makeSnapshots(conversationId), { method: 'POST', body: JSON.stringify({ label }) }),
     'make:restore': ({ conversationId, snapshotId }) => req(REST.makeRestore(conversationId, snapshotId), { method: 'POST' }),
     'make:reset': ({ conversationId }) => req(REST.makeReset(conversationId), { method: 'POST' }),
+    'make:publish': ({ conversationId }) => req(REST.makePublish(conversationId), { method: 'POST' }),
+    'make:unpublish': ({ conversationId }) => req(REST.makePublish(conversationId), { method: 'DELETE' }),
+    'make:check': ({ conversationId }) => req(REST.makeCheck(conversationId)),
+    'make:template': ({ conversationId, templateId }) => req(REST.makeTemplate(conversationId), { method: 'POST', body: JSON.stringify({ templateId }) }),
     'conversations:createDraft': (body) =>
       req(REST.conversationDraft, { method: 'POST', body: JSON.stringify(body) }),
     'kanbanAssistant:get': ({ projectId, conversationId }) => req(`/api/projects/${encodeURIComponent(projectId)}/kanban-assistant${conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : ''}`),
