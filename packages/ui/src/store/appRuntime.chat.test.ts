@@ -1593,6 +1593,35 @@ describe('voiceStore — ходы, переживающие обновление
     expect(store.getState().streamingReply).toBe('Новый ответ')
   })
 
+  it('applyClaudeStart даёт liveTarget активному разговору; done его снимает; чужой ход — только в activeTargets', async () => {
+    const { store } = makeClaudeStore()
+    await store.actions.init()
+    store.actions.setDraft('вопрос')
+    await store.actions.submitText()
+    const id = store.getState().activeId!
+    const target = { provider: 'codex' as const, model: 'gpt-5.6-sol', execTarget: 'm1' }
+    store.actions.applyClaudeStart(target, id)
+    expect(store.getState().liveTarget).toEqual(target)
+    store.actions.applyClaudeStart({ provider: 'claude', model: 'opus', execTarget: null }, 'другой')
+    expect(store.getState().liveTarget).toEqual(target)
+    expect(store.getState().activeTargets['другой']?.model).toBe('opus')
+    store.actions.applyClaudeDone('ок', undefined, 'codex', aiMessage(id, 'ок'), id)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.getState().liveTarget).toBeNull()
+    expect(store.getState().activeTargets[id]).toBeUndefined()
+  })
+
+  it('applyClaudeActive восстанавливает liveTarget из снапшота ходов', async () => {
+    const { store } = makeClaudeStore()
+    await store.actions.init()
+    store.actions.setDraft('вопрос')
+    await store.actions.submitText()
+    const id = store.getState().activeId!
+    await store.actions.selectConversation(id)
+    store.actions.applyClaudeActive([{ conversationId: id, partial: 'Нача', provider: 'codex', model: 'gpt', execTarget: 'm1' }])
+    expect(store.getState().liveTarget).toEqual({ provider: 'codex', model: 'gpt', execTarget: 'm1' })
+  })
+
   it('события чужого разговора копятся в activeTurns, но не трогают текущую ленту', async () => {
     const { store, api } = makeClaudeStore()
     const spyAdd = vi.spyOn(api, 'messages:add')

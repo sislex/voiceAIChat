@@ -85,6 +85,28 @@ describe('turns: канбан-ассистент', () => {
   })
 })
 
+describe('turns: claude.start', () => {
+  it('в начале хода сервер сообщает движок, модель и машину', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    db.addMessage(U, conv.id, 'u0', 'привет', '10:00')
+    db.saveSettings(U, { ...db.getSettings(U), llmProvider: 'codex', codexModel: 'gpt-5.6-sol' })
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, codex: rec.client, agents: onlineAgents, mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret' })
+    const starts: unknown[] = []
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => {
+        if (m.t === 'claude.start') starts.push(m)
+        if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() }
+      })
+      turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'привет' }] })
+    })
+    expect(starts).toEqual([expect.objectContaining({ t: 'claude.start', conversationId: conv.id, provider: 'codex', model: 'gpt-5.6-sol', execTarget: null })])
+    expect(turns.active(U)).toEqual([])
+    db.close()
+  })
+})
+
 describe('turns: инструкции чата', () => {
   it('по умолчанию модель получает подсказку про терминал; выключенная в настройках — нет', async () => {
     const db = freshDb()

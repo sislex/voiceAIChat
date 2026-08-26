@@ -10,7 +10,7 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import type { CcItem } from '@shared/cc'
 import type { CxItem } from '@shared/codexSessions'
 import type { KbUsageQuery } from '@shared/kb'
-import type { ActiveTurn, QueuedTurn } from '@shared/protocol'
+import type { ActiveTurn, TurnTarget, QueuedTurn } from '@shared/protocol'
 import type { LoginStatusMap } from '@shared/auth'
 import type { SttUpdate } from '@shared/ipc'
 import type {
@@ -49,6 +49,7 @@ export interface RealtimeHandlers {
   turnDone(text: string, meta?: TurnMeta, engine?: LlmProvider, message?: Message, conversationId?: string): void
   turnError(message: string, conversationId?: string): void
   turnActive(turns: ActiveTurn[]): void
+  turnStart(target: TurnTarget, conversationId: string): void
   turnQueue(conversationId: string, items: QueuedTurn[], paused: boolean, published?: Message, removedMessageIds?: string[]): void
   turnUsage(usage: TurnUsage, conversationId?: string): void
   turnLog(entry: ClaudeLogEntry, conversationId?: string): void
@@ -233,6 +234,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       void chat.actions.applyClaudeDone(text, meta, engine, message, conversationId),
     turnError: (message, conversationId) => chat.actions.applyClaudeError(message, conversationId),
     turnActive: (turns) => chat.actions.applyClaudeActive(turns),
+    turnStart: (target, conversationId) => chat.actions.applyClaudeStart(target, conversationId),
     turnQueue: (conversationId, items, paused, published, removedMessageIds) =>
       chat.actions.applyClaudeQueue(conversationId, items, paused, published, removedMessageIds),
     turnUsage: (usage, conversationId) => chat.actions.applyClaudeUsage(usage, conversationId),

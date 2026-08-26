@@ -534,6 +534,14 @@ describe('REST: conversations/messages/settings', () => {
     expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
   })
 
+  it('POST /messages для ответа без engine/execTarget подставляет эффективные движок и машину разговора', async () => {
+    const conv = db.createConversation(U, 'Диагностика')
+    db.saveSettings(U, { ...db.getSettings(U), llmProvider: 'codex' })
+    const res = await inj({ method: 'POST', url: `/api/conversations/${conv.id}/messages`, payload: { role: 'ai', text: '✓ проверка', time: '10:00' } })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ role: 'ai', engine: 'codex', execTarget: null })
+  })
+
   it('снимок содержит группу «Инструкции чата»; тумблер выключает инструкцию только в разговоре', async () => {
     const conv = db.createConversation(U, 'Чат')
     const groupOf = (json: { groups: Array<{ id: string; items: Array<{ id: string; enabled: boolean; includedInNextTurn: boolean; toggleable: boolean; details?: Record<string, unknown> }> }> }) => json.groups.find((g) => g.id === 'chat-instructions')!

@@ -442,7 +442,26 @@ export async function registerRest(
     '/api/conversations/:id/messages',
     async (req) => {
       const { role, text, time, engine, meta, execTarget, attachments } = req.body
-      return db.addMessage(uid(req), req.params.id, role, text, time, engine, meta, execTarget, attachments)
+      const userId = uid(req)
+      // Ответ без движка/машины (самодиагностика пишет текст сама) получает
+      // эффективные значения разговора: проектное наследование знает только сервер.
+      let effectiveEngine = engine
+      let effectiveTarget = execTarget
+      if (role === 'ai' && (engine === undefined || execTarget === undefined)) {
+        const conversation = db.getConversation(userId, req.params.id)
+        if (engine === undefined) {
+          const settings = db.getSettings(userId)
+          const projectLlm = conversation?.projectId && conversation.llmProvider === null
+            ? db.getCiLlmConfig('project', conversation.projectId) ?? db.ciLlmDefaultsForUser(userId)
+            : null
+          effectiveEngine = conversation?.llmProvider ?? projectLlm?.provider ?? settings.llmProvider
+        }
+        if (execTarget === undefined) {
+          const machine = db.resolveConversationMachine(userId, req.params.id)
+          effectiveTarget = machine?.source === 'disabled' ? 'none' : machine?.agentId ?? null
+        }
+      }
+      return db.addMessage(userId, req.params.id, role, text, time, effectiveEngine, meta, effectiveTarget, attachments)
     }
   )
 

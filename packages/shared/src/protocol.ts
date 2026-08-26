@@ -407,7 +407,16 @@ export interface QueuedTurn {
 }
 
 /** Активный (незавершённый) ход модели — для восстановления стрима после reconnect. */
-export interface ActiveTurn {
+/** Кем и где выполняется ход — для шапки живого ответа до его завершения. */
+export interface TurnTarget {
+  provider: LlmProvider
+  /** Модель, ушедшая в CLI ('' — умолчание движка). */
+  model: string
+  /** Машина выполнения: id агента, null — сервер, 'none' — без выполнения. */
+  execTarget: string | null
+}
+
+export interface ActiveTurn extends Partial<TurnTarget> {
   conversationId: string
   /** Накопленный частичный текст ответа. */
   partial: string
@@ -469,6 +478,8 @@ export type ServerMessage =
   | { t: 'stt.partial'; update: SttUpdate }
   | { t: 'stt.final'; update: SttUpdate }
   | { t: 'stt.error'; message: string }
+  /** Ход стартовал: движок/модель/машина известны сразу, а не только в claude.done. */
+  | ({ t: 'claude.start'; conversationId: string } & TurnTarget)
   | { t: 'claude.token'; conversationId: string; delta: string }
   | {
       t: 'claude.done'
@@ -570,6 +581,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'stt.partial',
   'stt.final',
   'stt.error',
+  'claude.start',
   'claude.token',
   'claude.done',
   'claude.error',

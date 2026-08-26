@@ -943,6 +943,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     diagnosticsControllerRef.current?.abort()
     const controller = new AbortController()
     diagnosticsControllerRef.current = controller
+    // Ход диагностики виден в ленте — настройки разговора закрываем сразу.
+    setConversationSettingsOpen(false)
     const engine = (): 'claude' | 'codex' => (activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'codex' : 'claude'
     void runChatDiagnostics({
       signal: controller.signal,
@@ -1505,6 +1507,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         streamingReply={chat.streamingReply}
         liveActivity={chat.liveActivity}
         liveUsage={chat.liveUsage}
+        liveTarget={chat.liveTarget}
         canSpeak={settingsState.ttsAvailable}
         speakingMessageId={voice.speakingMessageId}
         onSpeakMessage={voiceActions.replayMessage}
@@ -1578,6 +1581,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             diarization={settingsState.settings.diarization}
             detectedSpeakers={detectedSpeakers}
             aiLabel={(activeConversation?.llmProvider ?? settingsState.settings.llmProvider) === 'codex' ? 'Codex' : 'Claude'}
+            liveTarget={chat.liveTarget}
             attachments={chat.attachments}
             readServerFile={operationsActions.readServerFile}
             previewElement={previewElement}

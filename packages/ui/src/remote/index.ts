@@ -86,6 +86,7 @@ export function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
       ws.on('claude.error', (m) => cb({ conversationId: m.conversationId, message: m.message })),
     onLog: (cb) =>
       ws.on('claude.log', (m) => cb({ conversationId: m.conversationId, entry: m.entry })),
+    onStart: (cb) => ws.on('claude.start', (m) => cb({ conversationId: m.conversationId, provider: m.provider, model: m.model, execTarget: m.execTarget })),
     onActive: (cb) => ws.on('claude.active', (m) => cb({ turns: m.turns })),
     onQueue: (cb) => ws.on('claude.queue', (m) => cb({ conversationId: m.conversationId, items: m.items, paused: m.paused, published: m.published, removedMessageIds: m.removedMessageIds })),
     onUsage: (cb) =>
