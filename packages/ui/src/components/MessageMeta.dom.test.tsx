@@ -11,9 +11,13 @@ const META = makeTurnMeta()
 describe('MessageMeta', () => {
   it('тултип с краткой сводкой появляется по наведению', async () => {
     const user = userEvent.setup()
-    render(<MessageMeta meta={META} />)
+    render(<MessageMeta meta={META} messageId="a1" />)
     expect(screen.queryByTestId('meta-tip')).not.toBeInTheDocument()
-    await user.hover(screen.getByLabelText('Сведения об ответе').parentElement as HTMLElement)
+    // Триггер — сам блок токенов: цифры хода видны прямо в кнопке.
+    const trigger = screen.getByLabelText('Сведения об ответе')
+    expect(trigger).toHaveAttribute('data-testid', 'message-tokens-a1')
+    expect(trigger.textContent).toMatch(/↓|↑/)
+    await user.hover(trigger)
     const tip = screen.getByTestId('meta-tip')
     expect(tip.textContent).toContain('sonnet')
     expect(tip.textContent).toContain('1.5k → 320')

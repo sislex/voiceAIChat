@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Dialog } from '@voicechat/ui-kit'
-import { IconButton } from '@voicechat/ui-kit'
 import type { MessageRole, TurnMeta } from '@shared/types'
 import { estimateKbTokens } from '@shared/kb'
-import { messageCost } from '../lib/view'
+import { formatLiveUsage, messageCost } from '../lib/view'
 
 /** Человекочитаемая роль сообщения контекста. */
 function roleLabel(role: MessageRole): string {
@@ -54,15 +53,19 @@ function Chips({ label, items }: { label: string; items?: string[] }): JSX.Eleme
 
 export interface MessageMetaProps {
   meta: TurnMeta
+  /** id сообщения — для data-testid блока токенов и стоимости. */
+  messageId?: string
   /** Открыть раздел базы знаний (чипсы «База знаний» ведут в #/kb/:documentId). */
   onOpenKbDocument?: (documentId: string, anchor: string) => void
 }
 
 /**
- * Иконка ℹ у ответа модели: при наведении — краткая сводка (токены/размер/время/
- * модель), кнопка «Подробнее» открывает по клику панель со всем, что ушло модели.
+ * Блок токенов/стоимости в подвале ответа — он же триггер сведений о ходе:
+ * при наведении — краткая сводка (модель/токены/размер/время), по клику —
+ * панель «Что было отправлено модели». Отдельной иконки ℹ нет: один элемент
+ * вместо двух, а цифры и так подсказывают, что за ними стоит подробность.
  */
-export function MessageMeta({ meta, onOpenKbDocument }: MessageMetaProps): JSX.Element {
+export function MessageMeta({ meta, messageId, onOpenKbDocument }: MessageMetaProps): JSX.Element {
   const [hover, setHover] = useState(false)
   const [open, setOpen] = useState(false)
   const req = meta.request
@@ -92,17 +95,26 @@ export function MessageMeta({ meta, onOpenKbDocument }: MessageMetaProps): JSX.E
 
   // Стоимость: реальную (costUsd от модели) или расчётную по тарифам — обе в тултипе.
   const costLine = messageCost(meta)
+  const usage = formatLiveUsage(meta)
 
   return (
     <span className="metawrap" onMouseEnter={openTip} onMouseLeave={scheduleClose}>
-      <IconButton
-        size="sm"
+      <button
+        type="button"
+        className="msgact-count msgact-tokens"
         aria-label="Сведения об ответе"
-        title="Сведения об ответе"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        data-testid={messageId ? `message-tokens-${messageId}` : 'message-tokens'}
         onClick={() => setOpen(true)}
+        onFocus={openTip}
+        onBlur={scheduleClose}
       >
-        ⓘ
-      </IconButton>
+        {usage && <span className="msgact-usage">{usage}</span>}
+        {usage && costLine && <span className="msgact-sep"> · </span>}
+        {costLine && <span className="msgact-cost" data-testid={messageId ? `message-cost-${messageId}` : 'message-cost'}>{costLine.text}</span>}
+        {!usage && !costLine && <span aria-hidden="true">ⓘ</span>}
+      </button>
 
       {hover && !open && (
         <span className="metatip" role="tooltip" data-testid="meta-tip">

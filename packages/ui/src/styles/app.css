@@ -2744,6 +2744,19 @@ button.conscmd:hover {
 .msgact-tokens {
   font-variant-numeric: tabular-nums;
 }
+/* Блок токенов — кнопка сведений о ходе: сбрасываем вид button, оставляя чип. */
+button.msgact-tokens {
+  cursor: pointer;
+  font: inherit;
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  line-height: inherit;
+  appearance: none;
+}
+button.msgact-tokens:hover, button.msgact-tokens:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+}
 .msgact-sections {
   margin-top: 8px;
   padding-top: 6px;
