@@ -105,6 +105,24 @@ describe('turns: инструкции чата', () => {
     expect(rec.last()?.prompt).toContain('```image')
     db.close()
   })
+
+  it('tool-блок выключенной консоли вырезается из сохранённого ответа', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Чат')
+    db.addMessage(U, conv.id, 'u0', 'открой консоль', '10:00')
+    db.saveSettings(U, { ...db.getSettings(U), chatInstructions: { console: false } })
+    const client: LlmClient = {
+      send(_req, h) {
+        h.onDone('Открываю.\n\n```tool\n{"kind":"console"}\n```')
+        return { cancel: () => {} }
+      }
+    }
+    await runTurn(client, db, conv.id)
+    const last = db.listMessages(U, conv.id).at(-1)
+    expect(last?.role).toBe('ai')
+    expect(last?.text).toBe('Открываю.')
+    db.close()
+  })
 })
 
 describe('turns: персонализация', () => {
