@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-27
-checked: aecf9613
+checked: ff211534
 areas:
   - apps/server/src
 ---
@@ -61,7 +61,8 @@ ZIP — собственный писатель без сжатия (`make/zip.t
 MCP даёт `db.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
 Публикация: `.publish.json` в папке проекта + индекс `make/.published/<token>.json` → маршрут
 `/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен).
-`check()` — статика: нет `index.html`, битые `href/src/url()` на файлы проекта (относительно файла,
+`check()` — статика: ошибки компиляции jsx/tsx/ts (`compileDiagnostics` в `make/transpile.ts` → `kind: 'compile-error'`
+со `line/column`), нет `index.html`, битые `href/src/url()` на файлы проекта (относительно файла,
 `..` учитывается через `resolveRelativeRef`; якоря `#id`, `data:`, `mailto:`, `//` пропускаются),
 пустые файлы, `http://`-скрипты. `applyTemplate(id)` заменяет файлы шаблоном `MAKE_TEMPLATES`
 со снимком «Перед шаблоном «…»».

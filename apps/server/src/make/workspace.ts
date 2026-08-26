@@ -11,8 +11,9 @@ import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile
 import { dirname, join, resolve, sep } from 'node:path'
 import {
   MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, makePublicUrl, normalizeMakePath,
-  type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath } from '@voicechat/shared'
+  type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
+import { compileDiagnostics } from './transpile.js'
 import type { MakeSearchMatch, MakeStoryFile } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
@@ -367,6 +368,12 @@ export class MakeWorkspaces {
     if (!paths.has('index.html')) issues.push({ path: 'index.html', kind: 'no-index', message: 'Нет index.html — превью открывать нечего' })
     for (const file of files) {
       if (file.size === 0) issues.push({ path: file.path, kind: 'empty-file', message: 'Файл пустой' })
+      if (isMakeTranspiledPath(file.path) && file.size > 0) {
+        const source = await readFile(join(this.dirOf(conversationId), ...file.path.split('/')), 'utf8')
+        for (const d of await compileDiagnostics(file.path, source)) {
+          issues.push({ path: file.path, kind: 'compile-error', message: `Ошибка компиляции (строка ${d.line}): ${d.message}`, line: d.line, column: d.column })
+        }
+      }
       if (!/\.(html?|css)$/i.test(file.path)) continue
       const text = (await readFile(join(this.dirOf(conversationId), ...file.path.split('/')), 'utf8')).slice(0, 512 * 1024)
       const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''

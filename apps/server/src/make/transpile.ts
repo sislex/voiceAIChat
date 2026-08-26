@@ -36,6 +36,19 @@ function normalizeJoin(dir: string, spec: string): string {
   return parts.join('/')
 }
 
+/** Ошибки компиляции файла (для make_check и маркеров редактора); пустой массив — файл собирается. */
+export async function compileDiagnostics(path: string, source: string): Promise<Array<{ line: number; column: number; message: string }>> {
+  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
+  try {
+    await transform(source, { loader: ext === 'tsx' ? 'tsx' : ext === 'ts' ? 'ts' : 'jsx', format: 'esm', target: 'es2020', jsx: 'automatic', sourcefile: path, logLevel: 'silent' })
+    return []
+  } catch (error) {
+    const errors = (error as { errors?: Array<{ text: string; location?: { line: number; column: number } | null }> }).errors
+    if (!errors?.length) return [{ line: 1, column: 1, message: error instanceof Error ? error.message : String(error) }]
+    return errors.map((e) => ({ line: e.location?.line ?? 1, column: (e.location?.column ?? 0) + 1, message: e.text }))
+  }
+}
+
 export async function transpileForPreview(conversationId: string, path: string, source: string, rev: number, exists: FileExists): Promise<string> {
   const key = `${conversationId}:${path}`
   const hit = cache.get(key)

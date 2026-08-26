@@ -1,4 +1,4 @@
-import { MAKE_SCAFFOLD } from '@shared/make'
+import { MAKE_SCAFFOLD, type MakeCheckIssue } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
@@ -255,7 +255,16 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:restore': async ({ conversationId }) => makeState(conversationId),
     'make:publish': async ({ conversationId }) => { makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/' }); return makeState(conversationId) },
     'make:unpublish': async ({ conversationId }) => { makePub.delete(conversationId); return makeState(conversationId) },
-    'make:check': async ({ conversationId }) => ({ issues: makeFiles(conversationId).has('index.html') ? [] : [{ path: 'index.html', kind: 'no-index' as const, message: 'Нет index.html' }] }),
+    'make:check': async ({ conversationId }) => {
+      const issues: MakeCheckIssue[] = makeFiles(conversationId).has('index.html') ? [] : [{ path: 'index.html', kind: 'no-index', message: 'Нет index.html' }]
+      // Имитация esbuild: маркер «SYNTAX_ERROR» в jsx/tsx — ошибка компиляции на строке вхождения.
+      for (const [path, content] of makeFiles(conversationId)) {
+        if (!/\.(jsx|tsx|ts)$/.test(path)) continue
+        const idx = content.split('\n').findIndex((l) => l.includes('SYNTAX_ERROR'))
+        if (idx >= 0) issues.push({ path, kind: 'compile-error', message: `Ошибка компиляции (строка ${idx + 1}): Unexpected token`, line: idx + 1, column: 1 })
+      }
+      return { issues }
+    },
     'make:template': async ({ conversationId, templateId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', `<h1>${templateId}</h1>`); return makeState(conversationId) },
     'make:reset': async ({ conversationId }) => { const files = makeFiles(conversationId); files.clear(); for (const [k, v] of Object.entries(MAKE_SCAFFOLD)) files.set(k, v); return makeState(conversationId) },
     'conversations:create': async ({ title, assistantKind } = {}) => {

@@ -6577,3 +6577,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-monaco { position: relative; flex: 1 1 auto; min-height: 0; background: #1e1e1e; }
 .make-monaco > section { position: absolute !important; inset: 0; }
 .make-monaco-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #c9d1d9; font-size: 13px; }
+
+/* Make: вкладки открытых файлов и автосохранение. */
+.make-tabs-bar { display: flex; align-items: stretch; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--surface); padding: 0 4px; min-height: 32px; }
+.make-file-tab { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 8px; border-right: 1px solid var(--border-soft); color: var(--text-dim); }
+.make-file-tab.on { background: var(--panel); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.make-file-tab-name { border: 0; background: transparent; font: inherit; font-size: 12.5px; color: inherit; cursor: pointer; padding: 6px 4px; white-space: nowrap; }
+.make-file-tab-dirty { margin-left: 4px; color: var(--accent); font-size: 10px; }
+.make-file-tab .vc-btn--icon { opacity: .6; }
+.make-file-tab:hover .vc-btn--icon, .make-file-tab.on .vc-btn--icon { opacity: 1; }
+.make-editor-tools { display: inline-flex; align-items: center; gap: 10px; }
+.make-autosave { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); font-size: 12px; cursor: pointer; }

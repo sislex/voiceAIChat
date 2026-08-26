@@ -10,7 +10,11 @@ export interface CodeEditorProps {
   onChange: (next: string) => void
   onSave?: () => void
   ariaLabel: string
+  /** Маркеры ошибок (строка с 1) — подчёркивание в Monaco; фолбэк их не рисует. */
+  markers?: EditorMarker[]
 }
+
+export interface EditorMarker { line: number; column?: number; message: string }
 
 const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)
 const MonacoCodeEditor = lazy(() => import('./code/MonacoCodeEditor'))

@@ -32,6 +32,8 @@ export interface MakePaneProps {
    * сервер выпускает preview-cookie (`session:ensurePreview`, как у Web Reader).
    */
   ensurePreview?: () => Promise<boolean>
+  /** Задержка автосохранения; тесты уменьшают. */
+  autosaveDelayMs?: number
 }
 
 type Mode = 'preview' | 'code' | 'stories' | 'history'
@@ -59,7 +61,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, previewBase, ensurePreview }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -73,6 +75,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [content, setContent] = useState('')
   const [savedContent, setSavedContent] = useState('')
+  // Вкладки открытых файлов (как в VS Code) и автосохранение с паузой — правки не теряются при переключении.
+  const [tabs, setTabs] = useState<string[]>([])
+  const [autosave, setAutosave] = useState<boolean>(() => { try { return localStorage.getItem('vc.make.autosave') !== 'off' } catch { return true } })
+  const toggleAutosave = (): void => { setAutosave((v) => { const next = !v; try { localStorage.setItem('vc.make.autosave', next ? 'on' : 'off') } catch { /* приватный режим */ } return next }) }
   const [saving, setSaving] = useState(false)
   /** Превью готово к загрузке: cookie выпущена (или гейта нет). */
   const [previewReady, setPreviewReady] = useState(!ensurePreview)
@@ -150,6 +156,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
 
   const openFile = useCallback(async (path: string): Promise<void> => {
     // Бинарник (картинка, шрифт) редактировать нельзя — показываем его просмотр вместо текста.
+    setTabs((list) => (list.includes(path) ? list : [...list, path]))
     if (!isMakeTextPath(path)) { setSelectedPath(path); setContent(''); setSavedContent(''); return }
     try {
       const file = await api['make:read']({ conversationId, path })
@@ -212,7 +219,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
     frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.inspect', enabled: inspect }, '*')
   }, [inspect, previewRev])
 
-  const save = useCallback(async (): Promise<void> => {
+  const save = useCallback(async (silent = false): Promise<void> => {
     if (!selectedPath || !dirty || saving) return
     setSaving(true)
     try {
@@ -220,13 +227,37 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
       setSavedContent(content)
       setState(next)
       setPreviewRev(next.rev)
-      toast.success('Сохранено')
+      if (!silent) toast.success('Сохранено')
+      // Ошибки компиляции jsx/tsx — маркерами в редакторе; баннер не трогаем, если всё чисто.
+      if (/\.(jsx|tsx|ts)$/i.test(selectedPath)) {
+        const { issues: found } = await api['make:check']({ conversationId })
+        setIssues((prev) => (found.length > 0 ? found : prev === null ? null : found))
+      }
     } catch (e) {
       toast.error(describeError(e))
     } finally {
       setSaving(false)
     }
   }, [api, conversationId, selectedPath, content, dirty, saving, toast])
+  // Автосохранение: пауза после последней правки.
+  const saveRef = useRef(save)
+  saveRef.current = save
+  useEffect(() => {
+    if (!autosave || !dirty || !selectedPath) return
+    const timer = setTimeout(() => { void saveRef.current(true) }, autosaveDelayMs)
+    return () => clearTimeout(timer)
+  }, [autosave, dirty, content, selectedPath, autosaveDelayMs])
+  const closeTab = (path: string): void => {
+    const next = tabs.filter((t) => t !== path)
+    setTabs(next)
+    if (selectedPath === path) {
+      const idx = tabs.indexOf(path)
+      const neighbour = next[Math.min(idx, next.length - 1)]
+      if (neighbour) void openFile(neighbour)
+      else { setSelectedPath(null); setContent(''); setSavedContent('') }
+    }
+  }
+  const markers = useMemo(() => (issues ?? []).filter((i) => i.path === selectedPath && i.line).map((i) => ({ line: i.line!, column: i.column, message: i.message })), [issues, selectedPath])
 
   // Ctrl/Cmd+S в редакторе — сохранить; Tab — отступ, а не переход фокуса.
   const createFile = (): void => openAsk('Новый файл', 'Путь файла (например, about.html или css/theme.css)', '', 'Создать', (raw) => void createFileAt(raw))
@@ -289,6 +320,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
       setState(next)
       setPreviewRev(next.rev)
       if (selectedPath === path) setSelectedPath(to)
+      setTabs((list) => list.map((t) => (t === path ? to : t)))
     } catch (e) { toast.error(describeError(e)) }
   }
 
@@ -300,6 +332,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
       setState(next)
       setPreviewRev(next.rev)
       if (selectedPath === path) { setSelectedPath(null); setContent(''); setSavedContent('') }
+      setTabs((list) => list.filter((t) => t !== path))
     } catch (e) { toast.error(describeError(e)) }
   }
 
@@ -550,6 +583,18 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
                 <IconButton size="sm" aria-label="Скрыть результат проверки" title="Скрыть" onClick={() => setIssues(null)}>✕</IconButton>
               </div>
             )}
+            {tabs.length > 0 && (
+              <div className="make-tabs-bar" role="tablist" aria-label="Открытые файлы">
+                {tabs.map((t) => (
+                  <div key={t} className={t === selectedPath ? 'make-file-tab on' : 'make-file-tab'}>
+                    <button type="button" role="tab" aria-selected={t === selectedPath} className="make-file-tab-name" onClick={() => void openFile(t)} title={t}>
+                      {t.slice(t.lastIndexOf('/') + 1)}{t === selectedPath && dirty ? <span className="make-file-tab-dirty" aria-label="не сохранено">●</span> : null}
+                    </button>
+                    <IconButton size="sm" aria-label={`Закрыть ${t}`} title="Закрыть" onClick={() => closeTab(t)}>✕</IconButton>
+                  </div>
+                ))}
+              </div>
+            )}
             {selectedPath && !isMakeTextPath(selectedPath) ? (
               <>
                 <div className="make-editor-head">
@@ -567,9 +612,12 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
               <>
                 <div className="make-editor-head">
                   <code>{selectedPath}</code>
-                  <span className={dirty ? 'make-editor-state dirty' : 'make-editor-state'}>{dirty ? 'не сохранено' : 'сохранено'}</span>
+                  <span className="make-editor-tools">
+                    <label className="make-autosave"><input type="checkbox" checked={autosave} onChange={toggleAutosave} /> автосохранение</label>
+                    <span className={dirty ? 'make-editor-state dirty' : 'make-editor-state'}>{dirty ? 'не сохранено' : 'сохранено'}</span>
+                  </span>
                 </div>
-                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} />
+                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} />
               </>
             ) : (
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />

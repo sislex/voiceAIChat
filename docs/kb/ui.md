@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: aecf9613
+checked: ff211534
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -458,6 +458,12 @@ contribution-модулями — полный пакет тянул 4 МБ; в�
 `.make-monaco` нужна явная высота (обёртка `@monaco-editor/react` — height:100%), поэтому `> section`
 позиционируется абсолютно. Чанк `monaco` выделен в `apps/web/vite.config.ts` (`manualChunks`).
 Подсветка фолбэка знает `jsx`→javascript, `tsx`→typescript.
+**Вкладки открытых файлов** (`make-tabs-bar`, `tabs: string[]`): `openFile` добавляет, ✕ закрывает
+(активная — переключение на соседнюю), rename/delete обновляют список. **Автосохранение** — чекбокс в шапке
+редактора (`localStorage vc.make.autosave`, по умолчанию включено): через `autosaveDelayMs` (1500, проп для
+тестов) после последней правки `save(silent)` без тоста; Cmd/Ctrl+S — как раньше. После сохранения jsx/tsx/ts
+панель вызывает `make:check` и, если есть проблемы, показывает баннер; ошибки `compile-error` текущего файла
+уходят в `CodeEditor` пропом `markers` → `monaco.editor.setModelMarkers` (красные подчёркивания).
 
 **Поиск** в дереве (`make-search-input`): по мере ввода фильтрует файлы по пути; Enter — поиск по
 содержимому через `make:search` (`make-matches`, клик по строке открывает файл), Esc сбрасывает.

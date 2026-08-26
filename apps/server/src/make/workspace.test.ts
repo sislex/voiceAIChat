@@ -112,6 +112,19 @@ describe('MakeWorkspaces', () => {
     expect(again.filter((i) => i.kind === 'missing-file').map((i) => i.message)).toContain('Ссылка на отсутствующий файл: ../img/bg.png')
   })
 
+  it('check: синтаксическая ошибка в .tsx → compile-error со строкой', async () => {
+    const ws = await fresh()
+    await ws.write(CONV, 'index.html', '<script type="module" src="src/a.tsx"></script>')
+    await ws.write(CONV, 'src/a.tsx', 'export const A = () => <div>\n  <b>x</b\n')
+    const issues = await ws.check(CONV)
+    const compile = issues.find((i) => i.kind === 'compile-error')
+    expect(compile).toBeDefined()
+    expect(compile!.path).toBe('src/a.tsx')
+    expect(compile!.line).toBeGreaterThanOrEqual(1)
+    await ws.write(CONV, 'src/a.tsx', 'export const A = () => <div><b>x</b></div>\n')
+    expect((await ws.check(CONV)).some((i) => i.kind === 'compile-error')).toBe(false)
+  })
+
   it('applyTemplate заменяет файлы шаблоном и сохраняет снимок; неизвестный шаблон — not_found', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)
