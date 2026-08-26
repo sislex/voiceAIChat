@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-26
-checked: ee1d422f
+checked: 3254d6b5
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -247,8 +247,9 @@ Usage нормализуется в `TurnUsage` и рассылается как
 
 ## Старт хода: `claude.start`
 
-Сразу после регистрации хода сервер шлёт `claude.start {conversationId, provider, model,
-execTarget}` (`turns.ts`, рядом с `turns.set`); те же поля несёт `ActiveTurn` в
+Как только выбраны движок, модель и машина (до подготовки контекста БЗ и вложений — они
+занимают секунды), сервер шлёт `claude.start {conversationId, provider, model, execTarget}`
+(`turns.ts`, сразу после `requestedTarget`); те же поля несёт `ActiveTurn` в
 `claude.active`. Клиент (`chatStore.applyClaudeStart`, `liveTarget`/`activeTargets`) рисует
 по ним шапку «Готовим ответ…»/стрима — движок, модель по наведению и машину — вместо
 догадки по `aiLabel`/`execTarget` разговора, которая не знает наследования от проекта.

@@ -610,6 +610,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'Нет доступной online-машины: remote-команды заблокированы' }, userId)
     }
     const requestedTarget = target
+    // Клиент рисует шапку ответа сразу: движок/модель/машина известны уже здесь.
+    // Шлём до подготовки контекста БЗ и вложений (они занимают секунды), иначе
+    // до этого момента в шапке стоят догадки клиента без наследования от проекта.
+    broadcast({ t: 'claude.start', conversationId, provider, model, execTarget: requestedTarget }, userId)
     // Инструменты БЗ — ВНЕ ветки `remote`: база знаний read-only и нужна модели
     // и в ходе без машины (там она вообще единственный источник контекста).
     const kbToolAvailable = (): boolean => {
@@ -750,9 +754,6 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     }
     starting.delete(conversationId)
     turns.set(conversationId, turn)
-    // Клиент рисует шапку ответа сразу: движок/модель/машина известны здесь, а не
-    // только в claude.done (иначе до конца хода он показывал бы свои догадки).
-    broadcast({ t: 'claude.start', conversationId, provider, model, execTarget: requestedTarget }, userId)
     const finish = (): void => {
       turn.done = true
       releaseTurnTools(turn)
