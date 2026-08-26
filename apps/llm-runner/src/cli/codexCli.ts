@@ -5,7 +5,7 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { kbToolHint, parseCodexActivity, parseCodexLine, previewToolHint } from '@voicechat/shared'
+import { MAKE_ASSISTANT_HINT, kbToolHint, parseCodexActivity, parseCodexLine, previewToolHint } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '@voicechat/shared'
 import { cliProfileEnv } from './cliProfiles.js'
 import { killCliChild } from './childKill.js'
@@ -98,7 +98,7 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
   // Make: файлы проекта разговора как MCP-инструменты.
   if (req.makeMcpUrl) {
     args.push('-c', `mcp_servers.make.url="${req.makeMcpUrl}"`)
-    prompt = 'Инструмент «Make»: справа у пользователя открыт проект — статический сайт (index.html + css + js, без сборки и npm), его превью и редактор кода. Ты собираешь и меняешь этот проект ТОЛЬКО инструментами make_*: сначала make_list_files и make_read_file, затем make_write_file с ПОЛНЫМ содержимым файла (не diff). index.html — точка входа; стили и скрипты — отдельными файлами с относительными путями; картинки — inline SVG или data URI, внешние ресурсы — только по https. Делай интерфейс аккуратным и адаптивным, без внешних фреймворков, если пользователь не просил. После записи превью обновляется само — не проси пользователя обновлять страницу. В ответе коротко перечисли, какие файлы изменил и что теперь умеет проект; не вставляй в ответ полный код файлов. Если пользователь прислал выбранный элемент (селектор и HTML), меняй именно его. \n\n' + prompt
+    prompt = MAKE_ASSISTANT_HINT + '\n\n' + prompt
   }
 
   if (req.remote && req.permissionMode !== 'plan') {
