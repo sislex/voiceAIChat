@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-08-26
-checked: 472310fb
+updated: 2026-08-27
+checked: a9a1aed3
 areas:
   - apps/server/src
 ---
@@ -65,6 +65,15 @@ MCP даёт `db.conversationOwner(id)`. Старый исследователь
 `..` учитывается через `resolveRelativeRef`; якоря `#id`, `data:`, `mailto:`, `//` пропускаются),
 пустые файлы, `http://`-скрипты. `applyTemplate(id)` заменяет файлы шаблоном `MAKE_TEMPLATES`
 со снимком «Перед шаблоном «…»».
+**React без сборки** (`make/transpile.ts`): при отдаче превью и публикации файлы `.jsx/.tsx/.ts`
+прогоняются через `esbuild.transform` (esm, jsx automatic, target es2020), относительные импорты без
+расширения дополняются существующим файлом (`rewriteRelativeImports`), ошибка компиляции отдаётся
+модулем `throw new Error('Ошибка компиляции …')` — превью живо, текст виден в консоли/раннере. Кэш
+`(conv, path) → {rev, code}` на 500 записей. React берётся из esm.sh через import map в index.html
+(`MAKE_REACT_IMPORT_MAP`, шаблон `react`). **Сториз** (`make/stories.ts`): `parseStoryFile` — имена
+стори регуляркой по экспортам (код не исполняется на сервере), `renderStoriesPage` — HTML раннера
+для `GET /api/preview/make/:id/__stories__?file=&story=`; `GET /api/make/:id/stories` и
+`GET /api/make/:id/search?q=` (`MakeWorkspaces.stories/search`, поиск без регистра, ≤200 совпадений).
 
 Текущий `/api/preview` нельзя считать файловым или artifact-preview сервером: это аутентифицированный same-origin прокси внешнего HTTP/HTTPS. Его SSRF-ограничения и механизм iframe описаны ниже; отдельному продукту понадобятся собственные storage, ревизии, builder и изолированный runtime, которых сейчас в сервере нет.
 

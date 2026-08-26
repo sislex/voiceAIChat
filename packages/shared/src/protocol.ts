@@ -153,6 +153,10 @@ export const REST = {
   makeCheck: (id: string) => `/api/make/${encodeURIComponent(id)}/check`,
   makeTemplate: (id: string) => `/api/make/${encodeURIComponent(id)}/template`,
   makeUpload: (id: string) => `/api/make/${encodeURIComponent(id)}/upload`,
+  makeSearch: (id: string) => `/api/make/${encodeURIComponent(id)}/search`,
+  makeStories: (id: string) => `/api/make/${encodeURIComponent(id)}/stories`,
+  /** Страница-раннер сториз внутри превью (cookie-аутентификация, как у превью). */
+  makeStoriesPage: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/__stories__`,
   /** Превью и ZIP-экспорт живут под /api/preview/…: там действует preview-cookie для iframe и ссылок. */
   makePreview: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/`,
   makeExport: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/export.zip`,

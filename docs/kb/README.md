@@ -15,25 +15,25 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 11 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 59 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-25 | ⚠ 6 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 30 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 31 коммит(ов) в areas после сверки: a9a1aed3 feat(make): drag-and-drop файлов в проект и подсветка синтаксиса в редакторе … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ⚠ 23 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 117 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 50 коммит(ов) в areas после сверки: 89f21a0c refactor(llm): единый MAKE_ASSISTANT_HINT для claude/codex, make_check в allow-list, ответ на языке пользователя … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 31 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 25 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 18 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 629 коммит(ов) в areas после сверки: 89f21a0c refactor(llm): единый MAKE_ASSISTANT_HINT для claude/codex, make_check в allow-list, ответ на языке пользователя … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 94 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 20 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 630 коммит(ов) в areas после сверки: a9a1aed3 feat(make): drag-and-drop файлов в проект и подсветка синтаксиса в редакторе … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 95 коммит(ов) в areas после сверки: a9a1aed3 feat(make): drag-and-drop файлов в проект и подсветка синтаксиса в редакторе … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 21 коммит(ов) в areas после сверки: a9a1aed3 feat(make): drag-and-drop файлов в проект и подсветка синтаксиса в редакторе … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 19 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 46 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 5 коммит(ов) в areas после сверки: 2198e7a9 fix: auto-resolve merge conflicts with model step … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-26 | ⚠ 1 коммит(ов) в areas после сверки: 89f21a0c refactor(llm): единый MAKE_ASSISTANT_HINT для claude/codex, make_check в allow-list, ответ на языке пользователя |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 42 коммит(ов) в areas после сверки: 3410fcc9 feat(make): публикация, проверка, шаблоны, самодиагностика … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 20 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: 89f21a0c refactor(llm): единый MAKE_ASSISTANT_HINT для claude/codex, make_check в allow-list, ответ на языке пользователя … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: a6eea46e feat(make): загрузка файлов с диска и просмотр бинарников в режиме «Код» … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 21 коммит(ов) в areas после сверки: a9a1aed3 feat(make): drag-and-drop файлов в проект и подсветка синтаксиса в редакторе … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ✓ |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-26 | ⚠ 8 коммит(ов) в areas после сверки: 89f21a0c refactor(llm): единый MAKE_ASSISTANT_HINT для claude/codex, make_check в allow-list, ответ на языке пользователя … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 49 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ✓ |
@@ -57,8 +57,9 @@
 
 ## Журнал сессий
 
-Всего записей: 366. Последние:
+Всего записей: 367. Последние:
 
+- [2026-08-27-alexeys-macbook-air-2-make-react-storybook-search.md](log/2026-08-27-alexeys-macbook-air-2-make-react-storybook-search.md) — make-react-storybook-search
 - [2026-08-27-alexeys-macbook-air-2-make-dnd-highlight.md](log/2026-08-27-alexeys-macbook-air-2-make-dnd-highlight.md) — make-dnd-highlight
 - [2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics.md](log/2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics.md) — 2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics
 - [2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign.md](log/2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign.md) — 2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign
@@ -68,7 +69,6 @@
 - [2026-08-25-macbook-air-user-manual-qa-machine-labels.md](log/2026-08-25-macbook-air-user-manual-qa-machine-labels.md) — manual-qa-machine-labels
 - [2026-08-25-macbook-air-user-instant-submit.md](log/2026-08-25-macbook-air-user-instant-submit.md) — instant-submit
 - [2026-08-25-macbook-air-user-desktop-composer.md](log/2026-08-25-macbook-air-user-desktop-composer.md) — desktop-composer
-- [2026-08-25-macbook-air-user-context-snapshot-effective-llm.md](log/2026-08-25-macbook-air-user-context-snapshot-effective-llm.md) — context-snapshot-effective-llm
 
 ## Исторические планы
 

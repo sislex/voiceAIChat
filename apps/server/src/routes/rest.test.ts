@@ -570,6 +570,22 @@ describe('REST: conversations/messages/settings', () => {
     const img = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/img/logo.png` })
     expect(img.headers['content-type']).toMatch(/image\/png/)
     expect(img.rawPayload.equals(png)).toBe(true)
+    // React: JSX транспилируется при отдаче, импорт без расширения дополняется; страница сториз собирается.
+    await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'react' } })
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'src/Extra.jsx', content: "import { Button } from './components/Button'\nexport const X = () => <Button>x</Button>" } })
+    const jsx = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/src/Extra.jsx` })
+    expect(jsx.headers['content-type']).toMatch(/javascript/)
+    expect(jsx.body).toContain('./components/Button.jsx')
+    expect(jsx.body).toContain('jsx(')
+    expect(jsx.body).not.toContain('<Button>')
+    const stories = (await inj({ method: 'GET', url: `/api/make/${conv.id}/stories` })).json() as { files: Array<{ path: string; title: string; stories: string[] }> }
+    expect(stories.files.find((f) => f.path === 'src/components/Button.stories.jsx')).toMatchObject({ title: 'Button', stories: ['Primary', 'Secondary', 'Small'] })
+    const runner = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__stories__?file=src/components/Button.stories.jsx&story=Small` })
+    expect(runner.statusCode).toBe(200)
+    expect(runner.body).toContain('importmap')
+    expect(runner.body).toContain('"Small"')
+    const search = (await inj({ method: 'GET', url: `/api/make/${conv.id}/search?q=btn--secondary` })).json() as { matches: Array<{ path: string; line: number }> }
+    expect(search.matches.map((m) => m.path)).toContain('styles.css')
   })
 
   it('POST /messages для ответа без engine/execTarget подставляет эффективные движок и машину разговора', async () => {

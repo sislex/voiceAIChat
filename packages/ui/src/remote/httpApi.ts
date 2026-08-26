@@ -107,6 +107,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:check': ({ conversationId }) => req(REST.makeCheck(conversationId)),
     'make:template': ({ conversationId, templateId }) => req(REST.makeTemplate(conversationId), { method: 'POST', body: JSON.stringify({ templateId }) }),
     'make:upload': ({ conversationId, path, dataBase64 }) => req(REST.makeUpload(conversationId), { method: 'POST', body: JSON.stringify({ path, dataBase64 }) }),
+    'make:search': ({ conversationId, query }) => req(`${REST.makeSearch(conversationId)}?q=${encodeURIComponent(query)}`),
+    'make:stories': ({ conversationId }) => req(REST.makeStories(conversationId)),
     'conversations:createDraft': (body) =>
       req(REST.conversationDraft, { method: 'POST', body: JSON.stringify(body) }),
     'kanbanAssistant:get': ({ projectId, conversationId }) => req(`/api/projects/${encodeURIComponent(projectId)}/kanban-assistant${conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : ''}`),
