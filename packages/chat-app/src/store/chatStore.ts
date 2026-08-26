@@ -95,6 +95,9 @@ export function isPlaywrightReaderConversation(conv: Conversation): boolean {
   return conv.assistantKind === 'playwright-reader'
 }
 
+export function isMakeConversation(conv: Conversation): boolean {
+  return conv.assistantKind === 'make'
+}
 export function isConsoleReaderConversation(conv: Conversation): boolean {
   return conv.assistantKind === 'console-reader'
 }
@@ -152,6 +155,8 @@ export interface ChatState {
   playwrightReaderConversations: Conversation[]
   /** Все и только разговоры инструмента «Консоль с ассистентом». */
   consoleReaderConversations: Conversation[]
+  /** Разговоры инструмента Make (веб-проект с ассистентом). */
+  makeConversations: Conversation[]
   conversationsStatus: LoadStatus
   conversationsError: string | null
   searchQuery: string
@@ -207,7 +212,7 @@ export interface ChatActions {
   refreshConversations(options?: { keepActiveListed?: boolean }): Promise<void>
   scheduleConversationsRefresh(): void
   retryConversations(): Promise<void>
-  newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader'): Promise<string | null>
+  newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make'): Promise<string | null>
   /** Создаёт сохранённый чат из явной формы создания и сразу открывает его. */
   createConversation(input: { title: string; projectId?: string | null }): Promise<string>
   selectConversation(id: string): Promise<boolean>
@@ -325,6 +330,7 @@ function initialState(sidebarProjectId: string | null, showDoneTaskChats: boolea
     readerConversations: [],
     playwrightReaderConversations: [],
     consoleReaderConversations: [],
+    makeConversations: [],
     conversationsStatus: 'loading',
     conversationsError: null,
     searchQuery: '',
@@ -481,7 +487,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           : {
               readerConversations: all.filter(isReaderConversation),
               playwrightReaderConversations: all.filter(isPlaywrightReaderConversation),
-              consoleReaderConversations: all.filter(isConsoleReaderConversation)
+              consoleReaderConversations: all.filter(isConsoleReaderConversation),
+              makeConversations: all.filter(isMakeConversation)
             })
       })
       void loadTaskChatBadges()
@@ -788,7 +795,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   // --- Выбор и создание разговора ------------------------------------------
 
-  async function newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader'): Promise<string | null> {
+  async function newConversation(assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make'): Promise<string | null> {
     selectToken++ // недолетевший ответ прежнего выбора не перетрёт новый чат
     core.clearTimers()
     // Ход текущего разговора не отменяем — он доиграет на сервере.
@@ -810,9 +817,11 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     const readerList =
       assistantKind === 'playwright-reader' ? state.playwrightReaderConversations
         : assistantKind === 'console-reader' ? state.consoleReaderConversations
+        : assistantKind === 'make' ? state.makeConversations
         : state.readerConversations
     const prefix = assistantKind === 'playwright-reader' ? 'Playwright Reader'
       : assistantKind === 'console-reader' ? 'Консоль'
+      : assistantKind === 'make' ? 'Проект'
       : 'Web Reader'
     let number = 1
     while (readerList.some((item) => item.title === `${prefix} ${number}`)) number++
@@ -831,6 +840,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         assistantKind === 'console-reader'
           ? withConversation(getState().consoleReaderConversations, conversation)
           : getState().consoleReaderConversations,
+      makeConversations:
+        assistantKind === 'make'
+          ? withConversation(getState().makeConversations, conversation)
+          : getState().makeConversations,
       ...common
     })
     await refreshConversations()
@@ -1398,6 +1411,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
             readerConversations: conversations.filter(isReaderConversation),
             playwrightReaderConversations: conversations.filter(isPlaywrightReaderConversation),
             consoleReaderConversations: conversations.filter(isConsoleReaderConversation),
+            makeConversations: conversations.filter(isMakeConversation),
             conversationsStatus: 'ready',
             conversationsError: null
           })
@@ -1433,7 +1447,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           setState({
             readerConversations: getState().readerConversations.filter((c) => c.id !== id),
             playwrightReaderConversations: getState().playwrightReaderConversations.filter((c) => c.id !== id),
-            consoleReaderConversations: getState().consoleReaderConversations.filter((c) => c.id !== id)
+            consoleReaderConversations: getState().consoleReaderConversations.filter((c) => c.id !== id),
+            makeConversations: getState().makeConversations.filter((c) => c.id !== id)
           })
           const wasActive = getState().activeId === id
           await refreshConversations()
@@ -1461,7 +1476,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           conversations: getState().conversations.map((c) => (c.id === id ? conversation : c)),
           readerConversations: getState().readerConversations.map((c) => (c.id === id ? conversation : c)),
           playwrightReaderConversations: getState().playwrightReaderConversations.map((c) => (c.id === id ? conversation : c)),
-          consoleReaderConversations: getState().consoleReaderConversations.map((c) => (c.id === id ? conversation : c))
+          consoleReaderConversations: getState().consoleReaderConversations.map((c) => (c.id === id ? conversation : c)),
+          makeConversations: getState().makeConversations.map((c) => (c.id === id ? conversation : c))
         })
       },
       async setConversationPreviewUrl(id, previewUrl) {

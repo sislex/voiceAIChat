@@ -19,7 +19,8 @@ import type {
   RendererPtyBridge,
   RendererSessionBridge,
   RendererSttBridge,
-  RendererTtsBridge
+  RendererTtsBridge,
+  RendererMakeBridge
 } from '@shared/ipc'
 import { REST, type DesktopMigrationBundle, type ServerFileInfo } from '@shared/protocol'
 import type { FsResult } from '@shared/agentProtocol'
@@ -91,6 +92,12 @@ export function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
     onQueue: (cb) => ws.on('claude.queue', (m) => cb({ conversationId: m.conversationId, items: m.items, paused: m.paused, published: m.published, removedMessageIds: m.removedMessageIds })),
     onUsage: (cb) =>
       ws.on('claude.usage', (m) => cb({ conversationId: m.conversationId, usage: m.usage }))
+  }
+}
+
+function makeMakeBridge(ws: WsClient): RendererMakeBridge {
+  return {
+    onChanged: (cb) => ws.on('make.changed', (m) => cb({ conversationId: m.conversationId, rev: m.rev, paths: m.paths }))
   }
 }
 
@@ -424,6 +431,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   window.fs = makeFsBridge(httpBase)
   window.files = makeFilesBridge(httpBase)
   window.pty = makePtyBridge(ws)
+  window.make = makeMakeBridge(ws)
   window.preview = makePreviewBridge(ws)
   window.browser = makeBrowserBridge(httpBase)
   window.featurePreview = createFeaturePreviewRest(httpBase, localAgentId)

@@ -13,6 +13,7 @@ import type { PreviewElementPayload } from '@shared/previewInspector'
 import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration, type WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
 import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
+import { MakePane } from './components/MakePane'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -153,7 +154,7 @@ export default function App(props: AppProps = {}): JSX.Element {
 function initialChatIdFromPath(path: string, segments: string[]): string | null {
   const chatRoute = parseChatRoute(path)
   if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item') return chatRoute.conversationId
-  if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader' || segments[0] === 'console-reader') {
+  if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader' || segments[0] === 'console-reader' || segments[0] === 'make') {
     return segments[1] ?? null
   }
   const route = parseProjectsRoute(path)
@@ -213,8 +214,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const routePlaywrightReaderChatId = inPlaywrightReader ? (segments[1] ?? null) : null
   const inConsoleReader = segments[0] === 'console-reader'
   const routeConsoleReaderChatId = inConsoleReader ? (segments[1] ?? null) : null
+  const inMake = segments[0] === 'make'
+  const routeMakeChatId = inMake ? (segments[1] ?? null) : null
   // Любой полноэкранный split-режим «чат | панель справа».
-  const inSplit = inReader || inPlaywrightReader || inConsoleReader
+  const inSplit = inReader || inPlaywrightReader || inConsoleReader || inMake
   const inTaskChat = routeTaskChatId !== null
   const inChat = (!inProjects && !onUtilityPage && !inSplit) || inTaskChat
   const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
@@ -681,7 +684,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // адрес (клик по чату, «Назад», ссылка извне) — грузим чат из адреса;
   // изменился активный чат в сторе (создание, удаление, resume, автосоздание
   // первой репликой) — переписываем адрес без новой записи в истории.
-  const syncedChatId = useRef<string | null>(routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId ?? routeConsoleReaderChatId)
+  const syncedChatId = useRef<string | null>(routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId ?? routeConsoleReaderChatId ?? routeMakeChatId)
   useEffect(() => {
     if (!authed || !inChat) return
     if (routeChatId && routeChatId !== syncedChatId.current) {
@@ -789,6 +792,29 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     createConsoleReaderChat(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inConsoleReader, routeConsoleReaderChatId, chat.activeId, chat.consoleReaderConversations, chat.conversationsStatus, chatActions, navigate])
+  // Make: те же правила маршрутизации, что у Консоли (адрес → активный проект, иначе первый/новый).
+  const makeCreating = useRef(false)
+  const createMakeChat = (replace = false): void => {
+    if (makeCreating.current) return
+    makeCreating.current = true
+    void chatActions.newConversation('make')
+      .then((id) => { if (id) navigate(`/make/${id}`, { replace }) })
+      .catch(() => { /* store owns the visible error */ })
+      .finally(() => { makeCreating.current = false })
+  }
+  useEffect(() => {
+    if (!authed || !inMake || chat.conversationsStatus !== 'ready' || makeCreating.current) return
+    const chats = chat.makeConversations
+    const routed = chats.find((item) => item.id === routeMakeChatId)
+    if (routed) {
+      if (routed.id !== chat.activeId) void chatActions.selectConversation(routed.id)
+      return
+    }
+    const fallback = chats[0]
+    if (fallback) { navigate(`/make/${fallback.id}`, { replace: true }); return }
+    createMakeChat(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, inMake, routeMakeChatId, chat.activeId, chat.makeConversations, chat.conversationsStatus, chatActions, navigate])
 
   // URL → данные стора: вход/выход в раздел «Проекты», загрузка доски и
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
@@ -879,6 +905,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const readerActiveListed = chat.readerConversations.some((c) => c.id === chat.activeId)
   const playwrightReaderActiveListed = chat.playwrightReaderConversations.some((c) => c.id === chat.activeId)
   const consoleReaderActiveListed = chat.consoleReaderConversations.some((c) => c.id === chat.activeId)
+  const makeActiveListed = chat.makeConversations.some((c) => c.id === chat.activeId)
   // Reader route is authoritative. While its asynchronous conversation selection is
   // pending, the previous ChatColumn must not remain interactive: otherwise a user
   // can submit a turn for the old activeId while already seeing the new Reader URL.
@@ -895,7 +922,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     (routeConsoleReaderChatId !== null &&
       chat.activeId === routeConsoleReaderChatId &&
       consoleReaderActiveListed)
-  const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady && consoleReaderRouteReady
+  const makeRouteReady = !inMake || (routeMakeChatId !== null && chat.activeId === routeMakeChatId && makeActiveListed)
+  const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady && consoleReaderRouteReady && makeRouteReady
   const activeConversation = chat.conversations.find((c) => c.id === chat.activeId)
   const startWebReaderDiagnostics = useCallback((): void => {
     const conversationId = chat.activeId
@@ -1309,7 +1337,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         collapsed && 'app--sidebar-collapsed',
         inReader && 'app--web-reader',
         inPlaywrightReader && 'app--playwright-reader',
-        inConsoleReader && 'app--console-reader'
+        inConsoleReader && 'app--console-reader',
+        inMake && 'app--make'
       ].filter(Boolean).join(' ')}
       data-theme={settingsState.settings.theme}
     >
@@ -1422,6 +1451,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenWebReader={session.authRequired ? menu(openWebReaderWorkspace) : undefined}
         onOpenPlaywrightReader={session.authRequired ? menu(() => navigate('/playwright-reader')) : undefined}
         onOpenConsoleReader={session.authRequired ? menu(() => navigate('/console-reader')) : undefined}
+        onOpenMake={session.authRequired ? menu(() => navigate('/make')) : undefined}
         onOpenUsers={session.authRequired ? menu(() => navigate('/users')) : undefined}
         onOpenMachines={session.authRequired ? menu(() => navigate('/machines')) : undefined}
         onOpenCi={session.authRequired ? menu(() => navigate('/ci')) : undefined}
@@ -1478,11 +1508,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
       {(!inProjects || inTaskChat) && !onUtilityPage && (inChat || inSplit) && (
       <div className={inSplit ? `chat-split chat-split--${chatView}` : 'chat-page'} style={inSplit ? { '--preview-width': `${previewWidth}%` } as CSSProperties : undefined}>
-      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : 'Сайт'}</button></div></nav>}
+      {inSplit && <nav className="chat-split-tabs" aria-label="Режим экрана"><div role="tablist"><button type="button" role="tab" aria-selected={chatView === 'chat'} onClick={() => setChatView('chat')}>Чат</button><button type="button" role="tab" aria-selected={chatView === 'preview'} onClick={() => setChatView('preview')}>{inConsoleReader ? 'Консоль' : inMake ? 'Проект' : 'Сайт'}</button></div></nav>}
       <div className="chat-split-chat">
       {inReader && <header className="web-recorder-selector"><label><span className="vc-sr-only">Разговор Web Reader</span><select aria-label="Разговор Web Reader" value={readerActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/web-reader/${event.target.value}`) }}>{!readerActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.readerConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createReaderChat()}>+ Новый</button></header>}
       {inPlaywrightReader && <header className="web-recorder-selector playwright-reader-selector"><strong>Playwright Reader</strong><label><span className="vc-sr-only">Разговор Playwright Reader</span><select aria-label="Разговор Playwright Reader" value={playwrightReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/playwright-reader/${event.target.value}`) }}>{!playwrightReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.playwrightReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createPlaywrightReaderChat()}>+ Новый</button></header>}
       {inConsoleReader && <header className="web-recorder-selector console-reader-selector"><strong>Консоль</strong><label><span className="vc-sr-only">Разговор Консоли</span><select aria-label="Разговор Консоли" value={consoleReaderActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/console-reader/${event.target.value}`) }}>{!consoleReaderActiveListed && <option value="" disabled>Чат не выбран</option>}{chat.consoleReaderConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createConsoleReaderChat()}>+ Новый</button></header>}
+      {inMake && <header className="web-recorder-selector make-selector"><strong>Make</strong><label><span className="vc-sr-only">Проект Make</span><select aria-label="Проект Make" value={makeActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/make/${event.target.value}`) }}>{!makeActiveListed && <option value="" disabled>Проект не выбран</option>}{chat.makeConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createMakeChat()}>+ Новый</button></header>}
       {readerSurfaceReady ? <ChatColumn
         conversationId={chat.activeId}
         onToggleSidebar={inSplit ? undefined : toggleSidebar}
@@ -1508,6 +1539,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         liveActivity={chat.liveActivity}
         liveUsage={chat.liveUsage}
         liveTarget={chat.liveTarget}
+        {...(inSplit ? { composerLayout: 'docked' as const } : {})}
         canSpeak={settingsState.ttsAvailable}
         speakingMessageId={voice.speakingMessageId}
         onSpeakMessage={voiceActions.replayMessage}
@@ -1614,12 +1646,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
           />
         }
-      /> : <div className="chat-route-loading" role="status">Открываем выбранный Reader-разговор…</div>}
+      /> : <div className="chat-route-loading" role="status">{inMake ? 'Открываем проект…' : 'Открываем выбранный Reader-разговор…'}</div>}
       </div>
       {inSplit && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} />}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
+      {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} />}
       {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
       </div>
       )}

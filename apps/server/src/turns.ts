@@ -85,6 +85,8 @@ export interface TurnManagerDeps {
   previewMcpBaseUrl?: string
   /** База URL MCP-эндпоинта консоли (с секретом k); ход адресуется query `conv`. */
   consoleMcpBaseUrl?: string
+  /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
+  makeMcpBaseUrl?: string
   /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
   previewTool?: {
     register(token: string, entry: { userId: string; conversationId: string }): void
@@ -578,8 +580,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // включённые в настройках и не выключенные в инспекторе этого разговора.
     // У «Консоли с ассистентом» терминал уже открыт справа: подсказка «вставь
     // tool-блок console» модели не даётся, а такой блок из ответа вырезается.
+    // Make: править проект — и есть задача чата, спрашивать «завести задачу или работать
+    // в чате» (task-launch) бессмысленно; терминал в чат тоже не вставляем.
     const instructions = effectiveChatInstructions(settings.chatInstructions, disabledContext)
       .filter((item) => !(conv?.assistantKind === 'console-reader' && item.kind === 'console'))
+      .filter((item) => !(conv?.assistantKind === 'make' && (item.kind === 'taskLaunch' || item.kind === 'console')))
     const prompt = appendChatInstructionHints(basePrompt, instructions)
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
@@ -663,7 +668,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // и у БЗ, живёт ровно один ход.
     let previewToolToken: string | null = null
     let previewMcpUrl: string | undefined
-    if (conv && deps.previewMcpBaseUrl && deps.previewTool) {
+    // У Make своего браузерного превью в этом канале нет (панель — iframe проекта), а с
+    // инструментами browser_* модель пытается «проверить страницу» и упирается в таймауты.
+    if (conv && conv.assistantKind !== 'make' && deps.previewMcpBaseUrl && deps.previewTool) {
       previewToolToken = randomUUID()
       previewMcpUrl = `${deps.previewMcpBaseUrl}&turn=${encodeURIComponent(previewToolToken)}`
       deps.previewTool.register(previewToolToken, { userId, conversationId })
@@ -673,6 +680,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let consoleMcpUrl: string | undefined
     if (conv?.assistantKind === 'console-reader' && deps.consoleMcpBaseUrl) {
       consoleMcpUrl = `${deps.consoleMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}`
+    }
+    // Make: инструменты mcp__make__* пишут файлы проекта разговора; `turn` нужен,
+    // чтобы снимок «до правок ассистента» снимался один раз за ход.
+    let makeMcpUrl: string | undefined
+    if (conv?.assistantKind === 'make' && deps.makeMcpBaseUrl) {
+      makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(randomUUID())}`
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
@@ -776,7 +789,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(kbMcpUrl ? { kbMcpUrl, kbMode: kbMode === 'manual' ? ('manual' as const) : ('auto' as const) } : {}),
         ...(previewMcpUrl ? { previewMcpUrl } : {}),
         // В режиме «План» консоль read-only: ввод в терминал блокируется (&ro=1).
-        ...(consoleMcpUrl ? { consoleMcpUrl: permissionMode === 'plan' ? `${consoleMcpUrl}&ro=1` : consoleMcpUrl } : {})
+        ...(consoleMcpUrl ? { consoleMcpUrl: permissionMode === 'plan' ? `${consoleMcpUrl}&ro=1` : consoleMcpUrl } : {}),
+        ...(makeMcpUrl ? { makeMcpUrl: permissionMode === 'plan' ? `${makeMcpUrl}&ro=1` : makeMcpUrl } : {})
       },
       {
         onSession: (sid) => deps.db.setClaudeSession(userId, conversationId, `${provider}:${sid}`),

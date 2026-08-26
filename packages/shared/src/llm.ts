@@ -78,6 +78,12 @@ export interface LlmRequest {
    * читают ту же живую PTY-сессию, что открыта у пользователя справа.
    */
   consoleMcpUrl?: string
+  /**
+   * URL MCP-эндпоинта Make (инструменты mcp__make__*) с секретом и `conv`.
+   * Есть только у хода разговора Make: инструменты читают и пишут файлы проекта,
+   * превью которого открыто у пользователя справа.
+   */
+  makeMcpUrl?: string
   remote?: {
     /** URL MCP-эндпоинта с agent id и секретом в query. */
     mcpUrl: string

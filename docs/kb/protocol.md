@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-08-25
-checked: 95d24260
+updated: 2026-08-26
+checked: c4d5ae60
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -265,3 +265,12 @@ Health-check — обычный REST-запрос, а не отдельный WS
 ## Administration frontend contract
 
 `@voicechat/admin-app` не меняет REST, WebSocket или runner protocol. Публичный `AdminClient` покрывает существующие admin users/role/block/access, read-only machines/history/messages, user/global usage, LLM engines/health и model prices. Host adapter использует прежние `RendererApi` bridges; единственное добавленное имя bridge — `admin:updateUserRole`, которое вызывает уже существующий `PATCH /api/admin/users/:name`. Маршруты Administration строятся и разбираются пакетом для `#/users`, пользователя и вкладок access/machines/usage/history, а также engines/prices.
+
+
+## Make (2026-08-26)
+
+REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/makePreview/makeExport`
+(`protocol.ts`), мост `window.api['make:*']` (`ipc.ts`, `httpApi.ts`), WS `make.changed
+{conversationId, rev, paths}` (`SERVER_MESSAGE_TYPES`), мост `window.make.onChanged`
+(`RendererMakeBridge`, `remote/index.ts`). `LlmRunBody.makeMcpUrl` — MCP-эндпоинт `/mcp/make`.
+`AssistantKind` дополнен `'make'`; `conversations:create` принимает его.

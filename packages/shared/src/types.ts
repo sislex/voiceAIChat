@@ -100,7 +100,7 @@ export type ConversationStatus =
 
 export const PLAYWRIGHT_READER_KIND = 'playwright-reader' as const
 export const CONSOLE_READER_KIND = 'console-reader' as const
-export type AssistantKind = 'web-recorder' | 'playwright-reader' | 'console-reader' | 'kanban'
+export type AssistantKind = 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' | 'kanban'
 
 /**
  * Живой контекст PTY-сессии консоли: агент периодически сообщает, где сейчас
@@ -192,6 +192,10 @@ export function isPlaywrightReaderConversation(value: Pick<Conversation, 'assist
   return value.assistantKind === PLAYWRIGHT_READER_KIND
 }
 
+/** Разговор инструмента Make (веб-проект с ассистентом). */
+export function isMakeConversation(value: Pick<Conversation, 'assistantKind'>): boolean {
+  return value.assistantKind === 'make'
+}
 export function isConsoleReaderConversation(value: Pick<Conversation, 'assistantKind'>): boolean {
   return value.assistantKind === CONSOLE_READER_KIND
 }

@@ -67,6 +67,9 @@ function runOptions({ rules, tags = DEFAULT_TAGS }: A11yOptions = {}): RunOption
     // Нужны только нарушения: incomplete в jsdom почти целиком про цвет и
     // геометрию, а passes раздувает отчёт на тысячи узлов.
     resultTypes: ['violations'],
+    // jsdom не умеет фреймы: axe падает «Respondable target must be a frame», как
+    // только на экране есть <iframe> (превью Make). Содержимое фрейма — чужая страница.
+    iframes: false,
     elementRef: false
   }
 }

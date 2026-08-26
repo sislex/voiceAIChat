@@ -94,6 +94,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`${REST.conversations}${includeCompleted ? '?includeCompleted=1' : ''}`),
     'conversations:create': ({ title, assistantKind }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, assistantKind }) }),
+    'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
+    'make:read': ({ conversationId, path }) => req(`${REST.makeFile(conversationId)}?path=${encodeURIComponent(path)}`),
+    'make:write': ({ conversationId, path, content }) => req(REST.makeFile(conversationId), { method: 'PUT', body: JSON.stringify({ path, content }) }),
+    'make:delete': ({ conversationId, path }) => req(`${REST.makeFile(conversationId)}?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
+    'make:rename': ({ conversationId, from, to }) => req(REST.makeRename(conversationId), { method: 'POST', body: JSON.stringify({ from, to }) }),
+    'make:snapshot': ({ conversationId, label }) => req(REST.makeSnapshots(conversationId), { method: 'POST', body: JSON.stringify({ label }) }),
+    'make:restore': ({ conversationId, snapshotId }) => req(REST.makeRestore(conversationId, snapshotId), { method: 'POST' }),
+    'make:reset': ({ conversationId }) => req(REST.makeReset(conversationId), { method: 'POST' }),
     'conversations:createDraft': (body) =>
       req(REST.conversationDraft, { method: 'POST', body: JSON.stringify(body) }),
     'kanbanAssistant:get': ({ projectId, conversationId }) => req(`/api/projects/${encodeURIComponent(projectId)}/kanban-assistant${conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : ''}`),
