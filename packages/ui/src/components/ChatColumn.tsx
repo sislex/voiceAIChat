@@ -126,6 +126,12 @@ export interface ChatColumnProps {
   liveActivity?: ClaudeLogEntry[]
   /** Живые счётчики токенов текущего хода — счётчик под стрим-сообщением. */
   liveUsage?: TurnUsage | null
+  /**
+   * Раскладка композера. По умолчанию — «по центру» у пустой ленты и «внизу» у беседы;
+   * split-режимы (Reader/Консоль/Make) всегда рисуют VoiceBar внизу — иначе у пустого
+   * проекта обёртка `--centered` (height 0) уносит докнутый композер за край экрана.
+   */
+  composerLayout?: 'centered' | 'docked'
   /** Движок/модель/машина идущего хода (claude.start); null — сервер ещё не сообщил. */
   liveTarget?: TurnTarget | null
   /** Текст ошибки для баннера (null/undefined — нет баннера). */
@@ -247,6 +253,7 @@ export function ChatColumn({
   onChangeExecTarget,
   aiLabel = 'Claude',
   liveTarget = null,
+  composerLayout,
   onAnswerQuestions,
   onAnswerCiInteraction,
   answeredCiInteractions,
@@ -484,7 +491,7 @@ export function ChatColumn({
   }, [showPreparingReply, hasStream])
 
   return (
-    <main className={messages.length === 0 ? 'main main--empty' : 'main main--conversation'} data-chat-layout={messages.length === 0 ? 'centered' : 'docked'}>
+    <main className={messages.length === 0 ? 'main main--empty' : 'main main--conversation'} data-chat-layout={composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')}>
       <header className="mhead">
         {onToggleSidebar && (
           <SidebarToggle className="burger" expanded={sidebarExpanded} onToggle={onToggleSidebar} />
@@ -1032,7 +1039,7 @@ export function ChatColumn({
         </div>
       )}
 
-      <div className={messages.length === 0 ? 'chat-composer chat-composer--centered' : 'chat-composer chat-composer--docked'}>
+      <div className={(composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')) === 'centered' ? 'chat-composer chat-composer--centered' : 'chat-composer chat-composer--docked'}>
         {voiceBar}
       </div>
     </main>

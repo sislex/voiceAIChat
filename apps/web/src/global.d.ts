@@ -16,6 +16,7 @@ import type {
   RendererPreviewBridge,
   RendererRealtimeBridge,
   RendererPtyBridge,
+  RendererMakeBridge,
   RendererSessionBridge,
   RendererSttBridge,
   RendererTtsBridge
@@ -39,6 +40,8 @@ declare global {
     fs?: RendererFsBridge
     files?: RendererFilesBridge
     pty?: RendererPtyBridge
+    /** Make: события изменения файлов проекта (только web). */
+    make?: RendererMakeBridge
     ci?: RendererCiBridge
     /** Телеметрия использования базы знаний (web). */
     kb?: RendererKbBridge

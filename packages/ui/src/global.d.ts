@@ -16,6 +16,7 @@ import type {
   RendererPreviewBridge,
   RendererRealtimeBridge,
   RendererPtyBridge,
+  RendererMakeBridge,
   RendererSessionBridge,
   RendererSttBridge,
   RendererTtsBridge
@@ -49,6 +50,8 @@ declare global {
     files?: RendererFilesBridge
     /** Живой PTY-терминал по машине (web); в desktop отсутствует. */
     pty?: RendererPtyBridge
+    /** Make: события изменения файлов проекта (только web). */
+    make?: RendererMakeBridge
     /** CI-раннер (web); в desktop отсутствует. */
     ci?: RendererCiBridge
     /** Телеметрия использования базы знаний (web); в desktop отсутствует. */

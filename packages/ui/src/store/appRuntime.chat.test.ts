@@ -1851,6 +1851,18 @@ describe('voiceStore — машинные утилиты', () => {
     expect(store.getState().utility).toEqual({ kind: 'explorer', agentId: 'm1', path: '/work', dir: true })
   })
 
+  it('newConversation("make") создаёт проект «Проект N» и кладёт его в makeConversations', async () => {
+    const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
+    await store.actions.init()
+    const first = await store.actions.newConversation('make')
+    const second = await store.actions.newConversation('make')
+    const titles = store.getState().makeConversations.map((c) => c.title).sort()
+    expect(titles).toEqual(['Проект 1', 'Проект 2'])
+    expect(store.getState().makeConversations.every((c) => c.assistantKind === 'make')).toBe(true)
+    expect(store.getState().readerConversations.map((c) => c.id)).not.toContain(first)
+    expect(store.getState().consoleReaderConversations.map((c) => c.id)).not.toContain(second)
+  })
+
   it('в «Консоли с ассистентом» «открой консоль» не открывает второй виджет, а уходит модели', async () => {
     const store = createTestStore({ api: createFakeApi([]), fs: makeFs() })
     await store.actions.init()

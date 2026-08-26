@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-26
-checked: 3254d6b5
+checked: c4d5ae60
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -244,6 +244,18 @@ Usage нормализуется в `TurnUsage` и рассылается как
 результат в БД. Клиент при подключении получает `claude.active` со списком
 незакрытых ходов и накопленным частичным текстом — так восстанавливается стрим
 после F5. Модель хода зажимается по роли пользователя (`clampModelForRole`).
+
+## Make: инструменты `mcp__make__*`
+
+У разговора `assistantKind: 'make'` ход получает `makeMcpUrl` (`turns.ts`: база `MAKE_MCP_PATH`
++ `conv` + `turn`; в режиме «План» — `&ro=1`). Раннеры подключают MCP-сервер `make`
+(`claudeCli.ts`: allow-list `mcp__make__make_list_files|read_file|write_file|delete_file|rename_file`
++ системный хинт; `codexCli.ts`: `mcp_servers.make.url` + хинт в промпт). Хинт: проект — статический
+сайт без сборки, `index.html` — точка входа, писать файлы целиком через `make_write_file`, превью
+обновится само, полный код в ответ не вставлять. Из инструкций чата для Make сервер убирает
+`taskLaunch` (правка проекта — и есть задача, спрашивать «завести задачу» бессмысленно) и `console`.
+Сервер `apps/server/src/mcp/makeMcp.ts`: один снимок «До правок ассистента» на ход (по `turn`),
+после каждой мутации — `MakeHub.changed` → WS `make.changed` владельцу.
 
 ## Старт хода: `claude.start`
 

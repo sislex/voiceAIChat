@@ -40,6 +40,10 @@ import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
 import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from './mcp/remoteBashMcp.js'
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
+import { registerMakeMcp, MAKE_MCP_PATH } from './mcp/makeMcp.js'
+import { registerMakeRoutes } from './routes/make.js'
+import { MakeWorkspaces } from './make/workspace.js'
+import { MakeHub } from './make/hub.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
 import { createSession } from './session.js'
 import { createTurnManager } from './turns.js'
@@ -380,6 +384,12 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
   // инструменты пишут/читают ту же живую PTY-сессию, что видит пользователь.
   registerConsoleMcp(app, agentRegistry, mcpSecret)
+  // Make (mcp__make__*): файлы проекта разговора в <dataDir>/make/<conv>; изменения
+  // уходят владельцу кадром make.changed через MakeHub.
+  const makeWorkspaces = new MakeWorkspaces(opts.config.dataDir)
+  const makeHub = new MakeHub()
+  registerMakeMcp(app, { workspaces: makeWorkspaces, hub: makeHub, ownerOf: (id) => db.conversationOwner(id) }, mcpSecret)
+  registerMakeRoutes(app, { db, workspaces: makeWorkspaces, hub: makeHub })
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
   registerKbMcp(app, {
@@ -452,6 +462,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
   const previewMcpBaseUrl = buildPublicMcpUrl(opts.config, PREVIEW_MCP_PATH, mcpSecret)
   const consoleMcpBaseUrl = buildPublicMcpUrl(opts.config, CONSOLE_MCP_PATH, mcpSecret)
+  const makeMcpBaseUrl = buildPublicMcpUrl(opts.config, MAKE_MCP_PATH, mcpSecret)
 
   // «Исследовать проект»: модель на машине проекта сверяет статьи раздела
   // «Разработка проекта» с кодом. Живёт рядом с MCP-мостом — ей нужен тот же
@@ -833,6 +844,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     kbMcpBaseUrl,
     previewMcpBaseUrl,
     consoleMcpBaseUrl,
+    makeMcpBaseUrl,
     previewTool: previewToolBroker,
     remoteFileTool: remoteFileBroker,
     onAuthError: (userId, provider, message) => { authStatus.reportRunError(userId, provider, message) }
@@ -1500,7 +1512,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       preview: {
         subscribe: (userId, sink) => previewRelay.subscribe(userId, sink),
         resolve: (userId, requestId, outcome) => previewRelay.resolve(userId, requestId, outcome)
-      }
+      },
+      make: { subscribe: (userId, sink) => makeHub.subscribe(userId, sink) }
     })
 
   await app.register(async (scoped) => {

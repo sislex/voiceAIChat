@@ -80,6 +80,8 @@ export interface SessionDeps {
     subscribe(userId: string, sink: (m: ServerMessage) => void): () => void
     resolve(userId: string, requestId: string, outcome: { ok: boolean; result?: PreviewActionResult; error?: string }, conversationId?: string): void
   }
+  /** Make: кадры make.changed своего пользователя (файлы проекта изменились). */
+  make?: { subscribe(userId: string, sink: (m: ServerMessage) => void): () => void }
 }
 
 /** Минимальный релей PTY для сессии (реализует AgentRegistry). */
@@ -107,6 +109,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubCi: (() => void) | null = null
   let unsubKbUsage: (() => void) | null = null
   let unsubPreview: (() => void) | null = null
+  let unsubMake: (() => void) | null = null
   let unsubAuthStatus: (() => void) | null = null
   let ccTailStop: (() => void) | null = null
   let cxTailStop: (() => void) | null = null
@@ -148,6 +151,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
       }
       if (deps.preview) {
         unsubPreview = deps.preview.subscribe(deps.user.name, (m) => ctx.send(m))
+      }
+      if (deps.make) {
+        unsubMake = deps.make.subscribe(deps.user.name, (m) => ctx.send(m))
       }
       if (deps.agentsFeed) {
         ctx.send({ t: 'agents', agents: deps.agentsFeed.list() })
@@ -372,6 +378,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubKbUsage?.()
       unsubKbUsage = null
       unsubPreview?.()
+      unsubMake?.()
+      unsubMake = null
       unsubAuthStatus?.()
       unsubPreview = null
       ccTailStop?.()

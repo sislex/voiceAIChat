@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-08-25
-checked: 6480ffef
+updated: 2026-08-26
+checked: c4d5ae60
 areas:
   - apps/server/src
 ---
@@ -44,7 +44,21 @@ Backend — Fastify 5 на TypeScript ESM. Он не выпускает JS-ар�
 
 ## Граница отдельного Make-подобного продукта
 
-На 2026-08-08 в рабочем коде нет реализации Figma Make: ни `make_*`-таблиц в SQLite, ни Fastify-маршрутов, ни UI-маршрута для Make. Добавленный `plans/figma-make-analog.md` — исследовательский план, а не источник текущего поведения. Для будущей подсистемы уже существуют только общие границы: `packages/ui` использует hash-маршрутизацию для web и Electron, сервер выбирает реализацию общего `LlmClient`, а проекты проверяют доступ через `uid(req)` и `VoiceChatDb.getProject()` в `routes/projects.ts`.
+**Make (с 2026-08-26) — аналог Figma Make внутри чата.** Проект разговора — рабочая папка
+`<dataDir>/make/<conversationId>/` (`apps/server/src/make/workspace.ts`, класс `MakeWorkspaces`):
+статические файлы + служебный `.snapshots/<id>/{meta.json,files/}`. Пути нормализует
+`normalizeMakePath` (`@voicechat/shared/make`): без `..`, скрытых сегментов и спецсимволов,
+глубина ≤ 8; символические ссылки внутри проекта отвергаются; лимиты `MAKE_LIMITS`
+(2 МБ/файл, 400 файлов, 50 снимков). `rev` — счётчик изменений в памяти процесса.
+REST (`routes/make.ts`): `GET/PUT/DELETE /api/make/:id[/file]`, `/rename`, `/snapshots`,
+`/snapshots/:sid/restore`, `/reset`; все проверяют `db.getConversation(uid, id)` и
+`assistantKind === 'make'`. Превью и ZIP — `/api/preview/make/:id/*` и `…/export.zip`: под
+префиксом `/api/preview/` действует preview-cookie (`users/auth.ts`, `previewSession` принимает
+`startsWith('/api/preview/make/')`). HTML отдаётся с CSP `default-src 'self' 'unsafe-inline'
+'unsafe-eval' data: blob: https:; frame-ancestors 'self'` и инъекцией `MAKE_INSPECTOR_SCRIPT`.
+ZIP — собственный писатель без сжатия (`make/zip.ts`). События — `MakeHub` (`make/hub.ts`),
+сессия подписывается через `deps.make.subscribe` (как relay превью); владельца разговора для
+MCP даёт `db.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
 
 Текущий `/api/preview` нельзя считать файловым или artifact-preview сервером: это аутентифицированный same-origin прокси внешнего HTTP/HTTPS. Его SSRF-ограничения и механизм iframe описаны ниже; отдельному продукту понадобятся собственные storage, ревизии, builder и изолированный runtime, которых сейчас в сервере нет.
 

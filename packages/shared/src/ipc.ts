@@ -1,6 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
+import type { MakeFileContent, MakeProjectState } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -133,7 +134,16 @@ export interface IpcInvokeMap {
    * завершённых задач»).
    */
   'conversations:list': { arg: { includeCompleted?: boolean }; result: Conversation[] }
-  'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' }; result: Conversation }
+  /** Make: состояние проекта разговора (файлы, снимки, rev) и операции с файлами. */
+  'make:state': { arg: { conversationId: string }; result: MakeProjectState }
+  'make:read': { arg: { conversationId: string; path: string }; result: MakeFileContent }
+  'make:write': { arg: { conversationId: string; path: string; content: string }; result: MakeProjectState }
+  'make:delete': { arg: { conversationId: string; path: string }; result: MakeProjectState }
+  'make:rename': { arg: { conversationId: string; from: string; to: string }; result: MakeProjectState }
+  'make:snapshot': { arg: { conversationId: string; label?: string }; result: MakeProjectState }
+  'make:restore': { arg: { conversationId: string; snapshotId: string }; result: MakeProjectState }
+  'make:reset': { arg: { conversationId: string }; result: MakeProjectState }
+  'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' }; result: Conversation }
   /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
   'conversations:createDraft': {
     arg: { idempotencyKey: string; title: string; projectId?: string | null; message: Omit<AddMessageArgs, 'conversationId'> }
@@ -768,6 +778,11 @@ export interface RendererFilesBridge {
  * resize/kill; подписки — output/exit/error. Отсутствует в desktop → терминал
  * деградирует до однострочной консоли.
  */
+/** Мост Make (web): сервер сообщает об изменении файлов проекта — панель обновляет превью и дерево. */
+export interface RendererMakeBridge {
+  onChanged(cb: (m: { conversationId: string; rev: number; paths: string[] }) => void): () => void
+}
+
 export interface RendererPtyBridge {
   start(params: { agentId: string; ptyId: string; cols: number; rows: number; cwd?: string; projectId?: string }): void
   input(params: { ptyId: string; data: string }): void
@@ -860,6 +875,14 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'kb:researchStatus',
   'prompt:suggest',
   'conversations:list',
+  'make:state',
+  'make:read',
+  'make:write',
+  'make:delete',
+  'make:rename',
+  'make:snapshot',
+  'make:restore',
+  'make:reset',
   'conversations:create',
   'conversations:createDraft',
   'conversations:get',

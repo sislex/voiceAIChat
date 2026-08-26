@@ -28,6 +28,26 @@ export interface FakeApi extends RendererApi {
 }
 
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
+  const makeStore = new Map<string, Map<string, string>>()
+  const makeSnapStore = new Map<string, Array<{ id: string; createdAt: number; label: string; files: number }>>()
+  const makeRev = new Map<string, number>()
+  const makeFiles = (id: string): Map<string, string> => {
+    let files = makeStore.get(id)
+    if (!files) { files = new Map([['index.html', '<h1>Новый проект</h1>'], ['styles.css', 'body{}'], ['app.js', '']]); makeStore.set(id, files) }
+    return files
+  }
+  const makeSnaps = (id: string): Array<{ id: string; createdAt: number; label: string; files: number }> => {
+    let snaps = makeSnapStore.get(id)
+    if (!snaps) { snaps = []; makeSnapStore.set(id, snaps) }
+    return snaps
+  }
+  const makeState = (id: string) => ({
+    conversationId: id,
+    files: [...makeFiles(id).entries()].map(([path, content]) => ({ path, size: content.length, updatedAt: 1 })).sort((x, y) => x.path.localeCompare(y.path)),
+    snapshots: [...makeSnaps(id)],
+    rev: makeRev.get(id) ?? 0
+  })
+
   let idCounter = 0
   let clock = 1_700_000_000_000
   /** «Сейчас» фейкового бэкенда — двигается только `_advanceDays`. */
@@ -204,6 +224,19 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         .filter((c) => visibleInConversationList(c, Boolean(includeCompleted)))
         .sort((a, b) => b.updatedAt - a.updatedAt)
         .map(withCounts),
+    // Make: файлы проекта в памяти — панель тестируется без сервера.
+    'make:state': async ({ conversationId }) => makeState(conversationId),
+    'make:read': async ({ conversationId, path }) => {
+      const content = makeFiles(conversationId).get(path)
+      if (content === undefined) throw new Error(`Файл «${path}» не найден`)
+      return { path, size: content.length, updatedAt: 1, content }
+    },
+    'make:write': async ({ conversationId, path, content }) => { makeFiles(conversationId).set(path, content); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
+    'make:delete': async ({ conversationId, path }) => { makeFiles(conversationId).delete(path); return makeState(conversationId) },
+    'make:rename': async ({ conversationId, from, to }) => { const files = makeFiles(conversationId); const c = files.get(from) ?? ''; files.delete(from); files.set(to, c); return makeState(conversationId) },
+    'make:snapshot': async ({ conversationId, label }) => { makeSnaps(conversationId).unshift({ id: `s${Date.now()}`, createdAt: Date.now(), label: label ?? 'Снимок', files: makeFiles(conversationId).size }); return makeState(conversationId) },
+    'make:restore': async ({ conversationId }) => makeState(conversationId),
+    'make:reset': async ({ conversationId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', '<h1>Новый проект</h1>'); return makeState(conversationId) },
     'conversations:create': async ({ title, assistantKind } = {}) => {
       const conv = { ...makeConversation(title ?? 'Новый разговор'), ...(assistantKind ? { assistantKind } : {}) }
       conversations.push(conv)

@@ -139,6 +139,24 @@ describe('turns: инструкции чата', () => {
     db.close()
   })
 
+  it('у Make нет подсказок task-launch и console — ассистент сразу правит файлы инструментами make_*', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Проект', 'make')
+    db.addMessage(U, conv.id, 'u0', 'сделай лендинг', '10:00')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, agents: onlineAgents, mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret', makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => { if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() } })
+      turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'сделай лендинг' }] })
+    })
+    expect(rec.last()?.prompt).not.toContain('task-launch')
+    expect(rec.last()?.prompt).not.toContain('"kind": "console"')
+    expect(rec.last()?.prompt).toContain('```questions')
+    expect(rec.last()?.makeMcpUrl).toMatch(/\/mcp\/make\?k=secret&conv=.+&turn=.+/)
+    expect(rec.last()?.previewMcpUrl).toBeUndefined()
+    db.close()
+  })
+
   it('инструкция, выключенная в инспекторе разговора, не попадает в промпт при включённой настройке', async () => {
     const db = freshDb()
     const conv = db.createConversation(U, 'Чат')

@@ -142,6 +142,16 @@ export const REST = {
   sessionLogout: '/api/session/logout',
   sessionPreview: '/api/session/preview',
   conversations: '/api/conversations',
+  /** Make: состояние/файлы проекта разговора. */
+  makeState: (id: string) => `/api/make/${encodeURIComponent(id)}`,
+  makeFile: (id: string) => `/api/make/${encodeURIComponent(id)}/file`,
+  makeRename: (id: string) => `/api/make/${encodeURIComponent(id)}/rename`,
+  makeSnapshots: (id: string) => `/api/make/${encodeURIComponent(id)}/snapshots`,
+  makeRestore: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/restore`,
+  makeReset: (id: string) => `/api/make/${encodeURIComponent(id)}/reset`,
+  /** Превью и ZIP-экспорт живут под /api/preview/…: там действует preview-cookie для iframe и ссылок. */
+  makePreview: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/`,
+  makeExport: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/export.zip`,
   conversationDraft: '/api/conversations/draft',
   conversationsSearch: '/api/conversations/search',
   /** Полнотекстовый поиск по сообщениям пользователя (FTS5). */
@@ -543,6 +553,8 @@ export type ServerMessage =
    * остальные отвечают preview.result с ok:false — сервер ждёт первый успех.
    */
   | { t: 'preview.action'; conversationId: string; requestId: string; action: PreviewAction }
+  /** Make: файлы проекта изменились (ассистентом или пользователем) — превью и дерево обновляются. */
+  | { t: 'make.changed'; conversationId: string; rev: number; paths: string[] }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']

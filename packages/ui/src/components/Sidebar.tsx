@@ -256,6 +256,8 @@ export interface SidebarProps {
   onOpenPlaywrightReader?: () => void
   /** Открыть инструмент «Консоль с ассистентом». */
   onOpenConsoleReader?: () => void
+  /** Инструмент Make — веб-проект с ассистентом. */
+  onOpenMake?: () => void
   /** Открыть админ-страницу пользователей (только admin). */
   onOpenUsers?: () => void
   /** Открыть меню «Машины» (статус агентских машин; web). */
@@ -321,6 +323,7 @@ export function Sidebar({
   onOpenWebReader,
   onOpenPlaywrightReader,
   onOpenConsoleReader,
+  onOpenMake,
   onOpenUsers,
   onOpenMachines,
   onOpenCi,
@@ -790,6 +793,12 @@ export function Sidebar({
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenConsoleReader)}>
                     <span className="footico">▮</span>
                     Консоль с ассистентом
+                  </Button>
+                )}
+                {onOpenMake && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenMake)}>
+                    <span className="footico">✦</span>
+                    Make — веб-проект
                   </Button>
                 )}
                 <div className="acct-sep" aria-hidden />

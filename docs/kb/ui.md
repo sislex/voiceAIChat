@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-26
-checked: 3f8d036f
+checked: c4d5ae60
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -394,6 +394,37 @@ USD за 1M токенов, источник и дату тарифа; форм�
 Живой контекст терминала (cwd/foreground/altScreen) приносит агент сообщением `pty.context` (`agentProtocol.ts`, `AGENT_VERSION 0.14.0`): для PTY с префиксом `console:` и только на Linux он раз в секунду читает `/proc/<pid>/cwd`, tpgid из `/proc/<pid>/stat` → имя процесса, а альтернативный экран ловит по `?1049h/l` в потоке. Сервер хранит последний контекст в `PtySession.context`, отдаёт его через `registry.ptyContextOf`. На не-Linux/старых агентах поля остаются `null` — ожидаемая деградация.
 
 Самодиагностика (`packages/ui/src/consoleReaderDiagnostics.ts`, тест — рядом): кнопка «Самодиагностика» в настройках (проп `consoleReaderDiagnostics` при `inConsoleReader`) или команда `самодиагностика консоли` / `/console-reader-diagnostics`. 3 проверки: `bridge` (window.pty), `machine` (агент в сети), `session` (round-trip — пишет `echo <marker>` в общий PTY и ждёт маркер в выводе; маркер бьётся `<h1>''<h2>`, чтобы эхо ввода не совпадало с ним и подтверждало реальное исполнение shell). Тест MCP — `apps/server/src/mcp/consoleMcp.test.ts`.
+
+## Отдельный режим «Make — веб-проект с ассистентом»
+
+Четвёртый split-режим (маршруты `#/make` и `#/make/<conversationId>`, `assistantKind: 'make'`,
+константа `MAKE_KIND`/предикат `isMakeConversation` в `@shared/types`+`@shared/make`). Устроен
+как Консоль: `inMake` в `App.tsx` даёт корню `app--make`, входит в `inSplit`, список —
+`makeConversations` в `chatStore`, имя нового чата «Проект N», пункт меню «Make — веб-проект»
+(иконка `✦`) в `Sidebar`, второй таб на телефоне — «Проект». Selector-шапка `make-selector`.
+В split-режимах `ChatColumn` получает `composerLayout="docked"`: у пустого проекта обёртка
+`chat-composer--centered` (height 0) иначе уносила докнутый `VoiceBar` за край экрана.
+
+Правая панель — `MakePane` (`packages/ui/src/components/MakePane.tsx`, сториз `Make/MakePane`,
+тест `MakePane.dom.test.tsx`). Данные — `window.api['make:*']` (REST) и `window.make.onChanged`
+(WS `make.changed`). Три режима:
+
+- **Превью** — same-origin iframe на `REST.makePreview(conv)` + `index.html?rev=N`
+  (`sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"`).
+  Перед первой загрузкой — cookie-гейт `ensurePreview` (тот же `session:ensurePreview`,
+  что у Web Reader: iframe не шлёт Bearer). Пресеты ширины ПК/Планшет/Телефон, ⟳, открыть в
+  новой вкладке, ⛶ на весь экран, **⌖ «Выбрать элемент»**: сервер инъецирует в HTML скрипт
+  `MAKE_INSPECTOR_SCRIPT`, панель шлёт в iframe `{type:'vc-make.inspect', enabled}`, обратно
+  приходит `vc-make.selected {selector, tag, text, html}` — карточка над превью с кнопкой
+  «В чат» (`onInsertToChat` → `chatActions.setDraft('Измени элемент <selector> …')`).
+- **Код** — дерево файлов (группировка по первому каталогу), textarea-редактор (Tab → два
+  пробела, Ctrl/Cmd+S — сохранить), статус «сохранено/не сохранено», «+ Файл», ✎/✕ у файла.
+  Имена вводятся через `Dialog` (`make-ask`), не `window.prompt`.
+- **История** — снимки (`MakeSnapshot`) с «Вернуть», «+ Снимок», «Сбросить проект».
+
+`make.changed` от сервера: панель поднимает `previewRev` (iframe перезагружается), обновляет
+дерево и, если редактор не грязный и путь в `paths`, — содержимое открытого файла.
+«Скачать проект (ZIP)» — `REST.makeExport(conv)` (тоже под `/api/preview/`, cookie).
 
 ## Разговор и ход модели
 
