@@ -45,8 +45,11 @@ export interface MakePublication {
 export interface MakeCheckIssue {
   /** Файл, где найдено. */
   path: string
-  kind: 'missing-file' | 'no-index' | 'external-script' | 'empty-file'
+  kind: 'missing-file' | 'no-index' | 'external-script' | 'empty-file' | 'compile-error'
   message: string
+  /** Строка (с 1) — у ошибок компиляции; редактор ставит по ней маркер. */
+  line?: number
+  column?: number
 }
 
 /** Состояние проекта для панели: список файлов, ревизии и счётчик изменений. */
