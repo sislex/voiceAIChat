@@ -370,6 +370,9 @@ export function createVoiceStore(deps: VoiceDeps): VoiceStore {
 
   function applyTtsError(message: string): void {
     console.warn('[tts] ошибка озвучки:', message)
+    // Раньше ошибка оставалась только в консоли: пользователь жал 🔊 и ничего не
+    // происходило. Баннер оболочки — тот же канал, что у ошибок распознавания.
+    deps.onError?.(`Озвучка недоступна: ${message}`)
     if (ttsSession) {
       ttsSession.played += 1
       finishTtsSessionIfDone()

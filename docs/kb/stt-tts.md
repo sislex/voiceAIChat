@@ -1,7 +1,7 @@
 ---
 title: Речь: Whisper (STT) и Piper/say (TTS)
-updated: 2026-08-20
-checked: 25fcd3a3
+updated: 2026-08-26
+checked: 1de46edc
 areas:
   - apps/stt-runner
   - apps/server/src/stt
@@ -37,6 +37,11 @@ STT-пути принадлежат конфигу `apps/stt-runner/src/config.t
 В Docker `whisper-cli` собирается из whisper.cpp v1.7.5 и копируется только в target `stt-runner-runtime`. Сервис не публикует host-порт, имеет отдельные `/models` и `/stt-tmp`, healthcheck и лимиты 6 CPU/6 GiB; server image бинарь и STT volumes не получает. Внутреннее устройство и административные лимиты описаны в [stt-runner.md](stt-runner.md).
 
 ## Скачивание моделей и голосов
+
+В Docker голос по умолчанию (`ru_RU-ruslan-medium`) и бинарь Piper входят в образ
+`tts-runner` и засеивают пустой том голосов при старте — см. [tts-runner.md](tts-runner.md),
+«Конфигурация и контейнер».
+
 
 Каталог, файлы и операции моделей Whisper находятся в `apps/stt-runner/src/models`; серверные `/api/stt/*` являются прокси и не вычисляют пути к моделям.
 

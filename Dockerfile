@@ -104,14 +104,39 @@ EXPOSE 8790
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/llm-runner && exec node --import tsx src/index.ts"]
 
+# ---- Piper и голос по умолчанию для TTS ----------------------------------
+# Бинарный релиз Piper (со встроенным espeak-ng) по архитектуре и один русский
+# голос-«семя»: том /data/voices у нового контейнера пуст, а скачивание голосов из
+# UI убрано — без этого озвучка в Docker отвечала бы «No TTS engine available».
+FROM debian:bookworm-slim AS piper-assets
+ARG TARGETARCH
+ARG PIPER_VERSION=2023.11.14-2
+ARG PIPER_VOICE_PATH=ru/ru_RU/ruslan/medium/ru_RU-ruslan-medium
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl tar \
+  && rm -rf /var/lib/apt/lists/*
+RUN set -eux; case "$TARGETARCH" in amd64) arch=x86_64 ;; arm64) arch=aarch64 ;; *) echo "unsupported arch $TARGETARCH" >&2; exit 1 ;; esac; \
+  curl -fsSL "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}/piper_linux_${arch}.tar.gz" -o /tmp/piper.tar.gz; \
+  mkdir -p /opt && tar -xzf /tmp/piper.tar.gz -C /opt && rm /tmp/piper.tar.gz; \
+  test -x /opt/piper/piper; \
+  mkdir -p /opt/piper-voices-seed; \
+  base="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/${PIPER_VOICE_PATH}"; \
+  curl -fsSL "${base}.onnx" -o "/opt/piper-voices-seed/$(basename "$PIPER_VOICE_PATH").onnx"; \
+  curl -fsSL "${base}.onnx.json" -o "/opt/piper-voices-seed/$(basename "$PIPER_VOICE_PATH").onnx.json"
+
 # ---- Runtime исполнителя TTS --------------------------------------------
 FROM runtime-base AS tts-runner-runtime
 ENV PORT=8791 \
     VC_TTS_DATA_DIR=/data \
     VC_TTS_TEMP_DIR=/tmp/voicechat-tts \
-    VC_PIPER_VOICES_DIR=/data/voices
+    VC_PIPER_VOICES_DIR=/data/voices \
+    VC_PIPER_BIN=/opt/piper/piper \
+    VC_PIPER_SEED_VOICES_DIR=/opt/piper-voices-seed
+COPY --from=piper-assets /opt/piper /opt/piper
+COPY --from=piper-assets /opt/piper-voices-seed /opt/piper-voices-seed
 RUN mkdir -p /data/voices /tmp/voicechat-tts \
-  && chown -R node:node /data /tmp/voicechat-tts
+  && chown -R node:node /data /tmp/voicechat-tts \
+  && /opt/piper/piper --help >/dev/null 2>&1 || true
 VOLUME ["/data"]
 EXPOSE 8791
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
