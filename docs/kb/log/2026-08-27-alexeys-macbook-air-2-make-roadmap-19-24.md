@@ -55,3 +55,4 @@ author: alexeyrozhnov
 П.39: rate-limit импорта ZIP/URL (скользящее окно, 429 + Retry-After).
 П.40: копии примитивов ui-kit в packages/ui/src/components/ui удалены (остался SidebarToggle).
 П.33: read-only шаринг внутри ChatAI — share-токен, /api/make/shared/*, страница #/make-shared/<token>.
+П.34: мобильный редактор — fallback textarea и select файлов при ≤600px.

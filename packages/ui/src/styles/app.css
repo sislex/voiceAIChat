@@ -6825,3 +6825,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-snaps { list-style: none; margin: 0; padding: var(--space-3); display: grid; gap: var(--space-1); }
 .make-snap { display: grid; gap: 2px; padding: var(--space-2); border: 1px solid var(--border-soft); border-radius: var(--radius-medium); }
 .make-snap small { color: var(--text-dim); }
+
+/* Мобильный редактор Make (п.34): ≤600px — список файлов вместо дерева, textarea вместо Monaco */
+.make-file-picker { display: flex; gap: var(--space-2); align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.make-file-picker select { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--surface); color: var(--text); }
+@media (max-width: 600px) {
+  .make-code--phone { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+  .make-code--phone .make-tree { display: none; }
+  /* 16px — иначе iOS Safari приближает страницу при фокусе в поле. */
+  .make-code--phone .make-textarea, .make-code--phone .make-highlight { font-size: 16px; line-height: 1.45; }
+  .make-code--phone .make-editor-head { flex-wrap: wrap; row-gap: 4px; }
+}
