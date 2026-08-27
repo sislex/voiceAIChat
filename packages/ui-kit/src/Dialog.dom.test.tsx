@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Dialog } from './Dialog'
 import { DIALOG_Z_BASE, DIALOG_Z_STEP, dialogStackDepth } from './useDialogStack'
@@ -283,5 +283,13 @@ describe('Dialog — телефон', () => {
     const dialog = screen.getByRole('dialog')
     expect(dialog.className).toContain('vc-dialog--lg')
     expect(dialog.className).not.toContain('vc-dialog--phone')
+  })
+
+  it('padded оборачивает содержимое в .vc-dialog-body; без флага — рендерит как есть', () => {
+    render(<Dialog title="Окно" onClose={() => {}} padded><p>тело</p></Dialog>)
+    expect(screen.getByText('тело').parentElement).toHaveClass('vc-dialog-body')
+    cleanup()
+    render(<Dialog title="Окно" onClose={() => {}}><p>тело</p></Dialog>)
+    expect(screen.getByText('тело').parentElement).not.toHaveClass('vc-dialog-body')
   })
 })

@@ -1370,14 +1370,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
 
       {fileDiff && (
-        <Dialog className="make-dialog" title={`Сравнение: ${fileDiff.path}`} ariaLabel={`Сравнение ${fileDiff.path}`} size="lg" onClose={() => setFileDiff(null)} testId="make-file-diff"
+        <Dialog className="make-dialog" padded title={`Сравнение: ${fileDiff.path}`} ariaLabel={`Сравнение ${fileDiff.path}`} size="lg" onClose={() => setFileDiff(null)} testId="make-file-diff"
           actions={<Button size="sm" variant="secondary" onClick={() => { void restoreFile(fileDiff.snapshotId, fileDiff.path); setFileDiff(null) }}>Вернуть файл из снимка</Button>}>
           <p className="make-ideas-lead">Слева — снимок «{fileDiff.label}», справа — текущая версия.</p>
           <CodeDiff path={fileDiff.path} original={fileDiff.original} modified={fileDiff.modified} />
         </Dialog>
       )}
       {libraryOpen && (
-        <Dialog className="make-dialog" title="Библиотека компонентов" ariaLabel="Библиотека компонентов" size="md" onClose={() => setLibraryOpen(false)} testId="make-library">
+        <Dialog className="make-dialog" padded title="Библиотека компонентов" ariaLabel="Библиотека компонентов" size="md" onClose={() => setLibraryOpen(false)} testId="make-library">
           <p className="make-ideas-lead">Компоненты, сохранённые из ваших проектов. «Вставить» копирует файлы в текущий проект (снимок сохраняется).</p>
           {library === null ? <p className="make-diff-note">Загружаю…</p> : library.length === 0 ? (
             <EmptyState title="Библиотека пуста" description="Откройте стори во вкладке «Компоненты» и нажмите «В библиотеку»." />
@@ -1402,7 +1402,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {usageOpen && <MakeUsageDialog conversationId={conversationId} api={api} onClose={() => setUsageOpen(false)} onChanged={(next) => { setState(next); setPreviewRev(next.rev) }} />}
       {tokensOpen && state && <MakeTokensDialog conversationId={conversationId} api={api} files={state.files.map((f) => f.path)} onClose={() => setTokensOpen(false)} onWritten={(next) => { setState(next); setPreviewRev(next.rev) }} />}
       {assetsOpen && (
-        <Dialog className="make-dialog" title="Ассеты проекта" ariaLabel="Ассеты проекта" size="md" onClose={() => setAssetsOpen(false)} testId="make-assets">
+        <Dialog className="make-dialog" padded title="Ассеты проекта" ariaLabel="Ассеты проекта" size="md" onClose={() => setAssetsOpen(false)} testId="make-assets">
           <p className="make-ideas-lead">Картинки и другие бинарные файлы проекта. Путь или тег вставляются в буфер — дальше в код или в просьбу ассистенту.</p>
           {assets.length === 0 ? (
             <EmptyState title="Ассетов пока нет" description="Загрузите картинки кнопкой «Загрузить» или перетащите их в дерево файлов." actionLabel="Загрузить" onAction={() => { setAssetsOpen(false); uploadInputRef.current?.click() }} />
@@ -1429,7 +1429,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </Dialog>
       )}
       {exportOpen && (
-        <Dialog className="make-dialog" title="Скачать проект" ariaLabel="Скачать проект" size="sm" onClose={() => setExportOpen(false)} testId="make-export">
+        <Dialog className="make-dialog" padded title="Скачать проект" ariaLabel="Скачать проект" size="sm" onClose={() => setExportOpen(false)} testId="make-export">
           <div className="make-export-options">
             <button type="button" className="make-idea" onClick={() => { window.open(exportUrl(false), '_blank', 'noopener'); setExportOpen(false) }}>
               <strong>Статика как есть</strong>
@@ -1444,7 +1444,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </Dialog>
       )}
       {importOpen && (
-        <Dialog className="make-dialog" title="Импорт проекта" ariaLabel="Импорт проекта" size="sm" onClose={() => setImportOpen(false)} testId="make-import" closeOnOverlay={false}>
+        <Dialog className="make-dialog" padded title="Импорт проекта" ariaLabel="Импорт проекта" size="sm" onClose={() => setImportOpen(false)} testId="make-import" closeOnOverlay={false}>
           <p className="make-ideas-lead">Перед импортом сохранится снимок — откатиться можно во вкладке «История».</p>
           <fieldset className="make-import-mode">
             <legend>Как применить</legend>
@@ -1467,7 +1467,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </Dialog>
       )}
       {ideasOpen && (
-        <Dialog className="make-dialog" title="Идеи для старта" ariaLabel="Идеи для старта" size="md" onClose={() => setIdeasOpen(false)} testId="make-ideas">
+        <Dialog className="make-dialog" padded title="Идеи для старта" ariaLabel="Идеи для старта" size="md" onClose={() => setIdeasOpen(false)} testId="make-ideas">
           <p className="make-ideas-lead">Готовые промпты в духе Figma Make: клик вставляет текст в композер, дальше можно отредактировать и отправить.</p>
           {(Object.keys(MAKE_STARTER_GROUPS) as Array<keyof typeof MAKE_STARTER_GROUPS>).map((group) => (
             <section key={group} className="make-ideas-group">
@@ -1483,7 +1483,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </Dialog>
       )}
       {publishOpen && (
-        <Dialog className="make-dialog" title="Публикация проекта" ariaLabel="Публикация проекта" size="sm" onClose={() => setPublishOpen(false)} testId="make-publish">
+        <Dialog className="make-dialog" padded title="Публикация проекта" ariaLabel="Публикация проекта" size="sm" onClose={() => setPublishOpen(false)} testId="make-publish">
           {state?.published ? (
             <div className="make-publish">
               <p className="fsub">Ссылка открывается без входа — у всех, кто её знает.{' '}
@@ -1537,7 +1537,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
 
       {templatesOpen && (
-        <Dialog className="make-dialog" title="Шаблоны проекта" ariaLabel="Шаблоны проекта" size="md" onClose={() => setTemplatesOpen(false)} testId="make-templates">
+        <Dialog className="make-dialog" padded title="Шаблоны проекта" ariaLabel="Шаблоны проекта" size="md" onClose={() => setTemplatesOpen(false)} testId="make-templates">
           <ul className="make-templates" aria-label="Шаблоны">
             {MAKE_TEMPLATES.map((t) => (
               <li key={t.id} className="make-template">
@@ -1550,7 +1550,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
 
       {ask && (
-        <Dialog className="make-dialog" title={ask.title} ariaLabel={ask.title} size="sm" onClose={() => setAsk(null)} testId="make-ask">
+        <Dialog className="make-dialog" padded title={ask.title} ariaLabel={ask.title} size="sm" onClose={() => setAsk(null)} testId="make-ask">
           <form className="make-ask" onSubmit={(e) => { e.preventDefault(); const value = askValue.trim(); setAsk(null); if (value) ask.onSubmit(value) }}>
             <label className="make-ask-field"><span>{ask.label}</span><input className="tin" autoFocus value={askValue} aria-label={ask.label} onChange={(e) => setAskValue(e.target.value)} /></label>
             <div className="make-ask-actions">
