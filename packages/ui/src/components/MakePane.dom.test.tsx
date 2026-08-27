@@ -449,4 +449,16 @@ describe('MakePane', () => {
     fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.ready' }, source: next.contentWindow }))
     expect(post).toHaveBeenCalledWith({ type: 'vc-make.restore', x: 0, y: 640, hash: '#menu' }, '*')
   })
+
+  it('тема и язык превью уходят в iframe и повторяются после перезагрузки', async () => {
+    renderPane()
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage')
+    await userEvent.click(screen.getByRole('button', { name: 'Тема превью' }))
+    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: '' }, '*')
+    await userEvent.selectOptions(screen.getByLabelText('Язык превью'), 'en')
+    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }, '*')
+    fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.ready' }, source: frame.contentWindow }))
+    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }, '*')
+  })
 })

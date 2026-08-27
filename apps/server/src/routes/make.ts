@@ -62,6 +62,11 @@ export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
   window.addEventListener('scroll', function(){ clearTimeout(scrollTimer); scrollTimer = setTimeout(reportState, 120); }, true);
   window.addEventListener('hashchange', reportState);
   window.addEventListener('message', function(e){ var d = e.data; if (!d || d.type !== 'vc-make.restore') return; if (d.hash && d.hash !== location.hash) { try { location.hash = d.hash; } catch(err){} } if (typeof d.y === 'number') { window.scrollTo(d.x || 0, d.y); setTimeout(function(){ window.scrollTo(d.x || 0, d.y); }, 250); } });
+  // Тема и язык превью: prefers-color-scheme нельзя подменить, поэтому переписываем media-правила таблиц
+  // стилей (dark → all / light → not all) и выставляем color-scheme; язык — <html lang>.
+  var envScheme = 'auto';
+  function applyScheme(scheme){ envScheme = scheme; document.documentElement.style.colorScheme = scheme === 'auto' ? '' : scheme; var sheets = document.styleSheets; for (var i = 0; i < sheets.length; i++) { var rules; try { rules = sheets[i].cssRules; } catch(e) { continue; } for (var j = 0; j < rules.length; j++) { var r = rules[j]; if (!r.media) continue; var orig = r.__vcMedia || (r.__vcMedia = r.media.mediaText); if (orig.indexOf('prefers-color-scheme') < 0) continue; if (scheme === 'auto') { r.media.mediaText = orig; continue; } var wantsDark = orig.indexOf('dark') >= 0; r.media.mediaText = (wantsDark === (scheme === 'dark')) ? 'all' : 'not all'; } } }
+  window.addEventListener('message', function(e){ var d = e.data; if (!d || d.type !== 'vc-make.env') return; if (d.scheme) applyScheme(d.scheme); if (typeof d.lang === 'string') { if (d.lang) document.documentElement.setAttribute('lang', d.lang); else document.documentElement.removeAttribute('lang'); } });
   window.parent.postMessage({ type: 'vc-make.ready' }, '*');
 })();
 </script>`
