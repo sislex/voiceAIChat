@@ -251,6 +251,15 @@ export interface MakePresenceClient {
   at: number
 }
 
+/** Настройки проекта Make для ассистента (roadmap-4 пп.6–7): заметки-память и режим работы. Хранятся в `.make/`. */
+export type MakeAssistantMode = 'balanced' | 'designer' | 'developer'
+export interface MakeProjectNotes { notes: string; mode: MakeAssistantMode }
+export const MAKE_MODE_HINTS: Record<MakeAssistantMode, string> = {
+  balanced: '',
+  designer: 'Режим «Дизайнер»: приоритет — визуальная система (токены, типографика, отступы, состояния, адаптив, доступность). Логику и данные не переписывай без просьбы; предлагай варианты оформления и объясняй выбор коротко.',
+  developer: 'Режим «Разработчик»: приоритет — структура кода, состояние, обработка ошибок, тесты компонентов (*.test.tsx), производительность. Визуал меняй минимально и только через существующие токены.'
+}
+
 export interface MakeCleanupOptions {
   /** Оставить N последних снимков (остальные удалить); undefined — не трогать. */
   keepSnapshots?: number
