@@ -823,3 +823,22 @@ describe('блокировка после неудачных входов (auth-
     db.close()
   })
 })
+
+describe('обслуживание учёток (auth-roadmap п.18)', () => {
+  it('blockInactiveUsers блокирует давно не входивших (кроме admin) с причиной inactive; pruneInvites чистит истёкшие', () => {
+    const db = makeDb()
+    db.createUser('old', 'x', 'developer')
+    db.createUser('fresh', 'x', 'developer')
+    db.markLogin('fresh')
+    // created_at у тестовых часов маленькое → «давно»; у fresh есть свежий вход.
+    const blocked = db.blockInactiveUsers(30)
+    expect(blocked).toEqual(['old'])
+    expect(db.getUser('old')).toMatchObject({ blocked: true, lockReason: 'inactive' })
+    expect(db.getUser('fresh')!.blocked).toBe(false)
+    db.createInvite({ token: 'expired', role: 'tester', createdBy: 'admin', ttlMs: -8 * 24 * 60 * 60_000, maxUses: 1 })
+    db.createInvite({ token: 'alive', role: 'tester', createdBy: 'admin', ttlMs: 60_000, maxUses: 1 })
+    expect(db.pruneInvites()).toBe(1)
+    expect(db.getInvite('alive')).not.toBeNull()
+    db.close()
+  })
+})

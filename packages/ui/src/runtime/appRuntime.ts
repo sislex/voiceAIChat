@@ -99,7 +99,7 @@ export interface AppRuntime {
   /** Проверка сессии и, при успехе, защищённый bootstrap. Идемпотентен. */
   start(preferredChatId?: string | null): Promise<void>
   /** Вход по логину/паролю: успех → тот же защищённый bootstrap. */
-  login(name: string, password: string): Promise<void>
+  login(name: string, password: string, remember?: boolean): Promise<void>
   /** Второй шаг входа — код TOTP (auth-roadmap п.6). */
   loginCode(code: string): Promise<void>
   cancelTwoFactor(): void
@@ -353,8 +353,8 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       if (!user) return // требуется вход — защищённый bootstrap не запускаем
       await bootstrap(preferredChatId ?? null)
     },
-    async login(name, password) {
-      const user: SessionUser | null = await session.actions.login(name, password)
+    async login(name, password, remember = true) {
+      const user: SessionUser | null = await session.actions.login(name, password, remember)
       if (!user) return
       await bootstrap(null)
     },

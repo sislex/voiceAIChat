@@ -56,6 +56,7 @@ export interface AdminActions {
   createUserAccount(name: string, password: string, role: UserRole, mustChangePassword?: boolean): Promise<void>
   /** Код сброса пароля (auth-roadmap п.10); null — клиент не умеет. */
   issueResetCode(name: string): Promise<{ code: string; expiresAt: number } | null>
+  setUserLlmLimit(name: string, llmLimitUsd: number | null): Promise<void>
   updateUserRole(name: string, role: UserRole): Promise<void>
   setUserBlocked(name: string, blocked: boolean): Promise<void>
   deleteUserAccount(name: string): Promise<void>
@@ -325,6 +326,10 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
         } catch (err) {
           fail(err)
         }
+      },
+      async setUserLlmLimit(name, llmLimitUsd) {
+        if (!client.setUserLlmLimit) return
+        try { const u = await client.setUserLlmLimit({ name, llmLimitUsd }); setState({ adminUsers: getState().adminUsers.map((x) => (x.name === u.name ? u : x)) }) } catch (err) { fail(err, () => undefined) }
       },
       async issueResetCode(name) {
         if (!client.resetCode) return null

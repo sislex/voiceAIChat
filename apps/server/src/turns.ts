@@ -398,6 +398,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'Учётная запись недоступна.' }, userId)
       return
     }
+    // Роль observer (auth-roadmap п.17) — только чтение: ходы модели не запускает.
+    if (account.role === 'observer') {
+      broadcast({ t: 'claude.error', conversationId, message: 'Роль «наблюдатель» не может запускать ходы модели — попросите администратора выдать роль developer или tester.' }, userId)
+      return
+    }
+    // Месячный лимит расхода LLM (п.17): суммируем стоимость ответов пользователя с начала календарного месяца.
+    if (account.llmLimitUsd !== null && account.llmLimitUsd >= 0) {
+      const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
+      const mine = deps.db.usageSummary(monthStart.getTime()).find((u) => u.name === userId)
+      const spent = mine ? Math.max(mine.totals.costUsd, mine.totals.costFromPrices ?? 0) : 0
+      if (spent >= account.llmLimitUsd) {
+        broadcast({ t: 'claude.error', conversationId, message: `Достигнут месячный лимит расхода LLM: $${spent.toFixed(2)} из $${account.llmLimitUsd.toFixed(2)}. Лимит меняет администратор.` }, userId)
+        return
+      }
+    }
     req.messageId ??= [...deps.db.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
     // ключ идемпотентности для повторной доставки и нескольких вкладок.

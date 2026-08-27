@@ -7053,3 +7053,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Аватар аккаунта (auth-roadmap п.12) */
 .footico--avatar { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; }
 .pers-avatar { max-width: 160px; }
+
+/* Экран входа (auth-roadmap пп.14–15) */
+.login-password { position: relative; display: block; }
+.login-password .login-input { width: 100%; padding-right: 36px; box-sizing: border-box; }
+.login-eye { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: 0; background: none; cursor: pointer; font-size: 14px; }
+.login-caps { display: block; margin-top: 4px; font-size: 12px; color: #b26a00; }
+.login-remember { display: flex; gap: 6px; align-items: baseline; font-size: 13px; margin: 4px 0 8px; }
+.login-remember small { color: var(--text-dim); }
+
+.uadmin-limit { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.uadmin-limit-input { width: 110px; }

@@ -738,6 +738,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'admin:userSessions': async ({ name }) => ({ sessions: adminSessions.filter((s) => s.user === name) }),
     'admin:invites': async () => ({ invites: [...fakeInvites] }),
     'admin:resetCode': async () => ({ code: 'ABCD1234', expiresAt: 9_999_999_999_999 }),
+    'admin:setUserLlmLimit': async ({ name, llmLimitUsd }) => { const u = adminUsers.find((x) => x.name === name)!; Object.assign(u, { llmLimitUsd }); return { ...u } },
     'admin:inviteCreate': async ({ role, ttlHours, maxUses, note }) => { const inv = { token: `inv${fakeInvites.length + 1}`, role, createdBy: 'admin', createdAt: 1, expiresAt: 1 + (ttlHours ?? 72) * 3_600_000, maxUses: maxUses ?? 1, uses: 0, note: note ?? '' }; fakeInvites.push(inv); return inv },
     'admin:inviteDelete': async ({ token }) => { const i = fakeInvites.findIndex((x) => x.token === token); if (i >= 0) fakeInvites.splice(i, 1); return { ok: true as const } },
     'admin:securityEvents': async ({ user }) => ({ events: [{ id: 1, at: 1, user: user ?? 'admin', type: 'login' as const, ip: '127.0.0.1', userAgent: 'Test/1.0', details: '' }] }),

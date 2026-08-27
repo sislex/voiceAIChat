@@ -21,6 +21,8 @@ export interface AdminClient {
   createUser(input: { name: string; password: string; role: UserRole; mustChangePassword?: boolean }): Promise<AdminUserInfo>
   /** Одноразовый код сброса пароля (auth-roadmap п.10). */
   resetCode?(input: { name: string }): Promise<{ code: string; expiresAt: number }>
+  /** Месячный лимит расхода LLM (auth-roadmap п.17). */
+  setUserLlmLimit?(input: { name: string; llmLimitUsd: number | null }): Promise<AdminUserInfo>
   updateUserRole(input: { name: string; role: UserRole }): Promise<AdminUserInfo>
   setUserBlocked(input: { name: string; blocked: boolean }): Promise<void>
   deleteUser(input: { name: string }): Promise<void>

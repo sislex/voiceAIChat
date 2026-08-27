@@ -18,7 +18,7 @@ describe('LoginScreen', () => {
     render(<LoginScreen onLogin={onLogin} />)
     await userEvent.type(screen.getByLabelText('Пользователь'), 'admin')
     await userEvent.click(screen.getByRole('button', { name: 'Войти' }))
-    expect(onLogin).toHaveBeenCalledWith('admin', '')
+    expect(onLogin).toHaveBeenCalledWith('admin', '', true)
   })
 
   it('показывает ошибку', () => {
@@ -54,5 +54,23 @@ describe('LoginScreen — сброс пароля кодом и второй ф�
     await userEvent.type(screen.getByLabelText('Код подтверждения'), '123 456')
     await userEvent.click(btn)
     expect(onCode).toHaveBeenCalledWith('123456')
+  })
+})
+
+describe('LoginScreen — UX входа (auth-roadmap пп.14–15)', () => {
+  it('переключатель показывает пароль, галка «запомнить» уходит в onLogin, Caps Lock подсвечивается', async () => {
+    const onLogin = vi.fn()
+    render(<LoginScreen onLogin={onLogin} />)
+    const pass = screen.getByLabelText('Пароль') as HTMLInputElement
+    expect(pass.type).toBe('password')
+    await userEvent.click(screen.getByRole('button', { name: 'Показать пароль' }))
+    expect(pass.type).toBe('text')
+    fireEvent.keyDown(pass, { key: 'a', modifierCapsLock: true })
+    expect(screen.getByRole('status')).toHaveTextContent('Caps Lock')
+    await userEvent.type(screen.getByLabelText('Пользователь'), 'anna')
+    await userEvent.type(pass, 'secret')
+    await userEvent.click(screen.getByRole('checkbox'))
+    await userEvent.click(screen.getByRole('button', { name: 'Войти' }))
+    expect(onLogin).toHaveBeenCalledWith('anna', 'secret', false)
   })
 })

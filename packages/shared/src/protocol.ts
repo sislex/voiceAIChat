@@ -297,6 +297,8 @@ export const REST = {
   /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
   sessionReset: '/api/session/reset',
   sessionPassword: '/api/session/password',
+  /** Отметить уведомления безопасности просмотренными (п.16). */
+  sessionNoticesSeen: '/api/session/notices/seen',
   adminUserResetCode: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/reset-code`,
   adminUser: (name: string) => `/api/admin/users/${encodeURIComponent(name)}`,
   adminUserBlock: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/block`,

@@ -285,6 +285,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:revokeSession': ({ sid }) => req(REST.adminSessionRevoke(sid), { method: 'DELETE' }),
     'admin:invites': () => req(REST.adminInvites),
     'admin:resetCode': ({ name }) => req(REST.adminUserResetCode(name), { method: 'POST' }),
+    'admin:setUserLlmLimit': ({ name, llmLimitUsd }) => req(REST.adminUser(name), { method: 'PATCH', body: JSON.stringify({ llmLimitUsd }) }),
     'admin:inviteCreate': (body) => req(REST.adminInvites, { method: 'POST', body: JSON.stringify(body) }),
     'admin:inviteDelete': ({ token }) => req(REST.adminInvite(token), { method: 'DELETE' }),
     'admin:securityEvents': ({ user, limit }) => req(`${REST.adminSecurity}?${user ? `user=${encodeURIComponent(user)}&` : ''}${limit ? `limit=${limit}` : ''}`.replace(/[?&]$/, '')),

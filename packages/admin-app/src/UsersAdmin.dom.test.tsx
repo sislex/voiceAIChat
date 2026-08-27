@@ -260,3 +260,16 @@ describe('UsersAdmin — временный пароль и код сброса 
     expect(await screen.findByTestId('admin-reset-code')).toHaveTextContent('ABCD1234')
   })
 })
+
+describe('UsersAdmin — лимит LLM (auth-roadmap п.17)', () => {
+  it('поле лимита сохраняет число, пустое — снимает лимит', async () => {
+    const onSetLlmLimit = vi.fn()
+    renderAdmin({ isAdmin: true, selected: 'bob', onSetLlmLimit })
+    const box = screen.getByTestId('admin-llm-limit')
+    await userEvent.type(within(box).getByLabelText('Лимит LLM в месяц, USD'), '12')
+    await userEvent.click(within(box).getByRole('button', { name: 'Сохранить' }))
+    expect(onSetLlmLimit).toHaveBeenCalledWith('bob', 12)
+    await userEvent.click(within(box).getByRole('button', { name: 'Сохранить' }))
+    expect(onSetLlmLimit).toHaveBeenLastCalledWith('bob', null)
+  })
+})
