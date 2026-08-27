@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: fd195bb9
+checked: 893efd7e
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -513,6 +513,11 @@ read-only, side-by-side) или построчный фолбэк в jsdom; сл
 
 **Поиск** в дереве (`make-search-input`): по мере ввода фильтрует файлы по пути; Enter — поиск по
 содержимому через `make:search` (`make-matches`, клик по строке открывает файл), Esc сбрасывает.
+**Перенос файлов между папками** (п.5): строка дерева — `onPointerDown` → `usePointerDrag` из `lib/dnd.ts`
+(мышь/палец, порог 6px); цель — `.make-tree-group[data-dir]` под указателем (`pointInRect`) или корень дерева;
+на drop — `make:rename` в `moveTargetPath(path, dir)` (`lib/makeTree.ts`), подсветка `make-tree-group--drop`,
+объявления в `make-tree-live` (`role=status`). Клавиатурный путь — диалог «Переименовать» (✎). Мультивыбор
+сознательно не делаем.
 **Замена по проекту** (п.1): кнопка ⇄ открывает поле «Заменить на» и «Заменить все» → подтверждение →
 `make:replace` (`POST /api/make/:id/replace {query, replacement, matchCase}`; сервер `replaceAll` — подстрока
 без регистра во всех текстовых файлах, перед заменой снимок «Перед заменой «q» → «r»»).
