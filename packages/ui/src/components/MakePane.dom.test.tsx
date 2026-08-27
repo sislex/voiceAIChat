@@ -783,3 +783,17 @@ describe('MakePane', () => {
     await waitFor(() => expect(screen.queryByTestId('make-library')).not.toBeInTheDocument())
   })
 })
+
+describe('MakePane: inline-diff правок ассистента (roadmap-4 п.9)', () => {
+  it('после make.changed по открытому файлу во время хода показывает плашку с числом изменённых строк', async () => {
+    const { api, emit } = renderPane({ turnActive: true })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const editor = await screen.findByLabelText('Содержимое index.html') as HTMLTextAreaElement
+    await waitFor(() => expect(editor.value).toBe(MAKE_SCAFFOLD['index.html']))
+    await api['make:write']({ conversationId: CONV, path: 'index.html', content: MAKE_SCAFFOLD['index.html'] + '\n<!-- one -->\n<!-- two -->' })
+    emit({ conversationId: CONV, rev: 2, paths: ['index.html'] })
+    await waitFor(() => expect(screen.getByText(/Подсвечены строки, изменённые ассистентом \(2\)/)).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: 'скрыть' }))
+    expect(screen.queryByText(/Подсвечены строки/)).toBeNull()
+  })
+})
