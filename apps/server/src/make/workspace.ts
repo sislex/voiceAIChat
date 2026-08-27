@@ -15,7 +15,7 @@ import {
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
 import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakePublishEntry, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
-import { mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile } from '@voicechat/shared'
+import { applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists' | 'quota'
@@ -778,7 +778,21 @@ export class MakeWorkspaces {
    * Мок-API (п.29): для отсутствующего файла ищет `mock/<путь>[.<METHOD>].json`; `publicMode` — файлы с публикации
    * (закреплённый снимок), иначе текущие. Возвращает разобранный ответ или null, если мока нет / JSON битый.
    */
-  async resolveMock(conversationId: string, rawPath: string, method: string, publicMode = false): Promise<MockResponse | null> {
+  async resolveMock(conversationId: string, rawPath: string, method: string, publicMode = false, body: unknown = undefined): Promise<MockResponse | null> {
+    // Persist-коллекция (roadmap-2 п.12): `mock/<база>.json` с `$collection` — CRUD по id с записью в файл.
+    // На публикации коллекция только читается: анонимные посетители не должны менять файлы проекта.
+    for (const { file: colPath, id } of collectionCandidates(rawPath)) {
+      const colFile = publicMode ? await this.publicFile(conversationId, colPath).catch(() => null) : await this.readBuffer(conversationId, colPath).catch(() => null)
+      if (!colFile) continue
+      let json: unknown = null
+      try { json = JSON.parse(colFile.data.toString('utf8')) } catch { json = null }
+      if (!isMockCollection(json)) continue
+      const m = method.toUpperCase()
+      if (publicMode && m !== 'GET') return { status: 405, body: { error: 'публикация только для чтения' }, headers: {}, delayMs: 0 }
+      const result = applyCollectionRequest(json, m, id, body, () => randomUUID().slice(0, 8))
+      if (result.changed) await this.write(conversationId, colPath, JSON.stringify(result.file, null, 2) + '\n')
+      return result.response
+    }
     for (const candidate of mockCandidates(rawPath, method)) {
       let file: { data: Buffer } | null = null
       try { file = publicMode ? await this.publicFile(conversationId, candidate) : await this.readBuffer(conversationId, candidate) } catch { file = null }
