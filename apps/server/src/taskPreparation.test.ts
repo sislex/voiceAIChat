@@ -329,6 +329,35 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls[1].prompt).toContain('missing_acceptance_criteria')
   })
 
+  it('отклоняет служебный текст и несколько JSON-объектов вместо чистого Development Brief', async () => {
+    const { project, task } = await taskInBacklog()
+    const prefixed = `Подготовка завершена.\\n${compatibleReadiness()}`
+    const multiple = `${compatibleReadiness()}\\n${compatibleReadiness()}`
+    claudeAnswer = (attempt) => ({ text: attempt === 2 ? multiple : prefixed })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('blocked')
+    expect(run.readiness).toBeNull()
+    expect(claudeCalls).toHaveLength(3)
+    expect(claudeCalls[0].prompt).toContain('ровно один JSON-объект')
+    expect(claudeCalls[0].prompt).toContain('Markdown-ограда')
+    expect(claudeCalls[1].prompt).toContain('без любого текста вне JSON')
+    expect(run.error).toContain('ровно один JSON-объект')
+  })
+
+  it('требует schemaVersion=2 до строгой валидации', async () => {
+    const { project, task } = await taskInBacklog()
+    const wrongVersion = JSON.stringify({ ...JSON.parse(compatibleReadiness()), schemaVersion: 1 })
+    claudeAnswer = (attempt) => ({ text: attempt === 1 ? wrongVersion : compatibleReadiness() })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('success')
+    expect(claudeCalls[1].prompt).toContain('schemaVersion должен быть равен 2')
+    expect(run.readiness?.schemaVersion).toBe(2)
+  })
+
   it('repair-ход получает точные пути полей, если модель заменила строки массивами и объекты произвольной формой', async () => {
     const { project, task } = await taskInBacklog()
     const structurallyWrong = JSON.stringify({
