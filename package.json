@@ -47,6 +47,7 @@
     "kb:verify-prepared": "node scripts/kb-search.mjs verify",
     "kb:search": "node scripts/kb-search.mjs search",
     "kb:context": "node scripts/kb-search.mjs context",
-    "kb:impact": "node scripts/kb-search.mjs impact"
+    "kb:impact": "node scripts/kb-search.mjs impact",
+    "e2e:make": "vitest run --config e2e/vitest.config.ts"
   }
 }
