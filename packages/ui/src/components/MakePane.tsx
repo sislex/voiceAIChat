@@ -10,6 +10,7 @@ import type { MakeReplacePreviewLine } from '@shared/makeSearch'
 import { escapeMarkupText, replaceUniqueText } from '@shared/makeTextEdit'
 import { reorderMarkup } from '@shared/makeReorder'
 import { componentsWithoutStories, generateStoriesSource } from '@shared/makeStoriesGen'
+import { loadImageData, pixelDiff } from '../lib/pixelDiff'
 import { EMPTY_MAKE_SELECTION, pruneMakeSelection, toggleMakeSelection, type MakeSelectionState } from '@shared/makeSelection'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
@@ -967,6 +968,28 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [shotsOpen, setShotsOpen] = useState(false)
   const [shooting2, setShooting2] = useState(false)
   const [compare, setCompare] = useState<[string, string] | null>(null)
+  /** Визуальная регрессия (roadmap-4 п.24): карта различий выбранной пары снимков, считается в браузере. */
+  const [shotDiff, setShotDiff] = useState<{ url: string; mismatch: number } | null>(null)
+  useEffect(() => {
+    setShotDiff(null)
+    if (!compare || compare[0] === compare[1]) return
+    let alive = true
+    void (async () => {
+      try {
+        const [a, b] = await Promise.all([loadImageData(REST.makeShotImage(conversationId, compare[0])), loadImageData(REST.makeShotImage(conversationId, compare[1]))])
+        const r = pixelDiff(a, b)
+        const canvas = document.createElement('canvas')
+        canvas.width = r.width; canvas.height = r.height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        const image = ctx.createImageData(r.width, r.height)
+        image.data.set(r.diff)
+        ctx.putImageData(image, 0, 0)
+        if (alive) setShotDiff({ url: canvas.toDataURL('image/png'), mismatch: r.mismatch })
+      } catch { /* нет canvas (jsdom) или снимок не загрузился — без карты различий */ }
+    })()
+    return () => { alive = false }
+  }, [compare, conversationId])
   const loadShots = useCallback(async (): Promise<void> => { try { setShots((await api['make:shots']({ conversationId })).shots) } catch { /* нет снимков */ } }, [api, conversationId])
   useEffect(() => { if (mode === 'stories') void loadShots() }, [mode, loadShots])
   const takeStoryShot = async (): Promise<void> => {
@@ -1725,6 +1748,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   <div className="make-shots-compare" data-testid="make-shots-compare">
                     <figure><img src={REST.makeShotImage(conversationId, compare[0])} alt="До" /><figcaption>до</figcaption></figure>
                     <figure><img src={REST.makeShotImage(conversationId, compare[1])} alt="После" /><figcaption>после</figcaption></figure>
+                    {shotDiff && (
+                      <figure data-testid="make-shots-diff"><img src={shotDiff.url} alt="Карта различий" /><figcaption className={shotDiff.mismatch > 0.005 ? 'make-shots-diff--bad' : 'make-shots-diff--ok'}>{shotDiff.mismatch === 0 ? 'различий нет' : `отличается ${(shotDiff.mismatch * 100).toFixed(2)}% пикселей`}</figcaption></figure>
+                    )}
                   </div>
                 )}
               </section>
