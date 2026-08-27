@@ -260,6 +260,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       for (const [path, old] of snap ?? []) if (!now.has(path)) files.push({ path, status: 'removed', before: old.length, after: null })
       return { snapshotId, files: files.sort((a, b) => a.path.localeCompare(b.path)) }
     },
+    'make:snapshotFile': async ({ snapshotId, path }) => {
+      const old = makeSnapContents.get(snapshotId)?.get(path)
+      if (old === undefined) throw new Error('В снимке нет файла')
+      return { path, size: old.length, updatedAt: 1, content: old }
+    },
     'make:restoreFile': async ({ conversationId, snapshotId, path }) => {
       const old = makeSnapContents.get(snapshotId)?.get(path)
       if (old === undefined) throw new Error('В снимке нет файла')

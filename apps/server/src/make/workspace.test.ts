@@ -123,6 +123,7 @@ describe('MakeWorkspaces', () => {
     const diff = await ws.snapshotDiff(CONV, snap.id)
     const by = Object.fromEntries(diff.files.map((f) => [f.path, f.status]))
     expect(by).toMatchObject({ 'index.html': 'changed', 'new.js': 'added', 'app.js': 'removed', 'styles.css': 'same' })
+    expect((await ws.snapshotFile(CONV, snap.id, 'index.html')).content).toBe('v1')
     await ws.restoreFile(CONV, snap.id, 'index.html')
     expect((await ws.read(CONV, 'index.html')).content).toBe('v1')
     expect((await ws.list(CONV)).map((f) => f.path)).toContain('new.js')
