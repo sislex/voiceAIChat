@@ -7035,3 +7035,5 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* Диск с данными Make в админке (roadmap-4 п.40) */
 .uusage-disk--alert { color: #c0392b; font-weight: 600; }
+
+.ublock--lock { background: #fff4e0; color: #b26a00; }

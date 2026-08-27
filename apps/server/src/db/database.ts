@@ -282,7 +282,16 @@ export interface UserRow {
   role: UserRole
   blocked: boolean
   createdAt: number
+  /** Блокировка после неудач (auth-roadmap п.3): подряд неверных паролей и до какого момента вход закрыт. */
+  failedLogins: number
+  lockedUntil: number | null
+  lockReason: string | null
 }
+
+/** Порог временной блокировки и её длительность; после `LOGIN_HARD_LOCK_FAILS` подряд — блокировка `blocked`. */
+export const LOGIN_LOCK_FAILS = 5
+export const LOGIN_LOCK_MS = 15 * 60_000
+export const LOGIN_HARD_LOCK_FAILS = 10
 
 interface UserDbRow {
   name: string
@@ -290,6 +299,9 @@ interface UserDbRow {
   role: string
   blocked: number
   created_at: number
+  failed_logins?: number | null
+  locked_until?: number | null
+  lock_reason?: string | null
 }
 
 interface LlmEngineRow {
@@ -712,6 +724,11 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE users SET role = 'admin' WHERE name IN ('admin', 'admin1')`).run()
     this.db.prepare(`UPDATE llm_engines SET allowed_roles = replace(allowed_roles, '"user"', '"developer"') WHERE allowed_roles LIKE '%"user"%'`).run()
 
+    // Блокировка после неудачных входов (auth-roadmap п.3): три колонки поверх существующей таблицы users.
+    const userCols = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>
+    if (userCols.length && !userCols.some((c) => c.name === 'failed_logins')) this.db.exec(`ALTER TABLE users ADD COLUMN failed_logins INTEGER NOT NULL DEFAULT 0`)
+    if (userCols.length && !userCols.some((c) => c.name === 'locked_until')) this.db.exec(`ALTER TABLE users ADD COLUMN locked_until INTEGER`)
+    if (userCols.length && !userCols.some((c) => c.name === 'lock_reason')) this.db.exec(`ALTER TABLE users ADD COLUMN lock_reason TEXT`)
     const taskLinkCols = this.db.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'source_task_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
     const improvementCols = this.db.prepare(`PRAGMA table_info(task_improvements)`).all() as Array<{ name: string }>
@@ -2443,7 +2460,26 @@ export class VoiceChatDb {
   // ---- Users (аккаунты приложения) --------------------------------------
 
   private mapUser(r: UserDbRow): UserRow {
-    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at }
+    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at, failedLogins: r.failed_logins ?? 0, lockedUntil: r.locked_until ?? null, lockReason: r.lock_reason ?? null }
+  }
+
+  /** Неудачный вход: счётчик подряд; с 5-й попытки — замок на 15 минут, с 10-й — постоянная блокировка с причиной `auto`. */
+  recordLoginFailure(name: string): { failedLogins: number; lockedUntil: number | null; blocked: boolean } | null {
+    const row = this.db.prepare(`SELECT * FROM users WHERE name = ?`).get(name) as UserDbRow | undefined
+    if (!row) return null
+    const failed = (row.failed_logins ?? 0) + 1
+    // Замок сравнивается с Date.now() в auth.ts — тестовые часы БД здесь не подходят.
+    const now = Date.now()
+    const hard = failed >= LOGIN_HARD_LOCK_FAILS
+    const lockedUntil = hard ? null : failed >= LOGIN_LOCK_FAILS ? now + LOGIN_LOCK_MS : row.locked_until ?? null
+    this.db.prepare(`UPDATE users SET failed_logins = ?, locked_until = ?, blocked = CASE WHEN ? THEN 1 ELSE blocked END, lock_reason = CASE WHEN ? THEN 'auto' ELSE lock_reason END WHERE name = ?`)
+      .run(failed, lockedUntil, hard ? 1 : 0, hard ? 1 : 0, name)
+    return { failedLogins: failed, lockedUntil, blocked: hard || row.blocked !== 0 }
+  }
+
+  /** Успешный вход или ручная разблокировка: счётчик и замок снимаются. */
+  resetLoginFailures(name: string): void {
+    this.db.prepare(`UPDATE users SET failed_logins = 0, locked_until = NULL, lock_reason = NULL WHERE name = ?`).run(name)
   }
 
   /**
@@ -2463,7 +2499,7 @@ export class VoiceChatDb {
     this.db
       .prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES (?, ?, ?, 0, ?)`)
       .run(name, hashPassword(password), role, this.now())
-    return { name, role, blocked: false, createdAt: this.now() }
+    return { name, role, blocked: false, createdAt: this.now(), failedLogins: 0, lockedUntil: null, lockReason: null }
   }
 
   getUser(name: string): UserRow | null {
@@ -2488,7 +2524,9 @@ export class VoiceChatDb {
   }
 
   setUserBlocked(name: string, blocked: boolean): void {
-    this.db.prepare(`UPDATE users SET blocked = ? WHERE name = ?`).run(blocked ? 1 : 0, name)
+    // Ручная разблокировка снимает и авто-замок, иначе пользователь останется «заперт» до истечения таймера.
+    if (blocked) this.db.prepare(`UPDATE users SET blocked = 1 WHERE name = ?`).run(name)
+    else this.db.prepare(`UPDATE users SET blocked = 0, failed_logins = 0, locked_until = NULL, lock_reason = NULL WHERE name = ?`).run(name)
   }
 
   setUserRole(name: string, role: UserRole): UserRow | null {

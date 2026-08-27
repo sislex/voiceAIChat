@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
 updated: 2026-08-27
-checked: 1ed1a106
+checked: 4c63d250
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -226,3 +226,7 @@ USD за 1M обычных/кэшированных/записанных в кэ
 **Проекты** (таблицы `projects`/`project_members`/`project_machines`/`kanban_columns`/`tasks`, доступ по членству, а не по единственному владельцу) — см. [projects.md](projects.md).
 
 **Rate-limit входа (auth-roadmap п.1).** `POST /api/session/login` считает попытки двумя `SlidingWindowLimiter` (`apps/server/src/make/rateLimit.ts`): по `req.ip` и по имени (в нижнем регистре), 10 за 10 минут каждый; превышение — 429 с заголовком `Retry-After` и телом `{ error, retryAfterSec }`. Успешный вход счётчик не сбрасывает (окно скользящее), поэтому 11-я попытка с одного IP за окно блокируется даже при верном пароле. Лимитеры живут в памяти процесса — после рестарта сервера обнуляются; за прокси нужен корректный `trustProxy`, иначе все клиенты делят один IP.
+
+**Политика пароля (auth-roadmap п.2).** `checkPasswordPolicy(password, { name })` из `@shared/passwordPolicy` — общий для сервера и форм: пустой, короче `PASSWORD_MIN_LENGTH` (10), один повторяющийся символ, из списка частых или содержащий логин → текст причины. `POST /api/admin/users` отвечает 400 с этим текстом; в админке placeholder поля пароля напоминает про 10 символов. Опционально `VC_HIBP_CHECK=1` включает `pwnedCount` (`users/pwned.ts`): SHA-1 пароля, наружу — только 5 hex-символов префикса (`api.pwnedpasswords.com/range/`), таймаут 3 с, ошибка сети — fail-open. Пароли, заведённые до правила (в т.ч. пустые), не трогаются: политика проверяется только при установке.
+
+**Блокировка после неудачных входов (auth-roadmap п.3).** В `users` добавлены `failed_logins`, `locked_until` (мс, wall-clock `Date.now()`, а не тестовые часы БД) и `lock_reason`. `recordLoginFailure(name)` инкрементирует счётчик подряд: с `LOGIN_LOCK_FAILS` (5) ставит `locked_until = now + 15 мин`, с `LOGIN_HARD_LOCK_FAILS` (10) выставляет `blocked = 1, lock_reason = 'auto'`. Логин при действующем замке отвечает 423 с `Retry-After` до проверки пароля; успешный вход вызывает `resetLoginFailures` и `forget` окна rate-limit по имени; `setUserBlocked(name, false)` снимает и замок, и счётчик. Rate-limit по IP поднят до 30/10 мин (NAT), по имени — 10. Уведомление админу — предупреждение в лог сервера (`auth: аккаунт заблокирован автоматически…`) и статусы в `AdminUserInfo` (`failedLogins`, `lockedUntil`, `lockReason`), которые админка показывает бейджами; тесты сбрасывают лимитеры через `app.resetLoginLimiters()`.

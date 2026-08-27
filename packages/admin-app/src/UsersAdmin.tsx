@@ -226,7 +226,7 @@ export function UsersAdmin({
           {users.map((u) => (
             <button key={u.name} className={u.name === selected ? 'cc-item on' : 'cc-item'} onClick={() => onSelect(u.name)} data-testid="user-item">
               <span className="cc-name">
-                {u.name} {u.blocked && <span className="ublock">заблокирован</span>}
+                {u.name} {u.blocked && <span className="ublock" title={u.lockReason === 'auto' ? 'Автоматически: слишком много неверных паролей подряд' : undefined}>{u.lockReason === 'auto' ? 'заблокирован автоматически' : 'заблокирован'}</span>}{!u.blocked && u.lockedUntil && u.lockedUntil > Date.now() && <span className="ublock ublock--lock" title="Временный замок после неудачных входов; снимается сам или разблокировкой">замок до {new Date(u.lockedUntil).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>}
               </span>
               <span className="cc-sub">{u.role} · {u.agents.length} маш. · {u.conversationCount} разг.</span>
             </button>
@@ -234,7 +234,7 @@ export function UsersAdmin({
           {isAdmin && <div className="ucreate">
             <p className="ucreate-h">Создать пользователя</p>
             <input className="login-input" placeholder="Логин" aria-label="Логин нового пользователя" value={newName} onChange={(e) => setNewName(e.target.value)} />
-            <input className="login-input" type="password" placeholder="Пароль (можно пустой)" aria-label="Пароль нового пользователя" value={newPass} onChange={(e) => setNewPass(e.target.value)} />
+            <input className="login-input" type="password" placeholder="Пароль — не короче 10 символов" aria-label="Пароль нового пользователя" value={newPass} onChange={(e) => setNewPass(e.target.value)} />
             <select className="sel" aria-label="Роль нового пользователя" value={newRole} onChange={(e) => setNewRole(e.target.value as import('@shared/types').UserRole)}>
               <option value="developer">developer</option>
               <option value="tester">tester</option>

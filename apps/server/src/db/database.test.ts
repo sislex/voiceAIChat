@@ -803,3 +803,23 @@ describe('VoiceChatDb — персистентная очередь ходов',
   })
 })
 
+
+describe('блокировка после неудачных входов (auth-roadmap п.3)', () => {
+  it('5 неудач → замок на 15 минут, 10 → blocked/auto; сброс и ручная разблокировка чистят счётчик', () => {
+    const db = makeDb()
+    db.createUser('locky', 'x', 'developer')
+    for (let i = 0; i < 4; i++) db.recordLoginFailure('locky')
+    expect(db.getUser('locky')!.lockedUntil).toBeNull()
+    const fifth = db.recordLoginFailure('locky')!
+    expect(fifth.lockedUntil).toBeGreaterThan(Date.now())
+    expect(db.getUser('locky')!.lockedUntil).toBe(fifth.lockedUntil)
+    db.resetLoginFailures('locky')
+    expect(db.getUser('locky')).toMatchObject({ failedLogins: 0, lockedUntil: null })
+    for (let i = 0; i < 10; i++) db.recordLoginFailure('locky')
+    expect(db.getUser('locky')).toMatchObject({ blocked: true, lockReason: 'auto' })
+    db.setUserBlocked('locky', false)
+    expect(db.getUser('locky')).toMatchObject({ blocked: false, failedLogins: 0, lockReason: null })
+    expect(db.recordLoginFailure('ghost')).toBeNull()
+    db.close()
+  })
+})

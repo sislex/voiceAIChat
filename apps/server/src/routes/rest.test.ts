@@ -203,12 +203,35 @@ describe('REST: аутентификация', () => {
     db.createUser('victim', 'secret-pass', 'developer')
     let last = 0
     for (let i = 0; i < 10; i++) last = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'victim', password: 'wrong' } })).statusCode
-    expect(last).toBe(401)
+    expect([401, 423]).toContain(last) // с 5-й неудачи срабатывает замок аккаунта (п.3), но лимит по имени считает и его
     const blocked = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'victim', password: 'secret-pass' } })
     expect(blocked.statusCode).toBe(429)
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
-    // Другое имя с того же IP тоже упирается в лимит по IP.
-    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'other', password: '' } })).statusCode).toBe(429)
+    // Лимит по IP шире (30): другие имена с того же адреса проходят, пока окно не заполнится, затем — 429.
+    for (let i = 0; i < 19; i++) await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: `other${i}`, password: '' } })
+    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'other-last', password: '' } })).statusCode).toBe(429)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('блокировка после неудач: 5 неверных → 423 даже с верным паролем, 10 → blocked с причиной auto; успех сбрасывает счётчик (auth-roadmap п.3)', async () => {
+    db.createUser('locky', 'right-pass-2026', 'developer')
+    for (let i = 0; i < 4; i++) expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'nope' } })).statusCode).toBe(401)
+    // 4 неудачи — ещё можно войти, и счётчик обнуляется.
+    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'right-pass-2026' } })).statusCode).toBe(200)
+    expect(db.getUser('locky')!.failedLogins).toBe(0)
+    for (let i = 0; i < 5; i++) await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'nope' } })
+    const locked = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'right-pass-2026' } })
+    expect(locked.statusCode).toBe(423)
+    expect(Number(locked.headers['retry-after'])).toBeGreaterThan(0)
+    // Ручная разблокировка админом снимает замок.
+    db.setUserBlocked('locky', false)
+    expect(db.getUser('locky')!.lockedUntil).toBeNull()
+    // 10 подряд — постоянная блокировка с причиной auto (замок между попытками снимаем напрямую, чтобы не ждать 15 минут).
+    for (let i = 0; i < 10; i++) { db.recordLoginFailure('locky') }
+    const u = db.getUser('locky')!
+    expect(u.blocked).toBe(true)
+    expect(u.lockReason).toBe('auto')
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
   it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {
@@ -360,9 +383,12 @@ describe('REST: админ-роуты (только admin)', () => {
     const created = await inj({
       method: 'POST',
       url: '/api/admin/users',
-      payload: { name: 'bob', password: 'pw', role: 'developer' }
+      payload: { name: 'bob', password: 'strong-pass-2026-xyz', role: 'developer' }
     })
     expect(created.statusCode).toBe(200)
+    // Политика пароля (auth-roadmap п.2): короткий/пустой → 400 с текстом причины.
+    expect((await inj({ method: 'POST', url: '/api/admin/users', payload: { name: 'weak', password: 'pw', role: 'developer' } })).json()).toEqual({ error: 'Пароль короче 10 символов' })
+    expect((await inj({ method: 'POST', url: '/api/admin/users', payload: { name: 'weak', password: '', role: 'developer' } })).statusCode).toBe(400)
     expect(created.json()).toMatchObject({ name: 'bob', role: 'developer', blocked: false })
 
     await inj({ method: 'POST', url: '/api/admin/users/bob/block', payload: { blocked: true } })

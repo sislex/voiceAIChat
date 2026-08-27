@@ -5,7 +5,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SlidingWindowLimiter } from '../make/rateLimit.js'
 
+/** По имени — 10 за 10 минут; по IP — 30: за одним NAT сидит офис, и чужой брутфорс не должен запирать всех. */
 const LOGIN_LIMIT = 10
+const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
 import { REST, type SessionUser } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
@@ -164,8 +166,9 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
 
   // Rate-limit входа (auth-roadmap п.1): 10 попыток за 10 минут отдельно по IP и по имени; успешный вход счётчик не сбрасывает —
   // окно скользящее, и брутфорс с одного адреса упирается в 429 независимо от того, угадал ли он пароль по пути.
-  const loginByIp = new SlidingWindowLimiter(LOGIN_LIMIT, LOGIN_WINDOW_MS)
+  const loginByIp = new SlidingWindowLimiter(LOGIN_IP_LIMIT, LOGIN_WINDOW_MS)
   const loginByName = new SlidingWindowLimiter(LOGIN_LIMIT, LOGIN_WINDOW_MS)
+  app.decorate('resetLoginLimiters', () => { loginByIp.reset(); loginByName.reset() })
   app.post<{ Body: { name?: string; password?: string } }>(
     REST.sessionLogin,
     async (req, reply) => {
@@ -176,9 +179,24 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
         const retry = Math.max(byIp.retryAfterSec, byName.retryAfterSec)
         return reply.code(429).header('retry-after', String(retry)).send({ error: `Слишком много попыток входа — подождите ${retry} с`, retryAfterSec: retry })
       }
+      // Блокировка после неудач (auth-roadmap п.3): пока действует замок, пароль даже не проверяем — ответ одинаковый.
+      const existing = name ? db.getUser(name) : null
+      if (existing?.lockedUntil && existing.lockedUntil > Date.now()) {
+        const retry = Math.max(1, Math.ceil((existing.lockedUntil - Date.now()) / 1000))
+        return reply.code(423).header('retry-after', String(retry)).send({ error: `Вход временно закрыт после неудачных попыток — попробуйте через ${Math.ceil(retry / 60)} мин`, retryAfterSec: retry })
+      }
       const u = name ? db.verifyUserPassword(name, password ?? '') : null
-      if (!u) return reply.code(401).send({ error: 'неверный логин или пароль' })
-      if (u.blocked) return reply.code(403).send({ error: 'учётная запись заблокирована' })
+      if (!u) {
+        if (existing) {
+          const state = db.recordLoginFailure(existing.name)
+          if (state?.blocked && !existing.blocked) app.log.warn({ user: existing.name, ip: req.ip }, 'auth: аккаунт заблокирован автоматически после неудачных входов')
+          else if (state?.lockedUntil) app.log.warn({ user: existing.name, ip: req.ip, until: state.lockedUntil }, 'auth: временный замок после неудачных входов')
+        }
+        return reply.code(401).send({ error: 'неверный логин или пароль' })
+      }
+      if (u.blocked) return reply.code(403).send({ error: u.lockReason === 'auto' ? 'учётная запись заблокирована после многократных неудачных входов — обратитесь к администратору' : 'учётная запись заблокирована' })
+      db.resetLoginFailures(u.name)
+      loginByName.forget(u.name.trim().toLowerCase())
       const user: SessionUser = { name: u.name, role: u.role }
       const token = signToken(user, secret)
       reply.header('set-cookie', previewCookie(token))

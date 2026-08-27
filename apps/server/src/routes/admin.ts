@@ -2,6 +2,8 @@
 // токенам, просмотр истории и реестр LLM-исполнителей. Все под guard requireAdmin.
 
 import { request } from 'node:http'
+import { checkPasswordPolicy } from '@voicechat/shared'
+import { hibpEnabled, pwnedCount } from '../users/pwned.js'
 import type { AdminMakeStats } from '@voicechat/shared'
 import { formatMakeMetrics } from '../make/metrics.js'
 import type { FastifyInstance } from 'fastify'
@@ -217,16 +219,16 @@ export function registerAdminRoutes(
   })
 
   /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
-  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number): AdminUserInfo => {
+  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null } = {}): AdminUserInfo => {
     const online = registry.onlineIds()
     const agents = db.listAgents(name).map((a) => ({ ...a, online: online.has(a.id) }))
     // Админу — все беседы пользователя: скрытие чатов завершённых задач это
     // фильтр сайдбара их владельца, а не свойство данных.
-    return { name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
+    return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
   }
 
   app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> =>
-    db.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt))
+    db.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u))
   )
 
   app.post(REST.adminDeploy, guard, async (_req, reply) => {
@@ -260,8 +262,16 @@ export function registerAdminRoutes(
       if (!name) return reply.code(400).send({ error: 'name required' })
       if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
       if (db.getUser(name)) return reply.code(409).send({ error: 'пользователь уже существует' })
-      const u = db.createUser(name, req.body?.password ?? '', role)
-      return toInfo(u.name, u.role, u.blocked, u.createdAt)
+      // Политика пароля (auth-roadmap п.2): пустые и слабые пароли не принимаем; HIBP — только при VC_HIBP_CHECK=1, fail-open.
+      const password = req.body?.password ?? ''
+      const violation = checkPasswordPolicy(password, { name })
+      if (violation) return reply.code(400).send({ error: violation })
+      if (hibpEnabled()) {
+        const count = await pwnedCount(password)
+        if (count && count > 0) return reply.code(400).send({ error: `Этот пароль встречался в утечках (${count}) — выберите другой` })
+      }
+      const u = db.createUser(name, password, role)
+      return toInfo(u.name, u.role, u.blocked, u.createdAt, u)
     }
   )
 
@@ -272,7 +282,7 @@ export function registerAdminRoutes(
       const role = req.body?.role
       if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
       const user = db.setUserRole(req.params.name, role)
-      return user ? toInfo(user.name, user.role, user.blocked, user.createdAt) : reply.code(404).send({ error: 'not found' })
+      return user ? toInfo(user.name, user.role, user.blocked, user.createdAt, user) : reply.code(404).send({ error: 'not found' })
     }
   )
 
