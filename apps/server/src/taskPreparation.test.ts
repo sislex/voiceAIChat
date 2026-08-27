@@ -413,6 +413,26 @@ describe('подготовка к разработке: диагностика �
     expect(claudeCalls).toHaveLength(1)
   })
 
+  it('нормализует только отложенный обязательный прогон в некритический источник', async () => {
+    const { project, task } = await taskInBacklog()
+    const normalized = JSON.parse(compatibleReadiness())
+    normalized.testCases[0].description = 'Будущий прогон TypeScript'
+    normalized.testCases[0].notAutomatedReason = 'Ещё не выполнен: в текущем режиме подготовки запуск запрещён'
+    normalized.testCases[0].comments = 'Обязателен на следующем этапе'
+    normalized.sources.push(
+      { id: 'deferred', kind: 'tests', status: 'unavailable', summary: 'Будущий прогон ещё не выполнен из-за ограничений текущего этапа', refs: [], critical: true },
+      { id: 'ambiguous', kind: 'tests', status: 'unavailable', summary: 'Результаты тестов недоступны', refs: [], critical: true }
+    )
+    claudeAnswer = () => ({ text: JSON.stringify(normalized) })
+
+    const run = await settled(adminTok, (await launch(adminTok, project.id, task.id)).id)
+
+    expect(run.status).toBe('blocked')
+    expect(run.error).toContain('critical_source_unavailable:ambiguous')
+    expect(claudeCalls[1].prompt).toContain('critical_source_unavailable:ambiguous')
+    expect(claudeCalls[1].prompt).toContain('critical=false')
+  })
+
   it('нормализует совместимые kind и одиночный refs до общего контракта', async () => {
     const { project, task } = await taskInBacklog()
     const normalized = JSON.parse(compatibleReadiness())
