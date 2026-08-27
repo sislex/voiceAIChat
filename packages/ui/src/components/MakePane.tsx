@@ -6,6 +6,7 @@ import { CodeEditor } from './CodeEditor'
 import { CodeDiff } from './CodeDiff'
 import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { MakeControlField, type ArgType } from './MakeControls'
+import { captureIframeScreenshot } from '../lib/makeScreenshot'
 import { copyText } from '../lib/clipboard'
 import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
@@ -34,6 +35,8 @@ export interface MakePaneProps {
   onInsertToChat?: (text: string) => void
   /** Отправить сообщение ассистенту сразу (кнопка «Исправить» в баннере ошибок). */
   onAskAssistant?: (text: string) => void
+  /** Приложить файл к сообщению чата (скриншот превью). */
+  onAttachImage?: (file: File) => void
   /** База превью; по умолчанию — REST.makePreview (тест подменяет). */
   previewBase?: string
   /**
@@ -70,7 +73,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -502,6 +505,20 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     return files.every((f) => f.path in MAKE_SCAFFOLD && f.size === enc.encode(MAKE_SCAFFOLD[f.path]!).length)
   }, [state])
   const useStarter = (prompt: string): void => { onInsertToChat?.(prompt); setIdeasOpen(false) }
+  // Скриншот превью (или выбранного элемента) — во вложения чата: визуальный баг проще показать, чем описать.
+  const [shooting, setShooting] = useState(false)
+  const screenshotToChat = async (): Promise<void> => {
+    const doc = frameRef.current?.contentDocument
+    if (!doc || !onAttachImage) return
+    setShooting(true)
+    try {
+      const element = selected ? doc.querySelector(selected.selector) : null
+      const file = await captureIframeScreenshot({ doc, element, width: frameRef.current?.clientWidth }, selected ? 'element.png' : 'preview.png')
+      onAttachImage(file)
+      if (onInsertToChat && !selected) onInsertToChat('На скриншоте превью: ')
+      toast.success('Скриншот добавлен во вложения')
+    } catch (e) { toast.error(describeError(e)) } finally { setShooting(false) }
+  }
   useEffect(() => { setConsoleLines([]) }, [previewRev])
   // Итеративная правка: после перезагрузки превью (правка ассистента или своя) 8 секунд слушаем консоль;
   // появились ошибки — предлагаем «Исправить» одной кнопкой, текст ошибок уходит ассистенту сразу.
@@ -580,6 +597,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           </div>
           <IconButton size="sm" aria-label="Выбрать элемент" title="Выбрать элемент на странице и попросить ассистента его изменить" aria-pressed={inspect} className={inspect ? 'make-inspect on' : undefined} onClick={() => setInspect((v) => !v)}>⌖</IconButton>
           <IconButton size="sm" aria-label="Обновить превью" title="Обновить превью" onClick={() => setPreviewRev((r) => r + 1)}>⟳</IconButton>
+          {onAttachImage && <IconButton size="sm" aria-label="Скриншот превью в чат" title={selected ? 'Скриншот выбранного элемента — во вложения чата' : 'Скриншот превью — во вложения чата'} disabled={shooting} onClick={() => void screenshotToChat()}>📷</IconButton>}
           <IconButton size="sm" aria-label="Открыть в новой вкладке" title="Открыть в новой вкладке" onClick={() => window.open(`${base}index.html`, '_blank', 'noopener')}>↗</IconButton>
         </>
       )}

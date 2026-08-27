@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
 import { createFakeApi } from '../test/fakeApi'
 import { MAKE_SCAFFOLD } from '@shared/make'
+
+vi.mock('../lib/makeScreenshot', () => ({ captureIframeScreenshot: vi.fn(async (_t: unknown, name: string) => new File(['png'], name, { type: 'image/png' })) }))
 import { MakePane } from './MakePane'
 
 const CONV = 'make-1'
@@ -339,5 +341,16 @@ describe('MakePane', () => {
     expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.style', values: { 'font-size': '40px' } }, '*')
     await userEvent.click(within(panel).getByRole('button', { name: 'Записать в CSS' }))
     await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'styles.css' })).content).toContain('.hero__title {\n  font-size: 40px;\n}'))
+  })
+
+  it('📷 делает скриншот превью и отдаёт файл во вложения чата', async () => {
+    const onAttachImage = vi.fn()
+    renderPane({ onAttachImage })
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('button', { name: 'Скриншот превью в чат' }))
+    await waitFor(() => expect(onAttachImage).toHaveBeenCalled())
+    const file = onAttachImage.mock.calls[0]![0] as File
+    expect(file.name).toBe('preview.png')
+    expect(file.type).toBe('image/png')
   })
 })

@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: fe8ea077
+checked: 6f810a5b
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -473,6 +473,11 @@ lazy-чанке `monacoSetup`. **Модели проекта** (п.2): `syncProj
 тестов) после последней правки `save(silent)` без тоста; Cmd/Ctrl+S — как раньше. После сохранения jsx/tsx/ts
 панель вызывает `make:check` и, если есть проблемы, показывает баннер; ошибки `compile-error` текущего файла
 уходят в `CodeEditor` пропом `markers` → `monaco.editor.setModelMarkers` (красные подчёркивания).
+
+**Скриншот превью** (п.10): кнопка 📷 в шапке превью — `lib/makeScreenshot.ts` лениво грузит `html2canvas`
+(чанк `screenshot`), снимает документ same-origin iframe (или выбранный инспектором элемент) в PNG и отдаёт
+файл в `onAttachImage` → `chatActions.addAttachment`; для всей страницы в композер подставляется «На
+скриншоте превью: ». В тестах модуль мокается (`vi.mock('../lib/makeScreenshot')`).
 
 **Панель стилей** (`MakeStylePanel`, п.8): инспектор присылает `id/className/styles` (computed для 8 свойств);
 поля цвет/фон/размер/насыщенность/выравнивание/отступы/скругление шлют в iframe `vc-make.style {values}` —
