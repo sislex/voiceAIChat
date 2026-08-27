@@ -34,6 +34,7 @@ import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { BoardHub, NotificationHub } from './projects/boardHub.js'
 import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.js'
+import { createMailer, type Mailer } from './users/mailer.js'
 
 /** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
 function cookieToken(header: string | undefined): string | undefined {
@@ -126,6 +127,8 @@ export interface BuildOptions {
   createWsHandlers?: () => WsHandlers
   /** Секрет подписи токенов сессии (для тестов). Иначе — из dataDir/эфемерный. */
   sessionSecret?: string
+  /** Мейлер регистрации (для тестов — фейк). Иначе SMTP из config или консольный. */
+  mailer?: Mailer
   /** Реестр машин (для маршрутных тестов с фейковыми fs-ответами). */
   agentRegistry?: AgentRegistry
   /** Исполнитель CI-команд (в тестах — мок). По умолчанию поверх AgentRegistry. */
@@ -246,7 +249,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
   db.ensureAdmin(opts.config.adminPassword) // сид админа (пароль из VC_ADMIN_PASSWORD)
-  registerAuth(app, db, sessionSecret)
+  registerAuth(app, db, sessionSecret, { mailer: opts.mailer ?? createMailer({ smtpUrl: opts.config.smtpUrl, mailFrom: opts.config.mailFrom }, (m, extra) => app.log.warn(extra ?? {}, m)), publicUrl: opts.config.publicUrl })
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     ok: true,
@@ -493,7 +496,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
-  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats((id) => db.conversationOwner(id)))
+  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats((id) => db.conversationOwner(id)), Boolean(opts.mailer?.configured ?? opts.config.smtpUrl))
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()

@@ -10,6 +10,10 @@ export interface ServerConfig {
   host: string
   /** Каталог данных (БД, модели). */
   dataDir: string
+  /** Регистрация с подтверждением email: SMTP (smtp://user:pass@host:587 | smtps://…:465), отправитель и публичный URL для ссылок. */
+  smtpUrl: string | null
+  mailFrom: string | null
+  publicUrl: string | null
   /** Каталог голосов Piper. */
   piperVoicesDir: string
   /** Путь к исполняемому piper (или python для `python -m piper`). */
@@ -153,6 +157,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? '127.0.0.1',
     dataDir,
+    smtpUrl: env.VC_SMTP_URL ?? null,
+    mailFrom: env.VC_MAIL_FROM ?? null,
+    publicUrl: env.VC_PUBLIC_URL ?? null,
     piperVoicesDir: pick(env.VC_PIPER_VOICES_DIR, REPO.piperVoicesDir, join(dataDir, 'models', 'piper')),
     piperBin: pick(env.VC_PIPER_BIN, REPO.piperBin, 'piper'),
     piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : [],

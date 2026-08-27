@@ -9,10 +9,12 @@ import { SlidingWindowLimiter } from '../make/rateLimit.js'
 const LOGIN_LIMIT = 10
 const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
-import { REST, type SessionUser, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
+import { REST, type SessionUser, type UserRole, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
 import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js'
+import { createMailer, type Mailer } from './mailer.js'
+import { randomBytes } from 'node:crypto'
 
 const PREVIEW_SESSION_COOKIE = 'vc_preview_session'
 const PREVIEW_COOKIE_PATH = '/api/preview'
@@ -171,7 +173,21 @@ export function resolveActiveUser(db: VoiceChatDb, token: string | undefined, se
   return resolveUser(db, token, secret)
 }
 
-export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string): void {
+export interface AuthOptions {
+  /** Отправка писем (регистрация с подтверждением email); без SMTP — «консольный» мейлер из createMailer. */
+  mailer?: Mailer
+  /** Публичный адрес приложения для ссылок в письмах; иначе берём Origin/Host запроса. */
+  publicUrl?: string | null
+}
+
+/** Настройка открытой регистрации хранится в app_config: `signup.enabled` ('1'/'0') и `signup.role`. */
+export function readSignupConfig(db: VoiceChatDb): { enabled: boolean; role: UserRole } {
+  const role = db.getAppConfig('signup.role')
+  return { enabled: db.getAppConfig('signup.enabled') === '1', role: role === 'admin' || role === 'developer' || role === 'tester' || role === 'observer' ? role : 'developer' }
+}
+
+export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string, options: AuthOptions = {}): void {
+  const mailer = options.mailer ?? createMailer({}, (m, extra) => app.log.warn(extra ?? {}, m))
   app.decorateRequest('user', null)
   // Сессии (auth-roadmap п.4): токен действителен, пока есть живая запись в `sessions` (не отозвана, не истекла).
   // Токены без записи (выданы до таблицы) регистрируются лениво — так старые входы не рвутся при обновлении.
@@ -444,6 +460,62 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     db.revokeUserSessions(user.name, sidOf(req))
     db.logSecurityEvent({ user: user.name, type: 'password_changed', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
     return { ok: true }
+  })
+
+  // Открытая регистрация с подтверждением email: заявка → письмо со ссылкой #/verify/<token> → учётка и сессия.
+  const signupLimiter = new SlidingWindowLimiter(5, 60 * 60_000)
+  const baseUrl = (req: FastifyRequest): string => (options.publicUrl ?? `${String(req.headers['x-forwarded-proto'] ?? req.protocol)}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`).replace(/\/$/, '')
+  const sendVerification = async (req: FastifyRequest, name: string, email: string, token: string): Promise<void> => {
+    const link = `${baseUrl(req)}/#/verify/${encodeURIComponent(token)}`
+    await mailer.send({
+      to: email,
+      subject: 'Подтверждение регистрации в ChatAI',
+      text: `Здравствуйте, ${name}!\n\nЧтобы завершить регистрацию, откройте ссылку (действует 24 часа):\n${link}\n\nЕсли вы не регистрировались — просто проигнорируйте это письмо.`,
+      html: `<p>Здравствуйте, <b>${name}</b>!</p><p>Чтобы завершить регистрацию, нажмите кнопку (ссылка действует 24 часа):</p><p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#4f7cff;color:#fff;border-radius:8px;text-decoration:none">Подтвердить email</a></p><p style="color:#666;font-size:12px">Или скопируйте адрес: ${link}<br>Если вы не регистрировались — проигнорируйте письмо.</p>`
+    })
+  }
+  app.get(REST.sessionSignup, async () => ({ enabled: readSignupConfig(db).enabled }))
+  app.post<{ Body: { name?: string; email?: string; password?: string } }>(REST.sessionSignup, async (req, reply) => {
+    if (!readSignupConfig(db).enabled) return reply.code(404).send({ error: 'Регистрация закрыта — попросите приглашение у администратора' })
+    if (!signupLimiter.hit(req.ip).ok) return reply.code(429).send({ error: 'Слишком много регистраций — попробуйте позже' })
+    const { name, email, password } = req.body ?? {}
+    const login = (name ?? '').trim()
+    const mail = (email ?? '').trim().toLowerCase()
+    if (!/^[a-zA-Z0-9._-]{3,32}$/.test(login)) return reply.code(400).send({ error: 'Логин: 3–32 символа, латиница, цифры, точка, дефис, подчёркивание' })
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail) || mail.length > 254) return reply.code(400).send({ error: 'Некорректный email' })
+    const violation = checkPasswordPolicy(password ?? '', { name: login })
+    if (violation) return reply.code(400).send({ error: violation })
+    // Занятый логин или email не раскрываем сразу пользователю? Логин — раскрываем (он публичен), email — отвечаем одинаково.
+    if (db.getUser(login)) return reply.code(409).send({ error: 'Такой логин уже занят' })
+    if (!db.getUserByEmail(mail)) {
+      const token = randomBytes(24).toString('base64url')
+      db.createEmailVerification({ token, name: login, email: mail, password: password!, ttlMs: 24 * 60 * 60_000 })
+      db.logSecurityEvent({ user: login, type: 'signup_requested', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: mail })
+      try { await sendVerification(req, login, mail, token) } catch (error) { app.log.error({ error }, 'signup: письмо не отправлено'); return reply.code(502).send({ error: 'Не удалось отправить письмо — попробуйте позже или обратитесь к администратору' }) }
+    }
+    return { ok: true, mailSent: mailer.configured }
+  })
+  app.post<{ Body: { email?: string } }>(REST.sessionSignupResend, async (req, reply) => {
+    if (!readSignupConfig(db).enabled) return reply.code(404).send({ error: 'Регистрация закрыта' })
+    if (!signupLimiter.hit(`resend:${req.ip}`).ok) return reply.code(429).send({ error: 'Слишком часто — попробуйте позже' })
+    const mail = (req.body?.email ?? '').trim().toLowerCase()
+    const pending = mail ? db.pendingVerificationByEmail(mail) : null
+    if (pending) {
+      // Новый токен взамен старого: заявку пересоздать нельзя без пароля, поэтому продлеваем через новую ссылку на ту же запись.
+      const token = randomBytes(24).toString('base64url')
+      const row = db.getPendingVerificationRaw(mail)
+      if (row) db.replaceVerificationToken(mail, token, 24 * 60 * 60_000)
+      try { await sendVerification(req, pending.name, mail, token) } catch (error) { app.log.error({ error }, 'signup: письмо не отправлено') }
+    }
+    return { ok: true }
+  })
+  app.post<{ Body: { token?: string } }>(REST.sessionVerify, async (req, reply) => {
+    const { token } = req.body ?? {}
+    const cfg = readSignupConfig(db)
+    const u = token ? db.redeemEmailVerification(String(token), cfg.role) : null
+    if (!u) return reply.code(400).send({ error: 'Ссылка недействительна или истекла — зарегистрируйтесь ещё раз' })
+    db.logSecurityEvent({ user: u.name, type: 'signup_verified', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: u.email ?? '' })
+    return issueSession(req, reply, u.name, u.role)
   })
 
   // Перенос старой localStorage-сессии в cookie (п.5): Bearer → HttpOnly cookie + CSRF, токен из localStorage клиент удаляет.

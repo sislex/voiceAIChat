@@ -273,3 +273,18 @@ describe('UsersAdmin — лимит LLM (auth-roadmap п.17)', () => {
     expect(onSetLlmLimit).toHaveBeenLastCalledWith('bob', null)
   })
 })
+
+describe('UsersAdmin — открытая регистрация', () => {
+  it('раскрытие запрашивает настройку; галка и роль зовут onSetSignup; без SMTP — предупреждение', async () => {
+    const onLoadSignup = vi.fn(); const onSetSignup = vi.fn()
+    renderAdmin({ isAdmin: true, onLoadSignup, onSetSignup, signup: { enabled: false, role: 'developer', mailConfigured: false } })
+    const box = screen.getByTestId('admin-signup')
+    await userEvent.click(within(box).getByText(/Открытая регистрация/))
+    await waitFor(() => expect(onLoadSignup).toHaveBeenCalled())
+    await userEvent.click(within(box).getByLabelText('Разрешить регистрацию по email'))
+    expect(onSetSignup).toHaveBeenCalledWith({ enabled: true })
+    await userEvent.selectOptions(within(box).getByLabelText('Роль новых пользователей'), 'tester')
+    expect(onSetSignup).toHaveBeenCalledWith({ role: 'tester' })
+    expect(box).toHaveTextContent('SMTP не настроен')
+  })
+})

@@ -272,6 +272,21 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
       return { ok: true }
     },
+    signupEnabled: async () => { try { const r = await fetch(httpBase + REST.sessionSignup); return r.ok ? Boolean(((await r.json()) as { enabled?: boolean }).enabled) : false } catch { return false } },
+    signup: async ({ name, email, password }) => {
+      const r = await fetch(httpBase + REST.sessionSignup, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, email, password }) })
+      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
+      return (await r.json()) as { ok: true; mailSent: boolean }
+    },
+    signupResend: async (email) => { await fetch(httpBase + REST.sessionSignupResend, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) }) },
+    verifyEmail: async (token) => {
+      const r = await fetch(httpBase + REST.sessionVerify, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) })
+      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
+      const { token: t } = (await r.json()) as { token: string }
+      setToken(t)
+      ws.reconnect()
+      return { ok: true }
+    },
     inviteInfo: async (token) => {
       const r = await fetch(httpBase + REST.sessionInvite(token))
       return r.ok ? ((await r.json()) as { role: string; expiresAt: number; note: string }) : null
