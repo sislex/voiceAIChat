@@ -131,6 +131,11 @@ export const isMakeStoriesPath = (path: string): boolean => /\.stories\.(jsx|tsx
 export const MAKE_STORIES_PAGE = '__stories__'
 /** Галерея всех стори проекта (на превью и на публикации). */
 export const MAKE_GALLERY_PAGE = '__gallery__'
+/** Раннер тестов компонентов (roadmap-4 п.3): `?file=<*.test.tsx>` — выполняет все test() файла, шлёт vc-make.test. */
+export const MAKE_TESTS_PAGE = '__tests__'
+export const isMakeTestPath = (path: string): boolean => /\.test\.(jsx|tsx|js|ts)$/i.test(path)
+/** Тест-файл компонента: имена тестов вытаскиваются регуляркой по `test('…'`. */
+export interface MakeTestFile { path: string; names: string[]; component: string | null }
 
 /** Import map по умолчанию для React-проектов: React из esm.sh, версии закреплены. */
 export const MAKE_REACT_IMPORT_MAP: Record<string, string> = {

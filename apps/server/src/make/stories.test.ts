@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { extractHeadAssets, parseStoryFile, renderStoriesPage } from './stories'
+import { parseTestFile, renderTestsPage } from './stories'
 
 describe('make stories', () => {
   it('parseStoryFile: имена стори из экспортов, title из default или имени файла', () => {
@@ -24,5 +25,15 @@ describe('make stories', () => {
     expect(page).toContain('enumOptions')
     expect(page).toContain('argTypes')
     expect(page).toContain('vc-make.play')
+  })
+
+  it('parseTestFile и раннер тестов: имена test(), компонент рядом, страница шлёт vc-make.test (roadmap-4 п.3)', () => {
+    const t = parseTestFile('src/components/Button.test.tsx', "test('рендерит подпись', async (t) => {})\ntest(\"клик\", async (t) => {})", new Set(['src/components/Button.tsx', 'src/components/Button.test.tsx']))
+    expect(t).toEqual({ path: 'src/components/Button.test.tsx', names: ['рендерит подпись', 'клик'], component: 'src/components/Button.tsx' })
+    const html = renderTestsPage('src/components/Button.test.tsx', null)
+    expect(html).toContain("window.test = (name, fn)")
+    expect(html).toContain("'vc-make.test'")
+    expect(html).toContain("'vc-make.tests-done'")
+    expect(html).toContain('./src/components/Button.test.tsx')
   })
 })

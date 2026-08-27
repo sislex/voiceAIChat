@@ -202,6 +202,26 @@ describe('MakePane', () => {
     expect(editor.readOnly).toBe(false)
   })
 
+  it('тесты компонентов: кнопка «Тесты», результаты из раннера, «Исправить» с упавшими (roadmap-4 п.3)', async () => {
+    const api = createFakeApi([])
+    await api['make:write']({ conversationId: CONV, path: 'src/components/Button.test.tsx', content: "test('рендер', async () => {})\ntest('клик', async () => {})" })
+    const onAsk = vi.fn()
+    render(<MakePane conversationId={CONV} api={api} make={{ onChanged: () => () => {} }} previewBase={`/api/preview/make/${CONV}/`} onAskAssistant={onAsk} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Компоненты' }))
+    await userEvent.click(await screen.findByRole('button', { name: /^Тесты \(2\)/ }))
+    const frame = await screen.findByTitle('Тесты src/components/Button.test.tsx') as HTMLIFrameElement
+    expect(frame.src).toContain('__tests__?file=src%2Fcomponents%2FButton.test.tsx')
+    const send = (data: object) => window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }))
+    send({ type: 'vc-make.test', file: './src/components/Button.test.tsx', name: 'рендер', status: 'passed', ms: 12 })
+    send({ type: 'vc-make.test', file: './src/components/Button.test.tsx', name: 'клик', status: 'failed', ms: 3, error: 'expected 1 toBe 2' })
+    send({ type: 'vc-make.tests-done', passed: 1, failed: 1 })
+    const panel = await screen.findByTestId('make-tests')
+    await waitFor(() => expect(within(panel).getByText('✗ клик')).toBeInTheDocument())
+    expect(within(panel).getByText('expected 1 toBe 2')).toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Исправить' }))
+    expect(onAsk).toHaveBeenCalledWith(expect.stringContaining('Button.test.tsx › клик: expected 1 toBe 2'))
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)

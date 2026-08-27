@@ -116,6 +116,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:libraryInsert': ({ conversationId, slug }) => req(REST.makeLibraryInsert(conversationId, slug), { method: 'POST' }),
     'make:libraryRemove': ({ slug }) => req(REST.makeLibraryItem(slug), { method: 'DELETE' }),
     'make:shots': ({ conversationId }) => req(REST.makeShots(conversationId)),
+    'make:tests': ({ conversationId }) => req(REST.makeTests(conversationId)),
     'make:usage': ({ conversationId }) => req(REST.makeUsage(conversationId)),
     'make:share': ({ conversationId }) => req(REST.makeShare(conversationId), { method: 'POST' }),
     'make:unshare': ({ conversationId }) => req(REST.makeShare(conversationId), { method: 'DELETE' }),
