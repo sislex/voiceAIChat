@@ -8,6 +8,8 @@ import {
   REST,
   AGENT_VERSION,
   MACHINE_STORAGE_FORMAT_VERSION,
+  chatStorageDirectories,
+  type ChatStorageView,
   recommendedChatStoragePath,
   managedChatAttachmentsPath,
   managedChatArtifactsPath,
@@ -252,9 +254,14 @@ export async function registerAgentRoutes(
   )
 
   app.get<{ Params: { id: string } }>('/api/conversations/:id/storage', async (req, reply) => {
-    const binding = db.getChatStorageBinding(uid(req), req.params.id)
+    const userId = uid(req)
+    const binding = db.getChatStorageBinding(userId, req.params.id)
     if (!binding) return reply.code(404).send({ error: 'not found' })
-    return binding
+    // Карточке чата нужны абсолютные каталоги и состояние хранилища, а не только id.
+    const storage = db.listMachineStorages(userId, binding.machineId).find((item) => item.id === binding.storageId)
+    if (!storage) return binding satisfies ChatStorageView
+    const status: ChatStorageView['status'] = registry.isOnline(binding.machineId) ? storage.status : 'offline'
+    return { ...binding, rootPath: storage.rootPath, status, directories: chatStorageDirectories(storage.rootPath, binding.relativePath) } satisfies ChatStorageView
   })
 
   app.put<{ Params: { id: string }; Body: { machineId?: string; storageId?: string; relativePath?: string } }>(

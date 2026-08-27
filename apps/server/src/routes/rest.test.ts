@@ -179,6 +179,23 @@ describe('REST: хранилище машины', () => {
     // Обычные маркеры хранилища при этом на месте.
     expect(written.some((p) => p.endsWith('/project.json'))).toBe(true)
   })
+
+  it('GET storage отдаёт карточке чата абсолютные каталоги и статус хранилища', async () => {
+    const machine = db.createAgent(U, 'Мак')
+    connectFs(machine.id)
+    const storage = (await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })).json()
+    const conv = db.createConversation(U, 'C')
+    expect((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/storage` })).statusCode).toBe(404)
+    await inj({ method: 'PUT', url: `/api/conversations/${conv.id}/storage`, payload: { machineId: machine.id, storageId: storage.id } })
+    const view = (await inj({ method: 'GET', url: `/api/conversations/${conv.id}/storage` })).json()
+    expect(view).toMatchObject({ machineId: machine.id, storageId: storage.id, rootPath: '/Users/me/ChatAI', status: 'ready' })
+    expect(view.directories).toEqual({
+      chatRoot: `/Users/me/ChatAI/chats/${conv.id}`,
+      attachments: `/Users/me/ChatAI/chats/${conv.id}/attachments`,
+      artifacts: `/Users/me/ChatAI/chats/${conv.id}/artifacts`,
+      generated: `/Users/me/ChatAI/chats/${conv.id}/.generated`
+    })
+  })
 })
 
 describe('REST: аутентификация', () => {

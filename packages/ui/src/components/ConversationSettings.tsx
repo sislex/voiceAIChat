@@ -3,7 +3,8 @@ import { normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
 import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { LlmEngineOption } from '@shared/admin'
-import type { MachineStorage, ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
+import type { ChatStorageView, MachineStorage, ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
+import { ChatStorageCard } from './ChatStorageCard'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { MachineOps } from './machine'
 import { PopupFrame } from './PopupFrame'
@@ -38,6 +39,8 @@ export interface ConversationSettingsProps {
   makeDiagnostics?: { running: boolean; onRun: () => void }
   /** Сквозная самодиагностика чата (клиент→сервер→модель→БД) — в обычном чате. */
   chatDiagnostics?: { running: boolean; onRun: () => void }
+  /** Открыть проводник машины в каталоге результатов чата. */
+  onOpenExplorer?: (agentId: string, path: string) => void
   /** Загрузка деталей проекта (машины/папки/дефолт) для выбранного проекта. */
   fetchProjectDetail: (id: string) => Promise<ProjectDetail | null>
   /** Серверный список машин с тем же правилом доступа, что используется при сохранении. */
@@ -71,7 +74,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -105,6 +108,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
   const [storages, setStorages] = useState<MachineStorage[]>([])
   const [storageId, setStorageId] = useState('')
   const [storagePath, setStoragePath] = useState('')
+  const [storageView, setStorageView] = useState<ChatStorageView | null>(null)
   useEffect(() => {
     const syncContextRoute = (): void => {
       if (window.location.hash.startsWith(contextRoutePrefix)) setActiveTab('context')
@@ -202,6 +206,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
     ]).then(([nextStorages, binding]) => {
       if (!alive) return
       setStorages(nextStorages)
+      setStorageView(binding)
       if (binding?.machineId === selectedAgent.id) {
         setStorageId(binding.storageId)
         setStoragePath(binding.relativePath)
@@ -380,7 +385,8 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
               <input aria-label="Файловый каталог разговора" value={storagePath} disabled={!storageId} placeholder="Автоматический изолированный путь" onChange={(event) => setStoragePath(event.target.value)} />
             </label>
             <p className="convsettings-muted">Основное хранилище: {storages.find((storage) => storage.primary)?.rootPath ?? 'не назначено'}</p>
-            {storageId && <p className="convsettings-muted">Итоговый каталог: {storages.find((storage) => storage.id === storageId)?.rootPath}/{storagePath || 'автоматический путь разговора'}</p>}
+            <h3 className="convsettings-subtitle">Каталог результатов</h3>
+            <ChatStorageCard storage={storageView} machineName={storageView ? agents.find((a) => a.id === storageView.machineId)?.name : undefined} onOpenExplorer={onOpenExplorer} />
             {!storageId && <p className="convsettings-muted" role="alert">Временный legacy-режим использует <b>.voicechat_uploads</b>. Старые файлы автоматически не переносятся.</p>}
             <p className="convsettings-muted">Вложения и закреплённые файлы хранятся здесь. Рабочий Git-каталог настраивается отдельно ниже.</p>
           </> : <p className="convsettings-muted">Нет доступной машины или хранилища. Настройте хранилище в разделе машины.</p>}

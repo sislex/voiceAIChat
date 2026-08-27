@@ -7,7 +7,7 @@ import { summarizeConversationUsage } from '@shared/usageSummary'
 import { MakeSharedView } from './components/MakeSharedView'
 import type { EditorContextPayload, LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
+import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type ChatStorageView, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
 import type { PreparationClarificationNotification } from '@shared/qa'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
@@ -979,6 +979,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const makeRouteReady = !inMake || (routeMakeChatId !== null && chat.activeId === routeMakeChatId && makeActiveListed)
   const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady && consoleReaderRouteReady && makeRouteReady
   const activeConversation = chat.conversations.find((c) => c.id === chat.activeId)
+  // Каталог результатов активного чата — для чипа в шапке; обновляется при смене чата, закрытии настроек и после хода.
+  const [activeStorage, setActiveStorage] = useState<ChatStorageView | null>(null)
+  useEffect(() => {
+    const id = chat.activeId
+    if (!id || !window.api) { setActiveStorage(null); return }
+    let cancelled = false
+    window.api['conversations:getStorage']({ id }).then((view) => { if (!cancelled) setActiveStorage(view) }).catch(() => { if (!cancelled) setActiveStorage(null) })
+    return () => { cancelled = true }
+  }, [chat.activeId, conversationSettingsOpen, voice.voice])
   const startWebReaderDiagnostics = useCallback((): void => {
     const conversationId = chat.activeId
     if (!inReader || !conversationId || !activeConversation || !isReaderConversation(activeConversation)) {
@@ -1639,6 +1648,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenConversationSettings={() => { setConversationSettingsOpen(true); void projectsActions.refreshProjects() }}
         permissionMode={activePermissionMode}
         workspace={activeConversation?.workspace}
+        storage={activeStorage}
         onExecutePlan={(answerId) => void chatActions.executePlan(answerId)}
         onMakeRestore={inMake ? (snapshotId) => void restoreMakeTurn(snapshotId) : undefined}
         canExecutePlan={!forcedPlan}
@@ -2150,6 +2160,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           chatDiagnostics={!inSplit ? { running: diagnosticsControllerRef.current !== null, onRun: startChatDiagnostics } : undefined}
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}
+          onOpenExplorer={(agentId, path) => { setConversationSettingsOpen(false); operationsActions.openUtility('explorer', agentId, path) }}
           onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
             await chatActions.renameConversation(activeConversation.id, title)
             await chatActions.setConversationProject(activeConversation.id, projectId)

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
-import type { WorkspaceView } from '@shared/projects'
+import type { ChatStorageView, WorkspaceView } from '@shared/projects'
+import { ChatStorageCard } from './ChatStorageCard'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages, isImagePath } from '@shared/images'
@@ -101,6 +102,8 @@ export interface ChatColumnProps {
   permissionMode?: PermissionMode
   /** Фактический managed workspace, вычисленный сервером. */
   workspace?: WorkspaceView | null
+  /** Каталог результатов чата (привязка к хранилищу машины) — чип в шапке. */
+  storage?: ChatStorageView | null
   /** Выполнить исходный запрос планового ответа в режиме разработки. */
   onExecutePlan?: (answerId: string) => void
   /** Make: откатить правки этого ответа к снимку «До правок» (meta.makeSnapshotId). */
@@ -219,6 +222,7 @@ export function ChatColumn({
   onOpenConversationSettings,
   permissionMode = 'plan',
   workspace = null,
+  storage = null,
   onExecutePlan,
   onMakeRestore,
   canExecutePlan = true,
@@ -528,6 +532,7 @@ export function ChatColumn({
         <span className="mtitle-machine" data-testid="head-machine" title="Машина этого разговора">
           {execTarget === 'none' ? 'Без машины' : execTarget ? (agents.find((a) => a.id === execTarget)?.name ?? execTarget) : 'Сервер'}
         </span>
+        <ChatStorageCard compact storage={storage} onOpenExplorer={onOpenImageInExplorer} />
         {workspace && (
           <span
             className={`mode-badge workspace-badge workspace-badge--${workspace.state}`}
