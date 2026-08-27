@@ -179,6 +179,7 @@ export const REST = {
   /** Превью и ZIP-экспорт живут под /api/preview/…: там действует preview-cookie для iframe и ссылок. */
   makePreview: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/`,
   makeShare: (id: string) => `/api/make/${encodeURIComponent(id)}/share`,
+  makeShareGrants: (id: string) => `/api/make/${encodeURIComponent(id)}/share/grants`,
   makeShared: (token: string) => `/api/make/shared/${encodeURIComponent(token)}`,
   makeSharedFile: (token: string, path: string) => `/api/make/shared/${encodeURIComponent(token)}/file?path=${encodeURIComponent(path)}`,
   makeSharedStories: (token: string) => `/api/make/shared/${encodeURIComponent(token)}/stories`,

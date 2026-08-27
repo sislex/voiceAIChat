@@ -14,7 +14,7 @@ import {
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakePublishEntry, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
 import { applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
@@ -383,9 +383,9 @@ export class MakeWorkspaces {
 
   async share(conversationId: string): Promise<MakeShare | null> {
     try {
-      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), SHARE_FILE), 'utf8')) as { token?: string; createdAt?: number }
+      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), SHARE_FILE), 'utf8')) as { token?: string; createdAt?: number; grants?: MakeShareGrant[] }
       if (!raw.token || !ID_RE.test(raw.token)) return null
-      return { token: raw.token, createdAt: raw.createdAt ?? 0, url: makeSharedUrl(raw.token) }
+      return { token: raw.token, createdAt: raw.createdAt ?? 0, url: makeSharedUrl(raw.token), grants: raw.grants ?? [] }
     } catch { return null }
   }
 
@@ -399,6 +399,24 @@ export class MakeWorkspaces {
       await writeFile(join(this.dirOf(conversationId), SHARE_FILE), JSON.stringify({ token, createdAt: Date.now() }), 'utf8')
     }
     return this.state(conversationId)
+  }
+
+  /** Именной доступ (roadmap-3 п.6): role null — убрать; ссылка создаётся, если её ещё нет. */
+  async setShareGrant(conversationId: string, user: string, role: MakeShareRole | null): Promise<MakeProjectState> {
+    const name = user.trim()
+    if (!/^[\w.@-]{1,64}$/.test(name)) throw new MakeError('invalid_path', 'Некорректное имя пользователя')
+    if (!(await this.share(conversationId))) await this.createShare(conversationId)
+    const cur = (await this.share(conversationId))!
+    const grants = (cur.grants ?? []).filter((g) => g.user !== name)
+    if (role) grants.push({ user: name, role })
+    await writeFile(join(this.dirOf(conversationId), SHARE_FILE), JSON.stringify({ token: cur.token, createdAt: cur.createdAt, grants }), 'utf8')
+    return this.state(conversationId)
+  }
+
+  /** Роль пользователя по именному доступу; null — доступа нет. */
+  async shareRole(conversationId: string, user: string): Promise<MakeShareRole | null> {
+    const cur = await this.share(conversationId)
+    return cur?.grants?.find((g) => g.user === user)?.role ?? null
   }
 
   async revokeShare(conversationId: string): Promise<MakeProjectState> {

@@ -108,21 +108,36 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       return false
     }
     return true
+  }  /**
+   * Доступ участника по именному гранту (roadmap-3 п.6): владелец — всё; редактор — файлы, снимки, комментарии;
+   * зритель — только чтение. Публикация, шаринг, очистка и удаление остаются за владельцем (`own`).
+   */
+  const access = async (userId: string, id: string, reply: FastifyReply, level: 'editor' | 'viewer'): Promise<boolean> => {
+    const mine = db.getConversation(userId, id)
+    if (mine && mine.assistantKind === 'make') return true
+    const owner = db.conversationOwner(id)
+    if (owner) {
+      const role = await workspaces.shareRole(id, userId)
+      if (role === 'editor' || (role === 'viewer' && level === 'viewer')) return true
+    }
+    void reply.code(404).send({ error: 'conversation not found' })
+    return false
   }
 
+
   app.get<{ Params: { id: string } }>('/api/make/:id', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     try { await workspaces.ensure(req.params.id); return await workspaces.state(req.params.id) } catch (error) { return sendError(reply, error) }
   })
 
   app.get<{ Params: { id: string }; Querystring: { path?: string } }>('/api/make/:id/file', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     try { return await workspaces.read(req.params.id, req.query.path ?? '') } catch (error) { return sendError(reply, error) }
   })
 
   app.put<{ Params: { id: string }; Body: { path?: string; content?: string } }>('/api/make/:id/file', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!(await access(userId, req.params.id, reply, 'editor'))) return reply
     const { path, content } = req.body ?? {}
     if (typeof path !== 'string' || typeof content !== 'string') return reply.code(400).send({ error: 'path и content обязательны' })
     try {
@@ -136,7 +151,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   // Загрузка бинарника из панели (картинка, шрифт): base64 раздувает на треть — лимит тела с запасом.
   app.post<{ Params: { id: string }; Body: { path?: string; dataBase64?: string } }>('/api/make/:id/upload', { bodyLimit: 4 * 1024 * 1024 }, async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!(await access(userId, req.params.id, reply, 'editor'))) return reply
     const { path, dataBase64 } = req.body ?? {}
     if (typeof path !== 'string' || typeof dataBase64 !== 'string') return reply.code(400).send({ error: 'path и dataBase64 обязательны' })
     try {
@@ -149,7 +164,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.delete<{ Params: { id: string }; Querystring: { path?: string } }>('/api/make/:id/file', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!(await access(userId, req.params.id, reply, 'editor'))) return reply
     try {
       const state = await workspaces.delete(req.params.id, req.query.path ?? '')
       hub.changed(userId, req.params.id, state.rev, [req.query.path ?? ''])
@@ -159,7 +174,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.post<{ Params: { id: string }; Body: { from?: string; to?: string } }>('/api/make/:id/rename', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!(await access(userId, req.params.id, reply, 'editor'))) return reply
     const { from, to } = req.body ?? {}
     if (typeof from !== 'string' || typeof to !== 'string') return reply.code(400).send({ error: 'from и to обязательны' })
     try {
@@ -170,12 +185,12 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/snapshots', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     return workspaces.snapshots(req.params.id)
   })
 
   app.post<{ Params: { id: string }; Body: { label?: string } }>('/api/make/:id/snapshots', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!(await access(uid(req), req.params.id, reply, 'editor'))) return reply
     try {
       await workspaces.ensure(req.params.id)
       return await workspaces.snapshot(req.params.id, typeof req.body?.label === 'string' ? req.body.label : 'Снимок пользователя')
@@ -280,6 +295,13 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (!own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return await workspaces.createShare(req.params.id) } catch (error) { return sendError(reply, error) }
   })
+  app.post<{ Params: { id: string }; Body: { user?: string; role?: 'editor' | 'viewer' | null } | undefined }>('/api/make/:id/share/grants', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    const user = String(req.body?.user ?? '').trim()
+    if (user && !db.getUser(user)) return reply.code(404).send({ error: `Пользователь «${user}» не найден` })
+    const role = req.body?.role === 'editor' || req.body?.role === 'viewer' ? req.body.role : null
+    try { await workspaces.ensure(req.params.id); return await workspaces.setShareGrant(req.params.id, user, role) } catch (error) { return sendError(reply, error) }
+  })
   app.delete<{ Params: { id: string } }>('/api/make/:id/share', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try { return await workspaces.revokeShare(req.params.id) } catch (error) { return sendError(reply, error) }
@@ -296,7 +318,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       const owner = db.conversationOwner(conversationId) ?? ''
       const conv = owner ? db.getConversation(owner, conversationId) : null
       const state = await workspaces.state(conversationId)
-      return { token: req.params.token, owner, title: conv?.title ?? 'Проект', files: state.files, snapshots: state.snapshots, rev: state.rev }
+      return { token: req.params.token, owner, title: conv?.title ?? 'Проект', role: await workspaces.shareRole(conversationId, uid(req)), conversationId, files: state.files, snapshots: state.snapshots, rev: state.rev }
     } catch (error) { return sendError(reply, error) }
   })
   app.get<{ Params: { token: string }; Querystring: { path?: string } }>('/api/make/shared/:token/file', async (req, reply) => {
@@ -336,7 +358,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   // Presence вкладок (roadmap-2 п.14): heartbeat от каждой вкладки; ответ и WS-кадр — всем сокетам владельца.
   app.post<{ Params: { id: string }; Body: { clientId?: string; path?: string | null; editing?: boolean; leave?: boolean } | undefined }>('/api/make/:id/presence', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!(await access(userId, req.params.id, reply, 'viewer'))) return reply
     const clientId = String(req.body?.clientId ?? '').slice(0, 64)
     if (!clientId) return reply.code(400).send({ error: 'clientId обязателен' })
     const clients = hub.heartbeat(req.params.id, { clientId, user: userId, path: typeof req.body?.path === 'string' ? req.body.path.slice(0, 300) : null, editing: Boolean(req.body?.editing), at: Date.now() }, Boolean(req.body?.leave))
@@ -346,12 +368,12 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   // Комментарии к элементам превью (п.32).
   app.get<{ Params: { id: string } }>('/api/make/:id/comments', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     try { await workspaces.ensure(req.params.id); return { comments: await workspaces.comments(req.params.id) } } catch (error) { return sendError(reply, error) }
   })
   app.post<{ Params: { id: string }; Body: { selector?: string; elementLabel?: string; text?: string } | undefined }>('/api/make/:id/comments', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!(await access(userId, req.params.id, reply, 'editor'))) return reply
     try {
       await workspaces.ensure(req.params.id)
       const comments = await workspaces.addComment(req.params.id, { selector: req.body?.selector ?? '', elementLabel: req.body?.elementLabel ?? '', text: req.body?.text ?? '', author: userId })
@@ -361,7 +383,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
   app.patch<{ Params: { id: string; commentId: string }; Body: { resolved?: boolean; text?: string } | undefined }>('/api/make/:id/comments/:commentId', async (req, reply) => {
     const userId = uid(req)
-    if (!own(userId, req.params.id, reply)) return reply
+    if (!(await access(userId, req.params.id, reply, 'editor'))) return reply
     try {
       const comments = await workspaces.updateComment(req.params.id, req.params.commentId, { resolved: req.body?.resolved, text: req.body?.text })
       hub.changed(userId, req.params.id, workspaces.rev(req.params.id), [COMMENTS_SYNC_PATH])

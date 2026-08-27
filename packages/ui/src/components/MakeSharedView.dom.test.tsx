@@ -29,4 +29,19 @@ describe('MakeSharedView', () => {
     render(<MakeSharedView token="bad" api={createFakeApi([])} onBack={() => {}} />)
     await waitFor(() => expect(screen.getByText('Проект недоступен')).toBeInTheDocument())
   })
+
+  it('редактор по именному доступу правит файл и сохраняет через make:write (roadmap-3 п.6)', async () => {
+    const api = createFakeApi([])
+    await api['make:state']({ conversationId: 'make-1' })
+    await api['make:shareGrant']({ conversationId: 'make-1', user: 'admin', role: 'editor' })
+    render(<MakeSharedView token="share123" api={api} onBack={() => {}} />)
+    expect(await screen.findByText(/редактор · admin/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const editor = await screen.findByLabelText('Содержимое index.html') as HTMLTextAreaElement
+    expect(editor.readOnly).toBe(false)
+    await userEvent.clear(editor)
+    await userEvent.type(editor, '<h1>edited</h1>')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(async () => expect((await api['make:read']({ conversationId: 'make-1', path: 'index.html' })).content).toBe('<h1>edited</h1>'))
+  })
 })

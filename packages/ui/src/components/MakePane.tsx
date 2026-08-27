@@ -42,7 +42,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:presence'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -688,6 +688,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const ok = await confirm({ title: 'Снять проект с публикации?', message: 'Ссылка перестанет открываться.', variant: 'danger', confirmLabel: 'Снять' })
     if (!ok) return
     try { setState(await api['make:unpublish']({ conversationId })); toast.success('Публикация снята') } catch (e) { toast.error(describeError(e)) }
+  }
+  // Именной доступ (roadmap-3 п.6).
+  const [grantUser, setGrantUser] = useState('')
+  const [grantRole, setGrantRole] = useState<'editor' | 'viewer'>('viewer')
+  const grant = async (user: string, role: 'editor' | 'viewer' | null): Promise<void> => {
+    if (!user.trim()) return
+    try { setState(await api['make:shareGrant']({ conversationId, user: user.trim(), role })); toast.success(role ? `Доступ для ${user.trim()}: ${role === 'editor' ? 'редактор' : 'зритель'}` : `Доступ ${user.trim()} убран`) } catch (e) { toast.error(describeError(e)) }
   }
   const copyShareLink = async (text: string): Promise<void> => { toast[(await copyText(text)) ? 'success' : 'error']('Ссылка скопирована') }
   // Read-only ссылка внутри ChatAI (п.33): создать/отозвать.
@@ -1662,6 +1669,22 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   <code data-testid="make-share-url">{typeof window !== 'undefined' ? `${window.location.origin}/${state.shared.url}` : state.shared.url}</code>
                   <Button size="sm" variant="secondary" onClick={() => void copyShareLink(typeof window !== 'undefined' ? `${window.location.origin}/${state.shared!.url}` : state.shared!.url)}>Копировать</Button>
                   <Button size="sm" variant="ghost" onClick={() => void toggleShare()}>Отозвать</Button>
+                </div>
+                <div className="make-grants" data-testid="make-grants">
+                  <p className="fsub">Именной доступ: редактор правит файлы и снимки на странице проекта, зритель — только смотрит. Публикация и шаринг остаются за вами.</p>
+                  {(state.shared.grants ?? []).length > 0 && (
+                    <ul role="list">
+                      {state.shared.grants!.map((g) => (
+                        <li key={g.user}><code>{g.user}</code><span>{g.role === 'editor' ? 'редактор' : 'зритель'}</span>
+                          <IconButton size="sm" aria-label={`Убрать доступ ${g.user}`} title="Убрать доступ" onClick={() => void grant(g.user, null)}>✕</IconButton></li>
+                      ))}
+                    </ul>
+                  )}
+                  <form className="make-grant-add" onSubmit={(e) => { e.preventDefault(); void grant(grantUser, grantRole); setGrantUser('') }}>
+                    <input className="tin" aria-label="Имя пользователя" placeholder="логин" value={grantUser} onChange={(e) => setGrantUser(e.target.value)} />
+                    <select aria-label="Роль" value={grantRole} onChange={(e) => setGrantRole(e.target.value as 'editor' | 'viewer')}><option value="viewer">зритель</option><option value="editor">редактор</option></select>
+                    <Button size="sm" variant="secondary" type="submit" disabled={!grantUser.trim()}>Дать доступ</Button>
+                  </form>
                 </div>
               </>
             ) : <div className="make-ask-actions"><Button size="sm" variant="secondary" onClick={() => void toggleShare()}>Создать ссылку для чтения</Button></div>}
