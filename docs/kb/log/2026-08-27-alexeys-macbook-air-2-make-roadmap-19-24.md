@@ -28,3 +28,4 @@ author: alexeyrozhnov
 П.8: панель стилей выбранного элемента (live inline через postMessage + запись правила в CSS).
 П.3+п.2: типы React в Monaco (extraLibs из node_modules через ?raw), модели всех файлов проекта; фикс конфликта глобального .main с suggest-widget.
 П.14: controls по argTypes (range/color/select/object) + JSON-редактор массивов/объектов.
+П.10: скриншот превью/элемента во вложения чата (html2canvas, lazy).

@@ -6519,6 +6519,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-template-meta { display: grid; gap: 2px; }
 .make-template-meta small { color: var(--text-dim); }
 .make-head .vc-btn--icon { color: var(--text); font-size: 17px; line-height: 1; min-width: 30px; }
+.make-head .vc-btn--icon:disabled { opacity: .5; }
 
 /* Make: поиск в дереве, результаты по содержимому, вкладка «Компоненты». */
 .make-search { display: flex; align-items: center; gap: 6px; padding: 2px 4px 6px; }
