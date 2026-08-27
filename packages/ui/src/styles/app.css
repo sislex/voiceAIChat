@@ -6910,3 +6910,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-publish-stats { display: grid; gap: 4px; }
 .make-publish-bars { display: flex; align-items: flex-end; gap: 3px; height: 36px; padding: 2px 0; }
 .make-publish-bar { flex: 1 1 0; min-width: 4px; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .85; }
+
+/* Комментарии на телефоне — нижняя шторка (roadmap-3 п.4) */
+@media (max-width: 720px) {
+  .make-preview-body.make-preview-split { display: flex; }
+  .make-comments { position: fixed; left: 0; right: 0; bottom: 0; max-height: 60vh; z-index: 55; border-top: 0; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.18); padding-top: 18px; }
+  .make-comments::before { content: ''; position: absolute; top: 6px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--border); }
+  .make-comments-head .vc-btn--icon { min-width: 36px; min-height: 36px; }
+}

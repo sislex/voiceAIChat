@@ -62,6 +62,8 @@ export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
   window.addEventListener('message', function(e){ var d = e.data; if (!d || d.type !== 'vc-make.inspect') return; on = !!d.enabled; document.documentElement.style.cursor = on ? 'crosshair' : ''; if (!on) hide() });
   document.addEventListener('mousemove', onMove, true);
   document.addEventListener('click', onClick, true);
+  // Телефон (roadmap-3 п.4): пальцем нет hover — подсвечиваем элемент под касанием, тап выбирает (через click).
+  document.addEventListener('touchstart', function(e){ if (!on || !e.touches || !e.touches[0]) return; var t = e.touches[0]; var el = document.elementFromPoint(t.clientX, t.clientY); if (el) { hovered = el; place(el); } }, { capture: true, passive: true });
   window.addEventListener('scroll', function(){ if (on && hovered) place(hovered) }, true);
   // Состояние страницы (скролл, hash) — родитель восстановит его после перезагрузки превью по make.changed.
   var scrollTimer = null;
