@@ -1,7 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState, MakePresenceClient, MakeShareRole, MakeTestFile } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState, MakePresenceClient, MakeShareRole, MakeTestFile, MakeProjectNotes } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -164,6 +164,8 @@ export interface IpcInvokeMap {
   'make:libraryRemove': { arg: { slug: string }; result: { items: MakeLibraryItem[] } }
   'make:shots': { arg: { conversationId: string }; result: { shots: MakeStoryShot[] } }
   'make:tests': { arg: { conversationId: string }; result: { files: MakeTestFile[] } }
+  'make:notes': { arg: { conversationId: string }; result: MakeProjectNotes }
+  'make:setNotes': { arg: { conversationId: string } & Partial<MakeProjectNotes>; result: MakeProjectNotes }
   'make:usage': { arg: { conversationId: string }; result: MakeUsage }
   'make:share': { arg: { conversationId: string }; result: MakeProjectState }
   'make:unshare': { arg: { conversationId: string }; result: MakeProjectState }
@@ -957,6 +959,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:libraryRemove',
   'make:shots',
   'make:tests',
+  'make:notes',
+  'make:setNotes',
   'make:shot',
   'make:snapshotFile',
   'make:restoreFile',

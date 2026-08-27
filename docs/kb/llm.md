@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-27
-checked: 3b5f3cd4
+checked: 7c7ca737
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -273,6 +273,8 @@ Usage нормализуется в `TurnUsage` и рассылается как
 **Транзакции и патчи (roadmap-4 пп.1–2).** `make_apply_changes { files[], delete[] }` пишет несколько файлов разом (`MakeWorkspaces.applyChanges`): после записи запускается `check`, и если в любом из записанных файлов ошибка компиляции — все они возвращаются к прежнему содержимому (созданные удаляются, удалённые восстанавливаются), инструмент отвечает ошибкой «Изменения откачены». `make_edit_file { path, find, replace, all? }` (`editFile`) заменяет фрагмент: без `all` он должен встречаться ровно один раз (0 → `not_found`, >1 → `exists` с подсказкой расширить фрагмент). Хинт велит использовать патч для больших файлов и транзакцию для связанных правок; `make_write_file` остаётся для новых/маленьких файлов.
 
 **Режим вопроса (roadmap-4 п.4).** Если Make-разговор идёт в `plan` не из-за авто-плана (`isBigMakeRequest`), а по выбору пользователя, `turns.ts` добавляет хинт «## Режим вопроса» (ответь по существу, файлы не меняй, план не расписывай) вместо «Режима плана»; make MCP уходит с `ro=1`. В UI кнопка ❓ «Только спросить» в шапке Make (`askOnly`/`onAskOnlyChange`): `App` перед отправкой переключает разговор в «План» (`changeConversationMode`), а когда голосовое состояние возвращается в `idle`, восстанавливает прежний режим и сбрасывает переключатель.
+
+**Память проекта и режим ассистента (roadmap-4 пп.6–7).** `.make/notes.md` (заметки, ≤ 20 000 символов) и `.make/settings.json` (`mode: balanced|designer|developer`) хранятся в каталоге проекта (скрыты из `list`, переживают `reset`). `promptContext` добавляет хинт режима из `MAKE_MODE_HINTS` и первые 4000 символов заметок в блок «Контекст проекта Make». Инструмент `make_remember { note }` дописывает строку `- <дата>: <текст>`; REST `GET/PUT /api/make/:id/notes` (viewer/editor), мосты `make:notes`/`make:setNotes`. UI — `MakeNotesDialog` из меню «⋯ → Память проекта»: радио режима и textarea заметок.
 
 **Откат правок хода (roadmap-2 п.2).** Снимок «До правок», который `makeMcp` делает перед первой мутацией хода, регистрируется в `MakeHub.rememberTurnSnapshot(turn, snapshotId)`; `turns.ts` передаёт в MCP-URL тот же `turnId`, что и внутри хода, и при сборке `merged`-meta спрашивает `deps.makeHub.turnSnapshot(turnId)` → `TurnMeta.makeSnapshotId`. `ChatColumn` у ответа с этим полем показывает «Откатить правки» (проп `onMakeRestore`, `App` даёт его только в маршруте `/make`): подтверждение через `useConfirm`, затем `make:restore` — текущее состояние перед откатом сохраняется снимком «Перед восстановлением снимка». Ход без записей файлов кнопки не получает.
 

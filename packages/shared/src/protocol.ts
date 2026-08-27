@@ -161,6 +161,7 @@ export const REST = {
   makeRestoreFile: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/restore-file`,
   makeImport: (id: string) => `/api/make/${encodeURIComponent(id)}/import`,
   makeImportUrl: (id: string) => `/api/make/${encodeURIComponent(id)}/import-url`,
+  makeNotes: (id: string) => `/api/make/${encodeURIComponent(id)}/notes`,
   makeTests: (id: string) => `/api/make/${encodeURIComponent(id)}/tests`,
   makeTestsPage: (id: string, file: string) => `/api/preview/make/${encodeURIComponent(id)}/__tests__?file=${encodeURIComponent(file)}`,
   makeStories: (id: string) => `/api/make/${encodeURIComponent(id)}/stories`,

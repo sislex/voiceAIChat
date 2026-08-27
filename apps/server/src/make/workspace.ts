@@ -14,8 +14,8 @@ import {
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile, parseTestFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
-import { applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, MakeProjectNotes, MakeAssistantMode, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
+import { MAKE_MODE_HINTS, applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists' | 'quota'
@@ -38,6 +38,7 @@ export function refererHost(referer?: string | null): string | null {
   try { const h = new URL(referer).hostname.toLowerCase(); return h && h !== 'localhost' ? h : null } catch { return null }
 }
 const SHARE_FILE = '.share.json'
+const NOTES_DIR = '.make'
 /** Содержимое `.publish.json`; passwordHash = `<соль>:<sha256(соль:пароль)>`. */
 interface PublishRaw { token: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number; history?: MakePublishEntry[]; days?: Record<string, number>; referers?: Record<string, number> }
 const SHOTS_DIR = '.shots'
@@ -267,6 +268,33 @@ export class MakeWorkspaces {
     return out.sort((a, b) => b.createdAt - a.createdAt)
   }
 
+  // ---- Память проекта и режим ассистента (roadmap-4 пп.6–7): .make/notes.md + .make/settings.json ----
+
+  async notes(conversationId: string): Promise<MakeProjectNotes> {
+    const dir = join(this.dirOf(conversationId), NOTES_DIR)
+    const notes = await readFile(join(dir, 'notes.md'), 'utf8').catch(() => '')
+    let mode: MakeAssistantMode = 'balanced'
+    try { const s = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')) as { mode?: string }; if (s.mode === 'designer' || s.mode === 'developer') mode = s.mode } catch { /* дефолт */ }
+    return { notes, mode }
+  }
+
+  async setNotes(conversationId: string, patch: Partial<MakeProjectNotes>): Promise<MakeProjectNotes> {
+    const dir = join(this.dirOf(conversationId), NOTES_DIR)
+    await mkdir(dir, { recursive: true })
+    const cur = await this.notes(conversationId)
+    const next: MakeProjectNotes = { notes: (patch.notes ?? cur.notes).slice(0, 20_000), mode: patch.mode ?? cur.mode }
+    await writeFile(join(dir, 'notes.md'), next.notes, 'utf8')
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ mode: next.mode }), 'utf8')
+    return next
+  }
+
+  /** Дописать строку в заметки (инструмент make_remember): дата + текст. */
+  async appendNote(conversationId: string, line: string): Promise<MakeProjectNotes> {
+    const cur = await this.notes(conversationId)
+    const stamp = new Date().toISOString().slice(0, 10)
+    return this.setNotes(conversationId, { notes: `${cur.notes.trimEnd()}${cur.notes.trim() ? '\n' : ''}- ${stamp}: ${line.trim().slice(0, 500)}\n` })
+  }
+
   // ---- Тесты компонентов (roadmap-4 п.3) --------------------------------------
 
   async tests(conversationId: string): Promise<MakeTestFile[]> {
@@ -360,6 +388,9 @@ export class MakeWorkspaces {
       const tokens = css ? parseCssTokens(css.data.toString('utf8')) : []
       if (tokens.length) parts.push(`Дизайн-токены проекта (${tokensPath}, используй var(--имя), новые добавляй туда же): ${tokens.slice(0, 40).map((t) => `${t.name}: ${t.value}`).join('; ')}${tokens.length > 40 ? '; …' : ''}`)
     }
+    const memo = await this.notes(conversationId).catch(() => ({ notes: '', mode: 'balanced' as MakeAssistantMode }))
+    if (MAKE_MODE_HINTS[memo.mode]) parts.push(MAKE_MODE_HINTS[memo.mode])
+    if (memo.notes.trim()) parts.push(`Заметки проекта (решения, которых нужно придерживаться; дополняй через make_remember):\n${memo.notes.trim().slice(0, 4000)}`)
     const open = (await this.comments(conversationId).catch(() => [] as MakeComment[])).filter((c) => !c.resolved)
     if (open.length) parts.push(`Открытые замечания пользователя к превью (учитывай при правках, если запрос их касается):\n${open.slice(0, 20).map((c, i) => `${i + 1}. ${c.elementLabel || c.selector} (селектор \`${c.selector}\`): ${c.text}`).join('\n')}`)
     return parts.length ? `## Контекст проекта Make\n${parts.join('\n')}` : ''
@@ -726,7 +757,7 @@ export class MakeWorkspaces {
   private async clearFiles(conversationId: string): Promise<void> {
     const root = this.dirOf(conversationId)
     for (const entry of await readdir(root)) {
-      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE || entry === SHARE_FILE) continue
+      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE || entry === SHARE_FILE || entry === NOTES_DIR) continue
       await rm(join(root, entry), { recursive: true, force: true })
     }
   }

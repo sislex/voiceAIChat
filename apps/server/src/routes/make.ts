@@ -486,6 +486,16 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
+  app.get<{ Params: { id: string } }>('/api/make/:id/notes', async (req, reply) => {
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
+    try { await workspaces.ensure(req.params.id); return await workspaces.notes(req.params.id) } catch (error) { return sendError(reply, error) }
+  })
+  app.put<{ Params: { id: string }; Body: { notes?: string; mode?: string } | undefined }>('/api/make/:id/notes', async (req, reply) => {
+    if (!(await access(uid(req), req.params.id, reply, 'editor'))) return reply
+    const mode = req.body?.mode === 'designer' || req.body?.mode === 'developer' || req.body?.mode === 'balanced' ? req.body.mode : undefined
+    try { await workspaces.ensure(req.params.id); return await workspaces.setNotes(req.params.id, { ...(typeof req.body?.notes === 'string' ? { notes: req.body.notes } : {}), ...(mode ? { mode } : {}) }) } catch (error) { return sendError(reply, error) }
+  })
+
   app.get<{ Params: { id: string } }>('/api/make/:id/tests', async (req, reply) => {
     if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
     try { return { files: await workspaces.tests(req.params.id) } } catch (error) { return sendError(reply, error) }

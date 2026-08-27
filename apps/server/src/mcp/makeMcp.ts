@@ -150,6 +150,14 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           } catch (error) { return text(describeError(error), true) }
         })
 
+        server.registerTool('make_remember', {
+          description: 'Записать в заметки проекта решение, которого нужно придерживаться дальше (палитра, структура, договорённости с пользователем). Заметки попадают в контекст каждого следующего хода.',
+          inputSchema: { note: z.string().min(3).max(500).describe('Одна короткая формулировка') }
+        }, async (args) => {
+          if (readOnly) return planBlocked()
+          try { const n = await workspaces.appendNote(conv, args.note); return text(`Записано. Заметок: ${n.notes.split('\n').filter(Boolean).length}.`) } catch (error) { return text(describeError(error), true) }
+        })
+
         server.registerTool('make_delete_file', {
           description: 'Удалить файл проекта.',
           inputSchema: { path: z.string().describe('Путь относительно корня проекта') }
