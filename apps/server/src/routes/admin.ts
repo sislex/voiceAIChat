@@ -208,6 +208,14 @@ export function registerAdminRoutes(
   const guard = { preHandler: requireAdmin }
 
   // Метрики Make (п.38): место, публикации, просмотры — по системе и по пользователям.
+  // Сессии пользователей (auth-roadmap п.4): список и отзыв администратором.
+  app.get<{ Params: { name: string } }>(REST.adminSessions(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
+    if (!db.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+    return { sessions: db.listSessions(req.params.name) }
+  })
+  app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
+    return db.revokeSessionById(req.params.sid) ? { ok: true } : reply.code(404).send({ error: 'not found' })
+  })
   app.get(REST.adminMakeStats, guard, async (_req, reply) => {
     if (!makeStats) return reply.code(404).send({ error: 'Make недоступен' })
     return makeStats()

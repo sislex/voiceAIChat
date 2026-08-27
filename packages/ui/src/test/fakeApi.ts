@@ -30,6 +30,8 @@ export interface FakeApi extends RendererApi {
   }
 }
 
+/** Сессии для админки (auth-roadmap п.4) — по умолчанию одна у admin. */
+const adminSessions: Array<{ sid: string; user: string; createdAt: number; lastSeen: number; expiresAt: number; ip: string; userAgent: string }> = [{ sid: 's-admin-1', user: 'admin', createdAt: 1, lastSeen: 2, expiresAt: 9_999_999_999_999, ip: '127.0.0.1', userAgent: 'Test/1.0' }]
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const makeStore = new Map<string, Map<string, string>>()
   const makeSnapStore = new Map<string, Array<{ id: string; createdAt: number; label: string; files: number }>>()
@@ -731,6 +733,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       ]
     }),
     'admin:users': async () => adminUsers.map((u) => ({ ...u })),
+    'admin:userSessions': async ({ name }) => ({ sessions: adminSessions.filter((s) => s.user === name) }),
+    'admin:revokeSession': async ({ sid }) => { const i = adminSessions.findIndex((s) => s.sid === sid); if (i >= 0) adminSessions.splice(i, 1); return { ok: true as const } },
     'admin:makeStats': async () => ({ projects: 2, bytes: 3 * 1048576, filesBytes: 1048576, snapshotsBytes: 2 * 1048576, shotsBytes: 0, published: 1, shared: 0, views: 12, limitBytes: 64 * 1048576, userLimitBytes: 512 * 1048576, byUser: [{ user: 'admin', projects: 2, bytes: 3 * 1048576, published: 1, views: 12 }], top: [{ conversationId: 'make-1', owner: 'admin', filesCount: 5, bytes: 2 * 1048576, snapshots: 3, published: true, shared: false, views: 12, updatedAt: 1 }] }),
     'admin:usageSummary': async () => adminUsers.map((u) => ({ name: u.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0 }, byModel: [] })),
     'llm:access': async () => [...(userLlmAccess.get(ME) ?? [])],

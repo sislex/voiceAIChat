@@ -284,6 +284,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`${REST.cxTranscript}?id=${encodeURIComponent(id)}${limit ? `&limit=${limit}` : ''}`),
     'cx:resume': ({ id }) => req(REST.cxResume, { method: 'POST', body: JSON.stringify({ id }) }),
     'admin:users': () => req(REST.adminUsers),
+    'admin:userSessions': ({ name }) => req(REST.adminSessions(name)),
+    'admin:revokeSession': ({ sid }) => req(REST.adminSessionRevoke(sid), { method: 'DELETE' }),
     'admin:usageSummary': (arg) => {
       const q = new URLSearchParams()
       if (arg?.from) q.set('from', String(arg.from))

@@ -1,3 +1,4 @@
+import type { SessionInfo } from '@voicechat/shared'
 import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
@@ -2540,6 +2541,51 @@ export class VoiceChatDb {
 
   deleteUser(name: string): void {
     this.db.prepare(`DELETE FROM users WHERE name = ?`).run(name)
+  }
+
+  // ---- Сессии (auth-roadmap п.4) -------------------------------------------
+
+  /** Регистрирует сессию входа; повторный вызов для того же sid обновляет last_seen. */
+  createSession(sid: string, user: string, meta: { ip: string; userAgent: string; ttlMs: number }): void {
+    const now = Date.now()
+    this.db.prepare(`INSERT INTO sessions (sid, user_name, created_at, last_seen, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(sid) DO UPDATE SET last_seen = excluded.last_seen`).run(sid, user, now, now, now + meta.ttlMs, meta.ip.slice(0, 64), meta.userAgent.slice(0, 200))
+  }
+
+  /** Есть ли запись о сессии вообще (в т.ч. отозванная) — чтобы ленивый импорт старых токенов не воскрешал отозванные. */
+  hasSessionRow(sid: string): boolean {
+    return Boolean(this.db.prepare(`SELECT 1 FROM sessions WHERE sid = ?`).get(sid))
+  }
+
+  getSession(sid: string): SessionInfo | null {
+    const r = this.db.prepare(`SELECT * FROM sessions WHERE sid = ?`).get(sid) as { sid: string; user_name: string; created_at: number; last_seen: number; expires_at: number; ip: string; user_agent: string; revoked_at: number | null } | undefined
+    if (!r || r.revoked_at) return null
+    return { sid: r.sid, user: r.user_name, createdAt: r.created_at, lastSeen: r.last_seen, expiresAt: r.expires_at, ip: r.ip, userAgent: r.user_agent }
+  }
+
+  /** Отметка активности — не чаще раза в минуту, чтобы не писать в БД на каждый запрос. */
+  touchSession(sid: string, ttlMs: number): void {
+    const now = Date.now()
+    this.db.prepare(`UPDATE sessions SET last_seen = ?, expires_at = ? WHERE sid = ? AND last_seen < ?`).run(now, now + ttlMs, sid, now - 60_000)
+  }
+
+  listSessions(user: string): SessionInfo[] {
+    const rows = this.db.prepare(`SELECT * FROM sessions WHERE user_name = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY last_seen DESC`).all(user, Date.now()) as Array<{ sid: string; user_name: string; created_at: number; last_seen: number; expires_at: number; ip: string; user_agent: string }>
+    return rows.map((r) => ({ sid: r.sid, user: r.user_name, createdAt: r.created_at, lastSeen: r.last_seen, expiresAt: r.expires_at, ip: r.ip, userAgent: r.user_agent }))
+  }
+
+  revokeSessionById(sid: string): boolean {
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE sid = ? AND revoked_at IS NULL`).run(Date.now(), sid).changes > 0
+  }
+
+  /** «Выйти везде»: все сессии пользователя, кроме указанной (текущей). */
+  revokeUserSessions(user: string, exceptSid: string | null = null): number {
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE user_name = ? AND revoked_at IS NULL AND (? IS NULL OR sid != ?)`).run(Date.now(), user, exceptSid, exceptSid).changes
+  }
+
+  /** Чистка истёкших и давно отозванных сессий (вызывается на старте и раз в сутки). */
+  pruneSessions(): number {
+    return this.db.prepare(`DELETE FROM sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)`).run(Date.now(), Date.now() - 7 * 24 * 60 * 60_000).changes
   }
 
   /** Делает конкретный Bearer-токен недействительным даже после рестарта сервера. */

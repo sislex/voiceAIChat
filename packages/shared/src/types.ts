@@ -358,6 +358,20 @@ export interface SessionUser {
   role: UserRole
 }
 
+/** Сессия пользователя (auth-roadmap п.4): устройство, адрес, активность; `current` — та, с которой сделан запрос. */
+export interface SessionInfo {
+  sid: string
+  user: string
+  createdAt: number
+  lastSeen: number
+  expiresAt: number
+  ip: string
+  userAgent: string
+  current?: boolean
+}
+/** TTL сессии по умолчанию — 30 дней без активности; `remember=false` (п.15) даст короче. */
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000
+
 /**
  * Режим прав агента (передаётся в `claude --permission-mode`). Безопасный для
  * неинтерактивного (`-p`) запуска набор: bypass (полный доступ, текущее поведение),

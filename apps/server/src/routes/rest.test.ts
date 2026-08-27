@@ -234,6 +234,31 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
+  it('сессии: список с текущей, «выйти везде» отзывает остальные, отзыв одной, админ видит и отзывает (auth-roadmap п.4)', async () => {
+    db.createUser('sess', 'sess-pass-2026-ok', 'developer')
+    const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'sess', password: 'sess-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
+    const t1 = await login('Phone/1.0'), t2 = await login('Laptop/2.0')
+    const list = (await app.inject({ method: 'GET', url: '/api/session/list', headers: { authorization: `Bearer ${t1}` } })).json() as { sessions: Array<{ current?: boolean; userAgent: string }> }
+    expect(list.sessions).toHaveLength(2)
+    expect(list.sessions.find((s) => s.current)!.userAgent).toBe('Phone/1.0')
+    // Отзыв одной чужой (своей же) сессии по sid.
+    const other = list.sessions.find((s) => !s.current)! as unknown as { sid: string }
+    expect((await app.inject({ method: 'DELETE', url: `/api/session/${other.sid}`, headers: { authorization: `Bearer ${t1}` } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${t2}` } })).statusCode).toBe(401)
+    // «Выйти везде» с t1 при третьем входе: t3 отозван, t1 жив.
+    const t3 = await login('Tablet/3.0')
+    const all = (await app.inject({ method: 'POST', url: '/api/session/logout-all', headers: { authorization: `Bearer ${t1}` } })).json() as { revoked: number }
+    expect(all.revoked).toBe(1)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${t3}` } })).statusCode).toBe(401)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${t1}` } })).statusCode).toBe(200)
+    // Админ: список и отзыв.
+    const adminList = (await inj({ method: 'GET', url: '/api/admin/users/sess/sessions' })).json() as { sessions: Array<{ sid: string }> }
+    expect(adminList.sessions).toHaveLength(1)
+    expect((await inj({ method: 'DELETE', url: `/api/admin/sessions/${adminList.sessions[0]!.sid}` })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${t1}` } })).statusCode).toBe(401)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
   it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {
     db.createUser('user', '', 'developer')
     const login = await app.inject({

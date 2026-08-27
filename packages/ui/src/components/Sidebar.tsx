@@ -268,6 +268,8 @@ export interface SidebarProps {
   currentUser?: SessionUser | null
   /** Выйти из сессии (web). */
   onLogout?: () => void
+  /** Сессии и устройства (auth-roadmap п.4); нет в desktop. */
+  onOpenSessions?: () => void
   /** Режим списка: чаты или проекты. По умолчанию 'chats'. */
   mode?: SidebarMode
   /** Сегмент «Чаты | Проекты»; не задан — переключатель скрыт (desktop/local). */
@@ -329,6 +331,7 @@ export function Sidebar({
   onOpenCi,
   currentUser,
   onLogout,
+  onOpenSessions,
   mode = 'chats',
   onModeChange,
   activeProjectId = null,
@@ -825,6 +828,12 @@ export function Sidebar({
                   <GearIcon />
                   Настройки
                 </Button>
+                {onOpenSessions && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenSessions)}>
+                    <span className="footico">📱</span>
+                    Сессии и устройства
+                  </Button>
+                )}
                 {onLogout && (
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onLogout)}>
                     <span className="footico">🚪</span>

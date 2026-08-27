@@ -24,7 +24,7 @@ import type {
 } from '@shared/ipc'
 import { REST, type DesktopMigrationBundle, type ServerFileInfo } from '@shared/protocol'
 import type { FsResult } from '@shared/agentProtocol'
-import type { SessionUser } from '@shared/types'
+import type { SessionUser, SessionInfo } from '@shared/types'
 import { WsClient } from './wsClient'
 import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'
 import type { RendererCiBridge } from './ciBridge'
@@ -255,6 +255,20 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       if (!res.ok) throw new Error('Не удалось завершить сессию. Попробуйте ещё раз.')
       setToken(null)
       ws.reconnect() // рвём авторизованное соединение
+    },
+    // Сессии (auth-roadmap п.4): список устройств, «выйти везде» (кроме текущей), отзыв одной.
+    sessions: async () => {
+      const res = await fetch(httpBase + REST.sessionList, { headers: authHeaders() })
+      if (!res.ok) throw new Error('Не удалось получить список сессий')
+      return ((await res.json()) as { sessions: SessionInfo[] }).sessions
+    },
+    logoutAll: async () => {
+      const res = await fetch(httpBase + REST.sessionLogoutAll, { method: 'POST', headers: authHeaders() })
+      if (!res.ok) throw new Error('Не удалось завершить другие сессии')
+    },
+    revokeSession: async (sid) => {
+      const res = await fetch(httpBase + REST.sessionRevoke(sid), { method: 'DELETE', headers: authHeaders() })
+      if (!res.ok) throw new Error('Не удалось завершить сессию')
     },
     // Выпускает preview-cookie из текущего Bearer-токена: восстановленная из
     // localStorage сессия иначе остаётся без cookie и iframe превью ловит 401.

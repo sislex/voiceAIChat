@@ -12,7 +12,7 @@ import type {
   AdminMakeStats
 } from '@shared/admin'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
-import type { Conversation, Message, LlmProvider } from '@shared/types'
+import type { Conversation, Message, LlmProvider, SessionInfo } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { Button, Dialog, Skeleton, RefreshIndicator, EmptyState, ErrorState, ConfirmDialog } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from './loadState'
@@ -46,6 +46,10 @@ export interface UsersAdminProps {
   onSetBlocked: (name: string, blocked: boolean) => void
   onDelete: (name: string) => void
   onLoadUsage: (unit: UsageUnit, from?: number, to?: number, conversationId?: string) => void
+  /** Сессии выбранного пользователя (auth-roadmap п.4). */
+  sessions?: SessionInfo[] | null
+  onLoadSessions?: () => void
+  onRevokeSession?: (sid: string) => void
   onOpenConversation: (id: string) => void
   engines: AdminLlmEngine[]
   enginesStatus?: LoadStatus
@@ -124,6 +128,9 @@ export function UsersAdmin({
   onSetBlocked,
   onDelete,
   onLoadUsage,
+  sessions,
+  onLoadSessions,
+  onRevokeSession,
   onOpenConversation,
   engines,
   enginesStatus = 'ready',
@@ -303,6 +310,21 @@ export function UsersAdmin({
                 </span>
               </div>
 
+              {onLoadSessions && (
+                <details className="uadmin-sessions" data-testid="admin-sessions" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) onLoadSessions() }}>
+                  <summary>Сессии{sessions ? ` (${sessions.length})` : ''}</summary>
+                  {sessions === null || sessions === undefined ? <p className="fsub">Загрузка…</p> : sessions.length === 0 ? <p className="fsub">Активных сессий нет.</p> : (
+                    <ul className="sessions-list" role="list">
+                      {sessions.map((s) => (
+                        <li key={s.sid} className="sessions-item">
+                          <div><strong>{s.userAgent || 'устройство'}</strong><small>{s.ip || 'адрес неизвестен'} · вход {new Date(s.createdAt).toLocaleString('ru-RU')} · активность {new Date(s.lastSeen).toLocaleString('ru-RU')}</small></div>
+                          {onRevokeSession && <Button size="sm" variant="ghost" onClick={() => onRevokeSession(s.sid)}>Завершить</Button>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </details>
+              )}
               <div className="useg" role="tablist" aria-label="Статистика пользователя">
                 <button type="button" role="tab" aria-selected={tab === 'access'} className={tab === 'access' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('access')}>Доступ к моделям</button>
                 {isAdmin && <button type="button" role="tab" aria-selected={tab === 'machines'} className={tab === 'machines' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('machines')}>Машины пользователя</button>}

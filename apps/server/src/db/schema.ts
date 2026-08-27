@@ -207,6 +207,18 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sessions (
+  sid TEXT PRIMARY KEY,
+  user_name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  ip TEXT NOT NULL DEFAULT '',
+  user_agent TEXT NOT NULL DEFAULT '',
+  revoked_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_name);
+
 CREATE TABLE IF NOT EXISTS session_revocations (
   token_hash TEXT PRIMARY KEY,
   created_at INTEGER NOT NULL

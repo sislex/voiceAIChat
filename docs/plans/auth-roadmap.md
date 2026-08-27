@@ -10,7 +10,7 @@
 | 1 | Rate-limit `POST /api/session/login`: 10 попыток / 10 мин по IP и по имени, 429 + Retry-After | ✅ `SlidingWindowLimiter` ×2 в `users/auth.ts` (по IP и по имени, скользящее окно), 429 + `Retry-After` + `retryAfterSec` в теле |
 | 2 | Политика пароля: запрет пустого, минимум 10 символов; проверка по утечкам (HIBP k-anonymity) — опционально | ✅ `checkPasswordPolicy` (`@shared/passwordPolicy`: пустой/короче 10/повтор/частый/содержит логин) на создании пользователя → 400; HIBP k-anonymity при `VC_HIBP_CHECK=1` (fail-open, 3 с) |
 | 3 | Блокировка аккаунта после N неудач (счётчик в БД), уведомление админу | ✅ колонки `failed_logins/locked_until/lock_reason`: 5 подряд → замок 15 мин (423 + Retry-After), 10 → `blocked` с причиной `auto`; админка показывает «замок до…»/«заблокирован автоматически», в лог сервера — warn; разблокировка снимает всё |
-| 4 | Сессии с TTL и отзывом: таблица сессий (устройство, IP, last seen), «выйти везде», список в админке | |
+| 4 | Сессии с TTL и отзывом: таблица сессий (устройство, IP, last seen), «выйти везде», список в админке | ✅ таблица `sessions` (sid из токена, UA/IP/last_seen/expires 30 дней, отзыв), `/api/session/list|logout-all|:sid`, админ `GET users/:name/sessions`, `DELETE sessions/:sid`; диалог «Сессии и устройства» в меню аккаунта, раздел «Сессии» в админке |
 | 5 | Токен в HttpOnly-cookie + CSRF-токен для мутаций вместо localStorage | |
 | 6 | 2FA (TOTP) для admin; passkeys/WebAuthn как следующий шаг | |
 | 7 | Журнал безопасности: вход/выход/смена пароля/неудачи с IP и UA, страница в админке | |

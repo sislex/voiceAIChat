@@ -141,6 +141,12 @@ export const REST = {
   sessionLogin: '/api/session/login',
   sessionMe: '/api/session/me',
   sessionLogout: '/api/session/logout',
+  /** Сессии текущего пользователя и «выйти везде» (auth-roadmap п.4). */
+  sessionList: '/api/session/list',
+  sessionLogoutAll: '/api/session/logout-all',
+  sessionRevoke: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
+  adminSessions: (user: string) => `/api/admin/users/${encodeURIComponent(user)}/sessions`,
+  adminSessionRevoke: (sid: string) => `/api/admin/sessions/${encodeURIComponent(sid)}`,
   sessionPreview: '/api/session/preview',
   conversations: '/api/conversations',
   /** Make: состояние/файлы проекта разговора. */
