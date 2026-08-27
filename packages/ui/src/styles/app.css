@@ -6848,9 +6848,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-more-menu > button[disabled] { opacity: .5; cursor: default; }
 .make-more-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 13px; }
 .make-more-row .make-lang { display: inline-block; }
-.make-dialog > :not(.mdhead):not(.vc-dialog-foot) { padding-left: 22px; padding-right: 22px; }
-.make-dialog > .mdhead + :not(.vc-dialog-foot) { padding-top: 14px; }
-.make-dialog > :last-child:not(.vc-dialog-foot) { padding-bottom: 18px; }
 .make-dialog .fsub, .make-dialog .make-ask-field, .make-dialog .make-publish-pin label { font-size: 12.5px; line-height: 1.45; }
 .make-dialog .tin, .make-dialog textarea.tin { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13.5px; background: var(--surface); color: var(--text); }
 .make-dialog .tin:focus { outline: 2px solid var(--accent); outline-offset: -1px; }

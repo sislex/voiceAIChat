@@ -95,7 +95,7 @@ export function MakeTokensDialog({ conversationId, api, files, onClose, onWritte
 
   const source = target ?? 'tokens.css'
   return (
-    <Dialog className="make-dialog" title="Дизайн-токены" ariaLabel="Дизайн-токены" size="md" onClose={onClose} testId="make-tokens"
+    <Dialog className="make-dialog" padded title="Дизайн-токены" ariaLabel="Дизайн-токены" size="md" onClose={onClose} testId="make-tokens"
       footer={tokens.length > 0 ? <Button variant="primary" size="sm" disabled={changed.length === 0 || busy} loading={busy} onClick={() => void save()}>Сохранить{changed.length > 0 ? ` (${changed.length})` : ''}</Button> : undefined}>
       <p className="make-ideas-lead">CSS-переменные из <code>:root</code> файла <code>{source}</code>. Меняются здесь — подхватывают все компоненты; ассистент тоже использует их вместо жёстких значений.</p>
       {css === null ? <p className="fsub">Загрузка…</p> : tokens.length === 0 ? (
