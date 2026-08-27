@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canCompleteAutomation, canCompleteComponentQa, canCompleteQa, canConfirmDevelopmentReadiness, componentQaLaunchReasons, componentQaSemanticVersion, integrationTestGate, integrationTestSemanticVersion, qaProgress, validateIntegrationTestDiff, validateQaResult, type ComponentQaRun, type DevelopmentReadiness, type IntegrationTestRun, type QaSession, type TestCaseDefinition } from './qa'
+import { canCompleteAutomation, canCompleteComponentQa, canCompleteQa, canConfirmDevelopmentReadiness, componentQaLaunchReasons, componentQaSemanticVersion, integrationTestGate, integrationTestSemanticVersion, normalizeDeferredCheckSources, qaProgress, validateIntegrationTestDiff, validateQaResult, type ComponentQaRun, type DevelopmentReadiness, type IntegrationTestRun, type QaSession, type TestCaseDefinition } from './qa'
 
 function session(statuses: Array<'not_tested' | 'in_progress' | 'passed' | 'failed' | 'blocked' | 'not_applicable' | 'stale'>): QaSession {
   return {
@@ -65,6 +65,52 @@ describe('development readiness gate', () => {
       'missing_code_source', 'critical_source_unavailable:code'
     ]))
   })
+  it('normalizes only an explicitly deferred required test result', () => {
+    const input: DevelopmentReadiness = {
+      ...ready(),
+      testCases: [testCase({
+        description: 'Будущий прогон TypeScript',
+        notAutomatedReason: 'Ещё не выполнен: в текущем режиме подготовки запуск запрещён',
+        comments: 'Запустить на следующем этапе'
+      })],
+      sources: [
+        { id: 'deferred', kind: 'tests', status: 'unavailable', summary: 'Результат ещё не выполнен: в текущем режиме запуск запрещён', refs: [], critical: true },
+        { id: 'critical', kind: 'code', status: 'unavailable', summary: 'Критичный файл недоступен', refs: [], critical: true },
+        { id: 'ambiguous', kind: 'tests', status: 'unavailable', summary: 'Результаты тестов недоступны', refs: [], critical: true }
+      ]
+    }
+
+    normalizeDeferredCheckSources(input)
+
+    expect(input.sources?.map((source) => source.critical)).toEqual([false, true, true])
+  })
+
+  it('keeps a deferred check required and outside the critical-source gate', () => {
+    const input: DevelopmentReadiness = {
+      ...ready(),
+      schemaVersion: 2,
+      goal: 'Goal', scope: ['Scope'], outOfScope: ['Out'],
+      acceptanceCriteriaItems: [{ id: 'AC-1', title: 'Checks pass', precondition: 'Allowed stage', action: 'Run checks', observableResult: 'Exit 0' }],
+      testCases: [testCase({
+        description: 'Будущий прогон UI',
+        notAutomatedReason: 'Ещё не выполнен из-за прямого запрета текущего этапа',
+        comments: 'Обязателен на следующем этапе'
+      })],
+      sources: [
+        { id: 'kb', kind: 'knowledge', status: 'available', summary: 'Read', refs: ['kb'], critical: true },
+        { id: 'code', kind: 'code', status: 'available', summary: 'Read', refs: ['qa.ts'], critical: true },
+        { id: 'tests', kind: 'tests', status: 'unavailable', summary: 'Будущий прогон ещё не выполнен из-за ограничений текущего этапа', refs: [], critical: true }
+      ]
+    }
+
+    normalizeDeferredCheckSources(input)
+
+    expect(input.testCases[0].required).toBe(true)
+    expect(canConfirmDevelopmentReadiness(input).reasons).not.toContain('critical_source_unavailable:tests')
+    input.sources![2].critical = true
+    expect(canConfirmDevelopmentReadiness(input).reasons).toContain('critical_source_unavailable:tests')
+  })
+
   it('requires Storybook coverage or an explicit alternative for UI work', () => {
     const input = ready()
     input.uiImpact = 'new_components'

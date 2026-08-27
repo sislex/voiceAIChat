@@ -103,6 +103,30 @@ export interface DevelopmentReadiness {
 }
 export interface ReadinessCheck { allowed: boolean; reasons: string[] }
 
+const DEFERRED_CHECK_TEXT = /(?:ещ[её] не (?:запущ|выполн|провед)|будущ(?:ий|его) (?:прогон|запуск|этап)|следующ(?:ем|его) (?:этап|шаг)|not yet (?:run|executed)|future (?:test )?run)/i
+const CURRENT_STAGE_LIMIT_TEXT = /(?:текущ(?:ий|его|ем) (?:режим|этап)|режим(?:е)? подготовки|прям(?:ой|ого) запрет|запуск (?:пока )?запрещ[её]н|read-only|current (?:stage|mode)|explicitly prohibited)/i
+
+/**
+ * Repairs only the unambiguous compatibility case produced by preparation:
+ * a future required test run was represented as an unavailable critical source.
+ * The quality check remains required; only its not-yet-existing result stops being
+ * treated as a prerequisite research source.
+ */
+export function normalizeDeferredCheckSources(input: DevelopmentReadiness): DevelopmentReadiness {
+  const requiredDeferredChecks = input.testCases.filter((testCase) =>
+    testCase.required
+    && DEFERRED_CHECK_TEXT.test(`${testCase.description} ${testCase.comments} ${testCase.notAutomatedReason}`)
+    && CURRENT_STAGE_LIMIT_TEXT.test(`${testCase.description} ${testCase.comments} ${testCase.notAutomatedReason}`)
+  )
+  if (requiredDeferredChecks.length === 0) return input
+  for (const source of input.sources ?? []) {
+    if (source.kind !== 'tests' || source.status !== 'unavailable' || !source.critical || source.refs.length !== 0) continue
+    if (!DEFERRED_CHECK_TEXT.test(source.summary) || !CURRENT_STAGE_LIMIT_TEXT.test(source.summary)) continue
+    source.critical = false
+  }
+  return input
+}
+
 /** Pure quality gate used before entering Ready for Development. */
 export function canConfirmDevelopmentReadiness(input: DevelopmentReadiness): ReadinessCheck {
   const reasons: string[] = []
