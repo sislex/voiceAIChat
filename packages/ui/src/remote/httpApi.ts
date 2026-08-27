@@ -109,6 +109,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:upload': ({ conversationId, path, dataBase64 }) => req(REST.makeUpload(conversationId), { method: 'POST', body: JSON.stringify({ path, dataBase64 }) }),
     'make:search': ({ conversationId, query }) => req(`${REST.makeSearch(conversationId)}?q=${encodeURIComponent(query)}`),
     'make:stories': ({ conversationId }) => req(REST.makeStories(conversationId)),
+    'make:snapshotDiff': ({ conversationId, snapshotId }) => req(REST.makeSnapshotDiff(conversationId, snapshotId)),
+    'make:restoreFile': ({ conversationId, snapshotId, path }) => req(REST.makeRestoreFile(conversationId, snapshotId), { method: 'POST', body: JSON.stringify({ path }) }),
+    'make:import': ({ conversationId, dataBase64, mode }) => req(REST.makeImport(conversationId), { method: 'POST', body: JSON.stringify({ dataBase64, mode }) }),
+    'make:importUrl': ({ conversationId, url, mode }) => req(REST.makeImportUrl(conversationId), { method: 'POST', body: JSON.stringify({ url, mode }) }),
     'conversations:createDraft': (body) =>
       req(REST.conversationDraft, { method: 'POST', body: JSON.stringify(body) }),
     'kanbanAssistant:get': ({ projectId, conversationId }) => req(`/api/projects/${encodeURIComponent(projectId)}/kanban-assistant${conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : ''}`),

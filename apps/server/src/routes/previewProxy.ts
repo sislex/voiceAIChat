@@ -119,7 +119,7 @@ export function publicLookupResult(addresses: ResolvedAddress[], all: boolean): 
   return all ? addresses : address
 }
 
-async function assertPublicHost(hostname: string): Promise<void> {
+export async function assertPublicHost(hostname: string): Promise<void> {
   const literal = hostname.replace(/^\[|\]$/g, '')
   if (isIP(literal)) {
     if (!isPublicAddress(literal)) throw new PreviewProxyError(403, 'Адрес сайта недоступен для превью')

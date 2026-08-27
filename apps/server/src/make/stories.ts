@@ -48,6 +48,7 @@ export function renderStoriesPage(file: string, story: string, indexHtml: string
   <script type="module">
     const file = ${JSON.stringify(modulePath)};
     const storyName = ${JSON.stringify(story)};
+    (function(){ var levels=['log','info','warn','error']; function fmt(a){ try { return typeof a==='string'?a:(a instanceof Error?a.message:JSON.stringify(a)); } catch(e){ return String(a); } } function send(level,args){ try { window.parent.postMessage({ type:'vc-make.console', level:level, text:Array.prototype.map.call(args,fmt).join(' ').slice(0,2000), at:Date.now() }, '*'); } catch(e){} } levels.forEach(function(l){ var o=console[l]; console[l]=function(){ send(l,arguments); if(o) o.apply(console,arguments); }; }); window.addEventListener('error', function(e){ send('error',[e.message]); }); })();
     const fail = (message) => { const el = document.createElement('pre'); el.className = 'vc-story-error'; el.textContent = message; document.getElementById('root').replaceChildren(el); };
     window.addEventListener('error', (e) => fail(String(e.message || e.error)));
     window.addEventListener('unhandledrejection', (e) => fail(String(e.reason && e.reason.message || e.reason)));

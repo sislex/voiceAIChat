@@ -112,6 +112,38 @@ describe('MakeWorkspaces', () => {
     expect(again.filter((i) => i.kind === 'missing-file').map((i) => i.message)).toContain('Ссылка на отсутствующий файл: ../img/bg.png')
   })
 
+  it('snapshotDiff/restoreFile: статусы файлов и возврат одного файла', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'index.html', 'v1')
+    const snap = (await ws.snapshot(CONV, 's')).snapshots[0]!
+    await ws.write(CONV, 'index.html', 'v2-changed')
+    await ws.write(CONV, 'new.js', '1')
+    await ws.delete(CONV, 'app.js')
+    const diff = await ws.snapshotDiff(CONV, snap.id)
+    const by = Object.fromEntries(diff.files.map((f) => [f.path, f.status]))
+    expect(by).toMatchObject({ 'index.html': 'changed', 'new.js': 'added', 'app.js': 'removed', 'styles.css': 'same' })
+    await ws.restoreFile(CONV, snap.id, 'index.html')
+    expect((await ws.read(CONV, 'index.html')).content).toBe('v1')
+    expect((await ws.list(CONV)).map((f) => f.path)).toContain('new.js')
+    await expect(ws.restoreFile(CONV, snap.id, 'nope.txt')).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('importFiles: replace очищает, merge дописывает; снимок перед импортом; exportZip с vite добавляет package.json', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.importFiles(CONV, [{ path: 'index.html', data: Buffer.from('<h1>imp</h1>') }, { path: 'src/a.jsx', data: Buffer.from('export const A = 1') }, { path: '../evil', data: Buffer.from('x') }], 'replace')
+    expect((await ws.list(CONV)).map((f) => f.path)).toEqual(['index.html', 'src/a.jsx'])
+    expect((await ws.snapshots(CONV)).map((s) => s.label)).toContain('Перед импортом (замена)')
+    await ws.importFiles(CONV, [{ path: 'extra.css', data: Buffer.from('b{}') }], 'merge')
+    expect((await ws.list(CONV)).map((f) => f.path)).toContain('index.html')
+    const zip = (await ws.exportZip(CONV, { vite: true })).toString('latin1')
+    expect(zip).toContain('package.json')
+    expect(zip).toContain('@vitejs/plugin-react')
+    expect(zip).toContain('vite.config.js')
+    expect((await ws.exportZip(CONV)).toString('latin1')).not.toContain('package.json')
+  })
+
   it('check: синтаксическая ошибка в .tsx → compile-error со строкой', async () => {
     const ws = await fresh()
     await ws.write(CONV, 'index.html', '<script type="module" src="src/a.tsx"></script>')

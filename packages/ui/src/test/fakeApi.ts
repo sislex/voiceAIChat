@@ -1,4 +1,4 @@
-import { MAKE_SCAFFOLD, type MakeCheckIssue } from '@shared/make'
+import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakeSnapshotDiffEntry } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
@@ -31,6 +31,8 @@ export interface FakeApi extends RendererApi {
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const makeStore = new Map<string, Map<string, string>>()
   const makeSnapStore = new Map<string, Array<{ id: string; createdAt: number; label: string; files: number }>>()
+  /** Содержимое файлов на момент снимка — для diff и восстановления одного файла. */
+  const makeSnapContents = new Map<string, Map<string, string>>()
   const makeRev = new Map<string, number>()
   const makePub = new Map<string, { token: string; publishedAt: number; url: string }>()
   const makeFiles = (id: string): Map<string, string> => {
@@ -247,11 +249,43 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         stories: [...content.matchAll(/^export\s+const\s+(\w+)/gm)].map((m) => m[1]!)
       }))
     }),
+    'make:snapshotDiff': async ({ conversationId, snapshotId }) => {
+      const snap = makeSnapContents.get(snapshotId)
+      const now = makeFiles(conversationId)
+      const files: MakeSnapshotDiffEntry[] = []
+      for (const [path, content] of now) {
+        const old = snap?.get(path)
+        files.push(old === undefined ? { path, status: 'added', before: null, after: content.length } : { path, status: old === content ? 'same' : 'changed', before: old.length, after: content.length })
+      }
+      for (const [path, old] of snap ?? []) if (!now.has(path)) files.push({ path, status: 'removed', before: old.length, after: null })
+      return { snapshotId, files: files.sort((a, b) => a.path.localeCompare(b.path)) }
+    },
+    'make:restoreFile': async ({ conversationId, snapshotId, path }) => {
+      const old = makeSnapContents.get(snapshotId)?.get(path)
+      if (old === undefined) throw new Error('В снимке нет файла')
+      makeFiles(conversationId).set(path, old)
+      makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1)
+      return makeState(conversationId)
+    },
+    'make:import': async ({ conversationId, dataBase64, mode }) => {
+      // Фейк не разбирает ZIP: base64 содержит JSON {path: content}.
+      const files = JSON.parse(atob(dataBase64)) as Record<string, string>
+      if (mode === 'replace') makeFiles(conversationId).clear()
+      for (const [path, content] of Object.entries(files)) makeFiles(conversationId).set(path, content)
+      makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1)
+      return makeState(conversationId)
+    },
+    'make:importUrl': async ({ conversationId, url, mode }) => {
+      if (mode === 'replace') makeFiles(conversationId).clear()
+      makeFiles(conversationId).set('index.html', `<!-- импортировано из ${url} --><h1>imported</h1>`)
+      makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1)
+      return makeState(conversationId)
+    },
     'make:upload': async ({ conversationId, path, dataBase64 }) => { makeFiles(conversationId).set(path, `<binary ${dataBase64.length}>`); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
     'make:write': async ({ conversationId, path, content }) => { makeFiles(conversationId).set(path, content); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
     'make:delete': async ({ conversationId, path }) => { makeFiles(conversationId).delete(path); return makeState(conversationId) },
     'make:rename': async ({ conversationId, from, to }) => { const files = makeFiles(conversationId); const c = files.get(from) ?? ''; files.delete(from); files.set(to, c); return makeState(conversationId) },
-    'make:snapshot': async ({ conversationId, label }) => { makeSnaps(conversationId).unshift({ id: `s${Date.now()}`, createdAt: Date.now(), label: label ?? 'Снимок', files: makeFiles(conversationId).size }); return makeState(conversationId) },
+    'make:snapshot': async ({ conversationId, label }) => { const id = `s${Date.now()}-${makeSnaps(conversationId).length}`; makeSnapContents.set(id, new Map(makeFiles(conversationId))); makeSnaps(conversationId).unshift({ id, createdAt: Date.now(), label: label ?? 'Снимок', files: makeFiles(conversationId).size }); return makeState(conversationId) },
     'make:restore': async ({ conversationId }) => makeState(conversationId),
     'make:publish': async ({ conversationId }) => { makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/' }); return makeState(conversationId) },
     'make:unpublish': async ({ conversationId }) => { makePub.delete(conversationId); return makeState(conversationId) },

@@ -1,7 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeProjectState, MakeSearchMatch, MakeStoryFile } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -151,6 +151,12 @@ export interface IpcInvokeMap {
   'make:upload': { arg: { conversationId: string; path: string; dataBase64: string }; result: MakeProjectState }
   'make:search': { arg: { conversationId: string; query: string }; result: { matches: MakeSearchMatch[] } }
   'make:stories': { arg: { conversationId: string }; result: { files: MakeStoryFile[] } }
+  'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
+  'make:restoreFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeProjectState }
+  /** Импорт ZIP (base64) — replace очищает проект, merge дописывает поверх. */
+  'make:import': { arg: { conversationId: string; dataBase64: string; mode: MakeImportMode }; result: MakeProjectState }
+  /** Импорт страницы по URL: HTML + same-origin css/js/картинки. */
+  'make:importUrl': { arg: { conversationId: string; url: string; mode: MakeImportMode }; result: MakeProjectState }
   'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' }; result: Conversation }
   /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
   'conversations:createDraft': {
@@ -898,6 +904,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:upload',
   'make:search',
   'make:stories',
+  'make:snapshotDiff',
+  'make:restoreFile',
+  'make:import',
+  'make:importUrl',
   'conversations:create',
   'conversations:createDraft',
   'conversations:get',

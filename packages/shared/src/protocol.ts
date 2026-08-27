@@ -154,6 +154,10 @@ export const REST = {
   makeTemplate: (id: string) => `/api/make/${encodeURIComponent(id)}/template`,
   makeUpload: (id: string) => `/api/make/${encodeURIComponent(id)}/upload`,
   makeSearch: (id: string) => `/api/make/${encodeURIComponent(id)}/search`,
+  makeSnapshotDiff: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/diff`,
+  makeRestoreFile: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/restore-file`,
+  makeImport: (id: string) => `/api/make/${encodeURIComponent(id)}/import`,
+  makeImportUrl: (id: string) => `/api/make/${encodeURIComponent(id)}/import-url`,
   makeStories: (id: string) => `/api/make/${encodeURIComponent(id)}/stories`,
   /** Страница-раннер сториз внутри превью (cookie-аутентификация, как у превью). */
   makeStoriesPage: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/__stories__`,
