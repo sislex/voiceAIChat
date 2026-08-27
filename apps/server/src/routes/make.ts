@@ -56,6 +56,12 @@ export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
   document.addEventListener('mousemove', onMove, true);
   document.addEventListener('click', onClick, true);
   window.addEventListener('scroll', function(){ if (on && hovered) place(hovered) }, true);
+  // Состояние страницы (скролл, hash) — родитель восстановит его после перезагрузки превью по make.changed.
+  var scrollTimer = null;
+  function reportState(){ try { window.parent.postMessage({ type: 'vc-make.state', x: window.scrollX, y: window.scrollY, hash: location.hash }, '*'); } catch(e){} }
+  window.addEventListener('scroll', function(){ clearTimeout(scrollTimer); scrollTimer = setTimeout(reportState, 120); }, true);
+  window.addEventListener('hashchange', reportState);
+  window.addEventListener('message', function(e){ var d = e.data; if (!d || d.type !== 'vc-make.restore') return; if (d.hash && d.hash !== location.hash) { try { location.hash = d.hash; } catch(err){} } if (typeof d.y === 'number') { window.scrollTo(d.x || 0, d.y); setTimeout(function(){ window.scrollTo(d.x || 0, d.y); }, 250); } });
   window.parent.postMessage({ type: 'vc-make.ready' }, '*');
 })();
 </script>`

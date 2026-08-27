@@ -437,4 +437,16 @@ describe('MakePane', () => {
     await userEvent.click(within(screen.getByTestId('make-console')).getByRole('button', { name: 'В чат' }))
     expect(onInsertToChat).toHaveBeenCalledWith(expect.stringContaining('img/missing.png → 404'))
   })
+
+  it('скролл и hash превью восстанавливаются после перезагрузки iframe', async () => {
+    const { emit } = renderPane()
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.state', x: 0, y: 640, hash: '#menu' }, source: frame.contentWindow }))
+    emit({ conversationId: CONV, rev: 9, paths: ['index.html'] })
+    await waitFor(() => expect(screen.getByTitle('Превью проекта')).not.toBe(frame))
+    const next = screen.getByTitle('Превью проекта') as HTMLIFrameElement
+    const post = vi.spyOn(next.contentWindow!, 'postMessage')
+    fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.ready' }, source: next.contentWindow }))
+    expect(post).toHaveBeenCalledWith({ type: 'vc-make.restore', x: 0, y: 640, hash: '#menu' }, '*')
+  })
 })

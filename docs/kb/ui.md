@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: 0755af28
+checked: 3d135388
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -480,6 +480,12 @@ lazy-чанке `monacoSetup`. **Модели проекта** (п.2): `syncProj
 тестов) после последней правки `save(silent)` без тоста; Cmd/Ctrl+S — как раньше. После сохранения jsx/tsx/ts
 панель вызывает `make:check` и, если есть проблемы, показывает баннер; ошибки `compile-error` текущего файла
 уходят в `CodeEditor` пропом `markers` → `monaco.editor.setModelMarkers` (красные подчёркивания).
+
+**Скролл/якорь превью** (п.11): панель раз в 500 мс читает `scrollX/scrollY/location.hash` same-origin iframe в
+`pageStateRef` (события scroll, инициированные снаружи, в iframe не доходят надёжно) и после `onLoad` нового
+iframe восстанавливает их напрямую (`scrollTo` + повторы через 250/800 мс); параллельно скрипт превью шлёт
+`vc-make.state`, а панель отвечает `vc-make.restore` на `vc-make.ready` — второй путь для тестов и на случай, если
+поллинг не успел. Страница не прыгает наверх после правок ассистента.
 
 **Сеть превью** (п.9): инспектор-скрипт оборачивает `fetch` и `XMLHttpRequest.open/send`, шлёт
 `vc-make.network {method,url,status,ok,ms,kind}`; под превью две вкладки «Консоль | Сеть» (`bottomTab`), список
