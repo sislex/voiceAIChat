@@ -6739,3 +6739,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-shots-compare figure { margin: 0; display: grid; gap: 4px; }
 .make-shots-compare img { width: 100%; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .make-shots-compare figcaption { color: var(--text-dim); text-align: center; }
+
+/* Статус play-функции у стори. */
+.make-play { margin-left: 6px; font-size: 11px; }
+.make-play--passed { color: #1a7f37; }
+.make-play--failed { color: var(--danger); }
+.make-play--pending { color: var(--text-dim); }

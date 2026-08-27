@@ -259,7 +259,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       files: [...makeFiles(conversationId)].filter(([path]) => /\.stories\.(jsx|tsx)$/.test(path)).map(([path, content]) => ({
         path,
         title: content.match(/title\s*:\s*['"]([^'"]+)['"]/)?.[1] ?? path,
-        stories: [...content.matchAll(/^export\s+const\s+(\w+)/gm)].map((m) => m[1]!)
+        stories: [...content.matchAll(/^export\s+const\s+(\w+)/gm)].map((m) => m[1]!),
+        withPlay: [...content.matchAll(/^export\s+const\s+(\w+)\s*=\s*\{[^\n]*play/gm)].map((m) => m[1]!)
       }))
     }),
     'make:snapshotDiff': async ({ conversationId, snapshotId }) => {

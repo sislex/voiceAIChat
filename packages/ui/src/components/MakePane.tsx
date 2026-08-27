@@ -172,6 +172,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [argOverrides, setArgOverrides] = useState<Record<string, unknown>>({})
   const [argOptions, setArgOptions] = useState<Record<string, string[]>>({})
   const [argTypes, setArgTypes] = useState<Record<string, ArgType>>({})
+  // Результаты play-функций (п.18): ключ file::story → passed/failed + ошибка.
+  const [playResults, setPlayResults] = useState<Record<string, { status: 'passed' | 'failed'; ms: number; error?: string }>>({})
   const [ideasOpen, setIdeasOpen] = useState(false)
   // Консоль превью: строки из iframe (console.* и ошибки), сбрасываются при перезагрузке превью.
   const [consoleLines, setConsoleLines] = useState<MakeConsoleLine[]>([])
@@ -202,6 +204,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const onMessage = (e: MessageEvent): void => {
       const d = e.data as { type?: string; args?: Record<string, unknown>; options?: Record<string, string[]>; argTypes?: Record<string, ArgType> } | null
       if (d?.type === 'vc-make.story' && e.source === storyFrameRef.current?.contentWindow) { setStoryArgs(d.args ?? {}); setArgOptions(d.options ?? {}); setArgTypes(d.argTypes ?? {}); setArgOverrides({}) }
+      if (d?.type === 'vc-make.play' && e.source === storyFrameRef.current?.contentWindow) {
+        const r = d as unknown as { file: string; story: string; status: 'passed' | 'failed'; ms: number; error?: string }
+        setPlayResults((prev) => ({ ...prev, [`${r.file}::${r.story}`]: { status: r.status, ms: r.ms, error: r.error } }))
+      }
       if (d?.type === 'vc-make.network' && e.source === frameRef.current?.contentWindow) {
         const n = d as unknown as MakeNetworkEntry
         setNetwork((prev) => [...prev.slice(-199), n])
@@ -1088,7 +1094,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   const on = story?.file === file.path && story.name === name
                   return (
                     <div className={on ? 'make-tree-item on' : 'make-tree-item'} key={name}>
-                      <button type="button" className="make-tree-file" aria-current={on ? 'true' : undefined} onClick={() => setStory({ file: file.path, name })}>{name}</button>
+                      <button type="button" className="make-tree-file" aria-current={on ? 'true' : undefined} onClick={() => setStory({ file: file.path, name })}>
+                        {name}
+                        {(() => { const r = playResults[`${file.path}::${name}`]; const has = file.withPlay?.includes(name); if (!has && !r) return null; return <span className={`make-play make-play--${r?.status ?? 'pending'}`} title={r ? (r.status === 'passed' ? `play прошёл за ${r.ms} мс` : `play упал: ${r.error ?? ''}`) : 'есть play-функция — запустится при открытии'}>{r ? (r.status === 'passed' ? '✓' : '✗') : '▷'}</span> })()}
+                      </button>
                     </div>
                   )
                 })}
@@ -1111,6 +1120,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             ) : storyFiles && storyFiles.length > 0 ? (
               <EmptyState title="Выберите стори" description="Слева — компоненты проекта и их состояния." />
             ) : null}
+            {story && playResults[`${story.file}::${story.name}`]?.status === 'failed' && (
+              <div className="make-autofix" role="alert" data-testid="make-play-failed">
+                <span>play-функция упала: <code>{playResults[`${story.file}::${story.name}`]!.error}</code></span>
+                <span className="make-autofix-actions">
+                  {(onAskAssistant || onInsertToChat) && <Button size="sm" variant="primary" onClick={() => (onAskAssistant ?? onInsertToChat)!(`В стори «${story.name}» (${story.file}) упала play-функция: ${playResults[`${story.file}::${story.name}`]!.error}. Найди причину (компонент или сам тест) и исправь. `)}>Исправить</Button>}
+                </span>
+              </div>
+            )}
             {story && shotsOpen && storyShots.length > 0 && (
               <section className="make-shots" aria-label="Снимки стори" data-testid="make-shots">
                 <div className="make-shots-strip">

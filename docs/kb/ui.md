@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: 38c1a131
+checked: 1c356399
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -553,7 +553,10 @@ read-only, side-by-side) или построчный фолбэк в jsdom; сл
 **Вкладка «Компоненты»** (`mode: 'stories'`, `make-stories`): слева файлы `*.stories.(jsx|tsx)` из
 `make:stories` (заголовок из `title`, стори — именованные экспорты), справа iframe на страницу-раннер
 `REST.makeStoriesPage(conv)?file=&story=&rev=` (сервер собирает HTML: import map и `<link rel=stylesheet>`
-из index.html проекта, рендер одной стори через `react-dom/client`). Кнопка «📸 Снимок» снимает PNG раннера стори (`captureIframeScreenshot`) и сохраняет через `make:shot`; «Снимки (N)»
+из index.html проекта, рендер одной стори через `react-dom/client`). **play-функции** (п.18): раннер после рендера вызывает `story.play ?? meta.play({canvasElement, args, step})` и шлёт
+`vc-make.play {status, ms, error}`; в списке стори маркер ▷ (есть play, по `withPlay` из `parseStoryFile`) →
+✓/✗ с подсказкой, при падении — баннер с текстом ошибки и «Исправить» ассистенту.
+Кнопка «📸 Снимок» снимает PNG раннера стори (`captureIframeScreenshot`) и сохраняет через `make:shot`; «Снимки (N)»
 открывает ленту миниатюр текущей стори, два клика выбирают «до/после» — сравнение рядом (`make-shots-compare`).
 Кнопки «Галерея» (`REST.makeGalleryPage`) и «Поделиться» (публичная ссылка на стори; без публикации открывает
 диалог «Опубликовать»). Кнопка «Работать над компонентом»
