@@ -170,7 +170,13 @@ export interface AdminMakeUserStat {
   views: number
 }
 
+/** Диск с данными (roadmap-4 п.40): `alert` — свободно меньше `MAKE_DISK_ALERT_BYTES`. */
+export interface AdminDiskStats { totalBytes: number; freeBytes: number; alert: boolean }
+export const MAKE_DISK_ALERT_BYTES = 10 * 1024 ** 3
+
 export interface AdminMakeStats {
+  /** Свободное место на разделе с данными Make; null — узнать не удалось. */
+  disk?: AdminDiskStats | null
   projects: number
   bytes: number
   filesBytes: number

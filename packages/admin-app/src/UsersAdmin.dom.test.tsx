@@ -184,6 +184,13 @@ describe('UsersAdmin — доступность', () => {
     expectLabelledIconButtons()
   })
 
+  it('строка диска с данными: тревога при свободном месте меньше 10 ГБ (roadmap-4 п.40)', () => {
+    renderAdmin({ isAdmin: true, makeStats: { disk: { totalBytes: 100 * 1024 ** 3, freeBytes: 4 * 1024 ** 3, alert: true }, projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, userLimitBytes: 4 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3.5 * 1048576, published: 1, views: 7 }], top: [] } })
+    const disk = screen.getByTestId('admin-disk')
+    expect(disk).toHaveAttribute('role', 'alert')
+    expect(disk).toHaveTextContent('меньше 10 ГБ')
+  })
+
   it('секция «Make-проекты» показывает сводку и таблицу по пользователям (п.38)', () => {
     renderAdmin({ isAdmin: true, makeStats: { projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, userLimitBytes: 4 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3.5 * 1048576, published: 1, views: 7 }], top: [] } })
     const sec = screen.getByTestId('make-stats')

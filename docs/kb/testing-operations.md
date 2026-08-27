@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-08-27
-checked: bde76bdd
+checked: bdfafa18
 areas:
   - package.json
   - scripts
@@ -203,3 +203,5 @@ React из esm.sh — нужен интернет), «Компоненты» + c
 Ловушка: `page.goto` на URL, отличающийся только хэшем, не перезагружает документ — токен из localStorage
 подхватится только после `page.reload()`. В `npm test`/CI не входит: требует собранный `apps/web/dist`,
 браузер и сеть; `describe.skipIf(!existsSync(dist))`.
+
+**Мониторинг диска (roadmap-4 п.40).** `MakeWorkspaces.diskStats()` через `statfs` корня данных даёт `AdminMakeStats.disk { totalBytes, freeBytes, alert }`, порог тревоги — `MAKE_DISK_ALERT_BYTES` (10 ГБ, столько же с запасом требует проверка места перед релизом `RELEASE_MIN_FREE_KB`). В админке (`UsersAdmin`, блок Make) строка «Диск с данными…» краснеет и получает `role=alert`; в `/api/admin/make/metrics` — гауджи `make_disk_free_bytes`, `make_disk_total_bytes`, `make_disk_alert`. fail2ban и SSH-харденинг прод-хоста (btmp показывал брутфорс) не делались: это системная правка сервера вне репозитория — выполнять только по явному подтверждению.
