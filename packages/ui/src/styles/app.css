@@ -6950,3 +6950,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-mode span { display: grid; }
 .make-mode small { color: var(--text-dim); font-size: 12px; }
 .make-notes-text { width: 100%; box-sizing: border-box; font: 13px/1.5 ui-monospace, Menlo, monospace; resize: vertical; }
+
+/* Чипы «следующий шаг» (roadmap-4 п.8) */
+.make-next { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.make-next-label { color: var(--text-dim); }
+.make-next-chip { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.make-next-chip:hover { background: var(--surface-hover); }

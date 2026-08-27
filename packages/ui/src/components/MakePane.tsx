@@ -4,6 +4,7 @@ import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import type { EditorContextPayload } from '@shared/types'
 import { formatUsd, type ConversationUsage } from '@shared/usageSummary'
 import { pickTokensFile } from '@shared/makeTokens'
+import { makeNextSteps } from '@shared/makeNextSteps'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
 import { CodeEditor, PHONE_EDITOR_QUERY, type EditorSelection } from './CodeEditor'
@@ -204,6 +205,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
+  // Чипы «следующий шаг» (roadmap-4 п.8): показываем после завершения хода ассистента, пока пользователь не отправил следующий.
+  const [nextStepsOpen, setNextStepsOpen] = useState(false)
+  const prevTurnRef = useRef(false)
+  useEffect(() => { if (prevTurnRef.current && !turnActive) setNextStepsOpen(true); if (turnActive) setNextStepsOpen(false); prevTurnRef.current = turnActive }, [turnActive])
   // Тесты компонентов (roadmap-4 п.3): *.test.tsx выполняются в скрытом iframe-раннере __tests__,
   // результаты приходят кадрами vc-make.test / vc-make.tests-done.
   const [testFiles, setTestFiles] = useState<MakeTestFile[]>([])
@@ -1119,6 +1124,15 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               {onAttachImage && lastRequest && (onAskAssistant || onInsertToChat) && <Button size="sm" variant="secondary" onClick={() => void verifyResult()} title="Отправить ассистенту скриншот «после» и исходный запрос — пусть сверит и исправит">Сверить с запросом</Button>}
               {onAttachImage && <Button size="sm" variant="ghost" onClick={() => void diffToChat()}>В чат</Button>}
               <IconButton size="sm" aria-label="Скрыть сравнение" title="Скрыть" onClick={dismissDiff}>✕</IconButton>
+            </div>
+          )}
+          {nextStepsOpen && (onAskAssistant || onInsertToChat) && (
+            <div className="make-next" data-testid="make-next">
+              <span className="make-next-label">Что дальше:</span>
+              {makeNextSteps({ hasTokens: Boolean(pickTokensFile((state?.files ?? []).map((f) => f.path))) && (state?.files ?? []).some((f) => f.path === 'tokens.css' || f.path === 'styles.css'), hasTests: testFiles.length > 0, hasStories: (storyFiles?.length ?? 0) > 0, published: Boolean(state?.published), openComments: (comments ?? []).filter((c) => !c.resolved).length, a11yIssues: a11y ? a11y.length : null, files: state?.files.length ?? 0 }).map((s) => (
+                <button key={s.id} type="button" className="make-next-chip" onClick={() => { setNextStepsOpen(false); (onAskAssistant ?? onInsertToChat)!(s.prompt) }}>{s.title}</button>
+              ))}
+              <IconButton size="sm" aria-label="Скрыть подсказки" title="Скрыть" onClick={() => setNextStepsOpen(false)}>✕</IconButton>
             </div>
           )}
           {selected && (
