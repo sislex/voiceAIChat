@@ -141,6 +141,21 @@ describe('MakePane', () => {
     } finally { URL.createObjectURL = origCreate; vi.useRealTimers() }
   })
 
+  it('во время хода ассистента записанный файл открывается в редакторе и вкладка подсвечивается (roadmap-2 п.10)', async () => {
+    const api = createFakeApi([])
+    const listeners: Array<(m: { conversationId: string; rev: number; paths: string[] }) => void> = []
+    const make = { onChanged: (cb: (m: { conversationId: string; rev: number; paths: string[] }) => void) => { listeners.push(cb); return () => {} } }
+    const { rerender } = render(<MakePane conversationId={CONV} api={api} make={make} previewBase={`/api/preview/make/${CONV}/`} turnActive={false} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await screen.findByLabelText('Содержимое index.html')
+    rerender(<MakePane conversationId={CONV} api={api} make={make} previewBase={`/api/preview/make/${CONV}/`} turnActive />)
+    await api['make:write']({ conversationId: CONV, path: 'styles.css', content: 'h1 { color: green }' })
+    listeners.forEach((l) => l({ conversationId: CONV, rev: 3, paths: ['styles.css'] }))
+    const editor = await screen.findByLabelText('Содержимое styles.css') as HTMLTextAreaElement
+    expect(editor.value).toBe('h1 { color: green }')
+    expect(screen.getByTestId('make-file-tab-flash')).toHaveTextContent('styles.css')
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)

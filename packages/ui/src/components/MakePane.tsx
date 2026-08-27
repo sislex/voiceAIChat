@@ -196,6 +196,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
+  /** Файл, только что записанный ассистентом — вкладка коротко подсвечивается (roadmap-2 п.10). */
+  const [flashPath, setFlashPath] = useState<string | null>(null)
   // Визуальный diff хода (roadmap-2 п.8): «до» снимаем при старте хода, «после» — когда ход кончился и
   // превью перезагрузилось после правок. Только если файлы менялись; хранится в памяти вкладки.
   const [turnDiff, setTurnDiff] = useState<{ before: string; after: string } | null>(null)
@@ -384,8 +386,17 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       setPreviewRev(m.rev)
       void refresh()
       if (selectedPath && m.paths.includes(selectedPath) && !dirty) void openFile(selectedPath)
+      // Правки ассистента «на глазах» (roadmap-2 п.10): в режиме «Код» без несохранённых правок открываем
+      // файл, который он только что записал, и подсвечиваем вкладку. MCP пишет файл целиком, поэтому
+      // побайтовый стриминг невозможен — показываем результат каждой записи сразу.
+      const written = m.paths.find((p) => isMakeTextPath(p) && !p.startsWith('.'))
+      if (turnShotRef.current.active && written && !dirty && mode === 'code' && written !== selectedPath) {
+        void openFile(written)
+        setFlashPath(written)
+        window.setTimeout(() => setFlashPath((cur) => (cur === written ? null : cur)), 1800)
+      }
     })
-  }, [make, conversationId, refresh, openFile, selectedPath, dirty])
+  }, [make, conversationId, refresh, openFile, selectedPath, dirty, mode])
 
   // Сообщения из превью: выбранный элемент (режим «Выбрать элемент»).
   useEffect(() => {
@@ -1218,7 +1229,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             {tabs.length > 0 && (
               <div className="make-tabs-bar" role="tablist" aria-label="Открытые файлы">
                 {tabs.map((t) => (
-                  <div key={t} className={t === selectedPath ? 'make-file-tab on' : 'make-file-tab'}>
+                  <div key={t} className={`make-file-tab${t === selectedPath ? ' on' : ''}${t === flashPath ? ' make-file-tab--flash' : ''}`} data-testid={t === flashPath ? 'make-file-tab-flash' : undefined}>
                     <button type="button" role="tab" aria-selected={t === selectedPath} className="make-file-tab-name" onClick={() => void openFile(t)} title={t}>
                       {t.slice(t.lastIndexOf('/') + 1)}{t === selectedPath && dirty ? <span className="make-file-tab-dirty" aria-label="не сохранено">●</span> : null}
                     </button>
