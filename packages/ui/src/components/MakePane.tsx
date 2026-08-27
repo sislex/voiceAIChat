@@ -27,6 +27,8 @@ export interface MakePaneProps {
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
+  /** Отправить сообщение ассистенту сразу (кнопка «Исправить» в баннере ошибок). */
+  onAskAssistant?: (text: string) => void
   /** База превью; по умолчанию — REST.makePreview (тест подменяет). */
   previewBase?: string
   /**
@@ -63,7 +65,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -465,6 +467,18 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   }, [state])
   const useStarter = (prompt: string): void => { onInsertToChat?.(prompt); setIdeasOpen(false) }
   useEffect(() => { setConsoleLines([]) }, [previewRev])
+  // Итеративная правка: после перезагрузки превью (правка ассистента или своя) 8 секунд слушаем консоль;
+  // появились ошибки — предлагаем «Исправить» одной кнопкой, текст ошибок уходит ассистенту сразу.
+  const [autofix, setAutofix] = useState<{ rev: number; dismissed: boolean }>({ rev: 0, dismissed: false })
+  const watchUntil = useRef(0)
+  useEffect(() => { watchUntil.current = Date.now() + 8_000; setAutofix({ rev: previewRev, dismissed: false }) }, [previewRev])
+  const recentErrors = consoleLines.filter((l) => l.level === 'error' && l.at <= watchUntil.current)
+  const showAutofix = !autofix.dismissed && recentErrors.length > 0
+  const askFix = (): void => {
+    const text = `После последней правки в консоли превью ошибки:\n${recentErrors.slice(-5).map((l) => `- ${l.text.slice(0, 300)}`).join('\n')}\nНайди причину и исправь. `
+    if (onAskAssistant) onAskAssistant(text); else onInsertToChat?.(text)
+    setAutofix((a) => ({ ...a, dismissed: true }))
+  }
   const consoleErrors = consoleLines.filter((l) => l.level === 'error').length
   const sendConsoleToChat = (): void => {
     const errors = consoleLines.filter((l) => l.level === 'error' || l.level === 'warn').slice(-5)
@@ -598,6 +612,16 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
               style={frameWidth ? { width: `${frameWidth}px` } : undefined}
             />}
           </div>
+          {showAutofix && (
+            <div className="make-autofix" role="alert" data-testid="make-autofix">
+              <span>После правки в консоли {recentErrors.length === 1 ? 'ошибка' : `ошибок: ${recentErrors.length}`} — <code>{recentErrors[recentErrors.length - 1]!.text.slice(0, 120)}</code></span>
+              <span className="make-autofix-actions">
+                {(onAskAssistant || onInsertToChat) && <Button size="sm" variant="primary" onClick={askFix}>Исправить</Button>}
+                <Button size="sm" variant="ghost" onClick={() => { setAutofix((a) => ({ ...a, dismissed: true })); setConsoleOpen(true) }}>Показать консоль</Button>
+                <IconButton size="sm" aria-label="Скрыть предложение исправить" title="Скрыть" onClick={() => setAutofix((a) => ({ ...a, dismissed: true }))}>✕</IconButton>
+              </span>
+            </div>
+          )}
           <section className={consoleOpen ? 'make-console make-console--open' : 'make-console'} aria-label="Консоль превью" data-testid="make-console">
             <div className="make-console-head">
               <button type="button" className="make-console-toggle" aria-expanded={consoleOpen} onClick={() => setConsoleOpen((v) => !v)}>

@@ -36,13 +36,14 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
   app.register(async (scope) => {
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', (_req, _payload, done) => done(null, undefined))
-    scope.post<{ Querystring: { conv?: string; k?: string; turn?: string; ro?: string } }>(
+    scope.post<{ Querystring: { conv?: string; k?: string; turn?: string; ro?: string; note?: string } }>(
       MAKE_MCP_PATH,
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
         const conv = req.query.conv ?? ''
         const turn = req.query.turn ?? ''
         const readOnly = req.query.ro === '1'
+        const note = (req.query.note ?? '').trim().slice(0, 80)
         const owner = deps.ownerOf(conv)
         if (!owner) return reply.code(404).send({ error: 'conversation not found' })
         const { workspaces, hub } = deps
@@ -56,7 +57,7 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           if (turn && !snapshotDone.has(key)) {
             snapshotDone.add(key)
             if (snapshotDone.size > 5_000) snapshotDone.clear()
-            await workspaces.snapshot(conv, 'До правок ассистента')
+            await workspaces.snapshot(conv, note ? `До правок: «${note}»` : 'До правок ассистента')
           }
         }
         const afterMutation = (paths: string[]): void => {
