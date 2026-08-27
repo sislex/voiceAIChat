@@ -7,7 +7,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SlidingWindowLimiter } from '../make/rateLimit.js'
-import { MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse } from '@voicechat/shared'
+import { MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse } from '@voicechat/shared'
 import { transpileForPreview } from '../make/transpile.js'
 import { renderGalleryPage, renderStoriesPage } from '../make/stories.js'
 import { readZip, ZipReadError } from '../make/zipRead.js'
@@ -341,16 +341,28 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (!own(userId, req.params.id, reply)) return reply
     try {
       await workspaces.ensure(req.params.id)
-      return { comments: await workspaces.addComment(req.params.id, { selector: req.body?.selector ?? '', elementLabel: req.body?.elementLabel ?? '', text: req.body?.text ?? '', author: userId }) }
+      const comments = await workspaces.addComment(req.params.id, { selector: req.body?.selector ?? '', elementLabel: req.body?.elementLabel ?? '', text: req.body?.text ?? '', author: userId })
+      hub.changed(userId, req.params.id, workspaces.rev(req.params.id), [COMMENTS_SYNC_PATH])
+      return { comments }
     } catch (error) { return sendError(reply, error) }
   })
   app.patch<{ Params: { id: string; commentId: string }; Body: { resolved?: boolean; text?: string } | undefined }>('/api/make/:id/comments/:commentId', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
-    try { return { comments: await workspaces.updateComment(req.params.id, req.params.commentId, { resolved: req.body?.resolved, text: req.body?.text }) } } catch (error) { return sendError(reply, error) }
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    try {
+      const comments = await workspaces.updateComment(req.params.id, req.params.commentId, { resolved: req.body?.resolved, text: req.body?.text })
+      hub.changed(userId, req.params.id, workspaces.rev(req.params.id), [COMMENTS_SYNC_PATH])
+      return { comments }
+    } catch (error) { return sendError(reply, error) }
   })
   app.delete<{ Params: { id: string; commentId: string } }>('/api/make/:id/comments/:commentId', async (req, reply) => {
-    if (!own(uid(req), req.params.id, reply)) return reply
-    try { return { comments: await workspaces.removeComment(req.params.id, req.params.commentId) } } catch (error) { return sendError(reply, error) }
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    try {
+      const comments = await workspaces.removeComment(req.params.id, req.params.commentId)
+      hub.changed(userId, req.params.id, workspaces.rev(req.params.id), [COMMENTS_SYNC_PATH])
+      return { comments }
+    } catch (error) { return sendError(reply, error) }
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/usage', async (req, reply) => {

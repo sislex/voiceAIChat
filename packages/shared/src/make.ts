@@ -205,6 +205,9 @@ export interface MakeComment {
   resolved: boolean
 }
 
+/** Псевдопуть в `make.changed`, по которому вкладки узнают об изменении комментариев (roadmap-2 п.7); rev не меняется. */
+export const MAKE_COMMENTS_SYNC_PATH = '.comments.json'
+
 export interface MakeCleanupOptions {
   /** Оставить N последних снимков (остальные удалить); undefined — не трогать. */
   keepSnapshots?: number
