@@ -194,12 +194,14 @@ describe('ConversationSettings', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ execTarget: null })))
   })
 
-  it('открывает использование базы знаний из вкладки «Общее»', async () => {
+  it('открывает использование БЗ из вкладки «Общее» без сохранения настроек', () => {
     const onOpenKbUsage = vi.fn()
-    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onOpenKbUsage={onOpenKbUsage} onClose={vi.fn()} />)
+    const onSave = vi.fn()
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={onSave} onAddSkill={vi.fn()} onOpenKbUsage={onOpenKbUsage} onClose={vi.fn()} />)
     expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Использование базы знаний' }))
     expect(onOpenKbUsage).toHaveBeenCalledOnce()
+    expect(onSave).not.toHaveBeenCalled()
   })
 
   it('подписи режимов БЗ соответствуют семантике «инструменты модели», а не «вручную»', async () => {

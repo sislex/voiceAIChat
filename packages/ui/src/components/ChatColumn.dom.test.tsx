@@ -807,12 +807,15 @@ describe('ChatColumn — объявления для скринридера', ()
   })
 })
 
-describe('ChatColumn — упрощённая шапка', () => {
-  it.each(['idle', 'thinking', 'speaking'] as const)(
+describe('ChatColumn — упрощённая основная шапка', () => {
+  it.each(['idle', 'listening', 'transcribing', 'thinking', 'speaking'] as const)(
     'не показывает подпись VoiceState и элементы использования БЗ в состоянии %s',
     (state) => {
-      renderCol({ state })
-      expect(document.querySelector('.mhead-right > .badge')).not.toBeInTheDocument()
+      renderCol({ state, aiLabel: 'Codex' })
+      const header = document.querySelector('.mhead')
+      expect(header).not.toHaveTextContent('Codex думает')
+      expect(header).not.toHaveTextContent('Озвучка')
+      expect(header?.querySelector('.badge')).not.toBeInTheDocument()
       expect(screen.queryByTestId('kb-usage-open')).not.toBeInTheDocument()
       expect(screen.queryByTestId('kb-usage-live')).not.toBeInTheDocument()
       expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
