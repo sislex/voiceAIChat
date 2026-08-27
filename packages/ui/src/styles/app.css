@@ -6763,3 +6763,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .make-token-value { grid-column: 1 / -1; }
   .make-token-add { grid-template-columns: 1fr; }
 }
+
+/* Стоимость проекта Make в шапке (п.24) */
+.make-cost { display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 8px; border-radius: 999px; background: var(--surface-hover); color: var(--text); font: 500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; cursor: help; }
+.make-cost small { font: inherit; font-weight: 400; color: var(--text-dim); }
+@media (max-width: 720px) { .make-cost small { display: none; } }
