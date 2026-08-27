@@ -78,7 +78,7 @@ describe('UsersAdmin', () => {
     await userEvent.type(screen.getByLabelText('Логин нового пользователя'), 'carol')
     await userEvent.selectOptions(screen.getByLabelText('Роль нового пользователя'), 'developer')
     await userEvent.click(screen.getByRole('button', { name: 'Создать' }))
-    expect(p.onCreate).toHaveBeenCalledWith('carol', '', 'developer')
+    expect(p.onCreate).toHaveBeenCalledWith('carol', '', 'developer', true)
   })
 
   it('у обычного пользователя есть блок/удаление', () => {
@@ -244,5 +244,19 @@ describe('UsersAdmin — инвайт-ссылки (auth-roadmap п.8)', () => {
     expect(within(box).getByText(/#\/invite\/abc/)).toBeInTheDocument()
     await userEvent.click(within(box).getByRole('button', { name: 'Отозвать' }))
     expect(onDeleteInvite).toHaveBeenCalledWith('abc')
+  })
+})
+
+describe('UsersAdmin — временный пароль и код сброса (auth-roadmap пп.10–11)', () => {
+  it('создание передаёт флаг временного пароля; «Код сброса» показывает выданный код', async () => {
+    const onCreate = vi.fn()
+    const onResetCode = vi.fn(async () => ({ code: 'ABCD1234', expiresAt: 9_999_999_999_999 }))
+    renderAdmin({ isAdmin: true, onCreate, onResetCode, selected: 'bob' })
+    await userEvent.type(screen.getByLabelText('Логин нового пользователя'), 'newbie')
+    await userEvent.type(screen.getByLabelText('Пароль нового пользователя'), 'newbie-long-password')
+    await userEvent.click(screen.getByRole('button', { name: 'Создать' }))
+    expect(onCreate).toHaveBeenCalledWith('newbie', 'newbie-long-password', 'developer', true)
+    await userEvent.click(screen.getByRole('button', { name: 'Код сброса' }))
+    expect(await screen.findByTestId('admin-reset-code')).toHaveTextContent('ABCD1234')
   })
 })

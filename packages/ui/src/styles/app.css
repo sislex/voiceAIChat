@@ -7049,3 +7049,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .uadmin-invite-form input[type=number] { width: 64px; margin-left: 4px; }
 .invite-url { display: block; font-size: 11px; color: var(--text-dim); word-break: break-all; }
 .invite--dead { opacity: .6; }
+
+/* Аватар аккаунта (auth-roadmap п.12) */
+.footico--avatar { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; }
+.pers-avatar { max-width: 160px; }

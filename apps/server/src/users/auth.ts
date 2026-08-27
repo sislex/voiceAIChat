@@ -151,7 +151,7 @@ export function resolveUser(db: VoiceChatDb, token: string | undefined, secret: 
   if (!name) return null
   const u = db.getUser(name)
   if (!u || u.blocked) return null
-  return { name: u.name, role: u.role }
+  return { name: u.name, role: u.role, ...(u.mustChangePassword ? { mustChangePassword: true } : {}) }
 }
 
 /**
@@ -204,6 +204,11 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       await reply.code(401).send({ error: 'unauthorized' })
       return reply
     }
+    // Временный пароль (п.11): до смены пароля запрещаем всё, кроме чтения — сессионные роуты публичны и сюда не попадают.
+    if (user.mustChangePassword && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      await reply.code(403).send({ error: 'password_change_required' })
+      return reply
+    }
     if (viaCookie && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       const csrf = cookieOf(req, CSRF_COOKIE)
       if (!csrf || req.headers[CSRF_HEADER] !== csrf) {
@@ -242,7 +247,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   const pendingTwoFactor = new Map<string, { name: string; expires: number; attempts: number }>()
   const pendingSetup = new Map<string, { secret: string; expires: number }>()
   const issueSession = (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role']): { token: string; user: SessionUser; csrf: string } => {
-    const user: SessionUser = { name, role }
+    const row = db.getUser(name)
+    const user: SessionUser = { name, role, ...(row?.mustChangePassword ? { mustChangePassword: true } : {}) }
     const sid = newSessionId()
     const token = signToken(user, secret, sid)
     db.createSession(sid, name, { ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), ttlMs: SESSION_TTL_MS })
@@ -392,6 +398,34 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     db.consumeInvite(inv.token)
     db.logSecurityEvent({ user: login, type: 'registered', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `по инвайту ${inv.createdBy}, роль ${inv.role}` })
     return issueSession(req, reply, u.name, u.role)
+  })
+
+  // Сброс пароля кодом администратора (auth-roadmap п.10): без входа, код одноразовый и срочный, политика пароля та же.
+  app.post<{ Body: { name?: string; code?: string; password?: string } }>(REST.sessionReset, async (req, reply) => {
+    const { name, code, password } = req.body ?? {}
+    if (!registerLimiter.hit(`reset:${req.ip}`).ok) return reply.code(429).send({ error: 'Слишком много попыток — попробуйте позже' })
+    const login = (name ?? '').trim()
+    const violation = checkPasswordPolicy(password ?? '', { name: login })
+    if (violation) return reply.code(400).send({ error: violation })
+    if (!login || !code || !db.redeemResetCode(login, String(code).trim(), password!)) return reply.code(401).send({ error: 'Неверный логин или код, либо код истёк' })
+    const u = db.getUser(login)!
+    db.revokeUserSessions(login)
+    db.logSecurityEvent({ user: login, type: 'password_reset', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'по коду администратора' })
+    return issueSession(req, reply, u.name, u.role)
+  })
+  // Смена своего пароля (пп.11–12): текущий пароль обязателен; остальные сессии отзываются.
+  app.post<{ Body: { current?: string; next?: string } }>(REST.sessionPassword, async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    const { current, next } = req.body ?? {}
+    if (!db.verifyUserPassword(user.name, current ?? '')) return reply.code(400).send({ error: 'Текущий пароль неверен' })
+    const violation = checkPasswordPolicy(next ?? '', { name: user.name })
+    if (violation) return reply.code(400).send({ error: violation })
+    if (current === next) return reply.code(400).send({ error: 'Новый пароль совпадает с текущим' })
+    db.setUserPassword(user.name, next!)
+    db.revokeUserSessions(user.name, sidOf(req))
+    db.logSecurityEvent({ user: user.name, type: 'password_changed', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+    return { ok: true }
   })
 
   // Перенос старой localStorage-сессии в cookie (п.5): Bearer → HttpOnly cookie + CSRF, токен из localStorage клиент удаляет.

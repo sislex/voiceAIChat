@@ -217,6 +217,15 @@ export function registerAdminRoutes(
   app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
     return db.revokeSessionById(req.params.sid) ? { ok: true } : reply.code(404).send({ error: 'not found' })
   })
+  // Код сброса пароля (auth-roadmap п.10): администратор выдаёт одноразовый код на 24 часа, пользователь вводит его на экране входа.
+  app.post<{ Params: { name: string } }>(REST.adminUserResetCode(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
+    if (!db.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+    const code = randomBytes(6).toString('base64url').replace(/[-_]/g, 'x').slice(0, 8).toUpperCase()
+    const ttl = 24 * 60 * 60_000
+    db.setResetCode(req.params.name, code, ttl)
+    db.logSecurityEvent({ user: req.params.name, type: 'reset_code_issued', ip: req.ip, details: `администратор ${uid(req)}` })
+    return { code, expiresAt: Date.now() + ttl }
+  })
   // Инвайты на саморегистрацию (auth-roadmap п.8): создать (роль, срок, лимит), список, отозвать.
   app.get(REST.adminInvites, guard, async () => ({ invites: db.listInvites() }))
   app.post<{ Body: { role?: string; ttlHours?: number; maxUses?: number; note?: string } | undefined }>(REST.adminInvites, guard, async (req, reply) => {
@@ -244,12 +253,12 @@ export function registerAdminRoutes(
   })
 
   /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
-  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null } = {}): AdminUserInfo => {
+  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean } = {}): AdminUserInfo => {
     const online = registry.onlineIds()
     const agents = db.listAgents(name).map((a) => ({ ...a, online: online.has(a.id) }))
     // Админу — все беседы пользователя: скрытие чатов завершённых задач это
     // фильтр сайдбара их владельца, а не свойство данных.
-    return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
+    return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, mustChangePassword: Boolean(lock.mustChangePassword), name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
   }
 
   app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> =>
@@ -278,7 +287,7 @@ export function registerAdminRoutes(
     return db.usageSummary(from, to)
   })
 
-  app.post<{ Body: { name?: string; password?: string; role?: string } }>(
+  app.post<{ Body: { name?: string; password?: string; role?: string; mustChangePassword?: boolean } }>(
     REST.adminUsers,
     guard,
     async (req, reply) => {
@@ -296,7 +305,8 @@ export function registerAdminRoutes(
         if (count && count > 0) return reply.code(400).send({ error: `Этот пароль встречался в утечках (${count}) — выберите другой` })
       }
       const u = db.createUser(name, password, role)
-      db.logSecurityEvent({ user: name, type: 'password_set', ip: req.ip, details: `учётка создана администратором ${uid(req)}` })
+      if (req.body?.mustChangePassword) db.setMustChangePassword(name, true)
+      db.logSecurityEvent({ user: name, type: 'password_set', ip: req.ip, details: `учётка создана администратором ${uid(req)}${req.body?.mustChangePassword ? ', временный пароль' : ''}` })
       return toInfo(u.name, u.role, u.blocked, u.createdAt, u)
     }
   )

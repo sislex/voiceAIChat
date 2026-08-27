@@ -84,6 +84,7 @@ export function createAdminClient(api: RendererApi): AdminClient {
       revokeSession: ({ sid }) => api['admin:revokeSession']({ sid }).then(() => undefined),
       securityEvents: (input) => api['admin:securityEvents'](input).then((r) => r.events),
       listInvites: () => api['admin:invites']().then((r) => r.invites),
+      resetCode: ({ name }) => api['admin:resetCode']({ name }),
       createInvite: (input) => api['admin:inviteCreate'](input),
       deleteInvite: ({ token }) => api['admin:inviteDelete']({ token }).then(() => undefined),
       makeStats: () => api['admin:makeStats'](),

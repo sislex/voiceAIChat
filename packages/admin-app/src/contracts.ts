@@ -18,7 +18,9 @@ export interface AdminClient {
   listInvites?(): Promise<InviteInfo[]>
   createInvite?(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }): Promise<InviteInfo>
   deleteInvite?(input: { token: string }): Promise<void>
-  createUser(input: { name: string; password: string; role: UserRole }): Promise<AdminUserInfo>
+  createUser(input: { name: string; password: string; role: UserRole; mustChangePassword?: boolean }): Promise<AdminUserInfo>
+  /** Одноразовый код сброса пароля (auth-roadmap п.10). */
+  resetCode?(input: { name: string }): Promise<{ code: string; expiresAt: number }>
   updateUserRole(input: { name: string; role: UserRole }): Promise<AdminUserInfo>
   setUserBlocked(input: { name: string; blocked: boolean }): Promise<void>
   deleteUser(input: { name: string }): Promise<void>

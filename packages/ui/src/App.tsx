@@ -19,6 +19,7 @@ import { MakePane } from './components/MakePane'
 import { SessionsDialog } from './components/SessionsDialog'
 import { TwoFactorDialog } from './components/TwoFactorDialog'
 import { InviteRegister } from './components/InviteRegister'
+import { ChangePasswordDialog } from './components/ChangePasswordDialog'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -249,6 +250,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
   const [sessionsOpen, setSessionsOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
@@ -1401,6 +1403,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         twoFactor={Boolean(session.twoFactorTicket)}
         onCode={(code) => void runtime.loginCode(code)}
         onCancelTwoFactor={() => runtime.cancelTwoFactor()}
+        onReset={window.session?.resetPassword ? (name, code, password) => void runtime.resetPassword(name, code, password) : undefined}
       />
     )
   }
@@ -1534,6 +1537,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         currentUser={session.currentUser}
         onOpenSessions={session.authRequired && window.session?.sessions ? () => setSessionsOpen(true) : undefined}
         onOpenTwoFactor={session.authRequired && window.session?.twoFactor ? () => setTwoFactorOpen(true) : undefined}
+        onOpenChangePassword={session.authRequired && window.session?.changePassword ? () => setChangePasswordOpen(true) : undefined}
+        avatar={settingsState.settings.personalization.avatar ?? null}
         onLogout={session.authRequired ? async () => {
           const accepted = await confirm({
             title: 'Выйти из ChatAI?',
@@ -1737,6 +1742,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} />}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
+      {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
       {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
       {sessionsOpen && window.session?.sessions && window.session.logoutAll && window.session.revokeSession && <SessionsDialog load={window.session.sessions} revoke={window.session.revokeSession} logoutAll={window.session.logoutAll} onClose={() => setSessionsOpen(false)} />}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} />}
@@ -1995,7 +2001,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           conversationId={admin.adminConversationId}
           currentUserName={session.currentUser?.name ?? ''}
           onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void adminActions.selectAdminUser(name) }}
-          onCreate={(name, password, role) => void adminActions.createUserAccount(name, password, role)}
+          onCreate={(name, password, role, mustChangePassword) => void adminActions.createUserAccount(name, password, role, mustChangePassword)}
+          onResetCode={(name) => adminActions.issueResetCode(name)}
           onUpdateRole={(name, role) => void adminActions.updateUserRole(name, role)}
           onSetBlocked={(name, blocked) => void adminActions.setUserBlocked(name, blocked)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}

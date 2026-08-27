@@ -37,6 +37,10 @@ export interface SessionActions {
   loginCode(code: string): Promise<SessionUser | null>
   /** Отменить второй шаг и вернуться к паролю. */
   cancelTwoFactor(): void
+  /** Сброс пароля кодом администратора (auth-roadmap п.10) → сессия. */
+  resetPassword(name: string, code: string, password: string): Promise<SessionUser | null>
+  /** Обновить пользователя после смены временного пароля (п.11). */
+  refreshUser(): Promise<void>
   /** Выйти: закрыть сессию на сервере и показать экран логина. */
   logout(): Promise<void>
   /** Сессия истекла/потеряна (сервер ответил 401). */
@@ -124,6 +128,21 @@ export function createSessionStore(deps: SessionDeps = {}): SessionStore {
         return user
       },
       cancelTwoFactor() { setState({ twoFactorTicket: null, authError: null }) },
+      async resetPassword(name, code, password) {
+        if (!client?.resetPassword) return null
+        setState({ authError: null })
+        const r = await client.resetPassword({ name, code, password }).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }))
+        if (core.disposed()) return null
+        if ('error' in r) { setState({ authError: r.error }); return null }
+        const user = await client.me().catch(() => null)
+        if (!user) { setState({ authError: 'Пароль изменён, но войти не удалось — попробуйте ещё раз' }); return null }
+        apply(user)
+        return user
+      },
+      async refreshUser() {
+        const user = await client?.me().catch(() => null)
+        if (user && !core.disposed()) setState({ currentUser: user })
+      },
       async logout() {
         await client?.logout()
         if (core.disposed()) return

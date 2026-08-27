@@ -294,6 +294,10 @@ export const REST = {
   adminInvite: (token: string) => `/api/admin/invites/${encodeURIComponent(token)}`,
   sessionInvite: (token: string) => `/api/session/invite/${encodeURIComponent(token)}`,
   sessionRegister: '/api/session/register',
+  /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
+  sessionReset: '/api/session/reset',
+  sessionPassword: '/api/session/password',
+  adminUserResetCode: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/reset-code`,
   adminUser: (name: string) => `/api/admin/users/${encodeURIComponent(name)}`,
   adminUserBlock: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/block`,
   adminUserLlmAccess: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/llm-access`,
