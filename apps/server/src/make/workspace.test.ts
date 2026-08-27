@@ -241,4 +241,22 @@ describe('MakeWorkspaces', () => {
     await ws.unpublish(CONV)
     expect(await ws.slugToken('other')).toBeNull()
   })
+
+  it('мок-API: отсутствующий путь → mock/<путь>[.METHOD].json, конверт статуса, публикация со снимком отдаёт мок снимка', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'mock/api/users.json', '[{"id":1}]')
+    await ws.write(CONV, 'mock/api/users.POST.json', '{"$status":201,"$body":{"id":2}}')
+    await ws.write(CONV, 'mock/api/broken.json', '{oops')
+    expect(await ws.resolveMock(CONV, 'api/users', 'GET')).toMatchObject({ status: 200, body: [{ id: 1 }] })
+    expect(await ws.resolveMock(CONV, 'api/users', 'POST')).toMatchObject({ status: 201, body: { id: 2 } })
+    expect((await ws.resolveMock(CONV, 'api/broken', 'GET'))?.status).toBe(500)
+    expect(await ws.resolveMock(CONV, 'api/none', 'GET')).toBeNull()
+    expect(await ws.resolveMock(CONV, 'mock/api/users.json', 'GET')).toBeNull()
+    const snap = (await ws.snapshot(CONV, 'v1')).snapshots[0]!
+    await ws.publish(CONV, { snapshotId: snap.id })
+    await ws.write(CONV, 'mock/api/users.json', '[{"id":9}]')
+    expect(await ws.resolveMock(CONV, 'api/users', 'GET', true)).toMatchObject({ body: [{ id: 1 }] })
+    expect(await ws.resolveMock(CONV, 'api/users', 'GET')).toMatchObject({ body: [{ id: 9 }] })
+  })
 })

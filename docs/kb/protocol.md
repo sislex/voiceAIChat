@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-27
-checked: 9f61894e
+checked: a996a605
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -279,6 +279,8 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 `make:publish/unpublish/check/template`; `MakeProjectState.published: MakePublication|null`.
 Публичная раздача — `GET /p/<token>/*` (`MAKE_PUBLIC_PREFIX`, вне `/api`, без auth и без инспектора).
 Тот же контент по человекочитаемому адресу `GET /s/<slug>/*` (`MAKE_SLUG_PREFIX`, п.25): slug задаётся в `POST /api/make/:id/publish` (`{ snapshotId, slug, password }`; `slug`/`password` — `undefined` не трогать, `null` снять, строка установить; slug — `isValidMakeSlug`, занятый другим проектом → 409 `exists`). Публикация с паролем отдаёт на HTML-запросы форму (401), на остальное — 401 text; `POST /p/<token>/__auth__` и `/s/<slug>/__auth__` с urlencoded `password` ставят cookie `vc_pub_<token>` (sha256 от токена и хэша пароля — смена пароля разлогинивает всех) и редиректят на `?next`. Открытие `index.html` увеличивает `views` в `.publish.json`. `MakePublication` содержит `slug`, `slugUrl`, `passwordProtected`, `views`; хэш пароля наружу не отдаётся.
+
+**Мок-API проекта (п.29).** Если запрошенного файла нет, превью (`/api/preview/make/:id/*`) и публикация (`/p/…`, `/s/…`) ищут `mock/<путь>.<METHOD>.json` → `mock/<путь>.json` → `mock/<путь>/index[.<METHOD>].json` (`mockCandidates` в `@shared/makeMock`) и отдают JSON с `x-vc-mock: 1`. Файл — либо тело как есть, либо конверт `{ "$status", "$headers", "$delay" (≤ 5000 мс), "$body" }` (`unwrapMockEnvelope`). Не-GET методы (`POST/PUT/PATCH/DELETE`) на этих путях отдают только моки; на публикации `__auth__` обрабатывается тем же маршрутом (`publicMutation`). На публикации со закреплённым снимком моки берутся из снимка. Битый JSON мока → 500 с текстом ошибки. Прямой запрос файла `mock/…` мокам не подлежит (отдаётся как обычный файл).
 `REST.makeUpload` (POST `/api/make/:id/upload {path, dataBase64}`, bodyLimit 4 МБ) → мост `make:upload` —
 бинарники из панели; на сервере `MakeWorkspaces.writeBuffer` (общие лимиты с `write`).
 `REST.makeSearch` (`GET …/search?q=` → `{matches: MakeSearchMatch[]}`), `REST.makeStories` (`GET …/stories` →
