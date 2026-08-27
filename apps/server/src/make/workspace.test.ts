@@ -122,6 +122,20 @@ describe('MakeWorkspaces', () => {
     expect(again.filter((i) => i.kind === 'missing-file').map((i) => i.message)).toContain('Ссылка на отсутствующий файл: ../img/bg.png')
   })
 
+  it('replaceAll: замена во всех текстовых файлах без регистра, снимок перед заменой, без совпадений — ничего', async () => {
+    const ws = await fresh()
+    await ws.write(CONV, 'index.html', '<h1>Hello</h1><p>hello world</p>')
+    await ws.write(CONV, 'css/a.css', '.hello{}')
+    await ws.write(CONV, 'logo.png', 'hello-binary')
+    const r = await ws.replaceAll(CONV, 'hello', 'Привет')
+    expect(r).toMatchObject({ files: 2, replacements: 3 })
+    expect((await ws.read(CONV, 'index.html')).content).toBe('<h1>Привет</h1><p>Привет world</p>')
+    expect((await ws.snapshots(CONV))[0]!.label).toContain('Перед заменой')
+    const none = await ws.replaceAll(CONV, 'nothing-here', 'x')
+    expect(none.files).toBe(0)
+    expect(await ws.snapshots(CONV)).toHaveLength(1)
+  })
+
   it('snapshotDiff/restoreFile: статусы файлов и возврат одного файла', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)

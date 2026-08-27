@@ -242,6 +242,18 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       for (const [path, content] of makeFiles(conversationId)) content.split('\n').forEach((text, i) => { if (needle && text.toLocaleLowerCase().includes(needle)) matches.push({ path, line: i + 1, text: text.trim() }) })
       return { matches }
     },
+    'make:replace': async ({ conversationId, query, replacement, matchCase }) => {
+      const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi')
+      let files = 0, replacements = 0
+      for (const [path, content] of makeFiles(conversationId)) {
+        const n = (content.match(re) ?? []).length
+        if (n === 0) continue
+        files += 1; replacements += n
+        makeFiles(conversationId).set(path, content.replace(re, () => replacement))
+      }
+      if (files > 0) makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1)
+      return { files, replacements, state: makeState(conversationId) }
+    },
     'make:stories': async ({ conversationId }) => ({
       files: [...makeFiles(conversationId)].filter(([path]) => /\.stories\.(jsx|tsx)$/.test(path)).map(([path, content]) => ({
         path,

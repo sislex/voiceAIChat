@@ -29,7 +29,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -469,6 +469,23 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) { toast.error(describeError(e)) }
   }
 
+  const [replaceOpen, setReplaceOpen] = useState(false)
+  const [replacement, setReplacement] = useState('')
+  const [replacing, setReplacing] = useState(false)
+  const runReplace = async (): Promise<void> => {
+    const q = query.trim()
+    if (!q) return
+    const ok = await confirm({ title: `Заменить «${q}» на «${replacement}» во всех файлах?`, message: 'Перед заменой сохранится снимок — откатить можно во вкладке «История».', confirmLabel: 'Заменить' })
+    if (!ok) return
+    setReplacing(true)
+    try {
+      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase: false })
+      setState(result.state); setPreviewRev(result.state.rev)
+      if (selectedPath && isMakeTextPath(selectedPath)) await openFile(selectedPath)
+      toast.success(result.replacements === 0 ? 'Совпадений нет' : `Заменено: ${result.replacements} в ${result.files} файлах`)
+      setMatches(null)
+    } catch (e) { toast.error(describeError(e)) } finally { setReplacing(false) }
+  }
   const runSearch = async (): Promise<void> => {
     const q = query.trim()
     if (!q) { setMatches(null); return }
@@ -719,7 +736,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runSearch() } if (e.key === 'Escape') { setQuery(''); setMatches(null) } }}
               />
               {searching && <span className="make-search-state">ищу…</span>}
+              <IconButton size="sm" aria-label="Заменить по проекту" title="Поиск и замена во всех файлах" aria-pressed={replaceOpen} onClick={() => setReplaceOpen((v) => !v)}>⇄</IconButton>
             </div>
+            {replaceOpen && (
+              <div className="make-replace" data-testid="make-replace">
+                <input type="text" className="make-search-input" aria-label="Заменить на" placeholder="Заменить на…" value={replacement} onChange={(e) => setReplacement(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runReplace() } }} />
+                <Button size="sm" variant="secondary" disabled={!query.trim()} loading={replacing} onClick={() => void runReplace()}>Заменить все</Button>
+              </div>
+            )}
             {matches !== null && (
               <div className="make-matches" role="region" aria-label="Результаты поиска" data-testid="make-matches">
                 <p className="make-tree-dir">{matches.length === 0 ? 'Ничего не найдено' : `Найдено: ${matches.length}`}</p>

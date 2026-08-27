@@ -109,6 +109,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:upload': ({ conversationId, path, dataBase64 }) => req(REST.makeUpload(conversationId), { method: 'POST', body: JSON.stringify({ path, dataBase64 }) }),
     'make:search': ({ conversationId, query }) => req(`${REST.makeSearch(conversationId)}?q=${encodeURIComponent(query)}`),
     'make:stories': ({ conversationId }) => req(REST.makeStories(conversationId)),
+    'make:replace': ({ conversationId, query, replacement, matchCase }) => req(REST.makeReplace(conversationId), { method: 'POST', body: JSON.stringify({ query, replacement, matchCase }) }),
     'make:snapshotDiff': ({ conversationId, snapshotId }) => req(REST.makeSnapshotDiff(conversationId, snapshotId)),
     'make:snapshotFile': ({ conversationId, snapshotId, path }) => req(`${REST.makeSnapshotFile(conversationId, snapshotId)}?path=${encodeURIComponent(path)}`),
     'make:restoreFile': ({ conversationId, snapshotId, path }) => req(REST.makeRestoreFile(conversationId, snapshotId), { method: 'POST', body: JSON.stringify({ path }) }),

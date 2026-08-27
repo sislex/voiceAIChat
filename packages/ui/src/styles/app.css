@@ -6680,3 +6680,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-publish-pin { display: grid; gap: 6px; margin: 10px 0; min-width: 0; }
 .make-publish-pin label { font-size: 12px; color: var(--text-dim); }
 .make-publish-pin select { width: 100%; max-width: 100%; min-width: 0; text-overflow: ellipsis; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; background: var(--surface); color: var(--text); }
+
+/* Поиск и замена по проекту. */
+.make-replace { display: flex; align-items: center; gap: 6px; padding: 0 4px 6px; }

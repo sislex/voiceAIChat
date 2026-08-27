@@ -367,4 +367,16 @@ describe('MakePane', () => {
     expect(dialog).toHaveTextContent('Закреплена версия «релиз 1»')
     expect((within(dialog).getByLabelText('Что публиковать') as HTMLSelectElement).value).not.toBe('')
   })
+
+  it('замена по проекту: ⇄ открывает поле, «Заменить все» после подтверждения меняет файлы', async () => {
+    const { api } = renderPane()
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск по файлам проекта' }), 'Новый проект')
+    await userEvent.click(screen.getByRole('button', { name: 'Заменить по проекту' }))
+    await userEvent.type(screen.getByLabelText('Заменить на'), 'Мой сайт')
+    await userEvent.click(screen.getByRole('button', { name: 'Заменить все' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Заменить' }))
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toContain('Мой сайт'))
+  })
 })

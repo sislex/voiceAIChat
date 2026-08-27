@@ -154,6 +154,7 @@ export const REST = {
   makeTemplate: (id: string) => `/api/make/${encodeURIComponent(id)}/template`,
   makeUpload: (id: string) => `/api/make/${encodeURIComponent(id)}/upload`,
   makeSearch: (id: string) => `/api/make/${encodeURIComponent(id)}/search`,
+  makeReplace: (id: string) => `/api/make/${encodeURIComponent(id)}/replace`,
   makeSnapshotDiff: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/diff`,
   makeSnapshotFile: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/file`,
   makeRestoreFile: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/restore-file`,

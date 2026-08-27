@@ -365,6 +365,29 @@ export class MakeWorkspaces {
     return matches
   }
 
+  /** Замена подстроки во всех текстовых файлах (без регулярных выражений); перед правкой — снимок. */
+  async replaceAll(conversationId: string, query: string, replacement: string, options: { matchCase?: boolean } = {}): Promise<{ files: number; replacements: number; state: MakeProjectState }> {
+    if (!query) throw new MakeError('invalid_path', 'Пустая строка поиска')
+    const flags = options.matchCase ? 'g' : 'gi'
+    const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags)
+    let files = 0, replacements = 0
+    const touched: Array<{ path: string; next: string }> = []
+    for (const file of await this.list(conversationId)) {
+      if (!isMakeTextPath(file.path)) continue
+      const { content } = await this.read(conversationId, file.path)
+      const count = (content.match(re) ?? []).length
+      if (count === 0) continue
+      files += 1; replacements += count
+      touched.push({ path: file.path, next: content.replace(re, () => replacement) })
+    }
+    if (touched.length > 0) {
+      await this.snapshot(conversationId, `Перед заменой «${query.slice(0, 30)}» → «${replacement.slice(0, 30)}»`)
+      for (const t of touched) await writeFile(join(this.dirOf(conversationId), ...t.path.split('/')), t.next, 'utf8')
+      this.bump(conversationId)
+    }
+    return { files, replacements, state: await this.state(conversationId) }
+  }
+
   /** Файлы сториз проекта с именами стори. */
   async stories(conversationId: string): Promise<MakeStoryFile[]> {
     const result: MakeStoryFile[] = []
