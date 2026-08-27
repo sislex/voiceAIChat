@@ -104,6 +104,16 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [savedContent, setSavedContent] = useState('')
   // Вкладки открытых файлов (как в VS Code) и автосохранение с паузой — правки не теряются при переключении.
   const [tabs, setTabs] = useState<string[]>([])
+  // Содержимое всех текстовых файлов — для моделей Monaco (резолв импортов). Перечитываем по rev.
+  const [projectFiles, setProjectFiles] = useState<Array<{ path: string; content: string }>>([])
+  useEffect(() => {
+    if (mode !== 'code' || !state) return
+    let cancelled = false
+    const texts = state.files.filter((f) => isMakeTextPath(f.path) && f.size <= 512 * 1024)
+    void Promise.all(texts.map((f) => api['make:read']({ conversationId, path: f.path }).then((r) => ({ path: f.path, content: r.content })).catch(() => null)))
+      .then((list) => { if (!cancelled) setProjectFiles(list.filter((x): x is { path: string; content: string } => x !== null)) })
+    return () => { cancelled = true }
+  }, [mode, state?.rev, conversationId, api, state])
   const [autosave, setAutosave] = useState<boolean>(() => { try { return localStorage.getItem('vc.make.autosave') !== 'off' } catch { return true } })
   const toggleAutosave = (): void => { setAutosave((v) => { const next = !v; try { localStorage.setItem('vc.make.autosave', next ? 'on' : 'off') } catch { /* приватный режим */ } return next }) }
   const [saving, setSaving] = useState(false)
@@ -759,7 +769,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                     <span className={dirty ? 'make-editor-state dirty' : 'make-editor-state'}>{dirty ? 'не сохранено' : 'сохранено'}</span>
                   </span>
                 </div>
-                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} />
+                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} projectFiles={projectFiles} />
               </>
             ) : (
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />

@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type * as MonacoNs from 'monaco-editor/esm/vs/editor/editor.api'
 import Editor, { type OnMount } from '@monaco-editor/react'
-import { attachJsxAutoClose, setupMonaco } from './monacoSetup'
+import { attachJsxAutoClose, setupMonaco, syncProjectModels } from './monacoSetup'
 import { monacoLanguageFor } from './monacoLang'
 import type { CodeEditorProps } from '../CodeEditor'
 
 /** Редактор на Monaco — настоящий VS Code: подсветка TSX/JSX, автодополнение, поиск, сворачивание. */
-export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLabel, markers }: CodeEditorProps): JSX.Element {
+export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLabel, markers, projectFiles }: CodeEditorProps): JSX.Element {
   const monaco = useMemo(() => setupMonaco(), [])
+  useEffect(() => { if (projectFiles) syncProjectModels(monaco, projectFiles) }, [monaco, projectFiles])
   const saveRef = useRef(onSave)
   saveRef.current = onSave
   const editorRef = useRef<MonacoNs.editor.IStandaloneCodeEditor | null>(null)
@@ -32,7 +33,7 @@ export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLa
     <div className="make-monaco" data-testid="make-monaco" aria-label={ariaLabel} role="group">
       <Editor
         key={path}
-        path={path}
+        path={`file:///${path}`}
         language={monacoLanguageFor(path)}
         value={value}
         theme="vs-dark"

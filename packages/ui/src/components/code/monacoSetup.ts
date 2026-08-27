@@ -29,6 +29,7 @@ import 'monaco-editor/esm/vs/editor/contrib/contextmenu/browser/contextmenu'
 import 'monaco-editor/esm/vs/editor/contrib/indentation/browser/indentation'
 import 'monaco-editor/esm/vs/editor/contrib/linkedEditing/browser/linkedEditing'
 import { jsxClosingTagFor } from './monacoLang'
+import { REACT_TYPE_LIBS } from './monacoTypes'
 import { loader } from '@monaco-editor/react'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
@@ -64,6 +65,8 @@ export function setupMonaco(): typeof monaco {
       noEmit: true
     })
     defaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: false })
+    defaults.setEagerModelSync(true)
+    for (const lib of REACT_TYPE_LIBS) defaults.addExtraLib(lib.content, lib.path)
   }
   return monaco
 }
@@ -91,4 +94,26 @@ export function attachJsxAutoClose(editor: monaco.editor.IStandaloneCodeEditor, 
     editor.executeEdits('jsx-auto-close', [{ range: new m.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column), text: closing, forceMoveMarkers: false }])
     editor.setPosition(pos)
   })
+}
+
+/**
+ * Модели всех текстовых файлов проекта (п.2): TS-сервис Monaco резолвит `./components/Button.tsx`
+ * только если такой модели существует — тогда работают переход к определению (F12/Cmd+клик) и
+ * автодополнение импортов. Модели живут под `file:///<путь>`; редактор открытого файла использует
+ * ту же модель через `path` у <Editor>.
+ */
+export function syncProjectModels(m: typeof monaco, files: ReadonlyArray<{ path: string; content: string }>): void {
+  const keep = new Set<string>()
+  for (const file of files) {
+    const uri = m.Uri.parse(`file:///${file.path}`)
+    keep.add(uri.toString())
+    const existing = m.editor.getModel(uri)
+    if (!existing) m.editor.createModel(file.content, undefined, uri)
+    else if (existing.getValue() !== file.content && !existing.isAttachedToEditor()) existing.setValue(file.content)
+  }
+  // Удалённые файлы проекта — убрать, иначе TS будет резолвить в призраков.
+  for (const model of m.editor.getModels()) {
+    const key = model.uri.toString()
+    if (key.startsWith('file:///') && !key.includes('/node_modules/') && !keep.has(key) && !model.isAttachedToEditor()) model.dispose()
+  }
 }
