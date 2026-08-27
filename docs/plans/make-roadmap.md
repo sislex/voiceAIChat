@@ -33,16 +33,16 @@
 | 23 | Дизайн-система проекта (tokens.css) | ✅ диалог «Токены» + `@shared/makeTokens` + хинт модели |
 | 24 | Стоимость на проект | ✅ чип в шапке (`summarizeConversationUsage`) |
 | 25 | Публикация с поддоменом/паролем/счётчиком | ✅ адрес `/s/<slug>/`, пароль (cookie), счётчик; поддомен ⏸ (нужен wildcard-DNS) |
-| 27 | Git-экспорт/импорт | |
-| 28 | Импорт из Figma | |
+| 27 | Git-экспорт/импорт | ✅ импорт репозитория GitHub по ссылке (ZIP ветки, подкаталог); экспорт — ZIP/Vite; push в git ⏸ (нужен токен пользователя и git в образе) |
+| 28 | Импорт из Figma | ⏸ нужен Figma personal access token и файл-ключ; без REST API Figma импортировать нечего. Пока: «Copy as SVG» → загрузить как ассет |
 | 29 | Мок-API внутри проекта | ✅ `mock/<путь>[.METHOD].json`, конверт `$status/$delay/$headers/$body` |
 | 30 | Квоты и очистка | ✅ квота 64 МБ (`quota` → 413), `GET usage` / `POST cleanup`, диалог «Место» |
-| 31 | Совместная работа (Yjs) | |
+| 31 | Совместная работа (Yjs) | ⏸ нужен y-websocket сервер и модель совместного доступа к чату; сейчас есть live-обновление по `make.changed` и read-only шаринг (п.33) |
 | 32 | Комментарии к элементам превью | ✅ `.comments.json`, панель 💬, метки в превью, «Исправить все» |
 | 33 | Шаринг проекта read-only внутри ChatAI | ✅ share-токен, `#/make-shared/<token>`, `MakeSharedView` |
 | 34 | Мобильный редактор (fallback < 600px) | ✅ textarea-редактор + `<select>` файлов при ≤600px |
 | 35 | PWA в Vite-экспорте | ✅ `?pwa=1`: manifest + sw.js + icon.svg (+ инъекция в index.html), для статики и Vite |
-| 36 | Electron-десктоп | |
+| 36 | Electron-десктоп | ✅ desktop рендерит тот же UI через `installRemoteBridges` — все `make:*` мосты доступны; отдельного кода не нужно (typecheck:desktop падает на старом фикстуре Settings в `database.test.ts` — не Make) |
 | 38 | Метрики использования в админке | ✅ `GET /api/admin/make/stats`, секция «Make-проекты» в дашборде |
 | 39 | Rate-limit импорта | ✅ `SlidingWindowLimiter`: 10 ZIP / 20 URL за 10 мин → 429 |
 | 40 | Убрать дублирование useConfirm/Dialog | ✅ `components/ui/*` удалены, всё из `@voicechat/ui-kit`; остался `SidebarToggle` |
