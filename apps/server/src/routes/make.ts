@@ -69,6 +69,14 @@ export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
   var envScheme = 'auto';
   function applyScheme(scheme){ envScheme = scheme; document.documentElement.style.colorScheme = scheme === 'auto' ? '' : scheme; var sheets = document.styleSheets; for (var i = 0; i < sheets.length; i++) { var rules; try { rules = sheets[i].cssRules; } catch(e) { continue; } for (var j = 0; j < rules.length; j++) { var r = rules[j]; if (!r.media) continue; var orig = r.__vcMedia || (r.__vcMedia = r.media.mediaText); if (orig.indexOf('prefers-color-scheme') < 0) continue; if (scheme === 'auto') { r.media.mediaText = orig; continue; } var wantsDark = orig.indexOf('dark') >= 0; r.media.mediaText = (wantsDark === (scheme === 'dark')) ? 'all' : 'not all'; } } }
   window.addEventListener('message', function(e){ var d = e.data; if (!d || d.type !== 'vc-make.env') return; if (d.scheme) applyScheme(d.scheme); if (typeof d.lang === 'string') { if (d.lang) document.documentElement.setAttribute('lang', d.lang); else document.documentElement.removeAttribute('lang'); } });
+  // Комментарии (п.32): подсветка элемента по селектору и нумерованные метки, которые едут за элементами.
+  var pins = [], pinLayer = null;
+  function ensurePinLayer(){ if (pinLayer) return pinLayer; pinLayer = document.createElement('div'); pinLayer.setAttribute('data-vc-make-pins', ''); pinLayer.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:2147483646;pointer-events:none;'; document.documentElement.appendChild(pinLayer); return pinLayer; }
+  function placePins(){ if (!pinLayer) return; pinLayer.innerHTML = ''; pins.forEach(function(p){ var el = null; try { el = document.querySelector(p.selector); } catch(e){} if (!el) return; var r = el.getBoundingClientRect(); var b = document.createElement('div'); b.textContent = String(p.n); b.title = p.text || ''; b.style.cssText = 'position:absolute;left:' + Math.max(0, r.right - 10) + 'px;top:' + Math.max(0, r.top - 10) + 'px;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:' + (p.resolved ? '#8a8f98' : '#e5484d') + ';color:#fff;font:600 12px/20px system-ui,sans-serif;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.3);pointer-events:none;'; pinLayer.appendChild(b); }); }
+  window.addEventListener('message', function(e){ var d = e.data; if (!d || d.type !== 'vc-make.pins') return; pins = Array.isArray(d.items) ? d.items : []; ensurePinLayer(); placePins(); });
+  window.addEventListener('scroll', function(){ if (pins.length) placePins(); }, true);
+  window.addEventListener('resize', function(){ if (pins.length) placePins(); });
+  window.addEventListener('message', function(e){ var d = e.data; if (!d || d.type !== 'vc-make.highlight' || !d.selector) return; var el = null; try { el = document.querySelector(d.selector); } catch(err){} if (!el) return; try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(err){ el.scrollIntoView(); } var prev = el.style.outline, prevOff = el.style.outlineOffset; el.style.outline = '3px solid #e5484d'; el.style.outlineOffset = '2px'; setTimeout(function(){ el.style.outline = prev; el.style.outlineOffset = prevOff; }, 1600); });
   window.parent.postMessage({ type: 'vc-make.ready' }, '*');
 })();
 </script>`
@@ -246,6 +254,28 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.post<{ Params: { id: string }; Body: { snapshotId?: string | null; slug?: string | null; password?: string | null } | undefined }>('/api/make/:id/publish', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null, slug: req.body?.slug, password: req.body?.password }) } catch (error) { return sendError(reply, error) }
+  })
+
+  // Комментарии к элементам превью (п.32).
+  app.get<{ Params: { id: string } }>('/api/make/:id/comments', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { await workspaces.ensure(req.params.id); return { comments: await workspaces.comments(req.params.id) } } catch (error) { return sendError(reply, error) }
+  })
+  app.post<{ Params: { id: string }; Body: { selector?: string; elementLabel?: string; text?: string } | undefined }>('/api/make/:id/comments', async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    try {
+      await workspaces.ensure(req.params.id)
+      return { comments: await workspaces.addComment(req.params.id, { selector: req.body?.selector ?? '', elementLabel: req.body?.elementLabel ?? '', text: req.body?.text ?? '', author: userId }) }
+    } catch (error) { return sendError(reply, error) }
+  })
+  app.patch<{ Params: { id: string; commentId: string }; Body: { resolved?: boolean; text?: string } | undefined }>('/api/make/:id/comments/:commentId', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { return { comments: await workspaces.updateComment(req.params.id, req.params.commentId, { resolved: req.body?.resolved, text: req.body?.text }) } } catch (error) { return sendError(reply, error) }
+  })
+  app.delete<{ Params: { id: string; commentId: string } }>('/api/make/:id/comments/:commentId', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { return { comments: await workspaces.removeComment(req.params.id, req.params.commentId) } } catch (error) { return sendError(reply, error) }
   })
 
   app.get<{ Params: { id: string } }>('/api/make/:id/usage', async (req, reply) => {

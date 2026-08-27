@@ -282,4 +282,18 @@ describe('MakeWorkspaces', () => {
     expect((await ws.snapshots(CONV))[0]!.id).toBe(s1.id)
     expect(await ws.readBuffer(CONV, 'img/orphan.png')).toBeNull()
   })
+
+  it('комментарии: добавление, решено, удаление; переживают reset', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const list = await ws.addComment(CONV, { selector: 'h1', elementLabel: '<h1> Привет', text: '  Крупнее  ', author: 'admin' })
+    expect(list[0]).toMatchObject({ selector: 'h1', text: 'Крупнее', author: 'admin', resolved: false })
+    await expect(ws.addComment(CONV, { selector: '', elementLabel: '', text: 'x', author: 'a' })).rejects.toMatchObject({ code: 'invalid_path' })
+    const id = list[0]!.id
+    expect((await ws.updateComment(CONV, id, { resolved: true }))[0]!.resolved).toBe(true)
+    await expect(ws.updateComment(CONV, 'nope', { resolved: true })).rejects.toMatchObject({ code: 'not_found' })
+    await ws.reset(CONV)
+    expect((await ws.comments(CONV)).length).toBe(1)
+    expect(await ws.removeComment(CONV, id)).toEqual([])
+  })
 })

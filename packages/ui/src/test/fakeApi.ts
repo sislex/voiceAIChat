@@ -1,4 +1,4 @@
-import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem } from '@shared/make'
+import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
@@ -34,6 +34,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   /** Содержимое файлов на момент снимка — для diff и восстановления одного файла. */
   const makeSnapContents = new Map<string, Map<string, string>>()
   const makeShots = new Map<string, MakeStoryShot[]>()
+  const makeComments = new Map<string, MakeComment[]>()
   const library = new Map<string, MakeLibraryItem>()
   const libraryFiles = new Map<string, Map<string, string>>()
   const makeRev = new Map<string, number>()
@@ -281,6 +282,19 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:libraryInsert': async ({ conversationId, slug }) => { for (const [p, c] of libraryFiles.get(slug) ?? []) makeFiles(conversationId).set(p, c); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
     'make:libraryRemove': async ({ slug }) => { library.delete(slug); return { items: [...library.values()] } },
     'make:shots': async ({ conversationId }) => ({ shots: makeShots.get(conversationId) ?? [] }),
+    'make:comments': async ({ conversationId }) => ({ comments: makeComments.get(conversationId) ?? [] }),
+    'make:commentAdd': async ({ conversationId, selector, elementLabel, text }) => {
+      const list = [{ id: `c${(makeComments.get(conversationId) ?? []).length + 1}`, selector, elementLabel, text, author: 'admin', createdAt: 1, resolved: false }, ...(makeComments.get(conversationId) ?? [])]
+      makeComments.set(conversationId, list); return { comments: list }
+    },
+    'make:commentUpdate': async ({ conversationId, commentId, resolved, text }) => {
+      const list = (makeComments.get(conversationId) ?? []).map((c) => (c.id === commentId ? { ...c, resolved: resolved ?? c.resolved, text: text ?? c.text } : c))
+      makeComments.set(conversationId, list); return { comments: list }
+    },
+    'make:commentRemove': async ({ conversationId, commentId }) => {
+      const list = (makeComments.get(conversationId) ?? []).filter((c) => c.id !== commentId)
+      makeComments.set(conversationId, list); return { comments: list }
+    },
     'make:usage': async ({ conversationId }) => {
       const files = [...makeFiles(conversationId).entries()]
       const filesBytes = files.reduce((s, [, c]) => s + new TextEncoder().encode(c).byteLength, 0)
