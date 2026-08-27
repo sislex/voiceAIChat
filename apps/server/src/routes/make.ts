@@ -284,6 +284,18 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
+  app.get<{ Params: { id: string } }>('/api/make/:id/shots', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { return { shots: await workspaces.shots(req.params.id) } } catch (error) { return sendError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { file?: string; story?: string; dataBase64?: string } }>('/api/make/:id/shots', { bodyLimit: 8 * 1024 * 1024 }, async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    const { file, story, dataBase64 } = req.body ?? {}
+    if (typeof file !== 'string' || typeof story !== 'string' || typeof dataBase64 !== 'string') return reply.code(400).send({ error: 'file, story и dataBase64 обязательны' })
+    try { return { shots: await workspaces.addShot(req.params.id, file, story, Buffer.from(dataBase64, 'base64')) } } catch (error) { return sendError(reply, error) }
+  })
+
   app.get<{ Params: { id: string } }>('/api/make/:id/stories', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try { await workspaces.ensure(req.params.id); return { files: await workspaces.stories(req.params.id) } } catch (error) { return sendError(reply, error) }
@@ -349,6 +361,11 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (!own(uid(req), req.params.id, reply)) return reply
     await workspaces.ensure(req.params.id)
     const raw = req.params['*'] || 'index.html'
+    if (raw.startsWith('__shots__/') && raw.endsWith('.png')) {
+      const img = await workspaces.shotImage(req.params.id, raw.slice('__shots__/'.length, -4))
+      if (!img) return reply.code(404).type('text/plain; charset=utf-8').send('Снимок не найден')
+      return reply.header('content-type', 'image/png').header('cache-control', 'private, max-age=3600').send(img)
+    }
     if (raw === MAKE_GALLERY_PAGE) {
       const files = await workspaces.stories(req.params.id)
       return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store')

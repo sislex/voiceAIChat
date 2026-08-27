@@ -6727,3 +6727,15 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-a11y-help { border: 0; background: transparent; padding: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer; text-decoration: underline dotted; }
 .make-a11y-row small { color: var(--text-dim); }
 .make-a11y-row a { color: var(--text-dim); text-decoration: none; }
+
+/* Визуальные снимки стори. */
+.make-shots { border-top: 1px solid var(--border); background: var(--panel); padding: 6px 12px; font-size: 12px; }
+.make-shots-strip { display: flex; gap: 8px; align-items: center; overflow-x: auto; }
+.make-shot { display: grid; gap: 2px; border: 2px solid var(--border); border-radius: 8px; padding: 2px; background: var(--surface); cursor: pointer; font: inherit; color: var(--text-dim); }
+.make-shot.on { border-color: var(--accent); }
+.make-shot img { width: 96px; height: 60px; object-fit: cover; border-radius: 4px; background: #fff; }
+.make-shots-hint { color: var(--text-dim); }
+.make-shots-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.make-shots-compare figure { margin: 0; display: grid; gap: 4px; }
+.make-shots-compare img { width: 100%; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.make-shots-compare figcaption { color: var(--text-dim); text-align: center; }

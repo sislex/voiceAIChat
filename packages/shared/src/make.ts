@@ -89,6 +89,9 @@ export interface MakeConsoleLine { level: 'log' | 'info' | 'warn' | 'error'; tex
 /** Сетевой запрос из превью (fetch/XHR), перехваченный инспектор-скриптом. */
 export interface MakeNetworkEntry { method: string; url: string; status: number; ok: boolean; ms: number; at: number; kind: 'fetch' | 'xhr' }
 
+/** Визуальный снимок стори (PNG, снятый на клиенте), хранится на сервере вне файлов проекта. */
+export interface MakeStoryShot { id: string; file: string; story: string; at: number; rev: number }
+
 export type MakeImportMode = 'replace' | 'merge'
 
 /** Файлы, которые сервер транспилирует esbuild при отдаче превью (JSX/TS → ESM). */

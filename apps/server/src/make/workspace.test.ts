@@ -122,6 +122,23 @@ describe('MakeWorkspaces', () => {
     expect(again.filter((i) => i.kind === 'missing-file').map((i) => i.message)).toContain('Ссылка на отсутствующий файл: ../img/bg.png')
   })
 
+  it('addShot: PNG сохраняется, meta сортирована, лимит 10 на стори с удалением файлов', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(8)])
+    for (let i = 0; i < 12; i++) await ws.addShot(CONV, 'src/B.stories.tsx', 'Primary', png)
+    await ws.addShot(CONV, 'src/B.stories.tsx', 'Small', png)
+    const shots = await ws.shots(CONV)
+    expect(shots.filter((s) => s.story === 'Primary')).toHaveLength(10)
+    expect(shots.filter((s) => s.story === 'Small')).toHaveLength(1)
+    expect((await ws.shotImage(CONV, shots[0]!.id))!.equals(png)).toBe(true)
+    await expect(ws.addShot(CONV, 'a', 'b', Buffer.from('notpng'))).rejects.toMatchObject({ code: 'invalid_path' })
+    // .shots не считается файлом проекта и переживает reset
+    expect((await ws.list(CONV)).some((f) => f.path.includes('.shots'))).toBe(false)
+    await ws.reset(CONV)
+    expect(await ws.shots(CONV)).toHaveLength(11)
+  })
+
   it('replaceAll: замена во всех текстовых файлах без регистра, снимок перед заменой, без совпадений — ничего', async () => {
     const ws = await fresh()
     await ws.write(CONV, 'index.html', '<h1>Hello</h1><p>hello world</p>')
