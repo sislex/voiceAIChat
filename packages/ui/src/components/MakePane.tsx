@@ -436,9 +436,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) { toast.error(describeError(e)) }
   }
 
-  const publish = async (): Promise<void> => {
-    try { setState(await api['make:publish']({ conversationId })); toast.success('Проект опубликован') } catch (e) { toast.error(describeError(e)) }
+  const publish = async (snapshotId: string | null = null): Promise<void> => {
+    try {
+      setState(await api['make:publish']({ conversationId, snapshotId }))
+      toast.success(snapshotId ? 'Публикация закреплена за снимком' : state?.published ? 'Публикация обновлена: текущее состояние' : 'Проект опубликован')
+    } catch (e) { toast.error(describeError(e)) }
   }
+  const [publishPick, setPublishPick] = useState<string>('')
   const unpublish = async (): Promise<void> => {
     const ok = await confirm({ title: 'Снять проект с публикации?', message: 'Ссылка перестанет открываться.', variant: 'danger', confirmLabel: 'Снять' })
     if (!ok) return
@@ -879,6 +883,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   <span className="make-snapshot-actions">
                     <Button size="sm" variant="ghost" onClick={() => void loadDiff(snap.id)} aria-expanded={Boolean(diffs[snap.id])}>{diffs[snap.id] ? 'Скрыть' : 'Сравнить'}</Button>
                     <Button size="sm" variant="secondary" onClick={() => void restoreSnapshot(snap.id, snap.label)}>Вернуть</Button>
+                    <Button size="sm" variant="ghost" onClick={() => void publish(snap.id)} title="Публичная ссылка будет отдавать именно эту версию">{state?.published?.snapshotId === snap.id ? 'Опубликована' : 'Опубликовать версию'}</Button>
                   </span>
                   {diffs[snap.id] === 'loading' && <p className="make-diff-note">Сравниваю…</p>}
                   {diffs[snap.id] && diffs[snap.id] !== 'loading' && (
@@ -997,11 +1002,23 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         <Dialog title="Публикация проекта" ariaLabel="Публикация проекта" size="sm" onClose={() => setPublishOpen(false)} testId="make-publish">
           {state?.published ? (
             <div className="make-publish">
-              <p className="fsub">Ссылка открывается без входа — у всех, кто её знает. Файлы отдаются текущие: изменения видны сразу.</p>
+              <p className="fsub">Ссылка открывается без входа — у всех, кто её знает.{' '}
+                {state.published.snapshotId
+                  ? <>Закреплена версия <strong>«{state.published.snapshotLabel}»</strong> — правки не видны, пока публикацию не обновить.</>
+                  : <>Файлы отдаются текущие: изменения видны сразу.</>}
+              </p>
               <div className="make-publish-link">
                 <code data-testid="make-public-url">{typeof window !== 'undefined' ? new URL(state.published.url, window.location.origin).toString() : state.published.url}</code>
                 <Button size="sm" variant="secondary" onClick={() => void copyPublicLink()}>Копировать</Button>
                 <Button size="sm" variant="ghost" onClick={() => window.open(state.published!.url, '_blank', 'noopener')}>Открыть</Button>
+              </div>
+              <div className="make-publish-pin">
+                <label htmlFor="make-publish-pick">Что публиковать</label>
+                <select id="make-publish-pick" value={publishPick || (state.published.snapshotId ?? '')} onChange={(e) => setPublishPick(e.target.value)}>
+                  <option value="">Текущее состояние (обновляется сразу)</option>
+                  {state.snapshots.map((s) => <option key={s.id} value={s.id}>Снимок: {s.label} · {formatTime(s.createdAt)}</option>)}
+                </select>
+                <Button size="sm" variant="secondary" onClick={() => void publish((publishPick || state.published?.snapshotId) || null)}>Обновить публикацию</Button>
               </div>
               <div className="make-ask-actions"><Button size="sm" variant="danger" onClick={() => void unpublish()}>Снять с публикации</Button></div>
             </div>

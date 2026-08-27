@@ -39,6 +39,9 @@ export interface MakePublication {
   publishedAt: number
   /** Относительный URL страницы публикации (`/p/<token>/`). */
   url: string
+  /** Закреплённый снимок: ссылка отдаёт его файлы, а не текущие; null — «живая» публикация. */
+  snapshotId?: string | null
+  snapshotLabel?: string | null
 }
 
 /** Замечание статической проверки проекта (битые ссылки, отсутствующие файлы…). */

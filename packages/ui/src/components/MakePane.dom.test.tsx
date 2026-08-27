@@ -353,4 +353,18 @@ describe('MakePane', () => {
     expect(file.name).toBe('preview.png')
     expect(file.type).toBe('image/png')
   })
+
+  it('публикация версии: «Опубликовать версию» в истории закрепляет снимок, диалог показывает его', async () => {
+    const { api, emit } = renderPane()
+    await screen.findByTitle('Превью проекта')
+    const next = await api['make:snapshot']({ conversationId: CONV, label: 'релиз 1' })
+    emit({ conversationId: CONV, rev: next.rev, paths: [] })
+    await userEvent.click(screen.getByRole('tab', { name: 'История' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Опубликовать версию' }))
+    expect(await screen.findByRole('button', { name: 'Опубликована' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Опубликован' }))
+    const dialog = await screen.findByTestId('make-publish')
+    expect(dialog).toHaveTextContent('Закреплена версия «релиз 1»')
+    expect((within(dialog).getByLabelText('Что публиковать') as HTMLSelectElement).value).not.toBe('')
+  })
 })

@@ -385,25 +385,53 @@ export class MakeWorkspaces {
 
   async publication(conversationId: string): Promise<MakePublication | null> {
     try {
-      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), PUBLISH_FILE), 'utf8')) as { token?: string; publishedAt?: number }
+      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), PUBLISH_FILE), 'utf8')) as { token?: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null }
       if (!raw.token || !ID_RE.test(raw.token)) return null
-      return { token: raw.token, publishedAt: raw.publishedAt ?? 0, url: makePublicUrl(raw.token) }
+      return { token: raw.token, publishedAt: raw.publishedAt ?? 0, url: makePublicUrl(raw.token), snapshotId: raw.snapshotId ?? null, snapshotLabel: raw.snapshotLabel ?? null }
     } catch {
       return null
     }
   }
 
   /** Публикует проект (повторный вызов возвращает ту же ссылку). */
-  async publish(conversationId: string): Promise<MakeProjectState> {
+  /**
+   * Опубликовать: токен создаётся один раз и не меняется; `snapshotId` закрепляет публикацию за снимком
+   * (ссылка отдаёт его файлы, пока публикацию не обновят), null — «живая» публикация текущих файлов.
+   */
+  async publish(conversationId: string, options: { snapshotId?: string | null } = {}): Promise<MakeProjectState> {
     const existing = await this.publication(conversationId)
+    const token = existing?.token ?? randomUUID().replace(/-/g, '')
     if (!existing) {
-      const token = randomUUID().replace(/-/g, '')
       const indexDir = join(this.rootDir, 'make', PUBLISHED_INDEX_DIR)
       await mkdir(indexDir, { recursive: true })
       await writeFile(join(indexDir, `${token}.json`), JSON.stringify({ conversationId }), 'utf8')
-      await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify({ token, publishedAt: Date.now() }), 'utf8')
     }
+    let snapshotId: string | null = null, snapshotLabel: string | null = null
+    if (options.snapshotId) {
+      if (!ID_RE.test(options.snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
+      const snap = (await this.snapshots(conversationId)).find((s) => s.id === options.snapshotId)
+      if (!snap) throw new MakeError('not_found', 'Снимок не найден')
+      snapshotId = snap.id; snapshotLabel = snap.label
+    }
+    await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify({ token, publishedAt: Date.now(), snapshotId, snapshotLabel }), 'utf8')
     return this.state(conversationId)
+  }
+
+  /** Файл для публичной ссылки: из закреплённого снимка или текущий. Возвращает и «ключ ревизии» для кэша транспиляции. */
+  async publicFile(conversationId: string, rawPath: string): Promise<{ path: string; data: Buffer; cacheKey: string; rev: number } | null> {
+    const pub = await this.publication(conversationId)
+    if (pub?.snapshotId) {
+      const path = normalizeMakePath(rawPath)
+      if (!path) return null
+      const abs = join(this.dirOf(conversationId), SNAPSHOTS_DIR, pub.snapshotId, 'files', ...path.split('/'))
+      try {
+        const st = await stat(abs)
+        if (!st.isFile()) return null
+        return { path, data: await readFile(abs), cacheKey: `${conversationId}@${pub.snapshotId}`, rev: 0 }
+      } catch { return null }
+    }
+    const file = await this.readBuffer(conversationId, rawPath)
+    return file ? { ...file, cacheKey: conversationId, rev: this.rev(conversationId) } : null
   }
 
   async unpublish(conversationId: string): Promise<MakeProjectState> {

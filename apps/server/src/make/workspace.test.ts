@@ -94,6 +94,16 @@ describe('MakeWorkspaces', () => {
     expect((await ws.publish(CONV)).published?.token).toBe(token)
     await ws.reset(CONV)
     expect((await ws.state(CONV)).published?.token).toBe(token)
+    // Закрепление за снимком: publicFile отдаёт файлы снимка, а не текущие; повторный publish без snapshotId — живая.
+    await ws.write(CONV, 'index.html', 'live-v1')
+    const snap = (await ws.snapshot(CONV, 'релиз 1')).snapshots[0]!
+    await ws.write(CONV, 'index.html', 'live-v2')
+    const pinned = await ws.publish(CONV, { snapshotId: snap.id })
+    expect(pinned.published).toMatchObject({ token, snapshotId: snap.id, snapshotLabel: 'релиз 1' })
+    expect((await ws.publicFile(CONV, 'index.html'))!.data.toString()).toBe('live-v1')
+    await ws.publish(CONV)
+    expect((await ws.publicFile(CONV, 'index.html'))!.data.toString()).toBe('live-v2')
+    await expect(ws.publish(CONV, { snapshotId: 'nope' })).rejects.toMatchObject({ code: 'not_found' })
     const off = await ws.unpublish(CONV)
     expect(off.published).toBeNull()
     expect(await ws.publishedTarget(token)).toBeNull()

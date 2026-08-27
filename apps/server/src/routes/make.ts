@@ -224,9 +224,9 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
-  app.post<{ Params: { id: string } }>('/api/make/:id/publish', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { snapshotId?: string | null } | undefined }>('/api/make/:id/publish', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
-    try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id) } catch (error) { return sendError(reply, error) }
+    try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null }) } catch (error) { return sendError(reply, error) }
   })
 
   app.delete<{ Params: { id: string } }>('/api/make/:id/publish', async (req, reply) => {
@@ -275,15 +275,18 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const raw = req.params['*'] || 'index.html'
     const path = raw.endsWith('/') ? `${raw}index.html` : raw
     let file
-    try { file = await workspaces.readBuffer(conversationId, path) } catch { file = null }
+    try { file = await workspaces.publicFile(conversationId, path) } catch { file = null }
     if (!file) return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
+    const body = isMakeTranspiledPath(file.path)
+      ? await transpileForPreview(file.cacheKey, file.path, file.data.toString('utf8'), file.rev, () => true)
+      : file.data
     return reply
       .header('content-type', makeMimeType(file.path))
       .header('cache-control', 'no-store')
       .header('x-content-type-options', 'nosniff')
       .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:")
       .header('x-robots-tag', 'noindex')
-      .send(await previewBody(conversationId, file))
+      .send(body)
   })
   app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
   app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token/`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
