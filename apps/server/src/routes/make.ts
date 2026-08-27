@@ -6,7 +6,7 @@
 // разговор принадлежит пользователю; изменения рассылаются владельцу `make.changed`.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath } from '@voicechat/shared'
+import { MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse } from '@voicechat/shared'
 import { transpileForPreview } from '../make/transpile.js'
 import { renderGalleryPage, renderStoriesPage } from '../make/stories.js'
 import { readZip, ZipReadError } from '../make/zipRead.js'
@@ -361,6 +361,24 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
 <body><form method="post" action="${action}"><h1>Проект защищён паролем</h1>${wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
 
+  /** Ответ мок-API (п.29): JSON, статус и заголовки из конверта, искусственная задержка — как у настоящего бэкенда. */
+  const sendMock = async (reply: FastifyReply, mock: MockResponse): Promise<unknown> => {
+    if (mock.delayMs > 0) await new Promise((r) => setTimeout(r, mock.delayMs))
+    reply.code(mock.status).header('content-type', 'application/json; charset=utf-8').header('cache-control', 'no-store').header('x-vc-mock', '1')
+    for (const [k, v] of Object.entries(mock.headers)) reply.header(k, v)
+    return reply.send(mock.body === null ? '' : JSON.stringify(mock.body))
+  }
+  // Не-GET запросы превью — только моки: файлов такими методами не отдаём.
+  app.route<{ Params: { id: string; '*': string } }>({
+    method: ['POST', 'PUT', 'PATCH', 'DELETE'], url: '/api/preview/make/:id/*',
+    handler: async (req, reply) => {
+      if (!own(uid(req), req.params.id, reply)) return reply
+      const mock = await workspaces.resolveMock(req.params.id, req.params['*'] || '', req.method)
+      if (!mock) return reply.code(404).type('text/plain; charset=utf-8').send(`Мок не найден: mock/${req.params['*']}.${req.method}.json`)
+      return sendMock(reply, mock)
+    }
+  })
+
   /** Отдача файла публикации по токену: общий код для /p/<token>/ и /s/<slug>/. */
   const servePublic = async (token: string, rawPath: string, base: string, req: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     const conversationId = await workspaces.publishedTarget(token)
@@ -387,7 +405,11 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const path = raw.endsWith('/') ? `${raw}index.html` : raw
     let file
     try { file = await workspaces.publicFile(conversationId, path) } catch { file = null }
-    if (!file) return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
+    if (!file) {
+      const mock = await workspaces.resolveMock(conversationId, path, req.method, true)
+      if (mock) return sendMock(reply, mock)
+      return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
+    }
     if (path === 'index.html') void workspaces.countView(conversationId)
     const body = isMakeTranspiledPath(file.path)
       ? await transpileForPreview(file.cacheKey, file.path, file.data.toString('utf8'), file.rev, () => true)
@@ -415,8 +437,21 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   app.get<{ Params: { token: string; '*': string } }>(`${MAKE_PUBLIC_PREFIX}:token/*`, async (req, reply) =>
     servePublic(req.params.token, req.params['*'], `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/`, req, reply))
-  app.post<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token/__auth__`, async (req, reply) =>
-    authPublic(req.params.token, `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/`, req, reply))
+  /** Не-GET на публикации: `__auth__` — форма пароля, остальное — моки (после проверки пропуска). */
+  const publicMutation = async (token: string, rawPath: string, base: string, req: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
+    if (rawPath === '__auth__') return authPublic(token, base, req, reply)
+    const conversationId = await workspaces.publishedTarget(token)
+    if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
+    const gate = await workspaces.publicGate(conversationId)
+    if (gate && cookieValue(req, gateCookieName(token)) !== gate) return reply.code(401).type('text/plain; charset=utf-8').send('Публикация защищена паролем')
+    const mock = await workspaces.resolveMock(conversationId, rawPath, req.method, true)
+    if (!mock) return reply.code(404).type('text/plain; charset=utf-8').send('Мок не найден')
+    return sendMock(reply, mock)
+  }
+  app.route<{ Params: { token: string; '*': string } }>({
+    method: ['POST', 'PUT', 'PATCH', 'DELETE'], url: `${MAKE_PUBLIC_PREFIX}:token/*`,
+    handler: async (req, reply) => publicMutation(req.params.token, req.params['*'] || '', `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/`, req, reply)
+  })
   app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
   app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token/`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
 
@@ -427,10 +462,13 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (!token) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
     return servePublic(token, req.params['*'], slugBase(req.params.slug), req, reply)
   })
-  app.post<{ Params: { slug: string } }>(`${MAKE_SLUG_PREFIX}:slug/__auth__`, async (req, reply) => {
-    const token = await workspaces.slugToken(req.params.slug)
-    if (!token) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
-    return authPublic(token, slugBase(req.params.slug), req, reply)
+  app.route<{ Params: { slug: string; '*': string } }>({
+    method: ['POST', 'PUT', 'PATCH', 'DELETE'], url: `${MAKE_SLUG_PREFIX}:slug/*`,
+    handler: async (req, reply) => {
+      const token = await workspaces.slugToken(req.params.slug)
+      if (!token) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
+      return publicMutation(token, req.params['*'] || '', slugBase(req.params.slug), req, reply)
+    }
   })
   app.get<{ Params: { slug: string } }>(`${MAKE_SLUG_PREFIX}:slug`, async (req, reply) => reply.redirect(`${slugBase(req.params.slug)}index.html`))
   app.get<{ Params: { slug: string } }>(`${MAKE_SLUG_PREFIX}:slug/`, async (req, reply) => reply.redirect(`${slugBase(req.params.slug)}index.html`))
@@ -477,7 +515,11 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const path = raw.endsWith('/') ? `${raw}index.html` : raw
     let file
     try { file = await workspaces.readBuffer(req.params.id, path) } catch (error) { return sendError(reply, error) }
-    if (!file) return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
+    if (!file) {
+      const mock = await workspaces.resolveMock(req.params.id, path, 'GET')
+      if (mock) return sendMock(reply, mock)
+      return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
+    }
     const mime = makeMimeType(file.path)
     reply
       .header('content-type', mime)

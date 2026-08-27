@@ -14,7 +14,8 @@ import {
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse } from '@voicechat/shared'
+import { mockCandidates, unwrapMockEnvelope } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists'
@@ -557,6 +558,20 @@ export class MakeWorkspaces {
     if (!raw) return
     raw.views = (raw.views ?? 0) + 1
     await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8').catch(() => undefined)
+  }
+
+  /**
+   * Мок-API (п.29): для отсутствующего файла ищет `mock/<путь>[.<METHOD>].json`; `publicMode` — файлы с публикации
+   * (закреплённый снимок), иначе текущие. Возвращает разобранный ответ или null, если мока нет / JSON битый.
+   */
+  async resolveMock(conversationId: string, rawPath: string, method: string, publicMode = false): Promise<MockResponse | null> {
+    for (const candidate of mockCandidates(rawPath, method)) {
+      let file: { data: Buffer } | null = null
+      try { file = publicMode ? await this.publicFile(conversationId, candidate) : await this.readBuffer(conversationId, candidate) } catch { file = null }
+      if (!file) continue
+      try { return unwrapMockEnvelope(JSON.parse(file.data.toString('utf8'))) } catch { return { status: 500, body: { error: `Мок ${candidate}: невалидный JSON` }, headers: {}, delayMs: 0 } }
+    }
+    return null
   }
 
   /** Файл для публичной ссылки: из закреплённого снимка или текущий. Возвращает и «ключ ревизии» для кэша транспиляции. */
