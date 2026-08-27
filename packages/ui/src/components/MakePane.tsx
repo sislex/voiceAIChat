@@ -615,6 +615,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) { toast.error(describeError(e)) }
   }, [api, conversationId, toast])
   useEffect(() => { if (mode === 'stories') void loadStories() }, [mode, loadStories, state?.rev])
+  /** Публичная ссылка на стори (нужна публикация) — копируется в буфер. */
+  const shareStory = async (): Promise<void> => {
+    if (!story) return
+    if (!state?.published) { toast.info('Публичная ссылка появится после публикации проекта (кнопка «Опубликовать»)'); setPublishOpen(true); return }
+    const url = new URL(`${state.published.url}__stories__?file=${encodeURIComponent(story.file)}&story=${encodeURIComponent(story.name)}`, window.location.origin).toString()
+    toast[(await copyText(url)) ? 'success' : 'error']('Ссылка на стори скопирована')
+  }
   const sendStoryToChat = (): void => {
     if (!story || !onInsertToChat) return
     const component = story.file.slice(story.file.lastIndexOf('/') + 1).replace(/\.stories\.(jsx|tsx)$/i, '')
@@ -775,6 +782,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
       {mode === 'history' && <Button size="sm" variant="secondary" onClick={takeSnapshot}>+ Снимок</Button>}
       {mode === 'stories' && story && onInsertToChat && <Button size="sm" variant="primary" onClick={sendStoryToChat}>Работать над компонентом</Button>}
+      {mode === 'stories' && <Button size="sm" variant="ghost" onClick={() => window.open(REST.makeGalleryPage(conversationId), '_blank', 'noopener')} title="Все стори проекта одной страницей">Галерея</Button>}
+      {mode === 'stories' && story && <Button size="sm" variant="ghost" onClick={() => void shareStory()} title={state?.published ? 'Скопировать публичную ссылку на эту стори' : 'Сначала опубликуйте проект — ссылка будет без входа'}>Поделиться</Button>}
       {onInsertToChat && <IconButton size="sm" aria-label="Идеи для старта" title="Идеи: готовые промпты для приложений и сайтов" onClick={() => setIdeasOpen(true)}>✦</IconButton>}
       <IconButton size="sm" aria-label="Шаблоны проекта" title="Начать с шаблона" onClick={() => setTemplatesOpen(true)}>▤</IconButton>
       <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>

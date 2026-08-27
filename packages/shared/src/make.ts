@@ -98,6 +98,8 @@ export const isMakeStoriesPath = (path: string): boolean => /\.stories\.(jsx|tsx
 
 /** Страница-раннер сториз внутри превью проекта: `?file=<stories>&story=<name>`. */
 export const MAKE_STORIES_PAGE = '__stories__'
+/** Галерея всех стори проекта (на превью и на публикации). */
+export const MAKE_GALLERY_PAGE = '__gallery__'
 
 /** Import map по умолчанию для React-проектов: React из esm.sh, версии закреплены. */
 export const MAKE_REACT_IMPORT_MAP: Record<string, string> = {

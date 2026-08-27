@@ -6,9 +6,9 @@
 // разговор принадлежит пользователю; изменения рассылаются владельцу `make.changed`.
 
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { MAKE_PUBLIC_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath } from '@voicechat/shared'
+import { MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath } from '@voicechat/shared'
 import { transpileForPreview } from '../make/transpile.js'
-import { renderStoriesPage } from '../make/stories.js'
+import { renderGalleryPage, renderStoriesPage } from '../make/stories.js'
 import { readZip, ZipReadError } from '../make/zipRead.js'
 import { importFromUrl, ImportUrlError } from '../make/importUrl.js'
 import type { VoiceChatDb } from '../db/database.js'
@@ -302,6 +302,16 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const conversationId = await workspaces.publishedTarget(req.params.token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
     const raw = req.params['*'] || 'index.html'
+    // Публичные сториз и галерея (п.15): те же страницы, что в превью, но без входа; файлы — с публикации.
+    if (raw === MAKE_STORIES_PAGE || raw === MAKE_GALLERY_PAGE) {
+      const publicBase = `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/`
+      const headers = (r: FastifyReply): FastifyReply => r.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
+        .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:")
+      if (raw === MAKE_GALLERY_PAGE) return headers(reply).send(renderGalleryPage(await workspaces.stories(conversationId), publicBase))
+      const q = req.query as { file?: string; story?: string }
+      const index = await workspaces.publicFile(conversationId, 'index.html').catch(() => null)
+      return headers(reply).send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null))
+    }
     const path = raw.endsWith('/') ? `${raw}index.html` : raw
     let file
     try { file = await workspaces.publicFile(conversationId, path) } catch { file = null }
@@ -339,6 +349,12 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (!own(uid(req), req.params.id, reply)) return reply
     await workspaces.ensure(req.params.id)
     const raw = req.params['*'] || 'index.html'
+    if (raw === MAKE_GALLERY_PAGE) {
+      const files = await workspaces.stories(req.params.id)
+      return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store')
+        .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'")
+        .send(renderGalleryPage(files, `/api/preview/make/${encodeURIComponent(req.params.id)}/`))
+    }
     if (raw === MAKE_STORIES_PAGE) {
       const q = req.query as { file?: string; story?: string }
       const index = await workspaces.readBuffer(req.params.id, 'index.html').catch(() => null)

@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-27
-checked: 8e522673
+checked: 0574ce01
 areas:
   - apps/server/src
 ---
@@ -84,7 +84,9 @@ MCP даёт `db.conversationOwner(id)`. Старый исследователь
 (`MAKE_REACT_IMPORT_MAP`, шаблоны `react` и `react-ts` — второй на TSX с типизированными пропсами и
 `*.stories.tsx`). **Сториз** (`make/stories.ts`): `parseStoryFile` — имена
 стори регуляркой по экспортам (код не исполняется на сервере), `renderStoriesPage` — HTML раннера
-для `GET /api/preview/make/:id/__stories__?file=&story=`; `GET /api/make/:id/stories` и
+для `GET /api/preview/make/:id/__stories__?file=&story=`; `GET /api/make/:id/stories`,
+`GET /api/preview/make/:id/__gallery__` (`renderGalleryPage` — сетка iframe-ов на раннер; те же `__stories__` и
+`__gallery__` отдаются и на публикации `/p/<token>/…` без входа, п.15) и
 `GET /api/make/:id/search?q=` (`MakeWorkspaces.stories/search`, поиск без регистра, ≤200 совпадений).
 
 Текущий `/api/preview` нельзя считать файловым или artifact-preview сервером: это аутентифицированный same-origin прокси внешнего HTTP/HTTPS. Его SSRF-ограничения и механизм iframe описаны ниже; отдельному продукту понадобятся собственные storage, ревизии, builder и изолированный runtime, которых сейчас в сервере нет.
