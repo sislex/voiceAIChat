@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-27
-checked: fc097896
+checked: 408fb8f7
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -273,6 +273,8 @@ Usage нормализуется в `TurnUsage` и рассылается как
 **Откат правок хода (roadmap-2 п.2).** Снимок «До правок», который `makeMcp` делает перед первой мутацией хода, регистрируется в `MakeHub.rememberTurnSnapshot(turn, snapshotId)`; `turns.ts` передаёт в MCP-URL тот же `turnId`, что и внутри хода, и при сборке `merged`-meta спрашивает `deps.makeHub.turnSnapshot(turnId)` → `TurnMeta.makeSnapshotId`. `ChatColumn` у ответа с этим полем показывает «Откатить правки» (проп `onMakeRestore`, `App` даёт его только в маршруте `/make`): подтверждение через `useConfirm`, затем `make:restore` — текущее состояние перед откатом сохраняется снимком «Перед восстановлением снимка». Ход без записей файлов кнопки не получает.
 
 **Контекст проекта в промпте (roadmap-2 п.9).** Перед ходом Make `turns.ts` вызывает `deps.makeContext(conversationId)` (в `server.ts` — `makeWorkspaces.promptContext`): блок «## Контекст проекта Make» с токенами `:root` из `tokens.css`/`styles.css` (до 40, формат `--имя: значение`) и открытыми комментариями к превью (до 20, с селекторами). Блок добавляется к `promptBase` после подсказок инструкций; при ошибке чтения — пустая строка, ход не срывается.
+
+**Make без машины у не-admin (roadmap-3 п.2).** Раньше `turns.ts` форсил `plan` для любого пользователя без машины, а нативный plan-режим CLI глушит MCP — Make не мог писать файлы. Теперь для Make-разговора с провайдером Claude ход идёт в `default` с `disallowedTools = MAKE_ONLY_DISALLOWED_TOOLS` (Bash, Edit/Write/MultiEdit/NotebookEdit, Read/Glob/Grep/LS, WebFetch/WebSearch, Task, …) — остаются только MCP-инструменты, make MCP без `ro=1`. Для Codex `--sandbox read-only` блокирует HTTP-MCP, поэтому там по-прежнему план (ограничение Codex CLI, не наше).
 
 ## Старт хода: `claude.start`
 

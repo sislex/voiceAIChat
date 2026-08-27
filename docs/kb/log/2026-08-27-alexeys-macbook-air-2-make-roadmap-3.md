@@ -23,3 +23,4 @@ author: alexeyrozhnov
 
 -
 П.1 (roadmap-3): проверка места и docker prune перед production-сборкой; причина падения деплоя 0.1.164 — диск 97 %.
+П.2 (roadmap-3): Make у не-admin без машины — Claude в default с запретом встроенных инструментов; Codex остаётся в плане.
