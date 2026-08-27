@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-27
-checked: ea74f2c0
+checked: 8e522673
 areas:
   - apps/server/src
 ---
@@ -61,6 +61,9 @@ ZIP — собственный писатель без сжатия (`make/zip.t
 MCP даёт `db.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
 Публикация: `.publish.json` в папке проекта + индекс `make/.published/<token>.json` → маршрут
 `/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен).
+`publish(id, {snapshotId})` закрепляет публикацию за снимком (`snapshotId/snapshotLabel` в `.publish.json`):
+`publicFile()` читает файлы из `.snapshots/<id>/files`, транспиляция кэшируется по ключу `conv@snapshot`;
+`publish(id)` без снимка возвращает «живую» публикацию текущих файлов (п.26).
 `check()` — статика: ошибки компиляции jsx/tsx/ts (`compileDiagnostics` в `make/transpile.ts` → `kind: 'compile-error'`
 со `line/column`), нет `index.html`, битые `href/src/url()` на файлы проекта (относительно файла,
 `..` учитывается через `resolveRelativeRef`; якоря `#id`, `data:`, `mailto:`, `//` пропускаются),

@@ -6511,7 +6511,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-issues ul { margin: 0; padding-left: 16px; flex: 1 1 auto; display: grid; gap: 2px; }
 .make-issues > span { flex: 1 1 auto; }
 .make-issue-path { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 600; color: var(--accent); cursor: pointer; }
-.make-publish { display: grid; gap: 10px; }
+.make-publish { display: grid; gap: 10px; min-width: 0; }
 .make-publish-link { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .make-publish-link code { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
 .make-templates { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -6675,3 +6675,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-control-json textarea { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: 12px/1.4 'SF Mono', ui-monospace, Menlo, Consolas, monospace; background: var(--surface); color: var(--text); resize: vertical; }
 .make-control-json textarea[aria-invalid='true'] { border-color: var(--danger); }
 .make-control-error { color: var(--danger); font-size: 11px; }
+
+/* Публикация: выбор версии. */
+.make-publish-pin { display: grid; gap: 6px; margin: 10px 0; min-width: 0; }
+.make-publish-pin label { font-size: 12px; color: var(--text-dim); }
+.make-publish-pin select { width: 100%; max-width: 100%; min-width: 0; text-overflow: ellipsis; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; background: var(--surface); color: var(--text); }

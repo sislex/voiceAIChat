@@ -29,3 +29,4 @@ author: alexeyrozhnov
 П.3+п.2: типы React в Monaco (extraLibs из node_modules через ?raw), модели всех файлов проекта; фикс конфликта глобального .main с suggest-widget.
 П.14: controls по argTypes (range/color/select/object) + JSON-редактор массивов/объектов.
 П.10: скриншот превью/элемента во вложения чата (html2canvas, lazy).
+П.26: публикация конкретного снимка (закрепление, publicFile из .snapshots).

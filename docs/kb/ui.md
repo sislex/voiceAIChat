@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: 6f810a5b
+checked: 8e522673
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -498,7 +498,8 @@ lazy-чанке `monacoSetup`. **Модели проекта** (п.2): `syncProj
 (`make:restoreFile`, остальные файлы не трогаются); клик по имени текстового файла открывает **diff-вью**
 (`make-file-diff`): `components/CodeDiff.tsx` — Monaco `DiffEditor` (лениво, `code/MonacoDiffEditor.tsx`,
 read-only, side-by-side) или построчный фолбэк в jsdom; слева `make:snapshotFile`, справа `make:read`,
-в действиях — «Вернуть файл из снимка». **Скачать** (⇩) — диалог `make-export`: «Статика как
+в действиях — «Вернуть файл из снимка». В диалоге публикации — `<select>` «Что публиковать» (текущее состояние / снимок) и «Обновить публикацию»;
+в «Истории» у снимка кнопка «Опубликовать версию» (`make:publish {snapshotId}`). **Скачать** (⇩) — диалог `make-export`: «Статика как
 есть» или «Vite-проект» (`?vite=1`: package.json/vite.config/README/.gitignore, tsconfig для TS).
 **Импорт** (⇪) — диалог `make-import`: режим replace/merge, ZIP через `make:import` (base64) или
 страница по URL через `make:importUrl`; перед импортом сервер делает снимок.
