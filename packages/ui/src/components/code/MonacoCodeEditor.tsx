@@ -36,6 +36,8 @@ export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLa
   }, [changedLines, value])
   const onMount: OnMount = (editor, m) => {
     editorRef.current = editor
+    // Редактор пересоздаётся при смене файла (key={path}) — коллекция декораций старого экземпляра мертва.
+    decorationsRef.current = null
     editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => saveRef.current?.())
     editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyI, () => inlineRef.current?.())
     editor.onDidChangeCursorSelection((e) => {
