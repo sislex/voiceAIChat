@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@voicechat/ui-kit'
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import type { EditorContextPayload } from '@shared/types'
+import { formatUsd, type ConversationUsage } from '@shared/usageSummary'
+import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
 import { CodeEditor, type EditorSelection } from './CodeEditor'
 import { CodeDiff } from './CodeDiff'
@@ -46,6 +48,8 @@ export interface MakePaneProps {
   onAttachImage?: (file: File) => void
   /** Открытый файл и выделение — хост подмешивает в следующее сообщение чата (п.21). */
   onEditorContext?: (ctx: EditorContextPayload | null) => void
+  /** Расход беседы проекта — суммарная стоимость в шапке (п.24). */
+  usage?: ConversationUsage | null
   /** База превью; по умолчанию — REST.makePreview (тест подменяет). */
   previewBase?: string
   /**
@@ -82,7 +86,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -862,6 +866,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {mode === 'stories' && story && <Button size="sm" variant="ghost" onClick={() => void shareStory()} title={state?.published ? 'Скопировать публичную ссылку на эту стори' : 'Сначала опубликуйте проект — ссылка будет без входа'}>Поделиться</Button>}
       {onInsertToChat && <IconButton size="sm" aria-label="Идеи для старта" title="Идеи: готовые промпты для приложений и сайтов" onClick={() => setIdeasOpen(true)}>✦</IconButton>}
       <IconButton size="sm" aria-label="Шаблоны проекта" title="Начать с шаблона" onClick={() => setTemplatesOpen(true)}>▤</IconButton>
+      {usage && <span className="make-cost" data-testid="make-cost" title={`Расход на проект: ${usage.turns} ${usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'} · ↓ ${kilo(usage.inputTokens)} · ↑ ${kilo(usage.outputTokens)}${usage.estimated ? ' · часть суммы — расчёт по тарифам' : ''}${usage.unpriced ? ` · без цены: ${usage.unpriced}` : ''}`}>{formatUsd(usage.costUsd, usage.estimated)}<small>{usage.turns} {usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'}</small></span>}
       <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>
       <IconButton size="sm" aria-label="Импорт проекта" title="Импорт: ZIP или страница по URL" onClick={() => setImportOpen(true)}>⇪</IconButton>
       <IconButton size="sm" aria-label="Скачать проект (ZIP)" title="Скачать: статика или Vite-проект" onClick={() => setExportOpen(true)}>⇩</IconButton>

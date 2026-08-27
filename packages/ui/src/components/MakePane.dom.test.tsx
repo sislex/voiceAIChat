@@ -54,6 +54,14 @@ describe('MakePane', () => {
     await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'styles.css' })).content).toBe(MAKE_SCAFFOLD['styles.css'] + 'h1{'))
   })
 
+  it('сводка расхода проекта в шапке (п.24)', () => {
+    renderPane({ usage: { turns: 3, inputTokens: 12000, outputTokens: 800, costUsd: 0.4321, estimated: true, unpriced: 0 } })
+    const chip = screen.getByTestId('make-cost')
+    expect(chip).toHaveTextContent('≈ $0.43')
+    expect(chip).toHaveTextContent('3 хода')
+    expect(chip.getAttribute('title')).toContain('↓ 12.0k')
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)
