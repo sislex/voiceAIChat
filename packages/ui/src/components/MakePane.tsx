@@ -5,6 +5,7 @@ import type { EditorContextPayload } from '@shared/types'
 import { formatUsd, type ConversationUsage } from '@shared/usageSummary'
 import { pickTokensFile } from '@shared/makeTokens'
 import { makeNextSteps } from '@shared/makeNextSteps'
+import { changedLines as diffLines } from '@shared/lineDiff'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
 import { CodeEditor, PHONE_EDITOR_QUERY, type EditorSelection } from './CodeEditor'
@@ -205,6 +206,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
+  /** Строки открытого файла, изменённые последней записью ассистента (roadmap-4 п.9). */
+  const [changedLines, setChangedLines] = useState<number[]>([])
   // Чипы «следующий шаг» (roadmap-4 п.8): показываем после завершения хода ассистента, пока пользователь не отправил следующий.
   const [nextStepsOpen, setNextStepsOpen] = useState(false)
   const prevTurnRef = useRef(false)
@@ -417,6 +420,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const openFile = useCallback(async (path: string): Promise<void> => {
     // Бинарник (картинка, шрифт) редактировать нельзя — показываем его просмотр вместо текста.
     setTabs((list) => (list.includes(path) ? list : [...list, path]))
+    setChangedLines([])
     if (!isMakeTextPath(path)) { setSelectedPath(path); setContent(''); setSavedContent(''); return }
     try {
       const file = await api['make:read']({ conversationId, path })
@@ -458,7 +462,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       if (turnShotRef.current.active) turnShotRef.current.changed = true
       setPreviewRev(m.rev)
       void refresh()
-      if (selectedPath && m.paths.includes(selectedPath) && !dirty) void openFile(selectedPath)
+      if (selectedPath && m.paths.includes(selectedPath) && !dirty) {
+        // Inline-diff (roadmap-4 п.9): сравниваем прежнее содержимое с тем, что записал ассистент.
+        const before = savedContent
+        void api['make:read']({ conversationId, path: selectedPath }).then((file) => {
+          setContent(file.content); setSavedContent(file.content)
+          setChangedLines(turnShotRef.current.active ? diffLines(before, file.content) : [])
+        }).catch(() => void openFile(selectedPath))
+      }
       // Правки ассистента «на глазах» (roadmap-2 п.10): в режиме «Код» без несохранённых правок открываем
       // файл, который он только что записал, и подсвечиваем вкладку. MCP пишет файл целиком, поэтому
       // побайтовый стриминг невозможен — показываем результат каждой записи сразу.
@@ -469,7 +480,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         window.setTimeout(() => setFlashPath((cur) => (cur === written ? null : cur)), 1800)
       }
     })
-  }, [make, conversationId, refresh, openFile, selectedPath, dirty, mode])
+  }, [make, conversationId, refresh, openFile, selectedPath, dirty, mode, savedContent, api])
 
   // Сообщения из превью: выбранный элемент (режим «Выбрать элемент»).
   useEffect(() => {
@@ -1323,6 +1334,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             {lockedBy && (
               <div className="make-lock" role="status" data-testid="make-lock">🔒 Файл сейчас правится в другой вкладке ({lockedBy.user}) — здесь он только для чтения, чтобы автосохранение не затёрло правки.</div>
             )}
+            {changedLines.length > 0 && <div className="make-changed-note" role="status">Подсвечены строки, изменённые ассистентом ({changedLines.length}) <button type="button" className="make-link" onClick={() => setChangedLines([])}>скрыть</button></div>}
             {isPhone && state && (
               <div className="make-file-picker">
                 <select aria-label="Файл проекта" value={selectedPath ?? ''} onChange={(e) => { if (e.target.value) void openFile(e.target.value) }}>
@@ -1397,7 +1409,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                     <IconButton size="sm" aria-label="Закрыть правку ИИ" title="Закрыть" onClick={() => setInlineOpen(false)}>✕</IconButton>
                   </div>
                 )}
-                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} projectFiles={projectFiles} onSelectionChange={setSelection} onInlineCommand={openInline} readOnly={Boolean(lockedBy)} />
+                <CodeEditor path={selectedPath} value={content} onChange={(v) => { setContent(v); if (changedLines.length) setChangedLines([]) }} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} projectFiles={projectFiles} onSelectionChange={setSelection} onInlineCommand={openInline} readOnly={Boolean(lockedBy)} changedLines={changedLines} />
               </>
             ) : (
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />

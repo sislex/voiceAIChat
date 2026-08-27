@@ -28,3 +28,4 @@ author: alexeyrozhnov
 П.5 (roadmap-4): «Сверить с запросом» — скриншот «после» + запрос ассистенту.
 Пп.6–7 (roadmap-4): память проекта (.make/notes.md, make_remember) и режимы дизайнер/разработчик.
 П.8 (roadmap-4): чипы «Что дальше» после хода (makeNextSteps).
+П.9 (roadmap-4): inline-diff — подсветка строк, изменённых ассистентом за ход (changedLines, Monaco decorations).
