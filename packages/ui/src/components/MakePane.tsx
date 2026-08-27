@@ -20,7 +20,7 @@ import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
 import { copyText } from '../lib/clipboard'
-import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment } from '@shared/make'
+import { MAKE_COMMENTS_SYNC_PATH, MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -341,6 +341,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     if (!make) return
     return make.onChanged((m) => {
       if (m.conversationId !== conversationId) return
+      // Комментарии из другой вкладки/окна (roadmap-2 п.7): файлы не менялись — только перечитать список.
+      if (m.paths.includes(MAKE_COMMENTS_SYNC_PATH)) { void api['make:comments']({ conversationId }).then((r) => applyComments(r.comments)).catch(() => undefined); return }
       setPreviewRev(m.rev)
       void refresh()
       if (selectedPath && m.paths.includes(selectedPath) && !dirty) void openFile(selectedPath)

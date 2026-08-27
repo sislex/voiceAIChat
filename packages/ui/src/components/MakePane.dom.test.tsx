@@ -107,6 +107,15 @@ describe('MakePane', () => {
     await waitFor(() => expect(within(screen.getByTestId('make-share')).getByRole('button', { name: 'Создать ссылку для чтения' })).toBeInTheDocument())
   })
 
+  it('make.changed с .comments.json перечитывает комментарии без перезагрузки превью (roadmap-2 п.7)', async () => {
+    const { api, emit } = renderPane()
+    await userEvent.click(await screen.findByRole('button', { name: '💬' }))
+    await api['make:commentAdd']({ conversationId: CONV, selector: 'h1', elementLabel: '<h1>', text: 'Из другой вкладки' })
+    emit({ conversationId: CONV, rev: 0, paths: ['.comments.json'] })
+    await waitFor(() => expect(within(screen.getByTestId('make-comments')).getByText('Из другой вкладки')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: '💬 1' })).toBeInTheDocument()
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)

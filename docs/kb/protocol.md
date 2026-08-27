@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-27
-checked: 3323c479
+checked: a8c141af
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -284,7 +284,7 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 
 **Квота и очистка (п.30).** `MAKE_LIMITS.maxProjectBytes` (64 МБ) считается по файлам + `.snapshots` + `.shots`; превышение при записи — `MakeError('quota')` → 413 с подсказкой открыть «Место». `GET /api/make/:id/usage` → `MakeUsage` (байты/счётчики по составляющим, `unusedAssets` — бинарники, имя которых не встречается ни в одном текстовом файле ≤ 512 КБ). `POST /api/make/:id/cleanup` `{ keepSnapshots?, shots?, unusedAssets? }` → `MakeCleanupResult { freedBytes, removed, usage, state }`; снимок, закреплённый в публикации, не удаляется; после очистки рассылается `make.changed`. Мосты `make:usage` / `make:cleanup`.
 
-**Комментарии к элементам превью (п.32).** `GET/POST /api/make/:id/comments`, `PATCH/DELETE /api/make/:id/comments/:commentId` → `{ comments: MakeComment[] }` (`id, selector, elementLabel, text, author = uid, createdAt, resolved`); хранятся в `.comments.json` проекта (переживает `reset`, как `.publish.json`), лимит 500. Мосты `make:comments` / `make:commentAdd` / `make:commentUpdate` / `make:commentRemove`. Инспектор превью понимает два новых сообщения родителя: `vc-make.pins { items: [{ selector, n, text, resolved }] }` — рисует нумерованные метки поверх элементов (fixed-слой, пересчёт на scroll/resize) и `vc-make.highlight { selector }` — прокрутка к элементу и красная обводка на 1,6 с.
+**Комментарии к элементам превью (п.32).** `GET/POST /api/make/:id/comments`, `PATCH/DELETE /api/make/:id/comments/:commentId` → `{ comments: MakeComment[] }` (`id, selector, elementLabel, text, author = uid, createdAt, resolved`); хранятся в `.comments.json` проекта (переживает `reset`, как `.publish.json`), лимит 500. Любая мутация комментариев рассылает `make.changed` с `paths: ['.comments.json']` (`MAKE_COMMENTS_SYNC_PATH`) и текущим `rev` — панель в других вкладках перечитывает список, не перезагружая превью (roadmap-2 п.7). Мосты `make:comments` / `make:commentAdd` / `make:commentUpdate` / `make:commentRemove`. Инспектор превью понимает два новых сообщения родителя: `vc-make.pins { items: [{ selector, n, text, resolved }] }` — рисует нумерованные метки поверх элементов (fixed-слой, пересчёт на scroll/resize) и `vc-make.highlight { selector }` — прокрутка к элементу и красная обводка на 1,6 с.
 
 **Rate-limit импорта (п.39).** `POST /api/make/:id/import` и `/import-url` ограничены на пользователя скользящим окном (`apps/server/src/make/rateLimit.ts`, `SlidingWindowLimiter`): 10 ZIP-импортов и 20 импортов по URL за 10 минут; сверх — 429 `{ error }` с заголовком `Retry-After` (секунды). Лимитеры подменяются через `MakeRoutesDeps.importLimiter/importUrlLimiter`; счётчик в памяти процесса — перезапуск сервера его сбрасывает.
 
