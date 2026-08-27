@@ -2,6 +2,7 @@
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
 import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState, MakePresenceClient, MakeShareRole, MakeTestFile, MakeProjectNotes } from './make'
+import type { MakeReplacePreviewLine } from './makeSearch'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -150,10 +151,11 @@ export interface IpcInvokeMap {
   'make:template': { arg: { conversationId: string; templateId: string }; result: MakeProjectState }
   /** Загрузка бинарного файла (картинка, шрифт) — содержимое в base64. */
   'make:upload': { arg: { conversationId: string; path: string; dataBase64: string }; result: MakeProjectState }
-  'make:search': { arg: { conversationId: string; query: string }; result: { matches: MakeSearchMatch[] } }
+  'make:search': { arg: { conversationId: string; query: string; regex?: boolean; matchCase?: boolean }; result: { matches: MakeSearchMatch[] } }
   'make:stories': { arg: { conversationId: string }; result: { files: MakeStoryFile[] } }
   /** Замена по всем текстовым файлам проекта; перед заменой — снимок. */
-  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean }; result: { files: number; replacements: number; state: MakeProjectState } }
+  /** `dryRun` — только предпросмотр (`preview`), файлы не меняются. `regex` — запрос как регулярное выражение с `$1`-подстановками. */
+  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean }; result: { files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[] } }
   'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
   /** Текст файла из снимка — для diff-вью. */
   'make:library': { arg: Record<string, never>; result: { items: MakeLibraryItem[] } }

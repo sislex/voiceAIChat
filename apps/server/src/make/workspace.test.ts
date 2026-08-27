@@ -153,6 +153,25 @@ describe('MakeWorkspaces', () => {
     expect(await ws.snapshots(CONV)).toHaveLength(1)
   })
 
+  it('search/replaceAll с regex: $1-подстановки, dryRun даёт предпросмотр без записи, невалидный regex — MakeError (roadmap-4 п.11)', async () => {
+    const ws = await fresh()
+    await ws.write(CONV, 'styles.css', ':root { --bg: #fff; --fg: #000; }')
+    const found = await ws.search(CONV, '--(bg|fg)', 200, { regex: true })
+    expect(found).toHaveLength(1)
+    const dry = await ws.replaceAll(CONV, '--(\\w+): #fff', '--$1: white', { regex: true, dryRun: true })
+    expect(dry.replacements).toBe(1)
+    expect(dry.preview).toEqual([{ path: 'styles.css', line: 1, before: ':root { --bg: #fff; --fg: #000; }', after: ':root { --bg: white; --fg: #000; }' }])
+    expect((await ws.read(CONV, 'styles.css')).content).toContain('#fff')
+    expect(await ws.snapshots(CONV)).toHaveLength(0)
+    const real = await ws.replaceAll(CONV, '--(\\w+): #fff', '--$1: white', { regex: true })
+    expect(real.files).toBe(1)
+    expect((await ws.read(CONV, 'styles.css')).content).toBe(':root { --bg: white; --fg: #000; }')
+    // Без regex `$1` — обычный текст.
+    await ws.replaceAll(CONV, 'white', '$1')
+    expect((await ws.read(CONV, 'styles.css')).content).toContain('--bg: $1;')
+    await expect(ws.replaceAll(CONV, '(', 'x', { regex: true })).rejects.toThrow(/Неверное выражение/)
+  })
+
   it('snapshotDiff/restoreFile: статусы файлов и возврат одного файла', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)

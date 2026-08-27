@@ -797,3 +797,47 @@ describe('MakePane: inline-diff правок ассистента (roadmap-4 п.
     expect(screen.queryByText(/Подсвечены строки/)).toBeNull()
   })
 })
+
+describe('MakePane: мультивыбор файлов в дереве (roadmap-4 п.10)', () => {
+  it('Ctrl-клик выбирает файлы, панель показывает счётчик, «Удалить» убирает все выбранные после подтверждения', async () => {
+    const { api } = renderPane()
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const tree = screen.getByRole('navigation', { name: 'Файлы проекта' })
+    const files = within(tree).getAllByRole('button', { name: /^[^ ]+\.(html|css|tsx|js|json|md)$/ })
+    expect(files.length).toBeGreaterThan(2)
+    fireEvent.click(files[0]!, { ctrlKey: true })
+    fireEvent.click(files[1]!, { ctrlKey: true })
+    const bulk = await screen.findByTestId('make-bulk')
+    expect(bulk.textContent).toContain('Выбрано: 2')
+    // Shift-клик добирает диапазон от якоря (files[1]) до files[2].
+    fireEvent.click(files[2]!, { shiftKey: true })
+    expect(screen.getByTestId('make-bulk').textContent).toContain('Выбрано: 3')
+    const before = (await api['make:state']({ conversationId: CONV })).files.length
+    await userEvent.click(within(bulk).getByRole('button', { name: 'Удалить' }))
+    const dlg = await screen.findByRole('alertdialog').catch(() => screen.findByRole('dialog'))
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Удалить' }))
+    await waitFor(async () => expect((await api['make:state']({ conversationId: CONV })).files.length).toBe(before - 3))
+    expect(screen.queryByTestId('make-bulk')).toBeNull()
+  })
+})
+
+describe('MakePane: regex-поиск и предпросмотр замены (roadmap-4 п.11)', () => {
+  it('«.*» включает regex, «Предпросмотр» показывает строки до/после без записи, «Заменить все» применяет $1', async () => {
+    const { api } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'tokens.css', content: ':root { --bg: #fff; --card: #fff; }' })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Регулярное выражение' }))
+    await userEvent.type(screen.getByLabelText('Поиск по файлам проекта'), '--(\\w+): #fff')
+    await userEvent.click(screen.getByRole('button', { name: 'Заменить по проекту' }))
+    await userEvent.type(screen.getByLabelText('Заменить на'), '--$1: white')
+    await userEvent.click(screen.getByRole('button', { name: 'Предпросмотр' }))
+    const preview = await screen.findByTestId('make-replace-preview')
+    expect(preview.textContent).toContain('Изменится строк: 1')
+    expect(preview.textContent).toContain('--bg: white; --card: white;')
+    expect((await api['make:read']({ conversationId: CONV, path: 'tokens.css' })).content).toContain('#fff')
+    await userEvent.click(screen.getByRole('button', { name: 'Заменить все' }))
+    const dlg = await screen.findByRole('alertdialog').catch(() => screen.findByRole('dialog'))
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Заменить' }))
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'tokens.css' })).content).toBe(':root { --bg: white; --card: white; }'))
+  })
+})

@@ -6,6 +6,8 @@ import { formatUsd, type ConversationUsage } from '@shared/usageSummary'
 import { pickTokensFile } from '@shared/makeTokens'
 import { makeNextSteps } from '@shared/makeNextSteps'
 import { changedLines as diffLines } from '@shared/lineDiff'
+import type { MakeReplacePreviewLine } from '@shared/makeSearch'
+import { EMPTY_MAKE_SELECTION, pruneMakeSelection, toggleMakeSelection, type MakeSelectionState } from '@shared/makeSelection'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
 import { CodeEditor, PHONE_EDITOR_QUERY, type EditorSelection } from './CodeEditor'
@@ -208,6 +210,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [notesOpen, setNotesOpen] = useState(false)
   /** Строки открытого файла, изменённые последней записью ассистента (roadmap-4 п.9). */
   const [changedLines, setChangedLines] = useState<number[]>([])
+  /** Мультивыбор файлов в дереве (roadmap-4 п.10): Ctrl/Cmd-клик — переключить, Shift-клик — диапазон. */
+  const [picked, setPicked] = useState<MakeSelectionState>(EMPTY_MAKE_SELECTION)
   /** Содержимое открытого файла на старте хода — база для diff: за ход ассистент может записать файл несколько раз. */
   const turnBaseRef = useRef<{ path: string | null; content: string }>({ path: null, content: '' })
   // Чипы «следующий шаг» (roadmap-4 п.8): показываем после завершения хода ассистента, пока пользователь не отправил следующий.
@@ -798,6 +802,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [replacement, setReplacement] = useState('')
   const [replacing, setReplacing] = useState(false)
+  /** Regex-режим и учёт регистра поиска/замены (roadmap-4 п.11); предпросмотр — строки «до → после» без записи. */
+  const [searchRegex, setSearchRegex] = useState(false)
+  const [matchCase, setMatchCase] = useState(false)
+  const [replacePreview, setReplacePreview] = useState<MakeReplacePreviewLine[] | null>(null)
   const runReplace = async (): Promise<void> => {
     const q = query.trim()
     if (!q) return
@@ -805,7 +813,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     if (!ok) return
     setReplacing(true)
     try {
-      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase: false })
+      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase, regex: searchRegex })
+      setReplacePreview(null)
       setState(result.state); setPreviewRev(result.state.rev)
       if (selectedPath && isMakeTextPath(selectedPath)) await openFile(selectedPath)
       toast.success(result.replacements === 0 ? 'Совпадений нет' : `Заменено: ${result.replacements} в ${result.files} файлах`)
@@ -816,7 +825,16 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const q = query.trim()
     if (!q) { setMatches(null); return }
     setSearching(true)
-    try { setMatches((await api['make:search']({ conversationId, query: q })).matches) } catch (e) { toast.error(describeError(e)) } finally { setSearching(false) }
+    try { setMatches((await api['make:search']({ conversationId, query: q, regex: searchRegex, matchCase })).matches) } catch (e) { toast.error(describeError(e)) } finally { setSearching(false) }
+  }
+  const previewReplace = async (): Promise<void> => {
+    const q = query.trim()
+    if (!q) return
+    setReplacing(true)
+    try {
+      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase, regex: searchRegex, dryRun: true })
+      setReplacePreview(result.preview ?? [])
+    } catch (e) { toast.error(describeError(e)) } finally { setReplacing(false) }
   }
   const loadStories = useCallback(async (): Promise<void> => {
     try {
@@ -919,6 +937,29 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
 
   const groups = useMemo(() => groupFiles(state?.files ?? []), [state])
+  const treeOrder = useMemo(() => groups.flatMap((g) => g.files.map((f) => f.path)), [groups])
+  useEffect(() => { setPicked((sel) => (sel.paths.length ? pruneMakeSelection(sel, treeOrder) : sel)) }, [treeOrder])
+  const bulkDelete = async (): Promise<void> => {
+    const paths = picked.paths
+    const ok = await confirm({ title: `Удалить ${paths.length} файлов?`, message: paths.join(', '), variant: 'danger', confirmLabel: 'Удалить' })
+    if (!ok) return
+    try {
+      let next: MakeProjectState | null = null
+      for (const path of paths) next = await api['make:delete']({ conversationId, path })
+      if (next) { setState(next); setPreviewRev(next.rev) }
+      if (selectedPath && paths.includes(selectedPath)) { setSelectedPath(null); setContent(''); setSavedContent('') }
+      setTabs((list) => list.filter((t) => !paths.includes(t)))
+      setPicked(EMPTY_MAKE_SELECTION)
+      toast.success(`Удалено файлов: ${paths.length}`)
+    } catch (e) { toast.error(describeError(e)) }
+  }
+  const bulkMove = (): void => openAsk('Перенести файлы в папку', 'Папка (пусто — корень)', dirOfPath(picked.paths[0] ?? ''), 'Перенести', (raw) => {
+    const dir = raw.trim().replace(/^\/+|\/+$/g, '')
+    void (async () => {
+      for (const path of picked.paths) if (dirOfPath(path) !== dir) await renameFileTo(path, moveTargetPath(path, dir))
+      setPicked(EMPTY_MAKE_SELECTION)
+    })()
+  })
   // «Свежий» проект — только файлы заготовки без правок: показываем стартовые идеи, как главная Figma Make.
   const isFresh = useMemo(() => {
     const files = state?.files
@@ -1296,12 +1337,27 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runSearch() } if (e.key === 'Escape') { setQuery(''); setMatches(null) } }}
               />
               {searching && <span className="make-search-state">ищу…</span>}
+              <IconButton size="sm" aria-label="Регулярное выражение" title="Искать регулярным выражением" aria-pressed={searchRegex} onClick={() => setSearchRegex((v) => !v)}>.*</IconButton>
+              <IconButton size="sm" aria-label="Учитывать регистр" title="Учитывать регистр" aria-pressed={matchCase} onClick={() => setMatchCase((v) => !v)}>Aa</IconButton>
               <IconButton size="sm" aria-label="Заменить по проекту" title="Поиск и замена во всех файлах" aria-pressed={replaceOpen} onClick={() => setReplaceOpen((v) => !v)}>⇄</IconButton>
             </div>
             {replaceOpen && (
               <div className="make-replace" data-testid="make-replace">
                 <input type="text" className="make-search-input" aria-label="Заменить на" placeholder="Заменить на…" value={replacement} onChange={(e) => setReplacement(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runReplace() } }} />
+                <Button size="sm" variant="ghost" disabled={!query.trim()} loading={replacing} onClick={() => void previewReplace()}>Предпросмотр</Button>
                 <Button size="sm" variant="secondary" disabled={!query.trim()} loading={replacing} onClick={() => void runReplace()}>Заменить все</Button>
+              </div>
+            )}
+            {replaceOpen && replacePreview !== null && (
+              <div className="make-matches make-replace-preview" role="region" aria-label="Предпросмотр замены" data-testid="make-replace-preview">
+                <p className="make-tree-dir">{replacePreview.length === 0 ? 'Совпадений нет' : `Изменится строк: ${replacePreview.length}`}</p>
+                {replacePreview.map((row, i) => (
+                  <button key={`${row.path}:${row.line}:${i}`} type="button" className="make-match" onClick={() => void openFile(row.path)} title={`${row.path}:${row.line}`}>
+                    <span className="make-match-path">{row.path}<span className="make-match-line">:{row.line}</span></span>
+                    <code className="make-match-text make-match-text--before">{row.before}</code>
+                    <code className="make-match-text make-match-text--after">{row.after}</code>
+                  </button>
+                ))}
               </div>
             )}
             {matches !== null && (
@@ -1315,14 +1371,22 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 ))}
               </div>
             )}
+            {picked.paths.length > 0 && (
+              <div className="make-bulk" role="toolbar" aria-label="Действия с выбранными файлами" data-testid="make-bulk">
+                <span className="make-bulk-count">Выбрано: {picked.paths.length}</span>
+                <Button size="sm" variant="secondary" onClick={bulkMove}>В папку…</Button>
+                <Button size="sm" variant="danger" onClick={() => void bulkDelete()}>Удалить</Button>
+                <Button size="sm" variant="ghost" onClick={() => setPicked(EMPTY_MAKE_SELECTION)}>Снять</Button>
+              </div>
+            )}
             {dropActive && <p className="make-drop-hint" role="status">Отпустите, чтобы загрузить файлы в проект</p>}
             {groups.length === 0 && <EmptyState title="Файлов пока нет" description="Создайте файл, перетащите его сюда или попросите ассистента." />}
             {groups.map((group) => ({ ...group, files: group.files.filter((f) => !query.trim() || f.path.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) })).filter((g) => g.files.length > 0).map((group) => (
               <div className={dropDir === group.dir && dragPath ? 'make-tree-group make-tree-group--drop' : 'make-tree-group'} key={group.dir || '/'} data-dir={group.dir}>
                 {group.dir && <p className="make-tree-dir">📁 {group.dir}</p>}
                 {group.files.map((file) => (
-                  <div key={file.path} className={`make-tree-item${file.path === selectedPath ? ' on' : ''}${dragPath === file.path ? ' make-tree-item--drag' : ''}`} onPointerDown={(e) => beginFileDrag(e, file.path)}>
-                    <button type="button" className="make-tree-file" onClick={() => void openFile(file.path)} title={`${file.path} · ${formatSize(file.size)}`}>
+                  <div key={file.path} className={`make-tree-item${file.path === selectedPath ? ' on' : ''}${picked.paths.includes(file.path) ? ' make-tree-item--picked' : ''}${dragPath === file.path ? ' make-tree-item--drag' : ''}`} onPointerDown={(e) => beginFileDrag(e, file.path)}>
+                    <button type="button" className="make-tree-file" aria-selected={picked.paths.includes(file.path) || undefined} onClick={(e) => { if (e.shiftKey || e.metaKey || e.ctrlKey) { e.preventDefault(); setPicked((sel) => toggleMakeSelection(sel, file.path, treeOrder, e.shiftKey ? 'range' : 'toggle')); return } void openFile(file.path) }} title={`${file.path} · ${formatSize(file.size)} · Ctrl/Shift-клик — выбрать несколько`}>
                       {group.dir ? file.path.slice(group.dir.length + 1) : file.path}
                     </button>
                     <span className="make-tree-actions">

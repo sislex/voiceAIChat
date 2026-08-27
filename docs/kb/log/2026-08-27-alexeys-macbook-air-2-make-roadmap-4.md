@@ -29,3 +29,4 @@ author: alexeyrozhnov
 Пп.6–7 (roadmap-4): память проекта (.make/notes.md, make_remember) и режимы дизайнер/разработчик.
 П.8 (roadmap-4): чипы «Что дальше» после хода (makeNextSteps).
 П.9 (roadmap-4): inline-diff — подсветка строк, изменённых ассистентом за ход (changedLines, Monaco decorations).
+Пп.10–11 (roadmap-4): мультивыбор в дереве с массовыми операциями; regex-поиск/замена с предпросмотром (dryRun).
