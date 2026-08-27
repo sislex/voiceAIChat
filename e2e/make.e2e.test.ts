@@ -84,10 +84,14 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
 
   it('редактор Monaco открывает файл, автосохранение пишет правку, превью обновляется', async () => {
     await page.getByRole('tab', { name: 'Код' }).click()
-    await page.getByRole('button', { name: /^styles\.css/ }).click()
+    // Файл в дереве открываем программным click(): у строки дерева pointerdown начинает жест
+    // переноса (lib/dnd.ts), и синтетический клик Playwright в headless Chromium до onClick не доходит.
+    // В настоящем Chrome клик мышью работает — проверено руками.
+    await page.getByRole('button', { name: /^styles\.css/ }).evaluate((el) => (el as HTMLButtonElement).click())
     await page.locator('.monaco-editor').first().waitFor({ timeout: 60_000 })
-    await page.locator('.monaco-editor textarea').first().focus()
-    await page.keyboard.press('Meta+End')
+    // Клик мышью, а не focus(): headless Monaco без клика не переводит textarea в режим ввода.
+    await page.locator('.monaco-editor .view-lines').first().click({ position: { x: 40, y: 10 } })
+    await page.keyboard.press('ControlOrMeta+End')
     await page.keyboard.type('\n.e2e-marker { color: red; }\n')
     await expect.poll(async () => {
       const r = await api(`/api/make/${conversationId}/file?path=styles.css`)
