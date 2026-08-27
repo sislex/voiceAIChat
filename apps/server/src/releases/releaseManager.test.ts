@@ -180,6 +180,27 @@ describe('ReleaseManager separated preparation and deploy',()=>{
     expect(prepared.status).toBe('ready')
   })
 
+  it('checks free disk before build: prunes docker cache when low and fails explicitly if still low (roadmap-3 п.1)',async()=>{
+    const commands:string[]=[]
+    let pruned=false
+    const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{
+      commands.push(command)
+      if(command.includes('ls-remote'))return{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.50\n'}
+      if(command.includes('docker builder prune')){pruned=true;return{exitCode:0,output:'3000000\n'}}
+      if(command.includes("df -Pk"))return{exitCode:0,output:'1000000\n'}
+      return{exitCode:0,output:'ok'}
+    }}
+    db.createProjectRelease('owner',projectId,{branch:'release/0.1.50',version:'0.1.50',sha:'fixed-sha',status:'ready'})
+    const manager=new ReleaseManager(db,runtime)
+    const attempt=await manager.start('owner',ci(),prod(),'release/0.1.50')
+    await tick();await tick()
+    expect(pruned).toBe(true)
+    expect(commands.some(command=>command.includes('npm run deploy:prod'))).toBe(false)
+    const release=db.getProjectRelease('owner',projectId,attempt.id)
+    expect(release?.status).toBe('failed')
+    expect(release?.steps.find(step=>step.kind==='building')?.log).toMatch(/свободно 2\.9 ГБ, нужно не меньше 5\.0 ГБ/)
+  })
+
   it('refreshes the installed production launcher from the verified release checkout',async()=>{
     const commands:string[]=[]
     const runtime:ReleaseRuntime={isOnline:()=>true,prepareKnowledgeBase:async()=>{},exec:async(_target,command)=>{commands.push(command);return command.includes('ls-remote')?{exitCode:0,output:'fixed-sha\trefs/heads/release/0.1.44\n'}:command.includes('health:prod')?{exitCode:0,output:'{"ok":true,"version":"0.1.44","commit":"fixed-sha"}'}:{exitCode:0,output:'ok'}}}

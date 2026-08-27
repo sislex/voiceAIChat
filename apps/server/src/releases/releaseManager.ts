@@ -52,6 +52,15 @@ export function releaseDeployCommand(target:ProductionTarget,version:string,expe
   return at(target,`export VC_RELEASE_VERSION=${quote(version)} VC_RELEASE_VERSION_SOURCE='release-manager' && echo ${quote(expectedMetadata)} && ${refreshLauncher}${target.deployCommand}`)
 }
 
+/** Свободное место на диске production в КиБ (roadmap-3 п.1): без запаса docker падает на распаковке слоёв с «no space left on device». */
+export const RELEASE_MIN_FREE_KB = 5 * 1024 * 1024
+export function diskFreeCommand(target:ProductionTarget):string { return at(target,"df -Pk / | awk 'NR==2{print $4}'") }
+export function dockerPruneCommand(target:ProductionTarget):string {
+  return at(target,"docker builder prune -af --filter until=24h >/dev/null 2>&1; docker image prune -f >/dev/null 2>&1; df -Pk / | awk 'NR==2{print $4}'")
+}
+export function parseFreeKb(output:string):number|null { const m=output.trim().match(/(\d+)\s*$/); return m?Number(m[1]):null }
+const gb=(kb:number):string=>(kb/1048576).toFixed(1)
+
 export async function waitForReleaseHealth(
   expectedVersion:string,
   probe:()=>Promise<{ok?:boolean;version?:string}>,
@@ -280,7 +289,15 @@ export class ReleaseManager {
       this.db.setProjectReleaseStep(release.id,'building','running','',actor)
       const buildLimit=this.db.getProjectRelease(actor,target.projectId,release.id)?.steps.find(step=>step.kind==='building')?.limitMs??300_000
       const expectedMetadata=`Ожидаемые production metadata: version=${release.version} commit=${release.sha} source=release-manager`
-      this.db.setProjectReleaseStep(release.id,'building','running',expectedMetadata,actor)
+      // Место на диске (roadmap-3 п.1): мало — чистим docker-кэш; всё ещё мало — падаем здесь явно, а не через 20 минут на health-check.
+      let diskNote=''
+      const free=parseFreeKb((await this.runtime.exec(target,diskFreeCommand(target),30_000)).output)
+      if(free!==null&&free<RELEASE_MIN_FREE_KB){
+        const after=parseFreeKb((await this.runtime.exec(target,dockerPruneCommand(target),300_000)).output)
+        diskNote=`Свободно было ${gb(free)} ГБ (< ${gb(RELEASE_MIN_FREE_KB)} ГБ) — очищен docker build cache и висячие образы, свободно ${after===null?'?':gb(after)} ГБ`
+        if(after!==null&&after<RELEASE_MIN_FREE_KB)throw new Error(`Сборка и обновление контейнеров: на диске production свободно ${gb(after)} ГБ, нужно не меньше ${gb(RELEASE_MIN_FREE_KB)} ГБ. Освободите место (docker system df, старые образы/тома) и повторите деплой.`)
+      }else if(free!==null){ diskNote=`Свободно на диске: ${gb(free)} ГБ` }
+      this.db.setProjectReleaseStep(release.id,'building','running',[expectedMetadata,diskNote].filter(Boolean).join('\n'),actor)
       const built=await this.runtime.exec(target,releaseDeployCommand(target,release.version,expectedMetadata),buildLimit)
       if(built.timedOut)throw new Error(`Сборка и обновление контейнеров: фактическая длительность превысила лимит ${Math.round(buildLimit/1000)} с\n${built.output}`)
       if(built.exitCode!==0)throw new Error(built.output||'Production build завершился с ошибкой')
