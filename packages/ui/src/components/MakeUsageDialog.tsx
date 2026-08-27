@@ -58,7 +58,7 @@ export function MakeUsageDialog({ conversationId, api, onClose, onChanged }: Pro
   const pct = usage ? Math.min(100, Math.round((usage.totalBytes / usage.limitBytes) * 100)) : 0
   const seg = (bytes: number): string => (usage ? `${(bytes / usage.limitBytes) * 100}%` : '0%')
   return (
-    <Dialog title="Место проекта" ariaLabel="Место проекта" size="sm" onClose={onClose} testId="make-usage"
+    <Dialog className="make-dialog" title="Место проекта" ariaLabel="Место проекта" size="sm" onClose={onClose} testId="make-usage"
       footer={<Button size="sm" variant="danger" disabled={!usage || nothing || busy} loading={busy} onClick={() => void run()}>Очистить</Button>}>
       {!usage ? <Skeleton height={64} /> : (
         <div className="make-usage">
