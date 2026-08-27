@@ -213,3 +213,36 @@ describe('UsersAdmin — сессии пользователя (auth-roadmap п.
     expect(onRevokeSession).toHaveBeenCalledWith('s1')
   })
 })
+
+describe('UsersAdmin — журнал безопасности (auth-roadmap п.7)', () => {
+  it('вкладка «Безопасность» запрашивает события и показывает таблицу с подписями', async () => {
+    const onLoadSecurity = vi.fn()
+    renderAdmin({ isAdmin: true, selected: 'bob', onLoadSecurity, security: [
+      { id: 2, at: 2, user: 'bob', type: 'login_failed', ip: '10.0.0.2', userAgent: 'Firefox/1', details: 'неверный пароль' },
+      { id: 1, at: 1, user: 'bob', type: 'login', ip: '10.0.0.1', userAgent: 'Chrome/1', details: '' }
+    ] })
+    await userEvent.click(screen.getByRole('tab', { name: 'Безопасность' }))
+    expect(onLoadSecurity).toHaveBeenCalled()
+    const sec = screen.getByTestId('admin-security')
+    expect(within(sec).getByText('Неверный пароль')).toBeInTheDocument()
+    expect(within(sec).getByText('Вход')).toBeInTheDocument()
+    expect(within(sec).getByText('10.0.0.2')).toBeInTheDocument()
+  })
+})
+
+describe('UsersAdmin — инвайт-ссылки (auth-roadmap п.8)', () => {
+  it('раскрытие загружает список, форма создаёт инвайт с ролью/сроком/лимитом, «Отозвать» удаляет', async () => {
+    const onLoadInvites = vi.fn(); const onCreateInvite = vi.fn(); const onDeleteInvite = vi.fn()
+    renderAdmin({ isAdmin: true, onLoadInvites, onCreateInvite, onDeleteInvite, invites: [{ token: 'abc', role: 'tester', createdBy: 'admin', createdAt: 1, expiresAt: 9_999_999_999_999, maxUses: 2, uses: 0, note: 'QA' }] })
+    const box = screen.getByTestId('admin-invites')
+    await userEvent.click(within(box).getByText(/Инвайт-ссылки/))
+    await waitFor(() => expect(onLoadInvites).toHaveBeenCalled())
+    await userEvent.selectOptions(within(box).getByLabelText('Роль по инвайту'), 'observer')
+    await userEvent.type(within(box).getByLabelText('Заметка к инвайту'), 'гость')
+    await userEvent.click(within(box).getByRole('button', { name: 'Создать ссылку' }))
+    expect(onCreateInvite).toHaveBeenCalledWith({ role: 'observer', ttlHours: 72, maxUses: 1, note: 'гость' })
+    expect(within(box).getByText(/#\/invite\/abc/)).toBeInTheDocument()
+    await userEvent.click(within(box).getByRole('button', { name: 'Отозвать' }))
+    expect(onDeleteInvite).toHaveBeenCalledWith('abc')
+  })
+})

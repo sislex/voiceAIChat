@@ -26,7 +26,7 @@ import type {
   TurnMeta,
   TurnUsage,
   WhisperModel,
-  WhisperModelInfo, SessionInfo } from './types'
+  WhisperModelInfo, SessionInfo, LoginChallenge, UserRole } from './types'
 import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities, TurnTarget, ActiveTurn } from './protocol'
 import type { GitAccessDiagnostics, GitAccessResult } from './gitAccess'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
@@ -37,8 +37,7 @@ import type {
   LlmEngineOption,
   AdminUserInfo,
   UsageReport,
-  UsageUnit
-} from './admin'
+  UsageUnit, SecurityEvent, InviteInfo } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
@@ -336,6 +335,12 @@ export interface IpcInvokeMap {
   /** Сессии пользователя и их отзыв администратором (auth-roadmap п.4). */
   'admin:userSessions': { arg: { name: string }; result: { sessions: SessionInfo[] } }
   'admin:revokeSession': { arg: { sid: string }; result: { ok: true } }
+  /** Журнал безопасности (auth-roadmap п.7). */
+  'admin:securityEvents': { arg: { user?: string; limit?: number }; result: { events: SecurityEvent[] } }
+  /** Инвайты (auth-roadmap п.8). */
+  'admin:invites': { arg: void; result: { invites: InviteInfo[] } }
+  'admin:inviteCreate': { arg: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }; result: InviteInfo }
+  'admin:inviteDelete': { arg: { token: string }; result: { ok: true } }
   'admin:usageSummary': { arg: { from?: number; to?: number } | void; result: import('./admin').UserUsageSummary[] }
   'admin:makeStats': { arg: void; result: import('./admin').AdminMakeStats }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
@@ -784,7 +789,14 @@ export interface RendererBrowserBridge {
 }
 
 export interface RendererSessionBridge {
-  login(creds: { name: string; password: string }): Promise<SessionUser | null>
+  /** Вход: пользователь, `null` при отказе или вызов второго фактора (auth-roadmap п.6) — тогда нужен `login2fa`. */
+  login(creds: { name: string; password: string }): Promise<SessionUser | LoginChallenge | null>
+  login2fa?(input: { ticket: string; code: string }): Promise<SessionUser | null>
+  /** Саморегистрация по инвайту (auth-roadmap п.8, web). */
+  inviteInfo?(token: string): Promise<{ role: string; expiresAt: number; note: string } | null>
+  register?(input: { token: string; name: string; password: string }): Promise<{ ok: true } | { error: string }>
+  /** Настройка второго фактора (web): секрет/ссылка, включить по коду, выключить по коду, статус. */
+  twoFactor?: { status(): Promise<{ enabled: boolean }>; setup(): Promise<{ secret: string; otpauth: string }>; enable(code: string): Promise<void>; disable(code: string): Promise<void> }
   me(): Promise<SessionUser | null>
   logout(): Promise<void>
   /** Сессии пользователя (auth-roadmap п.4); нет в desktop-мосте. */
@@ -1026,6 +1038,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:users',
   'admin:userSessions',
   'admin:revokeSession',
+  'admin:securityEvents',
+  'admin:invites',
+  'admin:inviteCreate',
+  'admin:inviteDelete',
   'admin:makeStats',
   'admin:llmAccess',
   'admin:saveLlmAccess',

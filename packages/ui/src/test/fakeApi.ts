@@ -30,6 +30,8 @@ export interface FakeApi extends RendererApi {
   }
 }
 
+/** Инвайты для админки (auth-roadmap п.8). */
+const fakeInvites: Array<{ token: string; role: import('@shared/types').UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string }> = []
 /** Сессии для админки (auth-roadmap п.4) — по умолчанию одна у admin. */
 const adminSessions: Array<{ sid: string; user: string; createdAt: number; lastSeen: number; expiresAt: number; ip: string; userAgent: string }> = [{ sid: 's-admin-1', user: 'admin', createdAt: 1, lastSeen: 2, expiresAt: 9_999_999_999_999, ip: '127.0.0.1', userAgent: 'Test/1.0' }]
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
@@ -734,6 +736,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     }),
     'admin:users': async () => adminUsers.map((u) => ({ ...u })),
     'admin:userSessions': async ({ name }) => ({ sessions: adminSessions.filter((s) => s.user === name) }),
+    'admin:invites': async () => ({ invites: [...fakeInvites] }),
+    'admin:inviteCreate': async ({ role, ttlHours, maxUses, note }) => { const inv = { token: `inv${fakeInvites.length + 1}`, role, createdBy: 'admin', createdAt: 1, expiresAt: 1 + (ttlHours ?? 72) * 3_600_000, maxUses: maxUses ?? 1, uses: 0, note: note ?? '' }; fakeInvites.push(inv); return inv },
+    'admin:inviteDelete': async ({ token }) => { const i = fakeInvites.findIndex((x) => x.token === token); if (i >= 0) fakeInvites.splice(i, 1); return { ok: true as const } },
+    'admin:securityEvents': async ({ user }) => ({ events: [{ id: 1, at: 1, user: user ?? 'admin', type: 'login' as const, ip: '127.0.0.1', userAgent: 'Test/1.0', details: '' }] }),
     'admin:revokeSession': async ({ sid }) => { const i = adminSessions.findIndex((s) => s.sid === sid); if (i >= 0) adminSessions.splice(i, 1); return { ok: true as const } },
     'admin:makeStats': async () => ({ projects: 2, bytes: 3 * 1048576, filesBytes: 1048576, snapshotsBytes: 2 * 1048576, shotsBytes: 0, published: 1, shared: 0, views: 12, limitBytes: 64 * 1048576, userLimitBytes: 512 * 1048576, byUser: [{ user: 'admin', projects: 2, bytes: 3 * 1048576, published: 1, views: 12 }], top: [{ conversationId: 'make-1', owner: 'admin', filesCount: 5, bytes: 2 * 1048576, snapshots: 3, published: true, shared: false, views: 12, updatedAt: 1 }] }),
     'admin:usageSummary': async () => adminUsers.map((u) => ({ name: u.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0 }, byModel: [] })),

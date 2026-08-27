@@ -31,7 +31,7 @@ import type { RendererCiBridge } from './ciBridge'
 import type { RendererKbBridge } from './kbBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
 import { createQaRest } from './qaBridge'
-import { getToken, setToken } from './session'
+import { authHeaders as sessionHeaders, dropLegacyToken, getCsrf, getToken, hasSession, legacyToken, setToken } from './session'
 import { base64ToArrayBuffer } from './decode'
 
 function makeAuthBridge(ws: WsClient): RendererAuthBridge {
@@ -221,10 +221,7 @@ export async function migrateDesktopLegacy(httpBase: string, token: string): Pro
 
 /** Мост сессии поверх REST: логин сохраняет токен и перезапускает WS с ним. */
 export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridge {
-  const authHeaders = (): Record<string, string> => {
-    const t = getToken()
-    return t ? { authorization: `Bearer ${t}` } : {}
-  }
+  const authHeaders = (): Record<string, string> => sessionHeaders()
   return {
     login: async ({ name, password }) => {
       const res = await fetch(httpBase + REST.sessionLogin, {
@@ -233,9 +230,12 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
         body: JSON.stringify({ name, password })
       })
       if (!res.ok) return null
-      const { token, user } = (await res.json()) as { token: string; user: SessionUser }
+      const body = (await res.json()) as { token?: string; user?: SessionUser; requires2fa?: true; ticket?: string }
+      if (body.requires2fa && body.ticket) return { requires2fa: true, ticket: body.ticket }
+      const { token, user } = body as { token: string; user: SessionUser }
+      // Токен — в память (auth-roadmap п.5): сервер уже положил HttpOnly-cookie, localStorage больше не используем.
       setToken(token)
-      ws.reconnect() // теперь есть токен — поднимаем WS-соединение
+      ws.reconnect() // теперь есть сессия — поднимаем WS-соединение
       try {
         await migrateDesktopLegacy(httpBase, token)
       } catch (error) {
@@ -243,8 +243,35 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       }
       return user
     },
+    // Второй фактор (auth-roadmap п.6): код по тикету → та же сессия, что и после обычного входа.
+    login2fa: async ({ ticket, code }) => {
+      const res = await fetch(httpBase + REST.session2fa, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket, code }) })
+      if (!res.ok) return null
+      const { token, user } = (await res.json()) as { token: string; user: SessionUser }
+      setToken(token)
+      ws.reconnect()
+      return user
+    },
+    inviteInfo: async (token) => {
+      const r = await fetch(httpBase + REST.sessionInvite(token))
+      return r.ok ? ((await r.json()) as { role: string; expiresAt: number; note: string }) : null
+    },
+    register: async ({ token, name, password }) => {
+      const r = await fetch(httpBase + REST.sessionRegister, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, name, password }) })
+      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
+      const { token: t } = (await r.json()) as { token: string }
+      setToken(t)
+      ws.reconnect()
+      return { ok: true }
+    },
+    twoFactor: {
+      status: async () => { const r = await fetch(httpBase + REST.session2fa, { headers: authHeaders() }); if (!r.ok) throw new Error('Не удалось получить статус 2FA'); return (await r.json()) as { enabled: boolean } },
+      setup: async () => { const r = await fetch(httpBase + REST.session2faSetup, { method: 'POST', headers: authHeaders() }); if (!r.ok) throw new Error('Не удалось создать секрет'); return (await r.json()) as { secret: string; otpauth: string } },
+      enable: async (code) => { const r = await fetch(httpBase + REST.session2faEnable, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ code }) }); if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Не удалось включить 2FA') },
+      disable: async (code) => { const r = await fetch(httpBase + REST.session2faDisable, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ code }) }); if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? 'Не удалось выключить 2FA') }
+    },
     me: async () => {
-      if (!getToken()) return null
+      if (!hasSession()) return null
       const res = await fetch(httpBase + REST.sessionMe, { headers: authHeaders() })
       if (!res.ok) return null
       const { user } = (await res.json()) as { user: SessionUser | null }
@@ -273,7 +300,7 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
     // Выпускает preview-cookie из текущего Bearer-токена: восстановленная из
     // localStorage сессия иначе остаётся без cookie и iframe превью ловит 401.
     ensurePreview: async () => {
-      if (!getToken()) return false
+      if (!hasSession()) return false
       try {
         const res = await fetch(httpBase + REST.sessionPreview, { method: 'POST', headers: authHeaders() })
         return res.ok
@@ -290,10 +317,7 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
  * кадр (поллинг = screencast). Bearer из localStorage; incarnation даёт start.
  */
 export function makeBrowserBridge(httpBase: string): RendererBrowserBridge {
-  const authJson = (): Record<string, string> => {
-    const t = getToken()
-    return { 'content-type': 'application/json', ...(t ? { authorization: `Bearer ${t}` } : {}) }
-  }
+  const authJson = (): Record<string, string> => ({ 'content-type': 'application/json', ...sessionHeaders() })
   const post = async <T>(path: string, body: unknown): Promise<T> => {
     const res = await fetch(httpBase + path, { method: 'POST', headers: authJson(), body: JSON.stringify(body) })
     if (!res.ok) {
@@ -423,12 +447,25 @@ let ws: WsClient | null = null
  * Ставит window.api/audio/stt/claude/tts/cc/agents поверх сервера по адресу
  * serverHttp ('' = same-origin). Идемпотентно на один процесс.
  */
+/** Перенос унаследованного localStorage-токена в HttpOnly-cookie (auth-roadmap п.5); после успеха токен из localStorage удаляется. */
+async function migrateLegacyToken(httpBase: string): Promise<void> {
+  const legacy = legacyToken()
+  if (!legacy) return
+  try {
+    const res = await fetch(httpBase + REST.sessionCookie, { method: 'POST', headers: { authorization: `Bearer ${legacy}` } })
+    if (res.ok || res.status === 401) dropLegacyToken()
+    if (res.ok) ws?.reconnect()
+  } catch { /* сеть недоступна — попробуем при следующей загрузке */ }
+}
+
 export function installRemoteBridges(serverHttp: string, localAgentId: string | null = null): void {
   if (ws) return
   const httpBase = serverHttp.replace(/\/$/, '')
   const wsBase = toWsBase(httpBase)
   // WS дозванивается только при наличии токена сессии (getToken) — до логина ждём.
-  ws = new WsClient(`${wsBase}/ws`, getToken)
+  // Провайдер отдаёт Bearer или маркер 'cookie' (п.5): при cookie-сессии браузер сам отправит vc_session на upgrade.
+  ws = new WsClient(`${wsBase}/ws`, () => getToken() ?? (getCsrf() ? 'cookie' : null))
+  void migrateLegacyToken(httpBase)
   window.api = createHttpApi(httpBase, `${wsBase}/agent`)
   window.audio = makeAudioBridge(ws)
   window.auth = makeAuthBridge(ws)

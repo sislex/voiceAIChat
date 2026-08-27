@@ -100,6 +100,9 @@ export interface AppRuntime {
   start(preferredChatId?: string | null): Promise<void>
   /** Вход по логину/паролю: успех → тот же защищённый bootstrap. */
   login(name: string, password: string): Promise<void>
+  /** Второй шаг входа — код TOTP (auth-roadmap п.6). */
+  loginCode(code: string): Promise<void>
+  cancelTwoFactor(): void
   /** Выход: очистка всех пользовательских доменов и закрытие подписок. */
   logout(): Promise<void>
   /** Открытие админки: ленивый домен, обычный bootstrap его не грузит. */
@@ -352,6 +355,12 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       if (!user) return
       await bootstrap(null)
     },
+    async loginCode(code) {
+      const user: SessionUser | null = await session.actions.loginCode(code)
+      if (!user) return
+      await bootstrap(null)
+    },
+    cancelTwoFactor() { session.actions.cancelTwoFactor() },
     async logout() {
       await session.actions.logout()
     },

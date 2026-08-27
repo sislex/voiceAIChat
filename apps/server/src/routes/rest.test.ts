@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { totpCode } from '../users/totp'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
@@ -187,10 +188,10 @@ describe('REST: аутентификация', () => {
     expect(ok.statusCode).toBe(200)
     expect(ok.json().user).toEqual({ name: 'user', role: 'developer' })
     expect(typeof ok.json().token).toBe('string')
-    expect(ok.headers['set-cookie']).toContain('vc_preview_session=')
-    expect(ok.headers['set-cookie']).toContain('Path=/api/preview')
-    expect(ok.headers['set-cookie']).toContain('HttpOnly')
-    expect(ok.headers['set-cookie']).toContain('SameSite=Strict')
+    expect(String(ok.headers['set-cookie'])).toContain('vc_preview_session=')
+    expect(String(ok.headers['set-cookie'])).toContain('Path=/api/preview')
+    expect(String(ok.headers['set-cookie'])).toContain('HttpOnly')
+    expect(String(ok.headers['set-cookie'])).toContain('SameSite=Strict')
     const bad = await app.inject({
       method: 'POST',
       url: '/api/session/login',
@@ -259,6 +260,87 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
+  it('cookie-сессия: login ставит HttpOnly vc_session + vc_csrf; GET по cookie проходит, мутация без CSRF → 403, с заголовком → ок; logout гасит cookie (auth-roadmap п.5)', async () => {
+    db.createUser('cook', 'cookie-pass-2026', 'developer')
+    const login = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'cook', password: 'cookie-pass-2026' } })
+    const setCookies = ([] as string[]).concat(login.headers['set-cookie'] as string[])
+    const session = setCookies.find((c) => c.startsWith('vc_session='))!
+    const csrfCookie = setCookies.find((c) => c.startsWith('vc_csrf='))!
+    expect(session).toContain('HttpOnly'); expect(session).toContain('Path=/;')
+    expect(csrfCookie).not.toContain('HttpOnly')
+    expect(login.json().csrf).toBe(csrfCookie.split(';')[0]!.split('=')[1])
+    const cookie = `${session.split(';')[0]}; ${csrfCookie.split(';')[0]}`
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { cookie } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: { cookie }, payload: { title: 'x' } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: { cookie, 'x-vc-csrf': login.json().csrf }, payload: { title: 'x' } })).statusCode).not.toBe(403)
+    // Перенос Bearer → cookie.
+    const mig = await app.inject({ method: 'POST', url: '/api/session/cookie', headers: { authorization: `Bearer ${login.json().token}` } })
+    expect(mig.statusCode).toBe(200)
+    expect(String(mig.headers['set-cookie'])).toContain('vc_session=')
+    const out = await app.inject({ method: 'POST', url: '/api/session/logout', headers: { cookie, 'x-vc-csrf': login.json().csrf } })
+    expect(out.statusCode).toBe(200)
+    expect(String(out.headers['set-cookie'])).toContain('vc_session=; Path=/')
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { cookie } })).statusCode).toBe(401)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('2FA TOTP: setup → enable по коду → логин отдаёт тикет → код даёт сессию; disable по коду (auth-roadmap п.6)', async () => {
+    db.createUser('two', 'two-factor-pass-2026', 'developer')
+    const first = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'two', password: 'two-factor-pass-2026' } })
+    const tok = first.json().token as string
+    const setup = (await app.inject({ method: 'POST', url: '/api/session/2fa/setup', headers: { authorization: `Bearer ${tok}` } })).json() as { secret: string; otpauth: string; enabled: boolean }
+    expect(setup.enabled).toBe(false)
+    expect(setup.otpauth).toContain('otpauth://totp/ChatAI:two')
+    expect((await app.inject({ method: 'POST', url: '/api/session/2fa/enable', headers: { authorization: `Bearer ${tok}` }, payload: { code: '000000' } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'POST', url: '/api/session/2fa/enable', headers: { authorization: `Bearer ${tok}` }, payload: { code: totpCode(setup.secret) } })).statusCode).toBe(200)
+    // Теперь логин по паролю даёт только тикет.
+    const challenge = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'two', password: 'two-factor-pass-2026' } })
+    expect(challenge.json()).toMatchObject({ requires2fa: true })
+    expect(challenge.json().token).toBeUndefined()
+    const ticket = challenge.json().ticket as string
+    expect((await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: '123456' } })).statusCode).toBe(401)
+    const done = await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: totpCode(setup.secret) } })
+    expect(done.statusCode).toBe(200)
+    expect(done.json().user).toEqual({ name: 'two', role: 'developer' })
+    // Тикет одноразовый.
+    expect((await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: totpCode(setup.secret) } })).statusCode).toBe(401)
+    expect((await app.inject({ method: 'POST', url: '/api/session/2fa/disable', headers: { authorization: `Bearer ${done.json().token}` }, payload: { code: totpCode(setup.secret) } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'two', password: 'two-factor-pass-2026' } })).json().token).toBeTypeOf('string')
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('журнал безопасности: неудачный вход, вход и выход попадают в /api/admin/security с IP (auth-roadmap п.7)', async () => {
+    db.createUser('audit', 'audit-pass-2026-ok', 'developer')
+    await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'audit', password: 'nope' } })
+    const ok = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'audit', password: 'audit-pass-2026-ok' }, headers: { 'user-agent': 'Audit/1.0' } })
+    await app.inject({ method: 'POST', url: '/api/session/logout', headers: { authorization: `Bearer ${ok.json().token}` } })
+    const events = (await inj({ method: 'GET', url: '/api/admin/security?user=audit' })).json() as { events: Array<{ type: string; userAgent: string; ip: string }> }
+    expect(events.events.map((e) => e.type)).toEqual(['logout', 'login', 'login_failed'])
+    expect(events.events[1]!.userAgent).toBe('Audit/1.0')
+    expect(events.events[1]!.ip).toBeTruthy()
+    expect((await app.inject({ method: 'GET', url: '/api/admin/security' })).statusCode).toBe(401)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('инвайты: админ создаёт ссылку с ролью/лимитом, гость регистрируется с политикой пароля и получает сессию, лимит исчерпывается (auth-roadmap п.8)', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/admin/invites', payload: { role: 'tester', maxUses: 1, ttlHours: 1, note: 'QA' } })).json() as { token: string; role: string; uses: number }
+    expect(created.role).toBe('tester')
+    expect((await app.inject({ method: 'GET', url: `/api/session/invite/${created.token}` })).json()).toMatchObject({ role: 'tester', note: 'QA' })
+    expect((await app.inject({ method: 'GET', url: '/api/session/invite/nope' })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'newbie', password: 'short' } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'bad name!', password: 'good-long-password-1' } })).statusCode).toBe(400)
+    const reg = await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'newbie', password: 'good-long-password-1' } })
+    expect(reg.statusCode).toBe(200)
+    expect(reg.json().user).toEqual({ name: 'newbie', role: 'tester' })
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${reg.json().token}` } })).statusCode).toBe(200)
+    // Лимит 1 использование — второй раз ссылка мертва; список показывает uses=1; удаление.
+    expect((await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'second', password: 'good-long-password-2' } })).statusCode).toBe(404)
+    const list = (await inj({ method: 'GET', url: '/api/admin/invites' })).json() as { invites: Array<{ token: string; uses: number }> }
+    expect(list.invites.find((i) => i.token === created.token)!.uses).toBe(1)
+    expect((await inj({ method: 'DELETE', url: `/api/admin/invites/${created.token}` })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/admin/invites', payload: { role: 'tester' } })).statusCode).toBe(401)
+  })
+
   it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {
     db.createUser('user', '', 'developer')
     const login = await app.inject({
@@ -284,8 +366,8 @@ describe('REST: аутентификация', () => {
       headers: { authorization: `Bearer ${token}` }
     })
     expect(logout.statusCode).toBe(200)
-    expect(logout.headers['set-cookie']).toContain('vc_preview_session=;')
-    expect(logout.headers['set-cookie']).toContain('Max-Age=0')
+    expect(String(logout.headers['set-cookie'])).toContain('vc_preview_session=;')
+    expect(String(logout.headers['set-cookie'])).toContain('Max-Age=0')
     expect((await app.inject({
       method: 'GET',
       url: '/api/conversations',

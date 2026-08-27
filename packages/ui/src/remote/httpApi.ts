@@ -32,7 +32,7 @@ import type {
 import { encodeAgentConnection } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
 import type { MessageSearchResult } from '@shared/types'
-import { getToken } from './session'
+import { authHeaders } from './session'
 
 export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi {
   /**
@@ -45,10 +45,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
     // пустое JSON-тело у DELETE и отвечает 400. Токен сессии — в Authorization.
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { ...authHeaders() }
     if (init?.body != null) headers['content-type'] = 'application/json'
-    const token = getToken()
-    if (token) headers['authorization'] = `Bearer ${token}`
     const res = await fetch(httpBase + path, { ...init, headers })
     const text = await res.text()
     if (!res.ok) {
@@ -145,9 +143,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'widget:get': (body) => req('/api/widget-tools/get', { method: 'POST', body: JSON.stringify(body) }),
     'widget:action': (body) => req('/api/widget-tools/action', { method: 'POST', body: JSON.stringify(body) }),
     'conversations:get': async ({ id }) => {
-      const token = getToken()
       const res = await fetch(httpBase + REST.conversation(id), {
-        headers: token ? { authorization: `Bearer ${token}` } : undefined
+        headers: authHeaders()
       })
       if (res.status === 404) return null
       if (!res.ok) throw new Error(`GET ${REST.conversation(id)} → ${res.status}`)
@@ -286,6 +283,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:users': () => req(REST.adminUsers),
     'admin:userSessions': ({ name }) => req(REST.adminSessions(name)),
     'admin:revokeSession': ({ sid }) => req(REST.adminSessionRevoke(sid), { method: 'DELETE' }),
+    'admin:invites': () => req(REST.adminInvites),
+    'admin:inviteCreate': (body) => req(REST.adminInvites, { method: 'POST', body: JSON.stringify(body) }),
+    'admin:inviteDelete': ({ token }) => req(REST.adminInvite(token), { method: 'DELETE' }),
+    'admin:securityEvents': ({ user, limit }) => req(`${REST.adminSecurity}?${user ? `user=${encodeURIComponent(user)}&` : ''}${limit ? `limit=${limit}` : ''}`.replace(/[?&]$/, '')),
     'admin:usageSummary': (arg) => {
       const q = new URLSearchParams()
       if (arg?.from) q.set('from', String(arg.from))
@@ -340,9 +341,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'projects:list': () => req(REST.projects),
     'projects:create': (b) => req(REST.projects, { method: 'POST', body: JSON.stringify(b) }),
     'projects:get': async ({ id }) => {
-      const token = getToken()
       const res = await fetch(httpBase + REST.project(id), {
-        headers: token ? { authorization: `Bearer ${token}` } : undefined
+        headers: authHeaders()
       })
       if (res.status === 404) return null
       if (!res.ok) throw new Error(`GET ${REST.project(id)} → ${res.status}`)
@@ -444,9 +444,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'tasks:dismissPreparationNotification': ({ questionId }) =>
       req(`/api/task-preparation/notifications/${encodeURIComponent(questionId)}/dismiss`, { method: 'POST' }),
     'tasks:exportPreparationRun': async ({ runId, format }) => {
-      const token = getToken()
       const response = await fetch(httpBase + `/api/task-preparation/runs/${encodeURIComponent(runId)}/export/${format}`, {
-        headers: token ? { authorization: `Bearer ${token}` } : {}
+        headers: authHeaders()
       })
       if (!response.ok) throw new Error(`Экспорт подготовки → ${response.status}`)
       const disposition = response.headers.get('content-disposition') ?? ''
@@ -474,8 +473,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
 /** REST телеметрии БЗ: снапшоты по чату и по проекту (инкременты идут по WS). */
 export function createKbUsageRest(httpBase: string): RendererKbRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
-    const token = getToken()
-    const headers: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {}
+    const headers: Record<string, string> = { ...authHeaders() }
     if (init?.body != null) headers['content-type'] = 'application/json'
     const res = await fetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
@@ -490,10 +488,8 @@ export function createKbUsageRest(httpBase: string): RendererKbRest {
 
 export function createCiRest(httpBase: string): RendererCiRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { ...authHeaders() }
     if (init?.body != null) headers['content-type'] = 'application/json'
-    const token = getToken()
-    if (token) headers['authorization'] = `Bearer ${token}`
     const res = await fetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
     const text = await res.text()

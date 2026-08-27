@@ -12,7 +12,7 @@ import type {
   ModelPriceInput,
   UsageReport,
   UsageUnit,
-  UserUsageSummary, AdminMakeStats } from '@shared/admin'
+  UserUsageSummary, AdminMakeStats, SecurityEvent, InviteInfo } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
 
 export const EMPTY_LLM_ACCESS: readonly UserLlmAccess[] = Object.freeze([])
@@ -34,6 +34,10 @@ export interface AdminState {
   adminUsage: UsageReport | null
   /** Сессии выбранного пользователя (auth-roadmap п.4); null — не загружены. */
   adminSessions: SessionInfo[] | null
+  /** Журнал безопасности выбранного пользователя (auth-roadmap п.7). */
+  adminSecurity: SecurityEvent[] | null
+  /** Инвайты (auth-roadmap п.8). */
+  adminInvites: InviteInfo[] | null
   adminConversations: Conversation[]
   adminMessages: Message[]
   adminConversationId: string | null
@@ -56,6 +60,10 @@ export interface AdminActions {
   selectAdminUser(name: string): Promise<void>
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<void>
   loadAdminSessions(): Promise<void>
+  loadAdminSecurity(): Promise<void>
+  loadAdminInvites(): Promise<void>
+  createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }): Promise<InviteInfo | null>
+  deleteAdminInvite(token: string): Promise<void>
   revokeAdminSession(sid: string): Promise<void>
   openAdminConversation(conversationId: string): Promise<void>
   refreshAdminLlmEngines(): Promise<void>
@@ -91,6 +99,8 @@ function initialState(): AdminState {
     adminSelected: null,
     adminUsage: null,
     adminSessions: null,
+    adminSecurity: null,
+    adminInvites: null,
     adminConversations: [],
     adminMessages: [],
     adminConversationId: null,
@@ -159,6 +169,8 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       adminSelected: null,
       adminUsage: null,
     adminSessions: null,
+    adminSecurity: null,
+    adminInvites: null,
       adminConversations: [],
       adminMessages: [],
       adminConversationId: null,
@@ -174,6 +186,8 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       adminSelected: name,
       adminUsage: null,
     adminSessions: null,
+    adminSecurity: null,
+    adminInvites: null,
       adminConversations: [],
       adminMessages: [],
       adminConversationId: null,
@@ -229,6 +243,25 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     const name = getState().adminSelected
     if (!name || !client.userSessions) return
     try { setState({ adminSessions: await client.userSessions({ name }) }) } catch (err) { fail(err, () => void loadAdminSessions()) }
+  }
+
+  async function loadAdminSecurity(): Promise<void> {
+    const name = getState().adminSelected
+    if (!name || !client.securityEvents) return
+    try { setState({ adminSecurity: await client.securityEvents({ user: name, limit: 200 }) }) } catch (err) { fail(err, () => void loadAdminSecurity()) }
+  }
+
+  async function loadAdminInvites(): Promise<void> {
+    if (!client.listInvites) return
+    try { setState({ adminInvites: await client.listInvites() }) } catch (err) { fail(err, () => void loadAdminInvites()) }
+  }
+  async function createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }): Promise<InviteInfo | null> {
+    if (!client.createInvite) return null
+    try { const inv = await client.createInvite(input); await loadAdminInvites(); return inv } catch (err) { fail(err, () => void createAdminInvite(input)); return null }
+  }
+  async function deleteAdminInvite(token: string): Promise<void> {
+    if (!client.deleteInvite) return
+    try { await client.deleteInvite({ token }); await loadAdminInvites() } catch (err) { fail(err, () => void deleteAdminInvite(token)) }
   }
 
   async function revokeAdminSession(sid: string): Promise<void> {
@@ -318,6 +351,10 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       selectAdminUser,
       loadAdminUsage,
       loadAdminSessions,
+    loadAdminSecurity,
+    loadAdminInvites,
+    createAdminInvite,
+    deleteAdminInvite,
       revokeAdminSession,
       openAdminConversation,
       refreshAdminLlmEngines,

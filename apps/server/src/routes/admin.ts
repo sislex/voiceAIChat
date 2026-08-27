@@ -2,6 +2,7 @@
 // токенам, просмотр истории и реестр LLM-исполнителей. Все под guard requireAdmin.
 
 import { request } from 'node:http'
+import { randomBytes } from 'node:crypto'
 import { checkPasswordPolicy } from '@voicechat/shared'
 import { hibpEnabled, pwnedCount } from '../users/pwned.js'
 import type { AdminMakeStats } from '@voicechat/shared'
@@ -216,6 +217,22 @@ export function registerAdminRoutes(
   app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
     return db.revokeSessionById(req.params.sid) ? { ok: true } : reply.code(404).send({ error: 'not found' })
   })
+  // Инвайты на саморегистрацию (auth-roadmap п.8): создать (роль, срок, лимит), список, отозвать.
+  app.get(REST.adminInvites, guard, async () => ({ invites: db.listInvites() }))
+  app.post<{ Body: { role?: string; ttlHours?: number; maxUses?: number; note?: string } | undefined }>(REST.adminInvites, guard, async (req, reply) => {
+    const role = req.body?.role
+    if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
+    const ttlHours = Math.min(Math.max(Number(req.body?.ttlHours ?? 72), 1), 24 * 30)
+    const maxUses = Math.min(Math.max(Number(req.body?.maxUses ?? 1), 1), 100)
+    const invite = db.createInvite({ token: randomBytes(18).toString('base64url'), role, createdBy: uid(req), ttlMs: ttlHours * 60 * 60_000, maxUses, note: req.body?.note })
+    db.logSecurityEvent({ user: uid(req), type: 'invite_created', ip: req.ip, details: `роль ${role}, ${maxUses} исп., ${ttlHours} ч` })
+    return invite
+  })
+  app.delete<{ Params: { token: string } }>(REST.adminInvite(':token').replace('%3Atoken', ':token'), guard, async (req, reply) => {
+    return db.deleteInvite(req.params.token) ? { ok: true } : reply.code(404).send({ error: 'not found' })
+  })
+  // Журнал безопасности (auth-roadmap п.7).
+  app.get<{ Querystring: { user?: string; limit?: string } }>(REST.adminSecurity, guard, async (req) => ({ events: db.listSecurityEvents({ user: req.query.user || undefined, limit: req.query.limit ? Number(req.query.limit) : undefined }) }))
   app.get(REST.adminMakeStats, guard, async (_req, reply) => {
     if (!makeStats) return reply.code(404).send({ error: 'Make недоступен' })
     return makeStats()
@@ -279,6 +296,7 @@ export function registerAdminRoutes(
         if (count && count > 0) return reply.code(400).send({ error: `Этот пароль встречался в утечках (${count}) — выберите другой` })
       }
       const u = db.createUser(name, password, role)
+      db.logSecurityEvent({ user: name, type: 'password_set', ip: req.ip, details: `учётка создана администратором ${uid(req)}` })
       return toInfo(u.name, u.role, u.blocked, u.createdAt, u)
     }
   )
@@ -302,6 +320,7 @@ export function registerAdminRoutes(
       if (target === 'admin') return reply.code(400).send({ error: 'нельзя изменить admin' })
       if (!db.getUser(target)) return reply.code(404).send({ error: 'not found' })
       db.setUserBlocked(target, Boolean(req.body?.blocked))
+      db.logSecurityEvent({ user: target, type: req.body?.blocked ? 'user_blocked' : 'user_unblocked', ip: req.ip, details: `администратор ${uid(req)}` })
       return { ok: true }
     }
   )

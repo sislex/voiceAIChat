@@ -1,4 +1,4 @@
-import type { SessionInfo } from '@voicechat/shared'
+import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo } from '@voicechat/shared'
 import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
@@ -287,6 +287,8 @@ export interface UserRow {
   failedLogins: number
   lockedUntil: number | null
   lockReason: string | null
+  /** Включён ли второй фактор (auth-roadmap п.6); сам секрет наружу не отдаётся. */
+  totpEnabled: boolean
 }
 
 /** Порог временной блокировки и её длительность; после `LOGIN_HARD_LOCK_FAILS` подряд — блокировка `blocked`. */
@@ -303,6 +305,7 @@ interface UserDbRow {
   failed_logins?: number | null
   locked_until?: number | null
   lock_reason?: string | null
+  totp_secret?: string | null
 }
 
 interface LlmEngineRow {
@@ -730,6 +733,8 @@ export class VoiceChatDb {
     if (userCols.length && !userCols.some((c) => c.name === 'failed_logins')) this.db.exec(`ALTER TABLE users ADD COLUMN failed_logins INTEGER NOT NULL DEFAULT 0`)
     if (userCols.length && !userCols.some((c) => c.name === 'locked_until')) this.db.exec(`ALTER TABLE users ADD COLUMN locked_until INTEGER`)
     if (userCols.length && !userCols.some((c) => c.name === 'lock_reason')) this.db.exec(`ALTER TABLE users ADD COLUMN lock_reason TEXT`)
+    // 2FA (auth-roadmap п.6): base32-секрет TOTP; NULL — второй фактор выключен.
+    if (userCols.length && !userCols.some((c) => c.name === 'totp_secret')) this.db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`)
     const taskLinkCols = this.db.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'source_task_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
     const improvementCols = this.db.prepare(`PRAGMA table_info(task_improvements)`).all() as Array<{ name: string }>
@@ -2461,7 +2466,16 @@ export class VoiceChatDb {
   // ---- Users (аккаунты приложения) --------------------------------------
 
   private mapUser(r: UserDbRow): UserRow {
-    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at, failedLogins: r.failed_logins ?? 0, lockedUntil: r.locked_until ?? null, lockReason: r.lock_reason ?? null }
+    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at, failedLogins: r.failed_logins ?? 0, lockedUntil: r.locked_until ?? null, lockReason: r.lock_reason ?? null, totpEnabled: Boolean(r.totp_secret) }
+  }
+
+  getUserTotpSecret(name: string): string | null {
+    const r = this.db.prepare(`SELECT totp_secret FROM users WHERE name = ?`).get(name) as { totp_secret?: string | null } | undefined
+    return r?.totp_secret ?? null
+  }
+
+  setUserTotpSecret(name: string, secret: string | null): void {
+    this.db.prepare(`UPDATE users SET totp_secret = ? WHERE name = ?`).run(secret, name)
   }
 
   /** Неудачный вход: счётчик подряд; с 5-й попытки — замок на 15 минут, с 10-й — постоянная блокировка с причиной `auto`. */
@@ -2500,7 +2514,7 @@ export class VoiceChatDb {
     this.db
       .prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES (?, ?, ?, 0, ?)`)
       .run(name, hashPassword(password), role, this.now())
-    return { name, role, blocked: false, createdAt: this.now(), failedLogins: 0, lockedUntil: null, lockReason: null }
+    return { name, role, blocked: false, createdAt: this.now(), failedLogins: 0, lockedUntil: null, lockReason: null, totpEnabled: false }
   }
 
   getUser(name: string): UserRow | null {
@@ -2541,6 +2555,60 @@ export class VoiceChatDb {
 
   deleteUser(name: string): void {
     this.db.prepare(`DELETE FROM users WHERE name = ?`).run(name)
+  }
+
+  // ---- Инвайты (auth-roadmap п.8) --------------------------------------------
+
+  createInvite(input: { token: string; role: UserRole; createdBy: string; ttlMs: number; maxUses: number; note?: string }): InviteInfo {
+    const now = Date.now()
+    this.db.prepare(`INSERT INTO invites (token, role, created_by, created_at, expires_at, max_uses, uses, note) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+      .run(input.token, input.role, input.createdBy, now, now + input.ttlMs, Math.max(1, input.maxUses), (input.note ?? '').slice(0, 200))
+    return this.getInvite(input.token)!
+  }
+
+  getInvite(token: string): InviteInfo | null {
+    const r = this.db.prepare(`SELECT * FROM invites WHERE token = ?`).get(token) as { token: string; role: string; created_by: string; created_at: number; expires_at: number; max_uses: number; uses: number; note: string } | undefined
+    return r ? { token: r.token, role: r.role as UserRole, createdBy: r.created_by, createdAt: r.created_at, expiresAt: r.expires_at, maxUses: r.max_uses, uses: r.uses, note: r.note } : null
+  }
+
+  listInvites(): InviteInfo[] {
+    return (this.db.prepare(`SELECT token FROM invites ORDER BY created_at DESC`).all() as Array<{ token: string }>).map((r) => this.getInvite(r.token)!)
+  }
+
+  /** Инвайт годен: не истёк и не исчерпан. */
+  inviteUsable(token: string): InviteInfo | null {
+    const inv = this.getInvite(token)
+    return inv && inv.expiresAt > Date.now() && inv.uses < inv.maxUses ? inv : null
+  }
+
+  consumeInvite(token: string): void {
+    this.db.prepare(`UPDATE invites SET uses = uses + 1 WHERE token = ?`).run(token)
+  }
+
+  deleteInvite(token: string): boolean {
+    return this.db.prepare(`DELETE FROM invites WHERE token = ?`).run(token).changes > 0
+  }
+
+  /** Чистка истёкших и исчерпанных инвайтов старше недели (auth-roadmap п.18 — вызывается планировщиком). */
+  pruneInvites(): number {
+    return this.db.prepare(`DELETE FROM invites WHERE expires_at < ? OR (uses >= max_uses AND created_at < ?)`).run(Date.now() - 7 * 24 * 60 * 60_000, Date.now() - 7 * 24 * 60 * 60_000).changes
+  }
+
+  // ---- Журнал безопасности (auth-roadmap п.7) --------------------------------
+
+  logSecurityEvent(e: { user: string; type: SecurityEventType; ip?: string; userAgent?: string; details?: string }): void {
+    this.db.prepare(`INSERT INTO security_events (at, user_name, type, ip, user_agent, details) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(Date.now(), e.user.slice(0, 80), e.type, (e.ip ?? '').slice(0, 64), (e.userAgent ?? '').slice(0, 200), (e.details ?? '').slice(0, 500))
+    // Журнал не должен расти бесконечно: держим последние 50 000 записей.
+    if (Math.random() < 0.01) this.db.prepare(`DELETE FROM security_events WHERE id < (SELECT COALESCE(MAX(id), 0) - 50000 FROM security_events)`).run()
+  }
+
+  listSecurityEvents(filter: { user?: string; limit?: number } = {}): SecurityEvent[] {
+    const limit = Math.min(Math.max(filter.limit ?? 200, 1), 1000)
+    const rows = (filter.user
+      ? this.db.prepare(`SELECT * FROM security_events WHERE user_name = ? ORDER BY id DESC LIMIT ?`).all(filter.user, limit)
+      : this.db.prepare(`SELECT * FROM security_events ORDER BY id DESC LIMIT ?`).all(limit)) as Array<{ id: number; at: number; user_name: string; type: SecurityEventType; ip: string; user_agent: string; details: string }>
+    return rows.map((r) => ({ id: r.id, at: r.at, user: r.user_name, type: r.type, ip: r.ip, userAgent: r.user_agent, details: r.details }))
   }
 
   // ---- Сессии (auth-roadmap п.4) -------------------------------------------

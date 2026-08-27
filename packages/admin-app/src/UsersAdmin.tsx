@@ -9,8 +9,7 @@ import type {
   UsageReport,
   UsageUnit,
   UserUsageSummary,
-  AdminMakeStats
-} from '@shared/admin'
+  AdminMakeStats, SecurityEvent, SecurityEventType, InviteInfo } from '@shared/admin'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { Conversation, Message, LlmProvider, SessionInfo } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
@@ -22,6 +21,9 @@ function AdminFrame({ variant, onClose, children }: { variant: 'modal' | 'page';
     ? <Dialog title="Пользователи" size="full" onClose={onClose} testId="users-overlay"><div className="admin-frame">{children}</div></Dialog>
     : <section className="admin-page" aria-label="Пользователи" data-testid="users-overlay"><header className="admin-head"><h2>Пользователи</h2><Button onClick={onClose}>Закрыть</Button></header>{children}</section>
 }
+
+/** Подписи событий журнала безопасности (auth-roadmap п.7). */
+const SECURITY_LABEL: Record<SecurityEventType, string> = { invite_created: 'Создан инвайт', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
 
 export interface UsersAdminProps {
   variant?: 'modal' | 'page'
@@ -50,6 +52,16 @@ export interface UsersAdminProps {
   sessions?: SessionInfo[] | null
   onLoadSessions?: () => void
   onRevokeSession?: (sid: string) => void
+  /** Журнал безопасности выбранного пользователя (auth-roadmap п.7). */
+  security?: SecurityEvent[] | null
+  onLoadSecurity?: () => void
+  /** Инвайты на саморегистрацию (auth-roadmap п.8). */
+  invites?: InviteInfo[] | null
+  onLoadInvites?: () => void
+  onCreateInvite?: (input: { role: import('@shared/types').UserRole; ttlHours: number; maxUses: number; note: string }) => void
+  onDeleteInvite?: (token: string) => void
+  /** База абсолютной ссылки инвайта (origin + путь) — admin-app не трогает window, её даёт хост. */
+  inviteBaseUrl?: string
   onOpenConversation: (id: string) => void
   engines: AdminLlmEngine[]
   enginesStatus?: LoadStatus
@@ -131,6 +143,13 @@ export function UsersAdmin({
   sessions,
   onLoadSessions,
   onRevokeSession,
+  security,
+  onLoadSecurity,
+  invites,
+  onLoadInvites,
+  onCreateInvite,
+  onDeleteInvite,
+  inviteBaseUrl = '',
   onOpenConversation,
   engines,
   enginesStatus = 'ready',
@@ -154,6 +173,13 @@ export function UsersAdmin({
   const [newRole, setNewRole] = useState<import('@shared/types').UserRole>('developer')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [confirmBlock, setConfirmBlock] = useState<{ name: string; blocked: boolean } | null>(null)
+  /** Форма инвайта (auth-roadmap п.8). */
+  const [inviteRole, setInviteRole] = useState<import('@shared/types').UserRole>('developer')
+  const [inviteHours, setInviteHours] = useState(72)
+  const [inviteUses, setInviteUses] = useState(1)
+  const [inviteNote, setInviteNote] = useState('')
+  const [invitesOpen, setInvitesOpen] = useState(false)
+  const [copiedInvite, setCopiedInvite] = useState<string | null>(null)
   const [usageDays, setUsageDays] = useState<7 | 30 | null>(30)
   const [usageConversationId, setUsageConversationId] = useState('')
   const [engineDraft, setEngineDraft] = useState<AdminLlmEngineInput>(EMPTY_ENGINE)
@@ -162,7 +188,7 @@ export function UsersAdmin({
   const [accessDraft, setAccessDraft] = useState<UserLlmAccess[]>([])
   const [priceDraft, setPriceDraft] = useState<ModelPriceInput>(EMPTY_PRICE)
   const [editingPrice, setEditingPrice] = useState<string | null>(null)
-  const [tab, setTab] = useState<'access' | 'machines' | 'usage' | 'history'>('usage')
+  const [tab, setTab] = useState<'access' | 'machines' | 'usage' | 'history' | 'security'>('usage')
   useEffect(() => setAccessDraft(llmAccess), [selected, llmAccess])
   const accessDenied = (provider: LlmProvider, modelId: string): boolean => accessDraft.some((entry) => entry.provider === provider && (entry.modelId === '*' || entry.modelId === modelId))
   const providerAllowed = (provider: LlmProvider): boolean => !accessDraft.some((entry) => entry.provider === provider && entry.modelId === '*')
@@ -250,6 +276,35 @@ export function UsersAdmin({
             </select>
             <Button variant="primary" disabled={!newName.trim()} onClick={submitCreate}>Создать</Button>
           </div>}
+          {onLoadInvites && (
+            <details className="uadmin-invites" data-testid="admin-invites" open={invitesOpen} onToggle={(e) => { const open = (e.currentTarget as HTMLDetailsElement).open; setInvitesOpen(open); if (open) onLoadInvites() }}>
+              <summary>Инвайт-ссылки{invites ? ` (${invites.length})` : ''}</summary>
+              <form className="uadmin-invite-form" onSubmit={(e) => { e.preventDefault(); onCreateInvite?.({ role: inviteRole, ttlHours: inviteHours, maxUses: inviteUses, note: inviteNote.trim() }); setInviteNote('') }}>
+                <select aria-label="Роль по инвайту" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as import('@shared/types').UserRole)}><option value="developer">developer</option><option value="tester">tester</option><option value="observer">observer</option><option value="admin">admin</option></select>
+                <label>Срок, ч <input type="number" min={1} max={720} aria-label="Срок действия, часов" value={inviteHours} onChange={(e) => setInviteHours(Number(e.target.value) || 1)} /></label>
+                <label>Использований <input type="number" min={1} max={100} aria-label="Максимум использований" value={inviteUses} onChange={(e) => setInviteUses(Number(e.target.value) || 1)} /></label>
+                <input className="login-input" aria-label="Заметка к инвайту" placeholder="для кого (необязательно)" value={inviteNote} onChange={(e) => setInviteNote(e.target.value)} />
+                <Button size="sm" variant="primary" type="submit">Создать ссылку</Button>
+              </form>
+              {invites && invites.length > 0 && (
+                <ul className="sessions-list" role="list">
+                  {invites.map((inv) => {
+                    const url = `${inviteBaseUrl}#/invite/${encodeURIComponent(inv.token)}`
+                    const dead = inv.expiresAt < Date.now() || inv.uses >= inv.maxUses
+                    return (
+                      <li key={inv.token} className={dead ? 'sessions-item invite--dead' : 'sessions-item'}>
+                        <div><strong>{inv.role}{inv.note ? ` · ${inv.note}` : ''}</strong><small>{inv.uses}/{inv.maxUses} исп. · до {new Date(inv.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{dead ? ' · недействителен' : ''}</small><code className="invite-url">{url}</code></div>
+                        <span className="uadmin-actions">
+                          <Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard?.writeText(url).then(() => { setCopiedInvite(inv.token); setTimeout(() => setCopiedInvite(null), 1500) }) }}>{copiedInvite === inv.token ? 'Скопировано' : 'Копировать'}</Button>
+                          {onDeleteInvite && <Button size="sm" variant="ghost" onClick={() => onDeleteInvite(inv.token)}>Отозвать</Button>}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </details>
+          )}
         </nav>
 
         <div className="cc-col uadmin-detail" data-testid="user-detail">
@@ -330,6 +385,7 @@ export function UsersAdmin({
                 {isAdmin && <button type="button" role="tab" aria-selected={tab === 'machines'} className={tab === 'machines' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('machines')}>Машины пользователя</button>}
                 <button type="button" role="tab" aria-selected={tab === 'usage'} className={tab === 'usage' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('usage')}>Использование моделей</button>
                 <button type="button" role="tab" aria-selected={tab === 'history'} className={tab === 'history' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('history')}>История</button>
+                {onLoadSecurity && <button type="button" role="tab" aria-selected={tab === 'security'} className={tab === 'security' ? 'useg-item on' : 'useg-item'} onClick={() => { setTab('security'); onLoadSecurity() }}>Безопасность</button>}
               </div>
 
               {isAdmin && tab === 'machines' && <section className="uadmin-sec">
@@ -392,6 +448,25 @@ export function UsersAdmin({
                 )}
               </section>}
 
+              {tab === 'security' && <section className="uadmin-sec" data-testid="admin-security">
+                <h3 className="uadmin-h">Журнал безопасности</h3>
+                {security === null || security === undefined ? <p className="fsub">Загрузка…</p> : security.length === 0 ? <EmptyState compact icon="🛡" title="Событий пока нет" description="Входы, выходы, неудачные попытки и смена пароля появятся здесь." /> : (
+                  <table className="admin-security">
+                    <thead><tr><th>Когда</th><th>Событие</th><th>IP</th><th>Устройство</th><th>Детали</th></tr></thead>
+                    <tbody>
+                      {security.map((e) => (
+                        <tr key={e.id} className={/failed|locked|blocked/.test(e.type) ? 'admin-security--bad' : undefined}>
+                          <td>{new Date(e.at).toLocaleString('ru-RU')}</td>
+                          <td>{SECURITY_LABEL[e.type] ?? e.type}</td>
+                          <td>{e.ip}</td>
+                          <td title={e.userAgent}>{e.userAgent.slice(0, 40)}</td>
+                          <td>{e.details}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </section>}
               {tab === 'history' && <section className="uadmin-sec">
                 <h3 className="uadmin-h">История ({conversations.length})</h3>
                 {conversations.length === 0 && <EmptyState compact icon="💬" title="Разговоров пока нет" description="Появятся, как только пользователь начнёт первый чат." />}
