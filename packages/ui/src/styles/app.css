@@ -6644,3 +6644,15 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-autofix { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 12px; border-top: 1px solid var(--border); background: rgb(248 81 73 / .08); font-size: 12.5px; flex-wrap: wrap; }
 .make-autofix code { font-size: 12px; color: var(--danger); }
 .make-autofix-actions { display: inline-flex; gap: 6px; align-items: center; }
+
+/* Make: панель стилей выбранного элемента. */
+.make-style { border-bottom: 1px solid var(--border); padding: 8px 12px; background: var(--panel); font-size: 12.5px; }
+.make-style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px 12px; }
+.make-style-field { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 6px; }
+.make-style-field > span:first-child { color: var(--text-dim); }
+.make-style-field input[type='text'], .make-style-field select { min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 12.5px; background: var(--surface); color: var(--text); }
+.make-style-color { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.make-style-color input[type='color'] { width: 28px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: transparent; }
+.make-style-color code { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.make-style-actions { display: flex; gap: 6px; margin-top: 8px; }
+@media (max-width: 768px) { .make-style-grid { grid-template-columns: 1fr; } }

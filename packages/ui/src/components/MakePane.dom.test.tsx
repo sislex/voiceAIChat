@@ -325,4 +325,19 @@ describe('MakePane', () => {
     expect(onAskAssistant).toHaveBeenCalledWith(expect.stringContaining('foo is not defined'))
     await waitFor(() => expect(screen.queryByTestId('make-autofix')).not.toBeInTheDocument())
   })
+
+  it('панель стилей: правка уходит в превью postMessage, «Записать в CSS» дописывает правило в styles.css', async () => {
+    const { api } = renderPane()
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage')
+    fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.selected', selector: 'main > h1', tag: 'h1', text: 'Заголовок', html: '<h1>Заголовок</h1>', id: '', className: 'hero__title', styles: { color: 'rgb(0, 0, 0)', 'font-size': '32px' } }, source: frame.contentWindow }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Стили' }))
+    const panel = await screen.findByTestId('make-style')
+    expect((within(panel).getByLabelText('Селектор правила') as HTMLInputElement).value).toBe('.hero__title')
+    await userEvent.clear(within(panel).getByLabelText('Размер шрифта'))
+    await userEvent.type(within(panel).getByLabelText('Размер шрифта'), '40px')
+    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.style', values: { 'font-size': '40px' } }, '*')
+    await userEvent.click(within(panel).getByRole('button', { name: 'Записать в CSS' }))
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'styles.css' })).content).toContain('.hero__title {\n  font-size: 40px;\n}'))
+  })
 })

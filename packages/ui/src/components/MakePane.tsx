@@ -4,6 +4,7 @@ import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import { REST } from '@shared/protocol'
 import { CodeEditor } from './CodeEditor'
 import { CodeDiff } from './CodeDiff'
+import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { copyText } from '../lib/clipboard'
 import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
@@ -19,6 +20,9 @@ export interface MakeSelectedElement {
   tag: string
   text: string
   html: string
+  id?: string
+  className?: string
+  styles?: StyleValues
 }
 
 export interface MakePaneProps {
@@ -75,6 +79,25 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [fullscreen, setFullscreen] = useState(false)
   const [inspect, setInspect] = useState(false)
   const [selected, setSelected] = useState<MakeSelectedElement | null>(null)
+  const [styleOpen, setStyleOpen] = useState(false)
+  const previewStyles = (values: StyleValues): void => { frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.style', values }, '*') }
+  /** Дописать правило в главную таблицу стилей проекта (первый <link rel=stylesheet> из index.html, иначе styles.css). */
+  const writeStyles = async (rule: string, values: StyleValues): Promise<void> => {
+    try {
+      let target = 'styles.css'
+      try {
+        const index = await api['make:read']({ conversationId, path: 'index.html' })
+        const m = index.content.match(/<link[^>]*rel=["']stylesheet["'][^>]*href=["']([^"'#?]+)["']/i) ?? index.content.match(/<link[^>]*href=["']([^"'#?]+\.css)["'][^>]*rel=["']stylesheet["']/i)
+        if (m?.[1] && !/^https?:/i.test(m[1])) target = m[1].replace(/^\.\//, '')
+      } catch { /* нет index.html — пишем в styles.css */ }
+      let css = ''
+      try { css = (await api['make:read']({ conversationId, path: target })).content } catch { css = '' }
+      const block = `\n/* Правка из панели стилей Make */\n${cssRule(rule, values)}`
+      const next = await api['make:write']({ conversationId, path: target, content: css.replace(/\s*$/, '\n') + block })
+      setState(next); setPreviewRev(next.rev)
+      toast.success(`Правило ${rule} записано в ${target}`)
+    } catch (e) { toast.error(describeError(e)) }
+  }
   const [previewRev, setPreviewRev] = useState(0)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [content, setContent] = useState('')
@@ -233,12 +256,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (event.source !== frameRef.current?.contentWindow) return
-      const data = event.data as { type?: string; selector?: string; tag?: string; text?: string; html?: string } | null
+      const data = event.data as { type?: string; selector?: string; tag?: string; text?: string; html?: string; id?: string; className?: string; styles?: StyleValues } | null
       if (!data || typeof data !== 'object') return
       if (data.type === 'vc-make.ready') {
         frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.inspect', enabled: inspect }, '*')
       } else if (data.type === 'vc-make.selected' && data.selector) {
-        setSelected({ selector: data.selector, tag: data.tag ?? '', text: data.text ?? '', html: data.html ?? '' })
+        setSelected({ selector: data.selector, tag: data.tag ?? '', text: data.text ?? '', html: data.html ?? '', id: data.id, className: data.className, styles: data.styles })
+        setStyleOpen(false)
       }
     }
     window.addEventListener('message', onMessage)
@@ -580,10 +604,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               <code className="make-selected-sel" title={selected.selector}>&lt;{selected.tag}&gt; {selected.selector}</code>
               {selected.text && <span className="make-selected-text">«{selected.text.slice(0, 80)}»</span>}
               <span className="make-selected-actions">
+                <Button size="sm" variant={styleOpen ? 'secondary' : 'ghost'} aria-expanded={styleOpen} onClick={() => setStyleOpen((v) => !v)}>Стили</Button>
                 {onInsertToChat && <Button size="sm" variant="primary" onClick={sendSelectedToChat}>В чат</Button>}
-                <IconButton size="sm" aria-label="Снять выбор" title="Снять выбор" onClick={() => setSelected(null)}>✕</IconButton>
+                <IconButton size="sm" aria-label="Снять выбор" title="Снять выбор" onClick={() => { previewStyles({}); setSelected(null) }}>✕</IconButton>
               </span>
             </div>
+          )}
+          {selected && styleOpen && (
+            <MakeStylePanel selector={selected.selector} id={selected.id} className={selected.className} computed={selected.styles ?? {}} onPreview={previewStyles} onWrite={writeStyles} onReset={() => previewStyles({})} />
           )}
           {isFresh && onInsertToChat && (
             <section className="make-starters" aria-label="Идеи для старта" data-testid="make-starters">
