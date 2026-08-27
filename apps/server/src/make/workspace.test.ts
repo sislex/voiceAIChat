@@ -368,4 +368,19 @@ describe('MakeWorkspaces', () => {
     expect(h.map((e) => e.snapshotId)).toEqual([null, s1.id, null])
     expect(h[1]!.snapshotLabel).toBe('v1')
   })
+
+  it('persist-коллекция мок-API: POST пишет в файл, GET по id читает, на публикации только чтение', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'mock/api/todos.json', JSON.stringify({ $collection: true, $body: [{ id: '1', text: 'a' }] }))
+    const posted = await ws.resolveMock(CONV, 'api/todos', 'POST', false, { text: 'b' })
+    expect(posted?.status).toBe(201)
+    const saved = JSON.parse((await ws.read(CONV, 'mock/api/todos.json')).content) as { $body: Array<{ id: string }> }
+    expect(saved.$body).toHaveLength(2)
+    expect((await ws.resolveMock(CONV, `api/todos/${saved.$body[1]!.id}`, 'GET'))?.body).toMatchObject({ text: 'b' })
+    expect((await ws.resolveMock(CONV, 'api/todos/1', 'DELETE'))?.status).toBe(204)
+    await ws.publish(CONV)
+    expect((await ws.resolveMock(CONV, 'api/todos', 'POST', true, { text: 'c' }))?.status).toBe(405)
+    expect((await ws.resolveMock(CONV, 'api/todos', 'GET', true))?.status).toBe(200)
+  })
 })

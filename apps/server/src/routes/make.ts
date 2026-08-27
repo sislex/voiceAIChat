@@ -504,7 +504,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     method: ['POST', 'PUT', 'PATCH', 'DELETE'], url: '/api/preview/make/:id/*',
     handler: async (req, reply) => {
       if (!own(uid(req), req.params.id, reply)) return reply
-      const mock = await workspaces.resolveMock(req.params.id, req.params['*'] || '', req.method)
+      const mock = await workspaces.resolveMock(req.params.id, req.params['*'] || '', req.method, false, req.body)
       if (!mock) return reply.code(404).type('text/plain; charset=utf-8').send(`Мок не найден: mock/${req.params['*']}.${req.method}.json`)
       return sendMock(reply, mock)
     }
