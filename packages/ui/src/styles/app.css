@@ -4219,7 +4219,7 @@ button.conscmd:hover {
   border-radius: 10px;
   box-shadow: 0 10px 34px rgba(0, 0, 0, 0.18);
   z-index: 40;
-  max-height: calc(100dvh - max(16px, env(safe-area-inset-top)) - 64px);
+  max-height: calc(100dvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)) - 64px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -4680,6 +4680,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 .side-resize::after { content: ''; position: absolute; inset: 0 4px; background: transparent; transition: background 120ms ease; }
 .side-resize:hover::after, .side-resize:focus-visible::after { background: var(--accent); }
+@media (max-width: 768px) {
+  .side-resize { display: none; }
+}
 .projlist { padding-top: 8px; }
 .projitem { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: none; background: none; color: inherit; cursor: pointer; }
 .projitem .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
