@@ -248,6 +248,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
   // Открытый файл/выделение в Make — уходит вместе с сообщением (п.21).
   const [makeEditorContext, setMakeEditorContext] = useState<EditorContextPayload | null>(null)
+  // Откат правок хода Make (roadmap-2 п.2): восстановить снимок «До правок»; текущее состояние сохранится отдельным снимком.
+  const restoreMakeTurn = async (snapshotId: string): Promise<void> => {
+    if (!chat.activeId || !window.api) return
+    if (!(await confirm({ title: 'Откатить правки этого ответа?', message: 'Файлы проекта вернутся к состоянию до правок; текущее состояние сохранится снимком «Перед восстановлением».', confirmLabel: 'Откатить' }))) return
+    try { await window.api['make:restore']({ conversationId: chat.activeId, snapshotId }); toast.success('Правки откачены') } catch (e) { toast.error(e instanceof Error ? e.message : String(e)) }
+  }
   const makeUsage = useMemo(() => (inMake ? summarizeConversationUsage(chat.messages) : null), [inMake, chat.messages])
   const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
   const [assistantOpen, setAssistantOpen] = useState(() => globalThis.localStorage?.getItem('voicechat.kanbanAssistantOpen') === '1')
@@ -1572,6 +1578,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         permissionMode={activePermissionMode}
         workspace={activeConversation?.workspace}
         onExecutePlan={(answerId) => void chatActions.executePlan(answerId)}
+        onMakeRestore={inMake ? (snapshotId) => void restoreMakeTurn(snapshotId) : undefined}
         canExecutePlan={!forcedPlan}
         state={voice.voice}
         messages={chat.messages.filter((message) => !(chat.activeId ? chat.queuedTurns[chat.activeId] ?? [] : []).some((item) => item.messageId === message.id))}

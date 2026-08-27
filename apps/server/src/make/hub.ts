@@ -10,6 +10,17 @@ type Sink = (m: ServerMessage) => void
 
 export class MakeHub {
   private readonly sinks = new Map<string, Set<Sink>>()
+  /** Снимок «До правок» по id хода (roadmap-2 п.2): ход кладёт его в meta ответа, чат показывает «Откатить правки». */
+  private readonly turnSnapshots = new Map<string, string>()
+
+  rememberTurnSnapshot(turn: string, snapshotId: string): void {
+    if (this.turnSnapshots.size > 5_000) this.turnSnapshots.clear()
+    this.turnSnapshots.set(turn, snapshotId)
+  }
+
+  turnSnapshot(turn: string): string | undefined {
+    return this.turnSnapshots.get(turn)
+  }
 
   subscribe(userId: string, sink: Sink): () => void {
     const set = this.sinks.get(userId) ?? new Set<Sink>()

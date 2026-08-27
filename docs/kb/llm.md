@@ -1,7 +1,7 @@
 ---
 title: LLM: claude/codex CLI, ходы, stream-json, gateway
 updated: 2026-08-27
-checked: efbc9a6d
+checked: b921d53c
 areas:
   - apps/server/src/claude
   - apps/server/src/codex
@@ -269,6 +269,8 @@ Usage нормализуется в `TurnUsage` и рассылается как
 вызывать его после правок вместо попыток открыть страницу браузером.
 
 **Авто-проверка после записи (roadmap-2 п.1).** `make_write_file` после записи сам вызывает `workspaces.check` и дописывает в ответ инструмента блок «Замечания по файлу» — только по записанному пути (битые ссылки, ошибка компиляции jsx/tsx/ts с номером строки). Так модель видит ошибку до следующего шага и не зависит от того, вспомнит ли она про `make_check`; общий `make_check` по-прежнему нужен для проверки проекта целиком.
+
+**Откат правок хода (roadmap-2 п.2).** Снимок «До правок», который `makeMcp` делает перед первой мутацией хода, регистрируется в `MakeHub.rememberTurnSnapshot(turn, snapshotId)`; `turns.ts` передаёт в MCP-URL тот же `turnId`, что и внутри хода, и при сборке `merged`-meta спрашивает `deps.makeHub.turnSnapshot(turnId)` → `TurnMeta.makeSnapshotId`. `ChatColumn` у ответа с этим полем показывает «Откатить правки» (проп `onMakeRestore`, `App` даёт его только в маршруте `/make`): подтверждение через `useConfirm`, затем `make:restore` — текущее состояние перед откатом сохраняется снимком «Перед восстановлением снимка». Ход без записей файлов кнопки не получает.
 
 ## Старт хода: `claude.start`
 

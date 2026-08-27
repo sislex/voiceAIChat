@@ -11,4 +11,9 @@ describe('isBigMakeRequest', () => {
     expect(isBigMakeRequest('Да, делай')).toBe(false)
     expect(isBigMakeRequest('')).toBe(false)
   })
+
+  it('служебный контекст редактора не считается словами пользователя', () => {
+    expect(isBigMakeRequest('Сделай заголовок зелёным.\n\n[Контекст редактора Make] Открыт файл index.html, файл целиком. Правь именно здесь.')).toBe(false)
+    expect(isBigMakeRequest('Перепиши всё с нуля.\n\n[Контекст редактора Make] Открыт файл index.html, без выделения.')).toBe(true)
+  })
 })

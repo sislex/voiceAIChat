@@ -846,6 +846,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     previewMcpBaseUrl,
     consoleMcpBaseUrl,
     makeMcpBaseUrl,
+    makeHub,
     previewTool: previewToolBroker,
     remoteFileTool: remoteFileBroker,
     onAuthError: (userId, provider, message) => { authStatus.reportRunError(userId, provider, message) }

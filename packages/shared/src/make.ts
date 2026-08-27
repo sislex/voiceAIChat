@@ -660,7 +660,9 @@ export const MAKE_STARTER_PROMPTS: readonly MakeStarterPrompt[] = [
  * подтверждения. Короткие точечные просьбы («сделай кнопку синей») идут как обычно.
  */
 export function isBigMakeRequest(text: string): boolean {
-  const t = text.trim().toLocaleLowerCase('ru-RU')
+  // Служебные блоки (контекст редактора, выбранный элемент превью) — не слова пользователя: режем до них,
+  // иначе «файл целиком» из подсказки включал бы режим плана на любую мелкую правку.
+  const t = text.split(/\n\n\[Контекст редактора Make\]|\n*--- BEGIN UNTRUSTED/)[0]!.trim().toLocaleLowerCase('ru-RU')
   if (!t) return false
   if (/\b(да|давай|делай|подтверждаю|ок|окей|поехали|go|yes|согласен)\b/.test(t) && t.length < 80) return false
   if (t.length > 600) return true

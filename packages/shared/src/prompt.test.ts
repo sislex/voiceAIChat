@@ -189,6 +189,6 @@ describe('editor context (Make)', () => {
 
   it('восстанавливается из meta истории', () => {
     const prompt = buildConversationPrompt([{ role: 'u1', text: 'Поправь', meta: { editorContext: { path: 'styles.css' } } }])
-    expect(prompt).toContain('Открыт файл styles.css, файл целиком')
+    expect(prompt).toContain('Открыт файл styles.css, без выделения')
   })
 })

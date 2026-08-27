@@ -25,7 +25,7 @@ export function withPreviewElementContext(body: string, element?: PreviewElement
 /** Контекст редактора Make: открытый файл и выделение — «правь здесь», а не «где-то в проекте». */
 export function withEditorContext(body: string, ctx?: EditorContextPayload): string {
   if (!ctx?.path) return body
-  const where = ctx.startLine ? (ctx.endLine && ctx.endLine !== ctx.startLine ? `строки ${ctx.startLine}–${ctx.endLine}` : `строка ${ctx.startLine}`) : 'файл целиком'
+  const where = ctx.startLine ? (ctx.endLine && ctx.endLine !== ctx.startLine ? `строки ${ctx.startLine}–${ctx.endLine}` : `строка ${ctx.startLine}`) : 'без выделения'
   const lines = [`[Контекст редактора Make] Открыт файл ${ctx.path}, ${where}. Если запрос не называет другой файл — правь именно здесь.`]
   if (ctx.snippet) lines.push('Выделено:', '```', ctx.snippet.slice(0, 2000), '```')
   return body ? `${body}\n\n${lines.join('\n')}` : lines.join('\n')

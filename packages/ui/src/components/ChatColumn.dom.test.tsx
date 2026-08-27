@@ -858,4 +858,15 @@ describe('ChatColumn — кнопка «Использование БЗ»', () =
     await expectNoViolations()
     expectLabelledIconButtons()
   })
+
+  it('«Откатить правки» у ответа Make со снимком «До правок» (roadmap-2 п.2)', async () => {
+    const onMakeRestore = vi.fn()
+    const msg = makeAiMessage({ id: 'ai-make', engine: 'codex', meta: { model: 'gpt', makeSnapshotId: 'snap-1' } })
+    render(<ChatColumn title="Тест" state="idle" messages={[msg]} liveSegments={[]} diarization={false} voiceBar={null} onMakeRestore={onMakeRestore} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Откатить правки' }))
+    expect(onMakeRestore).toHaveBeenCalledWith('snap-1')
+    cleanup()
+    render(<ChatColumn title="Тест" state="idle" messages={[msg]} liveSegments={[]} diarization={false} voiceBar={null} />)
+    expect(screen.queryByRole('button', { name: 'Откатить правки' })).toBeNull()
+  })
 })

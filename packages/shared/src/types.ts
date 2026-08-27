@@ -479,6 +479,8 @@ export interface TurnMeta extends TurnUsage {
   previewElement?: PreviewElementPayload
   /** Контекст редактора Make: какой файл открыт и что выделено (п.21). */
   editorContext?: EditorContextPayload
+  /** Снимок «До правок», сделанный перед первой записью этого хода — для кнопки «Откатить правки». */
+  makeSnapshotId?: string
   /** Длительность хода, мс. */
   durationMs?: number
   /** Число ходов агента (num_turns). */
