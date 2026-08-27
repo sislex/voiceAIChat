@@ -965,3 +965,39 @@ describe('MakePane: автогенерация сториз (roadmap-4 п.23)', 
     expect(await screen.findByText('Default')).toBeInTheDocument()
   })
 })
+
+describe('MakePane: таблица коллекции моков (roadmap-4 п.29)', () => {
+  it('mock/*.json с $body открывается таблицей, правка ячейки делает файл грязным и сохраняется JSON-ом; переключатель JSON показывает редактор', async () => {
+    const { api, emit } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'mock/api/users.json', content: JSON.stringify({ $collection: true, $body: [{ id: 1, name: 'Анна' }] }, null, 2) })
+    emit({ conversationId: CONV, rev: 1, paths: ['mock/api/users.json'] })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const tree = screen.getByRole('navigation', { name: 'Файлы проекта' })
+    await userEvent.click(await within(tree).findByRole('button', { name: /^api\/users\.json/ }))
+    const table = await screen.findByTestId('make-mock-table')
+    await userEvent.type(within(table).getByLabelText('name строки 1'), '!')
+    expect(screen.getByText('не сохранено')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(async () => expect(JSON.parse((await api['make:read']({ conversationId: CONV, path: 'mock/api/users.json' })).content).$body[0].name).toBe('Анна!'))
+    await userEvent.click(screen.getByRole('button', { name: 'JSON' }))
+    expect(screen.queryByTestId('make-mock-table')).toBeNull()
+    expect(screen.getByLabelText('Содержимое mock/api/users.json')).toBeInTheDocument()
+  })
+})
+
+describe('MakePane: мок из описания (roadmap-4 п.30)', () => {
+  it('пункт меню ⋯ в режиме «Код» спрашивает описание и отправляет ассистенту запрос с форматом коллекции', async () => {
+    const onAskAssistant = vi.fn()
+    renderPane({ onAskAssistant })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await openMore()
+    await userEvent.click(screen.getByRole('button', { name: 'Мок из описания' }))
+    const dlg = await screen.findByRole('dialog', { name: 'Мок-данные из описания' })
+    await userEvent.type(within(dlg).getByRole('textbox'), 'товары: название, цена, 7 штук')
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Сгенерировать' }))
+    expect(onAskAssistant).toHaveBeenCalledTimes(1)
+    const text = onAskAssistant.mock.calls[0]![0] as string
+    expect(text).toContain('mock/api/tovary.json')
+    expect(text).toContain('7 правдоподобных записей')
+  })
+})

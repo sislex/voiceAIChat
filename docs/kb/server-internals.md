@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-27
-checked: 8abc98e3
+checked: faea13cf
 areas:
   - apps/server/src
 ---
@@ -269,3 +269,7 @@ Piper доступен только при бинарнике и валидно�
 HTTP-тесты используют `app.inject()`, WS-тесты — временно слушающий Fastify и `ws` client, DB — `:memory:`. Spawn/fetch/fs/resources передаются как зависимости. Реальные Claude, Codex, Whisper и Piper в тестах не запускаются.
 
 Гейт: `npm run -w @voicechat/server typecheck && npm run -w @voicechat/server test`.
+
+**Валидация моков по JSON Schema (roadmap-4 п.31).** Файл коллекции `mock/**.json` может содержать `$schema`; `applyCollectionRequest` (`@shared/makeMock`) перед POST/PUT/PATCH прогоняет тело через `validateJsonSchema` (`@shared/jsonSchemaLite` — подмножество: `type`, `required`, `properties`, `enum`, `minLength/maxLength`, `minimum/maximum`, `pattern`, `format: email`, `items`, `additionalProperties: false`), для PATCH `required` игнорируется. Ошибки — ответ 422 `{ error: 'validation', issues: [{ path, message }] }`, файл не меняется. Подсказка модели (`MAKE_ASSISTANT_HINT`) описывает это поле.
+
+**Auth-мок (roadmap-4 п.32).** Файл мока с полем `$auth` обрабатывает `applyAuthMock` (`@shared/makeMock`): `{ users: [{ username|login|email, password, … }], cookie? }` — POST сравнивает учётные данные, отвечает 200 с `user` (без пароля, слитым в объектное `$body`) и заголовком `Set-Cookie: vc_mock_session=<login>; Path=/; SameSite=Lax`, иначе 401 (не POST — 405); `{ require: true }` — без cookie 401, с ней в объектное `$body` подставляется `user: { username }`; `{ logout: true }` — 204 с `Max-Age=0`. `resolveMock` получил параметр `cookieHeader`, все три маршрута моков (GET превью, не-GET превью, публикация) передают `req.headers.cookie`; `sendMock` пробрасывает `set-cookie` как любой заголовок ответа. Это учебная имитация входа для прототипов, не защита данных.

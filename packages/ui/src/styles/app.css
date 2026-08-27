@@ -7004,3 +7004,19 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-contrast-row--bad .make-contrast-level { background: #fdecea; color: #c0392b; }
 
 .make-token-tools { display: flex; gap: 6px; margin: 8px 0 4px; }
+
+/* Таблица моков (roadmap-4 п.29) */
+.make-mock-table { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 12px; font-size: 13px; }
+.make-mock-table table { border-collapse: collapse; min-width: 100%; }
+.make-mock-table th, .make-mock-table td { border: 1px solid var(--border); padding: 0; text-align: left; vertical-align: middle; }
+.make-mock-table th { background: var(--surface); padding: 4px 6px; font-weight: 600; white-space: nowrap; }
+.make-mock-table th span { margin-right: 4px; }
+.make-mock-table td input { width: 100%; min-width: 80px; border: 0; padding: 5px 6px; font: inherit; background: transparent; color: inherit; box-sizing: border-box; }
+.make-mock-table td input:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+.make-mock-table-actions { width: 32px; text-align: center; }
+.make-mock-table-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.make-mock-table-col { display: flex; gap: 4px; }
+.make-mock-table-col input { font: inherit; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; }
+.make-mock-table-hint { flex-basis: 100%; font-size: 11px; color: var(--text-dim); }
+.make-mock-table-empty { padding: 12px; color: var(--text-dim); }
+.make-mock-view { display: inline-flex; gap: 2px; margin-right: 8px; }

@@ -33,8 +33,9 @@ export interface MakeRoutesDeps {
 async function galleryUsage(workspaces: MakeWorkspaces, conversationId: string): Promise<Record<string, Record<string, string>>> {
   const out: Record<string, Record<string, string>> = {}
   for (const f of await workspaces.stories(conversationId).catch(() => [])) {
-    const src = await workspaces.publicFile(conversationId, f.path).catch(() => null)
-    if (src) out[f.path] = storyUsageSnippets(f.path, src.data.toString('utf8'))
+    // read(), а не publicFile(): последний отдаёт транспилированный JS, а сниппеты нужны из исходного JSX.
+    const src = await workspaces.read(conversationId, f.path).catch(() => null)
+    if (src) out[f.path] = storyUsageSnippets(f.path, src.content)
   }
   return out
 }
@@ -384,7 +385,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     let file
     try { file = await workspaces.readBuffer(conversationId, path) } catch (error) { return sendError(reply, error) }
     if (!file) {
-      const mock = await workspaces.resolveMock(conversationId, path, 'GET')
+      const mock = await workspaces.resolveMock(conversationId, path, 'GET', false, undefined, req.headers.cookie)
       if (mock) return sendMock(reply, mock)
       return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
     }
@@ -591,7 +592,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     method: ['POST', 'PUT', 'PATCH', 'DELETE'], url: '/api/preview/make/:id/*',
     handler: async (req, reply) => {
       if (!own(uid(req), req.params.id, reply)) return reply
-      const mock = await workspaces.resolveMock(req.params.id, req.params['*'] || '', req.method, false, req.body)
+      const mock = await workspaces.resolveMock(req.params.id, req.params['*'] || '', req.method, false, req.body, req.headers.cookie)
       if (!mock) return reply.code(404).type('text/plain; charset=utf-8').send(`Мок не найден: mock/${req.params['*']}.${req.method}.json`)
       return sendMock(reply, mock)
     }
@@ -624,7 +625,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     let file
     try { file = await workspaces.publicFile(conversationId, path) } catch { file = null }
     if (!file) {
-      const mock = await workspaces.resolveMock(conversationId, path, req.method, true)
+      const mock = await workspaces.resolveMock(conversationId, path, req.method, true, (req as FastifyRequest & { body?: unknown }).body, req.headers.cookie)
       if (mock) return sendMock(reply, mock)
       return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
     }
@@ -722,7 +723,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       const files = await workspaces.stories(req.params.id)
       return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store')
         .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'")
-        .send(renderGalleryPage(files, `/api/preview/make/${encodeURIComponent(req.params.id)}/`))
+        .send(renderGalleryPage(files, `/api/preview/make/${encodeURIComponent(req.params.id)}/`, 'Компоненты', await galleryUsage(workspaces, req.params.id)))
     }
     if (raw === MAKE_TESTS_PAGE) {
       const q = req.query as { file?: string }

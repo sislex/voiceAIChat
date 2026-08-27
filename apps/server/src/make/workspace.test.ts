@@ -280,6 +280,14 @@ describe('MakeWorkspaces', () => {
     expect(await ws.resolveMock(CONV, 'api/users', 'GET')).toMatchObject({ status: 200, body: [{ id: 1 }] })
     expect(await ws.resolveMock(CONV, 'api/users', 'POST')).toMatchObject({ status: 201, body: { id: 2 } })
     expect((await ws.resolveMock(CONV, 'api/broken', 'GET'))?.status).toBe(500)
+    // Auth-мок (roadmap-4 п.32): логин → cookie, защищённый ресурс — только с ней.
+    await ws.write(CONV, 'mock/api/login.POST.json', JSON.stringify({ $auth: { users: [{ username: 'anna', password: '1', name: 'Анна' }] } }))
+    await ws.write(CONV, 'mock/api/me.json', JSON.stringify({ $auth: { require: true }, $body: { role: 'admin' } }))
+    const login = await ws.resolveMock(CONV, 'api/login', 'POST', false, { username: 'anna', password: '1' })
+    expect(login).toMatchObject({ status: 200, body: { user: { username: 'anna', name: 'Анна' } } })
+    expect(login?.headers['set-cookie']).toContain('vc_mock_session=anna')
+    expect((await ws.resolveMock(CONV, 'api/me', 'GET'))?.status).toBe(401)
+    expect(await ws.resolveMock(CONV, 'api/me', 'GET', false, undefined, 'vc_mock_session=anna')).toMatchObject({ status: 200, body: { role: 'admin', user: { username: 'anna' } } })
     expect(await ws.resolveMock(CONV, 'api/none', 'GET')).toBeNull()
     expect(await ws.resolveMock(CONV, 'mock/api/users.json', 'GET')).toBeNull()
     const snap = (await ws.snapshot(CONV, 'v1')).snapshots[0]!
