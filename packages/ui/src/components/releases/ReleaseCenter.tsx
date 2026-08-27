@@ -6,6 +6,7 @@ import { loadView, type LoadStatus } from '../../lib/loadState'
 import { EmptyState } from '../ui/EmptyState'
 import { ErrorState } from '../ui/ErrorState'
 import { RefreshIndicator, Skeleton } from '../ui/Skeleton'
+import { useConfirm } from '@voicechat/ui-kit'
 
 interface Props { projectId:string; baseBranch:string; owner:boolean; machines?:ProjectMachine[]; agents?:AgentInfo[]; agentsStatus?:LoadStatus; agentsError?:string|null; defaultAgentId?:string|null; releaseTimeouts?:ReleaseTimeouts; api?:RendererApi }
 type Tab='releases'|'deploy'
@@ -78,6 +79,9 @@ export function ReleaseCenter({projectId,baseBranch,owner,machines=[],agents=[],
   const [version,setVersion]=useState('')
   const [error,setError]=useState('')
   const [busy,setBusy]=useState(false)
+  // Удаление релиза — необратимое (ветка уходит из origin): подтверждение с набором названия, не window.prompt —
+  // нативный диалог блокирует вкладку и не даётся тестам/автоматизации.
+  const confirm=useConfirm()
   useEffect(()=>setSelectedAgentId(defaultAgentId??''),[defaultAgentId])
   const availableMachines=useMemo(()=>{
     const linked=new Map(machines.map(machine=>[machine.agentId,machine]))
@@ -146,7 +150,7 @@ export function ReleaseCenter({projectId,baseBranch,owner,machines=[],agents=[],
   const saveDefaultMachine=async(agentId:string):Promise<void>=>{const previous=selectedAgentId;setSelectedAgentId(agentId);setMachineSaving(true);setMachineSaveError('');try{if(!machines.some(machine=>machine.agentId===agentId))await api['projects:linkMachine']({id:projectId,agentId});await api['projects:setDefaultMachine']({id:projectId,agentId})}catch(reason){setSelectedAgentId(previous);setMachineSaveError(reason instanceof Error?reason.message:String(reason))}finally{setMachineSaving(false)}}
   const create=async():Promise<void>=>{setBusy(true);setError('');try{const release=await api['releases:createBranch']({projectId,branch:`release/${version}`,baseBranch});detailRequest.current+=1;setDetailReleaseId(release.id);setDetail(release);setDetailStatus('ready');setVersion('');await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
   const saveSettings=async():Promise<void>=>{setBusy(true);setError('');try{await api['projects:update']({id:projectId,releaseTimeouts:timeouts});setSettingsOpen(false)}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
-  const remove=async(release:ProjectReleaseSummary):Promise<void>=>{const typed=window.prompt(`Введите ${release.branch}, чтобы удалить ветку из origin`);if(typed!==release.branch)return;setBusy(true);try{await api['releases:delete']({projectId,releaseId:release.id,branch:release.branch});await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
+  const remove=async(release:ProjectReleaseSummary):Promise<void>=>{const ok=await confirm({title:`Удалить релиз ${release.branch}?`,message:`Ветка ${release.branch} будет удалена из origin, запись — из списка. Введите название ветки, чтобы подтвердить.`,variant:'danger',confirmLabel:'Удалить',requireText:release.branch});if(!ok)return;setBusy(true);try{await api['releases:delete']({projectId,releaseId:release.id,branch:release.branch});await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
   const deploy=async():Promise<void>=>{setBusy(true);setError('');try{const release=await api['releases:deploy']({projectId,branch:selected});detailRequest.current+=1;setDetailReleaseId(release.id);setDetail(release);setDetailStatus('ready');await refresh()}catch(reason){setError(reason instanceof Error?reason.message:String(reason))}finally{setBusy(false)}}
   if(detailStatus==='loading')return <section className="release-detail" aria-busy="true"><button className="vc-btn vc-btn--secondary" onClick={closeDetail}>← К списку</button><RefreshIndicator label="Загружаем подробности релиза…"/><Skeleton variant="list" item="block" count={4} height={49}/></section>
   if(detailStatus==='error')return <section className="release-detail"><button className="vc-btn vc-btn--secondary" onClick={closeDetail}>← К списку</button><ErrorState message="Не удалось загрузить подробности релиза" detail={detailError} onRetry={()=>void openDetail(detailReleaseId)}/></section>
