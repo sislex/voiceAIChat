@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@voicechat/ui-kit'
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import { REST } from '@shared/protocol'
-import { CodeEditor } from './CodeEditor'
+import { CodeEditor, type EditorSelection } from './CodeEditor'
 import { CodeDiff } from './CodeDiff'
 import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { MakeControlField, type ArgType } from './MakeControls'
@@ -294,6 +294,20 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }, [inspect, previewRev])
 
   const [formatting, setFormatting] = useState(false)
+  // Inline-команда (п.6, Cmd/Ctrl+I — ⌘K занят палитрой команд): выделенный фрагмент + инструкция → ассистенту,
+  // правку он делает через make_write_file.
+  const [selection, setSelection] = useState<EditorSelection | null>(null)
+  const [inlineOpen, setInlineOpen] = useState(false)
+  const [inlineText, setInlineText] = useState('')
+  const inlineInputRef = useRef<HTMLInputElement>(null)
+  const openInline = (): void => { if (!selectedPath || !onAskAssistant) return; setInlineOpen(true); setTimeout(() => inlineInputRef.current?.focus(), 0) }
+  const sendInline = (): void => {
+    if (!selectedPath || !onAskAssistant || !inlineText.trim()) return
+    const where = selection ? `строки ${selection.startLine}–${selection.endLine}` : 'весь файл'
+    const fragment = selection ? `\n\`\`\`\n${selection.text.slice(0, 4000)}\n\`\`\`\n` : '\n'
+    onAskAssistant(`Файл ${selectedPath}, ${where}:${fragment}Задача: ${inlineText.trim()}. Измени только этот фрагмент (перечитай файл make_read_file и запиши целиком make_write_file), остальное не трогай. `)
+    setInlineOpen(false); setInlineText('')
+  }
   /** Prettier по кнопке/при сохранении: синтаксическая ошибка — тост, текст не трогаем. */
   const formatCurrent = useCallback(async (source: string, path: string, quiet = false): Promise<string> => {
     try {
@@ -869,10 +883,19 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                     <label className="make-autosave"><input type="checkbox" checked={autosave} onChange={toggleAutosave} /> автосохранение</label>
                     <label className="make-autosave" title="Prettier перед сохранением по Cmd/Ctrl+S"><input type="checkbox" checked={formatOnSave} onChange={toggleFormatOnSave} /> формат при сохранении</label>
                     <Button size="sm" variant="ghost" loading={formatting} onClick={() => void formatNow()} title="Prettier (Shift+Alt+F в редакторе)">Форматировать</Button>
+                    {onAskAssistant && <Button size="sm" variant="ghost" onClick={openInline} title="Cmd/Ctrl+I в редакторе: попросить ассистента изменить выделенное">✨ Правка ИИ{selection ? ` (${selection.endLine - selection.startLine + 1} стр.)` : ''}</Button>}
                     <span className={dirty ? 'make-editor-state dirty' : 'make-editor-state'}>{dirty ? 'не сохранено' : 'сохранено'}</span>
                   </span>
                 </div>
-                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} projectFiles={projectFiles} />
+                {inlineOpen && (
+                  <div className="make-inline" data-testid="make-inline" role="dialog" aria-label="Правка выделенного ассистентом">
+                    <span className="make-inline-scope">{selection ? `Строки ${selection.startLine}–${selection.endLine}` : 'Весь файл'}</span>
+                    <input ref={inlineInputRef} type="text" aria-label="Что сделать с фрагментом" placeholder="Например: вынеси в отдельную функцию и добавь типы" value={inlineText} onChange={(e) => setInlineText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendInline() } if (e.key === 'Escape') setInlineOpen(false) }} />
+                    <Button size="sm" variant="primary" disabled={!inlineText.trim()} onClick={sendInline}>Отправить</Button>
+                    <IconButton size="sm" aria-label="Закрыть правку ИИ" title="Закрыть" onClick={() => setInlineOpen(false)}>✕</IconButton>
+                  </div>
+                )}
+                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} projectFiles={projectFiles} onSelectionChange={setSelection} onInlineCommand={openInline} />
               </>
             ) : (
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />

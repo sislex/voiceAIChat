@@ -391,4 +391,20 @@ describe('MakePane', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Форматировать' }))
     await waitFor(() => expect((screen.getByLabelText('Содержимое ugly.css') as HTMLTextAreaElement).value).toBe('body {\n  margin: 0;\n  padding: 0;\n}\n'))
   }, 30_000)
+
+  it('правка ИИ: Cmd+K с выделением отправляет ассистенту файл, строки и фрагмент', async () => {
+    const onAskAssistant = vi.fn()
+    renderPane({ onAskAssistant })
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Файлы проекта' })).getByRole('button', { name: /^styles\.css/ }))
+    const editor = await screen.findByLabelText('Содержимое styles.css') as HTMLTextAreaElement
+    editor.focus(); editor.setSelectionRange(0, 5); fireEvent.select(editor)
+    await userEvent.keyboard('{Meta>}i{/Meta}')
+    const box = await screen.findByTestId('make-inline')
+    expect(box).toHaveTextContent('Строки 1–1')
+    await userEvent.type(within(box).getByLabelText('Что сделать с фрагментом'), 'сделай переменной{Enter}')
+    expect(onAskAssistant).toHaveBeenCalledWith(expect.stringContaining('Файл styles.css, строки 1–1'))
+    expect(onAskAssistant.mock.calls[0]![0]).toContain('сделай переменной')
+  })
 })
