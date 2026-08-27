@@ -6986,3 +6986,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-pane--zen .make-head, .make-pane--zen .make-error { display: none; }
 .make-code--zen { grid-template-columns: 1fr; }
 .make-code--zen .make-tree { display: none; }
+
+/* Три ширины рядом (roadmap-4 п.21) */
+.make-frame-host--all { display: flex; align-items: stretch; gap: 12px; overflow: auto; padding: 8px; }
+.make-frame-host--all .make-frame { flex: 0 0 auto; height: auto; min-height: 100%; }

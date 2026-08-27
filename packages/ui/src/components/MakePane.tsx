@@ -9,6 +9,7 @@ import { changedLines as diffLines } from '@shared/lineDiff'
 import type { MakeReplacePreviewLine } from '@shared/makeSearch'
 import { escapeMarkupText, replaceUniqueText } from '@shared/makeTextEdit'
 import { reorderMarkup } from '@shared/makeReorder'
+import { componentsWithoutStories, generateStoriesSource } from '@shared/makeStoriesGen'
 import { EMPTY_MAKE_SELECTION, pruneMakeSelection, toggleMakeSelection, type MakeSelectionState } from '@shared/makeSelection'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
@@ -81,9 +82,11 @@ export interface MakePaneProps {
 
 type Mode = 'preview' | 'code' | 'stories' | 'history'
 const MODE_LABEL: Record<Mode, string> = { preview: 'Превью', code: 'Код', stories: 'Компоненты', history: 'История' }
-type Device = 'desktop' | 'tablet' | 'mobile'
-const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, mobile: 390 }
-const DEVICE_LABEL: Record<Device, string> = { desktop: 'Десктоп', tablet: 'Планшет', mobile: 'Телефон' }
+type Device = 'desktop' | 'tablet' | 'mobile' | 'all'
+const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, mobile: 390, all: null }
+const DEVICE_LABEL: Record<Device, string> = { desktop: 'Десктоп', tablet: 'Планшет', mobile: 'Телефон', all: 'Три ширины рядом' }
+/** Три ширины рядом (roadmap-4 п.21): дополнительные кадры к основному; скролл синхронизируется через vc-make.state → vc-make.restore. */
+const SYNC_WIDTHS = [820, 390]
 
 function formatSize(bytes: number): string {
   return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} КБ` : `${bytes} Б`
@@ -116,12 +119,21 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [selected, setSelected] = useState<MakeSelectedElement | null>(null)
   // Последнее известное состояние страницы превью (скролл/hash) — восстанавливается после перезагрузки (п.11).
   const pageStateRef = useRef<{ x: number; y: number; hash: string } | null>(null)
+  const syncFramesRef = useRef<Array<HTMLIFrameElement | null>>([])
+  const syncMuteUntil = useRef(0)
   // Тема/язык превью (п.12): пересылаются в iframe и повторяются после каждой перезагрузки.
   const [previewScheme, setPreviewScheme] = useState<'auto' | 'light' | 'dark'>('auto')
   const [previewLang, setPreviewLang] = useState('')
-  const envRef = useRef({ scheme: 'auto', lang: '' })
-  envRef.current = { scheme: previewScheme, lang: previewLang }
-  const sendEnv = (scheme = previewScheme, lang = previewLang): void => { frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', scheme, lang }, '*') }
+  const envRef = useRef<{ scheme: 'auto' | 'light' | 'dark'; lang: string; state: 'hover' | 'focus' | 'active' | null; reducedMotion: boolean; slowMs: number }>({ scheme: 'auto', lang: '', state: null, reducedMotion: false, slowMs: 0 })
+  /** Эмуляция окружения превью (roadmap-4 п.20): принудительное состояние выбранного элемента, reduced-motion, задержка моков. */
+  const [forcedState, setForcedState] = useState<'hover' | 'focus' | 'active' | null>(null)
+  const [reducedMotion, setReducedMotion] = useState(false)
+  const [slowMs, setSlowMs] = useState(0)
+  envRef.current = { scheme: previewScheme, lang: previewLang, state: forcedState, reducedMotion, slowMs }
+  const sendEnv = (scheme = previewScheme, lang = previewLang, extra: { state?: 'hover' | 'focus' | 'active' | null; reducedMotion?: boolean; slowMs?: number } = {}): void => { frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', scheme, lang, state: forcedState, reducedMotion, slowMs, ...extra }, '*') }
+  const cycleForcedState = (): void => { const order: Array<'hover' | 'focus' | 'active' | null> = [null, 'hover', 'focus', 'active']; const next = order[(order.indexOf(forcedState) + 1) % order.length] ?? null; setForcedState(next); sendEnv(previewScheme, previewLang, { state: next }) }
+  const toggleReducedMotion = (): void => { const next = !reducedMotion; setReducedMotion(next); sendEnv(previewScheme, previewLang, { reducedMotion: next }) }
+  const cycleSlowMs = (): void => { const next = slowMs === 0 ? 1500 : slowMs === 1500 ? 4000 : 0; setSlowMs(next); sendEnv(previewScheme, previewLang, { slowMs: next }) }
   const cycleScheme = (): void => { const next = previewScheme === 'auto' ? 'dark' : previewScheme === 'dark' ? 'light' : 'auto'; setPreviewScheme(next); sendEnv(next, previewLang) }
   // Опрос same-origin iframe: события scroll из родителя ненадёжны, а прямое чтение — всегда работает.
   useEffect(() => {
@@ -564,9 +576,21 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   // Сообщения из превью: выбранный элемент (режим «Выбрать элемент»).
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
-      if (event.source !== frameRef.current?.contentWindow) return
+      const fromSync = syncFramesRef.current.some((f) => f?.contentWindow === event.source)
+      if (event.source !== frameRef.current?.contentWindow && !fromSync) return
       const data = event.data as { type?: string; before?: string; after?: string; moved?: string; target?: string; position?: string; selector?: string; tag?: string; text?: string; html?: string; id?: string; className?: string; styles?: StyleValues } | null
       if (!data || typeof data !== 'object') return
+      // Три ширины рядом (п.21): скролл любого кадра повторяют остальные; эхо гасим окном в 300 мс.
+      if (data.type === 'vc-make.state' && typeof (data as { y?: unknown }).y === 'number') {
+        const all = [frameRef.current?.contentWindow, ...syncFramesRef.current.map((f) => f?.contentWindow)].filter(Boolean) as Window[]
+        const from = all.find((w) => w === event.source)
+        if (from && all.length > 1 && Date.now() > syncMuteUntil.current) {
+          syncMuteUntil.current = Date.now() + 300
+          for (const w of all) if (w !== from) w.postMessage({ type: 'vc-make.restore', x: 0, y: (data as { y: number }).y }, '*')
+        }
+      }
+      // Дополнительные кадры дают только скролл; выбор элемента, текст и прочее — от основного.
+      if (fromSync) { if (data.type === 'vc-make.ready' && event.source) (event.source as Window).postMessage({ type: 'vc-make.env', ...envRef.current, state: null }, '*'); return }
       if (data.type === 'vc-make.state' && event.source === frameRef.current?.contentWindow) {
         const s = data as unknown as { x: number; y: number; hash: string }
         pageStateRef.current = { x: s.x, y: s.y, hash: s.hash }
@@ -576,7 +600,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         if (commentsRef.current.length) sendPins()
         // Превью перезагрузилось (правка ассистента/своя) — вернуть скролл и якорь, чтобы не прыгать наверх.
         if (pageStateRef.current) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.restore', ...pageStateRef.current }, '*')
-        if (envRef.current.scheme !== 'auto' || envRef.current.lang) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', ...envRef.current }, '*')
+        if (envRef.current.scheme !== 'auto' || envRef.current.lang || envRef.current.reducedMotion || envRef.current.slowMs) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', ...envRef.current, state: null }, '*')
       } else if (data.type === 'vc-make.selected' && data.selector) {
         setSelected({ selector: data.selector, tag: data.tag ?? '', text: data.text ?? '', html: data.html ?? '', id: data.id, className: data.className, styles: data.styles })
         setStyleOpen(false)
@@ -911,6 +935,20 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       setReplacePreview(result.preview ?? [])
     } catch (e) { toast.error(describeError(e)) } finally { setReplacing(false) }
   }
+  /** Автогенерация сториз (roadmap-4 п.23): компоненты без `*.stories.*` и создание файла по пропсам. */
+  const orphanComponents = useMemo(() => componentsWithoutStories((state?.files ?? []).map((f) => f.path)), [state])
+  const generateStories = async (path: string): Promise<void> => {
+    try {
+      const { content } = await api['make:read']({ conversationId, path })
+      const gen = generateStoriesSource(path, content)
+      if (!gen) { toast.error('В файле не нашёлся экспортируемый компонент (PascalCase)'); return }
+      const next = await api['make:write']({ conversationId, path: gen.path, content: gen.content })
+      setState(next); setPreviewRev(next.rev)
+      toast.success(`Создан ${gen.path}`)
+      await loadStories()
+      setStory({ file: gen.path, name: 'Default' })
+    } catch (e) { toast.error(describeError(e)) }
+  }
   const loadStories = useCallback(async (): Promise<void> => {
     try {
       const { files } = await api['make:stories']({ conversationId })
@@ -1166,9 +1204,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {mode === 'preview' && (
         <>
           <div className="make-devices" role="group" aria-label="Ширина превью">
-            {(['desktop', 'tablet', 'mobile'] as Device[]).map((d) => (
+            {(['desktop', 'tablet', 'mobile', ...(isPhone ? [] : ['all' as Device])] as Device[]).map((d) => (
               <button key={d} type="button" aria-pressed={device === d} className={device === d ? 'make-device on' : 'make-device'} title={DEVICE_LABEL[d]} aria-label={DEVICE_LABEL[d]} onClick={() => setDevice(d)}>
-                {d === 'desktop' ? 'ПК' : d === 'tablet' ? 'Планшет' : 'Телефон'}
+                {d === 'desktop' ? 'ПК' : d === 'tablet' ? 'Планшет' : d === 'mobile' ? 'Телефон' : '⫼'}
               </button>
             ))}
           </div>
@@ -1203,6 +1241,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           <div className="jcard-menu make-more-menu" role="group" aria-label="Ещё действия" data-testid="make-more-menu">
             {mode === 'preview' && <>
               {item(`Тема: ${previewScheme === 'auto' ? 'как в системе' : previewScheme === 'dark' ? 'тёмная' : 'светлая'}`, () => cycleScheme(), { ariaLabel: 'Тема превью', title: 'Переключить тему превью' })}
+              {item(`Состояние элемента: ${forcedState ?? 'обычное'}`, () => cycleForcedState(), { ariaLabel: 'Состояние элемента', title: 'Показать выбранный элемент в :hover / :focus / :active — правила клонируются под принудительный класс', disabled: !selected })}
+              {item(`Reduced motion: ${reducedMotion ? 'вкл' : 'выкл'}`, () => toggleReducedMotion(), { ariaLabel: 'Reduced motion', title: 'Эмулировать prefers-reduced-motion: анимации и переходы без длительности' })}
+              {item(`Медленная сеть: ${slowMs === 0 ? 'выкл' : `${slowMs / 1000} с`}`, () => cycleSlowMs(), { ariaLabel: 'Медленная сеть', title: 'Задержка ответов fetch в превью (моки и данные), чтобы увидеть состояния загрузки' })}
               <label className="make-more-row"><span>Язык превью</span>
                 <select className="make-lang" aria-label="Язык превью" value={previewLang} onChange={(e) => { setPreviewLang(e.target.value); sendEnv(previewScheme, e.target.value) }} title="Атрибут lang документа превью">
                   <option value="">авто</option>
@@ -1309,8 +1350,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               src={previewSrc}
               onLoad={restorePageState}
               sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"
-              style={frameWidth ? { width: `${frameWidth}px` } : undefined}
+              style={frameWidth ? { width: `${frameWidth}px` } : device === 'all' ? { width: '1200px' } : undefined}
             />}
+            {device === 'all' && previewReady && SYNC_WIDTHS.map((w, i) => (
+              <iframe key={`${previewRev}-${w}`} ref={(el) => { syncFramesRef.current[i] = el }} className="make-frame make-frame--sync" title={`Превью ${w}px`} src={previewSrc} sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin" style={{ width: `${w}px` }} />
+            ))}
           </div>
           {commentsOpen && (
             <MakeCommentsPanel
@@ -1606,6 +1650,16 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 </div>
               </div>
             ))}
+            {storyFiles !== null && orphanComponents.length > 0 && (
+              <div className="make-tree-group" data-testid="make-orphans">
+                <p className="make-tree-dir" title="Компоненты, у которых ещё нет файла сториз">▢ Без сториз</p>
+                {orphanComponents.map((path) => (
+                  <div className="make-tree-item" key={path}>
+                    <button type="button" className="make-tree-file make-tree-file--dim" onClick={() => void generateStories(path)} title={`Создать ${path.replace(/\.(tsx|jsx)$/i, '.stories.tsx')} по пропсам компонента`}>+ сториз для {path.slice(path.lastIndexOf('/') + 1)}</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </nav>
           <div className="make-story-host">
             {runningTests && previewReady && <iframe key={runningTests} className="make-tests-frame" title={`Тесты ${runningTests}`} sandbox="allow-scripts allow-same-origin" src={`${base}__tests__?file=${encodeURIComponent(runningTests)}&rev=${previewRev}`} aria-hidden="true" />}
