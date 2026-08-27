@@ -21,6 +21,6 @@
 | 14 | Presence и блокировка файла при чужом редактировании | ✅ heartbeat `make:presence`, WS `make.presence`, чип 👥 N, read-only при несохранённых правках в другой вкладке |
 | 15 | Квота per-user + предупреждение в админке | ✅ `MAKE_LIMITS.maxUserBytes` 512 МБ, проверка при записи/импорте, ⚠ в дашборде при ≥ 80 % |
 | 16 | Фоновая очистка снимков (30 дней) и PNG стори | ✅ `MakeWorkspaces.sweep` при старте и каждые 6 ч; закреплённый и самый свежий снимок не трогаются |
-| 17 | Метрики Make в /api/health или отдельном /metrics | |
-| 18 | Экспорт push в GitHub (⏸ токен) | |
-| 19 | Импорт из Figma (⏸ токен) | |
+| 17 | Метрики Make в /api/health или отдельном /metrics | ✅ `GET /api/admin/make/metrics` (Prometheus text, Bearer админа) |
+| 18 | Экспорт push в GitHub (⏸ токен) | ⏸ нужен токен пользователя (GitHub PAT) и `git` в образе сервера |
+| 19 | Импорт из Figma (⏸ токен) | ⏸ нужен Figma personal access token и ключ файла |
