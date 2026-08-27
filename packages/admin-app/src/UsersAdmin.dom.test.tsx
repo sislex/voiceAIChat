@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UsersAdmin, type UsersAdminProps } from './UsersAdmin'
 import type { AdminLlmEngine, AdminUserInfo } from '@shared/admin'
@@ -198,5 +198,18 @@ describe('UsersAdmin — доступность', () => {
     expect(sec).toHaveTextContent('5.0 МБ')
     expect(within(sec).getByText('alice')).toBeInTheDocument()
     expect(within(sec).getByTestId('make-user-quota-warn')).toHaveTextContent('88% квоты')
+  })
+})
+
+describe('UsersAdmin — сессии пользователя (auth-roadmap п.4)', () => {
+  it('раскрытие «Сессии» запрашивает список; «Завершить» отзывает по sid', async () => {
+    const onLoadSessions = vi.fn()
+    const onRevokeSession = vi.fn()
+    renderAdmin({ isAdmin: true, selected: 'bob', sessions: [{ sid: 's1', user: 'bob', createdAt: 1, lastSeen: 2, expiresAt: 9, ip: '10.0.0.1', userAgent: 'Chrome/1' }], onLoadSessions, onRevokeSession })
+    const details = screen.getByTestId('admin-sessions')
+    await userEvent.click(within(details).getByText(/Сессии \(1\)/))
+    await waitFor(() => expect(onLoadSessions).toHaveBeenCalled())
+    await userEvent.click(within(details).getByRole('button', { name: 'Завершить' }))
+    expect(onRevokeSession).toHaveBeenCalledWith('s1')
   })
 })

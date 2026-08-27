@@ -80,6 +80,8 @@ export function createAdminClient(api: RendererApi): AdminClient {
   return {
       listUsers: () => api['admin:users'](),
       usageSummary: (range) => api['admin:usageSummary'](range),
+      userSessions: ({ name }) => api['admin:userSessions']({ name }).then((r) => r.sessions),
+      revokeSession: ({ sid }) => api['admin:revokeSession']({ sid }).then(() => undefined),
       makeStats: () => api['admin:makeStats'](),
       createUser: (input) => api['admin:createUser'](input),
       updateUserRole: (input) => api['admin:updateUserRole'](input),

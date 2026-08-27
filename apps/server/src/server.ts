@@ -33,7 +33,7 @@ import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { BoardHub, NotificationHub } from './projects/boardHub.js'
-import { registerAuth, resolveUser, uid } from './users/auth.js'
+import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.js'
 import { loadOrCreateSecret } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
@@ -1541,7 +1541,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       }
       // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
       const token = (request.query as { token?: string } | undefined)?.token
-      const user = resolveUser(db, token, sessionSecret)
+      const user = resolveActiveUser(db, token, sessionSecret)
       if (!user) {
         socket.close()
         return

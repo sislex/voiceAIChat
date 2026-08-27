@@ -9,9 +9,9 @@ import { SlidingWindowLimiter } from '../make/rateLimit.js'
 const LOGIN_LIMIT = 10
 const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
-import { REST, type SessionUser } from '@voicechat/shared'
+import { REST, type SessionUser, SESSION_TTL_MS } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
-import { signToken, verifyTokenName } from './accounts.js'
+import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
 
 const PREVIEW_SESSION_COOKIE = 'vc_preview_session'
 const PREVIEW_COOKIE_PATH = '/api/preview'
@@ -129,10 +129,39 @@ export function resolveUser(db: VoiceChatDb, token: string | undefined, secret: 
   return { name: u.name, role: u.role }
 }
 
+/**
+ * Как `resolveUser`, но с учётом отзыва токена и таблицы сессий (auth-roadmap п.4) — для WS и любых мест вне preHandler.
+ * Ленивую регистрацию старых токенов не делает: это забота HTTP-входа, WS всегда идёт после него.
+ */
+export function resolveActiveUser(db: VoiceChatDb, token: string | undefined, secret: string): SessionUser | null {
+  if (!token || db.isSessionRevoked(token)) return null
+  const parsed = verifyToken(token, secret)
+  if (!parsed) return null
+  if (parsed.sid) {
+    const s = db.getSession(parsed.sid)
+    if (s ? s.expiresAt < Date.now() : db.hasSessionRow(parsed.sid)) return null
+  }
+  return resolveUser(db, token, secret)
+}
+
 export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string): void {
   app.decorateRequest('user', null)
-  const activeUser = (token: string | undefined): SessionUser | null =>
-    token && !db.isSessionRevoked(token) ? resolveUser(db, token, secret) : null
+  // Сессии (auth-roadmap п.4): токен действителен, пока есть живая запись в `sessions` (не отозвана, не истекла).
+  // Токены без записи (выданы до таблицы) регистрируются лениво — так старые входы не рвутся при обновлении.
+  const activeUser = (token: string | undefined): SessionUser | null => {
+    if (!token || db.isSessionRevoked(token)) return null
+    const parsed = verifyToken(token, secret)
+    if (!parsed) return null
+    if (parsed.sid) {
+      const s = db.getSession(parsed.sid)
+      if (s) { if (s.expiresAt < Date.now()) return null; db.touchSession(parsed.sid, SESSION_TTL_MS) }
+      else if (db.hasSessionRow(parsed.sid)) return null // отозвана или истекла
+      else if (db.getUser(parsed.name)) db.createSession(parsed.sid, parsed.name, { ip: '', userAgent: 'legacy', ttlMs: SESSION_TTL_MS })
+    }
+    return resolveUser(db, token, secret)
+  }
+  const sidOf = (req: FastifyRequest): string | null => verifyToken(bearer(req), secret)?.sid ?? null
+  db.pruneSessions()
 
   app.addHook('preHandler', async (req, reply) => {
     const url = req.url.split('?')[0]
@@ -198,7 +227,9 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       db.resetLoginFailures(u.name)
       loginByName.forget(u.name.trim().toLowerCase())
       const user: SessionUser = { name: u.name, role: u.role }
-      const token = signToken(user, secret)
+      const sid = newSessionId()
+      const token = signToken(user, secret, sid)
+      db.createSession(sid, u.name, { ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), ttlMs: SESSION_TTL_MS })
       reply.header('set-cookie', previewCookie(token))
       return { token, user }
     }
@@ -224,7 +255,30 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const token = bearer(req)
     if (!activeUser(token)) return reply.code(401).send({ error: 'unauthorized' })
     db.revokeSession(token!)
+    const sid = sidOf(req)
+    if (sid) db.revokeSessionById(sid)
     reply.header('set-cookie', previewCookie('', 0))
+    return { ok: true }
+  })
+
+  // Сессии пользователя (auth-roadmap п.4): список, «выйти везде» (кроме текущей), отзыв одной.
+  app.get(REST.sessionList, async (req, reply) => {
+    const user = activeUser(bearer(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    const current = sidOf(req)
+    return { sessions: db.listSessions(user.name).map((s) => ({ ...s, current: s.sid === current })) }
+  })
+  app.post(REST.sessionLogoutAll, async (req, reply) => {
+    const user = activeUser(bearer(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    return { revoked: db.revokeUserSessions(user.name, sidOf(req)) }
+  })
+  app.delete<{ Params: { sid: string } }>('/api/session/:sid', async (req, reply) => {
+    const user = activeUser(bearer(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    const s = db.getSession(req.params.sid)
+    if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
+    db.revokeSessionById(s.sid)
     return { ok: true }
   })
 }

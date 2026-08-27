@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-27
-checked: 0e2a3b23
+checked: f1c49dce
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -305,3 +305,5 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 `REST.makeSnapshotFile` (GET `…/snapshots/:sid/file?path=` → `MakeFileContent`), `REST.makeRestoreFile` (POST `…/snapshots/:sid/restore-file {path}`), `REST.makeImport` (POST `…/import
 {dataBase64, mode}`, bodyLimit 12 МБ), `REST.makeImportUrl` (POST `…/import-url {url, mode}`), `export.zip?vite=1`;
 мосты `make:snapshotDiff/restoreFile/import/importUrl`. Сообщение iframe → панель: `vc-make.console`. Константы `MAKE_TRANSPILED_EXTENSIONS`, `MAKE_STORIES_PAGE`, `MAKE_REACT_IMPORT_MAP`.
+
+**Сессии (auth-roadmap п.4).** `REST.sessionList` (`GET /api/session/list` → `{ sessions: SessionInfo[] }`, у текущей `current: true`), `REST.sessionLogoutAll` (`POST`), `REST.sessionRevoke(sid)` (`DELETE /api/session/:sid`), админские `REST.adminSessions(user)` и `REST.adminSessionRevoke(sid)`; IPC `admin:userSessions`, `admin:revokeSession`; мост `RendererSessionBridge.sessions/logoutAll/revokeSession` (опциональные — в desktop их нет).

@@ -16,7 +16,7 @@ import type {
 import type { UserLlmAccess } from '@shared/llmAccess'
 
 export const EMPTY_LLM_ACCESS: readonly UserLlmAccess[] = Object.freeze([])
-import type { Conversation, Message, UserRole } from '@shared/types'
+import type { Conversation, Message, UserRole, SessionInfo } from '@shared/types'
 import type { AdminClient, SessionPort } from '../contracts'
 
 export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -32,6 +32,8 @@ export interface AdminState {
   adminUsersError: string | null
   adminSelected: string | null
   adminUsage: UsageReport | null
+  /** Сессии выбранного пользователя (auth-roadmap п.4); null — не загружены. */
+  adminSessions: SessionInfo[] | null
   adminConversations: Conversation[]
   adminMessages: Message[]
   adminConversationId: string | null
@@ -53,6 +55,8 @@ export interface AdminActions {
   deleteUserAccount(name: string): Promise<void>
   selectAdminUser(name: string): Promise<void>
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<void>
+  loadAdminSessions(): Promise<void>
+  revokeAdminSession(sid: string): Promise<void>
   openAdminConversation(conversationId: string): Promise<void>
   refreshAdminLlmEngines(): Promise<void>
   refreshAdminModelPrices(): Promise<void>
@@ -86,6 +90,7 @@ function initialState(): AdminState {
     adminUsersError: null,
     adminSelected: null,
     adminUsage: null,
+    adminSessions: null,
     adminConversations: [],
     adminMessages: [],
     adminConversationId: null,
@@ -153,6 +158,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       usersOpen: false,
       adminSelected: null,
       adminUsage: null,
+    adminSessions: null,
       adminConversations: [],
       adminMessages: [],
       adminConversationId: null,
@@ -167,6 +173,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     setState({
       adminSelected: name,
       adminUsage: null,
+    adminSessions: null,
       adminConversations: [],
       adminMessages: [],
       adminConversationId: null,
@@ -216,6 +223,17 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     } catch (err) {
       fail(err, () => void loadAdminUsage(unit, from, to, conversationId))
     }
+  }
+
+  async function loadAdminSessions(): Promise<void> {
+    const name = getState().adminSelected
+    if (!name || !client.userSessions) return
+    try { setState({ adminSessions: await client.userSessions({ name }) }) } catch (err) { fail(err, () => void loadAdminSessions()) }
+  }
+
+  async function revokeAdminSession(sid: string): Promise<void> {
+    if (!client.revokeSession) return
+    try { await client.revokeSession({ sid }); await loadAdminSessions() } catch (err) { fail(err, () => void revokeAdminSession(sid)) }
   }
 
   async function openAdminConversation(conversationId: string): Promise<void> {
@@ -299,6 +317,8 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       },
       selectAdminUser,
       loadAdminUsage,
+      loadAdminSessions,
+      revokeAdminSession,
       openAdminConversation,
       refreshAdminLlmEngines,
       refreshAdminModelPrices,

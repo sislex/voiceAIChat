@@ -26,8 +26,7 @@ import type {
   TurnMeta,
   TurnUsage,
   WhisperModel,
-  WhisperModelInfo
-} from './types'
+  WhisperModelInfo, SessionInfo } from './types'
 import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities, TurnTarget, ActiveTurn } from './protocol'
 import type { GitAccessDiagnostics, GitAccessResult } from './gitAccess'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
@@ -334,6 +333,9 @@ export interface IpcInvokeMap {
   'cx:resume': { arg: { id: string }; result: ConversationWithMessages }
   // --- Админ-страница пользователей (только admin) ---
   'admin:users': { arg: void; result: AdminUserInfo[] }
+  /** Сессии пользователя и их отзыв администратором (auth-roadmap п.4). */
+  'admin:userSessions': { arg: { name: string }; result: { sessions: SessionInfo[] } }
+  'admin:revokeSession': { arg: { sid: string }; result: { ok: true } }
   'admin:usageSummary': { arg: { from?: number; to?: number } | void; result: import('./admin').UserUsageSummary[] }
   'admin:makeStats': { arg: void; result: import('./admin').AdminMakeStats }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
@@ -785,6 +787,10 @@ export interface RendererSessionBridge {
   login(creds: { name: string; password: string }): Promise<SessionUser | null>
   me(): Promise<SessionUser | null>
   logout(): Promise<void>
+  /** Сессии пользователя (auth-roadmap п.4); нет в desktop-мосте. */
+  sessions?(): Promise<SessionInfo[]>
+  logoutAll?(): Promise<void>
+  revokeSession?(sid: string): Promise<void>
   /**
    * Выпускает HttpOnly-cookie превью из действующего Bearer-токена. Нужен сессиям,
    * восстановленным без повторного login (токен из localStorage, перезапуск браузера):
@@ -1018,6 +1024,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'cx:transcript',
   'cx:resume',
   'admin:users',
+  'admin:userSessions',
+  'admin:revokeSession',
   'admin:makeStats',
   'admin:llmAccess',
   'admin:saveLlmAccess',
