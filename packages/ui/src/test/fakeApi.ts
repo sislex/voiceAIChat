@@ -281,6 +281,23 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:libraryInsert': async ({ conversationId, slug }) => { for (const [p, c] of libraryFiles.get(slug) ?? []) makeFiles(conversationId).set(p, c); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
     'make:libraryRemove': async ({ slug }) => { library.delete(slug); return { items: [...library.values()] } },
     'make:shots': async ({ conversationId }) => ({ shots: makeShots.get(conversationId) ?? [] }),
+    'make:usage': async ({ conversationId }) => {
+      const files = [...makeFiles(conversationId).entries()]
+      const filesBytes = files.reduce((s, [, c]) => s + new TextEncoder().encode(c).byteLength, 0)
+      const snaps = makeSnaps(conversationId)
+      const shots = makeShots.get(conversationId) ?? []
+      const unusedAssets = files.filter(([p]) => /\.(png|jpe?g|gif|webp|svg)$/i.test(p) && !files.some(([q, c]) => q !== p && c.includes(p.split('/').pop()!))).map(([p, c]) => ({ path: p, size: c.length }))
+      return { filesBytes, filesCount: files.length, snapshotsBytes: snaps.length * 1024, snapshotsCount: snaps.length, shotsBytes: shots.length * 2048, shotsCount: shots.length, totalBytes: filesBytes + snaps.length * 1024 + shots.length * 2048, limitBytes: 64 * 1024 * 1024, unusedAssets }
+    },
+    'make:cleanup': async ({ conversationId, keepSnapshots, shots, unusedAssets }) => {
+      const before = await api['make:usage']({ conversationId })
+      const removed = { snapshots: 0, shots: 0, assets: 0 }
+      if (typeof keepSnapshots === 'number') { const list = makeSnaps(conversationId); removed.snapshots = Math.max(0, list.length - keepSnapshots); list.splice(keepSnapshots) }
+      if (shots) { removed.shots = (makeShots.get(conversationId) ?? []).length; makeShots.set(conversationId, []) }
+      if (unusedAssets) for (const a of before.unusedAssets) { makeFiles(conversationId).delete(a.path); removed.assets += 1 }
+      const usage = await api['make:usage']({ conversationId })
+      return { freedBytes: before.totalBytes - usage.totalBytes, removed, usage, state: makeState(conversationId) }
+    },
     'make:shot': async ({ conversationId, file, story }) => { const list = [{ id: `sh${(makeShots.get(conversationId) ?? []).length + 1}`, file, story, at: Date.now(), rev: makeRev.get(conversationId) ?? 0 }, ...(makeShots.get(conversationId) ?? [])]; makeShots.set(conversationId, list); return { shots: list } },
     'make:snapshotFile': async ({ snapshotId, path }) => {
       const old = makeSnapContents.get(snapshotId)?.get(path)

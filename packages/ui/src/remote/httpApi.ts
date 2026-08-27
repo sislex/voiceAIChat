@@ -116,6 +116,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:libraryInsert': ({ conversationId, slug }) => req(REST.makeLibraryInsert(conversationId, slug), { method: 'POST' }),
     'make:libraryRemove': ({ slug }) => req(REST.makeLibraryItem(slug), { method: 'DELETE' }),
     'make:shots': ({ conversationId }) => req(REST.makeShots(conversationId)),
+    'make:usage': ({ conversationId }) => req(REST.makeUsage(conversationId)),
+    'make:cleanup': ({ conversationId, ...options }) => req(REST.makeCleanup(conversationId), { method: 'POST', body: JSON.stringify(options) }),
     'make:shot': ({ conversationId, file, story, dataBase64 }) => req(REST.makeShots(conversationId), { method: 'POST', body: JSON.stringify({ file, story, dataBase64 }) }),
     'make:snapshotFile': ({ conversationId, snapshotId, path }) => req(`${REST.makeSnapshotFile(conversationId, snapshotId)}?path=${encodeURIComponent(path)}`),
     'make:restoreFile': ({ conversationId, snapshotId, path }) => req(REST.makeRestoreFile(conversationId, snapshotId), { method: 'POST', body: JSON.stringify({ path }) }),

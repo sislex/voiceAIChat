@@ -14,11 +14,11 @@ import {
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult } from '@voicechat/shared'
 import { mockCandidates, unwrapMockEnvelope } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
-export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists'
+export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists' | 'quota'
 
 export class MakeError extends Error {
   constructor(readonly code: MakeErrorCode, message: string) {
@@ -165,6 +165,12 @@ export class MakeWorkspaces {
     if (!files.some((f) => f.path === path) && files.length >= MAKE_LIMITS.maxFiles) {
       throw new MakeError('too_many_files', `В проекте уже ${MAKE_LIMITS.maxFiles} файлов`)
     }
+    // Квота проекта (п.30): считаем со снимками и PNG стори — именно они незаметно съедают место.
+    const prev = files.find((f) => f.path === path)?.size ?? 0
+    const usage = await this.usage(conversationId)
+    if (usage.totalBytes - prev + content.byteLength > MAKE_LIMITS.maxProjectBytes) {
+      throw new MakeError('quota', `Проект занял ${Math.round(usage.totalBytes / 1048576)} МБ из ${Math.round(MAKE_LIMITS.maxProjectBytes / 1048576)} — очистите снимки в «Место»`)
+    }
     await mkdir(dirname(abs), { recursive: true })
     await writeFile(abs, content)
     this.bump(conversationId)
@@ -222,6 +228,74 @@ export class MakeWorkspaces {
       } catch { /* битый снимок пропускаем */ }
     }
     return out.sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  // ---- Квота и очистка (п.30) ---------------------------------------------
+
+  private async dirBytes(dir: string): Promise<number> {
+    let total = 0
+    let entries: import('node:fs').Dirent[]
+    try { entries = await readdir(dir, { withFileTypes: true }) } catch { return 0 }
+    for (const e of entries) {
+      const abs = join(dir, e.name)
+      if (e.isDirectory()) total += await this.dirBytes(abs)
+      else if (e.isFile()) total += (await stat(abs).catch(() => ({ size: 0 }))).size
+    }
+    return total
+  }
+
+  /** Занятое место по составляющим и список бинарных файлов, на которые никто не ссылается. */
+  async usage(conversationId: string): Promise<MakeUsage> {
+    const root = this.dirOf(conversationId)
+    const files = await this.list(conversationId)
+    const filesBytes = files.reduce((s, f) => s + f.size, 0)
+    const snapshots = await this.snapshots(conversationId)
+    const [snapshotsBytes, shotsBytes, shots] = await Promise.all([
+      this.dirBytes(join(root, SNAPSHOTS_DIR)), this.dirBytes(join(root, SHOTS_DIR)), this.shots(conversationId)
+    ])
+    // Неиспользуемые ассеты: бинарник, имя которого не встречается ни в одном текстовом файле.
+    const texts: string[] = []
+    for (const f of files) {
+      if (!isMakeTextPath(f.path) || f.size > 512 * 1024) continue
+      const buf = await this.readBuffer(conversationId, f.path).catch(() => null)
+      if (buf) texts.push(buf.data.toString('utf8'))
+    }
+    const unusedAssets = files
+      .filter((f) => !isMakeTextPath(f.path))
+      .filter((f) => { const name = f.path.split('/').pop()!; return !texts.some((t) => t.includes(name)) })
+      .map((f) => ({ path: f.path, size: f.size }))
+    return {
+      filesBytes, filesCount: files.length, snapshotsBytes, snapshotsCount: snapshots.length, shotsBytes, shotsCount: shots.length,
+      totalBytes: filesBytes + snapshotsBytes + shotsBytes, limitBytes: MAKE_LIMITS.maxProjectBytes, unusedAssets
+    }
+  }
+
+  /** Очистка по выбранным пунктам; возвращает, сколько освободили. Закреплённый в публикации снимок не удаляется. */
+  async cleanup(conversationId: string, options: MakeCleanupOptions): Promise<MakeCleanupResult> {
+    const root = this.dirOf(conversationId)
+    const before = await this.usage(conversationId)
+    const removed = { snapshots: 0, shots: 0, assets: 0 }
+    if (typeof options.keepSnapshots === 'number') {
+      const keep = Math.max(0, Math.floor(options.keepSnapshots))
+      const pinned = (await this.publication(conversationId))?.snapshotId ?? null
+      const all = await this.snapshots(conversationId)
+      for (const snap of all.slice(keep)) {
+        if (snap.id === pinned) continue
+        await rm(join(root, SNAPSHOTS_DIR, snap.id), { recursive: true, force: true })
+        removed.snapshots += 1
+      }
+    }
+    if (options.shots) {
+      removed.shots = (await this.shots(conversationId)).length
+      await rm(join(root, SHOTS_DIR), { recursive: true, force: true })
+    }
+    if (options.unusedAssets) {
+      for (const asset of before.unusedAssets) {
+        try { await this.delete(conversationId, asset.path); removed.assets += 1 } catch { /* уже удалён */ }
+      }
+    }
+    const usage = await this.usage(conversationId)
+    return { freedBytes: Math.max(0, before.totalBytes - usage.totalBytes), removed, usage, state: await this.state(conversationId) }
   }
 
   /** Снимок текущих файлов; старые снимки сверх лимита удаляются. */
