@@ -314,7 +314,14 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:rename': async ({ conversationId, from, to }) => { const files = makeFiles(conversationId); const c = files.get(from) ?? ''; files.delete(from); files.set(to, c); return makeState(conversationId) },
     'make:snapshot': async ({ conversationId, label }) => { const id = `s${Date.now()}-${makeSnaps(conversationId).length}`; makeSnapContents.set(id, new Map(makeFiles(conversationId))); makeSnaps(conversationId).unshift({ id, createdAt: Date.now(), label: label ?? 'Снимок', files: makeFiles(conversationId).size }); return makeState(conversationId) },
     'make:restore': async ({ conversationId }) => makeState(conversationId),
-    'make:publish': async ({ conversationId, snapshotId }) => { const snap = snapshotId ? makeSnaps(conversationId).find((s) => s.id === snapshotId) : null; makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/', snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null }); return makeState(conversationId) },
+    'make:publish': async ({ conversationId, snapshotId, slug, password }) => {
+      const snap = snapshotId ? makeSnaps(conversationId).find((s) => s.id === snapshotId) : null
+      const prev = makePub.get(conversationId)
+      const nextSlug = slug === undefined ? prev?.slug ?? null : slug
+      const protectedNow = password === undefined ? prev?.passwordProtected ?? false : Boolean(password)
+      makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/', snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null, slug: nextSlug, slugUrl: nextSlug ? `/s/${nextSlug}/` : null, passwordProtected: protectedNow, views: prev?.views ?? 7 })
+      return makeState(conversationId)
+    },
     'make:unpublish': async ({ conversationId }) => { makePub.delete(conversationId); return makeState(conversationId) },
     'make:check': async ({ conversationId }) => {
       const issues: MakeCheckIssue[] = makeFiles(conversationId).has('index.html') ? [] : [{ path: 'index.html', kind: 'no-index', message: 'Нет index.html' }]

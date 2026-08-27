@@ -6768,3 +6768,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-cost { display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 8px; border-radius: 999px; background: var(--surface-hover); color: var(--text); font: 500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; cursor: help; }
 .make-cost small { font: inherit; font-weight: 400; color: var(--text-dim); }
 @media (max-width: 720px) { .make-cost small { display: none; } }
+
+/* Публикация: адрес, пароль, просмотры (п.25) */
+.make-publish-access { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.make-publish-access .make-ask-field span small { display: block; color: var(--text-dim); font-size: 11px; }
+.make-publish-views { margin: 0; }

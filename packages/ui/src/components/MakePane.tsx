@@ -571,12 +571,20 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) { toast.error(describeError(e)) }
   }
 
-  const publish = async (snapshotId: string | null = null): Promise<void> => {
+  // Адрес и пароль публикации (п.25): slug пустой → снять адрес; пароль пустой → не менять, «Снять пароль» → null.
+  const [publishSlug, setPublishSlug] = useState<string | null>(null)
+  const [publishPassword, setPublishPassword] = useState('')
+  const publish = async (snapshotId: string | null = null, extra: { slug?: string | null; password?: string | null } = {}): Promise<void> => {
     try {
-      setState(await api['make:publish']({ conversationId, snapshotId }))
-      toast.success(snapshotId ? 'Публикация закреплена за снимком' : state?.published ? 'Публикация обновлена: текущее состояние' : 'Проект опубликован')
+      setState(await api['make:publish']({ conversationId, snapshotId, ...extra }))
+      setPublishPassword('')
+      toast.success(extra.password === null ? 'Пароль снят' : snapshotId ? 'Публикация закреплена за снимком' : state?.published ? 'Публикация обновлена' : 'Проект опубликован')
     } catch (e) { toast.error(describeError(e)) }
   }
+  const publishOptions = (): { slug?: string | null; password?: string | null } => ({
+    ...(publishSlug !== null ? { slug: publishSlug.trim() || null } : {}),
+    ...(publishPassword ? { password: publishPassword } : {})
+  })
   const [publishPick, setPublishPick] = useState<string>('')
   const unpublish = async (): Promise<void> => {
     const ok = await confirm({ title: 'Снять проект с публикации?', message: 'Ссылка перестанет открываться.', variant: 'danger', confirmLabel: 'Снять' })
@@ -585,7 +593,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
   const copyPublicLink = async (): Promise<void> => {
     if (!state?.published) return
-    try { await navigator.clipboard.writeText(new URL(state.published.url, window.location.origin).toString()); toast.success('Ссылка скопирована') } catch { toast.error('Не удалось скопировать') }
+    try { await navigator.clipboard.writeText(new URL(state.published.slugUrl ?? state.published.url, window.location.origin).toString()); toast.success('Ссылка скопирована') } catch { toast.error('Не удалось скопировать') }
   }
   const runCheck = async (): Promise<void> => {
     setChecking(true)
@@ -1387,7 +1395,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   : <>Файлы отдаются текущие: изменения видны сразу.</>}
               </p>
               <div className="make-publish-link">
-                <code data-testid="make-public-url">{typeof window !== 'undefined' ? new URL(state.published.url, window.location.origin).toString() : state.published.url}</code>
+                <code data-testid="make-public-url">{typeof window !== 'undefined' ? new URL(state.published.slugUrl ?? state.published.url, window.location.origin).toString() : (state.published.slugUrl ?? state.published.url)}</code>
                 <Button size="sm" variant="secondary" onClick={() => void copyPublicLink()}>Копировать</Button>
                 <Button size="sm" variant="ghost" onClick={() => window.open(state.published!.url, '_blank', 'noopener')}>Открыть</Button>
               </div>
@@ -1397,7 +1405,15 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   <option value="">Текущее состояние (обновляется сразу)</option>
                   {state.snapshots.map((s) => <option key={s.id} value={s.id}>Снимок: {s.label} · {formatTime(s.createdAt)}</option>)}
                 </select>
-                <Button size="sm" variant="secondary" onClick={() => void publish((publishPick || state.published?.snapshotId) || null)}>Обновить публикацию</Button>
+              </div>
+              <div className="make-publish-access">
+                <label className="make-ask-field"><span>Адрес <small>/s/…/ — латиница, цифры, дефис</small></span><input className="tin" aria-label="Адрес публикации" placeholder="my-site" value={publishSlug ?? state.published.slug ?? ''} onChange={(e) => setPublishSlug(e.target.value.toLowerCase())} /></label>
+                <label className="make-ask-field"><span>Пароль {state.published.passwordProtected ? <small>установлен</small> : <small>нет — открыто по ссылке</small>}</span><input className="tin" type="password" aria-label="Пароль публикации" placeholder={state.published.passwordProtected ? 'новый пароль' : 'без пароля'} value={publishPassword} onChange={(e) => setPublishPassword(e.target.value)} autoComplete="new-password" /></label>
+                <p className="fsub make-publish-views">Просмотров: <strong data-testid="make-public-views">{state.published.views ?? 0}</strong></p>
+              </div>
+              <div className="make-ask-actions">
+                <Button size="sm" variant="secondary" onClick={() => void publish((publishPick || state.published?.snapshotId) || null, publishOptions())}>Обновить публикацию</Button>
+                {state.published.passwordProtected && <Button size="sm" variant="ghost" onClick={() => void publish((publishPick || state.published?.snapshotId) || null, { password: null })}>Снять пароль</Button>}
               </div>
               <div className="make-ask-actions"><Button size="sm" variant="danger" onClick={() => void unpublish()}>Снять с публикации</Button></div>
             </div>
