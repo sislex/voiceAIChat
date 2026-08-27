@@ -98,4 +98,16 @@ describe('makeMcp', () => {
     const ok = resultText((await rpc(call('make_check'))).json())
     expect(ok.isError).toBe(false)
   })
+
+  it('make_write_file возвращает замечания по записанному файлу: битая ссылка и ошибка компиляции', async () => {
+    await app.close()
+    await setup()
+    const w = resultText((await rpc(call('make_write_file', { path: 'index.html', content: '<link rel="stylesheet" href="nope.css"><h1>a</h1>' }))).json())
+    expect(w.text).toContain('Замечания по файлу')
+    expect(w.text).toContain('nope.css')
+    const ok = resultText((await rpc(call('make_write_file', { path: 'index.html', content: '<h1>a</h1>' }))).json())
+    expect(ok.text).not.toContain('Замечания')
+    const bad = resultText((await rpc(call('make_write_file', { path: 'src/App.tsx', content: 'export const A = () => <div>' }))).json())
+    expect(bad.text).toContain('Ошибка компиляции')
+  })
 })

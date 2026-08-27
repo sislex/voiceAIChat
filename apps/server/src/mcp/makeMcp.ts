@@ -101,7 +101,11 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
             await beforeMutation()
             const state = await workspaces.write(conv, args.path, args.content)
             afterMutation([args.path])
-            return text(`Записано: ${args.path} (${Buffer.byteLength(args.content, 'utf8')} байт). Файлов в проекте: ${state.files.length}.`)
+            // Авто-проверка (roadmap-2 п.1): замечания по записанному файлу сразу в ответе инструмента —
+            // модели не нужно помнить про make_check, а ошибка компиляции видна до следующего шага.
+            const issues = (await workspaces.check(conv).catch(() => [])).filter((i) => i.path === args.path)
+            const tail = issues.length ? `\nЗамечания по файлу (исправь перед завершением):\n${issues.map((i) => `- ${i.message}`).join('\n')}` : ''
+            return text(`Записано: ${args.path} (${Buffer.byteLength(args.content, 'utf8')} байт). Файлов в проекте: ${state.files.length}.${tail}`)
           } catch (error) { return text(describeError(error), true) }
         })
 

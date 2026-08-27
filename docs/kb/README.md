@@ -22,13 +22,13 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 42 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 40 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 34 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 674 коммит(ов) в areas после сверки: 10b9c5fc feat(make): ревизия стилей — меню «⋯» в шапке, отступы диалогов, мобильная вёрстка … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 675 коммит(ов) в areas после сверки: 31103e0b docs(kb): итог прогона roadmap Make … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 128 коммит(ов) в areas после сверки: 10b9c5fc feat(make): ревизия стилей — меню «⋯» в шапке, отступы диалогов, мобильная вёрстка … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 58 коммит(ов) в areas после сверки: 10b9c5fc feat(make): ревизия стилей — меню «⋯» в шапке, отступы диалогов, мобильная вёрстка … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 35 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 60 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 5 коммит(ов) в areas после сверки: 2198e7a9 fix: auto-resolve merge conflicts with model step … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 6 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ✓ |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-26 | ⚠ 24 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 50 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 56 коммит(ов) в areas после сверки: 10b9c5fc feat(make): ревизия стилей — меню «⋯» в шапке, отступы диалогов, мобильная вёрстка … |
@@ -57,8 +57,9 @@
 
 ## Журнал сессий
 
-Всего записей: 370. Последние:
+Всего записей: 371. Последние:
 
+- [2026-08-27-alexeys-macbook-air-2-make-roadmap-2.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-2.md) — make-roadmap-2
 - [2026-08-27-alexeys-macbook-air-2-make-roadmap-19-24.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-19-24.md) — make-roadmap-19-24
 - [2026-08-27-alexeys-macbook-air-2-make-react-storybook-search.md](log/2026-08-27-alexeys-macbook-air-2-make-react-storybook-search.md) — make-react-storybook-search
 - [2026-08-27-alexeys-macbook-air-2-make-monaco-editor.md](log/2026-08-27-alexeys-macbook-air-2-make-monaco-editor.md) — make-monaco-editor
@@ -68,7 +69,6 @@
 - [2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign.md](log/2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign.md) — 2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign
 - [2026-08-26-alexeys-macbook-air-2-make-publish-check-templates.md](log/2026-08-26-alexeys-macbook-air-2-make-publish-check-templates.md) — make-publish-check-templates
 - [2026-08-26-alexeys-macbook-air-2-console-with-assistant.md](log/2026-08-26-alexeys-macbook-air-2-console-with-assistant.md) — 2026-08-26-alexeys-macbook-air-2-console-with-assistant
-- [2026-08-26-alexeys-macbook-air-2-chat-instructions-toggles.md](log/2026-08-26-alexeys-macbook-air-2-chat-instructions-toggles.md) — Инструкции чата с чекбоксами в настройках
 
 ## Исторические планы
 
