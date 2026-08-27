@@ -1,7 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState, MakePresenceClient } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState, MakePresenceClient, MakeShareRole } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -166,6 +166,8 @@ export interface IpcInvokeMap {
   'make:usage': { arg: { conversationId: string }; result: MakeUsage }
   'make:share': { arg: { conversationId: string }; result: MakeProjectState }
   'make:unshare': { arg: { conversationId: string }; result: MakeProjectState }
+  /** Именной доступ (roadmap-3 п.6): role null — убрать. */
+  'make:shareGrant': { arg: { conversationId: string; user: string; role: MakeShareRole | null }; result: MakeProjectState }
   'make:shared': { arg: { token: string }; result: MakeSharedState }
   'make:sharedFile': { arg: { token: string; path: string }; result: MakeFileContent }
   'make:sharedStories': { arg: { token: string }; result: { files: MakeStoryFile[] } }
@@ -932,6 +934,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:cleanup',
   'make:share',
   'make:unshare',
+  'make:shareGrant',
   'make:shared',
   'make:sharedFile',
   'make:sharedStories',

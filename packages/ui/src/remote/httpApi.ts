@@ -119,6 +119,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:usage': ({ conversationId }) => req(REST.makeUsage(conversationId)),
     'make:share': ({ conversationId }) => req(REST.makeShare(conversationId), { method: 'POST' }),
     'make:unshare': ({ conversationId }) => req(REST.makeShare(conversationId), { method: 'DELETE' }),
+    'make:shareGrant': ({ conversationId, user, role }) => req(REST.makeShareGrants(conversationId), { method: 'POST', body: JSON.stringify({ user, role }) }),
     'make:shared': ({ token }) => req(REST.makeShared(token)),
     'make:sharedFile': ({ token, path }) => req(REST.makeSharedFile(token, path)),
     'make:sharedStories': ({ token }) => req(REST.makeSharedStories(token)),

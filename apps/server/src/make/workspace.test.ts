@@ -448,4 +448,17 @@ describe('MakeWorkspaces', () => {
     expect(pub.stats?.referers).toEqual([{ host: 'news.ycombinator.com', views: 1 }, { host: 't.co', views: 1 }])
     expect(refererHost('http://localhost:8787/x')).toBeNull()
   })
+
+  it('именной доступ: setShareGrant создаёт ссылку, роли читаются, null убирает', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.setShareGrant(CONV, 'bob', 'editor')
+    expect((await ws.state(CONV)).shared?.grants).toEqual([{ user: 'bob', role: 'editor' }])
+    expect(await ws.shareRole(CONV, 'bob')).toBe('editor')
+    await ws.setShareGrant(CONV, 'bob', 'viewer')
+    expect(await ws.shareRole(CONV, 'bob')).toBe('viewer')
+    await ws.setShareGrant(CONV, 'bob', null)
+    expect(await ws.shareRole(CONV, 'bob')).toBeNull()
+    await expect(ws.setShareGrant(CONV, 'bad name!', 'viewer')).rejects.toMatchObject({ code: 'invalid_path' })
+  })
 })

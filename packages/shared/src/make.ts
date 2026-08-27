@@ -156,13 +156,22 @@ export interface MakeShare {
   createdAt: number
   /** Hash-маршрут приложения: `#/make-shared/<token>`. */
   url: string
+  /** Именные доступы участников ChatAI (roadmap-3 п.6): редактор правит файлы, зритель только смотрит. */
+  grants?: MakeShareGrant[]
 }
+
+export type MakeShareRole = 'editor' | 'viewer'
+export interface MakeShareGrant { user: string; role: MakeShareRole }
 
 /** Что видит получатель read-only ссылки. */
 export interface MakeSharedState {
   token: string
   owner: string
   title: string
+  /** Роль текущего пользователя по именному доступу; null — только по ссылке (чтение). */
+  role: MakeShareRole | null
+  /** Id разговора — для записи файлов редактором через обычные `/api/make/:id/*`. */
+  conversationId: string
   files: MakeFileInfo[]
   snapshots: MakeSnapshot[]
   rev: number

@@ -287,11 +287,16 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:shots': async ({ conversationId }) => ({ shots: makeShots.get(conversationId) ?? [] }),
     'make:share': async ({ conversationId }) => { if (!makeShare.has(conversationId)) makeShare.set(conversationId, { token: 'share123', createdAt: 1, url: '#/make-shared/share123' }); return makeState(conversationId) },
     'make:unshare': async ({ conversationId }) => { makeShare.delete(conversationId); return makeState(conversationId) },
+    'make:shareGrant': async ({ conversationId, user, role }) => {
+      const cur = makeShare.get(conversationId) ?? { token: 'share123', createdAt: 1, url: '#/make-shared/share123', grants: [] }
+      const grants = (cur.grants ?? []).filter((g) => g.user !== user); if (role) grants.push({ user, role })
+      makeShare.set(conversationId, { ...cur, grants }); return makeState(conversationId)
+    },
     'make:shared': async ({ token }) => {
       const conv = [...makeShare.entries()].find(([, s]) => s.token === token)?.[0] ?? (token === 'share123' ? 'make-1' : null)
       if (!conv) throw new Error('Ссылка недействительна или отозвана')
       const st = makeState(conv)
-      return { token, owner: 'admin', title: 'Проект 1', files: st.files, snapshots: st.snapshots, rev: st.rev }
+      return { token, owner: 'admin', title: 'Проект 1', role: (makeShare.get(conv)?.grants ?? []).find((g) => g.user === 'admin')?.role ?? null, conversationId: conv, files: st.files, snapshots: st.snapshots, rev: st.rev }
     },
     'make:sharedFile': async ({ path }) => { const content = makeFiles('make-1').get(path); if (content === undefined) throw new Error('Файл не найден'); return { path, content, size: new TextEncoder().encode(content).length, updatedAt: 1 } },
     'make:sharedStories': async () => ({ files: [] }),
