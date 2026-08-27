@@ -33,6 +33,12 @@ export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
     levels.forEach(function(l){ var orig = console[l]; console[l] = function(){ send(l, arguments); if (orig) orig.apply(console, arguments); }; });
     window.addEventListener('error', function(e){ send('error', [e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '')]); });
     window.addEventListener('unhandledrejection', function(e){ send('error', ['Unhandled rejection: ' + fmt(e.reason)]); });
+    // Сеть превью: fetch и XHR → родителю (метод, адрес, статус, время) — панель «Сеть» под превью.
+    function net(kind, method, url, status, ok, started){ try { window.parent.postMessage({ type: 'vc-make.network', kind: kind, method: String(method || 'GET').toUpperCase(), url: String(url).slice(0, 500), status: status, ok: ok, ms: Math.round(performance.now() - started), at: Date.now() }, '*'); } catch(e){} }
+    var origFetch = window.fetch;
+    if (origFetch) window.fetch = function(input, init){ var started = performance.now(); var url = typeof input === 'string' ? input : (input && input.url) || String(input); var method = (init && init.method) || (input && input.method) || 'GET'; return origFetch.apply(this, arguments).then(function(res){ net('fetch', method, url, res.status, res.ok, started); return res; }, function(err){ net('fetch', method, url, 0, false, started); throw err; }); };
+    var XO = window.XMLHttpRequest && window.XMLHttpRequest.prototype.open, XS = window.XMLHttpRequest && window.XMLHttpRequest.prototype.send;
+    if (XO && XS) { window.XMLHttpRequest.prototype.open = function(method, url){ this.__vc = { method: method, url: url }; return XO.apply(this, arguments); }; window.XMLHttpRequest.prototype.send = function(){ var x = this, started = performance.now(); x.addEventListener('loadend', function(){ var m = x.__vc || {}; net('xhr', m.method, m.url, x.status, x.status >= 200 && x.status < 400, started); }); return XS.apply(this, arguments); }; }
   })();
   var on = false, hovered = null, box = null;
   function ensureBox(){ if (box) return box; box = document.createElement('div'); box.setAttribute('data-vc-make-box',''); box.style.cssText='position:fixed;pointer-events:none;border:2px solid #4f7cff;background:rgba(79,124,255,.12);z-index:2147483647;border-radius:3px;transition:all .05s'; document.documentElement.appendChild(box); return box }

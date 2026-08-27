@@ -86,6 +86,9 @@ export interface MakeSnapshotDiff { snapshotId: string; files: MakeSnapshotDiffE
 /** Строка консоли превью (перехват console.* и ошибок внутри iframe). */
 export interface MakeConsoleLine { level: 'log' | 'info' | 'warn' | 'error'; text: string; at: number }
 
+/** Сетевой запрос из превью (fetch/XHR), перехваченный инспектор-скриптом. */
+export interface MakeNetworkEntry { method: string; url: string; status: number; ok: boolean; ms: number; at: number; kind: 'fetch' | 'xhr' }
+
 export type MakeImportMode = 'replace' | 'merge'
 
 /** Файлы, которые сервер транспилирует esbuild при отдаче превью (JSX/TS → ESM). */

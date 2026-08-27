@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: 17ccbe80
+checked: 0755af28
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -480,6 +480,11 @@ lazy-чанке `monacoSetup`. **Модели проекта** (п.2): `syncProj
 тестов) после последней правки `save(silent)` без тоста; Cmd/Ctrl+S — как раньше. После сохранения jsx/tsx/ts
 панель вызывает `make:check` и, если есть проблемы, показывает баннер; ошибки `compile-error` текущего файла
 уходят в `CodeEditor` пропом `markers` → `monaco.editor.setModelMarkers` (красные подчёркивания).
+
+**Сеть превью** (п.9): инспектор-скрипт оборачивает `fetch` и `XMLHttpRequest.open/send`, шлёт
+`vc-make.network {method,url,status,ok,ms,kind}`; под превью две вкладки «Консоль | Сеть» (`bottomTab`), список
+`make-network` с подсветкой неуспешных, счётчик «N не загрузилось», «В чат» отдаёт ассистенту список битых
+запросов. Оба списка сбрасываются при смене `previewRev`.
 
 **Скриншот превью** (п.10): кнопка 📷 в шапке превью — `lib/makeScreenshot.ts` лениво грузит `html2canvas`
 (чанк `screenshot`), снимает документ same-origin iframe (или выбранный инспектором элемент) в PNG и отдаёт

@@ -6700,3 +6700,13 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-local-version { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; background: var(--panel); font: inherit; color: var(--text); cursor: pointer; }
 .make-local-version:hover { border-color: var(--accent); }
 .make-local-version small { color: var(--text-dim); }
+
+/* Вкладка «Сеть» под превью. */
+.make-console-tabs { display: inline-flex; gap: 10px; }
+.make-console-toggle.on { font-weight: 600; }
+.make-network-row { display: grid; grid-template-columns: 40px 48px 1fr auto; gap: 8px; align-items: baseline; font-size: 12px; }
+.make-network-status { font-variant-numeric: tabular-nums; color: #1a7f37; }
+.make-network-row--bad .make-network-status, .make-network-row--bad .make-network-url { color: var(--danger); }
+.make-network-method { color: var(--text-dim); font-size: 11px; }
+.make-network-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.make-network-row small { color: var(--text-dim); }
