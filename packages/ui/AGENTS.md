@@ -37,7 +37,7 @@ codex/agents/session/fs/pty`, формы которых описаны в `@shar
   `CcObserver`/`CodexObserver`, `UsersAdmin`, `QuestionsForm`,
   `MessageActivity`, `MessageImage`, `AgentCommands`, `Markdown`,
   `CommandPalette`/`HotkeysCheatSheet`.
-- `components/ui/` — примитивы без предметной логики: `Button`/`IconButton`
+- Примитивы без предметной логики живут в пакете `@voicechat/ui-kit` (`packages/ui-kit/src`), в `components/ui/` остался только `SidebarToggle` (п.40 Make-roadmap): `Button`/`IconButton`
   (единая кнопка), `Skeleton`/`EmptyState`/`ErrorState` (состояния экрана),
   `Dialog` (модальное окно),
   `useDialogStack` (стек открытых окон), `Toast`/`ToastProvider` (уведомления),

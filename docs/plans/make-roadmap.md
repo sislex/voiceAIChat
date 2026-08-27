@@ -45,5 +45,5 @@
 | 36 | Electron-десктоп | |
 | 38 | Метрики использования в админке | |
 | 39 | Rate-limit импорта | ✅ `SlidingWindowLimiter`: 10 ZIP / 20 URL за 10 мин → 429 |
-| 40 | Убрать дублирование useConfirm/Dialog | |
+| 40 | Убрать дублирование useConfirm/Dialog | ✅ `components/ui/*` удалены, всё из `@voicechat/ui-kit`; остался `SidebarToggle` |
 | — | Ревизия стилей/шрифтов/отступов Make и мобильная вёрстка | |

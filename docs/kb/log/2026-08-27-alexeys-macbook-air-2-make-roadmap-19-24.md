@@ -53,3 +53,4 @@ author: alexeyrozhnov
 П.30: квота проекта 64 МБ, usage/cleanup, диалог «Место» в истории.
 П.32: комментарии к элементам превью — .comments.json, панель, метки/подсветка в iframe, промпт «Исправить все».
 П.39: rate-limit импорта ZIP/URL (скользящее окно, 429 + Retry-After).
+П.40: копии примитивов ui-kit в packages/ui/src/components/ui удалены (остался SidebarToggle).

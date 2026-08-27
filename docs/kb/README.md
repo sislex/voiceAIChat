@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 40 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 38 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 32 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 666 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 667 коммит(ов) в areas после сверки: 750e2221 feat(make): rate-limit импорта ZIP/URL — 429 с Retry-After (п.39) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 123 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 52 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 33 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
@@ -32,14 +32,14 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-26 | ⚠ 22 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 48 коммит(ов) в areas после сверки: 9f61894e feat(make): суммарная стоимость проекта в шапке (п.24) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 51 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 6 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: 750e2221 feat(make): rate-limit импорта ZIP/URL — 429 с Retry-After (п.39) |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 7 коммит(ов) в areas после сверки: 750e2221 feat(make): rate-limit импорта ZIP/URL — 429 с Retry-After (п.39) … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 21 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 50 коммит(ов) в areas после сверки: 521a8aa4 feat(make): личная библиотека компонентов — экспорт из проекта и вставка в другой (п.17) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: b088d0c5 test(make): E2E в headless Chromium — превью React, компоненты, Monaco, публикация (п.37) |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 3 коммит(ов) в areas после сверки: 521a8aa4 feat(make): личная библиотека компонентов — экспорт из проекта и вставка в другой (п.17) … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: b182a56d feat(make): комментарии к элементам превью с метками и запросом «Исправить все» (п.32) |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-27, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
