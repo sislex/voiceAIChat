@@ -265,10 +265,10 @@ export function UsersAdmin({
           {isAdmin && !cur && makeStats && (
             <section className="uadmin-sec" data-testid="make-stats">
               <h3 className="uadmin-h">Make-проекты</h3>
-              <p className="uusage-note">Проектов: {makeStats.projects} · занято {mb(makeStats.bytes)} (файлы {mb(makeStats.filesBytes)}, снимки {mb(makeStats.snapshotsBytes)}, PNG стори {mb(makeStats.shotsBytes)}) · опубликовано {makeStats.published} · read-only ссылок {makeStats.shared} · просмотров публикаций {makeStats.views} · квота на проект {mb(makeStats.limitBytes)}</p>
+              <p className="uusage-note">Проектов: {makeStats.projects} · занято {mb(makeStats.bytes)} (файлы {mb(makeStats.filesBytes)}, снимки {mb(makeStats.snapshotsBytes)}, PNG стори {mb(makeStats.shotsBytes)}) · опубликовано {makeStats.published} · read-only ссылок {makeStats.shared} · просмотров публикаций {makeStats.views} · квота на проект {mb(makeStats.limitBytes)} · на пользователя {mb(makeStats.userLimitBytes)}</p>
               {makeStats.byUser.length > 0 && (
                 <table className="utable"><thead><tr><th>Пользователь</th><th>Проектов</th><th>Занято</th><th>Опубликовано</th><th>Просмотров</th></tr></thead><tbody>
-                  {makeStats.byUser.map((u) => <tr key={u.user}><td>{u.user}</td><td>{u.projects}</td><td>{mb(u.bytes)}</td><td>{u.published}</td><td>{u.views}</td></tr>)}
+                  {makeStats.byUser.map((u) => { const share = makeStats.userLimitBytes ? u.bytes / makeStats.userLimitBytes : 0; return <tr key={u.user} className={share >= 0.8 ? 'uadmin-warn' : undefined} data-testid={share >= 0.8 ? 'make-user-quota-warn' : undefined}><td>{u.user}</td><td>{u.projects}</td><td>{mb(u.bytes)}{share >= 0.8 ? ` ⚠ ${Math.round(share * 100)}% квоты` : ''}</td><td>{u.published}</td><td>{u.views}</td></tr> })}
                 </tbody></table>
               )}
               {makeStats.top.length > 0 && (

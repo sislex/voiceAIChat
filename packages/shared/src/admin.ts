@@ -180,6 +180,8 @@ export interface AdminMakeStats {
   shared: number
   views: number
   limitBytes: number
+  /** Квота на пользователя (сумма его проектов); в byUser предупреждение при ≥ 80 %. */
+  userLimitBytes: number
   byUser: AdminMakeUserStat[]
   /** Самые тяжёлые проекты (до 10). */
   top: AdminMakeProjectStat[]

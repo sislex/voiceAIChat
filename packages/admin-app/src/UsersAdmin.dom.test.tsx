@@ -185,10 +185,11 @@ describe('UsersAdmin — доступность', () => {
   })
 
   it('секция «Make-проекты» показывает сводку и таблицу по пользователям (п.38)', () => {
-    renderAdmin({ isAdmin: true, makeStats: { projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3 * 1048576, published: 1, views: 7 }], top: [] } })
+    renderAdmin({ isAdmin: true, makeStats: { projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, userLimitBytes: 4 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3.5 * 1048576, published: 1, views: 7 }], top: [] } })
     const sec = screen.getByTestId('make-stats')
     expect(sec).toHaveTextContent('Проектов: 3')
     expect(sec).toHaveTextContent('5.0 МБ')
     expect(within(sec).getByText('alice')).toBeInTheDocument()
+    expect(within(sec).getByTestId('make-user-quota-warn')).toHaveTextContent('88% квоты')
   })
 })

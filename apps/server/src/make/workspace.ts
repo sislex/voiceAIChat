@@ -61,7 +61,35 @@ function resolveRelativeRef(dir: string, value: string): string | null | undefin
 export class MakeWorkspaces {
   private readonly revs = new Map<string, number>()
 
-  constructor(private readonly rootDir: string) {}
+  constructor(private readonly rootDir: string, private readonly limits: { maxUserBytes: number } = { maxUserBytes: MAKE_LIMITS.maxUserBytes }) {}
+
+  /** Все проекты владельца данного разговора (для квоты на пользователя); null — владелец неизвестен. */
+  private projectsOfOwner: ((conversationId: string) => string[] | null) | null = null
+  private readonly userBytesCache = new Map<string, { bytes: number; at: number }>()
+
+  setProjectsOfOwner(fn: (conversationId: string) => string[] | null): void { this.projectsOfOwner = fn }
+
+  /** Сумма байт всех проектов владельца; кэш 60 с — обход каталогов на каждую запись слишком дорог. */
+  async ownerBytes(conversationId: string): Promise<{ bytes: number; projects: number } | null> {
+    const ids = this.projectsOfOwner?.(conversationId)
+    if (!ids) return null
+    const key = [...ids].sort().join(',')
+    const hit = this.userBytesCache.get(key)
+    if (hit && Date.now() - hit.at < 60_000) return { bytes: hit.bytes, projects: ids.length }
+    let bytes = 0
+    for (const id of ids) { try { bytes += (await this.usage(id)).totalBytes } catch { /* пропущенный проект не считаем */ } }
+    this.userBytesCache.set(key, { bytes, at: Date.now() })
+    return { bytes, projects: ids.length }
+  }
+
+  private async assertUserQuota(conversationId: string, deltaBytes: number): Promise<void> {
+    if (deltaBytes <= 0) return
+    const owner = await this.ownerBytes(conversationId)
+    if (owner && owner.bytes + deltaBytes > this.limits.maxUserBytes) {
+      throw new MakeError('quota', `Все ваши проекты Make заняли ${Math.round(owner.bytes / 1048576)} МБ из ${Math.round(this.limits.maxUserBytes / 1048576)} — очистите снимки или удалите старые проекты`)
+    }
+    this.userBytesCache.clear()
+  }
 
   /** Корень проекта разговора; id проверяется, чтобы имя каталога нельзя было подделать. */
   dirOf(conversationId: string): string {
@@ -173,6 +201,7 @@ export class MakeWorkspaces {
     if (usage.totalBytes - prev + content.byteLength > MAKE_LIMITS.maxProjectBytes) {
       throw new MakeError('quota', `Проект занял ${Math.round(usage.totalBytes / 1048576)} МБ из ${Math.round(MAKE_LIMITS.maxProjectBytes / 1048576)} — очистите снимки в «Место»`)
     }
+    await this.assertUserQuota(conversationId, content.byteLength - prev)
     await mkdir(dirname(abs), { recursive: true })
     await writeFile(abs, content)
     this.bump(conversationId)
@@ -304,7 +333,7 @@ export class MakeWorkspaces {
       byUserMap.set(key, cur)
     }
     return {
-      projects: projects.length, bytes: totals.filesBytes + totals.snapshotsBytes + totals.shotsBytes, ...totals, limitBytes: MAKE_LIMITS.maxProjectBytes,
+      projects: projects.length, bytes: totals.filesBytes + totals.snapshotsBytes + totals.shotsBytes, ...totals, limitBytes: MAKE_LIMITS.maxProjectBytes, userLimitBytes: this.limits.maxUserBytes,
       byUser: [...byUserMap.values()].sort((a, b) => b.bytes - a.bytes),
       top: [...projects].sort((a, b) => b.bytes - a.bytes).slice(0, 10)
     }
@@ -546,6 +575,8 @@ export class MakeWorkspaces {
 
   /** Импорт набора файлов (ZIP или страница по URL); перед этим — снимок. */
   async importFiles(conversationId: string, files: Array<{ path: string; data: Buffer }>, mode: MakeImportMode): Promise<MakeProjectState> {
+    // Квота пользователя (roadmap-2 п.15): импорт может принести сотни файлов — считаем сумму до записи.
+    await this.assertUserQuota(conversationId, files.reduce((n, f) => n + f.data.byteLength, 0))
     await this.ensure(conversationId)
     const accepted: Array<{ path: string; data: Buffer }> = []
     for (const file of files) {
