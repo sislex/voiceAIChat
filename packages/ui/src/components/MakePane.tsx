@@ -21,7 +21,7 @@ import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
 import { copyText } from '../lib/clipboard'
-import { MAKE_COMMENTS_SYNC_PATH, MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment, type MakePresenceClient } from '@shared/make'
+import { MAKE_COMMENTS_SYNC_PATH, MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment, type MakePresenceClient, type MakeTestFile } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -42,7 +42,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -197,6 +197,41 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
+  // Тесты компонентов (roadmap-4 п.3): *.test.tsx выполняются в скрытом iframe-раннере __tests__,
+  // результаты приходят кадрами vc-make.test / vc-make.tests-done.
+  const [testFiles, setTestFiles] = useState<MakeTestFile[]>([])
+  const [runningTests, setRunningTests] = useState<string | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, Array<{ name: string; status: 'passed' | 'failed' | 'pending'; ms: number; error?: string }>>>({})
+  const [testsOpen, setTestsOpen] = useState(false)
+  const testQueueRef = useRef<string[]>([])
+  const loadTests = useCallback(async (): Promise<void> => {
+    try { setTestFiles((await api['make:tests']({ conversationId })).files) } catch { setTestFiles([]) }
+  }, [api, conversationId])
+  const runTests = (paths: string[]): void => {
+    if (paths.length === 0) return
+    setTestsOpen(true)
+    setTestResults((prev) => { const next = { ...prev }; for (const p of paths) delete next[p]; return next })
+    testQueueRef.current = paths.slice(1)
+    setRunningTests(paths[0]!)
+  }
+  useEffect(() => {
+    const onMessage = (e: MessageEvent): void => {
+      const d = e.data as { type?: string; file?: string; name?: string; status?: 'passed' | 'failed'; ms?: number; error?: string } | null
+      if (!d || typeof d !== 'object' || !runningTests) return
+      if (d.type === 'vc-make.test' && d.name && d.status) {
+        setTestResults((prev) => ({ ...prev, [runningTests]: [...(prev[runningTests] ?? []), { name: d.name!, status: d.status!, ms: d.ms ?? 0, error: d.error }] }))
+      } else if (d.type === 'vc-make.tests-done') {
+        if (d.error) setTestResults((prev) => ({ ...prev, [runningTests]: [...(prev[runningTests] ?? []), { name: 'загрузка файла', status: 'failed', ms: 0, error: d.error }] }))
+        const next = testQueueRef.current.shift() ?? null
+        setRunningTests(next)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [runningTests])
+  const failedTests = Object.entries(testResults).flatMap(([file, list]) => list.filter((r) => r.status === 'failed').map((r) => ({ file, ...r })))
+  const testsPrompt = (): string => `Упали тесты компонентов:\n${failedTests.map((f) => `- ${f.file} › ${f.name}: ${f.error ?? ''}`).join('\n')}\nПрочитай тест и компонент (make_read_file), найди причину — в компоненте или в тесте — и исправь. `
+
   /** Файл, только что записанный ассистентом — вкладка коротко подсвечивается (roadmap-2 п.10). */
   const [flashPath, setFlashPath] = useState<string | null>(null)
   // Визуальный diff хода (roadmap-2 п.8): «до» снимаем при старте хода, «после» — когда ход кончился и
@@ -371,7 +406,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) {
       toast.error(describeError(e))
     }
-  }, [api, conversationId, toast])
+  }, [api, conversationId, toast, loadTests])
 
   // Cookie-гейт превью — один раз на монтирование панели.
   useEffect(() => {
@@ -752,6 +787,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     try {
       const { files } = await api['make:stories']({ conversationId })
       setStoryFiles(files)
+      void loadTests()
       setStory((current) => {
         if (current && files.some((f) => f.path === current.file && f.stories.includes(current.name))) return current
         const first = files.find((f) => f.stories.length > 0)
@@ -1002,6 +1038,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {mode === 'stories' && story && onInsertToChat && <Button size="sm" variant="primary" onClick={sendStoryToChat}>Работать над компонентом</Button>}
       {mode === 'stories' && story && <Button size="sm" variant="ghost" loading={shooting2} onClick={() => void takeStoryShot()} title="Сохранить PNG текущей стори, чтобы потом сравнить «до/после»">📸 Снимок</Button>}
       {mode === 'stories' && storyShots.length > 0 && <Button size="sm" variant="ghost" aria-expanded={shotsOpen} onClick={() => setShotsOpen((v) => !v)}>Снимки ({storyShots.length})</Button>}
+      {mode === 'stories' && testFiles.length > 0 && <Button size="sm" variant={failedTests.length ? 'danger' : 'ghost'} loading={Boolean(runningTests)} onClick={() => runTests(testFiles.map((f) => f.path))} title="Запустить все *.test.tsx в раннере">Тесты ({testFiles.reduce((n, f) => n + f.names.length, 0)}){failedTests.length ? ` · ✗ ${failedTests.length}` : ''}</Button>}
       {others.length > 0 && <span className="make-presence" data-testid="make-presence" title={`Проект открыт ещё в ${others.length} ${others.length === 1 ? 'вкладке' : 'вкладках'}: ${others.map((c) => `${c.user}${c.path ? ` · ${c.path}${c.editing ? ' (правит)' : ''}` : ''}`).join('; ')}`}>👥 {others.length + 1}</span>}
       {usage && <span className="make-cost" data-testid="make-cost" title={`Расход на проект: ${usage.turns} ${usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'} · ↓ ${kilo(usage.inputTokens)} · ↑ ${kilo(usage.outputTokens)}${usage.estimated ? ' · часть суммы — расчёт по тарифам' : ''}${usage.unpriced ? ` · без цены: ${usage.unpriced}` : ''}`}>{formatUsd(usage.costUsd, usage.estimated)}<small>{usage.turns} {usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'}</small></span>}
       <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>
@@ -1370,6 +1407,33 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             ))}
           </nav>
           <div className="make-story-host">
+            {runningTests && previewReady && <iframe key={runningTests} className="make-tests-frame" title={`Тесты ${runningTests}`} sandbox="allow-scripts allow-same-origin" src={`${base}__tests__?file=${encodeURIComponent(runningTests)}&rev=${previewRev}`} aria-hidden="true" />}
+            {testsOpen && (
+              <section className="make-tests" aria-label="Результаты тестов" data-testid="make-tests">
+                <div className="make-tests-head">
+                  <strong>Тесты компонентов</strong>
+                  {runningTests && <small>выполняется {runningTests}…</small>}
+                  <span className="make-head-spacer" />
+                  {failedTests.length > 0 && (onAskAssistant || onInsertToChat) && <Button size="sm" variant="primary" onClick={() => (onAskAssistant ?? onInsertToChat)!(testsPrompt())}>Исправить</Button>}
+                  <IconButton size="sm" aria-label="Закрыть результаты тестов" title="Закрыть" onClick={() => setTestsOpen(false)}>✕</IconButton>
+                </div>
+                <ul role="list">
+                  {testFiles.map((f) => (
+                    <li key={f.path} className="make-tests-file">
+                      <div className="make-tests-file-head"><code>{f.path}</code><Button size="sm" variant="ghost" onClick={() => runTests([f.path])} disabled={Boolean(runningTests)}>Запустить</Button></div>
+                      <ul role="list">
+                        {(testResults[f.path] ?? f.names.map((n) => ({ name: n, status: 'pending' as const, ms: 0, error: undefined as string | undefined }))).map((r, i) => (
+                          <li key={`${r.name}-${i}`} className={`make-test make-test--${r.status}`}>
+                            <span>{r.status === 'passed' ? '✓' : r.status === 'failed' ? '✗' : '·'} {r.name}</span>{r.status !== 'pending' && <small>{r.ms} мс</small>}
+                            {r.error && <pre>{r.error}</pre>}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             {story && previewReady ? (
               <iframe
                 ref={storyFrameRef}

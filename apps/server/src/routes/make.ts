@@ -7,9 +7,9 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SlidingWindowLimiter } from '../make/rateLimit.js'
-import { MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse } from '@voicechat/shared'
+import { MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse, MAKE_TESTS_PAGE } from '@voicechat/shared'
 import { transpileForPreview } from '../make/transpile.js'
-import { renderGalleryPage, renderStoriesPage } from '../make/stories.js'
+import { renderGalleryPage, renderStoriesPage, renderTestsPage } from '../make/stories.js'
 import { readZip, ZipReadError } from '../make/zipRead.js'
 import { importFromUrl, ImportUrlError } from '../make/importUrl.js'
 import type { VoiceChatDb } from '../db/database.js'
@@ -486,6 +486,11 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
+  app.get<{ Params: { id: string } }>('/api/make/:id/tests', async (req, reply) => {
+    if (!(await access(uid(req), req.params.id, reply, 'viewer'))) return reply
+    try { return { files: await workspaces.tests(req.params.id) } } catch (error) { return sendError(reply, error) }
+  })
+
   app.get<{ Params: { id: string } }>('/api/make/:id/shots', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try { return { shots: await workspaces.shots(req.params.id) } } catch (error) { return sendError(reply, error) }
@@ -671,6 +676,13 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store')
         .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'")
         .send(renderGalleryPage(files, `/api/preview/make/${encodeURIComponent(req.params.id)}/`))
+    }
+    if (raw === MAKE_TESTS_PAGE) {
+      const q = req.query as { file?: string }
+      const index = await workspaces.readBuffer(req.params.id, 'index.html').catch(() => null)
+      return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store')
+        .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'")
+        .send(renderTestsPage(q.file ?? '', index ? index.data.toString('utf8') : null))
     }
     if (raw === MAKE_STORIES_PAGE) {
       const q = req.query as { file?: string; story?: string }

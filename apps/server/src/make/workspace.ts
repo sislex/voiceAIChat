@@ -10,11 +10,11 @@ import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, detectPwaMeta, injectPwaIntoHtml, pwaFiles, isMakeTextPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
+  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, detectPwaMeta, injectPwaIntoHtml, pwaFiles, isMakeTextPath, isMakeTestPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
-import { parseStoryFile } from './stories.js'
+import { parseStoryFile, parseTestFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
 import { applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
@@ -265,6 +265,20 @@ export class MakeWorkspaces {
       } catch { /* битый снимок пропускаем */ }
     }
     return out.sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  // ---- Тесты компонентов (roadmap-4 п.3) --------------------------------------
+
+  async tests(conversationId: string): Promise<MakeTestFile[]> {
+    const files = await this.list(conversationId)
+    const paths = new Set(files.map((f) => f.path))
+    const out: MakeTestFile[] = []
+    for (const f of files) {
+      if (!isMakeTestPath(f.path) || f.size > 256 * 1024) continue
+      const buf = await this.readBuffer(conversationId, f.path).catch(() => null)
+      if (buf) out.push(parseTestFile(f.path, buf.data.toString('utf8'), paths))
+    }
+    return out.sort((a, b) => a.path.localeCompare(b.path))
   }
 
   // ---- Транзакционные правки и патчи (roadmap-4 пп.1–2) -------------------------

@@ -6926,3 +6926,19 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-grants li span { color: var(--text-dim); flex: 1; }
 .make-grant-add { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; }
 .make-grant-add select { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+
+/* Тесты компонентов (roadmap-4 п.3) */
+.make-tests-frame { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; }
+.make-tests { border-bottom: 1px solid var(--border); background: var(--surface); padding: 6px 12px; font-size: 12.5px; max-height: 40vh; overflow: auto; }
+.make-tests-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.make-tests-head small { color: var(--text-dim); }
+.make-tests ul { list-style: none; margin: 0; padding: 0; }
+.make-tests-file { padding: 4px 0; border-top: 1px solid var(--border-soft); }
+.make-tests-file-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.make-tests-file-head code { font-size: 12px; }
+.make-test { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 2px 0 2px 12px; }
+.make-test--passed { color: #067647; }
+.make-test--failed { color: #b42318; }
+.make-test--pending { color: var(--text-dim); }
+.make-test small { color: var(--text-dim); }
+.make-test pre { flex-basis: 100%; margin: 0; font-size: 11.5px; white-space: pre-wrap; color: #b42318; }

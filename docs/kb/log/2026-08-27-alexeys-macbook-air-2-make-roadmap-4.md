@@ -23,3 +23,4 @@ author: alexeyrozhnov
 
 -
 Пп.1–2 (roadmap-4): make_apply_changes (транзакция с откатом) и make_edit_file (патч фрагмента).
+П.3 (roadmap-4): тесты компонентов — раннер __tests__, панель результатов, «Исправить». Заведён docs/plans/auth-roadmap.md (18 пунктов) — после roadmap-4.
