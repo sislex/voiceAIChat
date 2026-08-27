@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import {
+  type ChatStorageBinding,
   appendChatInstructionHints,
   effectiveChatInstructions,
   stripDisabledInstructionBlocks,
@@ -120,6 +121,8 @@ export interface TurnManagerDeps {
   }
   /** Чтение файла картинки с диска сервера или из профиля исполнителя. */
   readServerFile?: (userId: string, path: string) => Promise<{ name: string; dataBase64: string } | null>
+  /** Привязка чата к хранилищу машины по умолчанию (ChatAI), если её ещё нет. */
+  ensureChatStorage?: (userId: string, conversationId: string, machineId: string) => Promise<ChatStorageBinding | null>
   /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
   mcpBaseUrl?: string
   /** Источник времени (для детерминированных тестов). */
@@ -964,7 +967,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
           const prepared = (async (): Promise<string> => {
             const a = deps.agents
+            // Чат без привязки к хранилищу: перед первой записью файла привязываем его к ChatAI машины по умолчанию.
             const binding = deps.db.getChatStorageBinding(userId, conversationId)
+              ?? (target && deps.ensureChatStorage ? await deps.ensureChatStorage(userId, conversationId, target) : null)
             const destinationAgentId = binding?.machineId ?? target
             if (!destinationAgentId || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.readServerFile) {
               if (binding) return `${parseImages(taskLaunch.text).body}\n\nНе удалось сохранить изображение: файловый доступ к MachineStorage недоступен.`

@@ -2209,6 +2209,12 @@ export class VoiceChatDb {
 
   // ---- Machine storage -----------------------------------------------------
 
+  /** Владелец машины (user_id агента); null — машина неизвестна. */
+  agentOwnerId(agentId: string): string | null {
+    const r = this.db.prepare(`SELECT user_id FROM agents WHERE id = ?`).get(agentId) as { user_id?: string | null } | undefined
+    return r?.user_id ?? null
+  }
+
   listMachineStorages(userId: string, machineId?: string): MachineStorage[] {
     const rows = this.db.prepare(
       `SELECT s.id, s.machine_id, s.root_path, s.format_version

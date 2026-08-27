@@ -22,14 +22,14 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 58 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 60 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 53 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 728 коммит(ов) в areas после сверки: 43f3b3c7 chore(compose): проброс VC_SMTP_URL/VC_MAIL_FROM/VC_PUBLIC_URL в server для регистрации по email … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 729 коммит(ов) в areas после сверки: 43b33d8b docs(kb): прод-каталог берётся из настроек проекта (/root/ChatAI на текущем проде) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 158 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-27 | ⚠ 25 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ✓ |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 57 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 77 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 5 коммит(ов) в areas после сверки: 2198e7a9 fix: auto-resolve merge conflicts with model step … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 7 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-26 | ⚠ 48 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ✓ |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 60 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 90 коммит(ов) в areas после сверки: b7250d17 feat(auth): открытая регистрация с подтверждением email — SMTP-клиент без зависимостей, заявки/verify, переключатель в админке, экраны регистрации … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 6 коммит(ов) в areas после сверки: 3a02f63b fix(auth): CSRF на logout и других мутациях /api/session по cookie — старая вкладка отзывала общую сессию … |
@@ -57,8 +57,9 @@
 
 ## Журнал сессий
 
-Всего записей: 374. Последние:
+Всего записей: 375. Последние:
 
+- [2026-08-28-alexeys-macbook-air-2-default-chatai-storage.md](log/2026-08-28-alexeys-macbook-air-2-default-chatai-storage.md) — default-chatai-storage
 - [2026-08-27-alexeys-macbook-air-2-make-roadmap-4.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-4.md) — make-roadmap-4
 - [2026-08-27-alexeys-macbook-air-2-make-roadmap-3.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-3.md) — make-roadmap-3
 - [2026-08-27-alexeys-macbook-air-2-make-roadmap-2.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-2.md) — make-roadmap-2
@@ -68,7 +69,6 @@
 - [2026-08-27-alexeys-macbook-air-2-make-dnd-highlight.md](log/2026-08-27-alexeys-macbook-air-2-make-dnd-highlight.md) — make-dnd-highlight
 - [2026-08-27-alexeys-macbook-air-2-make-console-assets-import.md](log/2026-08-27-alexeys-macbook-air-2-make-console-assets-import.md) — make-console-assets-import
 - [2026-08-27-alexeys-macbook-air-2-auth-roadmap.md](log/2026-08-27-alexeys-macbook-air-2-auth-roadmap.md) — auth-roadmap
-- [2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics.md](log/2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics.md) — 2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics
 
 ## Исторические планы
 
