@@ -6990,3 +6990,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Три ширины рядом (roadmap-4 п.21) */
 .make-frame-host--all { display: flex; align-items: stretch; gap: 12px; overflow: auto; padding: 8px; }
 .make-frame-host--all .make-frame { flex: 0 0 auto; height: auto; min-height: 100%; }
+
+/* Карта различий снимков (roadmap-4 п.24) */
+.make-shots-diff--bad { color: #c0392b; font-weight: 600; }
+.make-shots-diff--ok { color: #2e7d32; }
+
+/* Контраст токенов (roadmap-4 п.25) */
+.make-contrast-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.make-contrast-swatch { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 24px; border-radius: 4px; border: 1px solid var(--border); font-weight: 600; font-size: 12px; }
+.make-contrast-ratio { margin-left: auto; font-variant-numeric: tabular-nums; }
+.make-contrast-level { font-size: 11px; padding: 1px 6px; border-radius: 10px; background: #e6f4ea; color: #2e7d32; }
+.make-contrast-row--large .make-contrast-level { background: #fff4e0; color: #b26a00; }
+.make-contrast-row--bad .make-contrast-level { background: #fdecea; color: #c0392b; }
+
+.make-token-tools { display: flex; gap: 6px; margin: 8px 0 4px; }
