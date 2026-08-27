@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-27
-checked: d909d233
+checked: 6ebbae8a
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -289,6 +289,8 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 **Rate-limit импорта (п.39).** `POST /api/make/:id/import` и `/import-url` ограничены на пользователя скользящим окном (`apps/server/src/make/rateLimit.ts`, `SlidingWindowLimiter`): 10 ZIP-импортов и 20 импортов по URL за 10 минут; сверх — 429 `{ error }` с заголовком `Retry-After` (секунды). Лимитеры подменяются через `MakeRoutesDeps.importLimiter/importUrlLimiter`; счётчик в памяти процесса — перезапуск сервера его сбрасывает.
 
 **Read-only ссылка внутри ChatAI (п.33).** `POST/DELETE /api/make/:id/share` (владелец) → `MakeProjectState.shared: { token, createdAt, url: '#/make-shared/<token>' }`; хранится в `.share.json` + индекс `.published/share-<token>.json`, переживает `reset`. Чтение любым вошедшим пользователем: `GET /api/make/shared/:token` → `MakeSharedState { token, owner, title, files, snapshots, rev }`, `GET …/file?path=`, `GET …/stories`; превью — `GET /api/preview/make-shared/:token/*` (cookie превью; `previewSession` в `users/auth.ts` теперь принимает префикс `/api/preview/make` — и `/make/`, и `/make-shared/`), включая `__stories__`/`__gallery__` и моки. Записи по токену нет ни одной. Мосты `make:share/unshare/shared/sharedFile/sharedStories`.
+
+**PWA в экспорте (п.35).** `GET /api/preview/make/:id/export.zip?vite=1&pwa=1` (оба флага независимы): `exportZip({ vite, pwa })` добавляет `manifest.webmanifest`, `sw.js` (index — network-first, остальное — cache-first) и `icon.svg` (первая буква названия на `theme-color`) — для Vite в `public/` с абсолютными ссылками, для статики рядом с `index.html` с относительными. Ссылки (`<link rel=manifest>`, `theme-color`, `apple-mobile-web-app-capable`, регистрация SW не на `file:`) инъектируются только в копию `index.html` в архиве — файлы проекта не меняются. Название и цвет — `detectPwaMeta` (`<title>`, `meta theme-color`, иначе `--accent` из CSS). Чистые функции — `@shared/makePwa`.
 `REST.makeUpload` (POST `/api/make/:id/upload {path, dataBase64}`, bodyLimit 4 МБ) → мост `make:upload` —
 бинарники из панели; на сервере `MakeWorkspaces.writeBuffer` (общие лимиты с `write`).
 `REST.makeSearch` (`GET …/search?q=` → `{matches: MakeSearchMatch[]}`), `REST.makeStories` (`GET …/stories` →

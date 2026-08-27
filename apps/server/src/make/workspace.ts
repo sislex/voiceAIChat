@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
+  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, detectPwaMeta, injectPwaIntoHtml, pwaFiles, isMakeTextPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
@@ -831,12 +831,21 @@ export class MakeWorkspaces {
   }
 
   /** ZIP всех файлов проекта (без снимков) — «Скачать код». */
-  async exportZip(conversationId: string, options: { vite?: boolean } = {}): Promise<Buffer> {
+  async exportZip(conversationId: string, options: { vite?: boolean; pwa?: boolean } = {}): Promise<Buffer> {
     const files = await this.list(conversationId)
     const entries: Array<{ path: string; data: Buffer; mtime?: Date }> = []
     for (const file of files) {
       const data = await readFile(join(this.dirOf(conversationId), ...file.path.split('/')))
       entries.push({ path: file.path, data, mtime: new Date(file.updatedAt) })
+    }
+    if (options.pwa) {
+      // PWA (п.35): манифест + SW + иконка, ссылки — в копию index.html внутри архива (проект не трогаем).
+      const index = entries.find((e) => e.path === 'index.html')
+      const css = entries.find((e) => /\.css$/i.test(e.path))
+      const meta = detectPwaMeta(index ? index.data.toString('utf8') : null, css ? css.data.toString('utf8') : null)
+      const pwa = { ...meta, vite: Boolean(options.vite) }
+      for (const [path, text] of Object.entries(pwaFiles(pwa))) if (!files.some((f) => f.path === path)) entries.push({ path, data: Buffer.from(text, 'utf8') })
+      if (index) index.data = Buffer.from(injectPwaIntoHtml(index.data.toString('utf8'), pwa), 'utf8')
     }
     if (options.vite) {
       // «Настоящий проект»: package.json + vite.config, чтобы `npm i && npm run dev` работал локально.

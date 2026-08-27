@@ -194,6 +194,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
+  // PWA в экспорте (п.35): манифест + service worker + иконка, ссылки инъектируются в копию index.html.
+  const [exportPwa, setExportPwa] = useState(false)
+  const exportUrl = (vite: boolean): string => `${REST.makeExport(conversationId)}?${vite ? 'vite=1&' : ''}${exportPwa ? 'pwa=1' : ''}`.replace(/[?&]$/, '')
   // Телефон (п.34): дерево файлов заменяет выпадающий список, редактор — лёгкий (см. CodeEditor).
   const isPhone = useMediaQuery(PHONE_EDITOR_QUERY)
   // Комментарии к элементам (п.32): список грузим один раз при открытии панели, метки шлём в превью на каждый ready.
@@ -1395,15 +1398,16 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {exportOpen && (
         <Dialog title="Скачать проект" ariaLabel="Скачать проект" size="sm" onClose={() => setExportOpen(false)} testId="make-export">
           <div className="make-export-options">
-            <button type="button" className="make-idea" onClick={() => { window.open(REST.makeExport(conversationId), '_blank', 'noopener'); setExportOpen(false) }}>
+            <button type="button" className="make-idea" onClick={() => { window.open(exportUrl(false), '_blank', 'noopener'); setExportOpen(false) }}>
               <strong>Статика как есть</strong>
               <span>ZIP с файлами проекта — открывается двойным кликом по index.html или кладётся на любой хостинг.</span>
             </button>
-            <button type="button" className="make-idea" onClick={() => { window.open(`${REST.makeExport(conversationId)}?vite=1`, '_blank', 'noopener'); setExportOpen(false) }}>
+            <button type="button" className="make-idea" onClick={() => { window.open(exportUrl(true), '_blank', 'noopener'); setExportOpen(false) }}>
               <strong>Vite-проект</strong>
               <span>Плюс package.json, vite.config и README: распаковать, <code>npm install</code>, <code>npm run dev</code> — и продолжать в своём редакторе.</span>
             </button>
           </div>
+          <label className="make-export-pwa"><input type="checkbox" checked={exportPwa} onChange={(e) => setExportPwa(e.target.checked)} /> Добавить PWA: манифест, service worker и иконку — сайт можно «установить» на телефон и открывать офлайн</label>
         </Dialog>
       )}
       {importOpen && (

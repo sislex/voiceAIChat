@@ -312,4 +312,17 @@ describe('MakeWorkspaces', () => {
     expect(await ws.sharedTarget(token)).toBeNull()
     expect((await ws.state(CONV)).shared).toBeNull()
   })
+
+  it('exportZip с pwa добавляет манифест, sw и иконку, а копия index.html получает ссылки; сам проект не меняется', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const zip = (await ws.exportZip(CONV, { pwa: true })).toString('latin1')
+    expect(zip).toContain('manifest.webmanifest')
+    expect(zip).toContain('sw.js')
+    expect(zip).toContain('icon.svg')
+    expect(zip).toContain('rel="manifest"')
+    expect((await ws.read(CONV, 'index.html')).content).not.toContain('rel="manifest"')
+    const vite = (await ws.exportZip(CONV, { vite: true, pwa: true })).toString('latin1')
+    expect(vite).toContain('public/manifest.webmanifest')
+  })
 })
