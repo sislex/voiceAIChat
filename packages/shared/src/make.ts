@@ -42,6 +42,13 @@ export interface MakePublication {
   /** Закреплённый снимок: ссылка отдаёт его файлы, а не текущие; null — «живая» публикация. */
   snapshotId?: string | null
   snapshotLabel?: string | null
+  /** Человекочитаемый адрес `/s/<slug>/` (п.25); null — только токен. */
+  slug?: string | null
+  slugUrl?: string | null
+  /** Ссылка закрыта паролем: посетитель вводит его один раз, дальше — cookie. */
+  passwordProtected?: boolean
+  /** Сколько раз открывали index.html публикации. */
+  views?: number
 }
 
 /** Замечание статической проверки проекта (битые ссылки, отсутствующие файлы…). */
@@ -129,6 +136,13 @@ export interface MakeProjectState {
 /** Публичный префикс публикаций: маршрут вне `/api/`, поэтому без Bearer/cookie. */
 export const MAKE_PUBLIC_PREFIX = '/p/'
 export const makePublicUrl = (token: string): string => `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(token)}/`
+/** Префикс адресов по slug: `/s/<slug>/` — то же содержимое, что `/p/<token>/`, но запоминаемый адрес. */
+export const MAKE_SLUG_PREFIX = '/s/'
+export const makeSlugUrl = (slug: string): string => `${MAKE_SLUG_PREFIX}${encodeURIComponent(slug)}/`
+/** Slug: латиница/цифры/дефис, 3–40 символов, не начинается с дефиса. */
+export const MAKE_SLUG_RE = /^[a-z0-9][a-z0-9-]{2,39}$/
+export const MAKE_RESERVED_SLUGS: ReadonlySet<string> = new Set(['api', 'admin', 'p', 's', 'www', 'static', 'assets', 'login', 'make'])
+export const isValidMakeSlug = (slug: string): boolean => MAKE_SLUG_RE.test(slug) && !MAKE_RESERVED_SLUGS.has(slug)
 
 export const MAKE_LIMITS = {
   /** Максимальный размер одного файла (байты). */

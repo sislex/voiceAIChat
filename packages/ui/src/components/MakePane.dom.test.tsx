@@ -62,6 +62,21 @@ describe('MakePane', () => {
     expect(chip.getAttribute('title')).toContain('↓ 12.0k')
   })
 
+  it('публикация: адрес и пароль уходят в make:publish, ссылка показывает /s/<slug>/, просмотры видны (п.25)', async () => {
+    const { api } = renderPane()
+    await userEvent.click(await screen.findByRole('button', { name: 'Опубликовать' }))
+    await userEvent.click(within(screen.getByTestId('make-publish')).getByRole('button', { name: 'Опубликовать' }))
+    await screen.findByTestId('make-public-url')
+    await userEvent.type(screen.getByLabelText('Адрес публикации'), 'demo-site')
+    await userEvent.type(screen.getByLabelText('Пароль публикации'), 'qwerty')
+    await userEvent.click(screen.getByRole('button', { name: 'Обновить публикацию' }))
+    await waitFor(() => expect(screen.getByTestId('make-public-url')).toHaveTextContent('/s/demo-site/'))
+    expect((await api['make:state']({ conversationId: CONV })).published).toMatchObject({ slug: 'demo-site', passwordProtected: true })
+    expect(screen.getByTestId('make-public-views')).toHaveTextContent('7')
+    await userEvent.click(screen.getByRole('button', { name: 'Снять пароль' }))
+    await waitFor(async () => expect((await api['make:state']({ conversationId: CONV })).published?.passwordProtected).toBe(false))
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)

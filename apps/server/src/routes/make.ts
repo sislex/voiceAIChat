@@ -5,8 +5,8 @@
 // (iframe и ссылка «Скачать» не умеют слать Bearer). Все маршруты проверяют, что
 // разговор принадлежит пользователю; изменения рассылаются владельцу `make.changed`.
 
-import type { FastifyInstance, FastifyReply } from 'fastify'
-import { MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath } from '@voicechat/shared'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath } from '@voicechat/shared'
 import { transpileForPreview } from '../make/transpile.js'
 import { renderGalleryPage, renderStoriesPage } from '../make/stories.js'
 import { readZip, ZipReadError } from '../make/zipRead.js'
@@ -243,9 +243,9 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
-  app.post<{ Params: { id: string }; Body: { snapshotId?: string | null } | undefined }>('/api/make/:id/publish', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { snapshotId?: string | null; slug?: string | null; password?: string | null } | undefined }>('/api/make/:id/publish', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
-    try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null }) } catch (error) { return sendError(reply, error) }
+    try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null, slug: req.body?.slug, password: req.body?.password }) } catch (error) { return sendError(reply, error) }
   })
 
   app.delete<{ Params: { id: string } }>('/api/make/:id/publish', async (req, reply) => {
@@ -346,16 +346,40 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   // ---- Публикация: /p/<token>/… — вне /api, без авторизации; знание ссылки = доступ ----
 
-  app.get<{ Params: { token: string; '*': string } }>(`${MAKE_PUBLIC_PREFIX}:token/*`, async (req, reply) => {
-    const conversationId = await workspaces.publishedTarget(req.params.token)
+  // Форма пароля публикации: POST сюда же (`__auth__`) с urlencoded-телом; cookie на 30 дней.
+  if (!app.hasContentTypeParser('application/x-www-form-urlencoded')) {
+    app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
+      try { done(null, Object.fromEntries(new URLSearchParams(String(body)))) } catch (e) { done(e as Error, undefined) }
+    })
+  }
+  const gateCookieName = (token: string): string => `vc_pub_${token}`
+  const cookieValue = (req: FastifyRequest, name: string): string | null => {
+    const m = (req.headers.cookie ?? '').split(/;\s*/).find((c) => c.startsWith(`${name}=`))
+    return m ? decodeURIComponent(m.slice(name.length + 1)) : null
+  }
+  const passwordPage = (action: string, wrong: boolean): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
+<body><form method="post" action="${action}"><h1>Проект защищён паролем</h1>${wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
+
+  /** Отдача файла публикации по токену: общий код для /p/<token>/ и /s/<slug>/. */
+  const servePublic = async (token: string, rawPath: string, base: string, req: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
+    const conversationId = await workspaces.publishedTarget(token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
-    const raw = req.params['*'] || 'index.html'
+    const raw = rawPath || 'index.html'
+    // Пароль (п.25): без верной cookie — форма для HTML-запросов, 401 для остального.
+    const gate = await workspaces.publicGate(conversationId)
+    if (gate && cookieValue(req, gateCookieName(token)) !== gate) {
+      const wantsHtml = raw === 'index.html' || raw.endsWith('/') || raw.endsWith('.html') || raw === MAKE_STORIES_PAGE || raw === MAKE_GALLERY_PAGE
+      if (!wantsHtml) return reply.code(401).type('text/plain; charset=utf-8').send('Публикация защищена паролем')
+      const q = req.query as { wrong?: string }
+      return reply.code(401).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
+        .send(passwordPage(`${base}__auth__?next=${encodeURIComponent(raw)}`, q.wrong === '1'))
+    }
     // Публичные сториз и галерея (п.15): те же страницы, что в превью, но без входа; файлы — с публикации.
     if (raw === MAKE_STORIES_PAGE || raw === MAKE_GALLERY_PAGE) {
-      const publicBase = `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/`
       const headers = (r: FastifyReply): FastifyReply => r.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
         .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:")
-      if (raw === MAKE_GALLERY_PAGE) return headers(reply).send(renderGalleryPage(await workspaces.stories(conversationId), publicBase))
+      if (raw === MAKE_GALLERY_PAGE) return headers(reply).send(renderGalleryPage(await workspaces.stories(conversationId), base))
       const q = req.query as { file?: string; story?: string }
       const index = await workspaces.publicFile(conversationId, 'index.html').catch(() => null)
       return headers(reply).send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null))
@@ -364,6 +388,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     let file
     try { file = await workspaces.publicFile(conversationId, path) } catch { file = null }
     if (!file) return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
+    if (path === 'index.html') void workspaces.countView(conversationId)
     const body = isMakeTranspiledPath(file.path)
       ? await transpileForPreview(file.cacheKey, file.path, file.data.toString('utf8'), file.rev, () => true)
       : file.data
@@ -374,9 +399,41 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:")
       .header('x-robots-tag', 'noindex')
       .send(body)
-  })
+  }
+  const authPublic = async (token: string, base: string, req: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
+    const conversationId = await workspaces.publishedTarget(token)
+    if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
+    const body = (req.body ?? {}) as { password?: string }
+    const q = req.query as { next?: string }
+    const next = (q.next ?? 'index.html').replace(/^\/+/, '')
+    if (!(await workspaces.verifyPublicPassword(conversationId, body.password ?? ''))) return reply.redirect(`${base}${next}?wrong=1`)
+    const gate = await workspaces.publicGate(conversationId)
+    return reply
+      .header('set-cookie', `${gateCookieName(token)}=${gate ?? ''}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`)
+      .redirect(`${base}${next}`)
+  }
+
+  app.get<{ Params: { token: string; '*': string } }>(`${MAKE_PUBLIC_PREFIX}:token/*`, async (req, reply) =>
+    servePublic(req.params.token, req.params['*'], `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/`, req, reply))
+  app.post<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token/__auth__`, async (req, reply) =>
+    authPublic(req.params.token, `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/`, req, reply))
   app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
   app.get<{ Params: { token: string } }>(`${MAKE_PUBLIC_PREFIX}:token/`, async (req, reply) => reply.redirect(`${MAKE_PUBLIC_PREFIX}${encodeURIComponent(req.params.token)}/index.html`))
+
+  // Адрес по slug (п.25): /s/<slug>/… — то же содержимое, токен наружу не уходит.
+  const slugBase = (slug: string): string => `${MAKE_SLUG_PREFIX}${encodeURIComponent(slug)}/`
+  app.get<{ Params: { slug: string; '*': string } }>(`${MAKE_SLUG_PREFIX}:slug/*`, async (req, reply) => {
+    const token = await workspaces.slugToken(req.params.slug)
+    if (!token) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
+    return servePublic(token, req.params['*'], slugBase(req.params.slug), req, reply)
+  })
+  app.post<{ Params: { slug: string } }>(`${MAKE_SLUG_PREFIX}:slug/__auth__`, async (req, reply) => {
+    const token = await workspaces.slugToken(req.params.slug)
+    if (!token) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
+    return authPublic(token, slugBase(req.params.slug), req, reply)
+  })
+  app.get<{ Params: { slug: string } }>(`${MAKE_SLUG_PREFIX}:slug`, async (req, reply) => reply.redirect(`${slugBase(req.params.slug)}index.html`))
+  app.get<{ Params: { slug: string } }>(`${MAKE_SLUG_PREFIX}:slug/`, async (req, reply) => reply.redirect(`${slugBase(req.params.slug)}index.html`))
 
   // ---- Превью и экспорт (cookie-аутентификация, см. users/auth.ts) ----------
 

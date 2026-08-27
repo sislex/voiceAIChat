@@ -144,7 +144,7 @@ export interface IpcInvokeMap {
   'make:restore': { arg: { conversationId: string; snapshotId: string }; result: MakeProjectState }
   'make:reset': { arg: { conversationId: string }; result: MakeProjectState }
   /** snapshotId — закрепить публикацию за снимком; null/отсутствует — публиковать текущее состояние. */
-  'make:publish': { arg: { conversationId: string; snapshotId?: string | null }; result: MakeProjectState }
+  'make:publish': { arg: { conversationId: string; snapshotId?: string | null; slug?: string | null; password?: string | null }; result: MakeProjectState }
   'make:unpublish': { arg: { conversationId: string }; result: MakeProjectState }
   'make:check': { arg: { conversationId: string }; result: { issues: MakeCheckIssue[] } }
   'make:template': { arg: { conversationId: string; templateId: string }; result: MakeProjectState }

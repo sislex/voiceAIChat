@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, makePublicUrl, normalizeMakePath,
+  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, normalizeMakePath,
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
@@ -29,6 +29,8 @@ export class MakeError extends Error {
 const SNAPSHOTS_DIR = '.snapshots'
 /** Файл публикации проекта (в его корне) и индекс токен → разговор (общий каталог). */
 const PUBLISH_FILE = '.publish.json'
+/** Содержимое `.publish.json`; passwordHash = `<соль>:<sha256(соль:пароль)>`. */
+interface PublishRaw { token: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number }
 const SHOTS_DIR = '.shots'
 const SHOTS_PER_STORY = 10
 const PUBLISHED_INDEX_DIR = '.published'
@@ -443,13 +445,25 @@ export class MakeWorkspaces {
 
   // ---- Публикация: непубличная ссылка /p/<token>/ без авторизации -------------
 
-  async publication(conversationId: string): Promise<MakePublication | null> {
+  /** Сырой файл публикации — с хэшем пароля; наружу (в MakePublication) хэш не уходит. */
+  private async publishRaw(conversationId: string): Promise<PublishRaw | null> {
     try {
-      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), PUBLISH_FILE), 'utf8')) as { token?: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null }
+      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), PUBLISH_FILE), 'utf8')) as PublishRaw
       if (!raw.token || !ID_RE.test(raw.token)) return null
-      return { token: raw.token, publishedAt: raw.publishedAt ?? 0, url: makePublicUrl(raw.token), snapshotId: raw.snapshotId ?? null, snapshotLabel: raw.snapshotLabel ?? null }
+      return raw
     } catch {
       return null
+    }
+  }
+
+  async publication(conversationId: string): Promise<MakePublication | null> {
+    const raw = await this.publishRaw(conversationId)
+    if (!raw) return null
+    return {
+      token: raw.token, publishedAt: raw.publishedAt ?? 0, url: makePublicUrl(raw.token),
+      snapshotId: raw.snapshotId ?? null, snapshotLabel: raw.snapshotLabel ?? null,
+      slug: raw.slug ?? null, slugUrl: raw.slug ? makeSlugUrl(raw.slug) : null,
+      passwordProtected: Boolean(raw.passwordHash), views: raw.views ?? 0
     }
   }
 
@@ -458,8 +472,8 @@ export class MakeWorkspaces {
    * Опубликовать: токен создаётся один раз и не меняется; `snapshotId` закрепляет публикацию за снимком
    * (ссылка отдаёт его файлы, пока публикацию не обновят), null — «живая» публикация текущих файлов.
    */
-  async publish(conversationId: string, options: { snapshotId?: string | null } = {}): Promise<MakeProjectState> {
-    const existing = await this.publication(conversationId)
+  async publish(conversationId: string, options: { snapshotId?: string | null; slug?: string | null; password?: string | null } = {}): Promise<MakeProjectState> {
+    const existing = await this.publishRaw(conversationId)
     const token = existing?.token ?? randomUUID().replace(/-/g, '')
     if (!existing) {
       const indexDir = join(this.rootDir, 'make', PUBLISHED_INDEX_DIR)
@@ -473,8 +487,76 @@ export class MakeWorkspaces {
       if (!snap) throw new MakeError('not_found', 'Снимок не найден')
       snapshotId = snap.id; snapshotLabel = snap.label
     }
-    await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify({ token, publishedAt: Date.now(), snapshotId, snapshotLabel }), 'utf8')
+    // Slug (п.25): undefined — не трогать, null — снять, строка — проверить и занять (индекс slug→token, чужой занятый — конфликт).
+    let slug = existing?.slug ?? null
+    if (options.slug !== undefined) {
+      const next = options.slug ? options.slug.trim().toLowerCase() : null
+      if (next && !isValidMakeSlug(next)) throw new MakeError('invalid_path', 'Адрес: 3–40 символов, латиница, цифры и дефис')
+      if (next !== slug) {
+        const indexDir = join(this.rootDir, 'make', PUBLISHED_INDEX_DIR)
+        if (next) {
+          const owner = await this.slugToken(next)
+          if (owner && owner !== token) throw new MakeError('exists', 'Такой адрес уже занят другим проектом')
+          await mkdir(indexDir, { recursive: true })
+          await writeFile(join(indexDir, `slug-${next}.json`), JSON.stringify({ token }), 'utf8')
+        }
+        if (slug) await rm(join(indexDir, `slug-${slug}.json`), { force: true })
+        slug = next
+      }
+    }
+    // Пароль: undefined — оставить, null — снять, строка — новый хэш с солью. Сам пароль не хранится.
+    let passwordHash = existing?.passwordHash ?? null
+    if (options.password !== undefined) {
+      if (options.password === null || options.password === '') passwordHash = null
+      else {
+        if (options.password.length < 4) throw new MakeError('invalid_path', 'Пароль — не короче 4 символов')
+        const salt = randomUUID().replace(/-/g, '')
+        passwordHash = `${salt}:${createHash('sha256').update(`${salt}:${options.password}`).digest('hex')}`
+      }
+    }
+    const raw: PublishRaw = { token, publishedAt: Date.now(), snapshotId, snapshotLabel, slug, passwordHash, views: existing?.views ?? 0 }
+    await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8')
     return this.state(conversationId)
+  }
+
+  /** Токен публикации по slug; null — адрес свободен или снят. */
+  async slugToken(slug: string): Promise<string | null> {
+    if (!isValidMakeSlug(slug)) return null
+    try {
+      const raw = JSON.parse(await readFile(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `slug-${slug}.json`), 'utf8')) as { token?: string }
+      if (!raw.token) return null
+      // Индекс мог остаться от снятой публикации — сверяем с самой публикацией.
+      const conversationId = await this.publishedTarget(raw.token)
+      if (!conversationId) return null
+      const pub = await this.publishRaw(conversationId)
+      return pub?.slug === slug ? raw.token : null
+    } catch { return null }
+  }
+
+  /**
+   * Пропуск по паролю: `null` — публикация без пароля; иначе подпись, которую сервер кладёт в cookie
+   * после верного пароля и сравнивает при каждом запросе. Подпись зависит от хэша: смена пароля
+   * автоматически разлогинивает всех.
+   */
+  async publicGate(conversationId: string): Promise<string | null> {
+    const raw = await this.publishRaw(conversationId)
+    if (!raw?.passwordHash) return null
+    return createHash('sha256').update(`gate:${raw.token}:${raw.passwordHash}`).digest('hex')
+  }
+
+  async verifyPublicPassword(conversationId: string, password: string): Promise<boolean> {
+    const raw = await this.publishRaw(conversationId)
+    if (!raw?.passwordHash) return true
+    const [salt, hash] = raw.passwordHash.split(':')
+    return createHash('sha256').update(`${salt}:${password}`).digest('hex') === hash
+  }
+
+  /** Счётчик просмотров: +1 на открытие index.html публикации. Гонки терпимы — это статистика, не биллинг. */
+  async countView(conversationId: string): Promise<void> {
+    const raw = await this.publishRaw(conversationId)
+    if (!raw) return
+    raw.views = (raw.views ?? 0) + 1
+    await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8').catch(() => undefined)
   }
 
   /** Файл для публичной ссылки: из закреплённого снимка или текущий. Возвращает и «ключ ревизии» для кэша транспиляции. */
@@ -495,9 +577,10 @@ export class MakeWorkspaces {
   }
 
   async unpublish(conversationId: string): Promise<MakeProjectState> {
-    const existing = await this.publication(conversationId)
+    const existing = await this.publishRaw(conversationId)
     if (existing) {
       await rm(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `${existing.token}.json`), { force: true })
+      if (existing.slug) await rm(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `slug-${existing.slug}.json`), { force: true })
       await rm(join(this.dirOf(conversationId), PUBLISH_FILE), { force: true })
     }
     return this.state(conversationId)
