@@ -98,6 +98,7 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-dialog:focus { outline:none }.vc-dialog--sm{width:480px}.vc-dialog--md{width:640px}.vc-dialog--lg{width:1120px}.vc-dialog--full{width:calc(100vw - 32px);height:calc(100vh - 32px)}
 .vc-dialog.vc-dialog--phone { width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;box-shadow:none;padding-bottom:env(safe-area-inset-bottom) }
 .vc-dialog-overlay--phone { align-items:stretch;justify-content:stretch }
+.vc-dialog-body { flex:1 1 auto;min-height:0;overflow:auto;padding:14px 22px 18px }
 .vc-dialog-foot { flex:none;display:flex;justify-content:flex-end;gap:8px;padding:14px 22px;border-top:1px solid var(--border-soft) }
 .mdhead { padding:18px 22px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;justify-content:space-between;flex:none }
 .mdh { margin:0;font-size:15px;color:var(--text) }.util-head-btns{display:flex;align-items:center;gap:6px}

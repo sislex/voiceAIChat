@@ -207,6 +207,40 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS invites (
+  token TEXT PRIMARY KEY,
+  role TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  max_uses INTEGER NOT NULL DEFAULT 1,
+  uses INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS security_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at INTEGER NOT NULL,
+  user_name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  ip TEXT NOT NULL DEFAULT '',
+  user_agent TEXT NOT NULL DEFAULT '',
+  details TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_name, at DESC);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  sid TEXT PRIMARY KEY,
+  user_name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_seen INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  ip TEXT NOT NULL DEFAULT '',
+  user_agent TEXT NOT NULL DEFAULT '',
+  revoked_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_name);
+
 CREATE TABLE IF NOT EXISTS session_revocations (
   token_hash TEXT PRIMARY KEY,
   created_at INTEGER NOT NULL

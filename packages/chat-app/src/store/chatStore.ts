@@ -15,7 +15,7 @@ import type { ActiveTurn, QueuedTurn, TurnTarget } from '@shared/protocol'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { KbStatus, KbUsageQuery } from '@shared/kb'
 import type { PreviewElementPayload } from '@shared/previewInspector'
-import { withPreviewElementContext } from '@shared/prompt'
+import { withEditorContext, withPreviewElementContext } from '@shared/prompt'
 import { conversationToJson, conversationToMarkdown, exportFileName } from '@shared/export'
 import { detectOpenUtility, toolBlock, type ToolSpec } from '@shared/tools'
 import type {
@@ -31,8 +31,7 @@ import type {
   PermissionMode,
   Settings,
   TurnMeta,
-  TurnUsage
-} from '@shared/types'
+  TurnUsage, EditorContextPayload } from '@shared/types'
 import {
   applyKbUsageFrame,
   buildKbUsageFromMessages,
@@ -243,7 +242,7 @@ export interface ChatActions {
   setShowDoneTaskChats(show: boolean): Promise<void>
   exportConversation(format: 'md' | 'json'): void
   setDraft(value: string): void
-  submitText(previewElement?: PreviewElementPayload): Promise<boolean>
+  submitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean>
   /** Сохраняет безопасный служебный результат без запуска LLM. */
   publishDiagnosticMessage(conversationId: string, text: string): Promise<void>
   retryAttachment(localId: string): Promise<void>
@@ -956,7 +955,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
   }
 
-  async function performSubmitText(previewElement?: PreviewElementPayload): Promise<boolean> {
+  async function performSubmitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
     const state = getState()
     const text = state.draft.trim()
     const atts = state.attachments
@@ -982,7 +981,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       ...(file.agentId ? { agentId: file.agentId } : {})
     }))
     const messageText = composeUserText(text, ready)
-    const messageMeta = previewElement ? { previewElement } : undefined
+    const messageMeta = previewElement || editorContext ? { ...(previewElement ? { previewElement } : {}), ...(editorContext ? { editorContext } : {}) } : undefined
     const created = await ensureConversation(text || ready.map((a) => a.name).join(', '), {
       role: 'u1',
       text: messageText,
@@ -1030,7 +1029,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       return false // idle → thinking
     }
     const segments = [
-      { speakerId: 1, text: withPreviewElementContext(text || 'См. приложенные файлы.', previewElement) }
+      { speakerId: 1, text: withEditorContext(withPreviewElementContext(text || 'См. приложенные файлы.', previewElement), editorContext) }
     ]
     const activeId = getState().activeId
     if (queueOnly && turn.enabled && turn.send && activeId) {
@@ -1063,14 +1062,14 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     setState(patch)
   }
 
-  function submitText(previewElement?: PreviewElementPayload): Promise<boolean> {
+  function submitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
     // Два keydown/click до первого ответа API видят одну наблюдаемую операцию.
     if (submitTextInFlight || getState().pendingSubmit) return Promise.resolve(false)
     const state = getState()
     const text = state.draft.trim()
     const ready = state.attachments.filter((item) => item.status === 'ready' && item.upload)
     if ((!text && ready.length === 0 && !previewElement) || state.attachments.some((item) => item.status !== 'ready' || !item.upload)) {
-      return performSubmitText(previewElement)
+      return performSubmitText(previewElement, editorContext)
     }
     const queueOnly = voice.state() === 'thinking' || voice.state() === 'speaking' || voice.state() === 'transcribing'
     const operationId = globalThis.crypto?.randomUUID?.() ?? `pending-${now()}-${Math.random()}`
@@ -1093,7 +1092,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       }
     }
     setState(patch)
-    const pending = performSubmitText(previewElement)
+    const pending = performSubmitText(previewElement, editorContext)
     submitTextInFlight = pending
     const clearFlight = (): void => {
       if (submitTextInFlight === pending) submitTextInFlight = null

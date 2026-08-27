@@ -6,7 +6,7 @@ import { monacoLanguageFor } from './monacoLang'
 import type { CodeEditorProps } from '../CodeEditor'
 
 /** Редактор на Monaco — настоящий VS Code: подсветка TSX/JSX, автодополнение, поиск, сворачивание. */
-export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLabel, markers, projectFiles, onSelectionChange, onInlineCommand }: CodeEditorProps): JSX.Element {
+export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLabel, markers, projectFiles, onSelectionChange, onInlineCommand, readOnly, changedLines }: CodeEditorProps): JSX.Element {
   const monaco = useMemo(() => setupMonaco(), [])
   useEffect(() => { if (projectFiles) syncProjectModels(monaco, projectFiles) }, [monaco, projectFiles])
   const saveRef = useRef(onSave)
@@ -19,14 +19,25 @@ export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLa
     const model = editorRef.current?.getModel()
     if (!model) return
     monaco.editor.setModelMarkers(model, 'make', (markers ?? []).map((mk) => ({
-      severity: monaco.MarkerSeverity.Error,
+      severity: mk.severity === 'warning' ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Error,
       message: mk.message,
       startLineNumber: mk.line, startColumn: mk.column ?? 1,
       endLineNumber: mk.line, endColumn: model.getLineMaxColumn(Math.min(mk.line, model.getLineCount()))
     })))
   }, [markers, monaco, value])
+  // Подсветка строк, изменённых ассистентом (roadmap-4 п.9): полоска в gutter + фон строки; снимается новым набором/пустым.
+  const decorationsRef = useRef<MonacoNs.editor.IEditorDecorationsCollection | null>(null)
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    if (!decorationsRef.current) decorationsRef.current = editor.createDecorationsCollection([])
+    decorationsRef.current.set((changedLines ?? []).map((line) => ({ range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 }, options: { isWholeLine: true, className: 'make-line-changed', linesDecorationsClassName: 'make-line-changed-gutter' } })))
+    if (changedLines && changedLines.length) editor.revealLineInCenterIfOutsideViewport(changedLines[0]!)
+  }, [changedLines, value])
   const onMount: OnMount = (editor, m) => {
     editorRef.current = editor
+    // Редактор пересоздаётся при смене файла (key={path}) — коллекция декораций старого экземпляра мертва.
+    decorationsRef.current = null
     editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => saveRef.current?.())
     editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyI, () => inlineRef.current?.())
     editor.onDidChangeCursorSelection((e) => {
@@ -51,6 +62,7 @@ export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLa
         onMount={onMount}
         loading={<div className="make-monaco-loading">Загружаю редактор…</div>}
         options={{
+          readOnly: Boolean(readOnly),
           fontSize: 12.5,
           fontFamily: "'SF Mono', ui-monospace, Menlo, Consolas, monospace",
           tabSize: 2,

@@ -3,7 +3,9 @@ import { isReaderConversation, parseChatRoute } from '@voicechat/chat-app'
 import { parseOperationsRoute } from '@voicechat/operations-app'
 import { parseProjectsRoute } from '@voicechat/projects-app'
 import type { RendererApi } from '@shared/ipc'
-import type { LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
+import { summarizeConversationUsage } from '@shared/usageSummary'
+import { MakeSharedView } from './components/MakeSharedView'
+import type { EditorContextPayload, LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
 import type { PreparationClarificationNotification } from '@shared/qa'
@@ -14,6 +16,10 @@ import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration,
 import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { MakePane } from './components/MakePane'
+import { SessionsDialog, describeUserAgent } from './components/SessionsDialog'
+import { TwoFactorDialog } from './components/TwoFactorDialog'
+import { InviteRegister } from './components/InviteRegister'
+import { ChangePasswordDialog } from './components/ChangePasswordDialog'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -127,7 +133,7 @@ export function appendWidgetAction(items: WidgetUserAction[], action: WidgetActi
 }
 
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
-const HOST_UTILITY_PAGES: readonly string[] = ['users', 'personalization']
+const HOST_UTILITY_PAGES: readonly string[] = ['users', 'personalization', 'make-shared']
 
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
@@ -201,7 +207,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const operationsRoute = parseOperationsRoute(path)
   const utilitySeg = operationsRoute
     ? operationsRoute.page === 'history' ? (operationsRoute.engine === 'claude' ? 'claude-code' : 'codex') : operationsRoute.page === 'knowledge' ? 'kb' : operationsRoute.page
-    : segments.length >= 1 && HOST_UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || (segments[0] === 'users' && segments.length === 2)) ? segments[0] : null
+    : segments.length >= 1 && HOST_UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || ((segments[0] === 'users' || segments[0] === 'make-shared') && segments.length === 2)) ? segments[0] : null
   const routeKbDocumentId = operationsRoute?.page === 'knowledge' ? (operationsRoute.documentId ?? null) : null
   const routeUserName = segments[0] === 'users' ? (segments[1] ?? null) : null
   const onUtilityPage = utilitySeg !== null
@@ -241,9 +247,45 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const operationsActions = useOperationsActions()
   const adminActions = useAdminActions()
   const projectsActions = useProjectsActions()
+  /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
+  const [sessionsOpen, setSessionsOpen] = useState(false)
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  // Уведомление о входе с нового устройства (auth-roadmap п.16): после входа/восстановления сессии показываем и отмечаем просмотренными.
+  useEffect(() => {
+    const name = session.currentUser?.name
+    if (!name || !window.session?.securityNotices) return
+    let alive = true
+    void window.session.securityNotices().then((list) => {
+      if (!alive || list.length === 0) return
+      for (const n of list.slice(-3)) toast.info(`Вход в ваш аккаунт с нового устройства: ${describeUserAgent(n.userAgent)} · ${n.ip || 'адрес неизвестен'} · ${new Date(n.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}. Не вы — завершите сессии в меню аккаунта.`)
+      void window.session?.securityNoticesSeen?.()
+    }).catch(() => undefined)
+    return () => { alive = false }
+  }, [session.currentUser?.name]) // eslint-disable-line react-hooks/exhaustive-deps
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
+  // Открытый файл/выделение в Make — уходит вместе с сообщением (п.21).
+  const [makeEditorContext, setMakeEditorContext] = useState<EditorContextPayload | null>(null)
+  // Откат правок хода Make (roadmap-2 п.2): восстановить снимок «До правок»; текущее состояние сохранится отдельным снимком.
+  const restoreMakeTurn = async (snapshotId: string): Promise<void> => {
+    if (!chat.activeId || !window.api) return
+    if (!(await confirm({ title: 'Откатить правки этого ответа?', message: 'Файлы проекта вернутся к состоянию до правок; текущее состояние сохранится снимком «Перед восстановлением».', confirmLabel: 'Откатить' }))) return
+    try { await window.api['make:restore']({ conversationId: chat.activeId, snapshotId }); toast.success('Правки откачены') } catch (e) { toast.error(e instanceof Error ? e.message : String(e)) }
+  }
+  const [makeAskOnly, setMakeAskOnly] = useState(false)
+  const askRestoreRef = useRef<PermissionMode | null>(null)
+  useEffect(() => {
+    if (voice.voice !== 'idle' || !askRestoreRef.current) return
+    const prev = askRestoreRef.current; askRestoreRef.current = null
+    setMakeAskOnly(false)
+    // Возврат режима без диалога подтверждения: пользователь его не менял, это откат нашего временного «Плана».
+    if (activeConversation) void chatActions.setConversationExecTarget(activeConversation.id, activeConversation.execTarget ?? null, undefined, undefined, undefined, undefined, prev)
+    else void settingsActions.updateSettings({ permissionMode: prev })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.voice])
+  const makeUsage = useMemo(() => (inMake ? summarizeConversationUsage(chat.messages) : null), [inMake, chat.messages])
   const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
   const [assistantOpen, setAssistantOpen] = useState(() => globalThis.localStorage?.getItem('voicechat.kanbanAssistantOpen') === '1')
   const [assistantConversationId, setAssistantConversationId] = useState<string | null>(null)
@@ -1361,12 +1403,20 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       </div>
     )
   }
+  const inviteToken = /^#\/invite\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
+  if (session.authRequired && !session.currentUser && inviteToken && window.session?.inviteInfo && window.session.register) {
+    return <InviteRegister token={decodeURIComponent(inviteToken)} api={{ inviteInfo: window.session.inviteInfo, register: window.session.register }} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} />
+  }
   if (session.authRequired && !session.currentUser) {
     return (
       <LoginScreen
-        onLogin={(name, password) => void runtime.login(name, password)}
+        onLogin={(name, password, remember) => void runtime.login(name, password, remember)}
         error={session.authError}
         theme={settingsState.settings.theme}
+        twoFactor={Boolean(session.twoFactorTicket)}
+        onCode={(code) => void runtime.loginCode(code)}
+        onCancelTwoFactor={() => runtime.cancelTwoFactor()}
+        onReset={window.session?.resetPassword ? (name, code, password) => void runtime.resetPassword(name, code, password) : undefined}
       />
     )
   }
@@ -1501,6 +1551,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenMachines={session.authRequired ? menu(() => navigate('/machines')) : undefined}
         onOpenCi={session.authRequired ? menu(() => navigate('/ci')) : undefined}
         currentUser={session.currentUser}
+        onOpenSessions={session.authRequired && window.session?.sessions ? () => setSessionsOpen(true) : undefined}
+        onOpenTwoFactor={session.authRequired && window.session?.twoFactor ? () => setTwoFactorOpen(true) : undefined}
+        onOpenChangePassword={session.authRequired && window.session?.changePassword ? () => setChangePasswordOpen(true) : undefined}
+        avatar={settingsState.settings.personalization.avatar ?? null}
         onLogout={session.authRequired ? async () => {
           const accepted = await confirm({
             title: 'Выйти из ChatAI?',
@@ -1571,6 +1625,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         permissionMode={activePermissionMode}
         workspace={activeConversation?.workspace}
         onExecutePlan={(answerId) => void chatActions.executePlan(answerId)}
+        onMakeRestore={inMake ? (snapshotId) => void restoreMakeTurn(snapshotId) : undefined}
         canExecutePlan={!forcedPlan}
         state={voice.voice}
         messages={chat.messages.filter((message) => !(chat.activeId ? chat.queuedTurns[chat.activeId] ?? [] : []).some((item) => item.messageId === message.id))}
@@ -1674,7 +1729,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               if (inConsoleReader && isConsoleReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startConsoleReaderDiagnostics(); return }
               if (inMake && isMakeDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startMakeDiagnostics(); return }
               if (isChatDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startChatDiagnostics(); return }
-              void chatActions.submitText(previewElement ?? undefined).then((sent) => { if (sent) setPreviewElement(null) })
+              void (async () => {
+                // Режим вопроса Make (roadmap-4 п.4): один ход в «Плане», прежний режим вернётся по завершении хода.
+                if (inMake && makeAskOnly && activePermissionMode !== 'plan') { askRestoreRef.current = activePermissionMode; await changeConversationMode('plan') }
+                const sent = await chatActions.submitText(previewElement ?? undefined, inMake ? makeEditorContext ?? undefined : undefined)
+                if (sent) setPreviewElement(null)
+              })()
             }}
             onStartVoice={voiceActions.startVoice}
             onStopVoice={voiceActions.stopVoice}
@@ -1698,7 +1758,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} />}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
-      {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} />}
+      {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
+      {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
+      {sessionsOpen && window.session?.sessions && window.session.logoutAll && window.session.revokeSession && <SessionsDialog load={window.session.sessions} revoke={window.session.revokeSession} logoutAll={window.session.logoutAll} onClose={() => setSessionsOpen(false)} />}
+      {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} />}
       {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
       </div>
       )}
@@ -1934,11 +1997,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
 
+      {utilitySeg === 'make-shared' && segments[1] && window.api && (
+        <MakeSharedView key={segments[1]} token={segments[1]} api={window.api} ensurePreview={window.session?.ensurePreview} onBack={() => navigate('/')} />
+      )}
       {utilitySeg === 'users' && admin.usersOpen && (
         <Suspense fallback={<div role="status">Загрузка Administration…</div>}><UsersAdmin
           variant="page"
           users={admin.adminUsers}
           usageSummary={admin.adminUsageSummary}
+          makeStats={admin.adminMakeStats}
           isAdmin={session.currentUser?.role === 'admin'}
           status={admin.adminUsersStatus}
           error={admin.adminUsersError}
@@ -1950,11 +2017,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           conversationId={admin.adminConversationId}
           currentUserName={session.currentUser?.name ?? ''}
           onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void adminActions.selectAdminUser(name) }}
-          onCreate={(name, password, role) => void adminActions.createUserAccount(name, password, role)}
+          onCreate={(name, password, role, mustChangePassword) => void adminActions.createUserAccount(name, password, role, mustChangePassword)}
+          onResetCode={(name) => adminActions.issueResetCode(name)}
+          onSetLlmLimit={(name, usd) => void adminActions.setUserLlmLimit(name, usd)}
           onUpdateRole={(name, role) => void adminActions.updateUserRole(name, role)}
           onSetBlocked={(name, blocked) => void adminActions.setUserBlocked(name, blocked)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
+          sessions={admin.adminSessions}
+          onLoadSessions={() => void adminActions.loadAdminSessions()}
+          onRevokeSession={(sid) => void adminActions.revokeAdminSession(sid)}
+          security={admin.adminSecurity}
+          onLoadSecurity={() => void adminActions.loadAdminSecurity()}
+          invites={admin.adminInvites}
+          onLoadInvites={() => void adminActions.loadAdminInvites()}
+          onCreateInvite={(input) => void adminActions.createAdminInvite(input)}
+          onDeleteInvite={(token) => void adminActions.deleteAdminInvite(token)}
+          inviteBaseUrl={`${window.location.origin}${window.location.pathname}`}
           onOpenConversation={(id) => void adminActions.openAdminConversation(id)}
           llmAccess={admin.adminUserLlmAccess}
           onSaveLlmAccess={(access) => void adminActions.saveAdminUserLlmAccess(access)}

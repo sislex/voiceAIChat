@@ -39,7 +39,8 @@ export class WsClient {
     const token = this.tokenProvider ? this.tokenProvider() : undefined
     // Провайдер задан, но токена нет — соединение отложено до логина (reconnect()).
     if (this.tokenProvider && !token) return
-    const url = token ? `${this.baseUrl}?token=${encodeURIComponent(token)}` : this.baseUrl
+    // 'cookie' — маркер cookie-сессии (auth-roadmap п.5): токен в query не нужен, его отправит браузер в Cookie.
+    const url = token && token !== 'cookie' ? `${this.baseUrl}?token=${encodeURIComponent(token)}` : this.baseUrl
     const ws = new WebSocket(url)
     ws.binaryType = 'arraybuffer'
     this.ws = ws

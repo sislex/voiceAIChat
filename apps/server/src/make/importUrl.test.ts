@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { importFromUrl } from './importUrl'
+import { buildStoredZip } from './zip'
 
 vi.mock('../routes/previewProxy.js', () => ({ assertPublicHost: async () => undefined }))
 
@@ -32,5 +33,20 @@ describe('importFromUrl', () => {
     await expect(importFromUrl('ftp://x')).rejects.toThrow(/http/)
     const f = fakeFetch({ 'https://site.test/a.json': { body: '{}', type: 'application/json' } })
     await expect(importFromUrl('https://site.test/a.json', f)).rejects.toThrow(/не HTML/)
+  })
+
+  it('ссылка на GitHub: main → 404 → master, общий корень снят, подкаталог вырезан', async () => {
+    const zip = buildStoredZip([{ path: 'repo-master/index.html', data: Buffer.from('<h1>hi</h1>') }, { path: 'repo-master/site/a.css', data: Buffer.from('a{}') }])
+    const calls: string[] = []
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const href = String(input); calls.push(href)
+      if (href.endsWith('/main')) return new Response('nope', { status: 404 })
+      return new Response(new Uint8Array(zip), { status: 200, headers: { "content-type": "application/zip" } })
+    }) as unknown as typeof fetch
+    const files = await importFromUrl('https://github.com/o/repo', fetchImpl)
+    expect(calls).toEqual(['https://codeload.github.com/o/repo/zip/refs/heads/main', 'https://codeload.github.com/o/repo/zip/refs/heads/master'])
+    expect(files.map((f) => f.path).sort()).toEqual(['index.html', 'site/a.css'])
+    const sub = await importFromUrl('https://github.com/o/repo/tree/master/site', fetchImpl)
+    expect(sub.map((f) => f.path)).toEqual(['a.css'])
   })
 })

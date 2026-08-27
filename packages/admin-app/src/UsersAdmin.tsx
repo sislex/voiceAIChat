@@ -8,10 +8,10 @@ import type {
   AdminUserInfo,
   UsageReport,
   UsageUnit,
-  UserUsageSummary
-} from '@shared/admin'
+  UserUsageSummary,
+  AdminMakeStats, SecurityEvent, SecurityEventType, InviteInfo } from '@shared/admin'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
-import type { Conversation, Message, LlmProvider } from '@shared/types'
+import type { Conversation, Message, LlmProvider, SessionInfo } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { Button, Dialog, Skeleton, RefreshIndicator, EmptyState, ErrorState, ConfirmDialog } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from './loadState'
@@ -22,10 +22,15 @@ function AdminFrame({ variant, onClose, children }: { variant: 'modal' | 'page';
     : <section className="admin-page" aria-label="Пользователи" data-testid="users-overlay"><header className="admin-head"><h2>Пользователи</h2><Button onClick={onClose}>Закрыть</Button></header>{children}</section>
 }
 
+/** Подписи событий журнала безопасности (auth-roadmap п.7). */
+const SECURITY_LABEL: Record<SecurityEventType, string> = { login_new_device: 'Вход с нового устройства', inactive_blocked: 'Отключён за неактивность', reset_code_issued: 'Выдан код сброса', password_reset: 'Пароль сброшен по коду', password_changed: 'Пароль изменён', invite_created: 'Создан инвайт', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
+
 export interface UsersAdminProps {
   variant?: 'modal' | 'page'
   users: AdminUserInfo[]
   usageSummary?: UserUsageSummary[]
+  /** Метрики Make (п.38): место, публикации, просмотры — секция дашборда для админа. */
+  makeStats?: AdminMakeStats | null
   /** Обычный пользователь видит только собственную статистику без машин и админских действий. */
   isAdmin?: boolean
   status?: LoadStatus
@@ -38,11 +43,29 @@ export interface UsersAdminProps {
   conversationId: string | null
   currentUserName: string
   onSelect: (name: string) => void
-  onCreate: (name: string, password: string, role: import('@shared/types').UserRole) => void
+  onCreate: (name: string, password: string, role: import('@shared/types').UserRole, mustChangePassword?: boolean) => void
+  /** Код сброса пароля (auth-roadmap п.10): возвращает код для передачи пользователю. */
+  onResetCode?: (name: string) => Promise<{ code: string; expiresAt: number } | null>
+  /** Месячный лимит расхода LLM в USD (auth-roadmap п.17). */
+  onSetLlmLimit?: (name: string, llmLimitUsd: number | null) => void
   onUpdateRole?: (name: string, role: import('@shared/types').UserRole) => void
   onSetBlocked: (name: string, blocked: boolean) => void
   onDelete: (name: string) => void
   onLoadUsage: (unit: UsageUnit, from?: number, to?: number, conversationId?: string) => void
+  /** Сессии выбранного пользователя (auth-roadmap п.4). */
+  sessions?: SessionInfo[] | null
+  onLoadSessions?: () => void
+  onRevokeSession?: (sid: string) => void
+  /** Журнал безопасности выбранного пользователя (auth-roadmap п.7). */
+  security?: SecurityEvent[] | null
+  onLoadSecurity?: () => void
+  /** Инвайты на саморегистрацию (auth-roadmap п.8). */
+  invites?: InviteInfo[] | null
+  onLoadInvites?: () => void
+  onCreateInvite?: (input: { role: import('@shared/types').UserRole; ttlHours: number; maxUses: number; note: string }) => void
+  onDeleteInvite?: (token: string) => void
+  /** База абсолютной ссылки инвайта (origin + путь) — admin-app не трогает window, её даёт хост. */
+  inviteBaseUrl?: string
   onOpenConversation: (id: string) => void
   engines: AdminLlmEngine[]
   enginesStatus?: LoadStatus
@@ -75,6 +98,8 @@ function usd(n: number): string {
 }
 
 /** Не выдаём известную часть суммы за цену ответа с неизвестным тарифом. */
+function mb(n: number): string { return n < 1048576 ? `${Math.round(n / 1024)} КБ` : `${(n / 1048576).toFixed(1)} МБ` }
+
 function displayedUsd(n: number, costIncomplete?: boolean): string {
   return costIncomplete ? '—' : usd(n)
 }
@@ -102,6 +127,7 @@ const EMPTY_PRICE: ModelPriceInput = { provider: 'codex', model: '', inputPerMil
 export function UsersAdmin({
   users,
   usageSummary = NO_USAGE_SUMMARY,
+  makeStats = null,
   isAdmin = true,
   status = 'ready',
   error = null,
@@ -114,10 +140,22 @@ export function UsersAdmin({
   currentUserName,
   onSelect,
   onCreate,
+  onResetCode,
+  onSetLlmLimit,
   onUpdateRole = () => undefined,
   onSetBlocked,
   onDelete,
   onLoadUsage,
+  sessions,
+  onLoadSessions,
+  onRevokeSession,
+  security,
+  onLoadSecurity,
+  invites,
+  onLoadInvites,
+  onCreateInvite,
+  onDeleteInvite,
+  inviteBaseUrl = '',
   onOpenConversation,
   engines,
   enginesStatus = 'ready',
@@ -141,6 +179,17 @@ export function UsersAdmin({
   const [newRole, setNewRole] = useState<import('@shared/types').UserRole>('developer')
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
   const [confirmBlock, setConfirmBlock] = useState<{ name: string; blocked: boolean } | null>(null)
+  /** Форма инвайта (auth-roadmap п.8). */
+  const [inviteRole, setInviteRole] = useState<import('@shared/types').UserRole>('developer')
+  const [inviteHours, setInviteHours] = useState(72)
+  const [inviteUses, setInviteUses] = useState(1)
+  const [inviteNote, setInviteNote] = useState('')
+  const [invitesOpen, setInvitesOpen] = useState(false)
+  const [copiedInvite, setCopiedInvite] = useState<string | null>(null)
+  /** Временный пароль при создании (п.11) и выданный код сброса (п.10). */
+  const [newTemp, setNewTemp] = useState(true)
+  const [resetInfo, setResetInfo] = useState<{ name: string; code: string; expiresAt: number } | null>(null)
+  const [limitDraft, setLimitDraft] = useState<string>('')
   const [usageDays, setUsageDays] = useState<7 | 30 | null>(30)
   const [usageConversationId, setUsageConversationId] = useState('')
   const [engineDraft, setEngineDraft] = useState<AdminLlmEngineInput>(EMPTY_ENGINE)
@@ -149,7 +198,7 @@ export function UsersAdmin({
   const [accessDraft, setAccessDraft] = useState<UserLlmAccess[]>([])
   const [priceDraft, setPriceDraft] = useState<ModelPriceInput>(EMPTY_PRICE)
   const [editingPrice, setEditingPrice] = useState<string | null>(null)
-  const [tab, setTab] = useState<'access' | 'machines' | 'usage' | 'history'>('usage')
+  const [tab, setTab] = useState<'access' | 'machines' | 'usage' | 'history' | 'security'>('usage')
   useEffect(() => setAccessDraft(llmAccess), [selected, llmAccess])
   const accessDenied = (provider: LlmProvider, modelId: string): boolean => accessDraft.some((entry) => entry.provider === provider && (entry.modelId === '*' || entry.modelId === modelId))
   const providerAllowed = (provider: LlmProvider): boolean => !accessDraft.some((entry) => entry.provider === provider && entry.modelId === '*')
@@ -176,7 +225,7 @@ export function UsersAdmin({
   const submitCreate = (): void => {
     const n = newName.trim()
     if (!n) return
-    onCreate(n, newPass, newRole)
+    onCreate(n, newPass, newRole, newTemp)
     setNewName('')
     setNewPass('')
     setNewRole('developer')
@@ -220,7 +269,7 @@ export function UsersAdmin({
           {users.map((u) => (
             <button key={u.name} className={u.name === selected ? 'cc-item on' : 'cc-item'} onClick={() => onSelect(u.name)} data-testid="user-item">
               <span className="cc-name">
-                {u.name} {u.blocked && <span className="ublock">заблокирован</span>}
+                {u.name} {u.mustChangePassword && <span className="ublock ublock--lock" title="Временный пароль — сменит при входе">временный пароль</span>}{u.blocked && <span className="ublock" title={u.lockReason === 'auto' ? 'Автоматически: слишком много неверных паролей подряд' : undefined}>{u.lockReason === 'auto' ? 'заблокирован автоматически' : 'заблокирован'}</span>}{!u.blocked && u.lockedUntil && u.lockedUntil > Date.now() && <span className="ublock ublock--lock" title="Временный замок после неудачных входов; снимается сам или разблокировкой">замок до {new Date(u.lockedUntil).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>}
               </span>
               <span className="cc-sub">{u.role} · {u.agents.length} маш. · {u.conversationCount} разг.</span>
             </button>
@@ -228,15 +277,45 @@ export function UsersAdmin({
           {isAdmin && <div className="ucreate">
             <p className="ucreate-h">Создать пользователя</p>
             <input className="login-input" placeholder="Логин" aria-label="Логин нового пользователя" value={newName} onChange={(e) => setNewName(e.target.value)} />
-            <input className="login-input" type="password" placeholder="Пароль (можно пустой)" aria-label="Пароль нового пользователя" value={newPass} onChange={(e) => setNewPass(e.target.value)} />
+            <input className="login-input" type="password" placeholder="Пароль — не короче 10 символов" aria-label="Пароль нового пользователя" value={newPass} onChange={(e) => setNewPass(e.target.value)} />
             <select className="sel" aria-label="Роль нового пользователя" value={newRole} onChange={(e) => setNewRole(e.target.value as import('@shared/types').UserRole)}>
               <option value="developer">developer</option>
               <option value="tester">tester</option>
               <option value="observer">observer</option>
               <option value="admin">admin</option>
             </select>
+            <label className="make-autosave" title="Пользователь обязан сменить пароль при первом входе"><input type="checkbox" aria-label="Временный пароль" checked={newTemp} onChange={(e) => setNewTemp(e.target.checked)} /> временный пароль</label>
             <Button variant="primary" disabled={!newName.trim()} onClick={submitCreate}>Создать</Button>
           </div>}
+          {onLoadInvites && (
+            <details className="uadmin-invites" data-testid="admin-invites" open={invitesOpen} onToggle={(e) => { const open = (e.currentTarget as HTMLDetailsElement).open; setInvitesOpen(open); if (open) onLoadInvites() }}>
+              <summary>Инвайт-ссылки{invites ? ` (${invites.length})` : ''}</summary>
+              <form className="uadmin-invite-form" onSubmit={(e) => { e.preventDefault(); onCreateInvite?.({ role: inviteRole, ttlHours: inviteHours, maxUses: inviteUses, note: inviteNote.trim() }); setInviteNote('') }}>
+                <select aria-label="Роль по инвайту" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as import('@shared/types').UserRole)}><option value="developer">developer</option><option value="tester">tester</option><option value="observer">observer</option><option value="admin">admin</option></select>
+                <label>Срок, ч <input type="number" min={1} max={720} aria-label="Срок действия, часов" value={inviteHours} onChange={(e) => setInviteHours(Number(e.target.value) || 1)} /></label>
+                <label>Использований <input type="number" min={1} max={100} aria-label="Максимум использований" value={inviteUses} onChange={(e) => setInviteUses(Number(e.target.value) || 1)} /></label>
+                <input className="login-input" aria-label="Заметка к инвайту" placeholder="для кого (необязательно)" value={inviteNote} onChange={(e) => setInviteNote(e.target.value)} />
+                <Button size="sm" variant="primary" type="submit">Создать ссылку</Button>
+              </form>
+              {invites && invites.length > 0 && (
+                <ul className="sessions-list" role="list">
+                  {invites.map((inv) => {
+                    const url = `${inviteBaseUrl}#/invite/${encodeURIComponent(inv.token)}`
+                    const dead = inv.expiresAt < Date.now() || inv.uses >= inv.maxUses
+                    return (
+                      <li key={inv.token} className={dead ? 'sessions-item invite--dead' : 'sessions-item'}>
+                        <div><strong>{inv.role}{inv.note ? ` · ${inv.note}` : ''}</strong><small>{inv.uses}/{inv.maxUses} исп. · до {new Date(inv.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{dead ? ' · недействителен' : ''}</small><code className="invite-url">{url}</code></div>
+                        <span className="uadmin-actions">
+                          <Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard?.writeText(url).then(() => { setCopiedInvite(inv.token); setTimeout(() => setCopiedInvite(null), 1500) }) }}>{copiedInvite === inv.token ? 'Скопировано' : 'Копировать'}</Button>
+                          {onDeleteInvite && <Button size="sm" variant="ghost" onClick={() => onDeleteInvite(inv.token)}>Отозвать</Button>}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </details>
+          )}
         </nav>
 
         <div className="cc-col uadmin-detail" data-testid="user-detail">
@@ -256,6 +335,25 @@ export function UsersAdmin({
               </tbody></table>
             </section>
           )}
+          {isAdmin && !cur && makeStats && (
+            <section className="uadmin-sec" data-testid="make-stats">
+              <h3 className="uadmin-h">Make-проекты</h3>
+              {makeStats.disk && <p className={makeStats.disk.alert ? 'uusage-note uusage-disk uusage-disk--alert' : 'uusage-note uusage-disk'} role={makeStats.disk.alert ? 'alert' : undefined} data-testid="admin-disk">{makeStats.disk.alert ? '⚠ ' : ''}Диск с данными: свободно {mb(makeStats.disk.freeBytes)} из {mb(makeStats.disk.totalBytes)}{makeStats.disk.alert ? ' — меньше 10 ГБ, релизы упрутся в проверку места; очистите docker/логи' : ''}</p>}
+              <p className="uusage-note">Проектов: {makeStats.projects} · занято {mb(makeStats.bytes)} (файлы {mb(makeStats.filesBytes)}, снимки {mb(makeStats.snapshotsBytes)}, PNG стори {mb(makeStats.shotsBytes)}) · опубликовано {makeStats.published} · read-only ссылок {makeStats.shared} · просмотров публикаций {makeStats.views} · квота на проект {mb(makeStats.limitBytes)} · на пользователя {mb(makeStats.userLimitBytes)}</p>
+              {makeStats.byUser.length > 0 && (
+                <table className="utable"><thead><tr><th>Пользователь</th><th>Проектов</th><th>Занято</th><th>Опубликовано</th><th>Просмотров</th></tr></thead><tbody>
+                  {makeStats.byUser.map((u) => { const share = makeStats.userLimitBytes ? u.bytes / makeStats.userLimitBytes : 0; return <tr key={u.user} className={share >= 0.8 ? 'uadmin-warn' : undefined} data-testid={share >= 0.8 ? 'make-user-quota-warn' : undefined}><td>{u.user}</td><td>{u.projects}</td><td>{mb(u.bytes)}{share >= 0.8 ? ` ⚠ ${Math.round(share * 100)}% квоты` : ''}</td><td>{u.published}</td><td>{u.views}</td></tr> })}
+                </tbody></table>
+              )}
+              {makeStats.top.length > 0 && (
+                <details className="uusage-details"><summary>Самые тяжёлые проекты ({makeStats.top.length})</summary>
+                  <table className="utable"><thead><tr><th>Проект</th><th>Владелец</th><th>Файлов</th><th>Снимков</th><th>Занято</th><th>Публикация</th></tr></thead><tbody>
+                    {makeStats.top.map((p) => <tr key={p.conversationId}><td><code>{p.conversationId.slice(0, 8)}</code></td><td>{p.owner ?? '—'}</td><td>{p.filesCount}</td><td>{p.snapshots}</td><td>{mb(p.bytes)}</td><td>{p.published ? `да · ${p.views} просм.` : '—'}{p.shared ? ' · read-only' : ''}</td></tr>)}
+                  </tbody></table>
+                </details>
+              )}
+            </section>
+          )}
           {cur && (
             <>
               <div className="uadmin-head">
@@ -265,6 +363,7 @@ export function UsersAdmin({
                     <>
                       <select aria-label="Роль пользователя" value={cur.role} onChange={(event) => onUpdateRole(cur.name, event.target.value as import('@shared/types').UserRole)}><option value="admin">admin</option><option value="developer">developer</option><option value="tester">tester</option><option value="observer">observer</option></select>
                       <Button size="sm" onClick={() => setConfirmBlock({ name: cur.name, blocked: !cur.blocked })}>{cur.blocked ? 'Разблокировать' : 'Заблокировать'}</Button>
+                      {onResetCode && <Button size="sm" onClick={() => void onResetCode(cur.name).then((r) => { if (r) setResetInfo({ name: cur.name, ...r }) })} title="Одноразовый код на 24 часа: пользователь вводит его на экране входа вместо пароля">Код сброса</Button>}
                       {confirmDel === cur.name ? (
                         <>
                           <Button variant="danger" size="sm" onClick={() => onDelete(cur.name)}>Удалить всё</Button>
@@ -278,11 +377,36 @@ export function UsersAdmin({
                 </span>
               </div>
 
+              {onSetLlmLimit && (
+                <p className="uusage-note uadmin-limit" data-testid="admin-llm-limit">
+                  Последний вход: {cur.lastLogin ? new Date(cur.lastLogin).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'не было'} · Лимит LLM в месяц, $: <input className="login-input uadmin-limit-input" type="number" min={0} step={1} aria-label="Лимит LLM в месяц, USD" placeholder={cur.llmLimitUsd === null || cur.llmLimitUsd === undefined ? 'без лимита' : String(cur.llmLimitUsd)} value={limitDraft} onChange={(e) => setLimitDraft(e.target.value)} />
+                  <Button size="sm" onClick={() => { onSetLlmLimit(cur.name, limitDraft.trim() === '' ? null : Number(limitDraft)); setLimitDraft('') }}>Сохранить</Button>
+                </p>
+              )}
+              {resetInfo && resetInfo.name === cur.name && (
+                <p className="uusage-note" role="status" data-testid="admin-reset-code">Код сброса для <b>{cur.name}</b>: <code>{resetInfo.code}</code> — действует до {new Date(resetInfo.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}; передайте лично, повторно не показывается.</p>
+              )}
+              {onLoadSessions && (
+                <details className="uadmin-sessions" data-testid="admin-sessions" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) onLoadSessions() }}>
+                  <summary>Сессии{sessions ? ` (${sessions.length})` : ''}</summary>
+                  {sessions === null || sessions === undefined ? <p className="fsub">Загрузка…</p> : sessions.length === 0 ? <p className="fsub">Активных сессий нет.</p> : (
+                    <ul className="sessions-list" role="list">
+                      {sessions.map((s) => (
+                        <li key={s.sid} className="sessions-item">
+                          <div><strong>{s.userAgent || 'устройство'}</strong><small>{s.ip || 'адрес неизвестен'} · вход {new Date(s.createdAt).toLocaleString('ru-RU')} · активность {new Date(s.lastSeen).toLocaleString('ru-RU')}</small></div>
+                          {onRevokeSession && <Button size="sm" variant="ghost" onClick={() => onRevokeSession(s.sid)}>Завершить</Button>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </details>
+              )}
               <div className="useg" role="tablist" aria-label="Статистика пользователя">
                 <button type="button" role="tab" aria-selected={tab === 'access'} className={tab === 'access' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('access')}>Доступ к моделям</button>
                 {isAdmin && <button type="button" role="tab" aria-selected={tab === 'machines'} className={tab === 'machines' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('machines')}>Машины пользователя</button>}
                 <button type="button" role="tab" aria-selected={tab === 'usage'} className={tab === 'usage' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('usage')}>Использование моделей</button>
                 <button type="button" role="tab" aria-selected={tab === 'history'} className={tab === 'history' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('history')}>История</button>
+                {onLoadSecurity && <button type="button" role="tab" aria-selected={tab === 'security'} className={tab === 'security' ? 'useg-item on' : 'useg-item'} onClick={() => { setTab('security'); onLoadSecurity() }}>Безопасность</button>}
               </div>
 
               {isAdmin && tab === 'machines' && <section className="uadmin-sec">
@@ -345,6 +469,25 @@ export function UsersAdmin({
                 )}
               </section>}
 
+              {tab === 'security' && <section className="uadmin-sec" data-testid="admin-security">
+                <h3 className="uadmin-h">Журнал безопасности</h3>
+                {security === null || security === undefined ? <p className="fsub">Загрузка…</p> : security.length === 0 ? <EmptyState compact icon="🛡" title="Событий пока нет" description="Входы, выходы, неудачные попытки и смена пароля появятся здесь." /> : (
+                  <table className="admin-security">
+                    <thead><tr><th>Когда</th><th>Событие</th><th>IP</th><th>Устройство</th><th>Детали</th></tr></thead>
+                    <tbody>
+                      {security.map((e) => (
+                        <tr key={e.id} className={/failed|locked|blocked/.test(e.type) ? 'admin-security--bad' : undefined}>
+                          <td>{new Date(e.at).toLocaleString('ru-RU')}</td>
+                          <td>{SECURITY_LABEL[e.type] ?? e.type}</td>
+                          <td>{e.ip}</td>
+                          <td title={e.userAgent}>{e.userAgent.slice(0, 40)}</td>
+                          <td>{e.details}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </section>}
               {tab === 'history' && <section className="uadmin-sec">
                 <h3 className="uadmin-h">История ({conversations.length})</h3>
                 {conversations.length === 0 && <EmptyState compact icon="💬" title="Разговоров пока нет" description="Появятся, как только пользователь начнёт первый чат." />}

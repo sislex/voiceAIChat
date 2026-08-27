@@ -272,6 +272,14 @@ export interface SidebarProps {
   currentUser?: SessionUser | null
   /** Выйти из сессии (web). */
   onLogout?: () => void
+  /** Сессии и устройства (auth-roadmap п.4); нет в desktop. */
+  onOpenSessions?: () => void
+  /** Двухфакторная защита (auth-roadmap п.6); нет в desktop. */
+  onOpenTwoFactor?: () => void
+  /** Смена своего пароля (auth-roadmap п.12). */
+  onOpenChangePassword?: () => void
+  /** Аватар пользователя (эмодзи/буквы) из персонализации; null — 👤. */
+  avatar?: string | null
   /** Режим списка: чаты или проекты. По умолчанию 'chats'. */
   mode?: SidebarMode
   /** Сегмент «Чаты | Проекты»; не задан — переключатель скрыт (desktop/local). */
@@ -335,6 +343,10 @@ export function Sidebar({
   onOpenCi,
   currentUser,
   onLogout,
+  onOpenSessions,
+  onOpenTwoFactor,
+  onOpenChangePassword,
+  avatar = null,
   mode = 'chats',
   onModeChange,
   activeProjectId = null,
@@ -737,7 +749,7 @@ export function Sidebar({
               aria-expanded={acctOpen}
               title={`Роль: ${currentUser.role}`}
             >
-              <span className="footico">👤</span>
+              <span className={avatar ? 'footico footico--avatar' : 'footico'} data-testid="account-avatar">{avatar ?? '👤'}</span>
               <span className="username">{currentUser.name}</span>
               <span className="acct-caret" aria-hidden>▾</span>
             </Button>
@@ -813,6 +825,24 @@ export function Sidebar({
                   <GearIcon />
                   Настройки
                 </Button>
+                {onOpenSessions && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenSessions)}>
+                    <span className="footico">📱</span>
+                    Сессии и устройства
+                  </Button>
+                )}
+                {onOpenChangePassword && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenChangePassword)}>
+                    <span className="footico">🔑</span>
+                    Сменить пароль
+                  </Button>
+                )}
+                {onOpenTwoFactor && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenTwoFactor)}>
+                    <span className="footico">🔐</span>
+                    Двухфакторная защита
+                  </Button>
+                )}
                 {onLogout && (
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onLogout)}>
                     <span className="footico">🚪</span>

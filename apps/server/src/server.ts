@@ -33,7 +33,14 @@ import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { BoardHub, NotificationHub } from './projects/boardHub.js'
-import { registerAuth, resolveUser, uid } from './users/auth.js'
+import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.js'
+
+/** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
+function cookieToken(header: string | undefined): string | undefined {
+  if (!header) return undefined
+  for (const item of header.split(';')) { const [k, ...rest] = item.trim().split('='); if (k === 'vc_session') return rest.join('=') }
+  return undefined
+}
 import { loadOrCreateSecret } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
@@ -42,6 +49,7 @@ import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from '.
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
 import { registerMakeMcp, MAKE_MCP_PATH } from './mcp/makeMcp.js'
 import { registerMakeRoutes } from './routes/make.js'
+import { MakeLibrary } from './make/library.js'
 import { MakeWorkspaces } from './make/workspace.js'
 import { MakeHub } from './make/hub.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
@@ -388,8 +396,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // уходят владельцу кадром make.changed через MakeHub.
   const makeWorkspaces = new MakeWorkspaces(opts.config.dataDir)
   const makeHub = new MakeHub()
+  // Квота на пользователя (roadmap-2 п.15): все проекты Make владельца разговора.
+  makeWorkspaces.setProjectsOfOwner((id) => {
+    const owner = db.conversationOwner(id)
+    return owner ? db.listConversations(owner, { includeCompleted: true }).filter((c) => c.assistantKind === 'make').map((c) => c.id) : null
+  })
   registerMakeMcp(app, { workspaces: makeWorkspaces, hub: makeHub, ownerOf: (id) => db.conversationOwner(id) }, mcpSecret)
-  registerMakeRoutes(app, { db, workspaces: makeWorkspaces, hub: makeHub })
+  registerMakeRoutes(app, { db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir) })
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
   registerKbMcp(app, {
@@ -480,7 +493,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
-  registerAdminRoutes(app, db, agentRegistry, deployTrigger)
+  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats((id) => db.conversationOwner(id)))
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()
@@ -583,6 +596,28 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Тестовые buildServer используют фейковые реестры и запускают сервис явно.
   // Production-процесс делает первый проход после старта и затем каждые шесть часов.
   if (!process.env.VITEST) {
+    // Фоновая очистка Make (roadmap-2 п.16): снимки и PNG стори старше 30 дней, раз в 6 часов и при старте.
+    const makeSweep = async (): Promise<void> => {
+      try { const r = await makeWorkspaces.sweep(); if (r.snapshots || r.shots) app.log.info({ event: 'make_sweep', ...r }) } catch (error) { app.log.warn({ event: 'make_sweep_failed', error: String(error) }) }
+    }
+    const makeSweepTimer = setInterval(() => { void makeSweep() }, 6 * 60 * 60 * 1000)
+    makeSweepTimer.unref()
+    app.addHook('onClose', async () => clearInterval(makeSweepTimer))
+    queueMicrotask(() => { void makeSweep() })
+    // Учётки и сессии (auth-roadmap п.18): раз в сутки чистим истёкшие сессии/инвайты и отключаем неактивных (VC_INACTIVE_DAYS, 0 — выкл).
+    const inactiveDays = Number(process.env.VC_INACTIVE_DAYS ?? 180)
+    const accountsSweep = (): void => {
+      try {
+        const sessions = db.pruneSessions(), invites = db.pruneInvites()
+        const blocked = inactiveDays > 0 ? db.blockInactiveUsers(inactiveDays) : []
+        for (const name of blocked) db.logSecurityEvent({ user: name, type: 'inactive_blocked', details: `нет входов ${inactiveDays} дн.` })
+        if (sessions || invites || blocked.length) app.log.info({ event: 'accounts_sweep', sessions, invites, blocked }, 'accounts sweep')
+      } catch (error) { app.log.warn({ error }, 'accounts sweep failed') }
+    }
+    accountsSweep()
+    const accountsTimer = setInterval(accountsSweep, 24 * 60 * 60 * 1000)
+    accountsTimer.unref()
+    app.addHook('onClose', async () => clearInterval(accountsTimer))
     const cleanupTimer = setInterval(() => { void generatedCleanup.run() }, 6 * 60 * 60 * 1000)
     cleanupTimer.unref()
     app.addHook('onClose', async () => clearInterval(cleanupTimer))
@@ -845,6 +880,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     previewMcpBaseUrl,
     consoleMcpBaseUrl,
     makeMcpBaseUrl,
+    makeHub,
+    makeContext: (id) => makeWorkspaces.promptContext(id),
     previewTool: previewToolBroker,
     remoteFileTool: remoteFileBroker,
     onAuthError: (userId, provider, message) => { authStatus.reportRunError(userId, provider, message) }
@@ -1524,8 +1561,9 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         return
       }
       // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
-      const token = (request.query as { token?: string } | undefined)?.token
-      const user = resolveUser(db, token, sessionSecret)
+      // Токен в query (desktop/старые клиенты) либо cookie-сессия web (п.5): браузер шлёт cookie при upgrade сам.
+      const token = (request.query as { token?: string } | undefined)?.token ?? cookieToken(request.headers.cookie)
+      const user = resolveActiveUser(db, token, sessionSecret)
       if (!user) {
         socket.close()
         return

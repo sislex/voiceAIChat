@@ -18,17 +18,32 @@ export interface CodeEditorProps {
   onSelectionChange?: (sel: EditorSelection | null) => void
   /** Cmd/Ctrl+I в редакторе — «сделай с выделенным…» (⌘K занят палитрой команд приложения). */
   onInlineCommand?: () => void
+  /** Только чтение (read-only шаринг, п.33): правки и сохранение отключены. */
+  readOnly?: boolean
+  /** Строки, изменённые последней правкой ассистента (roadmap-4 п.9) — подсвечиваются в Monaco. */
+  changedLines?: number[]
 }
 
 export interface EditorSelection { startLine: number; endLine: number; text: string }
 
-export interface EditorMarker { line: number; column?: number; message: string }
+export interface EditorMarker { line: number; column?: number; message: string; severity?: 'error' | 'warning' }
+
+import { useMediaQuery } from '../lib/mediaQuery'
 
 const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)
+
+/** Телефонная ширина для редактора (п.34): Monaco на узком экране с виртуальной клавиатурой неудобен и тяжёл. */
+export const PHONE_EDITOR_QUERY = '(max-width: 600px)'
+
+/** Лёгкий редактор (textarea + подсветка) вместо Monaco: в jsdom и на телефоне. */
+export function shouldUseFallbackEditor(jsdom: boolean, phone: boolean): boolean {
+  return jsdom || phone
+}
 const MonacoCodeEditor = lazy(() => import('./code/MonacoCodeEditor'))
 
 export function CodeEditor(props: CodeEditorProps): JSX.Element {
-  if (isJsdom) return <FallbackEditor {...props} />
+  const phone = useMediaQuery(PHONE_EDITOR_QUERY)
+  if (shouldUseFallbackEditor(isJsdom, phone)) return <FallbackEditor {...props} />
   return (
     <Suspense fallback={<FallbackEditor {...props} />}>
       <MonacoCodeEditor {...props} />
@@ -37,7 +52,7 @@ export function CodeEditor(props: CodeEditorProps): JSX.Element {
 }
 
 /** Textarea + подсветка: прозрачный textarea поверх <pre> с теми же метриками, скролл синхронизирован. */
-export function FallbackEditor({ path, value, onChange, onSave, ariaLabel, onSelectionChange, onInlineCommand }: CodeEditorProps): JSX.Element {
+export function FallbackEditor({ path, value, onChange, onSave, ariaLabel, onSelectionChange, onInlineCommand, readOnly }: CodeEditorProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const highlightRef = useRef<HTMLPreElement | null>(null)
   const highlighted = useMemo(() => highlightCode(value, path), [value, path])
@@ -62,6 +77,7 @@ export function FallbackEditor({ path, value, onChange, onSave, ariaLabel, onSel
       <pre ref={highlightRef} className="make-highlight" aria-hidden="true"><code dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
       <textarea
         ref={textareaRef}
+        readOnly={readOnly}
         className="make-textarea"
         aria-label={ariaLabel}
         value={value}

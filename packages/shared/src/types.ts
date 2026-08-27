@@ -356,7 +356,27 @@ export interface SessionUser {
   /** Логин (он же идентификатор владельца данных). */
   name: string
   role: UserRole
+  /** Временный пароль — до смены доступна только смена пароля (auth-roadmap п.11). */
+  mustChangePassword?: boolean
 }
+
+/** Сессия пользователя (auth-roadmap п.4): устройство, адрес, активность; `current` — та, с которой сделан запрос. */
+export interface SessionInfo {
+  sid: string
+  user: string
+  createdAt: number
+  lastSeen: number
+  expiresAt: number
+  ip: string
+  userAgent: string
+  current?: boolean
+}
+/** Ответ логина при включённом втором факторе (auth-roadmap п.6): пароль верен, нужен код по одноразовому тикету. */
+export interface LoginChallenge { requires2fa: true; ticket: string }
+
+/** TTL сессии: «запомнить меня» — 30 дней без активности; без него — 12 часов (auth-roadmap п.15). */
+export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000
+export const SESSION_SHORT_TTL_MS = 12 * 60 * 60_000
 
 /**
  * Режим прав агента (передаётся в `claude --permission-mode`). Безопасный для
@@ -477,6 +497,10 @@ export interface SessionUsage extends TurnUsage {
 export interface TurnMeta extends TurnUsage {
   /** DOM-область, выбранная пользователем в веб-превью для этой реплики. */
   previewElement?: PreviewElementPayload
+  /** Контекст редактора Make: какой файл открыт и что выделено (п.21). */
+  editorContext?: EditorContextPayload
+  /** Снимок «До правок», сделанный перед первой записью этого хода — для кнопки «Откатить правки». */
+  makeSnapshotId?: string
   /** Длительность хода, мс. */
   durationMs?: number
   /** Число ходов агента (num_turns). */
@@ -681,6 +705,8 @@ export interface UserPersonalization {
   responseLanguage: string | null
   responseStyle: PersonalizationResponseStyle
   tone: PersonalizationTone
+  /** Аватар — эмодзи или 1–2 буквы (auth-roadmap п.12); null — стандартная иконка. */
+  avatar?: string | null
 }
 
 export const DEFAULT_PERSONALIZATION: UserPersonalization = {
@@ -690,7 +716,8 @@ export const DEFAULT_PERSONALIZATION: UserPersonalization = {
   birthYear: null,
   responseLanguage: null,
   responseStyle: 'normal',
-  tone: 'neutral'
+  tone: 'neutral',
+  avatar: null
 }
 
 /** Пользовательские настройки приложения. */
@@ -900,4 +927,13 @@ export interface SttResult {
   text: string
   /** true — финальный результат; false — частичная гипотеза. */
   isFinal: boolean
+}
+
+/** Открытый файл и выделение в редакторе Make — уходит модели вместе с сообщением как контекст «правь здесь». */
+export interface EditorContextPayload {
+  path: string
+  startLine?: number
+  endLine?: number
+  /** Фрагмент выделения (обрезан до 2000 символов). */
+  snippet?: string
 }

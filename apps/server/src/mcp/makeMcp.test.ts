@@ -62,6 +62,9 @@ describe('makeMcp', () => {
     await rpc(call('make_write_file', { path: 'app.js', content: 'x' }))
     const state = await workspaces.state(CONV)
     expect(state.snapshots.map((s) => s.label)).toEqual(['До правок ассистента'])
+    // Ход → снимок (roadmap-2 п.2): turns.ts кладёт этот id в meta ответа.
+    expect(hub.turnSnapshot('t1')).toBe(state.snapshots[0]!.id)
+    expect(hub.turnSnapshot('nope')).toBeUndefined()
     expect(events.filter((e) => e.t === 'make.changed')).toHaveLength(2)
     expect(events[0]).toMatchObject({ t: 'make.changed', conversationId: CONV, paths: ['index.html'] })
 
@@ -97,5 +100,31 @@ describe('makeMcp', () => {
     await rpc(call('make_write_file', { path: 'missing.js', content: '1' }))
     const ok = resultText((await rpc(call('make_check'))).json())
     expect(ok.isError).toBe(false)
+  })
+
+  it('make_write_file возвращает замечания по записанному файлу: битая ссылка и ошибка компиляции', async () => {
+    await app.close()
+    await setup()
+    const w = resultText((await rpc(call('make_write_file', { path: 'index.html', content: '<link rel="stylesheet" href="nope.css"><h1>a</h1>' }))).json())
+    expect(w.text).toContain('Замечания по файлу')
+    expect(w.text).toContain('nope.css')
+    const ok = resultText((await rpc(call('make_write_file', { path: 'index.html', content: '<h1>a</h1>' }))).json())
+    expect(ok.text).not.toContain('Замечания')
+    const bad = resultText((await rpc(call('make_write_file', { path: 'src/App.tsx', content: 'export const A = () => <div>' }))).json())
+    expect(bad.text).toContain('Ошибка компиляции')
+  })
+
+  it('make_apply_changes откатывает транзакцию при ошибке компиляции; make_edit_file правит фрагмент', async () => {
+    await app.close()
+    await setup()
+    await rpc(INIT)
+    const bad = resultText((await rpc(call('make_apply_changes', { files: [{ path: 'index.html', content: '<h1>tx</h1>' }, { path: 'src/App.tsx', content: 'export const A = () => <div>' }] }))).json())
+    expect(bad.text).toContain('откачены')
+    expect((await workspaces.read(CONV, 'index.html')).content).not.toBe('<h1>tx</h1>')
+    const ok = resultText((await rpc(call('make_apply_changes', { files: [{ path: 'index.html', content: '<h1>tx</h1>' }] }))).json())
+    expect(ok.text).toContain('Записано файлов: 1')
+    const edited = resultText((await rpc(call('make_edit_file', { path: 'index.html', find: 'tx', replace: 'edited' }))).json())
+    expect(edited.text).toContain('Заменено вхождений: 1')
+    expect((await workspaces.read(CONV, 'index.html')).content).toBe('<h1>edited</h1>')
   })
 })

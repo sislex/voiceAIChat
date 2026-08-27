@@ -42,14 +42,43 @@ export interface MakePublication {
   /** Закреплённый снимок: ссылка отдаёт его файлы, а не текущие; null — «живая» публикация. */
   snapshotId?: string | null
   snapshotLabel?: string | null
+  /** Человекочитаемый адрес `/s/<slug>/` (п.25); null — только токен. */
+  slug?: string | null
+  slugUrl?: string | null
+  /** Ссылка закрыта паролем: посетитель вводит его один раз, дальше — cookie. */
+  passwordProtected?: boolean
+  /** Сколько раз открывали index.html публикации. */
+  views?: number
+  /** История публикаций (roadmap-2 п.11): что и когда было опубликовано; последняя запись — текущая. */
+  history?: MakePublishEntry[]
+  /** Аналитика просмотров (roadmap-3 п.3): по дням (последние 90) и по хостам-рефererам (топ-20). */
+  stats?: MakePublishStats
+  /** Зрители могут оставлять комментарии (roadmap-4 п.34): виджет на странице публикации, модерация владельцем. */
+  allowComments?: boolean
+}
+
+export interface MakePublishStats {
+  days: Array<{ day: string; views: number }>
+  referers: Array<{ host: string; views: number }>
+}
+
+export interface MakePublishEntry {
+  at: number
+  /** null — «живая» публикация текущих файлов. */
+  snapshotId: string | null
+  snapshotLabel: string | null
 }
 
 /** Замечание статической проверки проекта (битые ссылки, отсутствующие файлы…). */
 export interface MakeCheckIssue {
   /** Файл, где найдено. */
   path: string
-  kind: 'missing-file' | 'no-index' | 'external-script' | 'empty-file' | 'compile-error'
+  kind: 'missing-file' | 'no-index' | 'external-script' | 'empty-file' | 'compile-error' | 'lint'
   message: string
+  /** `warning` — замечание линтера (roadmap-4 п.12): не блокирует транзакцию `make_apply_changes`; по умолчанию — ошибка. */
+  severity?: 'error' | 'warning'
+  /** Идентификатор правила линтера (`no-console`, `color-hex`…). */
+  rule?: string
   /** Строка (с 1) — у ошибок компиляции; редактор ставит по ней маркер. */
   line?: number
   column?: number
@@ -71,6 +100,8 @@ export interface MakeStoryFile {
   /** `title` из default-экспорта или имя файла без суффикса. */
   title: string
   stories: string[]
+  /** Имена стори с play-функцией (интерактивный тест) — по регулярке в исходнике. */
+  withPlay?: string[]
 }
 
 /** Сравнение снимка с текущим проектом: по файлам. */
@@ -89,6 +120,12 @@ export interface MakeConsoleLine { level: 'log' | 'info' | 'warn' | 'error'; tex
 /** Сетевой запрос из превью (fetch/XHR), перехваченный инспектор-скриптом. */
 export interface MakeNetworkEntry { method: string; url: string; status: number; ok: boolean; ms: number; at: number; kind: 'fetch' | 'xhr' }
 
+/** Визуальный снимок стори (PNG, снятый на клиенте), хранится на сервере вне файлов проекта. */
+export interface MakeStoryShot { id: string; file: string; story: string; at: number; rev: number }
+
+/** Элемент личной библиотеки компонентов (файлы компонента + сториз из какого-то проекта). */
+export interface MakeLibraryItem { slug: string; name: string; files: string[]; bytes: number; sourceConversationId: string; updatedAt: number }
+
 export type MakeImportMode = 'replace' | 'merge'
 
 /** Файлы, которые сервер транспилирует esbuild при отдаче превью (JSX/TS → ESM). */
@@ -98,6 +135,17 @@ export const isMakeStoriesPath = (path: string): boolean => /\.stories\.(jsx|tsx
 
 /** Страница-раннер сториз внутри превью проекта: `?file=<stories>&story=<name>`. */
 export const MAKE_STORIES_PAGE = '__stories__'
+/** Галерея всех стори проекта (на превью и на публикации). */
+export const MAKE_GALLERY_PAGE = '__gallery__'
+/** Комментарии зрителей публикации (roadmap-4 п.34): `/p/<token>/__comments__` GET/POST. */
+export const MAKE_PUBLIC_COMMENTS_PAGE = '__comments__'
+/** Превью файлов снимка (roadmap-4 п.37): `/api/preview/make/<id>/__snapshot__/<snapshotId>/<файл>`. */
+export const MAKE_SNAPSHOT_PREVIEW = '__snapshot__'
+/** Раннер тестов компонентов (roadmap-4 п.3): `?file=<*.test.tsx>` — выполняет все test() файла, шлёт vc-make.test. */
+export const MAKE_TESTS_PAGE = '__tests__'
+export const isMakeTestPath = (path: string): boolean => /\.test\.(jsx|tsx|js|ts)$/i.test(path)
+/** Тест-файл компонента: имена тестов вытаскиваются регуляркой по `test('…'`. */
+export interface MakeTestFile { path: string; names: string[]; component: string | null }
 
 /** Import map по умолчанию для React-проектов: React из esm.sh, версии закреплены. */
 export const MAKE_REACT_IMPORT_MAP: Record<string, string> = {
@@ -114,11 +162,49 @@ export interface MakeProjectState {
   /** Монотонный номер изменения — UI перезагружает превью, когда он растёт. */
   rev: number
   published: MakePublication | null
+  /** Read-only ссылка внутри ChatAI (п.33): любой вошедший пользователь видит проект без права правок. */
+  shared?: MakeShare | null
 }
+
+export interface MakeShare {
+  token: string
+  createdAt: number
+  /** Hash-маршрут приложения: `#/make-shared/<token>`. */
+  url: string
+  /** Именные доступы участников ChatAI (roadmap-3 п.6): редактор правит файлы, зритель только смотрит. */
+  grants?: MakeShareGrant[]
+}
+
+export type MakeShareRole = 'editor' | 'viewer'
+export interface MakeShareGrant { user: string; role: MakeShareRole }
+
+/** Что видит получатель read-only ссылки. */
+export interface MakeSharedState {
+  token: string
+  owner: string
+  title: string
+  /** Роль текущего пользователя по именному доступу; null — только по ссылке (чтение). */
+  role: MakeShareRole | null
+  /** Id разговора — для записи файлов редактором через обычные `/api/make/:id/*`. */
+  conversationId: string
+  files: MakeFileInfo[]
+  snapshots: MakeSnapshot[]
+  rev: number
+}
+
+export const MAKE_SHARED_ROUTE = '/make-shared/'
+export const makeSharedUrl = (token: string): string => `#${MAKE_SHARED_ROUTE}${encodeURIComponent(token)}`
 
 /** Публичный префикс публикаций: маршрут вне `/api/`, поэтому без Bearer/cookie. */
 export const MAKE_PUBLIC_PREFIX = '/p/'
 export const makePublicUrl = (token: string): string => `${MAKE_PUBLIC_PREFIX}${encodeURIComponent(token)}/`
+/** Префикс адресов по slug: `/s/<slug>/` — то же содержимое, что `/p/<token>/`, но запоминаемый адрес. */
+export const MAKE_SLUG_PREFIX = '/s/'
+export const makeSlugUrl = (slug: string): string => `${MAKE_SLUG_PREFIX}${encodeURIComponent(slug)}/`
+/** Slug: латиница/цифры/дефис, 3–40 символов, не начинается с дефиса. */
+export const MAKE_SLUG_RE = /^[a-z0-9][a-z0-9-]{2,39}$/
+export const MAKE_RESERVED_SLUGS: ReadonlySet<string> = new Set(['api', 'admin', 'p', 's', 'www', 'static', 'assets', 'login', 'make'])
+export const isValidMakeSlug = (slug: string): boolean => MAKE_SLUG_RE.test(slug) && !MAKE_RESERVED_SLUGS.has(slug)
 
 export const MAKE_LIMITS = {
   /** Максимальный размер одного файла (байты). */
@@ -128,8 +214,84 @@ export const MAKE_LIMITS = {
   /** Максимум хранимых снимков; старые удаляются. */
   maxSnapshots: 50,
   /** Максимальная глубина вложенности каталогов. */
-  maxDepth: 8
+  maxDepth: 8,
+  /** Квота проекта целиком: файлы + снимки + PNG-снимки стори (байты). */
+  maxProjectBytes: 64 * 1024 * 1024,
+  /** Квота на пользователя — сумма по всем его проектам Make (roadmap-2 п.15). */
+  maxUserBytes: 512 * 1024 * 1024
 } as const
+
+/** Занятое место проекта (п.30) по составляющим — для полосы квоты и диалога очистки. */
+export interface MakeUsage {
+  filesBytes: number
+  filesCount: number
+  snapshotsBytes: number
+  snapshotsCount: number
+  shotsBytes: number
+  shotsCount: number
+  totalBytes: number
+  limitBytes: number
+  /** Бинарные файлы, на которые не ссылается ни один текстовый файл проекта. */
+  unusedAssets: { path: string; size: number }[]
+}
+
+/** Комментарий к элементу превью (п.32): привязан к селектору, автор — имя пользователя. */
+export interface MakeComment {
+  id: string
+  selector: string
+  /** Краткое описание элемента на момент комментария (тег + текст) — селектор может «уехать». */
+  elementLabel: string
+  text: string
+  author: string
+  createdAt: number
+  resolved: boolean
+  /** Комментарии зрителей публикации (roadmap-4 п.34): `pending` до одобрения владельцем; свои — `approved` (по умолчанию). */
+  status?: 'pending' | 'approved'
+  /** Имя, которое назвал анонимный зритель. */
+  guestName?: string
+}
+
+/** Комментарий, отдаваемый зрителям публикации: без селектора-внутренностей и автора-логина. */
+export interface MakePublicComment { id: string; elementLabel: string; text: string; createdAt: number; guestName?: string }
+
+/** Псевдопуть в `make.changed`, по которому вкладки узнают об изменении комментариев (roadmap-2 п.7); rev не меняется. */
+export const MAKE_COMMENTS_SYNC_PATH = '.comments.json'
+
+/** Одна вкладка/окно с открытым проектом (roadmap-2 п.14). */
+export interface MakePresenceClient {
+  clientId: string
+  user: string
+  /** Открытый в редакторе файл; null — режим превью/истории. */
+  path: string | null
+  /** Есть несохранённые правки — файл считается занятым этой вкладкой. */
+  editing: boolean
+  at: number
+}
+
+/** Настройки проекта Make для ассистента (roadmap-4 пп.6–7): заметки-память и режим работы. Хранятся в `.make/`. */
+export type MakeAssistantMode = 'balanced' | 'designer' | 'developer'
+export interface MakeProjectNotes { notes: string; mode: MakeAssistantMode }
+export const MAKE_MODE_HINTS: Record<MakeAssistantMode, string> = {
+  balanced: '',
+  designer: 'Режим «Дизайнер»: приоритет — визуальная система (токены, типографика, отступы, состояния, адаптив, доступность). Логику и данные не переписывай без просьбы; предлагай варианты оформления и объясняй выбор коротко.',
+  developer: 'Режим «Разработчик»: приоритет — структура кода, состояние, обработка ошибок, тесты компонентов (*.test.tsx), производительность. Визуал меняй минимально и только через существующие токены.'
+}
+
+export interface MakeCleanupOptions {
+  /** Оставить N последних снимков (остальные удалить); undefined — не трогать. */
+  keepSnapshots?: number
+  /** Удалить все PNG-снимки стори. */
+  shots?: boolean
+  /** Удалить неиспользуемые ассеты (по списку из usage). */
+  unusedAssets?: boolean
+}
+
+export interface MakeCleanupResult {
+  freedBytes: number
+  removed: { snapshots: number; shots: number; assets: number }
+  usage: MakeUsage
+  state: MakeProjectState
+}
 
 /** Расширения, которые панель считает текстом и открывает в редакторе. */
 export const MAKE_TEXT_EXTENSIONS = new Set([
@@ -207,7 +369,7 @@ h1 { margin: 0 0 12px; font-size: 32px; }
 p { margin: 0; line-height: 1.5; color: #5b6170; }
 `,
   'app.js': `// Точка входа проекта. Ассистент дописывает поведение сюда или в новые файлы.
-console.log('Make: проект загружен');
+document.documentElement.dataset.makeReady = 'true';
 `
 }
 
@@ -563,3 +725,18 @@ export const MAKE_STARTER_PROMPTS: readonly MakeStarterPrompt[] = [
   { id: 'game-2048', group: 'tool', title: 'Игра 2048', prompt: 'Сделай игру 2048: поле 4×4, управление стрелками и свайпами, анимация плиток, счёт и лучший результат в localStorage, кнопка «Новая игра», экран победы/поражения. Аккуратная типографика.' },
   { id: 'markdown', group: 'tool', title: 'Markdown-редактор', prompt: 'Создай Markdown-редактор с живым превью в две колонки: свой простой парсер (заголовки, списки, жирный/курсив, ссылки, код), панель инструментов, счётчик слов, автосохранение в localStorage и экспорт в .md.' }
 ]
+
+/**
+ * «Большой» запрос к Make (п.20): переделка всего проекта, редизайн, «с нуля». Для таких ходов
+ * сервер включает режим «План»: модель сначала перечисляет файлы и изменения, правки — после
+ * подтверждения. Короткие точечные просьбы («сделай кнопку синей») идут как обычно.
+ */
+export function isBigMakeRequest(text: string): boolean {
+  // Служебные блоки (контекст редактора, выбранный элемент превью) — не слова пользователя: режем до них,
+  // иначе «файл целиком» из подсказки включал бы режим плана на любую мелкую правку.
+  const t = text.split(/\n\n\[Контекст редактора Make\]|\n*--- BEGIN UNTRUSTED/)[0]!.trim().toLocaleLowerCase('ru-RU')
+  if (!t) return false
+  if (/\b(да|давай|делай|подтверждаю|ок|окей|поехали|go|yes|согласен)\b/.test(t) && t.length < 80) return false
+  if (t.length > 600) return true
+  return /(перепиш|передел|с нуля|полностью|целиком|редизайн|весь сайт|все страниц|всё приложение|все компонент|новый дизайн|переверста|мигрир|перенес(и|ти) на|rewrite|redesign|from scratch)/.test(t)
+}
