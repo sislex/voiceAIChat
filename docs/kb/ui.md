@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: ea74f2c0
+checked: 25e0585a
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -474,7 +474,10 @@ contribution-модулями — полный пакет тянул 4 МБ; в�
 **Ассеты** — диалог `make-assets` (кнопка «Ассеты (N)» в режиме «Код»): бинарные файлы с превью
 картинок, «Путь»/«<img>» копируют в буфер (`lib/clipboard`), ✕ удаляет. **История → «Сравнить»**:
 `make:snapshotDiff` → список добавленных/удалённых/изменённых с размерами и «Вернуть файл»
-(`make:restoreFile`, остальные файлы не трогаются). **Скачать** (⇩) — диалог `make-export`: «Статика как
+(`make:restoreFile`, остальные файлы не трогаются); клик по имени текстового файла открывает **diff-вью**
+(`make-file-diff`): `components/CodeDiff.tsx` — Monaco `DiffEditor` (лениво, `code/MonacoDiffEditor.tsx`,
+read-only, side-by-side) или построчный фолбэк в jsdom; слева `make:snapshotFile`, справа `make:read`,
+в действиях — «Вернуть файл из снимка». **Скачать** (⇩) — диалог `make-export`: «Статика как
 есть» или «Vite-проект» (`?vite=1`: package.json/vite.config/README/.gitignore, tsconfig для TS).
 **Импорт** (⇪) — диалог `make-import`: режим replace/merge, ZIP через `make:import` (base64) или
 страница по URL через `make:importUrl`; перед импортом сервер делает снимок.

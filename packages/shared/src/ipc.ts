@@ -152,6 +152,8 @@ export interface IpcInvokeMap {
   'make:search': { arg: { conversationId: string; query: string }; result: { matches: MakeSearchMatch[] } }
   'make:stories': { arg: { conversationId: string }; result: { files: MakeStoryFile[] } }
   'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
+  /** Текст файла из снимка — для diff-вью. */
+  'make:snapshotFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeFileContent }
   'make:restoreFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeProjectState }
   /** Импорт ZIP (base64) — replace очищает проект, merge дописывает поверх. */
   'make:import': { arg: { conversationId: string; dataBase64: string; mode: MakeImportMode }; result: MakeProjectState }
@@ -905,6 +907,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:search',
   'make:stories',
   'make:snapshotDiff',
+  'make:snapshotFile',
   'make:restoreFile',
   'make:import',
   'make:importUrl',

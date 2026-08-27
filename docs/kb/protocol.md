@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-27
-checked: ea74f2c0
+checked: 25e0585a
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -283,6 +283,6 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 `REST.makeSearch` (`GET …/search?q=` → `{matches: MakeSearchMatch[]}`), `REST.makeStories` (`GET …/stories` →
 `{files: MakeStoryFile[]}`), `REST.makeStoriesPage` (`/api/preview/make/:id/__stories__`, cookie) — мосты
 `make:search`, `make:stories`. Ещё: `REST.makeSnapshotDiff` (GET `…/snapshots/:sid/diff` → `MakeSnapshotDiff`),
-`REST.makeRestoreFile` (POST `…/snapshots/:sid/restore-file {path}`), `REST.makeImport` (POST `…/import
+`REST.makeSnapshotFile` (GET `…/snapshots/:sid/file?path=` → `MakeFileContent`), `REST.makeRestoreFile` (POST `…/snapshots/:sid/restore-file {path}`), `REST.makeImport` (POST `…/import
 {dataBase64, mode}`, bodyLimit 12 МБ), `REST.makeImportUrl` (POST `…/import-url {url, mode}`), `export.zip?vite=1`;
 мосты `make:snapshotDiff/restoreFile/import/importUrl`. Сообщение iframe → панель: `vc-make.console`. Константы `MAKE_TRANSPILED_EXTENSIONS`, `MAKE_STORIES_PAGE`, `MAKE_REACT_IMPORT_MAP`.

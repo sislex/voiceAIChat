@@ -280,6 +280,18 @@ export class MakeWorkspaces {
     return { snapshotId, files }
   }
 
+  /** Текст файла из снимка (для сравнения с текущим). */
+  async snapshotFile(conversationId: string, snapshotId: string, rawPath: string): Promise<MakeFileContent> {
+    if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
+    const path = normalizeMakePath(rawPath)
+    if (!path) throw new MakeError('invalid_path', 'Недопустимый путь')
+    if (!isMakeTextPath(path)) throw new MakeError('not_text', `Файл «${path}» не текстовый`)
+    const src = join(this.dirOf(conversationId), SNAPSHOTS_DIR, snapshotId, 'files', ...path.split('/'))
+    if (!existsSync(src)) throw new MakeError('not_found', `В снимке нет файла «${path}»`)
+    const data = await readFile(src)
+    return { path, size: data.byteLength, updatedAt: (await stat(src)).mtimeMs, content: data.toString('utf8') }
+  }
+
   /** Вернуть один файл из снимка, остальное не трогая. */
   async restoreFile(conversationId: string, snapshotId: string, rawPath: string): Promise<MakeProjectState> {
     if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')

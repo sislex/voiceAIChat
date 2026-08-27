@@ -155,6 +155,7 @@ export const REST = {
   makeUpload: (id: string) => `/api/make/${encodeURIComponent(id)}/upload`,
   makeSearch: (id: string) => `/api/make/${encodeURIComponent(id)}/search`,
   makeSnapshotDiff: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/diff`,
+  makeSnapshotFile: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/file`,
   makeRestoreFile: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/restore-file`,
   makeImport: (id: string) => `/api/make/${encodeURIComponent(id)}/import`,
   makeImportUrl: (id: string) => `/api/make/${encodeURIComponent(id)}/import-url`,

@@ -3,6 +3,7 @@ import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@v
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import { REST } from '@shared/protocol'
 import { CodeEditor } from './CodeEditor'
+import { CodeDiff } from './CodeDiff'
 import { copyText } from '../lib/clipboard'
 import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
@@ -22,7 +23,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -112,6 +113,17 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   const [importing, setImporting] = useState(false)
   const importZipRef = useRef<HTMLInputElement>(null)
   const [diffs, setDiffs] = useState<Record<string, MakeSnapshotDiff | 'loading'>>({})
+  // Diff-вью одного файла: снимок ↔ текущее.
+  const [fileDiff, setFileDiff] = useState<{ snapshotId: string; label: string; path: string; original: string; modified: string } | null>(null)
+  const openFileDiff = async (snapshotId: string, label: string, path: string): Promise<void> => {
+    try {
+      const [orig, cur] = await Promise.all([
+        api['make:snapshotFile']({ conversationId, snapshotId, path }).then((f) => f.content).catch(() => ''),
+        api['make:read']({ conversationId, path }).then((f) => f.content).catch(() => '')
+      ])
+      setFileDiff({ snapshotId, label, path, original: orig, modified: cur })
+    } catch (e) { toast.error(describeError(e)) }
+  }
   const storyFrameRef = useRef<HTMLIFrameElement | null>(null)
   useEffect(() => {
     const onMessage = (e: MessageEvent): void => {
@@ -816,7 +828,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
                       {(diffs[snap.id] as MakeSnapshotDiff).files.filter((f) => f.status !== 'same').map((f) => (
                         <li key={f.path} className={`make-diff-row make-diff-row--${f.status}`}>
                           <span className="make-diff-status">{f.status === 'added' ? 'новый' : f.status === 'removed' ? 'удалён' : 'изменён'}</span>
-                          <code>{f.path}</code>
+                          {isMakeTextPath(f.path)
+                            ? <button type="button" className="make-diff-file" onClick={() => void openFileDiff(snap.id, snap.label, f.path)} title="Показать сравнение"><code>{f.path}</code></button>
+                            : <code>{f.path}</code>}
                           <small>{f.before !== null ? formatSize(f.before) : '—'} → {f.after !== null ? formatSize(f.after) : '—'}</small>
                           {f.status !== 'added' && <Button size="sm" variant="ghost" onClick={() => void restoreFile(snap.id, f.path)}>Вернуть файл</Button>}
                         </li>
@@ -833,6 +847,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
         </div>
       )}
 
+      {fileDiff && (
+        <Dialog title={`Сравнение: ${fileDiff.path}`} ariaLabel={`Сравнение ${fileDiff.path}`} size="lg" onClose={() => setFileDiff(null)} testId="make-file-diff"
+          actions={<Button size="sm" variant="secondary" onClick={() => { void restoreFile(fileDiff.snapshotId, fileDiff.path); setFileDiff(null) }}>Вернуть файл из снимка</Button>}>
+          <p className="make-ideas-lead">Слева — снимок «{fileDiff.label}», справа — текущая версия.</p>
+          <CodeDiff path={fileDiff.path} original={fileDiff.original} modified={fileDiff.modified} />
+        </Dialog>
+      )}
       {assetsOpen && (
         <Dialog title="Ассеты проекта" ariaLabel="Ассеты проекта" size="md" onClose={() => setAssetsOpen(false)} testId="make-assets">
           <p className="make-ideas-lead">Картинки и другие бинарные файлы проекта. Путь или тег вставляются в буфер — дальше в код или в просьбу ассистенту.</p>
