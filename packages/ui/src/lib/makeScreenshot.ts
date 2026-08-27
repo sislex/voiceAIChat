@@ -11,11 +11,22 @@ export interface ScreenshotTarget {
 export async function captureIframeScreenshot(target: ScreenshotTarget, filename = 'preview.png'): Promise<File> {
   const { default: html2canvas } = await import('html2canvas')
   const el = (target.element ?? target.doc.documentElement) as HTMLElement
+  // html2canvas перезапрашивает <link rel=stylesheet> сам — без preview-cookie превью отдаёт 401, и снимок
+  // выходит «голым». Поэтому правила уже загруженных таблиц инлайним в клон документа, а ссылки убираем.
+  const cssText = Array.from(target.doc.styleSheets).map((sheet) => {
+    try { return Array.from(sheet.cssRules).map((r) => r.cssText).join('\n') } catch { return '' }
+  }).join('\n')
   const canvas = await html2canvas(el, {
     useCORS: true,
     allowTaint: true,
     backgroundColor: null,
     logging: false,
+    onclone: (cloned) => {
+      cloned.querySelectorAll('link[rel="stylesheet"]').forEach((l) => l.remove())
+      const style = cloned.createElement('style')
+      style.textContent = cssText
+      cloned.head.appendChild(style)
+    },
     windowWidth: target.width ?? target.doc.documentElement.clientWidth,
     scale: Math.min(2, window.devicePixelRatio || 1)
   })

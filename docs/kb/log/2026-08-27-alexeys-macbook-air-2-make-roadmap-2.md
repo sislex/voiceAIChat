@@ -30,3 +30,4 @@ author: alexeyrozhnov
 П.6 (roadmap-2): typecheck:desktop зелёный — фикстура Settings через спред, vite-worker.d.ts в include.
 П.7 (roadmap-2): комментарии синхронизируются между вкладками через make.changed ('.comments.json').
 П.8 (roadmap-2): визуальный diff до/после хода — полоса над превью, окно сравнения, «В чат».
+П.9 (roadmap-2): токены и открытые комментарии в промпте хода (promptContext). Скриншоты превью: инлайн CSS в клон html2canvas.

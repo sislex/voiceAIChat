@@ -15,7 +15,7 @@ import {
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
 import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
-import { mockCandidates, unwrapMockEnvelope } from '@voicechat/shared'
+import { mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists' | 'quota'
@@ -230,6 +230,23 @@ export class MakeWorkspaces {
       } catch { /* битый снимок пропускаем */ }
     }
     return out.sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  // ---- Контекст для промпта (roadmap-2 п.9) ----------------------------------
+
+  /** Токены `:root` и открытые комментарии одним текстовым блоком; пусто — если нечего сказать. */
+  async promptContext(conversationId: string): Promise<string> {
+    const files = await this.list(conversationId).catch(() => [] as MakeFileInfo[])
+    const tokensPath = pickTokensFile(files.map((f) => f.path))
+    const parts: string[] = []
+    if (tokensPath) {
+      const css = await this.readBuffer(conversationId, tokensPath).catch(() => null)
+      const tokens = css ? parseCssTokens(css.data.toString('utf8')) : []
+      if (tokens.length) parts.push(`Дизайн-токены проекта (${tokensPath}, используй var(--имя), новые добавляй туда же): ${tokens.slice(0, 40).map((t) => `${t.name}: ${t.value}`).join('; ')}${tokens.length > 40 ? '; …' : ''}`)
+    }
+    const open = (await this.comments(conversationId).catch(() => [] as MakeComment[])).filter((c) => !c.resolved)
+    if (open.length) parts.push(`Открытые замечания пользователя к превью (учитывай при правках, если запрос их касается):\n${open.slice(0, 20).map((c, i) => `${i + 1}. ${c.elementLabel || c.selector} (селектор \`${c.selector}\`): ${c.text}`).join('\n')}`)
+    return parts.length ? `## Контекст проекта Make\n${parts.join('\n')}` : ''
   }
 
   // ---- Метрики для админки (п.38) -----------------------------------------
