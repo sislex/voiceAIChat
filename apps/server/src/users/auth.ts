@@ -204,6 +204,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     return resolveUser(db, token, secret)
   }
   const tokenOf = (req: FastifyRequest): string | undefined => bearer(req) ?? cookieOf(req, SESSION_COOKIE)
+  /** Мутации сессионных роутов по cookie требуют CSRF (общий preHandler их не покрывает — префикс публичный). */
+  const csrfOk = (req: FastifyRequest): boolean => Boolean(bearer(req)) || (Boolean(cookieOf(req, CSRF_COOKIE)) && req.headers[CSRF_HEADER] === cookieOf(req, CSRF_COOKIE))
   const sidOf = (req: FastifyRequest): string | null => verifyToken(tokenOf(req), secret)?.sid ?? null
   db.pruneSessions()
 
@@ -351,6 +353,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   app.post<{ Body: { code?: string } }>(REST.session2faEnable, async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const setup = pendingSetup.get(user.name)
     if (!setup || setup.expires < Date.now()) return reply.code(400).send({ error: 'сначала запросите новый секрет' })
     if (!verifyTotp(setup.secret, String(req.body?.code ?? ''))) return reply.code(400).send({ error: 'неверный код — проверьте время на устройстве и повторите' })
@@ -363,6 +366,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   app.post<{ Body: { code?: string } }>(REST.session2faDisable, async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const secretValue = db.getUserTotpSecret(user.name)
     if (!secretValue) return { ok: true }
     if (!verifyTotp(secretValue, String(req.body?.code ?? ''))) return reply.code(400).send({ error: 'неверный код' })
@@ -396,6 +400,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   app.post(REST.sessionNoticesSeen, async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     db.markNoticesSeen(user.name)
     return { ok: true }
   })
@@ -404,6 +409,12 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const token = tokenOf(req)
     const who = activeUser(token)
     if (!who) return reply.code(401).send({ error: 'unauthorized' })
+    // Выход по cookie — только с CSRF-заголовком: иначе любой запрос с приложенными браузером cookie (в т.ч. старая вкладка
+    // без Bearer или чужой сайт) отзовёт общую сессию. Сессионные роуты публичны и общим preHandler не проверяются.
+    if (!bearer(req)) {
+      const csrf = cookieOf(req, CSRF_COOKIE)
+      if (!csrf || req.headers[CSRF_HEADER] !== csrf) return reply.code(403).send({ error: 'csrf' })
+    }
     db.revokeSession(token!)
     const sid = sidOf(req)
     if (sid) db.revokeSessionById(sid)
@@ -451,6 +462,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   app.post<{ Body: { current?: string; next?: string } }>(REST.sessionPassword, async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const { current, next } = req.body ?? {}
     if (!db.verifyUserPassword(user.name, current ?? '')) return reply.code(400).send({ error: 'Текущий пароль неверен' })
     const violation = checkPasswordPolicy(next ?? '', { name: user.name })
@@ -537,6 +549,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   app.post(REST.sessionLogoutAll, async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const revoked = db.revokeUserSessions(user.name, sidOf(req))
     db.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}` })
     return { revoked }
