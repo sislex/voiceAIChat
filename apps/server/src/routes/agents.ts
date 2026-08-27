@@ -10,6 +10,7 @@ import {
   MACHINE_STORAGE_FORMAT_VERSION,
   chatStorageDirectories,
   type ChatStorageView,
+  type FsCopyResult,
   recommendedChatStoragePath,
   managedChatAttachmentsPath,
   managedChatArtifactsPath,
@@ -27,6 +28,7 @@ import {
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { AgentRegistry } from '../agents/registry.js'
+import { ensureDefaultStorage } from '../agents/defaultStorage.js'
 import { buildAgentScript } from '../agents/agentScript.js'
 import { buildAndroidInstallScript } from '../agents/androidInstall.js'
 import { buildWindowsInstallScript } from '../agents/windowsInstall.js'
@@ -557,6 +559,38 @@ export async function registerAgentRoutes(
   app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string } }>(
     '/api/agents/:id/fs/trash',
     async (req, reply) => withFs(req, reply, (id) => registry.fsTrash(id, req.body?.path ?? ''))
+  )
+  // Копирование между машинами: сервер — посредник (fs.read на источнике → fs.mkdir/fs.write на цели),
+  // прямого канала между агентами нет. Без targetDir файл ложится в `<ChatAI цели>/incoming`.
+  app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string; targetAgentId?: string; targetDir?: string } }>(
+    '/api/agents/:id/fs/copy-to',
+    async (req, reply) => {
+      const u = uid(req)
+      const { path, targetAgentId, targetDir } = req.body ?? {}
+      if (!path || !targetAgentId) return reply.code(400).send({ error: 'нужны path и targetAgentId' })
+      if (!canUseAgent(u, req.params.id, req.query?.projectId) || !canUseAgent(u, targetAgentId, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
+      if (targetAgentId === req.params.id) return reply.code(400).send({ error: 'Источник и цель — одна машина' })
+      if (!registry.isOnline(targetAgentId)) return reply.code(409).send({ error: 'Целевая машина не в сети' })
+      if (registry.policyOf(targetAgentId)?.allowWrite === false) return reply.code(403).send({ error: 'Запись на целевую машину запрещена политикой' })
+      try {
+        const source = await registry.fsRead(req.params.id, path)
+        const name = source.name ?? path.split(/[\\/]/).pop() ?? 'file'
+        let dir = targetDir?.trim() ?? ''
+        if (!dir) {
+          const storage = await ensureDefaultStorage({ db, registry }, u, targetAgentId)
+          if (!storage) return reply.code(409).send({ error: 'На целевой машине нет хранилища ChatAI — укажите каталог' })
+          dir = storagePath(storage.rootPath, registry.platformOf(targetAgentId) ?? 'linux', 'incoming')
+        }
+        await registry.fsMkdir(targetAgentId, dir)
+        const separator = dir.includes('\\') && !dir.includes('/') ? '\\' : '/'
+        const dest = `${dir.replace(/[\\/]+$/, '')}${separator}${name}`
+        await registry.fsWrite(targetAgentId, dest, source.dataBase64 ?? '')
+        const result: FsCopyResult = { path: dest, targetAgentId, size: Buffer.from(source.dataBase64 ?? '', 'base64').byteLength }
+        return result
+      } catch (err) {
+        return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
+      }
+    }
   )
   app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string } }>(
     '/api/agents/:id/fs/mkdir',

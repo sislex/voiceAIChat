@@ -1,7 +1,7 @@
 // Общий контракт операций над машиной-агентом для самодостаточных виджетов
 // (консоль/проводник). Реализуется стором поверх window.fs; в тестах — фейком.
 
-import type { AgentExecResult, FsResult } from '@shared/agentProtocol'
+import type { AgentExecResult, FsResult, FsCopyResult } from '@shared/agentProtocol'
 
 export interface MachineOps {
   list(agentId: string, path: string): Promise<FsResult>
@@ -11,6 +11,8 @@ export interface MachineOps {
   remove(agentId: string, path: string): Promise<FsResult>
   /** Корзина машины (агент ≥ 0.15.0): элемент переезжает в `.voicechat_trash`, результат несёт trashedPath. */
   trash?(agentId: string, path: string): Promise<FsResult>
+  /** Скопировать файл на другую машину пользователя (targetDir пуст — ChatAI/incoming цели). */
+  copyTo?(agentId: string, path: string, targetAgentId: string, targetDir?: string): Promise<FsCopyResult>
   rename(agentId: string, from: string, to: string): Promise<FsResult>
   mkdir(agentId: string, path: string): Promise<FsResult>
   download(agentId: string, path: string, name: string): Promise<void>

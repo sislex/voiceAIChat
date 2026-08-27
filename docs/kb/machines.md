@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-28
-checked: 4b20636a
+checked: 022b22ff
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -478,6 +478,15 @@ fallback-textarea), что и в Make; путь машины абсолютны�
 удаляют безвозвратно, как раньше. REST: `POST /api/agents/:id/fs/trash {path}`;
 мост `RendererFsBridge.trash?`. `.voicechat_trash/` — в `.gitignore`, потому что
 у агента, запущенного из исходников, корень — `apps/agent`.
+
+**Копирование между машинами** (`POST /api/agents/:id/fs/copy-to {path, targetAgentId, targetDir?}`):
+прямого канала между агентами нет, сервер читает файл `fs.read` у источника и пишет `fs.mkdir`+`fs.write`
+на цель (лимит — тот же 32 МБ `FS_MAX_BYTES`). Без `targetDir` каталог — `<ChatAI цели>/incoming`
+(`ensureDefaultStorage` создаст хранилище, если машина в сети и без него; иначе 409 «укажите каталог»).
+Обе машины должны быть доступны пользователю (`canUseAgent`), цель — в сети и с `allowWrite`.
+В проводнике у файла кнопка ⇄ (видна, когда есть другая online-машина с записью) открывает панель
+«цель + каталог»; после успеха — полоса «Скопировано на …» с «Открыть» (`onSwitchUtility('explorer', цель, каталог)`).
+Мост: `RendererFsBridge.copyTo?`, `MachineOps.copyTo?`, результат `FsCopyResult {path, targetAgentId, size}`.
 
 **Инцидент 2026-08-28 (CSRF в fs-мосте):** `makeFsBridge` в `packages/ui/src/remote/index.ts`
 собирал заголовки сам — только `authorization: Bearer` — и после перехода на cookie-сессии

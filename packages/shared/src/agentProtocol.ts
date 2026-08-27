@@ -35,6 +35,15 @@ export interface FsResult {
   trashedPath?: string
 }
 
+/** Результат копирования файла между машинами (`POST /api/agents/:id/fs/copy-to`): сервер читает с одной и пишет на другую. */
+export interface FsCopyResult {
+  /** Абсолютный путь файла на целевой машине. */
+  path: string
+  targetAgentId: string
+  /** Размер скопированных байт. */
+  size: number
+}
+
 /** Использование дискового раздела (байты). */
 export interface DiskUsage {
   totalBytes: number

@@ -144,6 +144,13 @@ export function FileExplorer({
   const [showDiff, setShowDiff] = useState(false)
   // Последний элемент, отправленный в корзину машины: полоса «Вернуть» под списком.
   const [trashed, setTrashed] = useState<{ name: string; from: string; to: string } | null>(null)
+  // Копирование файла на другую машину: инлайн-панель под списком (цель + каталог), результат — ссылка «Открыть».
+  const [copyFor, setCopyFor] = useState<{ path: string; name: string } | null>(null)
+  const [copyTarget, setCopyTarget] = useState('')
+  const [copyDir, setCopyDir] = useState('')
+  const [copying, setCopying] = useState(false)
+  const [copied, setCopied] = useState<{ path: string; targetAgentId: string } | null>(null)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmSave, setConfirmSave] = useState(false)
   const selectedRow = useRef<HTMLDivElement>(null)
@@ -154,6 +161,29 @@ export function FileExplorer({
   const writable = agentOnline && (selectedAgent?.policy.allowWrite ?? false)
   // Корзина — только если мост её умеет и агент достаточно новый; иначе прежнее безвозвратное удаление.
   const canTrash = typeof ops.trash === 'function' && isToolAllowed(selectedAgent?.version ?? '0.0.0', 'fs-trash')
+  const copyTargets = agents.filter((a) => a.id !== agentId && a.online && a.policy.allowWrite)
+  const canCopy = typeof ops.copyTo === 'function' && copyTargets.length > 0
+  const startCopy = (entry: FsEntry, abs: string): void => {
+    setCopyFor({ path: abs, name: entry.name })
+    setCopyTarget(copyTargets[0]?.id ?? '')
+    setCopyDir('')
+    setCopied(null)
+    setCopyError(null)
+  }
+  const runCopy = async (): Promise<void> => {
+    if (!agentId || !copyFor || !copyTarget || !ops.copyTo) return
+    setCopying(true)
+    setCopyError(null)
+    try {
+      const result = await ops.copyTo(agentId, copyFor.path, copyTarget, copyDir.trim() || undefined)
+      setCopied({ path: result.path, targetAgentId: result.targetAgentId })
+      setCopyFor(null)
+    } catch (err) {
+      setCopyError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCopying(false)
+    }
+  }
   const view = loadView(status, entries.length > 0)
   const visibleEntries = useMemo(
     () => sortEntries(entries.filter((entry) => entry.name.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase())), sortBy, sortDirection),
@@ -473,6 +503,25 @@ export function FileExplorer({
           )}
         </section>
       )}
+      {copyFor && (
+        <form className="fscopy" data-testid="fs-copy" onSubmit={(event) => { event.preventDefault(); void runCopy() }}>
+          <span>Копировать «{copyFor.name}» на</span>
+          <select aria-label="Целевая машина" value={copyTarget} onChange={(event) => setCopyTarget(event.target.value)}>
+            {copyTargets.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <input aria-label="Каталог на целевой машине" value={copyDir} placeholder="ChatAI/incoming целевой машины" onChange={(event) => setCopyDir(event.target.value)} />
+          <Button size="sm" type="submit" disabled={copying || !copyTarget}>{copying ? 'Копируем…' : 'Копировать'}</Button>
+          <Button size="sm" type="button" disabled={copying} onClick={() => setCopyFor(null)}>Отмена</Button>
+          {copyError && <span role="alert" className="fscopy-error">{copyError}</span>}
+        </form>
+      )}
+      {copied && (
+        <p className="fstrashed" role="status" data-testid="fs-copied">
+          Скопировано на «{agents.find((a) => a.id === copied.targetAgentId)?.name ?? copied.targetAgentId}»: <code>{copied.path}</code>
+          {onSwitchUtility && <Button size="sm" onClick={() => onSwitchUtility('explorer', copied.targetAgentId, parentOf(copied.path))}>Открыть</Button>}
+          <IconButton size="sm" title="Скрыть" aria-label="Скрыть уведомление о копировании" onClick={() => setCopied(null)}>×</IconButton>
+        </p>
+      )}
       {trashed && (
         <p className="fstrashed" role="status" data-testid="fs-trashed">
           «{trashed.name}» перемещён в корзину машины ({nameOf(parentOf(trashed.to))}).
@@ -590,6 +639,11 @@ export function FileExplorer({
                     onClick={() => agentId && void ops.download(agentId, abs, entry.name)}
                   >
                     ⬇
+                  </IconButton>
+                )}
+                {entry.kind === 'file' && canCopy && (
+                  <IconButton size="sm" title="Копировать на машину" aria-label={`Копировать ${entry.name} на другую машину`} onClick={() => startCopy(entry, abs)}>
+                    ⇄
                   </IconButton>
                 )}
                 {writable && (
