@@ -14,6 +14,8 @@ export interface SessionState {
   currentUser: SessionUser | null
   /** Ошибка последнего логина (для формы). */
   authError: string | null
+  /** Ожидается код второго фактора (auth-roadmap п.6): тикет от сервера после верного пароля. */
+  twoFactorTicket: string | null
   /** Идёт ли проверка сохранённой сессии (`/me`). В web стартует как true: до
    *  ответа `/me` нельзя показывать форму логина — она мигнёт у уже вошедшего. */
   checking: boolean
@@ -30,7 +32,15 @@ export interface SessionActions {
   /** Проверить сохранённую сессию. Возвращает пользователя или null. */
   check(): Promise<SessionUser | null>
   /** Войти по логину/паролю (web). */
-  login(name: string, password: string): Promise<SessionUser | null>
+  login(name: string, password: string, remember?: boolean): Promise<SessionUser | null>
+  /** Второй шаг входа: код TOTP по тикету. */
+  loginCode(code: string): Promise<SessionUser | null>
+  /** Отменить второй шаг и вернуться к паролю. */
+  cancelTwoFactor(): void
+  /** Сброс пароля кодом администратора (auth-roadmap п.10) → сессия. */
+  resetPassword(name: string, code: string, password: string): Promise<SessionUser | null>
+  /** Обновить пользователя после смены временного пароля (п.11). */
+  refreshUser(): Promise<void>
   /** Выйти: закрыть сессию на сервере и показать экран логина. */
   logout(): Promise<void>
   /** Сессия истекла/потеряна (сервер ответил 401). */
@@ -47,7 +57,7 @@ export interface SessionDeps {
 }
 
 function initialState(authRequired: boolean): SessionState {
-  return { authRequired, currentUser: null, authError: null, checking: authRequired }
+  return { authRequired, currentUser: null, authError: null, checking: authRequired, twoFactorTicket: null }
 }
 
 export function createSessionStore(deps: SessionDeps = {}): SessionStore {
@@ -89,17 +99,49 @@ export function createSessionStore(deps: SessionDeps = {}): SessionStore {
         else setState({ currentUser: null })
         return user
       },
-      async login(name, password) {
+      async login(name, password, remember = true) {
         if (!client) return null
         setState({ authError: null })
-        const user = await client.login({ name, password }).catch(() => null)
-        if (core.disposed()) return user
+        const result = await client.login({ name, password, remember }).catch(() => null)
+        if (core.disposed()) return null
+        if (result && 'requires2fa' in result) {
+          setState({ twoFactorTicket: result.ticket, authError: null })
+          return null
+        }
+        const user = result
         if (!user) {
           setState({ authError: 'Неверный логин или пароль' })
           return null
         }
         apply(user)
         return user
+      },
+      async loginCode(code) {
+        const ticket = getState().twoFactorTicket
+        if (!client?.login2fa || !ticket) return null
+        setState({ authError: null })
+        const user = await client.login2fa({ ticket, code }).catch(() => null)
+        if (core.disposed()) return null
+        if (!user) { setState({ authError: 'Неверный код подтверждения' }); return null }
+        setState({ twoFactorTicket: null })
+        apply(user)
+        return user
+      },
+      cancelTwoFactor() { setState({ twoFactorTicket: null, authError: null }) },
+      async resetPassword(name, code, password) {
+        if (!client?.resetPassword) return null
+        setState({ authError: null })
+        const r = await client.resetPassword({ name, code, password }).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }))
+        if (core.disposed()) return null
+        if ('error' in r) { setState({ authError: r.error }); return null }
+        const user = await client.me().catch(() => null)
+        if (!user) { setState({ authError: 'Пароль изменён, но войти не удалось — попробуйте ещё раз' }); return null }
+        apply(user)
+        return user
+      },
+      async refreshUser() {
+        const user = await client?.me().catch(() => null)
+        if (user && !core.disposed()) setState({ currentUser: user })
       },
       async logout() {
         await client?.logout()

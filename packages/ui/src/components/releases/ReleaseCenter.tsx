@@ -3,10 +3,7 @@ import { compareReleaseBranches, DEFAULT_RELEASE_TIMEOUTS, releaseFailureSummary
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
 import { loadView, type LoadStatus } from '../../lib/loadState'
-import { EmptyState } from '../ui/EmptyState'
-import { ErrorState } from '../ui/ErrorState'
-import { RefreshIndicator, Skeleton } from '../ui/Skeleton'
-import { useConfirm } from '@voicechat/ui-kit'
+import { useConfirm, EmptyState, ErrorState, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
 
 interface Props { projectId:string; baseBranch:string; owner:boolean; machines?:ProjectMachine[]; agents?:AgentInfo[]; agentsStatus?:LoadStatus; agentsError?:string|null; defaultAgentId?:string|null; releaseTimeouts?:ReleaseTimeouts; api?:RendererApi }
 type Tab='releases'|'deploy'

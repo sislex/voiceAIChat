@@ -16,11 +16,31 @@ function sign(payload: string, secret: string): string {
 }
 
 /** Подписанный токен `payloadB64.sigB64` для пользователя (в payload — только имя). */
-export function signToken(user: SessionUser, secret: string): string {
+export function signToken(user: SessionUser, secret: string, sid: string = newSessionId()): string {
   // Случайный id делает каждую сессию отдельной: logout может отозвать текущий
   // токен, не завершая другие входы пользователя и не блокируя следующий login.
-  const payload = base64url(Buffer.from(JSON.stringify({ name: user.name, sid: base64url(randomBytes(18)) })))
+  const payload = base64url(Buffer.from(JSON.stringify({ name: user.name, sid })))
   return `${payload}.${sign(payload, secret)}`
+}
+
+export const newSessionId = (): string => base64url(randomBytes(18))
+
+/** Имя и sid из проверенного токена; sid нужен таблице сессий (auth-roadmap п.4). */
+export function verifyToken(token: string | undefined, secret: string): { name: string; sid: string | null } | null {
+  if (!token) return null
+  const dot = token.indexOf('.')
+  if (dot <= 0) return null
+  const payload = token.slice(0, dot)
+  const sig = token.slice(dot + 1)
+  const expected = sign(payload, secret)
+  if (sig.length !== expected.length) return null
+  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64').toString('utf8')) as { name?: unknown; sid?: unknown }
+    return typeof parsed.name === 'string' ? { name: parsed.name, sid: typeof parsed.sid === 'string' ? parsed.sid : null } : null
+  } catch {
+    return null
+  }
 }
 
 /** Проверка подписи токена → имя пользователя (без роли; роль берётся из БД). */

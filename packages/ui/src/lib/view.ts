@@ -130,7 +130,7 @@ export function formatTurnMeta(meta: TurnMeta): string {
   return parts.join(' · ')
 }
 
-function kilo(n: number): string {
+export function kilo(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 }
 

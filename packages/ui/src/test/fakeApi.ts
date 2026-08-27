@@ -1,4 +1,6 @@
-import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry } from '@shared/make'
+import { lintMakeFile } from '@shared/makeLint'
+import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine } from '@shared/makeSearch'
+import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment, type MakeShare, type MakePresenceClient, type MakeProjectNotes } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
@@ -28,11 +30,22 @@ export interface FakeApi extends RendererApi {
   }
 }
 
+/** Инвайты для админки (auth-roadmap п.8). */
+const fakeInvites: Array<{ token: string; role: import('@shared/types').UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string }> = []
+/** Сессии для админки (auth-roadmap п.4) — по умолчанию одна у admin. */
+const adminSessions: Array<{ sid: string; user: string; createdAt: number; lastSeen: number; expiresAt: number; ip: string; userAgent: string }> = [{ sid: 's-admin-1', user: 'admin', createdAt: 1, lastSeen: 2, expiresAt: 9_999_999_999_999, ip: '127.0.0.1', userAgent: 'Test/1.0' }]
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const makeStore = new Map<string, Map<string, string>>()
   const makeSnapStore = new Map<string, Array<{ id: string; createdAt: number; label: string; files: number }>>()
   /** Содержимое файлов на момент снимка — для diff и восстановления одного файла. */
   const makeSnapContents = new Map<string, Map<string, string>>()
+  const makeShots = new Map<string, MakeStoryShot[]>()
+  const makeComments = new Map<string, MakeComment[]>()
+  const makeShare = new Map<string, MakeShare>()
+  const makePresence = new Map<string, Map<string, MakePresenceClient>>()
+  const makeNotes = new Map<string, MakeProjectNotes>()
+  const library = new Map<string, MakeLibraryItem>()
+  const libraryFiles = new Map<string, Map<string, string>>()
   const makeRev = new Map<string, number>()
   const makePub = new Map<string, MakePublication>()
   const makeFiles = (id: string): Map<string, string> => {
@@ -50,7 +63,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     files: [...makeFiles(id).entries()].map(([path, content]) => ({ path, size: new TextEncoder().encode(content).length, updatedAt: 1 })).sort((x, y) => x.path.localeCompare(y.path)),
     snapshots: [...makeSnaps(id)],
     rev: makeRev.get(id) ?? 0,
-    published: makePub.get(id) ?? null
+    published: makePub.get(id) ?? null,
+    shared: makeShare.get(id) ?? null
   })
 
   let idCounter = 0
@@ -236,21 +250,26 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (content === undefined) throw new Error(`Файл «${path}» не найден`)
       return { path, size: new TextEncoder().encode(content).length, updatedAt: 1, content }
     },
-    'make:search': async ({ conversationId, query }) => {
-      const needle = query.trim().toLocaleLowerCase()
+    'make:search': async ({ conversationId, query, regex, matchCase }) => {
+      if (!query.trim()) return { matches: [] }
+      const re = buildMakeSearchRegex(query, { regex, matchCase })
       const matches: { path: string; line: number; text: string }[] = []
-      for (const [path, content] of makeFiles(conversationId)) content.split('\n').forEach((text, i) => { if (needle && text.toLocaleLowerCase().includes(needle)) matches.push({ path, line: i + 1, text: text.trim() }) })
+      for (const [path, content] of makeFiles(conversationId)) content.split('\n').forEach((text, i) => { re.lastIndex = 0; if (re.test(text)) matches.push({ path, line: i + 1, text: text.trim() }) })
       return { matches }
     },
-    'make:replace': async ({ conversationId, query, replacement, matchCase }) => {
-      const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi')
+    'make:replace': async ({ conversationId, query, replacement, matchCase, regex, dryRun }) => {
+      const re = buildMakeSearchRegex(query, { regex, matchCase })
       let files = 0, replacements = 0
+      const preview: MakeReplacePreviewLine[] = []
       for (const [path, content] of makeFiles(conversationId)) {
+        re.lastIndex = 0
         const n = (content.match(re) ?? []).length
         if (n === 0) continue
         files += 1; replacements += n
-        makeFiles(conversationId).set(path, content.replace(re, () => replacement))
+        if (dryRun) { preview.push(...previewMakeReplace(path, content, re, regex ? replacement : () => replacement)); continue }
+        makeFiles(conversationId).set(path, regex ? content.replace(re, replacement) : content.replace(re, () => replacement))
       }
+      if (dryRun) return { files, replacements, state: makeState(conversationId), preview }
       if (files > 0) makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1)
       return { files, replacements, state: makeState(conversationId) }
     },
@@ -258,7 +277,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       files: [...makeFiles(conversationId)].filter(([path]) => /\.stories\.(jsx|tsx)$/.test(path)).map(([path, content]) => ({
         path,
         title: content.match(/title\s*:\s*['"]([^'"]+)['"]/)?.[1] ?? path,
-        stories: [...content.matchAll(/^export\s+const\s+(\w+)/gm)].map((m) => m[1]!)
+        stories: [...content.matchAll(/^export\s+const\s+(\w+)/gm)].map((m) => m[1]!),
+        withPlay: [...content.matchAll(/^export\s+const\s+(\w+)\s*=\s*\{[^\n]*play/gm)].map((m) => m[1]!)
       }))
     }),
     'make:snapshotDiff': async ({ conversationId, snapshotId }) => {
@@ -272,6 +292,65 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       for (const [path, old] of snap ?? []) if (!now.has(path)) files.push({ path, status: 'removed', before: old.length, after: null })
       return { snapshotId, files: files.sort((a, b) => a.path.localeCompare(b.path)) }
     },
+    'make:library': async () => ({ items: [...library.values()] }),
+    'make:libraryExport': async ({ conversationId, name, paths }) => { const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); const item = { slug, name, files: paths, bytes: 0, sourceConversationId: conversationId, updatedAt: Date.now() }; library.set(slug, item); libraryFiles.set(slug, new Map(paths.map((p) => [p, makeFiles(conversationId).get(p) ?? '']))); return { item } },
+    'make:libraryInsert': async ({ conversationId, slug }) => { for (const [p, c] of libraryFiles.get(slug) ?? []) makeFiles(conversationId).set(p, c); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return { state: makeState(conversationId), mergedTokens: 0, autoImported: [] } },
+    'make:libraryRemove': async ({ slug }) => { library.delete(slug); return { items: [...library.values()] } },
+    'make:notes': async ({ conversationId }) => makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' },
+    'make:setNotes': async ({ conversationId, notes, mode }) => { const cur = makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' as const }; const next = { notes: notes ?? cur.notes, mode: mode ?? cur.mode }; makeNotes.set(conversationId, next); return next },
+    'make:tests': async ({ conversationId }) => ({ files: [...makeFiles(conversationId).entries()].filter(([p]) => /\.test\.(jsx|tsx)$/i.test(p)).map(([p, c]) => ({ path: p, names: [...c.matchAll(/\btest\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]!), component: null })) }),
+    'make:shots': async ({ conversationId }) => ({ shots: makeShots.get(conversationId) ?? [] }),
+    'make:share': async ({ conversationId }) => { if (!makeShare.has(conversationId)) makeShare.set(conversationId, { token: 'share123', createdAt: 1, url: '#/make-shared/share123' }); return makeState(conversationId) },
+    'make:unshare': async ({ conversationId }) => { makeShare.delete(conversationId); return makeState(conversationId) },
+    'make:shareGrant': async ({ conversationId, user, role }) => {
+      const cur = makeShare.get(conversationId) ?? { token: 'share123', createdAt: 1, url: '#/make-shared/share123', grants: [] }
+      const grants = (cur.grants ?? []).filter((g) => g.user !== user); if (role) grants.push({ user, role })
+      makeShare.set(conversationId, { ...cur, grants }); return makeState(conversationId)
+    },
+    'make:shared': async ({ token }) => {
+      const conv = [...makeShare.entries()].find(([, s]) => s.token === token)?.[0] ?? (token === 'share123' ? 'make-1' : null)
+      if (!conv) throw new Error('Ссылка недействительна или отозвана')
+      const st = makeState(conv)
+      return { token, owner: 'admin', title: 'Проект 1', role: (makeShare.get(conv)?.grants ?? []).find((g) => g.user === 'admin')?.role ?? null, conversationId: conv, files: st.files, snapshots: st.snapshots, rev: st.rev }
+    },
+    'make:sharedFile': async ({ path }) => { const content = makeFiles('make-1').get(path); if (content === undefined) throw new Error('Файл не найден'); return { path, content, size: new TextEncoder().encode(content).length, updatedAt: 1 } },
+    'make:sharedStories': async () => ({ files: [] }),
+    'make:presence': async ({ conversationId, clientId, path, editing, leave }) => {
+      const map = makePresence.get(conversationId) ?? new Map<string, MakePresenceClient>()
+      if (leave) map.delete(clientId); else map.set(clientId, { clientId, user: 'admin', path, editing, at: Date.now() })
+      makePresence.set(conversationId, map); return { clients: [...map.values()] }
+    },
+    'make:comments': async ({ conversationId }) => ({ comments: makeComments.get(conversationId) ?? [] }),
+    'make:commentAdd': async ({ conversationId, selector, elementLabel, text }) => {
+      const list = [{ id: `c${(makeComments.get(conversationId) ?? []).length + 1}`, selector, elementLabel, text, author: 'admin', createdAt: 1, resolved: false }, ...(makeComments.get(conversationId) ?? [])]
+      makeComments.set(conversationId, list); return { comments: list }
+    },
+    'make:commentUpdate': async ({ conversationId, commentId, resolved, text, status }) => {
+      const list = (makeComments.get(conversationId) ?? []).map((c) => (c.id === commentId ? { ...c, resolved: resolved ?? c.resolved, text: text ?? c.text, ...(status ? { status } : {}) } : c))
+      makeComments.set(conversationId, list); return { comments: list }
+    },
+    'make:commentRemove': async ({ conversationId, commentId }) => {
+      const list = (makeComments.get(conversationId) ?? []).filter((c) => c.id !== commentId)
+      makeComments.set(conversationId, list); return { comments: list }
+    },
+    'make:usage': async ({ conversationId }) => {
+      const files = [...makeFiles(conversationId).entries()]
+      const filesBytes = files.reduce((s, [, c]) => s + new TextEncoder().encode(c).byteLength, 0)
+      const snaps = makeSnaps(conversationId)
+      const shots = makeShots.get(conversationId) ?? []
+      const unusedAssets = files.filter(([p]) => /\.(png|jpe?g|gif|webp|svg)$/i.test(p) && !files.some(([q, c]) => q !== p && c.includes(p.split('/').pop()!))).map(([p, c]) => ({ path: p, size: c.length }))
+      return { filesBytes, filesCount: files.length, snapshotsBytes: snaps.length * 1024, snapshotsCount: snaps.length, shotsBytes: shots.length * 2048, shotsCount: shots.length, totalBytes: filesBytes + snaps.length * 1024 + shots.length * 2048, limitBytes: 64 * 1024 * 1024, unusedAssets }
+    },
+    'make:cleanup': async ({ conversationId, keepSnapshots, shots, unusedAssets }) => {
+      const before = await api['make:usage']({ conversationId })
+      const removed = { snapshots: 0, shots: 0, assets: 0 }
+      if (typeof keepSnapshots === 'number') { const list = makeSnaps(conversationId); removed.snapshots = Math.max(0, list.length - keepSnapshots); list.splice(keepSnapshots) }
+      if (shots) { removed.shots = (makeShots.get(conversationId) ?? []).length; makeShots.set(conversationId, []) }
+      if (unusedAssets) for (const a of before.unusedAssets) { makeFiles(conversationId).delete(a.path); removed.assets += 1 }
+      const usage = await api['make:usage']({ conversationId })
+      return { freedBytes: before.totalBytes - usage.totalBytes, removed, usage, state: makeState(conversationId) }
+    },
+    'make:shot': async ({ conversationId, file, story }) => { const list = [{ id: `sh${(makeShots.get(conversationId) ?? []).length + 1}`, file, story, at: Date.now(), rev: makeRev.get(conversationId) ?? 0 }, ...(makeShots.get(conversationId) ?? [])]; makeShots.set(conversationId, list); return { shots: list } },
     'make:snapshotFile': async ({ snapshotId, path }) => {
       const old = makeSnapContents.get(snapshotId)?.get(path)
       if (old === undefined) throw new Error('В снимке нет файла')
@@ -304,7 +383,16 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:rename': async ({ conversationId, from, to }) => { const files = makeFiles(conversationId); const c = files.get(from) ?? ''; files.delete(from); files.set(to, c); return makeState(conversationId) },
     'make:snapshot': async ({ conversationId, label }) => { const id = `s${Date.now()}-${makeSnaps(conversationId).length}`; makeSnapContents.set(id, new Map(makeFiles(conversationId))); makeSnaps(conversationId).unshift({ id, createdAt: Date.now(), label: label ?? 'Снимок', files: makeFiles(conversationId).size }); return makeState(conversationId) },
     'make:restore': async ({ conversationId }) => makeState(conversationId),
-    'make:publish': async ({ conversationId, snapshotId }) => { const snap = snapshotId ? makeSnaps(conversationId).find((s) => s.id === snapshotId) : null; makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/', snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null }); return makeState(conversationId) },
+    'make:publish': async ({ conversationId, snapshotId, slug, password, allowComments }) => {
+      const snap = snapshotId ? makeSnaps(conversationId).find((s) => s.id === snapshotId) : null
+      const prev = makePub.get(conversationId)
+      const nextSlug = slug === undefined ? prev?.slug ?? null : slug
+      const protectedNow = password === undefined ? prev?.passwordProtected ?? false : Boolean(password)
+      const history = [...(prev?.history ?? [])]
+      if (!prev || history[history.length - 1]?.snapshotId !== (snap?.id ?? null)) history.push({ at: history.length + 1, snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null })
+      makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/', snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null, slug: nextSlug, slugUrl: nextSlug ? `/s/${nextSlug}/` : null, passwordProtected: protectedNow, allowComments: allowComments ?? prev?.allowComments ?? false, views: prev?.views ?? 7, history, stats: { days: [{ day: '2026-08-26', views: 3 }, { day: '2026-08-27', views: 4 }], referers: [{ host: 'news.ycombinator.com', views: 5 }] } })
+      return makeState(conversationId)
+    },
     'make:unpublish': async ({ conversationId }) => { makePub.delete(conversationId); return makeState(conversationId) },
     'make:check': async ({ conversationId }) => {
       const issues: MakeCheckIssue[] = makeFiles(conversationId).has('index.html') ? [] : [{ path: 'index.html', kind: 'no-index', message: 'Нет index.html' }]
@@ -314,6 +402,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         const idx = content.split('\n').findIndex((l) => l.includes('SYNTAX_ERROR'))
         if (idx >= 0) issues.push({ path, kind: 'compile-error', message: `Ошибка компиляции (строка ${idx + 1}): Unexpected token`, line: idx + 1, column: 1 })
       }
+      // Линтер (roadmap-4 п.12) — тот же чистый модуль, что на сервере.
+      for (const [path, content] of makeFiles(conversationId)) for (const w of lintMakeFile(path, content)) issues.push({ path, kind: 'lint', severity: 'warning', rule: w.rule, message: w.message, line: w.line, column: w.column })
       return { issues }
     },
     'make:template': async ({ conversationId, templateId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', `<h1>${templateId}</h1>`); return makeState(conversationId) },
@@ -645,6 +735,15 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       ]
     }),
     'admin:users': async () => adminUsers.map((u) => ({ ...u })),
+    'admin:userSessions': async ({ name }) => ({ sessions: adminSessions.filter((s) => s.user === name) }),
+    'admin:invites': async () => ({ invites: [...fakeInvites] }),
+    'admin:resetCode': async () => ({ code: 'ABCD1234', expiresAt: 9_999_999_999_999 }),
+    'admin:setUserLlmLimit': async ({ name, llmLimitUsd }) => { const u = adminUsers.find((x) => x.name === name)!; Object.assign(u, { llmLimitUsd }); return { ...u } },
+    'admin:inviteCreate': async ({ role, ttlHours, maxUses, note }) => { const inv = { token: `inv${fakeInvites.length + 1}`, role, createdBy: 'admin', createdAt: 1, expiresAt: 1 + (ttlHours ?? 72) * 3_600_000, maxUses: maxUses ?? 1, uses: 0, note: note ?? '' }; fakeInvites.push(inv); return inv },
+    'admin:inviteDelete': async ({ token }) => { const i = fakeInvites.findIndex((x) => x.token === token); if (i >= 0) fakeInvites.splice(i, 1); return { ok: true as const } },
+    'admin:securityEvents': async ({ user }) => ({ events: [{ id: 1, at: 1, user: user ?? 'admin', type: 'login' as const, ip: '127.0.0.1', userAgent: 'Test/1.0', details: '' }] }),
+    'admin:revokeSession': async ({ sid }) => { const i = adminSessions.findIndex((s) => s.sid === sid); if (i >= 0) adminSessions.splice(i, 1); return { ok: true as const } },
+    'admin:makeStats': async () => ({ projects: 2, bytes: 3 * 1048576, filesBytes: 1048576, snapshotsBytes: 2 * 1048576, shotsBytes: 0, published: 1, shared: 0, views: 12, limitBytes: 64 * 1048576, userLimitBytes: 512 * 1048576, byUser: [{ user: 'admin', projects: 2, bytes: 3 * 1048576, published: 1, views: 12 }], top: [{ conversationId: 'make-1', owner: 'admin', filesCount: 5, bytes: 2 * 1048576, snapshots: 3, published: true, shared: false, views: 12, updatedAt: 1 }] }),
     'admin:usageSummary': async () => adminUsers.map((u) => ({ name: u.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0 }, byModel: [] })),
     'llm:access': async () => [...(userLlmAccess.get(ME) ?? [])],
     'admin:llmAccess': async ({ name }) => [...(userLlmAccess.get(name) ?? [])],

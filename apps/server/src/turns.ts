@@ -33,7 +33,8 @@ import {
   type LlmAttachment,
   type LlmProvider,
   type WidgetAssistantContext,
-  toolNameForContextId
+  toolNameForContextId,
+  isBigMakeRequest,
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
@@ -43,6 +44,9 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { kbViewOf } from './kb/access.js'
 import { buildKbAutoContext } from './kb/autoContext.js'
 import type { KbUsageTracker } from './kb/usage.js'
+
+/** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
+export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
 
 export interface TurnManagerDeps {
   db: VoiceChatDb
@@ -87,6 +91,10 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
+  /** Реестр снимков «До правок» по id хода — для meta.makeSnapshotId. */
+  makeHub?: { turnSnapshot(turn: string): string | undefined }
+  /** Контекст проекта Make для промпта: дизайн-токены и открытые комментарии (roadmap-2 п.9). */
+  makeContext?: (conversationId: string) => Promise<string>
   /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
   previewTool?: {
     register(token: string, entry: { userId: string; conversationId: string }): void
@@ -390,6 +398,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'Учётная запись недоступна.' }, userId)
       return
     }
+    // Роль observer (auth-roadmap п.17) — только чтение: ходы модели не запускает.
+    if (account.role === 'observer') {
+      broadcast({ t: 'claude.error', conversationId, message: 'Роль «наблюдатель» не может запускать ходы модели — попросите администратора выдать роль developer или tester.' }, userId)
+      return
+    }
+    // Месячный лимит расхода LLM (п.17): суммируем стоимость ответов пользователя с начала календарного месяца.
+    if (account.llmLimitUsd !== null && account.llmLimitUsd >= 0) {
+      const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
+      const mine = deps.db.usageSummary(monthStart.getTime()).find((u) => u.name === userId)
+      const spent = mine ? Math.max(mine.totals.costUsd, mine.totals.costFromPrices ?? 0) : 0
+      if (spent >= account.llmLimitUsd) {
+        broadcast({ t: 'claude.error', conversationId, message: `Достигнут месячный лимит расхода LLM: $${spent.toFixed(2)} из $${account.llmLimitUsd.toFixed(2)}. Лимит меняет администратор.` }, userId)
+        return
+      }
+    }
     req.messageId ??= [...deps.db.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
     // ключ идемпотентности для повторной доставки и нескольких вкладок.
@@ -461,6 +484,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
     // Режим прав: переопределение разговора приоритетнее общих настроек.
     let permissionMode = conv?.permissionMode ?? settings.permissionMode
+    // Большая переделка Make (п.20): ход идёт в режиме «План» (файлы только на чтение), модель отвечает
+    // планом и ждёт «да». Явно выставленный пользователем режим не трогаем — только default → plan.
+    const makeAutoPlan = conv?.assistantKind === 'make' && permissionMode !== 'plan'
+      && isBigMakeRequest(req.segments.map((s) => s.text).join(' '))
+    if (makeAutoPlan) permissionMode = 'plan'
     // Рабочий каталог разговора (`conv.workdir`) выбирается через проводник
     // МАШИНЫ — это путь на её хосте, и в контейнере сервера его нет. Он уходит
     // только в MCP-мост (`&cwd=`), где `remote.bash` делает `cd` на агенте.
@@ -492,7 +520,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Навыки: выключенные (skill-<encoded>) убираем из выбранных для этого хода.
     const effectiveSkills = (conv?.skillNames ?? []).filter((name) => !disabledContext.has(`skill-${encodeURIComponent(name)}`))
     // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
-    const disallowedTools = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
+    const disallowedTools: string[] = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
     const turnId = randomUUID()
     if (deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
@@ -585,7 +613,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const instructions = effectiveChatInstructions(settings.chatInstructions, disabledContext)
       .filter((item) => !(conv?.assistantKind === 'console-reader' && item.kind === 'console'))
       .filter((item) => !(conv?.assistantKind === 'make' && (item.kind === 'taskLaunch' || item.kind === 'console')))
-    const prompt = appendChatInstructionHints(basePrompt, instructions)
+    const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext ? await deps.makeContext(conversationId).catch(() => '') : ''
+    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '')
+    // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
+    const makeQuestion = conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
+    const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase
+    const prompt = makeAutoPlan
+      ? `${promptBase}\n\n## Режим плана (большая переделка)\nЗапрос затрагивает весь проект. Сначала изучи файлы (make_list_files/make_read_file) и ответь планом: какие файлы создашь/изменишь и что в них будет, 5–12 пунктов. Файлы в этом ходе менять нельзя. Закончи вопросом, подтверждает ли пользователь план — после «да» он пришлёт следующий запрос, и ты выполнишь его целиком.`
+      : promptQ
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
     const machine = deps.db.resolveConversationMachine(userId, conversationId, {
@@ -686,8 +721,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let makeMcpUrl: string | undefined
     if (conv?.assistantKind === 'make' && deps.makeMcpBaseUrl) {
       // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
-      const note = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim().slice(0, 80)
-      makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(randomUUID())}${note ? `&note=${encodeURIComponent(note)}` : ''}`
+      const userText = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim()
+      const note = userText.slice(0, 80)
+      makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
+
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
@@ -726,7 +763,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
-    if (executionDisabled || (role !== 'admin' && !remote)) permissionMode = 'plan'
+    // Make без машины (roadmap-3 п.2): инструменты make_* не требуют машины и безопасны, а нативный
+    // plan-режим CLI их глушит. Для Claude запускаем default, но запрещаем все встроенные инструменты
+    // (shell/файлы сервера) — остаются только MCP. Codex в read-only sandbox блокирует HTTP-MCP, поэтому
+    // там остаётся план (ограничение задокументировано в KB).
+    const makeOnlyExecution = conv?.assistantKind === 'make' && provider === 'claude' && !executionDisabled
+      && role !== 'admin' && !remote && permissionMode !== 'plan'
+    if (executionDisabled || (role !== 'admin' && !remote && !makeOnlyExecution)) permissionMode = 'plan'
+    if (makeOnlyExecution) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
     // Полный контекст хода: все сообщения разговора на момент отправки
     // (реплика пользователя уже сохранена клиентом перед claude.send).
     const contextMessages = deps.db
@@ -832,6 +876,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             // live-снапшот: так счётчики не теряются при различиях форматов CLI.
             ...turn.usage,
             ...meta,
+            ...(deps.makeHub?.turnSnapshot(turnId) ? { makeSnapshotId: deps.makeHub.turnSnapshot(turnId) } : {}),
             // Длительность из CLI, а если её нет — измеряем по стенным часам.
             durationMs: meta?.durationMs ?? now() - startedAt,
             model: resolvedModel,

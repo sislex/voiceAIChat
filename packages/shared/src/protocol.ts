@@ -1,3 +1,4 @@
+import type { MakePresenceClient } from './make'
 // Контракт клиент↔сервер (Ф1). HTTP REST — запрос/ответ; WebSocket — стриминг.
 // Семантика соответствует прежним Electron-IPC каналам (1:1), но транспорт-нейтральна.
 
@@ -140,6 +141,19 @@ export const REST = {
   sessionLogin: '/api/session/login',
   sessionMe: '/api/session/me',
   sessionLogout: '/api/session/logout',
+  /** Сессии текущего пользователя и «выйти везде» (auth-roadmap п.4). */
+  sessionList: '/api/session/list',
+  /** Bearer → HttpOnly cookie-сессия + CSRF (auth-roadmap п.5). */
+  sessionCookie: '/api/session/cookie',
+  /** Второй фактор TOTP (auth-roadmap п.6): код после пароля, настройка и отключение. */
+  session2fa: '/api/session/2fa',
+  session2faSetup: '/api/session/2fa/setup',
+  session2faEnable: '/api/session/2fa/enable',
+  session2faDisable: '/api/session/2fa/disable',
+  sessionLogoutAll: '/api/session/logout-all',
+  sessionRevoke: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
+  adminSessions: (user: string) => `/api/admin/users/${encodeURIComponent(user)}/sessions`,
+  adminSessionRevoke: (sid: string) => `/api/admin/sessions/${encodeURIComponent(sid)}`,
   sessionPreview: '/api/session/preview',
   conversations: '/api/conversations',
   /** Make: состояние/файлы проекта разговора. */
@@ -160,11 +174,34 @@ export const REST = {
   makeRestoreFile: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/restore-file`,
   makeImport: (id: string) => `/api/make/${encodeURIComponent(id)}/import`,
   makeImportUrl: (id: string) => `/api/make/${encodeURIComponent(id)}/import-url`,
+  makeNotes: (id: string) => `/api/make/${encodeURIComponent(id)}/notes`,
+  makeTests: (id: string) => `/api/make/${encodeURIComponent(id)}/tests`,
+  makeTestsPage: (id: string, file: string) => `/api/preview/make/${encodeURIComponent(id)}/__tests__?file=${encodeURIComponent(file)}`,
   makeStories: (id: string) => `/api/make/${encodeURIComponent(id)}/stories`,
   /** Страница-раннер сториз внутри превью (cookie-аутентификация, как у превью). */
+  makeLibrary: '/api/make/library',
+  makeLibraryExport: (id: string) => `/api/make/${encodeURIComponent(id)}/library`,
+  makeLibraryInsert: (id: string, slug: string) => `/api/make/${encodeURIComponent(id)}/library/${encodeURIComponent(slug)}/insert`,
+  makeLibraryItem: (slug: string) => `/api/make/library/${encodeURIComponent(slug)}`,
+  makeShots: (id: string) => `/api/make/${encodeURIComponent(id)}/shots`,
+  makeUsage: (id: string) => `/api/make/${encodeURIComponent(id)}/usage`,
+  makeComments: (id: string) => `/api/make/${encodeURIComponent(id)}/comments`,
+  makePresence: (id: string) => `/api/make/${encodeURIComponent(id)}/presence`,
+  makeComment: (id: string, commentId: string) => `/api/make/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
+  /** Комментарии зрителей публикации (roadmap-4 п.34): GET — одобренные, POST — новый (в модерацию). */
+  makePublicComments: (token: string) => `/p/${encodeURIComponent(token)}/__comments__`,
+  makeCleanup: (id: string) => `/api/make/${encodeURIComponent(id)}/cleanup`,
+  makeShotImage: (id: string, shotId: string) => `/api/preview/make/${encodeURIComponent(id)}/__shots__/${encodeURIComponent(shotId)}.png`,
+  makeGalleryPage: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/__gallery__`,
   makeStoriesPage: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/__stories__`,
   /** Превью и ZIP-экспорт живут под /api/preview/…: там действует preview-cookie для iframe и ссылок. */
   makePreview: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/`,
+  makeShare: (id: string) => `/api/make/${encodeURIComponent(id)}/share`,
+  makeShareGrants: (id: string) => `/api/make/${encodeURIComponent(id)}/share/grants`,
+  makeShared: (token: string) => `/api/make/shared/${encodeURIComponent(token)}`,
+  makeSharedFile: (token: string, path: string) => `/api/make/shared/${encodeURIComponent(token)}/file?path=${encodeURIComponent(path)}`,
+  makeSharedStories: (token: string) => `/api/make/shared/${encodeURIComponent(token)}/stories`,
+  makeSharedPreview: (token: string) => `/api/preview/make-shared/${encodeURIComponent(token)}/`,
   makeExport: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/export.zip`,
   conversationDraft: '/api/conversations/draft',
   conversationsSearch: '/api/conversations/search',
@@ -250,6 +287,19 @@ export const REST = {
   // --- Админ-страница пользователей (только admin) ---
   adminUsers: '/api/admin/users',
   adminUsersUsageSummary: '/api/admin/users/usage-summary',
+  /** Журнал безопасности (auth-roadmap п.7): `?user=&limit=`. */
+  adminSecurity: '/api/admin/security',
+  /** Инвайты на саморегистрацию (auth-roadmap п.8). */
+  adminInvites: '/api/admin/invites',
+  adminInvite: (token: string) => `/api/admin/invites/${encodeURIComponent(token)}`,
+  sessionInvite: (token: string) => `/api/session/invite/${encodeURIComponent(token)}`,
+  sessionRegister: '/api/session/register',
+  /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
+  sessionReset: '/api/session/reset',
+  sessionPassword: '/api/session/password',
+  /** Отметить уведомления безопасности просмотренными (п.16). */
+  sessionNoticesSeen: '/api/session/notices/seen',
+  adminUserResetCode: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/reset-code`,
   adminUser: (name: string) => `/api/admin/users/${encodeURIComponent(name)}`,
   adminUserBlock: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/block`,
   adminUserLlmAccess: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/llm-access`,
@@ -259,6 +309,8 @@ export const REST = {
   adminUserMessages: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/messages`,
   adminLlmEngines: '/api/admin/llm-engines',
   adminModelPrices: '/api/admin/model-prices',
+  adminMakeStats: '/api/admin/make/stats',
+  adminMakeMetrics: '/api/admin/make/metrics',
   adminModelPrice: (provider: string, model: string) => '/api/admin/model-prices/' + encodeURIComponent(provider) + '/' + encodeURIComponent(model),
   adminLlmEngine: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}`,
   adminLlmEngineHealth: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}/health`,
@@ -569,6 +621,8 @@ export type ServerMessage =
   | { t: 'preview.action'; conversationId: string; requestId: string; action: PreviewAction }
   /** Make: файлы проекта изменились (ассистентом или пользователем) — превью и дерево обновляются. */
   | { t: 'make.changed'; conversationId: string; rev: number; paths: string[] }
+  /** Presence вкладок проекта Make (roadmap-2 п.14): кто открыл проект и какой файл правит. */
+  | { t: 'make.presence'; conversationId: string; clients: MakePresenceClient[] }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']

@@ -1,14 +1,28 @@
 import type {
   AdminLlmEngine, AdminLlmEngineHealth, AdminLlmEngineInput, AdminUserInfo,
-  ModelPrice, ModelPriceInput, UsageReport, UsageUnit, UserUsageSummary
-} from '@shared/admin'
+  ModelPrice, ModelPriceInput, UsageReport, UsageUnit, UserUsageSummary, AdminMakeStats, SecurityEvent, InviteInfo } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
-import type { Conversation, Message, SessionUser, UserRole } from '@shared/types'
+import type { Conversation, Message, SessionInfo, SessionUser, UserRole } from '@shared/types'
 
 export interface AdminClient {
   listUsers(): Promise<AdminUserInfo[]>
   usageSummary(range?: { from?: number; to?: number }): Promise<UserUsageSummary[]>
-  createUser(input: { name: string; password: string; role: UserRole }): Promise<AdminUserInfo>
+  /** Метрики Make (п.38); у старых клиентов метода может не быть — стор это переживает. */
+  makeStats?(): Promise<AdminMakeStats>
+  /** Сессии пользователя и отзыв (auth-roadmap п.4); у старых клиентов может не быть. */
+  userSessions?(input: { name: string }): Promise<SessionInfo[]>
+  revokeSession?(input: { sid: string }): Promise<void>
+  /** Журнал безопасности (auth-roadmap п.7). */
+  securityEvents?(input: { user?: string; limit?: number }): Promise<SecurityEvent[]>
+  /** Инвайты на саморегистрацию (auth-roadmap п.8). */
+  listInvites?(): Promise<InviteInfo[]>
+  createInvite?(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }): Promise<InviteInfo>
+  deleteInvite?(input: { token: string }): Promise<void>
+  createUser(input: { name: string; password: string; role: UserRole; mustChangePassword?: boolean }): Promise<AdminUserInfo>
+  /** Одноразовый код сброса пароля (auth-roadmap п.10). */
+  resetCode?(input: { name: string }): Promise<{ code: string; expiresAt: number }>
+  /** Месячный лимит расхода LLM (auth-roadmap п.17). */
+  setUserLlmLimit?(input: { name: string; llmLimitUsd: number | null }): Promise<AdminUserInfo>
   updateUserRole(input: { name: string; role: UserRole }): Promise<AdminUserInfo>
   setUserBlocked(input: { name: string; blocked: boolean }): Promise<void>
   deleteUser(input: { name: string }): Promise<void>

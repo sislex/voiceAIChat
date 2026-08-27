@@ -10,6 +10,15 @@ export interface AdminUserInfo {
   role: UserRole
   blocked: boolean
   createdAt: number
+  /** Временный пароль: пользователь обязан сменить его при входе (auth-roadmap п.11). */
+  mustChangePassword?: boolean
+  /** Последний вход (п.18) и месячный лимит расхода LLM (п.17). */
+  lastLogin?: number | null
+  llmLimitUsd?: number | null
+  /** Авто-блокировка после неудачных входов (auth-roadmap п.3). */
+  failedLogins?: number
+  lockedUntil?: number | null
+  lockReason?: string | null
   conversationCount: number
   /** Машины-агенты пользователя с онлайн-статусом. */
   agents: AgentInfo[]
@@ -147,4 +156,55 @@ export interface LlmEngineOption {
   name: string
   kind: LlmEngineKind
   isDefault: boolean
+}
+
+/** Метрики Make для админки (п.38): сколько проектов, места и публикаций — по системе и по пользователям. */
+export interface AdminMakeProjectStat {
+  conversationId: string
+  owner: string | null
+  filesCount: number
+  bytes: number
+  snapshots: number
+  published: boolean
+  shared: boolean
+  views: number
+  updatedAt: number
+}
+
+export interface AdminMakeUserStat {
+  user: string
+  projects: number
+  bytes: number
+  published: number
+  views: number
+}
+
+/** Инвайт на саморегистрацию (auth-roadmap п.8): роль, срок, лимит использований. */
+export interface InviteInfo { token: string; role: UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string }
+
+/** Журнал безопасности (auth-roadmap п.7): входы, выходы, неудачи, блокировки, смена пароля, 2FA. */
+export type SecurityEventType = 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
+export interface SecurityEvent { id: number; at: number; user: string; type: SecurityEventType; ip: string; userAgent: string; details: string }
+
+/** Диск с данными (roadmap-4 п.40): `alert` — свободно меньше `MAKE_DISK_ALERT_BYTES`. */
+export interface AdminDiskStats { totalBytes: number; freeBytes: number; alert: boolean }
+export const MAKE_DISK_ALERT_BYTES = 10 * 1024 ** 3
+
+export interface AdminMakeStats {
+  /** Свободное место на разделе с данными Make; null — узнать не удалось. */
+  disk?: AdminDiskStats | null
+  projects: number
+  bytes: number
+  filesBytes: number
+  snapshotsBytes: number
+  shotsBytes: number
+  published: number
+  shared: number
+  views: number
+  limitBytes: number
+  /** Квота на пользователя (сумма его проектов); в byUser предупреждение при ≥ 80 %. */
+  userLimitBytes: number
+  byUser: AdminMakeUserStat[]
+  /** Самые тяжёлые проекты (до 10). */
+  top: AdminMakeProjectStat[]
 }

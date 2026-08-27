@@ -1,7 +1,8 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState, MakePresenceClient, MakeShareRole, MakeTestFile, MakeProjectNotes } from './make'
+import type { MakeReplacePreviewLine } from './makeSearch'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -25,8 +26,7 @@ import type {
   TurnMeta,
   TurnUsage,
   WhisperModel,
-  WhisperModelInfo
-} from './types'
+  WhisperModelInfo, SessionInfo, LoginChallenge, UserRole } from './types'
 import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities, TurnTarget, ActiveTurn } from './protocol'
 import type { GitAccessDiagnostics, GitAccessResult } from './gitAccess'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
@@ -37,8 +37,7 @@ import type {
   LlmEngineOption,
   AdminUserInfo,
   UsageReport,
-  UsageUnit
-} from './admin'
+  UsageUnit, SecurityEvent, InviteInfo } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
@@ -144,18 +143,46 @@ export interface IpcInvokeMap {
   'make:restore': { arg: { conversationId: string; snapshotId: string }; result: MakeProjectState }
   'make:reset': { arg: { conversationId: string }; result: MakeProjectState }
   /** snapshotId — закрепить публикацию за снимком; null/отсутствует — публиковать текущее состояние. */
-  'make:publish': { arg: { conversationId: string; snapshotId?: string | null }; result: MakeProjectState }
+  'make:publish': { arg: { conversationId: string; snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean }; result: MakeProjectState }
   'make:unpublish': { arg: { conversationId: string }; result: MakeProjectState }
   'make:check': { arg: { conversationId: string }; result: { issues: MakeCheckIssue[] } }
   'make:template': { arg: { conversationId: string; templateId: string }; result: MakeProjectState }
   /** Загрузка бинарного файла (картинка, шрифт) — содержимое в base64. */
   'make:upload': { arg: { conversationId: string; path: string; dataBase64: string }; result: MakeProjectState }
-  'make:search': { arg: { conversationId: string; query: string }; result: { matches: MakeSearchMatch[] } }
+  'make:search': { arg: { conversationId: string; query: string; regex?: boolean; matchCase?: boolean }; result: { matches: MakeSearchMatch[] } }
   'make:stories': { arg: { conversationId: string }; result: { files: MakeStoryFile[] } }
   /** Замена по всем текстовым файлам проекта; перед заменой — снимок. */
-  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean }; result: { files: number; replacements: number; state: MakeProjectState } }
+  /** `dryRun` — только предпросмотр (`preview`), файлы не меняются. `regex` — запрос как регулярное выражение с `$1`-подстановками. */
+  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean }; result: { files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[] } }
   'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
   /** Текст файла из снимка — для diff-вью. */
+  'make:library': { arg: Record<string, never>; result: { items: MakeLibraryItem[] } }
+  /** Сохранить файлы проекта в библиотеку под именем. */
+  'make:libraryExport': { arg: { conversationId: string; name: string; paths: string[] }; result: { item: MakeLibraryItem } }
+  /** Вставить компонент из библиотеки в проект (существующие файлы перезаписываются). */
+  /** `autoImported` — компоненты, import которых добавлен в точку входа (roadmap-4 п.13). */
+  'make:libraryInsert': { arg: { conversationId: string; slug: string }; result: { state: MakeProjectState; mergedTokens: number; autoImported: string[] } }
+  'make:libraryRemove': { arg: { slug: string }; result: { items: MakeLibraryItem[] } }
+  'make:shots': { arg: { conversationId: string }; result: { shots: MakeStoryShot[] } }
+  'make:tests': { arg: { conversationId: string }; result: { files: MakeTestFile[] } }
+  'make:notes': { arg: { conversationId: string }; result: MakeProjectNotes }
+  'make:setNotes': { arg: { conversationId: string } & Partial<MakeProjectNotes>; result: MakeProjectNotes }
+  'make:usage': { arg: { conversationId: string }; result: MakeUsage }
+  'make:share': { arg: { conversationId: string }; result: MakeProjectState }
+  'make:unshare': { arg: { conversationId: string }; result: MakeProjectState }
+  /** Именной доступ (roadmap-3 п.6): role null — убрать. */
+  'make:shareGrant': { arg: { conversationId: string; user: string; role: MakeShareRole | null }; result: MakeProjectState }
+  'make:shared': { arg: { token: string }; result: MakeSharedState }
+  'make:sharedFile': { arg: { token: string; path: string }; result: MakeFileContent }
+  'make:sharedStories': { arg: { token: string }; result: { files: MakeStoryFile[] } }
+  'make:comments': { arg: { conversationId: string }; result: { comments: MakeComment[] } }
+  /** Heartbeat presence (каждые ~15 с и при смене файла/грязности); ответ — все живые вкладки. */
+  'make:presence': { arg: { conversationId: string; clientId: string; path: string | null; editing: boolean; leave?: boolean }; result: { clients: MakePresenceClient[] } }
+  'make:commentAdd': { arg: { conversationId: string; selector: string; elementLabel: string; text: string }; result: { comments: MakeComment[] } }
+  'make:commentUpdate': { arg: { conversationId: string; commentId: string; resolved?: boolean; text?: string; status?: 'pending' | 'approved' }; result: { comments: MakeComment[] } }
+  'make:commentRemove': { arg: { conversationId: string; commentId: string }; result: { comments: MakeComment[] } }
+  'make:cleanup': { arg: { conversationId: string } & MakeCleanupOptions; result: MakeCleanupResult }
+  'make:shot': { arg: { conversationId: string; file: string; story: string; dataBase64: string }; result: { shots: MakeStoryShot[] } }
   'make:snapshotFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeFileContent }
   'make:restoreFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeProjectState }
   /** Импорт ZIP (base64) — replace очищает проект, merge дописывает поверх. */
@@ -305,11 +332,25 @@ export interface IpcInvokeMap {
   'cx:resume': { arg: { id: string }; result: ConversationWithMessages }
   // --- Админ-страница пользователей (только admin) ---
   'admin:users': { arg: void; result: AdminUserInfo[] }
+  /** Сессии пользователя и их отзыв администратором (auth-roadmap п.4). */
+  'admin:userSessions': { arg: { name: string }; result: { sessions: SessionInfo[] } }
+  'admin:revokeSession': { arg: { sid: string }; result: { ok: true } }
+  /** Журнал безопасности (auth-roadmap п.7). */
+  'admin:securityEvents': { arg: { user?: string; limit?: number }; result: { events: SecurityEvent[] } }
+  /** Инвайты (auth-roadmap п.8). */
+  'admin:invites': { arg: void; result: { invites: InviteInfo[] } }
+  'admin:inviteCreate': { arg: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }; result: InviteInfo }
+  'admin:inviteDelete': { arg: { token: string }; result: { ok: true } }
+  /** Одноразовый код сброса пароля (auth-roadmap п.10). */
+  'admin:resetCode': { arg: { name: string }; result: { code: string; expiresAt: number } }
   'admin:usageSummary': { arg: { from?: number; to?: number } | void; result: import('./admin').UserUsageSummary[] }
+  'admin:makeStats': { arg: void; result: import('./admin').AdminMakeStats }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
-  'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole }; result: AdminUserInfo }
+  'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole; mustChangePassword?: boolean }; result: AdminUserInfo }
   'admin:updateUserRole': { arg: { name: string; role: import('./types').UserRole }; result: AdminUserInfo }
+  /** Месячный лимит расхода LLM (auth-roadmap п.17); null — без лимита. */
+  'admin:setUserLlmLimit': { arg: { name: string; llmLimitUsd: number | null }; result: AdminUserInfo }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
@@ -752,9 +793,26 @@ export interface RendererBrowserBridge {
 }
 
 export interface RendererSessionBridge {
-  login(creds: { name: string; password: string }): Promise<SessionUser | null>
+  /** Вход: пользователь, `null` при отказе или вызов второго фактора (auth-roadmap п.6) — тогда нужен `login2fa`. */
+  login(creds: { name: string; password: string; remember?: boolean }): Promise<SessionUser | LoginChallenge | null>
+  login2fa?(input: { ticket: string; code: string }): Promise<SessionUser | null>
+  /** Уведомления безопасности — входы с нового устройства (auth-roadmap п.16): получить непросмотренные и отметить. */
+  securityNotices?(): Promise<Array<{ at: number; ip: string; userAgent: string }>>
+  securityNoticesSeen?(): Promise<void>
+  /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
+  resetPassword?(input: { name: string; code: string; password: string }): Promise<{ ok: true } | { error: string }>
+  changePassword?(input: { current: string; next: string }): Promise<{ ok: true } | { error: string }>
+  /** Саморегистрация по инвайту (auth-roadmap п.8, web). */
+  inviteInfo?(token: string): Promise<{ role: string; expiresAt: number; note: string } | null>
+  register?(input: { token: string; name: string; password: string }): Promise<{ ok: true } | { error: string }>
+  /** Настройка второго фактора (web): секрет/ссылка, включить по коду, выключить по коду, статус. */
+  twoFactor?: { status(): Promise<{ enabled: boolean }>; setup(): Promise<{ secret: string; otpauth: string }>; enable(code: string): Promise<void>; disable(code: string): Promise<void> }
   me(): Promise<SessionUser | null>
   logout(): Promise<void>
+  /** Сессии пользователя (auth-roadmap п.4); нет в desktop-мосте. */
+  sessions?(): Promise<SessionInfo[]>
+  logoutAll?(): Promise<void>
+  revokeSession?(sid: string): Promise<void>
   /**
    * Выпускает HttpOnly-cookie превью из действующего Bearer-токена. Нужен сессиям,
    * восстановленным без повторного login (токен из localStorage, перезапуск браузера):
@@ -800,6 +858,8 @@ export interface RendererFilesBridge {
 /** Мост Make (web): сервер сообщает об изменении файлов проекта — панель обновляет превью и дерево. */
 export interface RendererMakeBridge {
   onChanged(cb: (m: { conversationId: string; rev: number; paths: string[] }) => void): () => void
+  /** Presence вкладок (roadmap-2 п.14); у старых хостов может отсутствовать. */
+  onPresence?(cb: (m: { conversationId: string; clients: MakePresenceClient[] }) => void): () => void
 }
 
 export interface RendererPtyBridge {
@@ -904,6 +964,19 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:reset',
   'make:publish',
   'make:unpublish',
+  'make:usage',
+  'make:cleanup',
+  'make:share',
+  'make:unshare',
+  'make:shareGrant',
+  'make:shared',
+  'make:sharedFile',
+  'make:sharedStories',
+  'make:comments',
+  'make:presence',
+  'make:commentAdd',
+  'make:commentUpdate',
+  'make:commentRemove',
   'make:check',
   'make:template',
   'make:upload',
@@ -911,6 +984,15 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:stories',
   'make:replace',
   'make:snapshotDiff',
+  'make:library',
+  'make:libraryExport',
+  'make:libraryInsert',
+  'make:libraryRemove',
+  'make:shots',
+  'make:tests',
+  'make:notes',
+  'make:setNotes',
+  'make:shot',
   'make:snapshotFile',
   'make:restoreFile',
   'make:import',
@@ -964,6 +1046,15 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'cx:transcript',
   'cx:resume',
   'admin:users',
+  'admin:userSessions',
+  'admin:revokeSession',
+  'admin:securityEvents',
+  'admin:invites',
+  'admin:inviteCreate',
+  'admin:inviteDelete',
+  'admin:resetCode',
+  'admin:setUserLlmLimit',
+  'admin:makeStats',
   'admin:llmAccess',
   'admin:saveLlmAccess',
   'admin:createUser',

@@ -57,7 +57,8 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           if (turn && !snapshotDone.has(key)) {
             snapshotDone.add(key)
             if (snapshotDone.size > 5_000) snapshotDone.clear()
-            await workspaces.snapshot(conv, note ? `До правок: «${note}»` : 'До правок ассистента')
+            const snapped = await workspaces.snapshot(conv, note ? `До правок: «${note}»` : 'До правок ассистента')
+            if (snapped.snapshots[0]) hub.rememberTurnSnapshot(turn, snapped.snapshots[0].id)
           }
         }
         const afterMutation = (paths: string[]): void => {
@@ -101,8 +102,60 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
             await beforeMutation()
             const state = await workspaces.write(conv, args.path, args.content)
             afterMutation([args.path])
-            return text(`Записано: ${args.path} (${Buffer.byteLength(args.content, 'utf8')} байт). Файлов в проекте: ${state.files.length}.`)
+            // Авто-проверка (roadmap-2 п.1): замечания по записанному файлу сразу в ответе инструмента —
+            // модели не нужно помнить про make_check, а ошибка компиляции видна до следующего шага.
+            const issues = (await workspaces.check(conv).catch(() => [])).filter((i) => i.path === args.path)
+            const tail = issues.length ? `\nЗамечания по файлу (исправь перед завершением):\n${issues.map((i) => `- ${i.message}`).join('\n')}` : ''
+            return text(`Записано: ${args.path} (${Buffer.byteLength(args.content, 'utf8')} байт). Файлов в проекте: ${state.files.length}.${tail}`)
           } catch (error) { return text(describeError(error), true) }
+        })
+
+        server.registerTool('make_apply_changes', {
+          description: 'Записать НЕСКОЛЬКО файлов одной транзакцией (и при необходимости удалить). Если хоть один записанный файл не компилируется, все изменения откатываются и возвращаются ошибки. Используй для связанных правок (компонент + сториз + стили) вместо серии make_write_file.',
+          inputSchema: {
+            files: z.array(z.object({ path: z.string(), content: z.string() })).min(1).max(30).describe('Полное содержимое каждого файла'),
+            delete: z.array(z.string()).max(30).optional().describe('Пути файлов, которые удалить')
+          }
+        }, async (args) => {
+          if (readOnly) return planBlocked()
+          try {
+            await workspaces.ensure(conv)
+            await beforeMutation()
+            const result = await workspaces.applyChanges(conv, args.files, args.delete ?? [])
+            afterMutation([...args.files.map((f) => f.path), ...(args.delete ?? [])])
+            if (result.rolledBack) return text(`Изменения откачены: ошибка компиляции.\n${result.issues.map((i) => `- ${i.path}: ${i.message}`).join('\n')}`, true)
+            const warn = result.issues.length ? `\nЗамечания:\n${result.issues.map((i) => `- ${i.path}: ${i.message}`).join('\n')}` : ''
+            return text(`Записано файлов: ${args.files.length}${args.delete?.length ? `, удалено: ${args.delete.length}` : ''}. Файлов в проекте: ${result.state.files.length}.${warn}`)
+          } catch (error) { return text(describeError(error), true) }
+        })
+
+        server.registerTool('make_edit_file', {
+          description: 'Точечная правка: заменить фрагмент текста в файле, не переписывая его целиком. Фрагмент должен встречаться ровно один раз (или передай all=true). Экономит токены на больших файлах.',
+          inputSchema: {
+            path: z.string(),
+            find: z.string().describe('Точный текст, который заменить (с переносами и отступами как в файле)'),
+            replace: z.string().describe('Новый текст'),
+            all: z.boolean().optional().describe('Заменить все вхождения')
+          }
+        }, async (args) => {
+          if (readOnly) return planBlocked()
+          try {
+            await workspaces.ensure(conv)
+            await beforeMutation()
+            const { replaced } = await workspaces.editFile(conv, args.path, args.find, args.replace, args.all ?? false)
+            afterMutation([args.path])
+            const issues = (await workspaces.check(conv).catch(() => [])).filter((i) => i.path === args.path)
+            const tail = issues.length ? `\nЗамечания по файлу:\n${issues.map((i) => `- ${i.message}`).join('\n')}` : ''
+            return text(`Заменено вхождений: ${replaced} в ${args.path}.${tail}`)
+          } catch (error) { return text(describeError(error), true) }
+        })
+
+        server.registerTool('make_remember', {
+          description: 'Записать в заметки проекта решение, которого нужно придерживаться дальше (палитра, структура, договорённости с пользователем). Заметки попадают в контекст каждого следующего хода.',
+          inputSchema: { note: z.string().min(3).max(500).describe('Одна короткая формулировка') }
+        }, async (args) => {
+          if (readOnly) return planBlocked()
+          try { const n = await workspaces.appendNote(conv, args.note); return text(`Записано. Заметок: ${n.notes.split('\n').filter(Boolean).length}.`) } catch (error) { return text(describeError(error), true) }
         })
 
         server.registerTool('make_delete_file', {

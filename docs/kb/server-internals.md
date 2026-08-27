@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-27
-checked: 8e522673
+checked: a6f3c3af
 areas:
   - apps/server/src
 ---
@@ -60,7 +60,7 @@ ZIP — собственный писатель без сжатия (`make/zip.t
 сессия подписывается через `deps.make.subscribe` (как relay превью); владельца разговора для
 MCP даёт `db.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
 Публикация: `.publish.json` в папке проекта + индекс `make/.published/<token>.json` → маршрут
-`/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен).
+`/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен). Фоновая очистка (roadmap-2 п.16): `MakeWorkspaces.sweep(maxAgeMs = 30 дней)` обходит все проекты и удаляет снимки старше срока (кроме закреплённого в публикации и самого свежего) и PNG-снимки стори того же возраста; `server.ts` запускает её после старта и каждые 6 часов рядом с `GeneratedCleanupService` (не в VITEST), результат — в лог `make_sweep`.
 `publish(id, {snapshotId})` закрепляет публикацию за снимком (`snapshotId/snapshotLabel` в `.publish.json`):
 `publicFile()` читает файлы из `.snapshots/<id>/files`, транспиляция кэшируется по ключу `conv@snapshot`;
 `publish(id)` без снимка возвращает «живую» публикацию текущих файлов (п.26).
@@ -84,7 +84,14 @@ MCP даёт `db.conversationOwner(id)`. Старый исследователь
 (`MAKE_REACT_IMPORT_MAP`, шаблоны `react` и `react-ts` — второй на TSX с типизированными пропсами и
 `*.stories.tsx`). **Сториз** (`make/stories.ts`): `parseStoryFile` — имена
 стори регуляркой по экспортам (код не исполняется на сервере), `renderStoriesPage` — HTML раннера
-для `GET /api/preview/make/:id/__stories__?file=&story=`; `GET /api/make/:id/stories` и
+для `GET /api/preview/make/:id/__stories__?file=&story=`; `GET /api/make/:id/stories`,
+**Библиотека компонентов** (п.17, `make/library.ts`): `<dataDir>/make-library/<base64url(login)>/<slug>/{meta.json,
+files/…}`; `GET /api/make/library`, `POST /api/make/:id/library {name, paths}` (файлы читаются из проекта),
+`POST /api/make/:id/library/:slug/insert` (→ `importFiles(merge)` со снимком), `DELETE /api/make/library/:slug`;
+slug — транслит имени (`librarySlug`). `GET/POST /api/make/:id/shots` (визуальные снимки стори: PNG снимает клиент, сервер хранит в `.shots/<id>.png` +
+`meta.json`, ≤10 на стори, отдаёт `…/__shots__/<id>.png`; `.shots` не входит в список файлов и переживает reset;
+серверный Playwright для авто-снимков отложен — в прод-образе нет браузеров), `GET /api/preview/make/:id/__gallery__` (`renderGalleryPage` — сетка iframe-ов на раннер; те же `__stories__` и
+`__gallery__` отдаются и на публикации `/p/<token>/…` без входа, п.15) и
 `GET /api/make/:id/search?q=` (`MakeWorkspaces.stories/search`, поиск без регистра, ≤200 совпадений).
 
 Текущий `/api/preview` нельзя считать файловым или artifact-preview сервером: это аутентифицированный same-origin прокси внешнего HTTP/HTTPS. Его SSRF-ограничения и механизм iframe описаны ниже; отдельному продукту понадобятся собственные storage, ревизии, builder и изолированный runtime, которых сейчас в сервере нет.
@@ -262,3 +269,7 @@ Piper доступен только при бинарнике и валидно�
 HTTP-тесты используют `app.inject()`, WS-тесты — временно слушающий Fastify и `ws` client, DB — `:memory:`. Spawn/fetch/fs/resources передаются как зависимости. Реальные Claude, Codex, Whisper и Piper в тестах не запускаются.
 
 Гейт: `npm run -w @voicechat/server typecheck && npm run -w @voicechat/server test`.
+
+**Валидация моков по JSON Schema (roadmap-4 п.31).** Файл коллекции `mock/**.json` может содержать `$schema`; `applyCollectionRequest` (`@shared/makeMock`) перед POST/PUT/PATCH прогоняет тело через `validateJsonSchema` (`@shared/jsonSchemaLite` — подмножество: `type`, `required`, `properties`, `enum`, `minLength/maxLength`, `minimum/maximum`, `pattern`, `format: email`, `items`, `additionalProperties: false`), для PATCH `required` игнорируется. Ошибки — ответ 422 `{ error: 'validation', issues: [{ path, message }] }`, файл не меняется. Подсказка модели (`MAKE_ASSISTANT_HINT`) описывает это поле.
+
+**Auth-мок (roadmap-4 п.32).** Файл мока с полем `$auth` обрабатывает `applyAuthMock` (`@shared/makeMock`): `{ users: [{ username|login|email, password, … }], cookie? }` — POST сравнивает учётные данные, отвечает 200 с `user` (без пароля, слитым в объектное `$body`) и заголовком `Set-Cookie: vc_mock_session=<login>; Path=/; SameSite=Lax`, иначе 401 (не POST — 405); `{ require: true }` — без cookie 401, с ней в объектное `$body` подставляется `user: { username }`; `{ logout: true }` — 204 с `Max-Age=0`. `resolveMock` получил параметр `cookieHeader`, все три маршрута моков (GET превью, не-GET превью, публикация) передают `req.headers.cookie`; `sendMock` пробрасывает `set-cookie` как любой заголовок ответа. Это учебная имитация входа для прототипов, не защита данных.

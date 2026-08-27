@@ -45,6 +45,8 @@ export interface DialogProps {
   actions?: ReactNode
   /** Подвал: кнопки под содержимым, вне области прокрутки. */
   footer?: ReactNode
+  /** Обернуть содержимое в `.vc-dialog-body` с отступами и своим скроллом — для окон без собственной раскладки. */
+  padded?: boolean
   /** Куда ставить фокус при открытии; по умолчанию — первый интерактивный элемент. */
   initialFocusRef?: RefObject<HTMLElement>
   /** data-testid оверлея: клик по нему — это клик по фону. */
@@ -65,6 +67,7 @@ export function Dialog({
   closeLabel = 'Закрыть',
   actions,
   footer,
+  padded = false,
   initialFocusRef,
   testId,
   className,
@@ -161,7 +164,7 @@ export function Dialog({
             </span>
           )}
         </div>
-        {children}
+        {padded ? <div className="vc-dialog-body">{children}</div> : children}
         {footer && <div className="vc-dialog-foot">{footer}</div>}
       </div>
     </div>,

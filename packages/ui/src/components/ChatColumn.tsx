@@ -103,6 +103,8 @@ export interface ChatColumnProps {
   workspace?: WorkspaceView | null
   /** Выполнить исходный запрос планового ответа в режиме разработки. */
   onExecutePlan?: (answerId: string) => void
+  /** Make: откатить правки этого ответа к снимку «До правок» (meta.makeSnapshotId). */
+  onMakeRestore?: (snapshotId: string) => void
   /** Разрешено ли эскалировать план (user без машины — нет). */
   canExecutePlan?: boolean
   state: VoiceState
@@ -218,6 +220,7 @@ export function ChatColumn({
   permissionMode = 'plan',
   workspace = null,
   onExecutePlan,
+  onMakeRestore,
   canExecutePlan = true,
   state,
   messages,
@@ -872,6 +875,11 @@ export function ChatColumn({
                     {isAi && isLast && m.meta?.request?.permissionMode === 'plan' && onExecutePlan && canExecutePlan && state === 'idle' && (
                       <Button size="sm" className="execute-plan" onClick={() => onExecutePlan(m.id)}>
                         Выполнить план
+                      </Button>
+                    )}
+                    {isAi && m.meta?.makeSnapshotId && onMakeRestore && (
+                      <Button size="sm" variant="ghost" className="make-restore-turn" title="Вернуть файлы проекта к состоянию до правок этого ответа" onClick={() => onMakeRestore(m.meta!.makeSnapshotId!)}>
+                        Откатить правки
                       </Button>
                     )}
                     {/* Справа: озвучить, удалить и — крайним правым — время окончания (ЧЧ:ММ:СС). */}
