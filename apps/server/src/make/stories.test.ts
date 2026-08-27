@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { extractHeadAssets, parseStoryFile, renderStoriesPage } from './stories'
-import { parseTestFile, renderTestsPage } from './stories'
+import { parseTestFile, renderGalleryPage, renderTestsPage, storyUsageSnippets } from './stories'
 
 describe('make stories', () => {
   it('parseStoryFile: имена стори из экспортов, title из default или имени файла', () => {
@@ -35,5 +35,21 @@ describe('make stories', () => {
     expect(html).toContain("'vc-make.test'")
     expect(html).toContain("'vc-make.tests-done'")
     expect(html).toContain('./src/components/Button.test.tsx')
+  })
+})
+
+describe('storyUsageSnippets / витрина (roadmap-4 п.28)', () => {
+  it('берёт JSX стрелочных стори и import компонента; объектные стори — только import', () => {
+    const src = "import { Button } from './Button'\nexport default { title: 'Button', component: Button }\nexport const Primary = () => <Button variant=\"primary\">Ок</Button>\nexport const Wide = (args) => (\n  <Button {...args} />\n)\nexport const Args = { args: { label: 'x' } }\n"
+    const u = storyUsageSnippets('src/components/Button.stories.tsx', src)
+    expect(u.Primary).toBe("import { Button } from './src/components/Button'\n\n<Button variant=\"primary\">Ок</Button>")
+    expect(u.Wide).toBe("import { Button } from './src/components/Button'\n\n<Button {...args} />")
+    expect(u.Args).toBe("import { Button } from './src/components/Button'")
+  })
+  it('renderGalleryPage: поиск, data-search и блок кода', () => {
+    const html = renderGalleryPage([{ path: 'src/components/Button.stories.tsx', title: 'Button', stories: ['Primary'] }], '/p/x/', 'Витрина', { 'src/components/Button.stories.tsx': { Primary: '<Button />' } })
+    expect(html).toContain('aria-label="Поиск по витрине"')
+    expect(html).toContain('data-search="button primary src/components/button.stories.tsx"')
+    expect(html).toContain('<details class="code"><summary>Код</summary><pre>&lt;Button /></pre>')
   })
 })
