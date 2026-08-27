@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "measurement": "Vite minified JavaScript bytes",
-  "measuredAt": "2026-08-25 after context inspector projection",
+  "measuredAt": "2026-08-27 after Monaco worker bundling and desktop sidebar",
   "headroom": "12% rounded up; budgets must be re-baselined explicitly",
   "maxBytes": {
-    "index-": 970000,
+    "index-": 1135000,
     "react-": 160000,
     "markdown-": 375000,
     "terminal-": 327000,
     "qrcode-": 27000
   },
-  "totalJsMaxBytes": 1730000
+  "totalJsMaxBytes": 18120000
 }
