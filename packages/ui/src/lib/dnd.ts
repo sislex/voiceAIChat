@@ -175,6 +175,8 @@ interface Gesture {
   started: boolean
   hold: number | null
   capture: HTMLElement | null
+  /** Элемент, на котором начался жест: капчур берём с него в момент старта, а не на pointerdown. */
+  target: HTMLElement | null
   ghost: Ghost | null
   raf: number | null
 }
@@ -226,6 +228,17 @@ export function createDragEngine(): DragEngine {
     } catch {
       // окружение без Selection API
     }
+    // Захват указателя — только когда жест действительно начался (roadmap-2 п.4): взятый на pointerdown
+    // капчур делал целью click контейнер строки, и кнопка внутри (открыть файл) не получала onClick —
+    // в headless Chromium это ломало E2E, а по спецификации так и должно быть.
+    if (g.target && typeof g.target.setPointerCapture === 'function') {
+      try {
+        g.target.setPointerCapture(g.pointerId)
+        g.capture = g.target
+      } catch {
+        // капчур недоступен — обойдёмся слушателями на window
+      }
+    }
     g.ghost = g.spec.lift ? createGhost(g.spec.lift, point) : null
     document.body.classList.add('vc-dragging')
     g.spec.onStart(point)
@@ -260,19 +273,12 @@ export function createDragEngine(): DragEngine {
       started: false,
       hold: null,
       capture: null,
+      target: null,
       ghost: null,
       raf: null
     }
     g = gesture
-    const target = (e.currentTarget ?? null) as HTMLElement | null
-    if (target && typeof target.setPointerCapture === 'function') {
-      try {
-        target.setPointerCapture(gesture.pointerId)
-        gesture.capture = target
-      } catch {
-        // капчур недоступен — обойдёмся слушателями на window
-      }
-    }
+    gesture.target = (e.currentTarget ?? null) as HTMLElement | null
     if (touch) {
       if (spec.immediate) start(point)
       else gesture.hold = window.setTimeout(() => start(gesture.point), DRAG_HOLD_MS)
