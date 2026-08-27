@@ -856,3 +856,53 @@ describe('MakePane: замечания линтера (roadmap-4 п.12)', () => 
     expect(box.className).not.toContain('make-issues--bad')
   })
 })
+
+describe('MakePane: сплит «код | превью» и zen (roadmap-4 п.16)', () => {
+  it('◫ показывает превью рядом с редактором и запоминает выбор; ⛶ скрывает шапку и дерево, Esc возвращает', async () => {
+    renderPane()
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    expect(screen.queryByTestId('make-split-preview')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Превью рядом' }))
+    const side = await screen.findByTestId('make-split-preview')
+    expect(within(side).getByTitle('Превью рядом').getAttribute('src')).toContain('index.html?rev=')
+    expect(screen.getByRole('separator', { name: 'Граница код/превью' })).toBeInTheDocument()
+    expect(localStorage.getItem('vc.make.split')).toBe('on')
+    await userEvent.click(screen.getByRole('button', { name: 'Zen-режим' }))
+    expect(screen.getByTestId('make-pane').className).toContain('make-pane--zen')
+    expect(screen.getByTestId('make-code').className).toContain('make-code--zen')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByTestId('make-pane').className).not.toContain('make-pane--zen'))
+    await userEvent.click(screen.getByRole('button', { name: 'Превью рядом' }))
+    expect(screen.queryByTestId('make-split-preview')).toBeNull()
+    localStorage.removeItem('vc.make.split')
+  })
+})
+
+describe('MakePane: правка текста в превью (roadmap-4 п.17)', () => {
+  it('vc-make.text из iframe записывает новый текст в файл с единственным вхождением; неоднозначность — тост без записи', async () => {
+    const { api } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'index.html', content: '<h1>Заголовок</h1>\n<p>Абзац\n  текста</p>' })
+    await api['make:write']({ conversationId: CONV, path: 'about.html', content: '<h2>Дубль</h2>' })
+    await api['make:write']({ conversationId: CONV, path: 'contacts.html', content: '<h2>Дубль</h2>' })
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    const send = (data: object) => window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }))
+    send({ type: 'vc-make.text', selector: 'p', before: 'Абзац текста', after: 'Новый <b>текст</b>' })
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toBe('<h1>Заголовок</h1>\n<p>Новый &lt;b&gt;текст&lt;/b&gt;</p>'))
+    send({ type: 'vc-make.text', selector: 'h2', before: 'Дубль', after: 'Другой' })
+    await screen.findByText(/встречается в нескольких файлах/)
+    expect((await api['make:read']({ conversationId: CONV, path: 'about.html' })).content).toBe('<h2>Дубль</h2>')
+  })
+})
+
+describe('MakePane: перетаскивание секций в превью (roadmap-4 п.18)', () => {
+  it('vc-make.reorder переносит фрагмент в файле; при неоднозначности файл не трогается', async () => {
+    const { api } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'index.html', content: '<main>\n  <section id="a">A</section>\n  <section id="b">B</section>\n</main>' })
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    const send = (data: object) => window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }))
+    send({ type: 'vc-make.reorder', moved: '<section id="a">A</section>', target: '<section id="b">B</section>', position: 'after' })
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toBe('<main>\n  <section id="b">B</section>\n  <section id="a">A</section>\n</main>'))
+    send({ type: 'vc-make.reorder', moved: '<div>nope</div>', target: '<section id="b">B</section>', position: 'after' })
+    await screen.findByText(/порядок в файле не изменён/)
+  })
+})

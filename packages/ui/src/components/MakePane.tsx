@@ -7,6 +7,8 @@ import { pickTokensFile } from '@shared/makeTokens'
 import { makeNextSteps } from '@shared/makeNextSteps'
 import { changedLines as diffLines } from '@shared/lineDiff'
 import type { MakeReplacePreviewLine } from '@shared/makeSearch'
+import { escapeMarkupText, replaceUniqueText } from '@shared/makeTextEdit'
+import { reorderMarkup } from '@shared/makeReorder'
 import { EMPTY_MAKE_SELECTION, pruneMakeSelection, toggleMakeSelection, type MakeSelectionState } from '@shared/makeSelection'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
@@ -210,6 +212,37 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [notesOpen, setNotesOpen] = useState(false)
   /** Строки открытого файла, изменённые последней записью ассистента (roadmap-4 п.9). */
   const [changedLines, setChangedLines] = useState<number[]>([])
+  /** Сплит «код | превью» и zen-режим (roadmap-4 п.16): доля редактора хранится между сессиями. */
+  const [split, setSplit] = useState<boolean>(() => { try { return localStorage.getItem('vc.make.split') === 'on' } catch { return false } })
+  const [splitPct, setSplitPct] = useState<number>(() => { try { const v = Number(localStorage.getItem('vc.make.splitPct')); return v >= 25 && v <= 80 ? v : 55 } catch { return 55 } })
+  const [zen, setZen] = useState(false)
+  const toggleSplit = (): void => setSplit((v) => { const next = !v; try { localStorage.setItem('vc.make.split', next ? 'on' : 'off') } catch { /* приватный режим */ } return next })
+  const splitDrag = usePointerDrag()
+  const codeRef = useRef<HTMLDivElement | null>(null)
+  const beginSplitDrag = (e: React.PointerEvent<HTMLElement>): void => {
+    const box = codeRef.current?.getBoundingClientRect()
+    if (!box) return
+    const tree = codeRef.current?.querySelector<HTMLElement>('.make-tree')?.getBoundingClientRect().width ?? 0
+    let last = splitPct
+    splitDrag.begin(e, {
+      lift: null,
+      immediate: true,
+      onStart: () => undefined,
+      onMove: (pt) => {
+        const usable = box.width - tree
+        last = Math.min(80, Math.max(25, Math.round(((pt.x - box.left - tree) / Math.max(1, usable)) * 100)))
+        setSplitPct(last)
+      },
+      onDrop: () => { try { localStorage.setItem('vc.make.splitPct', String(last)) } catch { /* приватный режим */ } },
+      onCancel: () => undefined
+    })
+  }
+  useEffect(() => {
+    if (!zen) return
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setZen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [zen])
   /** Мультивыбор файлов в дереве (roadmap-4 п.10): Ctrl/Cmd-клик — переключить, Shift-клик — диапазон. */
   const [picked, setPicked] = useState<MakeSelectionState>(EMPTY_MAKE_SELECTION)
   /** Содержимое открытого файла на старте хода — база для diff: за ход ассистент может записать файл несколько раз. */
@@ -321,6 +354,44 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }, [conversationId])
   const commentAction = async (run: () => Promise<{ comments: MakeComment[] }>): Promise<void> => {
     try { applyComments((await run()).comments) } catch (e) { toast.error(describeError(e)) }
+  }
+  /** Текст, отредактированный в превью (п.17): ищем старый текст как уникальную подстроку одного файла и записываем новый. */
+  const applyPreviewTextEdit = async (before: string, after: string): Promise<void> => {
+    try {
+      const found = (await api['make:search']({ conversationId, query: before.trim().split(/\s+/)[0] ?? before })).matches
+      const candidates = Array.from(new Set(found.map((m) => m.path))).filter(isMakeTextPath)
+      const hits: Array<{ path: string; next: string }> = []
+      for (const path of candidates) {
+        const { content } = await api['make:read']({ conversationId, path })
+        const next = replaceUniqueText(content, before, escapeMarkupText(after))
+        if (next) hits.push({ path, next })
+      }
+      if (hits.length !== 1) { toast.error(hits.length === 0 ? 'Не нашёл этот текст в исходнике ровно один раз — правка в превью не записана' : `Текст встречается в нескольких файлах (${hits.map((h) => h.path).join(', ')}) — поправьте в коде`); setPreviewRev((r) => r + 1); return }
+      const hit = hits[0]!
+      const next = await api['make:write']({ conversationId, path: hit.path, content: hit.next })
+      setState(next)
+      if (selectedPath === hit.path) { setContent(hit.next); setSavedContent(hit.next) }
+      toast.success(`Текст записан в ${hit.path}`)
+    } catch (e) { toast.error(describeError(e)) }
+  }
+  /** Перестановка секции из превью (п.18): оба фрагмента должны найтись в одном файле ровно по разу. */
+  const applyPreviewReorder = async (moved: string, target: string, position: 'before' | 'after'): Promise<void> => {
+    try {
+      // Обработчик живёт в замыкании эффекта — состояние берём свежее, а не из пропсов рендера.
+      const files = (await api['make:state']({ conversationId })).files.map((f) => f.path).filter((p) => /\.(html?|tsx|jsx)$/i.test(p))
+      const hits: Array<{ path: string; next: string }> = []
+      for (const path of files) {
+        const { content } = await api['make:read']({ conversationId, path })
+        const next = reorderMarkup(content, moved, target, position)
+        if (next) hits.push({ path, next })
+      }
+      if (hits.length !== 1) { toast.error('Не удалось однозначно найти эти блоки в исходнике — порядок в файле не изменён'); setPreviewRev((r) => r + 1); return }
+      const hit = hits[0]!
+      const next = await api['make:write']({ conversationId, path: hit.path, content: hit.next })
+      setState(next)
+      if (selectedPath === hit.path) { setContent(hit.next); setSavedContent(hit.next) }
+      toast.success(`Порядок записан в ${hit.path}`)
+    } catch (e) { toast.error(describeError(e)) }
   }
   const highlightInPreview = (selector: string): void => { setMode('preview'); frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.highlight', selector }, '*') }
   const [exportOpen, setExportOpen] = useState(false)
@@ -494,7 +565,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (event.source !== frameRef.current?.contentWindow) return
-      const data = event.data as { type?: string; selector?: string; tag?: string; text?: string; html?: string; id?: string; className?: string; styles?: StyleValues } | null
+      const data = event.data as { type?: string; before?: string; after?: string; moved?: string; target?: string; position?: string; selector?: string; tag?: string; text?: string; html?: string; id?: string; className?: string; styles?: StyleValues } | null
       if (!data || typeof data !== 'object') return
       if (data.type === 'vc-make.state' && event.source === frameRef.current?.contentWindow) {
         const s = data as unknown as { x: number; y: number; hash: string }
@@ -509,6 +580,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       } else if (data.type === 'vc-make.selected' && data.selector) {
         setSelected({ selector: data.selector, tag: data.tag ?? '', text: data.text ?? '', html: data.html ?? '', id: data.id, className: data.className, styles: data.styles })
         setStyleOpen(false)
+      } else if (data.type === 'vc-make.text' && typeof data.before === 'string' && typeof data.after === 'string' && event.source === frameRef.current?.contentWindow) {
+        void applyPreviewTextEdit(data.before, data.after)
+      } else if (data.type === 'vc-make.reorder' && typeof data.moved === 'string' && typeof data.target === 'string' && event.source === frameRef.current?.contentWindow) {
+        void applyPreviewReorder(data.moved, data.target, data.position === 'before' ? 'before' : 'after')
       }
     }
     window.addEventListener('message', onMessage)
@@ -1104,6 +1179,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
       {mode === 'code' && (
         <>
+          {!isPhone && <IconButton size="sm" aria-label="Превью рядом" title={split ? 'Скрыть превью рядом с кодом' : 'Показать превью рядом с кодом (границу можно перетаскивать)'} aria-pressed={split} onClick={toggleSplit}>◫</IconButton>}
+          {!isPhone && <IconButton size="sm" aria-label="Zen-режим" title="Zen: только редактор, Esc — выйти" aria-pressed={zen} onClick={() => setZen(true)}>⛶</IconButton>}
           <Button size="sm" variant="ghost" onClick={() => void runCheck()} loading={checking}>Проверить</Button>
           <Button size="sm" variant="secondary" onClick={createFile}>+ Файл</Button>
           <Button size="sm" variant="primary" disabled={!dirty || saving} onClick={() => void save()} title="Сохранить (Ctrl/Cmd+S)">{saving ? 'Сохраняю…' : 'Сохранить'}</Button>
@@ -1164,7 +1241,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   )
 
   return (
-    <section className={fullscreen ? 'make-pane make-pane--fs' : 'make-pane'} aria-label="Проект Make" data-testid="make-pane">
+    <section className={`make-pane${fullscreen ? ' make-pane--fs' : ''}${zen && mode === 'code' ? ' make-pane--zen' : ''}`} aria-label="Проект Make" data-testid="make-pane">
       {header}
       {error && <p className="make-error" role="alert">{error}</p>}
 
@@ -1324,7 +1401,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
 
       {mode === 'code' && (
-        <div className={`${dropActive ? 'make-code make-code--drop' : 'make-code'}${isPhone ? ' make-code--phone' : ''}`} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code">
+        <div ref={codeRef} className={`${dropActive ? 'make-code make-code--drop' : 'make-code'}${isPhone ? ' make-code--phone' : ''}${split && !isPhone ? ' make-code--split' : ''}${zen ? ' make-code--zen' : ''}`} style={split && !isPhone && !zen ? { gridTemplateColumns: `minmax(150px, 220px) ${splitPct}fr 6px ${100 - splitPct}fr` } : split && zen ? { gridTemplateColumns: `${splitPct}fr 6px ${100 - splitPct}fr` } : undefined} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code">
           <nav className={dragPath ? 'make-tree make-tree--dragging' : 'make-tree'} aria-label="Файлы проекта" ref={treeRef}>
             <span className="vc-sr-only" role="status" aria-live="polite" data-testid="make-tree-live">{treeLive}</span>
             <div className="make-search">
@@ -1487,6 +1564,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />
             )}
           </div>
+          {split && !isPhone && (
+            <>
+              <div className="make-split-handle" role="separator" aria-label="Граница код/превью" aria-orientation="vertical" aria-valuenow={splitPct} onPointerDown={beginSplitDrag} />
+              <div className="make-split-preview" data-testid="make-split-preview">
+                <iframe key={previewRev} className="make-frame" title="Превью рядом" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups" src={previewSrc} />
+              </div>
+            </>
+          )}
         </div>
       )}
 
