@@ -27,6 +27,7 @@
     "src/renderer/**/*.tsx",
     "src/preload/**/*.d.ts",
     "../../packages/ui/src/global.d.ts",
-    "../../packages/ui/src/vite-worker.d.ts"
+    "../../packages/ui/src/vite-worker.d.ts",
+    "../../packages/ui/src/vite-env.d.ts"
   ]
 }
