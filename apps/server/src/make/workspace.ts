@@ -15,6 +15,7 @@ import {
 import { parseStoryFile, parseTestFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
 import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, MakeProjectNotes, MakeAssistantMode, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
+import { lintMakeFile, addComponentImports, componentExports, pickEntryFile, type AutoImportSpec } from '@voicechat/shared'
 import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine, type MakeSearchOptions } from '@voicechat/shared'
 import { MAKE_MODE_HINTS, applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
@@ -358,7 +359,7 @@ export class MakeWorkspaces {
    * Файлы компонентов копируются как при merge-импорте; файл токенов (`tokens.css`/`styles.css`) не затирает
    * проектный — в его `:root` добавляются только отсутствующие переменные, чтобы кит не сломал текущую палитру.
    */
-  async insertLibraryFiles(conversationId: string, files: Array<{ path: string; data: Buffer }>): Promise<{ state: MakeProjectState; mergedTokens: number }> {
+  async insertLibraryFiles(conversationId: string, files: Array<{ path: string; data: Buffer }>): Promise<{ state: MakeProjectState; mergedTokens: number; autoImported: string[] }> {
     const existing = new Set((await this.list(conversationId)).map((f) => f.path))
     const isTokens = (p: string): boolean => p === 'tokens.css' || p === 'styles.css'
     const plain = files.filter((f) => !(isTokens(f.path) && existing.has(f.path)))
@@ -374,7 +375,27 @@ export class MakeWorkspaces {
       for (const t of incoming) if (!have.has(t.name)) { css = setCssToken(css, t.name, t.value); mergedTokens += 1 }
       if (mergedTokens) state = await this.write(conversationId, tf.path, css)
     }
-    return { state, mergedTokens }
+    // Автоимпорт (roadmap-4 п.13): компоненты кита подключаем в точку входа, иначе они лежат «мёртвым» файлом.
+    const autoImported: string[] = []
+    const entry = pickEntryFile(state.files.map((f) => f.path))
+    if (entry) {
+      const specs: AutoImportSpec[] = []
+      for (const f of plain) {
+        if (!/\.(tsx|jsx)$/i.test(f.path) || isMakeStoriesPath(f.path) || /\.test\.(tsx|jsx)$/i.test(f.path) || f.path === entry) continue
+        const exp = componentExports(f.path, f.data.toString('utf8'))
+        const base = f.path.slice(f.path.lastIndexOf('/') + 1).replace(/\.(tsx|jsx)$/i, '')
+        const defaultName = exp.hasDefault && !exp.names.includes(base) ? base : undefined
+        if (exp.names.length || defaultName) specs.push({ path: f.path, names: exp.names, defaultName })
+      }
+      if (specs.length) {
+        const cur = await this.readBuffer(conversationId, entry)
+        if (cur) {
+          const r = addComponentImports(entry, cur.data.toString('utf8'), specs)
+          if (r.added.length) { state = await this.write(conversationId, entry, r.source); autoImported.push(...r.added) }
+        }
+      }
+    }
+    return { state, mergedTokens, autoImported }
   }
 
   // ---- Контекст для промпта (roadmap-2 п.9) ----------------------------------
@@ -1091,6 +1112,11 @@ export class MakeWorkspaces {
         for (const d of await compileDiagnostics(file.path, source)) {
           issues.push({ path: file.path, kind: 'compile-error', message: `Ошибка компиляции (строка ${d.line}): ${d.message}`, line: d.line, column: d.column })
         }
+        for (const w of lintMakeFile(file.path, source)) issues.push({ path: file.path, kind: 'lint', severity: 'warning', rule: w.rule, message: w.message, line: w.line, column: w.column })
+      }
+      if (/\.css$/i.test(file.path) && file.size > 0 && file.size <= 512 * 1024) {
+        const source = await readFile(join(this.dirOf(conversationId), ...file.path.split('/')), 'utf8')
+        for (const w of lintMakeFile(file.path, source)) issues.push({ path: file.path, kind: 'lint', severity: 'warning', rule: w.rule, message: w.message, line: w.line, column: w.column })
       }
       if (!/\.(html?|css)$/i.test(file.path)) continue
       const text = (await readFile(join(this.dirOf(conversationId), ...file.path.split('/')), 'utf8')).slice(0, 512 * 1024)

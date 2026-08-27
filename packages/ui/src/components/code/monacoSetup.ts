@@ -29,6 +29,7 @@ import 'monaco-editor/esm/vs/editor/contrib/contextmenu/browser/contextmenu'
 import 'monaco-editor/esm/vs/editor/contrib/indentation/browser/indentation'
 import 'monaco-editor/esm/vs/editor/contrib/linkedEditing/browser/linkedEditing'
 import { jsxClosingTagFor } from './monacoLang'
+import { snippetWordAt, snippetsFor } from './monacoSnippets'
 import { REACT_TYPE_LIBS } from './monacoTypes'
 import { formatCode } from '../../lib/formatCode'
 import { loader } from '@monaco-editor/react'
@@ -62,6 +63,27 @@ export function setupMonaco(): typeof monaco {
         const formatted = await formatCode(path, model.getValue()).catch(() => null)
         if (formatted === null || formatted === model.getValue()) return []
         return [{ range: model.getFullModelRange(), text: formatted }]
+      }
+    })
+  }
+  // Сниппеты `rfc` / `story` / `token` (roadmap-4 п.15): один провайдер на язык, тела — в monacoSnippets.
+  for (const language of ['typescript', 'javascript', 'css']) {
+    monaco.languages.registerCompletionItemProvider(language, {
+      provideCompletionItems(model, position) {
+        const { word, startColumn } = snippetWordAt(model.getLineContent(position.lineNumber), position.column)
+        if (!word) return { suggestions: [] }
+        const range = { startLineNumber: position.lineNumber, endLineNumber: position.lineNumber, startColumn, endColumn: position.column }
+        return {
+          suggestions: snippetsFor(language).map((s) => ({
+            label: s.label,
+            filterText: s.prefix,
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            detail: s.detail,
+            insertText: s.body,
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            range
+          }))
+        }
       }
     })
   }

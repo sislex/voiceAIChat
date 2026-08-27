@@ -162,7 +162,8 @@ export interface IpcInvokeMap {
   /** Сохранить файлы проекта в библиотеку под именем. */
   'make:libraryExport': { arg: { conversationId: string; name: string; paths: string[] }; result: { item: MakeLibraryItem } }
   /** Вставить компонент из библиотеки в проект (существующие файлы перезаписываются). */
-  'make:libraryInsert': { arg: { conversationId: string; slug: string }; result: MakeProjectState }
+  /** `autoImported` — компоненты, import которых добавлен в точку входа (roadmap-4 п.13). */
+  'make:libraryInsert': { arg: { conversationId: string; slug: string }; result: { state: MakeProjectState; mergedTokens: number; autoImported: string[] } }
   'make:libraryRemove': { arg: { slug: string }; result: { items: MakeLibraryItem[] } }
   'make:shots': { arg: { conversationId: string }; result: { shots: MakeStoryShot[] } }
   'make:tests': { arg: { conversationId: string }; result: { files: MakeTestFile[] } }

@@ -603,7 +603,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       else { setSelectedPath(null); setContent(''); setSavedContent('') }
     }
   }
-  const markers = useMemo(() => (issues ?? []).filter((i) => i.path === selectedPath && i.line).map((i) => ({ line: i.line!, column: i.column, message: i.message })), [issues, selectedPath])
+  const markers = useMemo(() => (issues ?? []).filter((i) => i.path === selectedPath && i.line).map((i) => ({ line: i.line!, column: i.column, message: i.message, severity: i.severity })), [issues, selectedPath])
 
   // Ctrl/Cmd+S в редакторе — сохранить; Tab — отступ, а не переход фокуса.
   const createFile = (): void => openAsk('Новый файл', 'Путь файла (например, about.html или css/theme.css)', '', 'Создать', (raw) => void createFileAt(raw))
@@ -906,9 +906,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const clash = item.files.filter((p) => state?.files.some((f) => f.path === p))
     if (clash.length > 0 && !(await confirm({ title: `Вставить «${item.name}»?`, message: `Файлы будут перезаписаны: ${clash.join(', ')}. Перед вставкой сохранится снимок.`, confirmLabel: 'Вставить' }))) return
     try {
-      const next = await api['make:libraryInsert']({ conversationId, slug: item.slug })
+      const { state: next, autoImported } = await api['make:libraryInsert']({ conversationId, slug: item.slug })
       setState(next); setPreviewRev(next.rev); setLibraryOpen(false)
-      toast.success(`«${item.name}» добавлен в проект`)
+      toast.success(autoImported.length ? `«${item.name}» добавлен; импорт в точку входа: ${autoImported.join(', ')}` : `«${item.name}» добавлен в проект`)
+      if (selectedPath && isMakeTextPath(selectedPath)) void openFile(selectedPath)
       void loadStories()
     } catch (e) { toast.error(describeError(e)) }
   }
@@ -1413,9 +1414,12 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               </div>
             )}
             {issues !== null && (
-              <div className={issues.length ? 'make-issues make-issues--bad' : 'make-issues'} role="status" data-testid="make-issues">
+              <div className={issues.some((i) => i.severity !== 'warning') ? 'make-issues make-issues--bad' : issues.length ? 'make-issues make-issues--warn' : 'make-issues'} role="status" data-testid="make-issues">
                 {issues.length === 0 ? <span>✓ Проверка пройдена: index.html есть, ссылки на файлы проекта разрешаются.</span> : (
-                  <ul>{issues.map((issue, i) => <li key={i}><button type="button" className="make-issue-path" onClick={() => void openFile(issue.path)}>{issue.path}</button> — {issue.message}</li>)}</ul>
+                  <>
+                    {issues.every((i) => i.severity === 'warning') && <span>✓ Ошибок нет; замечания линтера ({issues.length}):</span>}
+                    <ul>{issues.map((issue, i) => <li key={i} className={issue.severity === 'warning' ? 'make-issue--warn' : undefined}>{issue.severity === 'warning' ? '⚠ ' : ''}<button type="button" className="make-issue-path" onClick={() => void openFile(issue.path)}>{issue.path}{issue.line ? `:${issue.line}` : ''}</button> — {issue.message}{issue.rule ? <span className="make-issue-rule"> {issue.rule}</span> : null}</li>)}</ul>
+                  </>
                 )}
                 <IconButton size="sm" aria-label="Скрыть результат проверки" title="Скрыть" onClick={() => setIssues(null)}>✕</IconButton>
               </div>

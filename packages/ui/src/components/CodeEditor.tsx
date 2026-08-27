@@ -26,7 +26,7 @@ export interface CodeEditorProps {
 
 export interface EditorSelection { startLine: number; endLine: number; text: string }
 
-export interface EditorMarker { line: number; column?: number; message: string }
+export interface EditorMarker { line: number; column?: number; message: string; severity?: 'error' | 'warning' }
 
 import { useMediaQuery } from '../lib/mediaQuery'
 

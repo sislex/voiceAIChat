@@ -19,7 +19,7 @@ export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLa
     const model = editorRef.current?.getModel()
     if (!model) return
     monaco.editor.setModelMarkers(model, 'make', (markers ?? []).map((mk) => ({
-      severity: monaco.MarkerSeverity.Error,
+      severity: mk.severity === 'warning' ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Error,
       message: mk.message,
       startLineNumber: mk.line, startColumn: mk.column ?? 1,
       endLineNumber: mk.line, endColumn: model.getLineMaxColumn(Math.min(mk.line, model.getLineCount()))

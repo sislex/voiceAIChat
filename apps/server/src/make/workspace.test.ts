@@ -172,6 +172,16 @@ describe('MakeWorkspaces', () => {
     await expect(ws.replaceAll(CONV, '(', 'x', { regex: true })).rejects.toThrow(/Неверное выражение/)
   })
 
+  it('check: замечания линтера идут как warning и не откатывают applyChanges (roadmap-4 п.12)', async () => {
+    const ws = await fresh()
+    await ws.write(CONV, 'index.html', '<!doctype html><script type="module" src="app.tsx"></script>')
+    const r = await ws.applyChanges(CONV, [{ path: 'app.tsx', content: "console.log('hi')\nexport const a = 1\n" }, { path: 'styles.css', content: '.a { color: red !important; }' }])
+    expect(r.rolledBack).toBe(false)
+    const lint = r.issues.filter((i) => i.kind === 'lint')
+    expect(lint.map((i) => `${i.path}:${i.line}:${i.rule}`)).toEqual(['app.tsx:1:no-console', 'styles.css:1:no-important'])
+    expect(lint.every((i) => i.severity === 'warning')).toBe(true)
+  })
+
   it('snapshotDiff/restoreFile: статусы файлов и возврат одного файла', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)
@@ -417,6 +427,22 @@ describe('MakeWorkspaces', () => {
     expect(css).toContain('--accent: #f00')
     expect(css).toContain('--radius: 8px')
     expect(css).toContain('body { margin: 0 }')
+  })
+
+  it('insertLibraryFiles: компоненты кита автоимпортируются в src/App.tsx, сториз и повторы — нет (roadmap-4 п.13)', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'src/App.tsx', "import { Button } from './components/Button'\nexport function App() { return <Button /> }")
+    await ws.write(CONV, 'src/components/Button.tsx', 'export const Button = () => null')
+    const r = await ws.insertLibraryFiles(CONV, [
+      { path: 'src/components/Card.tsx', data: Buffer.from('export const Card = () => null\nexport const CardTitle = () => null') },
+      { path: 'src/components/Hero.tsx', data: Buffer.from('export default function Hero() { return null }') },
+      { path: 'src/components/Card.stories.tsx', data: Buffer.from('export const Basic = () => null') },
+      { path: 'src/components/Button.tsx', data: Buffer.from('export const Button = () => null') }
+    ])
+    expect(r.autoImported).toEqual(['Card', 'CardTitle', 'Hero'])
+    const app = (await ws.read(CONV, 'src/App.tsx')).content.split('\n')
+    expect(app.slice(0, 3)).toEqual(["import { Button } from './components/Button'", "import { Card, CardTitle } from './components/Card'", "import Hero from './components/Hero'"])
   })
 
   it('квота на пользователя: сумма по проектам владельца, превышение — MakeError quota', async () => {

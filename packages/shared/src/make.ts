@@ -71,8 +71,12 @@ export interface MakePublishEntry {
 export interface MakeCheckIssue {
   /** Файл, где найдено. */
   path: string
-  kind: 'missing-file' | 'no-index' | 'external-script' | 'empty-file' | 'compile-error'
+  kind: 'missing-file' | 'no-index' | 'external-script' | 'empty-file' | 'compile-error' | 'lint'
   message: string
+  /** `warning` — замечание линтера (roadmap-4 п.12): не блокирует транзакцию `make_apply_changes`; по умолчанию — ошибка. */
+  severity?: 'error' | 'warning'
+  /** Идентификатор правила линтера (`no-console`, `color-hex`…). */
+  rule?: string
   /** Строка (с 1) — у ошибок компиляции; редактор ставит по ней маркер. */
   line?: number
   column?: number
@@ -352,7 +356,7 @@ h1 { margin: 0 0 12px; font-size: 32px; }
 p { margin: 0; line-height: 1.5; color: #5b6170; }
 `,
   'app.js': `// Точка входа проекта. Ассистент дописывает поведение сюда или в новые файлы.
-console.log('Make: проект загружен');
+document.documentElement.dataset.makeReady = 'true';
 `
 }
 

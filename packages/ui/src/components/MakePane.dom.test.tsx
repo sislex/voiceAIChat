@@ -841,3 +841,18 @@ describe('MakePane: regex-поиск и предпросмотр замены (r
     await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'tokens.css' })).content).toBe(':root { --bg: white; --card: white; }'))
   })
 })
+
+describe('MakePane: замечания линтера (roadmap-4 п.12)', () => {
+  it('предупреждения показываются с ⚠, правилом и строкой, без пометки «ошибка»', async () => {
+    const { api } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'src/lint.tsx', content: "console.log('x')\nexport const a = 1\n" })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить' }))
+    const box = await screen.findByTestId('make-issues')
+    expect(box).toHaveTextContent('Ошибок нет; замечания линтера (1)')
+    expect(box).toHaveTextContent('⚠ src/lint.tsx:1 — Отладочный console.log')
+    expect(box).toHaveTextContent('no-console')
+    expect(box.className).toContain('make-issues--warn')
+    expect(box.className).not.toContain('make-issues--bad')
+  })
+})
