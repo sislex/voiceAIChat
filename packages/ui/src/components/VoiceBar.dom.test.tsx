@@ -90,11 +90,17 @@ describe('VoiceBar — состояния', () => {
     expect(screen.getByTestId('request-status')).toHaveTextContent('Claude формирует ответ…')
   })
 
-  it('стриминг: Enter ставит сообщение в очередь', async () => {
+  it('стриминг: Enter и кнопка ставят допустимые сообщения в очередь, не отменяя ответ', async () => {
     const props = setup('thinking', { replyStarted: true, draft: 'привет' })
-    screen.getByLabelText('Поле ввода сообщения').focus()
+    const input = screen.getByLabelText('Поле ввода сообщения')
+    expect(input).toBeEnabled()
+
+    input.focus()
     await userEvent.keyboard('{Enter}')
-    expect(props.onSubmitText).toHaveBeenCalledOnce()
+    await userEvent.click(screen.getByLabelText('Добавить сообщение в очередь'))
+
+    expect(props.onSubmitText).toHaveBeenCalledTimes(2)
+    expect(props.onCancelRequest).not.toHaveBeenCalled()
   })
 
   it('pending подтверждения показывает loader и блокирует повторную отправку', async () => {
@@ -291,7 +297,12 @@ describe('VoiceBar — высота поля ввода', () => {
     expect(toggle.parentElement).toHaveClass('composer-input')
     expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+    const icon = toggle.querySelector('svg')
+    expect(icon).toHaveAttribute('viewBox', '0 0 24 24')
+    expect(Array.from(icon?.querySelectorAll('path') ?? [], (path) => path.getAttribute('d'))).toEqual([
+      'M16 3 L21 3 L21 8',
+      'M8 21 L3 21 L3 16'
+    ])
 
     input.focus()
     input.setSelectionRange(2, 8)
@@ -602,7 +613,12 @@ describe('VoiceBar — адаптивный композер', () => {
     expect(toggle.parentElement).toHaveClass('composer-input')
     expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+    const icon = toggle.querySelector('svg')
+    expect(icon).toHaveAttribute('viewBox', '0 0 24 24')
+    expect(Array.from(icon?.querySelectorAll('path') ?? [], (path) => path.getAttribute('d'))).toEqual([
+      'M16 3 L21 3 L21 8',
+      'M8 21 L3 21 L3 16'
+    ])
 
     input.focus()
     input.setSelectionRange(2, 8)
