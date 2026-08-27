@@ -31,6 +31,8 @@ export interface FsResult {
   dataBase64?: string
   /** Имя файла (для fs.read — для сохранения). */
   name?: string
+  /** Куда перемещён элемент (для fs.trash) — по этому пути его можно вернуть fs.rename. */
+  trashedPath?: string
 }
 
 /** Использование дискового раздела (байты). */
@@ -226,6 +228,8 @@ export type FsOp =
   | { t: 'fs.write'; opId: string; path: string; dataBase64: string }
   | { t: 'fs.delete'; opId: string; path: string }
   | { t: 'fs.delete-file-safe'; opId: string; path: string }
+  /** Переместить файл/каталог в корзину машины (`<корень>/.voicechat_trash`), откат — fs.rename обратно. */
+  | { t: 'fs.trash'; opId: string; path: string }
   | { t: 'fs.rename'; opId: string; from: string; to: string }
   | { t: 'fs.mkdir'; opId: string; path: string }
 

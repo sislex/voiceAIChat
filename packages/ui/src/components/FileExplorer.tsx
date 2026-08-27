@@ -9,6 +9,9 @@ import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '../lib/loadState'
 import { ToolFrame } from './ToolFrame'
+import { CodeEditor } from './CodeEditor'
+import { CodeDiff } from './CodeDiff'
+import { isToolAllowed } from '@shared/version'
 
 export interface FileExplorerProps {
   agents: AgentInfo[]
@@ -136,6 +139,11 @@ export function FileExplorer({
   const [previewErrorKind, setPreviewErrorKind] = useState<'read' | 'save'>('read')
   const [previewLoading, setPreviewLoading] = useState(false)
   const [editing, setEditing] = useState(false)
+  // Текст файла на момент открытия — база для diff «что я поменял» перед сохранением.
+  const [previewOriginal, setPreviewOriginal] = useState('')
+  const [showDiff, setShowDiff] = useState(false)
+  // Последний элемент, отправленный в корзину машины: полоса «Вернуть» под списком.
+  const [trashed, setTrashed] = useState<{ name: string; from: string; to: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmSave, setConfirmSave] = useState(false)
   const selectedRow = useRef<HTMLDivElement>(null)
@@ -144,6 +152,8 @@ export function FileExplorer({
   const selectedAgent = agents.find((agent) => agent.id === agentId)
   const agentOnline = selectedAgent?.online ?? false
   const writable = agentOnline && (selectedAgent?.policy.allowWrite ?? false)
+  // Корзина — только если мост её умеет и агент достаточно новый; иначе прежнее безвозвратное удаление.
+  const canTrash = typeof ops.trash === 'function' && isToolAllowed(selectedAgent?.version ?? '0.0.0', 'fs-trash')
   const view = loadView(status, entries.length > 0)
   const visibleEntries = useMemo(
     () => sortEntries(entries.filter((entry) => entry.name.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase())), sortBy, sortDirection),
@@ -258,6 +268,8 @@ export function FileExplorer({
         else {
           setPreview({ path, name: entry.name, size: entry.size, kind: 'text' })
           setPreviewText(text)
+          setPreviewOriginal(text)
+          setShowDiff(false)
         }
       }
     } catch (err) {
@@ -277,6 +289,8 @@ export function FileExplorer({
     try {
       await ops.write(agentId, preview.path, encodeUtf8(previewText))
       await load(cwd)
+      setPreviewOriginal(previewText)
+      setShowDiff(false)
       setEditing(false)
       setConfirmSave(false)
     } catch (err) {
@@ -442,9 +456,14 @@ export function FileExplorer({
           )}
           {!previewLoading && !previewError && preview?.kind === 'text' && (
             <>
-              {editing ? <textarea className="fspreview-text fspreview-editor" aria-label="Содержимое файла" value={previewText} onChange={(event) => setPreviewText(event.target.value)} /> : <pre className="fspreview-text">{previewText}</pre>}
+              {editing
+                ? (showDiff
+                  ? <div className="fspreview-editor" data-testid="fs-diff"><CodeDiff path={preview.path} original={previewOriginal} modified={previewText} /></div>
+                  : <div className="fspreview-editor"><CodeEditor path={preview.path} value={previewText} onChange={setPreviewText} ariaLabel="Содержимое файла" onSave={() => setConfirmSave(true)} /></div>)
+                : <pre className="fspreview-text">{previewText}</pre>}
               {writable ? (
                 <div className="fspreview-actions">
+                  {editing && previewText !== previewOriginal && <Button size="sm" onClick={() => setShowDiff((v) => !v)}>{showDiff ? 'Скрыть изменения' : 'Показать изменения'}</Button>}
                   {editing ? (
                     confirmSave ? <><Button size="sm" disabled={saving} onClick={() => void savePreview()}>{saving ? 'Сохраняем…' : 'Подтвердить сохранение'}</Button><Button size="sm" disabled={saving} onClick={() => setConfirmSave(false)}>Отмена</Button></> : <Button size="sm" onClick={() => setConfirmSave(true)}>Сохранить</Button>
                   ) : <Button size="sm" onClick={() => setEditing(true)}>Редактировать</Button>}
@@ -453,6 +472,13 @@ export function FileExplorer({
             </>
           )}
         </section>
+      )}
+      {trashed && (
+        <p className="fstrashed" role="status" data-testid="fs-trashed">
+          «{trashed.name}» перемещён в корзину машины ({nameOf(parentOf(trashed.to))}).
+          <Button size="sm" onClick={() => { const t = trashed; setTrashed(null); if (agentId) void run(ops.rename(agentId, t.to, t.from)) }}>Вернуть</Button>
+          <IconButton size="sm" title="Скрыть" aria-label="Скрыть уведомление о корзине" onClick={() => setTrashed(null)}>×</IconButton>
+        </p>
       )}
       <div
         className={uploading.length > 0 ? 'fslist fslist--uploading' : 'fslist'}
@@ -579,10 +605,15 @@ export function FileExplorer({
                         size="sm"
                         onClick={() => {
                           setConfirmDel(null)
-                          if (agentId) void run(ops.remove(agentId, abs))
+                          if (!agentId) return
+                          if (canTrash) {
+                            void run(ops.trash!(agentId, abs).then((result) => {
+                              if (result.trashedPath) setTrashed({ name: entry.name, from: abs, to: result.trashedPath })
+                            }))
+                          } else void run(ops.remove(agentId, abs))
                         }}
                       >
-                        Удалить
+                        {canTrash ? 'В корзину' : 'Удалить'}
                       </Button>
                       <Button size="sm" onClick={() => setConfirmDel(null)}>
                         Отмена

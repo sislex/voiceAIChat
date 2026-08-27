@@ -838,6 +838,8 @@ export interface RendererFsBridge {
   read(agentId: string, path: string, projectId?: string): Promise<FsResult>
   write(agentId: string, path: string, dataBase64: string, projectId?: string): Promise<FsResult>
   remove(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  /** Корзина машины (агент ≥ 0.15.0): результат содержит trashedPath для отката. */
+  trash?(agentId: string, path: string, projectId?: string): Promise<FsResult>
   rename(agentId: string, from: string, to: string, projectId?: string): Promise<FsResult>
   mkdir(agentId: string, path: string, projectId?: string): Promise<FsResult>
   /**

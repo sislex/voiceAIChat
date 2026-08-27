@@ -497,6 +497,9 @@ export class AgentRegistry {
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult> {
     return this.runFs(agentId, (opId) => ({ t: 'fs.write', opId, path, dataBase64 }))
   }
+  fsTrash(agentId: string, path: string): Promise<FsResult> {
+    return this.runFs(agentId, (opId) => ({ t: 'fs.trash', opId, path }), 'fs-trash')
+  }
   fsDelete(agentId: string, path: string): Promise<FsResult> {
     return this.runFs(agentId, (opId) => ({ t: 'fs.delete', opId, path }))
   }

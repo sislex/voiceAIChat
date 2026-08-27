@@ -395,11 +395,9 @@ function makeFilesBridge(httpBase: string): RendererFilesBridge {
 }
 
 /** Мост файлового проводника поверх REST (с токеном сессии). */
-function makeFsBridge(httpBase: string): RendererFsBridge {
-  const authHeaders = (extra?: Record<string, string>): Record<string, string> => {
-    const t = getToken()
-    return { ...(t ? { authorization: `Bearer ${t}` } : {}), ...extra }
-  }
+export function makeFsBridge(httpBase: string): RendererFsBridge {
+  // Общие заголовки сессии: Bearer (legacy) ИЛИ cookie + x-vc-csrf — без CSRF сервер отвечает 403 на любую мутацию.
+  const authHeaders = (extra?: Record<string, string>): Record<string, string> => ({ ...sessionHeaders(), ...extra })
   const asResult = async (res: Response): Promise<FsResult> => {
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string }
@@ -425,6 +423,12 @@ function makeFsBridge(httpBase: string): RendererFsBridge {
       }).then(asResult),
     remove: (id, path, projectId) =>
       fetch(q(id, path, projectId), { method: 'DELETE', headers: authHeaders() }).then(asResult),
+    trash: (id, path, projectId) =>
+      fetch(`${httpBase}${REST.agentFsTrash(id)}${projectOnlyQuery(projectId)}`, {
+        method: 'POST',
+        headers: authHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ path })
+      }).then(asResult),
     rename: (id, from, to, projectId) =>
       fetch(`${httpBase}${REST.agentFsRename(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',

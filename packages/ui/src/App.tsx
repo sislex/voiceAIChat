@@ -1389,6 +1389,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         read: operationsActions.fsRead,
         write: operationsActions.fsWrite,
         remove: operationsActions.fsRemove,
+        trash: operationsActions.fsTrash,
         rename: operationsActions.fsRename,
         mkdir: operationsActions.fsMkdir,
         download: operationsActions.downloadFsFile,
