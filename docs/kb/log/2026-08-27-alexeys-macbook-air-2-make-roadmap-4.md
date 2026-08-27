@@ -45,3 +45,4 @@ author: alexeyrozhnov
 П.29 (roadmap-4): табличный редактор коллекций моков (MakeMockTable).
 Пп.30–31 (roadmap-4): мок из описания через ассистента; $schema в коллекциях моков → 422.
 П.32 (roadmap-4): auth-мок с cookie-сессией ($auth users/require/logout).
+Пп.33/38/39 (roadmap-4): ⏸ — нет wildcard-DNS, браузеров Playwright в образе, GitHub/Figma-токенов; причины и точки входа записаны.

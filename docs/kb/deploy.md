@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-08-25
-checked: 0985f857
+updated: 2026-08-27
+checked: b2257923
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -473,3 +473,5 @@ ls /app/scripts/ci-usage-report.mjs`). Лестницы хватает и на �
 `pull --ff-only → docker compose build → up -d` с секундной паузой. Задержку угадывать
 не нужно, и пачка ранов не рвётся на середине; цена — результат виден только в логе
 сеанса, в ленте рана его нет.
+
+**Кастомный домен публикаций Make (roadmap-4 п.33, ⏸).** Публикации живут на `/p/<token>/` и `/s/<slug>/` того же хоста. Свой домен на проект требует wildcard-DNS (`*.make.<домен>` → прод) и TLS-сертификата на wildcard в Caddy (`tls` с DNS-челленджем) плюс маршрут, который по `Host` подставляет slug; ни DNS-зоны, ни DNS-провайдера в окружении нет, поэтому пункт отложен. Когда появятся — точка входа: `servePublic` в `apps/server/src/routes/make.ts` (разрешение slug → token через `.published/slug-<slug>.json`).
