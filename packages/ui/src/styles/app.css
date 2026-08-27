@@ -6710,3 +6710,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-network-method { color: var(--text-dim); font-size: 11px; }
 .make-network-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .make-network-row small { color: var(--text-dim); }
+
+/* Язык превью. */
+.make-lang { border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px; background: var(--surface); color: var(--text); max-width: 96px; }
+@media (max-width: 768px) { .make-lang { display: none; } }

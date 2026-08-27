@@ -89,6 +89,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [selected, setSelected] = useState<MakeSelectedElement | null>(null)
   // Последнее известное состояние страницы превью (скролл/hash) — восстанавливается после перезагрузки (п.11).
   const pageStateRef = useRef<{ x: number; y: number; hash: string } | null>(null)
+  // Тема/язык превью (п.12): пересылаются в iframe и повторяются после каждой перезагрузки.
+  const [previewScheme, setPreviewScheme] = useState<'auto' | 'light' | 'dark'>('auto')
+  const [previewLang, setPreviewLang] = useState('')
+  const envRef = useRef({ scheme: 'auto', lang: '' })
+  envRef.current = { scheme: previewScheme, lang: previewLang }
+  const sendEnv = (scheme = previewScheme, lang = previewLang): void => { frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', scheme, lang }, '*') }
+  const cycleScheme = (): void => { const next = previewScheme === 'auto' ? 'dark' : previewScheme === 'dark' ? 'light' : 'auto'; setPreviewScheme(next); sendEnv(next, previewLang) }
   // Опрос same-origin iframe: события scroll из родителя ненадёжны, а прямое чтение — всегда работает.
   useEffect(() => {
     const timer = setInterval(() => {
@@ -310,6 +317,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.inspect', enabled: inspect }, '*')
         // Превью перезагрузилось (правка ассистента/своя) — вернуть скролл и якорь, чтобы не прыгать наверх.
         if (pageStateRef.current) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.restore', ...pageStateRef.current }, '*')
+        if (envRef.current.scheme !== 'auto' || envRef.current.lang) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', ...envRef.current }, '*')
       } else if (data.type === 'vc-make.selected' && data.selector) {
         setSelected({ selector: data.selector, tag: data.tag ?? '', text: data.text ?? '', html: data.html ?? '', id: data.id, className: data.className, styles: data.styles })
         setStyleOpen(false)
@@ -726,6 +734,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           </div>
           <IconButton size="sm" aria-label="Выбрать элемент" title="Выбрать элемент на странице и попросить ассистента его изменить" aria-pressed={inspect} className={inspect ? 'make-inspect on' : undefined} onClick={() => setInspect((v) => !v)}>⌖</IconButton>
           <IconButton size="sm" aria-label="Обновить превью" title="Обновить превью" onClick={() => setPreviewRev((r) => r + 1)}>⟳</IconButton>
+          <IconButton size="sm" aria-label="Тема превью" title={`Тема превью: ${previewScheme === 'auto' ? 'как в системе' : previewScheme === 'dark' ? 'тёмная' : 'светлая'} — переключить`} aria-pressed={previewScheme !== 'auto'} onClick={cycleScheme}>{previewScheme === 'dark' ? '🌙' : previewScheme === 'light' ? '☀️' : '🌓'}</IconButton>
+          <select className="make-lang" aria-label="Язык превью" value={previewLang} onChange={(e) => { setPreviewLang(e.target.value); sendEnv(previewScheme, e.target.value) }} title="Атрибут lang документа превью">
+            <option value="">lang: авто</option>
+            {['ru', 'en', 'de', 'fr', 'es', 'zh', 'ar'].map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
           {onAttachImage && <IconButton size="sm" aria-label="Скриншот превью в чат" title={selected ? 'Скриншот выбранного элемента — во вложения чата' : 'Скриншот превью — во вложения чата'} disabled={shooting} onClick={() => void screenshotToChat()}>📷</IconButton>}
           <IconButton size="sm" aria-label="Открыть в новой вкладке" title="Открыть в новой вкладке" onClick={() => window.open(`${base}index.html`, '_blank', 'noopener')}>↗</IconButton>
         </>

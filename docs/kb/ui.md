@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: 3d135388
+checked: f7190d96
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -480,6 +480,11 @@ lazy-чанке `monacoSetup`. **Модели проекта** (п.2): `syncProj
 тестов) после последней правки `save(silent)` без тоста; Cmd/Ctrl+S — как раньше. После сохранения jsx/tsx/ts
 панель вызывает `make:check` и, если есть проблемы, показывает баннер; ошибки `compile-error` текущего файла
 уходят в `CodeEditor` пропом `markers` → `monaco.editor.setModelMarkers` (красные подчёркивания).
+
+**Тема и язык превью** (п.12): кнопка 🌓/🌙/☀️ (авто→тёмная→светлая) и `<select>` lang шлют `vc-make.env
+{scheme, lang}`; скрипт превью переписывает `mediaText` правил с `prefers-color-scheme` (dark→`all`,
+light→`not all`, авто — исходный), ставит `color-scheme` и `<html lang>`. Настройка повторяется после каждого
+`vc-make.ready`. На телефоне селект языка скрыт.
 
 **Скролл/якорь превью** (п.11): панель раз в 500 мс читает `scrollX/scrollY/location.hash` same-origin iframe в
 `pageStateRef` (события scroll, инициированные снаружи, в iframe не доходят надёжно) и после `onLoad` нового
