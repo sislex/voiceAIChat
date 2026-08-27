@@ -786,6 +786,7 @@ export function VoiceBar({
               )}
               <IconButton
                 className="vc-btn--circle composer-send"
+                size="sm"
                 variant="primary"
                 onClick={submitRequest}
                 title={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}

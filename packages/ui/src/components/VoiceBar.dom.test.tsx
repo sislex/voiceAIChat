@@ -90,20 +90,37 @@ describe('VoiceBar — состояния', () => {
     expect(screen.getByTestId('request-status')).toHaveTextContent('Claude формирует ответ…')
   })
 
-  it('стриминг: Enter ставит сообщение в очередь', async () => {
+  it('стриминг: клик и Enter ставят допустимое сообщение в очередь, не останавливая ответ', async () => {
     const props = setup('thinking', { replyStarted: true, draft: 'привет' })
+    const submit = screen.getByLabelText('Добавить сообщение в очередь')
+    expect(submit).toHaveClass('vc-btn--sm')
+    await userEvent.click(submit)
     screen.getByLabelText('Поле ввода сообщения').focus()
     await userEvent.keyboard('{Enter}')
-    expect(props.onSubmitText).toHaveBeenCalledOnce()
+    expect(props.onSubmitText).toHaveBeenCalledTimes(2)
+    expect(props.onCancelRequest).not.toHaveBeenCalled()
   })
 
-  it('pending подтверждения показывает loader и блокирует повторную отправку', async () => {
-    const props = setup('idle', { draft: 'привет', submitPending: true })
-    const submit = screen.getByLabelText('Отправить сообщение')
+  it('pending подтверждения во время стрима блокирует повторную отправку кликом и Enter', async () => {
+    const props = setup('thinking', { replyStarted: true, draft: 'привет', submitPending: true })
+    const submit = screen.getByLabelText('Добавить сообщение в очередь')
     expect(submit).toBeDisabled()
     expect(screen.getByTestId('request-status')).toHaveTextContent('Запрос отправляется…')
     await userEvent.click(submit)
+    screen.getByLabelText('Поле ввода сообщения').focus()
+    await userEvent.keyboard('{Enter}')
     expect(props.onSubmitText).not.toHaveBeenCalled()
+    expect(props.onCancelRequest).not.toHaveBeenCalled()
+  })
+
+  it.each(['processing', 'error'] as const)('стриминг: вложение %s блокирует очередь даже при непустом тексте', (status) => {
+    setup('thinking', {
+      replyStarted: true,
+      draft: 'не потерять',
+      attachments: [{ id: status, status, name: 'photo.png', mimeType: 'image/png' }]
+    })
+    expect(screen.getByLabelText('Добавить сообщение в очередь')).toBeDisabled()
+    expect(screen.getByLabelText('Поле ввода сообщения')).toBeEnabled()
   })
 
   it('повторные realtime-события обновляют единственную строку без дублей', () => {
@@ -291,7 +308,12 @@ describe('VoiceBar — высота поля ввода', () => {
     expect(toggle.parentElement).toHaveClass('composer-input')
     expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+    const icon = toggle.querySelector('svg')
+    expect(icon).toHaveAttribute('viewBox', '0 0 24 24')
+    expect(Array.from(icon?.querySelectorAll('path') ?? []).map((path) => path.getAttribute('d'))).toEqual([
+      'M16 3 L21 3 L21 8',
+      'M8 21 L3 21 L3 16'
+    ])
 
     input.focus()
     input.setSelectionRange(2, 8)
@@ -602,7 +624,12 @@ describe('VoiceBar — адаптивный композер', () => {
     expect(toggle.parentElement).toHaveClass('composer-input')
     expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+    const icon = toggle.querySelector('svg')
+    expect(icon).toHaveAttribute('viewBox', '0 0 24 24')
+    expect(Array.from(icon?.querySelectorAll('path') ?? []).map((path) => path.getAttribute('d'))).toEqual([
+      'M16 3 L21 3 L21 8',
+      'M8 21 L3 21 L3 16'
+    ])
 
     input.focus()
     input.setSelectionRange(2, 8)
