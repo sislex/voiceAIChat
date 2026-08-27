@@ -265,6 +265,7 @@ export function UsersAdmin({
           {isAdmin && !cur && makeStats && (
             <section className="uadmin-sec" data-testid="make-stats">
               <h3 className="uadmin-h">Make-проекты</h3>
+              {makeStats.disk && <p className={makeStats.disk.alert ? 'uusage-note uusage-disk uusage-disk--alert' : 'uusage-note uusage-disk'} role={makeStats.disk.alert ? 'alert' : undefined} data-testid="admin-disk">{makeStats.disk.alert ? '⚠ ' : ''}Диск с данными: свободно {mb(makeStats.disk.freeBytes)} из {mb(makeStats.disk.totalBytes)}{makeStats.disk.alert ? ' — меньше 10 ГБ, релизы упрутся в проверку места; очистите docker/логи' : ''}</p>}
               <p className="uusage-note">Проектов: {makeStats.projects} · занято {mb(makeStats.bytes)} (файлы {mb(makeStats.filesBytes)}, снимки {mb(makeStats.snapshotsBytes)}, PNG стори {mb(makeStats.shotsBytes)}) · опубликовано {makeStats.published} · read-only ссылок {makeStats.shared} · просмотров публикаций {makeStats.views} · квота на проект {mb(makeStats.limitBytes)} · на пользователя {mb(makeStats.userLimitBytes)}</p>
               {makeStats.byUser.length > 0 && (
                 <table className="utable"><thead><tr><th>Пользователь</th><th>Проектов</th><th>Занято</th><th>Опубликовано</th><th>Просмотров</th></tr></thead><tbody>

@@ -11,6 +11,7 @@ export function formatMakeMetrics(stats: AdminMakeStats): string {
     const l = labels ? `{${Object.entries(labels).map(([k, v]) => `${k}="${esc(v)}"`).join(',')}}` : ''
     lines.push(`${name}${l} ${value}`)
   }
+  if (stats.disk) { gauge('make_disk_free_bytes', 'Свободно на разделе с данными Make', stats.disk.freeBytes); gauge('make_disk_total_bytes', 'Размер раздела с данными Make', stats.disk.totalBytes); gauge('make_disk_alert', 'Свободно меньше порога тревоги (1 — да)', stats.disk.alert ? 1 : 0) }
   gauge('voicechat_make_projects', 'Число проектов Make', stats.projects)
   gauge('voicechat_make_bytes_total', 'Занято байт всеми проектами (файлы + снимки + PNG стори)', stats.bytes)
   gauge('voicechat_make_files_bytes', 'Байт в файлах проектов', stats.filesBytes)
