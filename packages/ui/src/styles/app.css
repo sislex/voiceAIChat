@@ -6683,3 +6683,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* Поиск и замена по проекту. */
 .make-replace { display: flex; align-items: center; gap: 6px; padding: 0 4px 6px; }
+
+/* Перенос файлов между папками дерева. */
+.make-tree--dragging .make-tree-group { outline: 1px dashed var(--border); outline-offset: -2px; border-radius: 8px; }
+.make-tree-group--drop { background: var(--surface-hover); outline-color: var(--accent) !important; }
+.make-tree-item--drag { opacity: .5; }
+.make-tree-item { touch-action: pan-y; }

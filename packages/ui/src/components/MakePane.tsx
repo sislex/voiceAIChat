@@ -8,6 +8,8 @@ import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { MakeControlField, type ArgType } from './MakeControls'
 import { captureIframeScreenshot } from '../lib/makeScreenshot'
 import { formatCode } from '../lib/formatCode'
+import { pointInRect, usePointerDrag } from '../lib/dnd'
+import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { copyText } from '../lib/clipboard'
 import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
@@ -400,6 +402,36 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
 
   const renameFile = (path: string): void => openAsk('Переименовать файл', 'Новый путь файла', path, 'Переименовать', (raw) => void renameFileTo(path, raw))
+  // Перенос файла между папками указателем (мышь/палец): цель — группа папки под курсором или корень дерева.
+  const drag = usePointerDrag()
+  const [dragPath, setDragPath] = useState<string | null>(null)
+  const [dropDir, setDropDir] = useState<string | null>(null)
+  const [treeLive, setTreeLive] = useState('')
+  const treeRef = useRef<HTMLElement | null>(null)
+  const dirUnderPointer = (p: { x: number; y: number }): string | null => {
+    const groups = Array.from(treeRef.current?.querySelectorAll<HTMLElement>('.make-tree-group') ?? [])
+    for (const g of groups) if (pointInRect(g.getBoundingClientRect(), p)) return g.dataset.dir ?? ''
+    const tree = treeRef.current?.getBoundingClientRect()
+    return tree && pointInRect(tree, p) ? '' : null
+  }
+  const beginFileDrag = (e: React.PointerEvent<HTMLElement>, path: string): void => {
+    if (e.button !== 0) return
+    const lift = e.currentTarget.closest<HTMLElement>('.make-tree-item')
+    drag.begin(e, {
+      lift,
+      onStart: () => { setDragPath(path); setTreeLive(`Перенос ${path}: отпустите над папкой`) },
+      onMove: (pt) => setDropDir(dirUnderPointer(pt)),
+      onDrop: (pt) => {
+        const dir = dirUnderPointer(pt)
+        setDragPath(null); setDropDir(null)
+        if (dir === null || dir === dirOfPath(path)) { setTreeLive('Перенос отменён'); return }
+        const to = moveTargetPath(path, dir)
+        setTreeLive(`${path} → ${to}`)
+        void renameFileTo(path, to)
+      },
+      onCancel: () => { setDragPath(null); setDropDir(null); setTreeLive('Перенос отменён') }
+    })
+  }
   const renameFileTo = async (path: string, raw: string): Promise<void> => {
     if (raw === path) return
     const to = normalizeMakePath(raw)
@@ -744,7 +776,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
 
       {mode === 'code' && (
         <div className={dropActive ? 'make-code make-code--drop' : 'make-code'} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code">
-          <nav className="make-tree" aria-label="Файлы проекта">
+          <nav className={dragPath ? 'make-tree make-tree--dragging' : 'make-tree'} aria-label="Файлы проекта" ref={treeRef}>
+            <span className="vc-sr-only" role="status" aria-live="polite" data-testid="make-tree-live">{treeLive}</span>
             <div className="make-search">
               <input
                 type="search"
@@ -778,10 +811,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             {dropActive && <p className="make-drop-hint" role="status">Отпустите, чтобы загрузить файлы в проект</p>}
             {groups.length === 0 && <EmptyState title="Файлов пока нет" description="Создайте файл, перетащите его сюда или попросите ассистента." />}
             {groups.map((group) => ({ ...group, files: group.files.filter((f) => !query.trim() || f.path.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) })).filter((g) => g.files.length > 0).map((group) => (
-              <div className="make-tree-group" key={group.dir || '/'}>
+              <div className={dropDir === group.dir && dragPath ? 'make-tree-group make-tree-group--drop' : 'make-tree-group'} key={group.dir || '/'} data-dir={group.dir}>
                 {group.dir && <p className="make-tree-dir">📁 {group.dir}</p>}
                 {group.files.map((file) => (
-                  <div key={file.path} className={file.path === selectedPath ? 'make-tree-item on' : 'make-tree-item'}>
+                  <div key={file.path} className={`make-tree-item${file.path === selectedPath ? ' on' : ''}${dragPath === file.path ? ' make-tree-item--drag' : ''}`} onPointerDown={(e) => beginFileDrag(e, file.path)}>
                     <button type="button" className="make-tree-file" onClick={() => void openFile(file.path)} title={`${file.path} · ${formatSize(file.size)}`}>
                       {group.dir ? file.path.slice(group.dir.length + 1) : file.path}
                     </button>

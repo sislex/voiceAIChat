@@ -11,7 +11,7 @@
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 65 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 80 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
-| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-24 | ⚠ 5 коммит(ов) в areas после сверки: 8e522673 feat(make): скриншот превью или выбранного элемента во вложения чата (п.10) … |
+| [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-24 | ⚠ 6 коммит(ов) в areas после сверки: 893efd7e feat(make): форматирование Prettier — кнопка, Shift+Alt+F и формат при сохранении (п.4) … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 12 коммит(ов) в areas после сверки: b088d0c5 test(make): E2E в headless Chromium — превью React, компоненты, Monaco, публикация (п.37) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 59 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-25 | ⚠ 6 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 35 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 31 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 25 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 646 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 647 коммит(ов) в areas после сверки: 893efd7e feat(make): форматирование Prettier — кнопка, Shift+Alt+F и формат при сохранении (п.4) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 109 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 36 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 26 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
@@ -30,7 +30,7 @@
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 5 коммит(ов) в areas после сверки: 2198e7a9 fix: auto-resolve merge conflicts with model step … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-26 | ⚠ 13 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 45 коммит(ов) в areas после сверки: 8e522673 feat(make): скриншот превью или выбранного элемента во вложения чата (п.10) … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 46 коммит(ов) в areas после сверки: 893efd7e feat(make): форматирование Prettier — кнопка, Shift+Alt+F и формат при сохранении (п.4) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 35 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 4 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: fd195bb9 feat(make): поиск и замена по всему проекту со снимком перед заменой (п.1) … |

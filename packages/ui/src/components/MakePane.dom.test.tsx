@@ -134,7 +134,7 @@ describe('MakePane', () => {
     const file = new File(['h1{color:red}'], 'drop.css', { type: 'text/css' })
     const dataTransfer = { types: ['Files'], files: [file], dropEffect: 'none' }
     fireEvent.dragOver(zone, { dataTransfer })
-    expect(await screen.findByRole('status')).toHaveTextContent('Отпустите')
+    expect(await screen.findByText(/Отпустите, чтобы загрузить/)).toBeInTheDocument()
     fireEvent.drop(zone, { dataTransfer })
     await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'drop.css' })).content).toBe('h1{color:red}'))
     await userEvent.click((await screen.findAllByRole('button', { name: /drop\.css/ }))[0]!)
