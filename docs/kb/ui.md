@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: 48d12257
+checked: ed0ff46f
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -415,8 +415,8 @@ USD за 1M токенов, источник и дату тарифа; форм�
   что у Web Reader: iframe не шлёт Bearer). Пресеты ширины ПК/Планшет/Телефон, ⟳, открыть в
   новой вкладке, ⛶ на весь экран, **⌖ «Выбрать элемент»**: сервер инъецирует в HTML скрипт
   `MAKE_INSPECTOR_SCRIPT`, панель шлёт в iframe `{type:'vc-make.inspect', enabled}`, обратно
-  приходит `vc-make.selected {selector, tag, text, html}` — карточка над превью с кнопкой
-  «В чат» (`onInsertToChat` → `chatActions.setDraft('Измени элемент <selector> …')`).
+  приходит `vc-make.selected {selector, tag, text, html}` — карточка над превью с кнопками
+  «Стили» и «В чат» (`onInsertToChat` → `chatActions.setDraft('Измени элемент <selector> …')`).
 - **Код** — дерево файлов (группировка по первому каталогу), textarea-редактор (Tab → два
   пробела, Ctrl/Cmd+S — сохранить), статус «сохранено/не сохранено», «+ Файл», ✎/✕ у файла.
   Имена вводятся через `Dialog` (`make-ask`), не `window.prompt`.
@@ -464,6 +464,12 @@ contribution-модулями — полный пакет тянул 4 МБ; в�
 тестов) после последней правки `save(silent)` без тоста; Cmd/Ctrl+S — как раньше. После сохранения jsx/tsx/ts
 панель вызывает `make:check` и, если есть проблемы, показывает баннер; ошибки `compile-error` текущего файла
 уходят в `CodeEditor` пропом `markers` → `monaco.editor.setModelMarkers` (красные подчёркивания).
+
+**Панель стилей** (`MakeStylePanel`, п.8): инспектор присылает `id/className/styles` (computed для 8 свойств);
+поля цвет/фон/размер/насыщенность/выравнивание/отступы/скругление шлют в iframe `vc-make.style {values}` —
+скрипт применяет их inline поверх сохранённого `style`; «Записать в CSS» дописывает правило
+(`cssRule(selector, values)`) в первый `<link rel=stylesheet>` из index.html (иначе `styles.css`); селектор по
+умолчанию — `shortSelector`: `#id` → `.первый-класс` → последние два звена без `:nth-of-type`.
 
 **Консоль превью** (`make-console` под iframe): инспектор-скрипт превью и раннер сториз оборачивают
 `console.log/info/warn/error` и слушают `error`/`unhandledrejection`, шлют родителю `vc-make.console
