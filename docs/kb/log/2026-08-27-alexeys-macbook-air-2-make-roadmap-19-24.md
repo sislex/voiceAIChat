@@ -57,3 +57,4 @@ author: alexeyrozhnov
 П.33: read-only шаринг внутри ChatAI — share-токен, /api/make/shared/*, страница #/make-shared/<token>.
 П.34: мобильный редактор — fallback textarea и select файлов при ≤600px.
 П.35: PWA в экспорте (manifest, sw.js, icon.svg, инъекция в index.html; чекбокс в «Скачать»).
+П.38: метрики Make в админке (adminStats по каталогам проектов, секция в дашборде).

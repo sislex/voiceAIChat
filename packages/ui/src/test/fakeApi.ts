@@ -705,6 +705,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       ]
     }),
     'admin:users': async () => adminUsers.map((u) => ({ ...u })),
+    'admin:makeStats': async () => ({ projects: 2, bytes: 3 * 1048576, filesBytes: 1048576, snapshotsBytes: 2 * 1048576, shotsBytes: 0, published: 1, shared: 0, views: 12, limitBytes: 64 * 1048576, byUser: [{ user: 'admin', projects: 2, bytes: 3 * 1048576, published: 1, views: 12 }], top: [{ conversationId: 'make-1', owner: 'admin', filesCount: 5, bytes: 2 * 1048576, snapshots: 3, published: true, shared: false, views: 12, updatedAt: 1 }] }),
     'admin:usageSummary': async () => adminUsers.map((u) => ({ name: u.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, messages: 0 }, byModel: [] })),
     'llm:access': async () => [...(userLlmAccess.get(ME) ?? [])],
     'admin:llmAccess': async ({ name }) => [...(userLlmAccess.get(name) ?? [])],

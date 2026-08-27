@@ -8,7 +8,8 @@ import type {
   AdminUserInfo,
   UsageReport,
   UsageUnit,
-  UserUsageSummary
+  UserUsageSummary,
+  AdminMakeStats
 } from '@shared/admin'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { Conversation, Message, LlmProvider } from '@shared/types'
@@ -26,6 +27,8 @@ export interface UsersAdminProps {
   variant?: 'modal' | 'page'
   users: AdminUserInfo[]
   usageSummary?: UserUsageSummary[]
+  /** Метрики Make (п.38): место, публикации, просмотры — секция дашборда для админа. */
+  makeStats?: AdminMakeStats | null
   /** Обычный пользователь видит только собственную статистику без машин и админских действий. */
   isAdmin?: boolean
   status?: LoadStatus
@@ -75,6 +78,8 @@ function usd(n: number): string {
 }
 
 /** Не выдаём известную часть суммы за цену ответа с неизвестным тарифом. */
+function mb(n: number): string { return n < 1048576 ? `${Math.round(n / 1024)} КБ` : `${(n / 1048576).toFixed(1)} МБ` }
+
 function displayedUsd(n: number, costIncomplete?: boolean): string {
   return costIncomplete ? '—' : usd(n)
 }
@@ -102,6 +107,7 @@ const EMPTY_PRICE: ModelPriceInput = { provider: 'codex', model: '', inputPerMil
 export function UsersAdmin({
   users,
   usageSummary = NO_USAGE_SUMMARY,
+  makeStats = null,
   isAdmin = true,
   status = 'ready',
   error = null,
@@ -254,6 +260,24 @@ export function UsersAdmin({
                   </tr>
                 })}
               </tbody></table>
+            </section>
+          )}
+          {isAdmin && !cur && makeStats && (
+            <section className="uadmin-sec" data-testid="make-stats">
+              <h3 className="uadmin-h">Make-проекты</h3>
+              <p className="uusage-note">Проектов: {makeStats.projects} · занято {mb(makeStats.bytes)} (файлы {mb(makeStats.filesBytes)}, снимки {mb(makeStats.snapshotsBytes)}, PNG стори {mb(makeStats.shotsBytes)}) · опубликовано {makeStats.published} · read-only ссылок {makeStats.shared} · просмотров публикаций {makeStats.views} · квота на проект {mb(makeStats.limitBytes)}</p>
+              {makeStats.byUser.length > 0 && (
+                <table className="utable"><thead><tr><th>Пользователь</th><th>Проектов</th><th>Занято</th><th>Опубликовано</th><th>Просмотров</th></tr></thead><tbody>
+                  {makeStats.byUser.map((u) => <tr key={u.user}><td>{u.user}</td><td>{u.projects}</td><td>{mb(u.bytes)}</td><td>{u.published}</td><td>{u.views}</td></tr>)}
+                </tbody></table>
+              )}
+              {makeStats.top.length > 0 && (
+                <details className="uusage-details"><summary>Самые тяжёлые проекты ({makeStats.top.length})</summary>
+                  <table className="utable"><thead><tr><th>Проект</th><th>Владелец</th><th>Файлов</th><th>Снимков</th><th>Занято</th><th>Публикация</th></tr></thead><tbody>
+                    {makeStats.top.map((p) => <tr key={p.conversationId}><td><code>{p.conversationId.slice(0, 8)}</code></td><td>{p.owner ?? '—'}</td><td>{p.filesCount}</td><td>{p.snapshots}</td><td>{mb(p.bytes)}</td><td>{p.published ? `да · ${p.views} просм.` : '—'}{p.shared ? ' · read-only' : ''}</td></tr>)}
+                  </tbody></table>
+                </details>
+              )}
             </section>
           )}
           {cur && (

@@ -1,13 +1,14 @@
 import type {
   AdminLlmEngine, AdminLlmEngineHealth, AdminLlmEngineInput, AdminUserInfo,
-  ModelPrice, ModelPriceInput, UsageReport, UsageUnit, UserUsageSummary
-} from '@shared/admin'
+  ModelPrice, ModelPriceInput, UsageReport, UsageUnit, UserUsageSummary, AdminMakeStats } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { Conversation, Message, SessionUser, UserRole } from '@shared/types'
 
 export interface AdminClient {
   listUsers(): Promise<AdminUserInfo[]>
   usageSummary(range?: { from?: number; to?: number }): Promise<UserUsageSummary[]>
+  /** Метрики Make (п.38); у старых клиентов метода может не быть — стор это переживает. */
+  makeStats?(): Promise<AdminMakeStats>
   createUser(input: { name: string; password: string; role: UserRole }): Promise<AdminUserInfo>
   updateUserRole(input: { name: string; role: UserRole }): Promise<AdminUserInfo>
   setUserBlocked(input: { name: string; blocked: boolean }): Promise<void>

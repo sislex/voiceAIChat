@@ -43,7 +43,7 @@
 | 34 | Мобильный редактор (fallback < 600px) | ✅ textarea-редактор + `<select>` файлов при ≤600px |
 | 35 | PWA в Vite-экспорте | ✅ `?pwa=1`: manifest + sw.js + icon.svg (+ инъекция в index.html), для статики и Vite |
 | 36 | Electron-десктоп | |
-| 38 | Метрики использования в админке | |
+| 38 | Метрики использования в админке | ✅ `GET /api/admin/make/stats`, секция «Make-проекты» в дашборде |
 | 39 | Rate-limit импорта | ✅ `SlidingWindowLimiter`: 10 ZIP / 20 URL за 10 мин → 429 |
 | 40 | Убрать дублирование useConfirm/Dialog | ✅ `components/ui/*` удалены, всё из `@voicechat/ui-kit`; остался `SidebarToggle` |
 | — | Ревизия стилей/шрифтов/отступов Make и мобильная вёрстка | |

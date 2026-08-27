@@ -148,3 +148,39 @@ export interface LlmEngineOption {
   kind: LlmEngineKind
   isDefault: boolean
 }
+
+/** Метрики Make для админки (п.38): сколько проектов, места и публикаций — по системе и по пользователям. */
+export interface AdminMakeProjectStat {
+  conversationId: string
+  owner: string | null
+  filesCount: number
+  bytes: number
+  snapshots: number
+  published: boolean
+  shared: boolean
+  views: number
+  updatedAt: number
+}
+
+export interface AdminMakeUserStat {
+  user: string
+  projects: number
+  bytes: number
+  published: number
+  views: number
+}
+
+export interface AdminMakeStats {
+  projects: number
+  bytes: number
+  filesBytes: number
+  snapshotsBytes: number
+  shotsBytes: number
+  published: number
+  shared: number
+  views: number
+  limitBytes: number
+  byUser: AdminMakeUserStat[]
+  /** Самые тяжёлые проекты (до 10). */
+  top: AdminMakeProjectStat[]
+}

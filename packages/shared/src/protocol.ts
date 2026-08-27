@@ -275,6 +275,7 @@ export const REST = {
   adminUserMessages: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/messages`,
   adminLlmEngines: '/api/admin/llm-engines',
   adminModelPrices: '/api/admin/model-prices',
+  adminMakeStats: '/api/admin/make/stats',
   adminModelPrice: (provider: string, model: string) => '/api/admin/model-prices/' + encodeURIComponent(provider) + '/' + encodeURIComponent(model),
   adminLlmEngine: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}`,
   adminLlmEngineHealth: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}/health`,

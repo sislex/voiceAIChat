@@ -2,6 +2,7 @@
 // токенам, просмотр истории и реестр LLM-исполнителей. Все под guard requireAdmin.
 
 import { request } from 'node:http'
+import type { AdminMakeStats } from '@voicechat/shared'
 import type { FastifyInstance } from 'fastify'
 import {
   LLM_RUNNER,
@@ -198,9 +199,16 @@ export function registerAdminRoutes(
   app: FastifyInstance,
   db: VoiceChatDb,
   registry: AgentRegistry,
-  deployTrigger?: DeployTrigger
+  deployTrigger?: DeployTrigger,
+  makeStats?: () => Promise<AdminMakeStats>
 ): void {
   const guard = { preHandler: requireAdmin }
+
+  // Метрики Make (п.38): место, публикации, просмотры — по системе и по пользователям.
+  app.get(REST.adminMakeStats, guard, async (_req, reply) => {
+    if (!makeStats) return reply.code(404).send({ error: 'Make недоступен' })
+    return makeStats()
+  })
 
   /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
   const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number): AdminUserInfo => {
