@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SlidingWindowLimiter } from '../make/rateLimit.js'
 import { MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse, MAKE_TESTS_PAGE } from '@voicechat/shared'
 import { transpileForPreview } from '../make/transpile.js'
-import { renderGalleryPage, renderStoriesPage, renderTestsPage } from '../make/stories.js'
+import { renderGalleryPage, renderStoriesPage, renderTestsPage, storyUsageSnippets } from '../make/stories.js'
 import { readZip, ZipReadError } from '../make/zipRead.js'
 import { importFromUrl, ImportUrlError } from '../make/importUrl.js'
 import type { VoiceChatDb } from '../db/database.js'
@@ -29,6 +29,16 @@ export interface MakeRoutesDeps {
 }
 
 /** Скрипт «выбрать элемент» для превью: по сообщению родителя подсвечивает элементы и отдаёт выбранный. */
+/** Код использования для витрины (п.28): читаем исходники сториз проекта; ошибки чтения — просто без кода. */
+async function galleryUsage(workspaces: MakeWorkspaces, conversationId: string): Promise<Record<string, Record<string, string>>> {
+  const out: Record<string, Record<string, string>> = {}
+  for (const f of await workspaces.stories(conversationId).catch(() => [])) {
+    const src = await workspaces.publicFile(conversationId, f.path).catch(() => null)
+    if (src) out[f.path] = storyUsageSnippets(f.path, src.data.toString('utf8'))
+  }
+  return out
+}
+
 export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
 (function(){
   if (window.parent === window) return;
@@ -364,7 +374,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const raw = req.params['*'] || 'index.html'
     const base = `/api/preview/make-shared/${encodeURIComponent(req.params.token)}/`
     const csp = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'"
-    if (raw === MAKE_GALLERY_PAGE) return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', csp).send(renderGalleryPage(await workspaces.stories(conversationId), base))
+    if (raw === MAKE_GALLERY_PAGE) return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', csp).send(renderGalleryPage(await workspaces.stories(conversationId), base, 'Компоненты', await galleryUsage(workspaces, conversationId)))
     if (raw === MAKE_STORIES_PAGE) {
       const q = req.query as { file?: string; story?: string }
       const index = await workspaces.readBuffer(conversationId, 'index.html').catch(() => null)
@@ -605,7 +615,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (raw === MAKE_STORIES_PAGE || raw === MAKE_GALLERY_PAGE) {
       const headers = (r: FastifyReply): FastifyReply => r.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
         .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:")
-      if (raw === MAKE_GALLERY_PAGE) return headers(reply).send(renderGalleryPage(await workspaces.stories(conversationId), base))
+      if (raw === MAKE_GALLERY_PAGE) return headers(reply).send(renderGalleryPage(await workspaces.stories(conversationId), base, 'Компоненты', await galleryUsage(workspaces, conversationId)))
       const q = req.query as { file?: string; story?: string }
       const index = await workspaces.publicFile(conversationId, 'index.html').catch(() => null)
       return headers(reply).send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null))

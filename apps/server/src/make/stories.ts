@@ -105,11 +105,30 @@ export function renderStoriesPage(file: string, story: string, indexHtml: string
 
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
-/** Галерея всех стори проекта: сетка iframe-ов на раннер, каждая с подписью и ссылкой «открыть». */
-export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 'Компоненты'): string {
+/**
+ * Код использования для витрины (roadmap-4 п.28): из `export const Name = () => <X … />` берём JSX после стрелки
+ * и добавляем import компонента относительно корня проекта. Объектные стори (CSF `{ args }`) — только import.
+ */
+export function storyUsageSnippets(path: string, source: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const importPath = './' + path.replace(/\.stories\.(jsx|tsx)$/i, '')
+  const component = /component\s*:\s*([A-Z][A-Za-z0-9_]*)/.exec(source)?.[1] ?? /import\s*\{\s*([A-Z][A-Za-z0-9_]*)/.exec(source)?.[1] ?? null
+  const importLine = component ? `import { ${component} } from '${importPath}'` : null
+  for (const m of source.matchAll(/export\s+const\s+([A-Z]\w*)\s*=\s*(?:\([^)]*\)|\w+)?\s*=>\s*\(?\s*(<[\s\S]*?>)\s*\)?\s*(?=\n|$)/g)) {
+    const jsx = m[2]!.trim().replace(/\)\s*$/, '')
+    out[m[1]!] = [importLine, jsx].filter(Boolean).join('\n\n')
+  }
+  for (const m of source.matchAll(/export\s+const\s+([A-Z]\w*)\s*=\s*\{/g)) if (!out[m[1]!] && importLine) out[m[1]!] = importLine
+  return out
+}
+
+/** Галерея всех стори проекта: сетка iframe-ов на раннер, поиск по названиям и код использования (п.28). */
+export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 'Компоненты', usage: Record<string, Record<string, string>> = {}): string {
   const cards = files.flatMap((f) => f.stories.map((name) => {
     const href = `${base}${MAKE_STORIES_PAGE}?file=${encodeURIComponent(f.path)}&story=${encodeURIComponent(name)}`
-    return `<figure class="card"><iframe loading="lazy" title="${escapeHtml(f.title)} / ${escapeHtml(name)}" src="${href}"></iframe><figcaption><b>${escapeHtml(f.title)}</b> · ${escapeHtml(name)} <a href="${href}" target="_blank" rel="noreferrer">открыть</a></figcaption></figure>`
+    const code = usage[f.path]?.[name]
+    const codeBlock = code ? `<details class="code"><summary>Код</summary><pre>${escapeHtml(code)}</pre><button type="button" class="copy" data-code="${escapeHtml(code)}">Скопировать</button></details>` : ''
+    return `<figure class="card" data-search="${escapeHtml(`${f.title} ${name} ${f.path}`.toLowerCase())}"><iframe loading="lazy" title="${escapeHtml(f.title)} / ${escapeHtml(name)}" src="${href}"></iframe><figcaption><b>${escapeHtml(f.title)}</b> · ${escapeHtml(name)} <a href="${href}" target="_blank" rel="noreferrer">открыть</a></figcaption>${codeBlock}</figure>`
   }))
   return `<!doctype html>
 <html lang="ru">
@@ -126,11 +145,26 @@ export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 
     figcaption { padding: 8px 12px; font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
     figcaption a { margin-left: auto; color: #4f7cff; }
     .empty { color: #666; }
+    .head { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+    .search { flex: 1 1 320px; max-width: 420px; padding: 8px 12px; border: 1px solid #d5d8e0; border-radius: 8px; font: inherit; }
+    .code { border-top: 1px solid #eef0f4; padding: 6px 12px 10px; font-size: 12px; }
+    .code summary { cursor: pointer; color: #4f7cff; }
+    .code pre { margin: 8px 0; padding: 8px; background: #f6f7fb; border-radius: 6px; overflow: auto; font: 12px/1.45 ui-monospace, Menlo, monospace; }
+    .copy { font: inherit; padding: 4px 10px; border: 1px solid #d5d8e0; border-radius: 6px; background: #fff; cursor: pointer; }
+    .card[hidden] { display: none; }
   </style>
 </head>
 <body>
-  <h1>${escapeHtml(title)}</h1>
+  <div class="head"><h1 style="margin:0">${escapeHtml(title)}</h1>${cards.length ? '<input class="search" type="search" placeholder="Поиск компонента или стори…" aria-label="Поиск по витрине">' : ''}<span class="count"></span></div>
   ${cards.length ? `<div class="grid">${cards.join('')}</div>` : '<p class="empty">В проекте пока нет сториз (*.stories.jsx/tsx).</p>'}
+  <script>
+    (function(){
+      var q = document.querySelector('.search'), cards = Array.prototype.slice.call(document.querySelectorAll('.card')), count = document.querySelector('.count');
+      function apply(){ var v = (q && q.value || '').trim().toLowerCase(); var shown = 0; cards.forEach(function(c){ var hit = !v || (c.getAttribute('data-search') || '').indexOf(v) >= 0; c.hidden = !hit; if (hit) shown++; }); if (count) count.textContent = v ? shown + ' из ' + cards.length : ''; }
+      if (q) { q.addEventListener('input', apply); var initial = new URLSearchParams(location.search).get('q'); if (initial) { q.value = initial; apply(); } }
+      document.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('.copy'); if (!b) return; var code = b.getAttribute('data-code') || ''; (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(function(){ b.textContent = 'Скопировано'; setTimeout(function(){ b.textContent = 'Скопировать'; }, 1500); }, function(){ b.textContent = 'Выделите и скопируйте'; }); });
+    })();
+  </script>
 </body>
 </html>`
 }
