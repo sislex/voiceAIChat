@@ -733,6 +733,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               const next = normalizeAcceptanceCriteria(raw)
               const start = e.target.selectionStart
               const end = e.target.selectionEnd
+              criteriaDirtyRef.current = true
               setCriteria(next)
               requestAnimationFrame(() => {
                 const el = criteriaRef.current
@@ -766,6 +767,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               const el = e.currentTarget
               const merged = criteria.slice(0, el.selectionStart) + pasted + criteria.slice(el.selectionEnd)
               const next = normalizeAcceptanceCriteria(merged)
+              criteriaDirtyRef.current = true
               setCriteria(next)
               requestAnimationFrame(() => criteriaRef.current?.setSelectionRange(next.length, next.length))
             }}
