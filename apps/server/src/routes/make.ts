@@ -25,6 +25,7 @@ export interface MakeRoutesDeps {
   /** Ограничители импорта — подменяются в тестах. */
   importLimiter?: SlidingWindowLimiter
   importUrlLimiter?: SlidingWindowLimiter
+  passwordLimiter?: SlidingWindowLimiter
 }
 
 /** Скрипт «выбрать элемент» для превью: по сообщению родителя подсвечивает элементы и отдаёт выбранный. */
@@ -213,6 +214,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   // Импорт ZIP: base64 в JSON — архив до ~8 МБ (лимит тела с запасом на base64).
   // Rate-limit импорта (п.39): 10 ZIP и 20 URL на пользователя за 10 минут; 429 + Retry-After.
   const importLimiter = deps.importLimiter ?? new SlidingWindowLimiter(10, 10 * 60_000)
+  const passwordLimiter = deps.passwordLimiter ?? new SlidingWindowLimiter(10, 10 * 60_000)
   const importUrlLimiter = deps.importUrlLimiter ?? new SlidingWindowLimiter(20, 10 * 60_000)
   const limited = (limiter: SlidingWindowLimiter, userId: string, reply: FastifyReply): boolean => {
     const v = limiter.hit(userId)
@@ -474,9 +476,9 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const m = (req.headers.cookie ?? '').split(/;\s*/).find((c) => c.startsWith(`${name}=`))
     return m ? decodeURIComponent(m.slice(name.length + 1)) : null
   }
-  const passwordPage = (action: string, wrong: boolean): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
+  const passwordPage = (action: string, wrong: boolean, limited = 0): string => `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>Доступ по паролю</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,sans-serif;background:#f6f7fb;color:#1a1d23}form{background:#fff;padding:28px 32px;border-radius:14px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;gap:12px;min-width:280px}h1{margin:0;font-size:18px}input{font:inherit;padding:10px 12px;border:1px solid #d9dbe3;border-radius:8px}button{font:inherit;padding:10px 12px;border:0;border-radius:8px;background:#4f7cff;color:#fff;cursor:pointer}.err{color:#c0392b;margin:0;font-size:13px}</style></head>
-<body><form method="post" action="${action}"><h1>Проект защищён паролем</h1>${wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
+<body><form method="post" action="${action}"><h1>Проект защищён паролем</h1>${limited ? `<p class="err">Слишком много попыток — подождите ${limited} с.</p>` : wrong ? '<p class="err">Пароль не подошёл — попробуйте ещё раз.</p>' : ''}<input type="password" name="password" placeholder="Пароль" autofocus required autocomplete="current-password"><button type="submit">Открыть</button></form></body></html>`
 
   /** Ответ мок-API (п.29): JSON, статус и заголовки из конверта, искусственная задержка — как у настоящего бэкенда. */
   const sendMock = async (reply: FastifyReply, mock: MockResponse): Promise<unknown> => {
@@ -545,6 +547,9 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     const body = (req.body ?? {}) as { password?: string }
     const q = req.query as { next?: string }
     const next = (q.next ?? 'index.html').replace(/^\/+/, '')
+    // Перебор пароля (roadmap-2 п.3): 10 попыток за 10 минут на IP+токен; сверх — 429 с той же формой и обратным отсчётом.
+    const verdict = passwordLimiter.hit(`${req.ip}:${token}`)
+    if (!verdict.ok) return reply.code(429).header('retry-after', String(verdict.retryAfterSec)).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').send(passwordPage(`${base}__auth__?next=${encodeURIComponent(next)}`, false, verdict.retryAfterSec))
     if (!(await workspaces.verifyPublicPassword(conversationId, body.password ?? ''))) return reply.redirect(`${base}${next}?wrong=1`)
     const gate = await workspaces.publicGate(conversationId)
     return reply
