@@ -13,12 +13,14 @@ import { readZip, ZipReadError } from '../make/zipRead.js'
 import { importFromUrl, ImportUrlError } from '../make/importUrl.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { MakeError, MakeWorkspaces } from '../make/workspace.js'
+import type { MakeLibrary } from '../make/library.js'
 import type { MakeHub } from '../make/hub.js'
 
 export interface MakeRoutesDeps {
   db: VoiceChatDb
   workspaces: MakeWorkspaces
   hub: MakeHub
+  library: MakeLibrary
 }
 
 /** Скрипт «выбрать элемент» для превью: по сообщению родителя подсвечивает элементы и отдаёт выбранный. */
@@ -80,7 +82,7 @@ function sendError(reply: FastifyReply, error: unknown): FastifyReply {
 }
 
 export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): void {
-  const { db, workspaces, hub } = deps
+  const { db, workspaces, hub, library } = deps
   const uid = (req: { user?: { name: string } | null }): string => req.user?.name ?? ''
 
   /** Разговор пользователя вида Make, иначе 404 (чужой и несуществующий неотличимы). */
@@ -281,6 +283,40 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       const result = await workspaces.replaceAll(req.params.id, query, replacement, { matchCase: Boolean(matchCase) })
       if (result.files > 0) hub.changed(userId, req.params.id, result.state.rev, result.state.files.map((f) => f.path))
       return result
+    } catch (error) { return sendError(reply, error) }
+  })
+
+  // ---- Личная библиотека компонентов (п.17) ----
+  app.get('/api/make/library', async (req) => ({ items: await library.list(uid(req)) }))
+
+  app.delete<{ Params: { slug: string } }>('/api/make/library/:slug', async (req) => {
+    await library.remove(uid(req), req.params.slug)
+    return { items: await library.list(uid(req)) }
+  })
+
+  app.post<{ Params: { id: string }; Body: { name?: string; paths?: string[] } }>('/api/make/:id/library', async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    const { name, paths } = req.body ?? {}
+    if (typeof name !== 'string' || !Array.isArray(paths) || paths.length === 0) return reply.code(400).send({ error: 'name и paths обязательны' })
+    try {
+      const files: Array<{ path: string; data: Buffer }> = []
+      for (const raw of paths.slice(0, 30)) {
+        const file = await workspaces.readBuffer(req.params.id, String(raw))
+        if (file) files.push({ path: file.path, data: file.data })
+      }
+      return { item: await library.save(userId, name, files, req.params.id) }
+    } catch (error) { return sendError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string; slug: string } }>('/api/make/:id/library/:slug/insert', async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    try {
+      const files = await library.files(userId, req.params.slug)
+      const state = await workspaces.importFiles(req.params.id, files, 'merge')
+      hub.changed(userId, req.params.id, state.rev, files.map((f) => f.path))
+      return state
     } catch (error) { return sendError(reply, error) }
   })
 

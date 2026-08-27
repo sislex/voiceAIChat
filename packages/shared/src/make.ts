@@ -94,6 +94,9 @@ export interface MakeNetworkEntry { method: string; url: string; status: number;
 /** Визуальный снимок стори (PNG, снятый на клиенте), хранится на сервере вне файлов проекта. */
 export interface MakeStoryShot { id: string; file: string; story: string; at: number; rev: number }
 
+/** Элемент личной библиотеки компонентов (файлы компонента + сториз из какого-то проекта). */
+export interface MakeLibraryItem { slug: string; name: string; files: string[]; bytes: number; sourceConversationId: string; updatedAt: number }
+
 export type MakeImportMode = 'replace' | 'merge'
 
 /** Файлы, которые сервер транспилирует esbuild при отдаче превью (JSX/TS → ESM). */
