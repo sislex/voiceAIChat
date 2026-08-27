@@ -1,7 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -164,6 +164,11 @@ export interface IpcInvokeMap {
   'make:libraryRemove': { arg: { slug: string }; result: { items: MakeLibraryItem[] } }
   'make:shots': { arg: { conversationId: string }; result: { shots: MakeStoryShot[] } }
   'make:usage': { arg: { conversationId: string }; result: MakeUsage }
+  'make:share': { arg: { conversationId: string }; result: MakeProjectState }
+  'make:unshare': { arg: { conversationId: string }; result: MakeProjectState }
+  'make:shared': { arg: { token: string }; result: MakeSharedState }
+  'make:sharedFile': { arg: { token: string; path: string }; result: MakeFileContent }
+  'make:sharedStories': { arg: { token: string }; result: { files: MakeStoryFile[] } }
   'make:comments': { arg: { conversationId: string }; result: { comments: MakeComment[] } }
   'make:commentAdd': { arg: { conversationId: string; selector: string; elementLabel: string; text: string }; result: { comments: MakeComment[] } }
   'make:commentUpdate': { arg: { conversationId: string; commentId: string; resolved?: boolean; text?: string }; result: { comments: MakeComment[] } }
@@ -920,6 +925,11 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:unpublish',
   'make:usage',
   'make:cleanup',
+  'make:share',
+  'make:unshare',
+  'make:shared',
+  'make:sharedFile',
+  'make:sharedStories',
   'make:comments',
   'make:commentAdd',
   'make:commentUpdate',

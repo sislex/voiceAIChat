@@ -88,7 +88,7 @@ function bearer(req: FastifyRequest): string | undefined {
 function previewSession(req: FastifyRequest, url: string): string | undefined {
   // Точный путь прокси плюс сброс cookie-контейнера превью (кнопка «Сессия» Reader).
   // Превью и экспорт Make лежат под тем же префиксом: iframe и ссылка «Скачать» шлют только cookie.
-  if (url !== PREVIEW_COOKIE_PATH && url !== PREVIEW_COOKIE_PATH + '/reset-cookies' && !url.startsWith(PREVIEW_COOKIE_PATH + '/make/')) return undefined
+  if (url !== PREVIEW_COOKIE_PATH && url !== PREVIEW_COOKIE_PATH + '/reset-cookies' && !url.startsWith(PREVIEW_COOKIE_PATH + '/make')) return undefined
   const header = req.headers.cookie
   if (typeof header !== 'string') return undefined
   for (const item of header.split(';')) {

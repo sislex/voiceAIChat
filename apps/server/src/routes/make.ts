@@ -271,6 +271,64 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null, slug: req.body?.slug, password: req.body?.password }) } catch (error) { return sendError(reply, error) }
   })
 
+  // Read-only ссылка внутри ChatAI (п.33): владелец создаёт/отзывает, любой вошедший читает по токену.
+  app.post<{ Params: { id: string } }>('/api/make/:id/share', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { await workspaces.ensure(req.params.id); return await workspaces.createShare(req.params.id) } catch (error) { return sendError(reply, error) }
+  })
+  app.delete<{ Params: { id: string } }>('/api/make/:id/share', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { return await workspaces.revokeShare(req.params.id) } catch (error) { return sendError(reply, error) }
+  })
+  const sharedConv = async (token: string, reply: FastifyReply): Promise<string | null> => {
+    const conversationId = await workspaces.sharedTarget(token)
+    if (!conversationId) { void reply.code(404).send({ error: 'Ссылка недействительна или отозвана' }); return null }
+    return conversationId
+  }
+  app.get<{ Params: { token: string } }>('/api/make/shared/:token', async (req, reply) => {
+    const conversationId = await sharedConv(req.params.token, reply)
+    if (!conversationId) return reply
+    try {
+      const owner = db.conversationOwner(conversationId) ?? ''
+      const conv = owner ? db.getConversation(owner, conversationId) : null
+      const state = await workspaces.state(conversationId)
+      return { token: req.params.token, owner, title: conv?.title ?? 'Проект', files: state.files, snapshots: state.snapshots, rev: state.rev }
+    } catch (error) { return sendError(reply, error) }
+  })
+  app.get<{ Params: { token: string }; Querystring: { path?: string } }>('/api/make/shared/:token/file', async (req, reply) => {
+    const conversationId = await sharedConv(req.params.token, reply)
+    if (!conversationId) return reply
+    try { return await workspaces.read(conversationId, req.query.path ?? '') } catch (error) { return sendError(reply, error) }
+  })
+  app.get<{ Params: { token: string } }>('/api/make/shared/:token/stories', async (req, reply) => {
+    const conversationId = await sharedConv(req.params.token, reply)
+    if (!conversationId) return reply
+    try { return { files: await workspaces.stories(conversationId) } } catch (error) { return sendError(reply, error) }
+  })
+  app.get<{ Params: { token: string; '*': string } }>('/api/preview/make-shared/:token/*', async (req, reply) => {
+    const conversationId = await sharedConv(req.params.token, reply)
+    if (!conversationId) return reply
+    const raw = req.params['*'] || 'index.html'
+    const base = `/api/preview/make-shared/${encodeURIComponent(req.params.token)}/`
+    const csp = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'"
+    if (raw === MAKE_GALLERY_PAGE) return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', csp).send(renderGalleryPage(await workspaces.stories(conversationId), base))
+    if (raw === MAKE_STORIES_PAGE) {
+      const q = req.query as { file?: string; story?: string }
+      const index = await workspaces.readBuffer(conversationId, 'index.html').catch(() => null)
+      return reply.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('content-security-policy', csp).send(renderStoriesPage(q.file ?? '', q.story ?? '', index ? index.data.toString('utf8') : null))
+    }
+    const path = raw.endsWith('/') ? `${raw}index.html` : raw
+    let file
+    try { file = await workspaces.readBuffer(conversationId, path) } catch (error) { return sendError(reply, error) }
+    if (!file) {
+      const mock = await workspaces.resolveMock(conversationId, path, 'GET')
+      if (mock) return sendMock(reply, mock)
+      return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
+    }
+    return reply.header('content-type', makeMimeType(file.path)).header('cache-control', 'no-store').header('x-content-type-options', 'nosniff').header('content-security-policy', csp)
+      .send(await previewBody(conversationId, file))
+  })
+
   // Комментарии к элементам превью (п.32).
   app.get<{ Params: { id: string } }>('/api/make/:id/comments', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply

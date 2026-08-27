@@ -10,11 +10,11 @@ import { existsSync } from 'node:fs'
 import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, normalizeMakePath,
+  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare } from '@voicechat/shared'
 import { mockCandidates, unwrapMockEnvelope } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
@@ -31,6 +31,7 @@ const SNAPSHOTS_DIR = '.snapshots'
 /** Файл публикации проекта (в его корне) и индекс токен → разговор (общий каталог). */
 const PUBLISH_FILE = '.publish.json'
 const COMMENTS_FILE = '.comments.json'
+const SHARE_FILE = '.share.json'
 /** Содержимое `.publish.json`; passwordHash = `<соль>:<sha256(соль:пароль)>`. */
 interface PublishRaw { token: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number }
 const SHOTS_DIR = '.shots'
@@ -229,6 +230,48 @@ export class MakeWorkspaces {
       } catch { /* битый снимок пропускаем */ }
     }
     return out.sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  // ---- Read-only ссылка внутри ChatAI (п.33): .share.json + индекс share-<token> → разговор ----
+
+  async share(conversationId: string): Promise<MakeShare | null> {
+    try {
+      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), SHARE_FILE), 'utf8')) as { token?: string; createdAt?: number }
+      if (!raw.token || !ID_RE.test(raw.token)) return null
+      return { token: raw.token, createdAt: raw.createdAt ?? 0, url: makeSharedUrl(raw.token) }
+    } catch { return null }
+  }
+
+  /** Создаёт ссылку (повторный вызов возвращает ту же). */
+  async createShare(conversationId: string): Promise<MakeProjectState> {
+    if (!(await this.share(conversationId))) {
+      const token = randomUUID().replace(/-/g, '')
+      const indexDir = join(this.rootDir, 'make', PUBLISHED_INDEX_DIR)
+      await mkdir(indexDir, { recursive: true })
+      await writeFile(join(indexDir, `share-${token}.json`), JSON.stringify({ conversationId }), 'utf8')
+      await writeFile(join(this.dirOf(conversationId), SHARE_FILE), JSON.stringify({ token, createdAt: Date.now() }), 'utf8')
+    }
+    return this.state(conversationId)
+  }
+
+  async revokeShare(conversationId: string): Promise<MakeProjectState> {
+    const cur = await this.share(conversationId)
+    if (cur) {
+      await rm(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `share-${cur.token}.json`), { force: true })
+      await rm(join(this.dirOf(conversationId), SHARE_FILE), { force: true })
+    }
+    return this.state(conversationId)
+  }
+
+  /** Разговор по share-токену; null — ссылка отозвана или неверна. */
+  async sharedTarget(token: string): Promise<string | null> {
+    if (!ID_RE.test(token)) return null
+    try {
+      const raw = JSON.parse(await readFile(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `share-${token}.json`), 'utf8')) as { conversationId?: string }
+      if (!raw.conversationId) return null
+      const cur = await this.share(raw.conversationId)
+      return cur?.token === token ? raw.conversationId : null
+    } catch { return null }
   }
 
   // ---- Комментарии к элементам превью (п.32): .comments.json, переживает reset как .publish.json ----
@@ -460,7 +503,7 @@ export class MakeWorkspaces {
   private async clearFiles(conversationId: string): Promise<void> {
     const root = this.dirOf(conversationId)
     for (const entry of await readdir(root)) {
-      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE) continue
+      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE || entry === SHARE_FILE) continue
       await rm(join(root, entry), { recursive: true, force: true })
     }
   }
@@ -554,8 +597,8 @@ export class MakeWorkspaces {
   }
 
   async state(conversationId: string): Promise<MakeProjectState> {
-    const [files, snapshots, published] = await Promise.all([this.list(conversationId), this.snapshots(conversationId), this.publication(conversationId)])
-    return { conversationId, files, snapshots, rev: this.rev(conversationId), published }
+    const [files, snapshots, published, shared] = await Promise.all([this.list(conversationId), this.snapshots(conversationId), this.publication(conversationId), this.share(conversationId)])
+    return { conversationId, files, snapshots, rev: this.rev(conversationId), published, shared }
   }
 
   // ---- Публикация: непубличная ссылка /p/<token>/ без авторизации -------------

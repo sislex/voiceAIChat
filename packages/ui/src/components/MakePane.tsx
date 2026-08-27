@@ -40,7 +40,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -613,6 +613,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const ok = await confirm({ title: 'Снять проект с публикации?', message: 'Ссылка перестанет открываться.', variant: 'danger', confirmLabel: 'Снять' })
     if (!ok) return
     try { setState(await api['make:unpublish']({ conversationId })); toast.success('Публикация снята') } catch (e) { toast.error(describeError(e)) }
+  }
+  const copyShareLink = async (text: string): Promise<void> => { toast[(await copyText(text)) ? 'success' : 'error']('Ссылка скопирована') }
+  // Read-only ссылка внутри ChatAI (п.33): создать/отозвать.
+  const toggleShare = async (): Promise<void> => {
+    try {
+      setState(await (state?.shared ? api['make:unshare']({ conversationId }) : api['make:share']({ conversationId })))
+      toast.success(state?.shared ? 'Ссылка для чтения отозвана' : 'Ссылка для чтения создана')
+    } catch (e) { toast.error(describeError(e)) }
   }
   const copyPublicLink = async (): Promise<void> => {
     if (!state?.published) return
@@ -1463,6 +1471,19 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               <div className="make-ask-actions"><Button size="sm" variant="primary" onClick={() => void publish()}>Опубликовать</Button></div>
             </div>
           )}
+          <div className="make-share" data-testid="make-share">
+            <h4>Только чтение внутри ChatAI</h4>
+            {state?.shared ? (
+              <>
+                <p className="fsub">Коллеги с аккаунтом ChatAI увидят превью, код и снимки, но не смогут ничего менять.</p>
+                <div className="make-publish-link">
+                  <code data-testid="make-share-url">{typeof window !== 'undefined' ? `${window.location.origin}/${state.shared.url}` : state.shared.url}</code>
+                  <Button size="sm" variant="secondary" onClick={() => void copyShareLink(typeof window !== 'undefined' ? `${window.location.origin}/${state.shared!.url}` : state.shared!.url)}>Копировать</Button>
+                  <Button size="sm" variant="ghost" onClick={() => void toggleShare()}>Отозвать</Button>
+                </div>
+              </>
+            ) : <div className="make-ask-actions"><Button size="sm" variant="secondary" onClick={() => void toggleShare()}>Создать ссылку для чтения</Button></div>}
+          </div>
         </Dialog>
       )}
 

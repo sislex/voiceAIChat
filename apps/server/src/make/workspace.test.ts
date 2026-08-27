@@ -296,4 +296,20 @@ describe('MakeWorkspaces', () => {
     expect((await ws.comments(CONV)).length).toBe(1)
     expect(await ws.removeComment(CONV, id)).toEqual([])
   })
+
+  it('read-only ссылка: токен один и тот же, sharedTarget, отзыв; переживает reset', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const st = await ws.createShare(CONV)
+    expect(st.shared?.url).toMatch(/^#\/make-shared\/[0-9a-f]{32}$/)
+    const token = st.shared!.token
+    expect((await ws.createShare(CONV)).shared?.token).toBe(token)
+    expect(await ws.sharedTarget(token)).toBe(CONV)
+    expect(await ws.sharedTarget('nope')).toBeNull()
+    await ws.reset(CONV)
+    expect((await ws.state(CONV)).shared?.token).toBe(token)
+    await ws.revokeShare(CONV)
+    expect(await ws.sharedTarget(token)).toBeNull()
+    expect((await ws.state(CONV)).shared).toBeNull()
+  })
 })
