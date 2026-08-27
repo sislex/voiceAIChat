@@ -90,6 +90,8 @@ export interface TurnManagerDeps {
   makeMcpBaseUrl?: string
   /** Реестр снимков «До правок» по id хода — для meta.makeSnapshotId. */
   makeHub?: { turnSnapshot(turn: string): string | undefined }
+  /** Контекст проекта Make для промпта: дизайн-токены и открытые комментарии (roadmap-2 п.9). */
+  makeContext?: (conversationId: string) => Promise<string>
   /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
   previewTool?: {
     register(token: string, entry: { userId: string; conversationId: string }): void
@@ -593,7 +595,8 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const instructions = effectiveChatInstructions(settings.chatInstructions, disabledContext)
       .filter((item) => !(conv?.assistantKind === 'console-reader' && item.kind === 'console'))
       .filter((item) => !(conv?.assistantKind === 'make' && (item.kind === 'taskLaunch' || item.kind === 'console')))
-    const promptBase = appendChatInstructionHints(basePrompt, instructions)
+    const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext ? await deps.makeContext(conversationId).catch(() => '') : ''
+    const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '')
     const prompt = makeAutoPlan
       ? `${promptBase}\n\n## Режим плана (большая переделка)\nЗапрос затрагивает весь проект. Сначала изучи файлы (make_list_files/make_read_file) и ответь планом: какие файлы создашь/изменишь и что в них будет, 5–12 пунктов. Файлы в этом ходе менять нельзя. Закончи вопросом, подтверждает ли пользователь план — после «да» он пришлёт следующий запрос, и ты выполнишь его целиком.`
       : promptBase
