@@ -185,7 +185,9 @@ describe('VoiceChatDb — настройки', () => {
   })
 
   it('сохраняет и читает настройки', () => {
+    // Спред дефолтов: новые обязательные поля Settings не должны ломать этот тест при каждом добавлении.
     db.saveSettings({
+      ...DEFAULT_SETTINGS,
       model: 'opus[1m]',
       whisperModel: 'medium',
       diarization: false,
@@ -208,6 +210,7 @@ describe('VoiceChatDb — настройки', () => {
       aiAssistPrompts: DEFAULT_SETTINGS.aiAssistPrompts
     })
     expect(db.getSettings()).toEqual({
+      ...DEFAULT_SETTINGS,
       model: 'opus[1m]',
       whisperModel: 'medium',
       diarization: false,

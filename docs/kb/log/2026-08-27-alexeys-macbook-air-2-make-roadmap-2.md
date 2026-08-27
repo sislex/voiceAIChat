@@ -27,3 +27,4 @@ author: alexeyrozhnov
 П.3 (roadmap-2): rate-limit формы пароля публикации (10/10 мин, 429).
 П.4 (roadmap-2): dnd берёт pointer capture при старте жеста — клик по строке дерева доходит до кнопки; E2E без обхода.
 П.5 (roadmap-2): Dialog ui-kit получил проп padded (.vc-dialog-body); диалоги Make на нём.
+П.6 (roadmap-2): typecheck:desktop зелёный — фикстура Settings через спред, vite-worker.d.ts в include.

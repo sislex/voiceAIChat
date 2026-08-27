@@ -1,7 +1,7 @@
 ---
 title: Клиенты и упаковка: web, desktop и agent-tray
-updated: 2026-08-24
-checked: 79851eea
+updated: 2026-08-27
+checked: 0c109bca
 areas:
   - apps/web
   - apps/desktop/src
@@ -93,3 +93,5 @@ Renderer намеренно простой HTML+TypeScript, без React: `setup
 Operations-код не знает `window`, fetch, WebSocket, SSE или Electron. Публичные интерфейсы `MachinesClient`, `TerminalClient`, `FilesClient`, `LlmObserverClient`, `KnowledgeClient`, `CiMonitorClient`, `DiagnosticsClient` и `ConsoleClient` описаны в `packages/operations-app/src/contracts.ts`; transport adapters поверх существующих host bridges в этом срезе ещё не добавлены. Транспортные протоколы не менялись.
 
 Administration также не знает прямых transport API. `packages/ui/src/clients/browser.ts#createAdminClient` — host adapter существующего `RendererApi`: он переводит IPC channel names в методы публичного `AdminClient`. REST bridge остаётся в `packages/ui/src/remote/httpApi.ts`; backend и Electron preload не менялись.
+
+**typecheck:desktop и типы Vite-суффиксов.** `apps/desktop/tsconfig.web.json` включает `packages/ui/src/global.d.ts` и `vite-worker.d.ts` (объявления `*?raw`/`*?worker` для воркеров Monaco): без второго tsc десктопа не знает про импорты в `components/code/monacoSetup.ts`. Фикстура настроек в `src/main/db/database.test.ts` строится спредом `DEFAULT_SETTINGS` — новое обязательное поле `Settings` больше не ломает тест (roadmap-2 п.6).
