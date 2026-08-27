@@ -1439,7 +1439,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       <Sidebar
         open={sidebarOpen}
         width={sidebarWidth}
-        onWidthChange={setSidebarWidth}
+        onWidthChange={compactChat ? undefined : setSidebarWidth}
         onToggleCollapse={() => shellActions.setSidebarCollapsed(true)}
         conversations={chat.conversations.filter((conversation) => conversation.assistantKind !== 'web-recorder' && !conversation.previewUrl)}
         conversationsStatus={chat.conversationsStatus}

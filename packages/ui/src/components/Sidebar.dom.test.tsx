@@ -454,6 +454,32 @@ describe('Sidebar — кнопка командной палитры', () => {
 })
 
 describe('Sidebar — desktop resize и панели управления', () => {
+  it('показывает только два раздела, расширяет активный и выводит одно контекстное действие над ними', () => {
+    const onNew = vi.fn()
+    const onModeChange = vi.fn()
+    const view = setup({ onNew, onModeChange, mode: 'chats', onCreateProject: vi.fn() })
+    const group = screen.getByRole('group', { name: 'Тип списка' })
+    const chats = within(group).getByRole('button', { name: 'Чаты' })
+    const projects = within(group).getByRole('button', { name: 'Проекты' })
+
+    expect(within(group).getAllByRole('button')).toHaveLength(2)
+    expect(chats).toHaveClass('on')
+    expect(chats).toHaveAttribute('aria-pressed', 'true')
+    expect(projects).not.toHaveClass('on')
+    expect(screen.getByRole('button', { name: /Новый чат/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Новый проект/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Беседы' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Сообщения' })).not.toBeInTheDocument()
+    expect(document.querySelector('.side-primary-action')?.nextElementSibling).toBe(group)
+
+    fireEvent.click(screen.getByRole('button', { name: /Новый чат/ }))
+    expect(onNew).toHaveBeenCalledTimes(1)
+    view.rerender(<Sidebar {...view} onNew={onNew} onModeChange={onModeChange} mode="projects" onCreateProject={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /Новый проект/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Новый чат/ })).not.toBeInTheDocument()
+    expect(within(group).getByRole('button', { name: 'Проекты' })).toHaveClass('on')
+  })
+
   it('граница меняет ширину pointer-жестом, clamp-ит пределы и доступна с клавиатуры', () => {
     const onWidthChange = vi.fn()
     setup({ width: 264, onWidthChange })
@@ -470,6 +496,12 @@ describe('Sidebar — desktop resize и панели управления', () =
     expect(onWidthChange).toHaveBeenLastCalledWith(272)
     expect(handle).toHaveAttribute('aria-valuemin', '220')
     expect(handle).toHaveAttribute('aria-valuemax', '420')
+
+    onWidthChange.mockClear()
+    fireEvent.pointerDown(handle, { pointerId: 8, clientX: 264 })
+    fireEvent.pointerCancel(handle, { pointerId: 8 })
+    fireEvent.pointerMove(handle, { pointerId: 8, clientX: 320 })
+    expect(onWidthChange).not.toHaveBeenCalled()
   })
 
   it('wheel раскрывает вверх у scrollTop=0 и скрывает вниз с порогом', () => {
