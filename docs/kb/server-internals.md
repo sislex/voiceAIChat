@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-27
-checked: ff211534
+checked: ea74f2c0
 areas:
   - apps/server/src
 ---
@@ -65,7 +65,14 @@ MCP даёт `db.conversationOwner(id)`. Старый исследователь
 со `line/column`), нет `index.html`, битые `href/src/url()` на файлы проекта (относительно файла,
 `..` учитывается через `resolveRelativeRef`; якоря `#id`, `data:`, `mailto:`, `//` пропускаются),
 пустые файлы, `http://`-скрипты. `applyTemplate(id)` заменяет файлы шаблоном `MAKE_TEMPLATES`
-со снимком «Перед шаблоном «…»».
+со снимком «Перед шаблоном «…»». `snapshotDiff(id, sid)` сравнивает файлы снимка с текущими побайтно
+(added/removed/changed/same), `restoreFile(id, sid, path)` возвращает один файл. `importFiles(id, files, mode)`
+— общий вход для импорта ZIP (`make/zipRead.ts`: store+deflate, срез общей папки, пропуск скрытых и
+`__MACOSX`) и страницы по URL (`make/importUrl.ts`: HTML → index.html, same-origin css/js/img → `assets/`,
+ссылки переписаны, чужие домены и `<a href>` — абсолютные; хосты проверяет `assertPublicHost` из
+`previewProxy.ts`, лимиты 30 файлов × 2 МБ); перед импортом — снимок, `replace` очищает проект.
+`exportZip(id, {vite})` добавляет `package.json` (react/react-dom при jsx/tsx, typescript при ts),
+`vite.config.js`, `tsconfig.json`, `.gitignore`, `README.md` — только если таких файлов нет в проекте.
 **React без сборки** (`make/transpile.ts`): при отдаче превью и публикации файлы `.jsx/.tsx/.ts`
 прогоняются через `esbuild.transform` (esm, jsx automatic, target es2020), относительные импорты без
 расширения дополняются существующим файлом (`rewriteRelativeImports`), ошибка компиляции отдаётся

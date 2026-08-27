@@ -70,6 +70,21 @@ export interface MakeStoryFile {
   stories: string[]
 }
 
+/** Сравнение снимка с текущим проектом: по файлам. */
+export interface MakeSnapshotDiffEntry {
+  path: string
+  status: 'added' | 'removed' | 'changed' | 'same'
+  /** Размеры для подписи: в снимке и сейчас. */
+  before: number | null
+  after: number | null
+}
+export interface MakeSnapshotDiff { snapshotId: string; files: MakeSnapshotDiffEntry[] }
+
+/** Строка консоли превью (перехват console.* и ошибок внутри iframe). */
+export interface MakeConsoleLine { level: 'log' | 'info' | 'warn' | 'error'; text: string; at: number }
+
+export type MakeImportMode = 'replace' | 'merge'
+
 /** Файлы, которые сервер транспилирует esbuild при отдаче превью (JSX/TS → ESM). */
 export const MAKE_TRANSPILED_EXTENSIONS = new Set(['jsx', 'tsx', 'ts'])
 export const isMakeTranspiledPath = (path: string): boolean => MAKE_TRANSPILED_EXTENSIONS.has(path.slice(path.lastIndexOf('.') + 1).toLowerCase())

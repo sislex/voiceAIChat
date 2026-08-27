@@ -546,6 +546,10 @@ describe('REST: conversations/messages/settings', () => {
     expect(withAuth.statusCode).toBe(200)
     expect(withAuth.headers['content-type']).toMatch(/text\/html/)
     expect(withAuth.body).toContain('data-vc-make-inspector')
+    // Инжектируемый скрипт должен парситься: ломаный перехват консоли ломал и инспектор.
+    const script = withAuth.body.match(/<script data-vc-make-inspector>([\s\S]*?)<\/script>/)![1]!
+    expect(() => new Function(script)).not.toThrow()
+    expect(script).toContain('vc-make.console')
     // Публикация: ссылка открывается без авторизации и без инспектора; после снятия — 404.
     const published = (await inj({ method: 'POST', url: `/api/make/${conv.id}/publish` })).json() as { published: { url: string } }
     expect(published.published.url).toMatch(/^\/p\//)

@@ -3,7 +3,8 @@ import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@v
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import { REST } from '@shared/protocol'
 import { CodeEditor } from './CodeEditor'
-import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile } from '@shared/make'
+import { copyText } from '../lib/clipboard'
+import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -21,7 +22,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -100,11 +101,26 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
   const [argOverrides, setArgOverrides] = useState<Record<string, unknown>>({})
   const [argOptions, setArgOptions] = useState<Record<string, string[]>>({})
   const [ideasOpen, setIdeasOpen] = useState(false)
+  // Консоль превью: строки из iframe (console.* и ошибки), сбрасываются при перезагрузке превью.
+  const [consoleLines, setConsoleLines] = useState<MakeConsoleLine[]>([])
+  const [consoleOpen, setConsoleOpen] = useState(false)
+  const [assetsOpen, setAssetsOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importUrl, setImportUrl] = useState('')
+  const [importMode, setImportMode] = useState<MakeImportMode>('replace')
+  const [importing, setImporting] = useState(false)
+  const importZipRef = useRef<HTMLInputElement>(null)
+  const [diffs, setDiffs] = useState<Record<string, MakeSnapshotDiff | 'loading'>>({})
   const storyFrameRef = useRef<HTMLIFrameElement | null>(null)
   useEffect(() => {
     const onMessage = (e: MessageEvent): void => {
       const d = e.data as { type?: string; args?: Record<string, unknown>; options?: Record<string, string[]> } | null
       if (d?.type === 'vc-make.story' && e.source === storyFrameRef.current?.contentWindow) { setStoryArgs(d.args ?? {}); setArgOptions(d.options ?? {}); setArgOverrides({}) }
+      if (d?.type === 'vc-make.console' && (e.source === frameRef.current?.contentWindow || e.source === storyFrameRef.current?.contentWindow)) {
+        const line = d as unknown as MakeConsoleLine
+        setConsoleLines((prev) => [...prev.slice(-199), { level: line.level, text: line.text, at: line.at }])
+      }
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -436,6 +452,48 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
     return files.every((f) => f.path in MAKE_SCAFFOLD && f.size === enc.encode(MAKE_SCAFFOLD[f.path]!).length)
   }, [state])
   const useStarter = (prompt: string): void => { onInsertToChat?.(prompt); setIdeasOpen(false) }
+  useEffect(() => { setConsoleLines([]) }, [previewRev])
+  const consoleErrors = consoleLines.filter((l) => l.level === 'error').length
+  const sendConsoleToChat = (): void => {
+    const errors = consoleLines.filter((l) => l.level === 'error' || l.level === 'warn').slice(-5)
+    if (!onInsertToChat || errors.length === 0) return
+    onInsertToChat(`В консоли превью ошибки:\n${errors.map((l) => `- [${l.level}] ${l.text.slice(0, 300)}`).join('\n')}\nИсправь. `)
+  }
+  const assets = useMemo(() => (state?.files ?? []).filter((f) => !isMakeTextPath(f.path)), [state])
+  const copyAsset = async (text: string, what: string): Promise<void> => { toast[(await copyText(text)) ? 'success' : 'error'](`${what} скопирован`) }
+  const loadDiff = async (snapshotId: string): Promise<void> => {
+    if (diffs[snapshotId]) { setDiffs((d) => { const next = { ...d }; delete next[snapshotId]; return next }); return }
+    setDiffs((d) => ({ ...d, [snapshotId]: 'loading' }))
+    try { const diff = await api['make:snapshotDiff']({ conversationId, snapshotId }); setDiffs((d) => ({ ...d, [snapshotId]: diff })) }
+    catch (e) { toast.error(describeError(e)); setDiffs((d) => { const next = { ...d }; delete next[snapshotId]; return next }) }
+  }
+  const restoreFile = async (snapshotId: string, path: string): Promise<void> => {
+    try {
+      const next = await api['make:restoreFile']({ conversationId, snapshotId, path })
+      setState(next); setPreviewRev(next.rev)
+      if (selectedPath === path) await openFile(path)
+      setDiffs((d) => { const n = { ...d }; delete n[snapshotId]; return n })
+      toast.success(`Файл ${path} восстановлен`)
+    } catch (e) { toast.error(describeError(e)) }
+  }
+  const runImport = async (kind: 'zip' | 'url', file?: File): Promise<void> => {
+    setImporting(true)
+    try {
+      let next: MakeProjectState
+      if (kind === 'zip') {
+        if (!file) return
+        const bytes = new Uint8Array(await new Promise<ArrayBuffer>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as ArrayBuffer); r.onerror = () => rej(r.error); r.readAsArrayBuffer(file) }))
+        let binary = ''
+        for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+        next = await api['make:import']({ conversationId, dataBase64: btoa(binary), mode: importMode })
+      } else {
+        if (!importUrl.trim()) return
+        next = await api['make:importUrl']({ conversationId, url: importUrl.trim(), mode: importMode })
+      }
+      setState(next); setPreviewRev(next.rev); setImportOpen(false); setMode('preview')
+      toast.success(`Импортировано файлов: ${next.files.length}`)
+    } catch (e) { toast.error(describeError(e)) } finally { setImporting(false); if (importZipRef.current) importZipRef.current.value = '' }
+  }
   const frameWidth = DEVICE_WIDTH[device]
   const previewSrc = `${base}index.html?rev=${previewRev}`
 
@@ -468,6 +526,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
           <Button size="sm" variant="ghost" onClick={() => void runCheck()} loading={checking}>Проверить</Button>
           <Button size="sm" variant="secondary" onClick={createFile}>+ Файл</Button>
           <Button size="sm" variant="ghost" onClick={() => uploadInputRef.current?.click()}>Загрузить</Button>
+          <Button size="sm" variant="ghost" onClick={() => setAssetsOpen(true)}>Ассеты{assets.length > 0 ? ` (${assets.length})` : ''}</Button>
           <input ref={uploadInputRef} type="file" multiple hidden aria-label="Загрузить файлы в проект" data-testid="make-upload-input" onChange={(e) => void uploadFiles(e.target.files)} />
           <Button size="sm" variant="primary" disabled={!dirty || saving} onClick={() => void save()} title="Сохранить (Ctrl/Cmd+S)">{saving ? 'Сохраняю…' : 'Сохранить'}</Button>
         </>
@@ -477,7 +536,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
       {onInsertToChat && <IconButton size="sm" aria-label="Идеи для старта" title="Идеи: готовые промпты для приложений и сайтов" onClick={() => setIdeasOpen(true)}>✦</IconButton>}
       <IconButton size="sm" aria-label="Шаблоны проекта" title="Начать с шаблона" onClick={() => setTemplatesOpen(true)}>▤</IconButton>
       <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>
-      <IconButton size="sm" aria-label="Скачать проект (ZIP)" title="Скачать проект (ZIP)" onClick={() => window.open(REST.makeExport(conversationId), '_blank', 'noopener')}>⇩</IconButton>
+      <IconButton size="sm" aria-label="Импорт проекта" title="Импорт: ZIP или страница по URL" onClick={() => setImportOpen(true)}>⇪</IconButton>
+      <IconButton size="sm" aria-label="Скачать проект (ZIP)" title="Скачать: статика или Vite-проект" onClick={() => setExportOpen(true)}>⇩</IconButton>
       <IconButton size="sm" aria-label={fullscreen ? 'Свернуть панель' : 'На весь экран'} title={fullscreen ? 'Свернуть панель' : 'На весь экран'} aria-pressed={fullscreen} onClick={() => setFullscreen((v) => !v)}>⛶</IconButton>
     </div>
   )
@@ -526,6 +586,24 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
               style={frameWidth ? { width: `${frameWidth}px` } : undefined}
             />}
           </div>
+          <section className={consoleOpen ? 'make-console make-console--open' : 'make-console'} aria-label="Консоль превью" data-testid="make-console">
+            <div className="make-console-head">
+              <button type="button" className="make-console-toggle" aria-expanded={consoleOpen} onClick={() => setConsoleOpen((v) => !v)}>
+                {consoleOpen ? '▾' : '▸'} Консоль <span className="make-console-count">{consoleLines.length}</span>
+                {consoleErrors > 0 && <span className="make-console-errors" data-testid="make-console-errors">{consoleErrors} ошибок</span>}
+              </button>
+              <span className="make-console-actions">
+                {onInsertToChat && consoleErrors > 0 && <Button size="sm" variant="secondary" onClick={sendConsoleToChat}>В чат</Button>}
+                {consoleLines.length > 0 && <Button size="sm" variant="ghost" onClick={() => setConsoleLines([])}>Очистить</Button>}
+              </span>
+            </div>
+            {consoleOpen && (
+              <ol className="make-console-lines">
+                {consoleLines.length === 0 && <li className="make-console-empty">Пусто — console.log и ошибки страницы появятся здесь.</li>}
+                {consoleLines.map((l, i) => <li key={`${l.at}-${i}`} className={`make-console-line make-console-line--${l.level}`}><span className="make-console-level">{l.level}</span><code>{l.text}</code></li>)}
+              </ol>
+            )}
+          </section>
         </div>
       )}
 
@@ -727,7 +805,24 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
                     <strong>{snap.label}</strong>
                     <small>{formatTime(snap.createdAt)} · файлов: {snap.files}</small>
                   </span>
-                  <Button size="sm" variant="secondary" onClick={() => void restoreSnapshot(snap.id, snap.label)}>Вернуть</Button>
+                  <span className="make-snapshot-actions">
+                    <Button size="sm" variant="ghost" onClick={() => void loadDiff(snap.id)} aria-expanded={Boolean(diffs[snap.id])}>{diffs[snap.id] ? 'Скрыть' : 'Сравнить'}</Button>
+                    <Button size="sm" variant="secondary" onClick={() => void restoreSnapshot(snap.id, snap.label)}>Вернуть</Button>
+                  </span>
+                  {diffs[snap.id] === 'loading' && <p className="make-diff-note">Сравниваю…</p>}
+                  {diffs[snap.id] && diffs[snap.id] !== 'loading' && (
+                    <ul className="make-diff" aria-label={`Отличия от снимка ${snap.label}`} data-testid="make-diff">
+                      {(diffs[snap.id] as MakeSnapshotDiff).files.filter((f) => f.status !== 'same').length === 0 && <li className="make-diff-note">Файлы совпадают с текущими.</li>}
+                      {(diffs[snap.id] as MakeSnapshotDiff).files.filter((f) => f.status !== 'same').map((f) => (
+                        <li key={f.path} className={`make-diff-row make-diff-row--${f.status}`}>
+                          <span className="make-diff-status">{f.status === 'added' ? 'новый' : f.status === 'removed' ? 'удалён' : 'изменён'}</span>
+                          <code>{f.path}</code>
+                          <small>{f.before !== null ? formatSize(f.before) : '—'} → {f.after !== null ? formatSize(f.after) : '—'}</small>
+                          {f.status !== 'added' && <Button size="sm" variant="ghost" onClick={() => void restoreFile(snap.id, f.path)}>Вернуть файл</Button>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               ))}
             </ul>
@@ -738,6 +833,70 @@ export function MakePane({ conversationId, api, make, onInsertToChat, previewBas
         </div>
       )}
 
+      {assetsOpen && (
+        <Dialog title="Ассеты проекта" ariaLabel="Ассеты проекта" size="md" onClose={() => setAssetsOpen(false)} testId="make-assets">
+          <p className="make-ideas-lead">Картинки и другие бинарные файлы проекта. Путь или тег вставляются в буфер — дальше в код или в просьбу ассистенту.</p>
+          {assets.length === 0 ? (
+            <EmptyState title="Ассетов пока нет" description="Загрузите картинки кнопкой «Загрузить» или перетащите их в дерево файлов." actionLabel="Загрузить" onAction={() => { setAssetsOpen(false); uploadInputRef.current?.click() }} />
+          ) : (
+            <ul className="make-assets" aria-label="Список ассетов">
+              {assets.map((f) => (
+                <li key={f.path} className="make-asset">
+                  <div className="make-asset-thumb">
+                    {/\.(png|jpe?g|gif|webp|svg|ico|avif|bmp)$/i.test(f.path) ? <img src={`${base}${f.path}?rev=${previewRev}`} alt="" /> : <span>{f.path.split('.').pop()?.toUpperCase()}</span>}
+                  </div>
+                  <div className="make-asset-meta">
+                    <code title={f.path}>{f.path}</code>
+                    <small>{formatSize(f.size)}</small>
+                  </div>
+                  <span className="make-asset-actions">
+                    <Button size="sm" variant="ghost" onClick={() => void copyAsset(f.path, 'Путь')}>Путь</Button>
+                    <Button size="sm" variant="ghost" onClick={() => void copyAsset(`<img src="${f.path}" alt="">`, 'Тег')}>&lt;img&gt;</Button>
+                    <IconButton size="sm" aria-label={`Удалить ${f.path}`} title="Удалить" onClick={() => void deleteFile(f.path)}>✕</IconButton>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Dialog>
+      )}
+      {exportOpen && (
+        <Dialog title="Скачать проект" ariaLabel="Скачать проект" size="sm" onClose={() => setExportOpen(false)} testId="make-export">
+          <div className="make-export-options">
+            <button type="button" className="make-idea" onClick={() => { window.open(REST.makeExport(conversationId), '_blank', 'noopener'); setExportOpen(false) }}>
+              <strong>Статика как есть</strong>
+              <span>ZIP с файлами проекта — открывается двойным кликом по index.html или кладётся на любой хостинг.</span>
+            </button>
+            <button type="button" className="make-idea" onClick={() => { window.open(`${REST.makeExport(conversationId)}?vite=1`, '_blank', 'noopener'); setExportOpen(false) }}>
+              <strong>Vite-проект</strong>
+              <span>Плюс package.json, vite.config и README: распаковать, <code>npm install</code>, <code>npm run dev</code> — и продолжать в своём редакторе.</span>
+            </button>
+          </div>
+        </Dialog>
+      )}
+      {importOpen && (
+        <Dialog title="Импорт проекта" ariaLabel="Импорт проекта" size="sm" onClose={() => setImportOpen(false)} testId="make-import" closeOnOverlay={false}>
+          <p className="make-ideas-lead">Перед импортом сохранится снимок — откатиться можно во вкладке «История».</p>
+          <fieldset className="make-import-mode">
+            <legend>Как применить</legend>
+            <label><input type="radio" name="make-import-mode" checked={importMode === 'replace'} onChange={() => setImportMode('replace')} /> заменить проект</label>
+            <label><input type="radio" name="make-import-mode" checked={importMode === 'merge'} onChange={() => setImportMode('merge')} /> добавить к текущим файлам</label>
+          </fieldset>
+          <section className="make-import-block">
+            <h3>ZIP-архив</h3>
+            <p>Файлы проекта в корне архива или в одной общей папке; до 400 файлов по 2 МБ.</p>
+            <input ref={importZipRef} type="file" accept=".zip,application/zip" aria-label="ZIP-архив проекта" data-testid="make-import-zip" disabled={importing} onChange={(e) => { const f = e.target.files?.[0]; if (f) void runImport('zip', f) }} />
+          </section>
+          <section className="make-import-block">
+            <h3>Страница по адресу</h3>
+            <p>Скачаем HTML и её стили/скрипты/картинки с того же домена — как стартовую точку для редизайна.</p>
+            <div className="make-import-url">
+              <input type="url" aria-label="Адрес страницы" placeholder="https://example.com/" value={importUrl} onChange={(e) => setImportUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void runImport('url') }} disabled={importing} />
+              <Button size="sm" variant="primary" onClick={() => void runImport('url')} loading={importing} disabled={!importUrl.trim()}>Импортировать</Button>
+            </div>
+          </section>
+        </Dialog>
+      )}
       {ideasOpen && (
         <Dialog title="Идеи для старта" ariaLabel="Идеи для старта" size="md" onClose={() => setIdeasOpen(false)} testId="make-ideas">
           <p className="make-ideas-lead">Готовые промпты в духе Figma Make: клик вставляет текст в композер, дальше можно отредактировать и отправить.</p>

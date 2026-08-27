@@ -9,6 +9,8 @@ import type { FastifyInstance, FastifyReply } from 'fastify'
 import { MAKE_PUBLIC_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath } from '@voicechat/shared'
 import { transpileForPreview } from '../make/transpile.js'
 import { renderStoriesPage } from '../make/stories.js'
+import { readZip, ZipReadError } from '../make/zipRead.js'
+import { importFromUrl, ImportUrlError } from '../make/importUrl.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { MakeError, MakeWorkspaces } from '../make/workspace.js'
 import type { MakeHub } from '../make/hub.js'
@@ -23,6 +25,15 @@ export interface MakeRoutesDeps {
 export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
 (function(){
   if (window.parent === window) return;
+  // Консоль превью: console.* и ошибки страницы уходят родителю — панель показывает их под превью.
+  (function(){
+    var levels = ['log','info','warn','error'];
+    function fmt(a){ try { return typeof a === 'string' ? a : (a instanceof Error ? (a.message + (a.stack ? ' | ' + a.stack.split(String.fromCharCode(10)).slice(1,3).join(' | ') : '')) : JSON.stringify(a)); } catch(e){ return String(a); } }
+    function send(level, args){ try { window.parent.postMessage({ type: 'vc-make.console', level: level, text: Array.prototype.map.call(args, fmt).join(' ').slice(0, 2000), at: Date.now() }, '*'); } catch(e){} }
+    levels.forEach(function(l){ var orig = console[l]; console[l] = function(){ send(l, arguments); if (orig) orig.apply(console, arguments); }; });
+    window.addEventListener('error', function(e){ send('error', [e.message + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '')]); });
+    window.addEventListener('unhandledrejection', function(e){ send('error', ['Unhandled rejection: ' + fmt(e.reason)]); });
+  })();
   var on = false, hovered = null, box = null;
   function ensureBox(){ if (box) return box; box = document.createElement('div'); box.setAttribute('data-vc-make-box',''); box.style.cssText='position:fixed;pointer-events:none;border:2px solid #4f7cff;background:rgba(79,124,255,.12);z-index:2147483647;border-radius:3px;transition:all .05s'; document.documentElement.appendChild(box); return box }
   function place(el){ var r = el.getBoundingClientRect(), b = ensureBox(); b.style.left=r.left+'px'; b.style.top=r.top+'px'; b.style.width=r.width+'px'; b.style.height=r.height+'px'; b.style.display='block' }
@@ -142,6 +153,56 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
+  app.get<{ Params: { id: string; snapshotId: string } }>('/api/make/:id/snapshots/:snapshotId/diff', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { return await workspaces.snapshotDiff(req.params.id, req.params.snapshotId) } catch (error) { return sendError(reply, error) }
+  })
+
+  app.post<{ Params: { id: string; snapshotId: string }; Body: { path?: string } }>('/api/make/:id/snapshots/:snapshotId/restore-file', async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    if (typeof req.body?.path !== 'string') return reply.code(400).send({ error: 'path обязателен' })
+    try {
+      const state = await workspaces.restoreFile(req.params.id, req.params.snapshotId, req.body.path)
+      hub.changed(userId, req.params.id, state.rev, [normalizeMakePath(req.body.path) ?? req.body.path])
+      return state
+    } catch (error) { return sendError(reply, error) }
+  })
+
+  // Импорт ZIP: base64 в JSON — архив до ~8 МБ (лимит тела с запасом на base64).
+  app.post<{ Params: { id: string }; Body: { dataBase64?: string; mode?: string } }>('/api/make/:id/import', { bodyLimit: 12 * 1024 * 1024 }, async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    if (typeof req.body?.dataBase64 !== 'string') return reply.code(400).send({ error: 'dataBase64 обязателен' })
+    const mode = req.body.mode === 'merge' ? 'merge' : 'replace'
+    try {
+      const entries = readZip(Buffer.from(req.body.dataBase64, 'base64'))
+      const state = await workspaces.importFiles(req.params.id, entries, mode)
+      hub.changed(userId, req.params.id, state.rev, state.files.map((f) => f.path))
+      return state
+    } catch (error) {
+      if (error instanceof ZipReadError) return reply.code(400).send({ error: error.message, code: 'bad_zip' })
+      return sendError(reply, error)
+    }
+  })
+
+  app.post<{ Params: { id: string }; Body: { url?: string; mode?: string } }>('/api/make/:id/import-url', async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    if (typeof req.body?.url !== 'string') return reply.code(400).send({ error: 'url обязателен' })
+    const mode = req.body.mode === 'merge' ? 'merge' : 'replace'
+    try {
+      const files = await importFromUrl(req.body.url)
+      const state = await workspaces.importFiles(req.params.id, files, mode)
+      hub.changed(userId, req.params.id, state.rev, state.files.map((f) => f.path))
+      return state
+    } catch (error) {
+      if (error instanceof ImportUrlError) return reply.code(400).send({ error: error.message, code: 'bad_url' })
+      if (error instanceof Error && !(error instanceof MakeError)) return reply.code(400).send({ error: `Не удалось загрузить страницу: ${error.message}`, code: 'bad_url' })
+      return sendError(reply, error)
+    }
+  })
+
   app.post<{ Params: { id: string } }>('/api/make/:id/reset', async (req, reply) => {
     const userId = uid(req)
     if (!own(userId, req.params.id, reply)) return reply
@@ -219,11 +280,11 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   // ---- Превью и экспорт (cookie-аутентификация, см. users/auth.ts) ----------
 
-  app.get<{ Params: { id: string } }>('/api/preview/make/:id/export.zip', async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { vite?: string } }>('/api/preview/make/:id/export.zip', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try {
       await workspaces.ensure(req.params.id)
-      const zip = await workspaces.exportZip(req.params.id)
+      const zip = await workspaces.exportZip(req.params.id, { vite: req.query.vite === '1' })
       return reply
         .header('content-type', 'application/zip')
         .header('content-disposition', `attachment; filename="make-${req.params.id.slice(0, 8)}.zip"`)

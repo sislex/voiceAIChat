@@ -14,7 +14,7 @@ import {
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists'
@@ -252,6 +252,69 @@ export class MakeWorkspaces {
     return this.state(conversationId)
   }
 
+  /** Сравнение снимка с текущими файлами — что добавилось, пропало и изменилось. */
+  async snapshotDiff(conversationId: string, snapshotId: string): Promise<MakeSnapshotDiff> {
+    if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
+    const snapRoot = join(this.dirOf(conversationId), SNAPSHOTS_DIR, snapshotId, 'files')
+    if (!existsSync(snapRoot)) throw new MakeError('not_found', 'Снимок не найден')
+    const before = new Map<string, Buffer>()
+    const walk = async (dir: string, rel: string): Promise<void> => {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const next = rel ? `${rel}/${entry.name}` : entry.name
+        if (entry.isDirectory()) await walk(join(dir, entry.name), next)
+        else before.set(next, await readFile(join(dir, entry.name)))
+      }
+    }
+    await walk(snapRoot, '')
+    const current = await this.list(conversationId)
+    const files: MakeSnapshotDiffEntry[] = []
+    for (const file of current) {
+      const now = await readFile(join(this.dirOf(conversationId), ...file.path.split('/')))
+      const old = before.get(file.path)
+      if (!old) files.push({ path: file.path, status: 'added', before: null, after: now.length })
+      else files.push({ path: file.path, status: old.equals(now) ? 'same' : 'changed', before: old.length, after: now.length })
+      before.delete(file.path)
+    }
+    for (const [path, data] of before) files.push({ path, status: 'removed', before: data.length, after: null })
+    files.sort((a, b) => a.path.localeCompare(b.path))
+    return { snapshotId, files }
+  }
+
+  /** Вернуть один файл из снимка, остальное не трогая. */
+  async restoreFile(conversationId: string, snapshotId: string, rawPath: string): Promise<MakeProjectState> {
+    if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
+    const { path, abs } = await this.resolveFile(conversationId, rawPath)
+    const src = join(this.dirOf(conversationId), SNAPSHOTS_DIR, snapshotId, 'files', ...path.split('/'))
+    if (!existsSync(src)) throw new MakeError('not_found', `В снимке нет файла «${path}»`)
+    await mkdir(dirname(abs), { recursive: true })
+    await cp(src, abs)
+    this.bump(conversationId)
+    return this.state(conversationId)
+  }
+
+  /** Импорт набора файлов (ZIP или страница по URL); перед этим — снимок. */
+  async importFiles(conversationId: string, files: Array<{ path: string; data: Buffer }>, mode: MakeImportMode): Promise<MakeProjectState> {
+    await this.ensure(conversationId)
+    const accepted: Array<{ path: string; data: Buffer }> = []
+    for (const file of files) {
+      const path = normalizeMakePath(file.path)
+      if (!path) continue
+      if (file.data.byteLength > MAKE_LIMITS.maxFileBytes) throw new MakeError('too_large', `Файл «${path}» больше ${Math.round(MAKE_LIMITS.maxFileBytes / 1024)} КБ`)
+      accepted.push({ path, data: file.data })
+    }
+    if (accepted.length === 0) throw new MakeError('invalid_path', 'В импорте нет подходящих файлов')
+    if (accepted.length > MAKE_LIMITS.maxFiles) throw new MakeError('too_many_files', `В проекте не может быть больше ${MAKE_LIMITS.maxFiles} файлов`)
+    await this.snapshot(conversationId, mode === 'replace' ? 'Перед импортом (замена)' : 'Перед импортом')
+    if (mode === 'replace') await this.clearFiles(conversationId)
+    for (const file of accepted) {
+      const abs = join(this.dirOf(conversationId), ...file.path.split('/'))
+      await mkdir(dirname(abs), { recursive: true })
+      await writeFile(abs, file.data)
+    }
+    this.bump(conversationId)
+    return this.state(conversationId)
+  }
+
   /** Стартовая заготовка вместо всех файлов (снимки остаются). */
   async reset(conversationId: string): Promise<MakeProjectState> {
     await this.snapshot(conversationId, 'Перед сбросом проекта')
@@ -413,12 +476,33 @@ export class MakeWorkspaces {
   }
 
   /** ZIP всех файлов проекта (без снимков) — «Скачать код». */
-  async exportZip(conversationId: string): Promise<Buffer> {
+  async exportZip(conversationId: string, options: { vite?: boolean } = {}): Promise<Buffer> {
     const files = await this.list(conversationId)
-    const entries = []
+    const entries: Array<{ path: string; data: Buffer; mtime?: Date }> = []
     for (const file of files) {
       const data = await readFile(join(this.dirOf(conversationId), ...file.path.split('/')))
       entries.push({ path: file.path, data, mtime: new Date(file.updatedAt) })
+    }
+    if (options.vite) {
+      // «Настоящий проект»: package.json + vite.config, чтобы `npm i && npm run dev` работал локально.
+      // Import map на esm.sh Vite не мешает: он переписывает bare-импорты до того, как браузер применит карту.
+      const paths = new Set(files.map((f) => f.path))
+      const react = files.some((f) => /\.(jsx|tsx)$/i.test(f.path))
+      const ts = files.some((f) => /\.tsx?$/i.test(f.path))
+      const pkg = {
+        name: 'make-project', private: true, version: '0.1.0', type: 'module',
+        scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' },
+        dependencies: react ? { react: '^18.3.1', 'react-dom': '^18.3.1' } : {},
+        devDependencies: { vite: '^5.4.11', ...(react ? { '@vitejs/plugin-react': '^4.3.4' } : {}), ...(ts ? { typescript: '^5.7.2', '@types/react': '^18.3.18', '@types/react-dom': '^18.3.5' } : {}) }
+      }
+      const add = (path: string, text: string): void => { if (!paths.has(path)) entries.push({ path, data: Buffer.from(text, 'utf8') }) }
+      add('package.json', JSON.stringify(pkg, null, 2) + '\n')
+      add('vite.config.js', react
+        ? "import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({ plugins: [react()] })\n"
+        : "import { defineConfig } from 'vite'\n\nexport default defineConfig({})\n")
+      if (ts) add('tsconfig.json', JSON.stringify({ compilerOptions: { target: 'ES2020', module: 'ESNext', moduleResolution: 'Bundler', jsx: 'react-jsx', strict: true, allowImportingTsExtensions: true, noEmit: true, skipLibCheck: true }, include: ['src'] }, null, 2) + '\n')
+      add('.gitignore', 'node_modules\ndist\n')
+      add('README.md', '# Проект из Make\n\n```bash\nnpm install\nnpm run dev\n```\n\nСобрано в инструменте Make: статический сайт' + (react ? ' на React (JSX транспилируется Vite)' : '') + '.\n')
     }
     return buildStoredZip(entries)
   }
