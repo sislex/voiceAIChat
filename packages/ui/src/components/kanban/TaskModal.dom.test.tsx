@@ -32,6 +32,50 @@ function props(over: Partial<TaskModalProps> = {}): TaskModalProps {
   }
 }
 
+
+describe('TaskModal — синхронизация полных данных задачи', () => {
+  it('подставляет поздно загруженные описание и критерии для того же task.id', () => {
+    const { rerender } = render(<TaskModal {...props()} />)
+
+    rerender(<TaskModal {...props({
+      task: mkTask({ description: 'Описание с сервера', acceptanceCriteria: 'Первый критерий' })
+    })} />)
+
+    expect(screen.getByTestId('task-desc-view')).toHaveTextContent('Описание с сервера')
+    expect(screen.getByTestId('task-criteria-view')).toHaveTextContent('Первый критерий')
+  })
+
+  it('не перезаписывает черновик изменённого поля и независимо синхронизирует второе', async () => {
+    const { rerender } = render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Изменить описание' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Описание задачи' }), { target: { value: 'Локальный черновик' } })
+
+    rerender(<TaskModal {...props({
+      task: mkTask({ description: 'Позднее описание', acceptanceCriteria: 'Поздний критерий' })
+    })} />)
+
+    expect(screen.getByRole('textbox', { name: 'Описание задачи' })).toHaveValue('Локальный черновик')
+    expect(screen.getByTestId('task-criteria-view')).toHaveTextContent('Поздний критерий')
+  })
+
+  it('полностью переинициализирует поля и режимы редактирования при смене task.id', async () => {
+    const { rerender } = render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Изменить описание' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Описание задачи' }), { target: { value: 'Черновик старой задачи' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Критерии приёмки' }), { target: { value: 'Черновик критерия' } })
+
+    rerender(<TaskModal {...props({
+      task: mkTask({ id: 't2', title: 'Задача B', description: 'Описание B', acceptanceCriteria: 'Критерий B' })
+    })} />)
+
+    expect(screen.queryByRole('textbox', { name: 'Описание задачи' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Критерии приёмки' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('task-desc-view')).toHaveTextContent('Описание B')
+    expect(screen.getByTestId('task-criteria-view')).toHaveTextContent('Критерий B')
+  })
+})
+
 function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
   return { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }
 }
