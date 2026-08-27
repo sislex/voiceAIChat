@@ -5,6 +5,7 @@ import type { EditorContextPayload } from '@shared/types'
 import { REST } from '@shared/protocol'
 import { CodeEditor, type EditorSelection } from './CodeEditor'
 import { CodeDiff } from './CodeDiff'
+import { MakeTokensDialog } from './MakeTokensDialog'
 import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { MakeControlField, type ArgType } from './MakeControls'
 import { captureIframeScreenshot } from '../lib/makeScreenshot'
@@ -184,6 +185,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [network, setNetwork] = useState<MakeNetworkEntry[]>([])
   const [bottomTab, setBottomTab] = useState<'console' | 'network'>('console')
   const [assetsOpen, setAssetsOpen] = useState(false)
+  const [tokensOpen, setTokensOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [importUrl, setImportUrl] = useState('')
@@ -845,6 +847,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           <Button size="sm" variant="secondary" onClick={createFile}>+ Файл</Button>
           <Button size="sm" variant="ghost" onClick={() => uploadInputRef.current?.click()}>Загрузить</Button>
           <Button size="sm" variant="ghost" onClick={() => setAssetsOpen(true)}>Ассеты{assets.length > 0 ? ` (${assets.length})` : ''}</Button>
+          <Button size="sm" variant="ghost" onClick={() => setTokensOpen(true)} title="Дизайн-токены: CSS-переменные :root — цвета, отступы, шрифты">Токены</Button>
           <input ref={uploadInputRef} type="file" multiple hidden aria-label="Загрузить файлы в проект" data-testid="make-upload-input" onChange={(e) => void uploadFiles(e.target.files)} />
           <Button size="sm" variant="primary" disabled={!dirty || saving} onClick={() => void save()} title="Сохранить (Ctrl/Cmd+S)">{saving ? 'Сохраняю…' : 'Сохранить'}</Button>
         </>
@@ -1288,6 +1291,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           )}
         </Dialog>
       )}
+      {tokensOpen && state && <MakeTokensDialog conversationId={conversationId} api={api} files={state.files.map((f) => f.path)} onClose={() => setTokensOpen(false)} onWritten={(next) => { setState(next); setPreviewRev(next.rev) }} />}
       {assetsOpen && (
         <Dialog title="Ассеты проекта" ariaLabel="Ассеты проекта" size="md" onClose={() => setAssetsOpen(false)} testId="make-assets">
           <p className="make-ideas-lead">Картинки и другие бинарные файлы проекта. Путь или тег вставляются в буфер — дальше в код или в просьбу ассистенту.</p>
