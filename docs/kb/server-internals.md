@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-27
-checked: a04ebf0d
+checked: 8abc98e3
 areas:
   - apps/server/src
 ---
@@ -60,7 +60,7 @@ ZIP — собственный писатель без сжатия (`make/zip.t
 сессия подписывается через `deps.make.subscribe` (как relay превью); владельца разговора для
 MCP даёт `db.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
 Публикация: `.publish.json` в папке проекта + индекс `make/.published/<token>.json` → маршрут
-`/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен).
+`/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен). Фоновая очистка (roadmap-2 п.16): `MakeWorkspaces.sweep(maxAgeMs = 30 дней)` обходит все проекты и удаляет снимки старше срока (кроме закреплённого в публикации и самого свежего) и PNG-снимки стори того же возраста; `server.ts` запускает её после старта и каждые 6 часов рядом с `GeneratedCleanupService` (не в VITEST), результат — в лог `make_sweep`.
 `publish(id, {snapshotId})` закрепляет публикацию за снимком (`snapshotId/snapshotLabel` в `.publish.json`):
 `publicFile()` читает файлы из `.snapshots/<id>/files`, транспиляция кэшируется по ключу `conv@snapshot`;
 `publish(id)` без снимка возвращает «живую» публикацию текущих файлов (п.26).

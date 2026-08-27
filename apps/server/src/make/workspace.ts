@@ -303,6 +303,40 @@ export class MakeWorkspaces {
     return parts.length ? `## Контекст проекта Make\n${parts.join('\n')}` : ''
   }
 
+  // ---- Фоновая очистка (roadmap-2 п.16) ----------------------------------------
+
+  /**
+   * Снимки старше `maxAgeMs` и PNG-снимки стори того же возраста удаляются по всем проектам;
+   * закреплённый в публикации снимок и самый свежий снимок проекта не трогаем никогда.
+   */
+  async sweep(maxAgeMs = 30 * 86_400_000, now = Date.now()): Promise<{ projects: number; snapshots: number; shots: number }> {
+    const root = join(this.rootDir, 'make')
+    let ids: string[] = []
+    try { ids = (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name) } catch { ids = [] }
+    const out = { projects: 0, snapshots: 0, shots: 0 }
+    for (const id of ids) {
+      if (!ID_RE.test(id)) continue
+      out.projects += 1
+      try {
+        const [snaps, pub] = await Promise.all([this.snapshots(id), this.publication(id)])
+        const newest = snaps[0]?.id
+        for (const s of snaps) {
+          if (s.id === newest || s.id === pub?.snapshotId || now - s.createdAt < maxAgeMs) continue
+          await rm(join(root, id, SNAPSHOTS_DIR, s.id), { recursive: true, force: true })
+          out.snapshots += 1
+        }
+        const shots = await this.shots(id)
+        const keep = shots.filter((s) => now - s.at < maxAgeMs)
+        if (keep.length !== shots.length) {
+          for (const s of shots) if (!keep.includes(s)) { await rm(join(root, id, SHOTS_DIR, `${s.id}.png`), { force: true }); out.shots += 1 }
+          await writeFile(join(root, id, SHOTS_DIR, 'meta.json'), JSON.stringify(keep), 'utf8').catch(() => undefined)
+        }
+      } catch { /* битый проект пропускаем */ }
+    }
+    this.userBytesCache.clear()
+    return out
+  }
+
   // ---- Метрики для админки (п.38) -----------------------------------------
 
   /** Обход всех проектов на диске; владелец — из БД через колбэк (каталог знает только id разговора). */

@@ -589,6 +589,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Тестовые buildServer используют фейковые реестры и запускают сервис явно.
   // Production-процесс делает первый проход после старта и затем каждые шесть часов.
   if (!process.env.VITEST) {
+    // Фоновая очистка Make (roadmap-2 п.16): снимки и PNG стори старше 30 дней, раз в 6 часов и при старте.
+    const makeSweep = async (): Promise<void> => {
+      try { const r = await makeWorkspaces.sweep(); if (r.snapshots || r.shots) app.log.info({ event: 'make_sweep', ...r }) } catch (error) { app.log.warn({ event: 'make_sweep_failed', error: String(error) }) }
+    }
+    const makeSweepTimer = setInterval(() => { void makeSweep() }, 6 * 60 * 60 * 1000)
+    makeSweepTimer.unref()
+    app.addHook('onClose', async () => clearInterval(makeSweepTimer))
+    queueMicrotask(() => { void makeSweep() })
     const cleanupTimer = setInterval(() => { void generatedCleanup.run() }, 6 * 60 * 60 * 1000)
     cleanupTimer.unref()
     app.addHook('onClose', async () => clearInterval(cleanupTimer))

@@ -1,4 +1,4 @@
-import { mkdtemp, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -410,5 +410,26 @@ describe('MakeWorkspaces', () => {
     await expect(ws.write(CONV, 'big.txt', 'x'.repeat(3000 - used + 1))).rejects.toMatchObject({ code: 'quota' })
     await ws.write(CONV, 'ok.txt', 'y')
     expect((await ws.adminStats(() => 'u')).userLimitBytes).toBe(3000)
+  })
+
+  it('sweep: удаляет снимки старше 30 дней, кроме закреплённого и самого свежего; чистит старые PNG стори', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const day = 86_400_000
+    const now = Date.now()
+    const old1 = (await ws.snapshot(CONV, 'old1')).snapshots[0]!
+    const old2 = (await ws.snapshot(CONV, 'old2')).snapshots[0]!
+    const fresh1 = (await ws.snapshot(CONV, 'fresh')).snapshots[0]!
+    const dir = join((ws as unknown as { rootDir: string }).rootDir, 'make', CONV, '.snapshots')
+    for (const [snap, age] of [[old1, 40], [old2, 35], [fresh1, 1]] as const) {
+      const metaPath = join(dir, snap.id, 'meta.json')
+      const meta = JSON.parse(await readFile(metaPath, 'utf8')) as { createdAt: number }
+      meta.createdAt = now - age * day
+      await writeFile(metaPath, JSON.stringify(meta), 'utf8')
+    }
+    await ws.publish(CONV, { snapshotId: old2.id })
+    const r = await ws.sweep(30 * day, now)
+    expect(r).toEqual({ projects: 1, snapshots: 1, shots: 0 })
+    expect((await ws.snapshots(CONV)).map((s) => s.label).sort()).toEqual(['fresh', 'old2'])
   })
 })
