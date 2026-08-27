@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-08-27
-checked: 0755af28
+updated: 2026-08-25
+checked: 711a2885
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -36,8 +36,6 @@ areas:
 Web Reader сохраняет iframe `/api/preview?url=...`; URL разговора имеет приоритет, а project preview служит только нематериализованным fallback. При активации store создаёт recorder для `conversationId`, передаёт ему URL и исполняет relay-запросы только для активной беседы. Generation token отбрасывает устаревшие async-ответы, смена беседы dispose-ит recorder, а общий `dispose()` снимает relay subscription, поэтому поздний результат не доставляется в другой чат. Безопасность конкретного `postMessage` остаётся обязанностью host adapter/существующего recorder-контракта, а пакет видит только transport-agnostic port.
 
 Самодиагностика доступна только в активном Web Reader-чате: её запускают кнопкой «Самодиагностика» в настройках разговора либо точной командой `самодиагностика Web Reader` или `/web-reader-diagnostics` в композере. Перед первым действием `packages/ui/src/webReaderDiagnostics.ts` сохраняет в чат полный перечень проверяемых возможностей, затем отдельными служебными AI-сообщениями публикует результат и длительность каждого шага, а при сбое — классифицированный проблемный слой. Первые шаги проверяют handshake фактической регистрации iframe (capabilities из `ready`), совпадение `conversationId` с активным чатом и актуальность `registrationId` (localStorage-claim вкладки); все DOM-шаги идут через `registration.run`, то есть через реальный postMessage-контракт, а не прямые вызовы. На время прогона host шлёт Reader-у `diagnostics-start` (Reader показывает прогресс-панель и глушит запись сценария), `finally` выключает режим. Шаг навигации после click перечитывает страницу с retry до 5 секунд: навигация начинается только после ответа клика, и host может ещё не знать о `page-loading` (постановку команд в очередь до ready проверяет связка open → read). Эти сообщения записывает `publishDiagnosticMessage` без запуска LLM; повторный запуск и смена активного разговора отменяют прежний сценарий.
-
-Рядом живёт **самодиагностика обычного чата** (`packages/ui/src/chatDiagnostics.ts`) — сквозная проверка «клиент → сервер → модель → БД» из любого разговора (не только Reader). Запуск — командой в композере `самодиагностика чата` или `/chat-diagnostics` (перехват в `App.tsx` `onSubmitText`, до `submitText`), либо **кнопкой «Самодиагностика» в настройках разговора** (`ConversationSettings`, проп `chatDiagnostics`, секция видна вне ридеров — при `!inReader && !inPlaywrightReader`). Тот же формат: публикует перечень проверок и пошаговый результат `✓/✗ … — мс — …` через `publishDiagnosticMessage` (без LLM), при сбое — «Проблемный слой: …» и прогон останавливается на первом провале. 11 шагов по слоям `transport` (HTTP `/api/health` + версия, WS открыт через `window.realtime.connected()`, сессия `session:me`), `backend` (`system:capabilities`, вход CLI активного движка из `auth:status[engine].loggedIn`, MCP-серверы `mcp:list`), `model` (реальный лёгкий ход модели через `prompt:suggest` — Claude/haiku round-trip, дёшево и не пишет в беседу), `persistence` (создание эфемерного разговора через `api` напрямую → запись+чтение сообщения-маркера → удаление; эфемерная беседа не попадает в сайдбар, а `finally` подчищает её при обрыве) и `store` (снимок стора: есть активный разговор и загружены беседы). Движок берётся как `activeConversation.llmProvider ?? settings.llmProvider`. Модуль чистый (пробы инъектируются из `App`), тест — `chatDiagnostics.test.ts`. Для проверки WS добавлен `WsClient.isConnected()` и `RendererRealtimeBridge.connected()`. Живой прогон 2026-08-25: на dev-стенде без `claude login` шаги transport прошли, `auth-cli` честно упал на слое backend.
 
 Playwright Reader владеет отдельным `BrowserSessionState` и жизненным циклом start/subscribe/navigate/stop/dispose. Начальное состояние честно объявляет все capabilities выключенными; browser UI показывает недоступность Chromium и блокирует навигацию, пока adapter не вернул `navigate: true`. Это frontend-модель интеграции, не свидетельство готовой server orchestration Chromium.
 
@@ -229,24 +227,19 @@ AGENTS.md, эффективные настройки разговора, выб�
 Разметка в `packages/ui/src/styles/app.css` ограничивает ширину и переносит
 длинные серверные метаданные без горизонтального переполнения.
 
-**Тумблеры контекста (гейтинг).** Каждый пункт снимка несёт `toggleable`/`enabled`
-(`ContextSnapshotItem` в `types.ts`). Выключаемы всё, кроме безопасности и чистой
-информации — правила задаёт `isContextToggleable` в `packages/shared/src/contextGating.ts`
-(`SAFETY_CONTEXT_IDS` = platform/application-instructions; `INFO_CONTEXT_IDS` =
-working-directory, agents-chain, llm, machine, permission-mode, conversation-history,
-current-message; пункты `instruction-<id>` группы «Инструкции чата» выключаемы). `ContextInspector` рисует чекбокс у выключаемого пункта (у
-неотключаемого — замок 🔒) и переключатель в detail; клик шлёт
-`conversations:setContextItem` → `POST /api/conversations/:id/context/:itemId`, сервер
-пишет id в `conversations.disabled_context_json` (метод `setConversationContextEnabled`,
-безопасность выключить отказывается) и возвращает свежий снимок. **Применение** — в
-`apps/server/src/turns.ts`: выключенные `personalization`/`project-binding`/`knowledge-mode`
-убирают соответствующий блок промпта (kb → режим off), выключенные `skill-<name>` уходят
-из `effectiveSkills`, а выключенные `mcp-remote-*`/`mcp-kb-*` через `toolNameForContextId`
-попадают в `LlmRequest.disallowedTools` → claudeCli добавляет их в единый `--disallowedTools`
-и убирает из allow-list (`claudeCli.ts`, `disallowed`-массив). `includedInNextTurn`
-у выключенного пункта в снимке становится `false`. AGENTS.md читает CLI из cwd, сервер
-его не вставляет — пункт информационный (текст не раскрывается). Тесты: `contextGating.test.ts`,
-тумблер и снимок в `rest.test.ts`, применение — `turns.test.ts`, `--disallowedTools` — `claudeCli.test.ts`.
+Основной экран инспектора — пользовательская двухуровневая проекция снимка.
+Сверху находятся назначение раздела, карточка эффективного запуска и перечень
+знаний со статусами «Будет использовано», «Доступно при необходимости»,
+«Не настроено», «Недоступно» и «Определится после отправки». Источники
+`Разговор`, `Проект` и `Настройки пользователя` отображаются соответственно
+как переопределение чата, настройки проекта и общие настройки. Динамический
+статус имеет приоритет для текущего сообщения, режима автоматической БЗ и
+навыков. Навыки, MCP-возможности и AGENTS.md находятся в закрытом по умолчанию
+разделе дополнительных возможностей; время снимка, версия схемы,
+`freshnessWarning`, внутренние идентификаторы и исходные boolean-признаки — в
+закрытом техническом разделе. `freshnessWarning` не является ошибкой:
+предупреждение с действием появляется на основном уровне только для настроенной,
+но недоступной машины или при ошибке загрузки снимка.
 
 Состояние разложено по доменным хранилищам (таблица выше); ниже — что в каких
 областях лежит:
@@ -369,8 +362,6 @@ USD за 1M токенов, источник и дату тарифа; форм�
 
 Цепочка высоты описана в `packages/ui/src/styles/app.css`: корень Web Reader становится одноколоночным, `chat-split` занимает первую колонку и наследует `height: 100%`, а `section.webpreview[aria-label="Web Reader"]` также имеет `height: 100%`. Обычная `chat-page` использует ту же наследуемую высоту вместо отдельного `100vh`; на узком экране действуют существующие правила `100dvh` и переключение табов «Чат»/«Сайт». DOM-регрессия закреплена сценарием отдельной страницы в `packages/ui/src/App.chat.dom.test.tsx`: тест требует отсутствие `aside.side`, класс `app--web-reader` и наличие семантической секции Web Reader.
 
-**Ширина колонки чата в сплите.** Панель превью (`.webpreview` / `.playwright-browser-pane`) — `flex: 0 1 var(--preview-width); min-width` (сжимаема), а `.chat-split-chat` держит `min-width: 360px`, чтобы композер и шапка не схлопывались при широком превью. Композер использует **контейнерный запрос**: `.voicebar` объявлен `container: composer / inline-size`, и компакт-режим (скрытая подпись «Полный доступ» у `.mode-menu`, уменьшённые круглые кнопки, узкие поля) включается по `@container composer (max-width: 560px)` — то есть по ширине самой колонки чата, а не вьюпорта; иначе в узкой reader-колонке на широком экране текстовое поле схлопывалось до ~80px. Заголовок шапки `.mtitle` — одна строка с многоточием (`white-space: nowrap; text-overflow: ellipsis`). Тулбар превью веб-рекордера (`apps/web-recorder/src/Recorder.tsx`) собирает инструменты страницы (Сессия, Выбор элемента, Редактировать, Область, Записать сценарий) в свёрнутое `<details className="webpreview-tools">`-меню, а `.webpreview-bar` получил `flex-wrap`, чтобы не переполнять узкую панель. Кнопки инструментов остаются в DOM и в свёрнутом меню — поэтому dom-тесты рекордера их находят без раскрытия.
-
 ## Отдельный режим Playwright Reader
 
 Рядом с Web Reader живёт второй полноэкранный режим — Playwright Reader (маршруты `#/playwright-reader` и `#/playwright-reader/<conversationId>`). Он устроен по той же схеме: признак `inPlaywrightReader` в `App.tsx` даёт корню класс `app--playwright-reader`, исключает `Sidebar` из DOM тем же условием, что и Reader, не передаёт в `ChatColumn` обработчик сайдбара и рендерит ту же `chat-split` с левой колонкой обычного чата. Пункт меню «Playwright Reader» (иконка `▣`) стоит в `Sidebar` сразу после «Web Reader» и в компактном наборе иконок, но, в отличие от него, открывается в текущей вкладке обычным `navigate('/playwright-reader')`, а не `window.open`. Смысл, состав контрактов и состояние backend-части — в [features/playwright-reader.md](features/playwright-reader.md).
@@ -379,182 +370,7 @@ USD за 1M токенов, источник и дату тарифа; форм�
 
 Правая панель Playwright Reader — `BrowserSessionPane` (`packages/ui/src/components/BrowserSessionPane.tsx`) поверх реального изолированного Chromium из `apps/browser-runner` через мост `window.browser` (REST-оркестрация на сервере). Это ключевое отличие от Web Reader, который на своём маршруте монтирует `WebReaderFrame` (iframe поверх `/api/preview`): панель Playwright показывает пиксельные кадры настоящего браузера (поллинг `screenshot` = screencast), навигацию/back/forward/reload и пользовательский ввод (клик по кадру пересчитывается `scaleBrowserCoordinates` в координаты вьюпорта, набор текста — командой `type`). Детали серверной связки — [features/playwright-reader.md](features/playwright-reader.md), раздел «Связка оркестрация + панель». Инструменты модели `mcp__browser__*` в этом режиме пока идут через общий `PreviewActionRelay` (не через раннер) — это следующий шаг. `projectId` у Playwright-чатов всегда `null`. Панель ищется в DOM/тестах по `aria-label="Browser session"` (не по «Web Reader»). Ранее неиспользованные правила `.playwright-browser-pane`/`.playwright-reader-header` теперь задействованы `BrowserSessionPane` (+ добавлены `.playwright-browser-viewport`/`.playwright-browser-input`). Восстановление после refresh держится на `initialChatId`: `useVoiceStore` получает `routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId`, поэтому чат из адреса становится активным сразу. Split-раскладка общая с Web Reader: тот же стейт вкладок `chatView`, тот же `resizePreview` и ключ `localStorage` `voicechat.previewWidth`. Регрессии — `BrowserSessionPane.dom.test.tsx` и ветка Playwright в `App.dom.test.tsx`.
 
-Обычный сайдбар эти чаты пока не прячет: он фильтрует список условием «не `web-recorder` и без `previewUrl`», под которое Playwright-чаты не попадают, — «Playwright Reader N» видны в общем списке бесед. Привязка Playwright-чата к проекту **разрешена** (прежний серверный запрет в `setConversationProject` снят): смена проекта в настройках сохраняется штатно, а `chatStore.setConversationProject` обновляет запись сразу в `conversations`, `readerConversations` и `playwrightReaderConversations`, чтобы селектор ридера не показывал устаревшее.
-
-Самодиагностика Playwright Reader (`packages/ui/src/playwrightReaderDiagnostics.ts`) — аналог web-reader-диагностики для пути изолированного Chromium: кнопка «Самодиагностика» в настройках разговора (проп `playwrightReaderDiagnostics`, только при `inPlaywrightReader`) или команда `самодиагностика Playwright Reader` / `/playwright-reader-diagnostics`. Обработчик `startPlaywrightReaderDiagnostics` в `App.tsx` замыкает мост `window.browser`; 6 проверок по слоям `bridge` (мост подключён), `session` (идемпотентный `start` поднимает/переиспользует Chromium, метаданные вкладки/вьюпорта), `frame` (кадр `screenshot`) и `command` (`reload`). Проверки не уводят открытую страницу; результаты публикуются служебными AI-сообщениями через `publishDiagnosticMessage` (без LLM). Модуль чистый, тест — `playwrightReaderDiagnostics.test.ts`.
-
-## Отдельный режим «Консоль с ассистентом»
-
-Третий полноэкранный split-режим (маршруты `#/console-reader` и `#/console-reader/<conversationId>`, `assistantKind: 'console-reader'`, kind-константа `CONSOLE_READER_KIND` в `@shared/types`). Устроен по той же схеме, что Playwright Reader: `inConsoleReader` в `App.tsx` даёт корню `app--console-reader`, прячет `Sidebar` (общий флаг `inSplit = inReader || inPlaywrightReader || inConsoleReader`), рендерит ту же `chat-split`. Отличие — **правая панель и второй таб называется «Консоль», а не «Сайт»**. Список — `consoleReaderConversations` в `chatStore` (предикат `isConsoleReaderConversation`), пункт меню «Консоль с ассистентом» (иконка `▮`) в `Sidebar`, имя нового чата «Консоль N». Пункт меню и селектор — `console-reader-selector`.
-
-Правая панель — `ConsoleSessionPane` (`packages/ui/src/components/ConsoleSessionPane.tsx`): живой PTY-терминал разговора поверх `window.pty`, переиспользует экспортированный `TerminalView` из `MachineTerminal` (xterm). **Ключевая идея — разделяемый терминал: пользователь и ассистент пишут в одну сессию.** ptyId детерминирован — `consolePtyId(conversationId)` = `console:<id>` (общий хелпер в `@shared/types`), поэтому и панель, и серверные инструменты ассистента адресуют одну живую PTY. Машину-хост выбирает шапка панели; смена машины перезапускает сессию (`key` по agentId).
-
-Инструменты ассистента — MCP-набор `mcp__console__*` (сервер `apps/server/src/mcp/consoleMcp.ts`, путь `/mcp/console`, query `conv`): `console_read` (экран без ANSI из кольцевого буфера сессии), `console_context` (cwd/foreground/altScreen), `console_run` (команда в shell + Enter, ждёт строку-сентинел `__VCEND_<id>_<code>__`, возвращает вывод и код выхода), `console_input` (текст как есть), `console_keys` (спец-клавиши для TUI — nano/vim: `ctrl+o`, `enter`, `ctrl+x`, стрелки…). Все — через `registry.ptyInput`/`ptyBufferText` той же сессии (НЕ через одноразовый `exec`, как remote-bash). Гейт по режиму прав: в «Плане» ход получает `&ro=1` и write-инструменты отклоняются; необратимые команды (`rm -rf`, `git push`, `sudo`) требуют `confirm=true`. URL подключается в `turns.ts` (`consoleMcpUrl` только у console-reader), CLI-регистрация `mcpServers.console` — в `claudeCli.ts`/`codexCli.ts` с системным хинтом «работай в общем терминале: смотри context/read, в shell — run, в TUI — keys».
-
-Живой контекст терминала (cwd/foreground/altScreen) приносит агент сообщением `pty.context` (`agentProtocol.ts`, `AGENT_VERSION 0.14.0`): для PTY с префиксом `console:` и только на Linux он раз в секунду читает `/proc/<pid>/cwd`, tpgid из `/proc/<pid>/stat` → имя процесса, а альтернативный экран ловит по `?1049h/l` в потоке. Сервер хранит последний контекст в `PtySession.context`, отдаёт его через `registry.ptyContextOf`. На не-Linux/старых агентах поля остаются `null` — ожидаемая деградация.
-
-Самодиагностика (`packages/ui/src/consoleReaderDiagnostics.ts`, тест — рядом): кнопка «Самодиагностика» в настройках (проп `consoleReaderDiagnostics` при `inConsoleReader`) или команда `самодиагностика консоли` / `/console-reader-diagnostics`. 3 проверки: `bridge` (window.pty), `machine` (агент в сети), `session` (round-trip — пишет `echo <marker>` в общий PTY и ждёт маркер в выводе; маркер бьётся `<h1>''<h2>`, чтобы эхо ввода не совпадало с ним и подтверждало реальное исполнение shell). Тест MCP — `apps/server/src/mcp/consoleMcp.test.ts`.
-
-## Отдельный режим «Make — веб-проект с ассистентом»
-
-Четвёртый split-режим (маршруты `#/make` и `#/make/<conversationId>`, `assistantKind: 'make'`,
-константа `MAKE_KIND`/предикат `isMakeConversation` в `@shared/types`+`@shared/make`). Устроен
-как Консоль: `inMake` в `App.tsx` даёт корню `app--make`, входит в `inSplit`, список —
-`makeConversations` в `chatStore`, имя нового чата «Проект N», пункт меню «Make — веб-проект»
-(иконка `✦`) в `Sidebar`, второй таб на телефоне — «Проект». Selector-шапка `make-selector`.
-В split-режимах `ChatColumn` получает `composerLayout="docked"`: у пустого проекта обёртка
-`chat-composer--centered` (height 0) иначе уносила докнутый `VoiceBar` за край экрана.
-
-Правая панель — `MakePane` (`packages/ui/src/components/MakePane.tsx`, сториз `Make/MakePane`,
-тест `MakePane.dom.test.tsx`). Данные — `window.api['make:*']` (REST) и `window.make.onChanged`
-(WS `make.changed`). Три режима:
-
-- **Превью** — same-origin iframe на `REST.makePreview(conv)` + `index.html?rev=N`
-  (`sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"`).
-  Перед первой загрузкой — cookie-гейт `ensurePreview` (тот же `session:ensurePreview`,
-  что у Web Reader: iframe не шлёт Bearer). Пресеты ширины ПК/Планшет/Телефон, ⟳, открыть в
-  новой вкладке, ⛶ на весь экран, **⌖ «Выбрать элемент»**: сервер инъецирует в HTML скрипт
-  `MAKE_INSPECTOR_SCRIPT`, панель шлёт в iframe `{type:'vc-make.inspect', enabled}`, обратно
-  приходит `vc-make.selected {selector, tag, text, html}` — карточка над превью с кнопками
-  «Стили» и «В чат» (`onInsertToChat` → `chatActions.setDraft('Измени элемент <selector> …')`).
-- **Код** — дерево файлов (группировка по первому каталогу), textarea-редактор (Tab → два
-  пробела, Ctrl/Cmd+S — сохранить), статус «сохранено/не сохранено», «+ Файл», ✎/✕ у файла.
-  Имена вводятся через `Dialog` (`make-ask`), не `window.prompt`.
-- **История** — снимки (`MakeSnapshot`) с «Вернуть», «+ Снимок», «Сбросить проект».
-
-`make.changed` от сервера: панель поднимает `previewRev` (iframe перезагружается), обновляет
-дерево и, если редактор не грязный и путь в `paths`, — содержимое открытого файла.
-«Скачать проект (ZIP)» — `REST.makeExport(conv)` (тоже под `/api/preview/`, cookie).
-
-Вторая итерация (2026-08-26): **«Опубликовать»** — диалог `make-publish` (ссылка `/p/<token>/`
-без входа, копировать/открыть/снять; кнопка в шапке становится «Опубликован»); **«Проверить»** —
-`REST.makeCheck` → баннер `make-issues` со списком `MakeCheckIssue` (клик по пути открывает файл
-в редакторе); **▤ «Шаблоны проекта»** — диалог `make-templates` по `MAKE_TEMPLATES` (пустая,
-лендинг, дашборд; применение делает снимок). **Самодиагностика Make** — `makeDiagnostics.ts`
-(команда «самодиагностика make»/`/make-diagnostics` в композере или кнопка в настройках чата):
-шаги REST → превью с cookie → round-trip записи файла → событие `make.changed`; пишет в чат
-через `publishDiagnosticMessage`, как Консоль и Reader. У текстовых кнопок панели `title` не
-ставим — он попадает в доступное имя и ломает `getByRole('button', {name})`.
-«Загрузить» в режиме «Код» — скрытый `<input type=file multiple>` (`make-upload-input`): текстовые
-файлы уходят `make:write`, остальное — `make:upload` (base64), картинки складываются в `img/`. Чтение
-через `FileReader`, а не `Blob.text()/arrayBuffer()` — их нет в jsdom. Клик по бинарному файлу в дереве
-открывает просмотр (`make-binary`: `<img>` для картинок, иначе `EmptyState`) вместо редактора.
-Файлы можно **перетащить** в режим «Код» (`make-code`, `onDragOver/onDrop` → тот же `uploadFiles`;
-подсказка `make-drop-hint`). **Подсветка синтаксиса** — `lib/codeHighlight.ts` (highlight.js core +
-xml/css/javascript/json/markdown по расширению, лимит `HIGHLIGHT_MAX_CHARS`): прозрачный `textarea`
-лежит поверх `<pre class="make-highlight">` с теми же шрифтом/отступами (`.make-editor-body`), скролл
-синхронизируется в `onScroll`; хвостовой `\n` дополняется пробелом, иначе высоты расходятся. Фон
-редактора тёмный в обеих темах — под палитру `github-dark`, которую уже грузит `Markdown`.
-
-**Редактор — Monaco** (движок VS Code): `components/CodeEditor.tsx` лениво грузит
-`code/MonacoCodeEditor.tsx` (`@monaco-editor/react` + `monaco-editor/esm/vs/editor/editor.api` с выборочными
-contribution-модулями — полный пакет тянул 4 МБ; воркеры собираются Vite через `?worker`, тип в
-`vite-worker.d.ts`), а в jsdom (`navigator.userAgent` содержит jsdom — тесты и axe-прогон сториз) рисует
-`FallbackEditor` — textarea с подсветкой highlight.js поверх `<pre>` (то же aria-label «Содержимое <файл>»).
-Настройки Monaco — `code/monacoSetup.ts`: тема vs-dark, JSX automatic, семантическая проверка TS выключена
-(типов React в браузере нет), Ctrl/Cmd+S → `onSave`, **автозакрытие JSX-тегов** — `attachJsxAutoClose`
-(в VS Code это делает TS-сервер, здесь — своё: после `>` у `<Tag …>` вставляем `</Tag>`; правило
-`jsxClosingTagFor` в `code/monacoLang.ts`, без импорта Monaco — тестируется в vitest). Контейнеру
-`.make-monaco` нужна явная высота (обёртка `@monaco-editor/react` — height:100%), поэтому `> section`
-позиционируется абсолютно. Чанк `monaco` выделен в `apps/web/vite.config.ts` (`manualChunks`).
-Подсветка фолбэка знает `jsx`→javascript, `tsx`→typescript.
-**Форматирование** (п.4): `lib/formatCode.ts` — Prettier standalone + плагины по расширению (babel/estree,
-typescript, html+postcss, markdown, yaml), всё lazy (чанк `prettier`, ~470 КБ gzip); настройки проекта —
-без `;`, одинарные кавычки, printWidth 100. `monacoSetup` регистрирует `DocumentFormattingEditProvider` на
-наши языки (путь берётся из URI модели) → Shift+Alt+F; чекбокс «формат при сохранении» (`vc.make.formatOnSave`)
-делает `formatDocument` перед сохранением по Cmd/Ctrl+S. Синтаксическая ошибка → Prettier бросает, формат не
-применяется (маркер компиляции подскажет где).
-
-**Типы React в Monaco** (п.3): `code/monacoTypes.ts` импортирует d.ts `@types/react`, `@types/react-dom`,
-`csstype` как текст (Vite `?raw`) **относительными путями к корневому node_modules** — у `@types/react`
-закрытый `exports`, deep-import по имени пакета Vite не резолвит; d.ts подкладываются `addExtraLib` под
-`file:///node_modules/...`, декларация `*?raw` — в `vite-worker.d.ts`. Текст типов (~1,1 МБ) лежит в
-lazy-чанке `monacoSetup`. **Модели проекта** (п.2): `syncProjectModels` создаёт `file:///<path>` для всех
-текстовых файлов (MakePane читает их при входе в «Код» и по `state.rev`) — TS резолвит
-`./components/Button.tsx`, работают автодополнение и peek definition; `<Editor path>` тоже `file:///…`.
-Глобальные `.main/.left/.right` в app.css ломали suggest-widget Monaco (строки подсказок используют те же
-классы) — есть скоуп-сброс `.monaco-editor .monaco-list-row .main`.
-**Вкладки открытых файлов** (`make-tabs-bar`, `tabs: string[]`): `openFile` добавляет, ✕ закрывает
-(активная — переключение на соседнюю), rename/delete обновляют список. **Автосохранение** — чекбокс в шапке
-редактора (`localStorage vc.make.autosave`, по умолчанию включено): через `autosaveDelayMs` (1500, проп для
-тестов) после последней правки `save(silent)` без тоста; Cmd/Ctrl+S — как раньше. После сохранения jsx/tsx/ts
-панель вызывает `make:check` и, если есть проблемы, показывает баннер; ошибки `compile-error` текущего файла
-уходят в `CodeEditor` пропом `markers` → `monaco.editor.setModelMarkers` (красные подчёркивания).
-
-**Сеть превью** (п.9): инспектор-скрипт оборачивает `fetch` и `XMLHttpRequest.open/send`, шлёт
-`vc-make.network {method,url,status,ok,ms,kind}`; под превью две вкладки «Консоль | Сеть» (`bottomTab`), список
-`make-network` с подсветкой неуспешных, счётчик «N не загрузилось», «В чат» отдаёт ассистенту список битых
-запросов. Оба списка сбрасываются при смене `previewRev`.
-
-**Скриншот превью** (п.10): кнопка 📷 в шапке превью — `lib/makeScreenshot.ts` лениво грузит `html2canvas`
-(чанк `screenshot`), снимает документ same-origin iframe (или выбранный инспектором элемент) в PNG и отдаёт
-файл в `onAttachImage` → `chatActions.addAttachment`; для всей страницы в композер подставляется «На
-скриншоте превью: ». В тестах модуль мокается (`vi.mock('../lib/makeScreenshot')`).
-
-**Панель стилей** (`MakeStylePanel`, п.8): инспектор присылает `id/className/styles` (computed для 8 свойств);
-поля цвет/фон/размер/насыщенность/выравнивание/отступы/скругление шлют в iframe `vc-make.style {values}` —
-скрипт применяет их inline поверх сохранённого `style`; «Записать в CSS» дописывает правило
-(`cssRule(selector, values)`) в первый `<link rel=stylesheet>` из index.html (иначе `styles.css`); селектор по
-умолчанию — `shortSelector`: `#id` → `.первый-класс` → последние два звена без `:nth-of-type`.
-
-**Консоль превью** (`make-console` под iframe): инспектор-скрипт превью и раннер сториз оборачивают
-`console.log/info/warn/error` и слушают `error`/`unhandledrejection`, шлют родителю `vc-make.console
-{level,text,at}`; панель хранит до 200 строк, сбрасывает их при смене `previewRev`, показывает счётчик
-ошибок и кнопку «В чат»; 8 секунд после смены `previewRev` ошибки считаются «после правки» — баннер
-`make-autofix` с кнопкой «Исправить» шлёт их ассистенту сразу (`onAskAssistant` → `setDraft` + `submitText`) (последние ошибки/предупреждения → просьба исправить). В инжектируемом скрипте
-нельзя писать `'\n'` внутри TS-шаблона — в HTML попадёт реальный перенос строки в JS-строке, и весь
-скрипт (вместе с инспектором) молча упадёт; тест `rest.test.ts` парсит скрипт через `new Function`.
-**Ассеты** — диалог `make-assets` (кнопка «Ассеты (N)» в режиме «Код»): бинарные файлы с превью
-картинок, «Путь»/«<img>» копируют в буфер (`lib/clipboard`), ✕ удаляет. **История → «Сравнить»**:
-`make:snapshotDiff` → список добавленных/удалённых/изменённых с размерами и «Вернуть файл»
-(`make:restoreFile`, остальные файлы не трогаются); клик по имени текстового файла открывает **diff-вью**
-(`make-file-diff`): `components/CodeDiff.tsx` — Monaco `DiffEditor` (лениво, `code/MonacoDiffEditor.tsx`,
-read-only, side-by-side) или построчный фолбэк в jsdom; слева `make:snapshotFile`, справа `make:read`,
-в действиях — «Вернуть файл из снимка». В диалоге публикации — `<select>` «Что публиковать» (текущее состояние / снимок) и «Обновить публикацию»;
-в «Истории» у снимка кнопка «Опубликовать версию» (`make:publish {snapshotId}`). **Скачать** (⇩) — диалог `make-export`: «Статика как
-есть» или «Vite-проект» (`?vite=1`: package.json/vite.config/README/.gitignore, tsconfig для TS).
-**Импорт** (⇪) — диалог `make-import`: режим replace/merge, ZIP через `make:import` (base64) или
-страница по URL через `make:importUrl`; перед импортом сервер делает снимок.
-
-**Поиск** в дереве (`make-search-input`): по мере ввода фильтрует файлы по пути; Enter — поиск по
-содержимому через `make:search` (`make-matches`, клик по строке открывает файл), Esc сбрасывает.
-**Локальные версии** (п.7): `lib/fileHistory.ts` — до 20 предыдущих сохранённых версий файла в localStorage
-(`vc.make.history:<conv>:<path>`, без дублей подряд, файлы > 200 K символов не пишутся); в `save()` перед
-перезаписью кладётся прежний `savedContent`. Кнопка «Версии» в шапке редактора показывает список, клик
-подставляет текст в редактор (сохранение — отдельно). Серверные снимки остаются источником правды.
-**Правка ИИ** (п.6): кнопка «✨ Правка ИИ» или Cmd/Ctrl+I в редакторе (⌘K занят палитрой команд) открывает строку
-`make-inline`: выделение (`onSelectionChange` из Monaco `onDidChangeCursorSelection` / `onSelect` textarea) +
-инструкция → `onAskAssistant` с файлом, строками и фрагментом; модель правит через make_read_file/make_write_file.
-**Перенос файлов между папками** (п.5): строка дерева — `onPointerDown` → `usePointerDrag` из `lib/dnd.ts`
-(мышь/палец, порог 6px); цель — `.make-tree-group[data-dir]` под указателем (`pointInRect`) или корень дерева;
-на drop — `make:rename` в `moveTargetPath(path, dir)` (`lib/makeTree.ts`), подсветка `make-tree-group--drop`,
-объявления в `make-tree-live` (`role=status`). Клавиатурный путь — диалог «Переименовать» (✎). Мультивыбор
-сознательно не делаем.
-**Замена по проекту** (п.1): кнопка ⇄ открывает поле «Заменить на» и «Заменить все» → подтверждение →
-`make:replace` (`POST /api/make/:id/replace {query, replacement, matchCase}`; сервер `replaceAll` — подстрока
-без регистра во всех текстовых файлах, перед заменой снимок «Перед заменой «q» → «r»»).
-**Вкладка «Компоненты»** (`mode: 'stories'`, `make-stories`): слева файлы `*.stories.(jsx|tsx)` из
-`make:stories` (заголовок из `title`, стори — именованные экспорты), справа iframe на страницу-раннер
-`REST.makeStoriesPage(conv)?file=&story=&rev=` (сервер собирает HTML: import map и `<link rel=stylesheet>`
-из index.html проекта, рендер одной стори через `react-dom/client`). Кнопка «Работать над компонентом»
-вставляет в композер контекст «Работаем только над компонентом X (файл, стори)…» — так модель правит
-один файл. Список перечитывается при смене `state.rev`. **Controls** (`make-controls`): раннер после
-рендера шлёт `vc-make.story {args}` (функции/элементы — метки `[function]`/`[element]`), панель рисует поля
-по типу значения (checkbox/number/text, остальное read-only) и на каждое изменение шлёт в iframe
-`vc-make.args {args}` — раннер перерисовывает стори с `{...args, ...overrides}`; файлы не меняются.
-«Сбросить» очищает переопределения, «Сохранить через ассистента» вставляет в чат просьбу зафиксировать
-args в стори. Enum-подобные args: раннер собирает строковые значения одного ключа по всем стори файла
-(`options`, ≥2 значений, кроме `children` и строк длиннее 32) — панель рисует `<select>`. Поля рисует
-`MakeControls.tsx` (п.14): `controlKind` — сначала `argTypes` из CSF (`control: range|color|select|object`,
-`min/max/step/options`, раннер шлёт их в `vc-make.story.argTypes`), потом эвристика по значению: `#hex`/`rgb()`
-→ `<input type=color>`, массив/объект → JSON-textarea с проверкой (невалидный текст не уходит в раннер,
-`aria-invalid` + текст ошибки), `[function]`/`[element]` — read-only.
-**Стартовые идеи** (как главная Figma Make): в «свежем» проекте (файлы = `MAKE_SCAFFOLD` по байтам)
-над превью карточки `make-starters` (первые 6 из `MAKE_STARTER_PROMPTS`), кнопка ✦ в шапке открывает
-диалог `make-ideas` со всеми промптами по группам `MAKE_STARTER_GROUPS`; клик вставляет промпт в
-композер через `onInsertToChat`. Фейк `createFakeApi` сидит проект настоящим `MAKE_SCAFFOLD` и считает
-размеры в байтах — иначе `isFresh` в тестах не срабатывает. **Мобильная раскладка** (≤768px): дерево/список
-сториз — верхняя полоса 38 % высоты, редактор/раннер — под ней; пресеты ширины превью скрыты.
+Обычный сайдбар эти чаты пока не прячет: он фильтрует список условием «не `web-recorder` и без `previewUrl`», под которое Playwright-чаты не попадают, — «Playwright Reader N» видны в общем списке бесед. На сервере привязка такого разговора к проекту запрещена: `setConversationProject` возвращает `null` при непустом `projectId`.
 
 ## Разговор и ход модели
 
@@ -580,7 +396,7 @@ UI показывает отдельный блок «В очереди» с о�
 
 Обычная отправка остаётся в `pendingSubmit`, пока realtime-событие `chat.message` не подтвердит тот же сохранённый `messageId`. Запись содержит локальный `operationId`, текущие `conversationId` и `messageId`, исходный текст и признак `queueOnly`; это единственная ожидающая подтверждения операция всего `chatStore`. Если ответ уже активен, стор синхронно добавляет `QueuedTurn` с локальным id только в оптимистичную `queuedTurns` и удаляет сохранённую реплику из `messages`; следующий авторитетный снимок `claude.queue` заменяет очередь серверными элементами и снимает pending после получения серверного `messageId`. Поэтому ожидающая реплика не мигает в основной ленте и не дублируется при подтверждении.
 
-Для обычной реплики после её сохранения `preparingReply` резервирует в `ChatColumn` место ответа. Это уже **полноценная карточка ответа** (`.msg.ai` с шапкой: движок, машина выполнения по `execTarget`, время начала из `prepStartRef`), а нейтральное «Готовим ответ…» показывается **внутри пузыря** `.bub` (live-область `role="status"`/`aria-live="polite"`) — так шапка со сведениями видна сразу, ещё до первого фрагмента. Подтверждение `chat.message` снимает только pending отправки: индикатор подготовки живёт дальше до первого непустого `claude.token`. Он также очищается при `claude.done`, ошибке, пользовательской отмене или смене разговора; utility-команда и отказ голосового автомата снимают его без ожидания модели. С началом стрима место карточки занимает обычный AI-блок с `MessageTimeline` (машина — так же в шапке, а не в теле). Внешний контейнер карточки несёт `data-testid="reply-preparing"`.
+Для обычной реплики после её сохранения `preparingReply` резервирует в `ChatColumn` место ответа и показывает нейтральное «Готовим ответ…» под пользовательским сообщением. Подтверждение `chat.message` снимает только pending отправки: индикатор подготовки живёт дальше до первого непустого `claude.token`. Он также очищается при `claude.done`, ошибке, пользовательской отмене или смене разговора; utility-команда и отказ голосового автомата снимают его без ожидания модели. Элемент имеет `role="status"` и `aria-live="polite"`, а с началом стрима его место занимает обычный AI-блок с `MessageTimeline`.
 
 `App.tsx` передаёт pending активного разговора в `VoiceBar`. Пока подтверждение не пришло, кнопка отправки заменяет иконку на loader, получает `disabled` и `aria-busy`, скрытая живая область сообщает «Запрос отправляется…», а обработчик дополнительно игнорирует повторный вызов. Ошибка либо отмена очищает pending и, если поле ещё пусто, восстанавливает сохранённый в операции текст черновика, поэтому повторная отправка возможна без потери содержимого. После подтверждения композер снова доступен даже при продолжающемся ходе: следующая реплика создаёт новую оптимистичную запись очереди.
 
@@ -662,8 +478,6 @@ Partial STT обновляет живые сегменты; final формиру
 ## Компоненты и поверхности
 
 `App.tsx` соединяет основной layout и глобальные popup-поверхности. `Sidebar` показывает разговоры, поиск, фильтр проекта и режим работы чата; его карточки только открывают или удаляют разговор, а не переименовывают его. Переименование доступно только из шапки открытого чата через `ChatColumn.onRenameTitle`. Пункт «История LLM» открывает объединённый `EnginesObserver` по неизменному `#/claude-code`; он показывает сессии Claude/Codex, их модель, токены и оценку стоимости, а его `ToolFrame` носит то же название. `ChatColumn` рендерит timeline, streaming response, activity/usage и edit/delete действия. `VoiceBar` содержит композер, вложения, микрофон и cancel.
-
-**Шапка и подвал ответа ассистента (`ChatColumn`, класс `.msg-head`).** У живого ответа (готовим/стрим) шапку даёт `liveHead()` по пропу `liveTarget` из `claude.start` (движок, модель по наведению, машина); без него — прежняя догадка по `aiLabel`/`execTarget`. В шапке слева — движок (`engineLabel`) с используемой моделью (`meta.model ?? meta.request.model`), которая по умолчанию скрыта (`.msg-model { display:none }`) и появляется при наведении на движок (плюс `title`); сразу за движком/моделью — **машина выполнения** (`.msg-machine-head`: имя агента по `execTarget`, «Без машины» для `none`, «Сервер» иначе — перенесена сюда из подвала); затем селект «Вид ответа» (список `TIMELINE_MODES`; переключается и во время ответа — для живого хода это `liveMode`, для завершённого — `modeById`). Крайнее правое сверху — **время начала ответа** (`clockTime(createdAt − durationMs)`, формат ЧЧ:ММ:СС, тултип полной даты). Иконка **«Копировать ответ»** теперь **внутри пузыря** `.bub` (класс `.copymsg`, тот же глиф `⧉`/`✓` и тот же угол, что у копии кода `.copycode`; проявляется по ховеру пузыря). В подвале (`.mfoot`) слева — блок токенов `.msgact-tokens`, и это **сам `MessageMeta`**: `<button aria-label="Сведения об ответе">` (`formatLiveUsage` внутри; наведение/фокус — тултип-сводка `meta-tip`, клик — модалка «Что было отправлено модели»; отдельной иконки ℹ больше нет). Внутри блока и **ориентировочная стоимость** `.msgact-cost` (`messageCost` из `lib/view.ts`: реальная `meta.costUsd` показывается как есть, иначе расчётная по `estimateCostUsd`/`packages/shared/src/pricing.ts` с «≈»); стоимость дублируется строкой в тултипе/модалке `MessageMeta`. Правая группа `.mfoot-right` (`margin-left:auto`): озвучить, удалить и **крайним правым — время окончания** (`clockTime(createdAt)`, тот же формат ЧЧ:ММ:СС). Прежние `.msg-machine`/`.msg-mode`/`.msg-cost` из подвала удалены. У живого (стримящегося) хода в подвале — таймер «Отвечает: мм:сс» (`formatElapsed`) в той же `.mfoot-right`, обновляется раз в секунду (эффект по `hasStream`, старт — `streamStartRef`). Чистые хелпера — `clockTime`/`dateTimeTooltip`/`formatElapsed`/`messageCost` в `packages/ui/src/lib/view.ts` (тесты — `view.test.ts`, разметка/поведение — `ChatColumn.dom.test.tsx`).
 
 ### Адаптивный композер `VoiceBar`
 
@@ -753,7 +567,7 @@ accent-полоска (`.convo--task`), а рамка подсвечиваетс
 
 ## Web Reader — отдельная страница
 
-Устарело: с 2026-08-26 Make реализован (см. «Отдельный режим «Make — веб-проект с ассистентом»» выше); `plans/figma-make-analog.md` — исходный план. Ближайший работающий отдельный маршрут с интерактивным iframe — Web Reader; он показывает внешний сайт через `/api/preview`, а не файлы или артефакты сгенерированного приложения. Новая Make-страница должна остаться отдельной поверхностью `packages/ui` и использовать существующий `useHashRoute`, но её каталог, редактор, превью и ревизии в коде ещё отсутствуют.
+На 2026-08-08 в UI нет страницы или компонентов Figma Make: `plans/figma-make-analog.md` фиксирует план, а не реализованную поверхность. Ближайший работающий отдельный маршрут с интерактивным iframe — Web Reader; он показывает внешний сайт через `/api/preview`, а не файлы или артефакты сгенерированного приложения. Новая Make-страница должна остаться отдельной поверхностью `packages/ui` и использовать существующий `useHashRoute`, но её каталог, редактор, превью и ревизии в коде ещё отсутствуют.
 
 Обычный чат не монтирует браузерную панель: `App.tsx` рендерит его как `.chat-page` с одним `ChatColumn`. Пользовательское название отдельной страницы — **Web Reader**, её канонический hash-маршрут — `#/web-reader/:id`. Старые ссылки `#/web-recorder/:id` остаются входной точкой, но сразу заменяются через `navigate(..., { replace: true })` на новый URL. Пункт «Web Reader» с доступным названием находится в `Sidebar` сразу после «Консоли» (и в компактном наборе иконок). Он вызывает экспортированный `openWebReaderWorkspace`: функция формирует URL текущего приложения с hash `#/web-reader` и открывает его через `window.open(..., '_blank', 'noopener,noreferrer')`, поэтому маршрут и экран исходного чата не меняются. Новая вкладка сама выбирает существующий Reader-разговор либо создаёт его и монтирует самостоятельную split-поверхность; она не добавляет второй чат в DOM исходной страницы и не зависит от её локального React-состояния.
 
@@ -1104,10 +918,6 @@ Storybook 8.6 на vite-билдере: `packages/ui/.storybook/main.ts` (гло
 ## AI-помощник формулировки
 
 Переиспользуемые `PromptBuilder` и `useAiAssist` живут в `packages/ui/src/components/prompt-builder/` и экспортируются из `@voicechat/ui`. Компонент транспорт-нейтрален: генератор, модификаторы, применение и персистентность приходят через props. Builder собирает результат из вариантов и сохраняет работу при переходе в настройки; закрытие сбрасывает сессию. Генерация запускается только вручную кнопкой-палочкой справа в поле промпта: сам ввод текста и изменение модификаторов сетевой запрос не выполняют. `applyNativeInputValue` использует нативный setter и bubbling `input`, поэтому интеграция совместима с управляемыми полями и библиотеками форм. Композер `VoiceBar` — первая production-интеграция.
-
-**Сплит чата (Reader/Консоль) уезжал вверх.** Две причины: `.vc-sr-only` (absolute) внутри сообщений позиционировались от `.main` и раздували `scrollHeight` колонки до высоты всей ленты, а `term.focus()` xterm в правой панели заставлял браузер прокрутить `overflow:hidden`-контейнер `.chat-split` (hidden не запрещает программную прокрутку). Лечение: `.scroll { position: relative }`, `.chat-split { overflow: clip }`, в `MachineTerminal` фокус через `term.textarea.focus({ preventScroll: true })`.
-
-Раздел «Инструкции» `SettingsModal` — компонент `ChatInstructionsSettings`: список `Settings.chatInstructions` с чекбоксами, инлайн-редактор (название/описание/текст, «Сбросить к стандартному» у встроенных), дублирование, добавление, удаление через `useConfirm` и «Восстановить стандартные»; патч уходит целым списком в `Settings.chatInstructions`, сервер по нему собирает подсказки ([llm.md](llm.md)). Per-чат тумблеры — группа «Инструкции чата» в инспекторе контекста.
 
 Настройки AI-помощника (`aiAssistProvider`, `aiAssistModel`, `aiAssistPrompts`) хранятся в общих per-user `Settings`. В `SettingsModal` им соответствует отдельный раздел «AI-помощник»; настройки внутри `PromptBuilder` могут временно редактироваться локально или сохраняться через `onPromptsChange`. Storybook содержит состояния builder/settings и интеграции с input/textarea; DOM-тесты дополнительно запускают axe в обоих режимах.
 
