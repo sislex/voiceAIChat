@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-08-25
-checked: 46552c82
+updated: 2026-08-27
+checked: bde76bdd
 areas:
   - package.json
   - scripts
@@ -191,3 +191,15 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 `scripts/frontend-quality.mjs` проверяет workspace dependency graph и циклы, запрет deep imports и product/host/platform/transport leaks, существование root/styles package exports, обязательную Storybook-матрицу пяти модулей, CSS imports/keyframes/unscoped selectors и dynamic imports всех product modules с role-gated Admin. Негативные fixtures и redaction отчёта покрыты `scripts/frontend-quality.test.mjs`. Безопасный машинный отчёт сохраняется в `artifacts/frontend-quality/report.json`; token, Bearer credentials и credential-bearing URLs редактируются.
 
 Bundle gate сравнивает minified JS chunks Web build с измеренным baseline `frontend-quality/bundle-baseline.json`; запас равен 12%, превышение сообщает chunk, limit, actual и delta, React обязан находиться в одном chunk. Baseline меняется только явной правкой файла. `affected-check` запускает дорогие frontend build gates только при frontend-влиянии; server/runner/agent-only diff их не включает.
+
+## E2E Make в реальном Chromium (2026-08-27)
+
+`npm run e2e:make` — `e2e/make.e2e.test.ts` под vitest (`e2e/vitest.config.ts`) с `playwright` из корневых
+node_modules (браузер — из кэша `~/Library/Caches/ms-playwright`, ставится `npx playwright install chromium`).
+Тест сам поднимает `apps/server` на случайном порту с временным `VC_DATA_DIR`, логинится по
+`/api/session/login`, выставляет `onboarded: true` через `PUT /api/settings` (иначе оверлей онбординга перекрывает
+панель), создаёт Make-разговор и применяет шаблон `react-ts`. Сценарии: превью React (TSX через esbuild,
+React из esm.sh — нужен интернет), «Компоненты» + controls, Monaco + автосохранение, публикация без входа.
+Ловушка: `page.goto` на URL, отличающийся только хэшем, не перезагружает документ — токен из localStorage
+подхватится только после `page.reload()`. В `npm test`/CI не входит: требует собранный `apps/web/dist`,
+браузер и сеть; `describe.skipIf(!existsSync(dist))`.
