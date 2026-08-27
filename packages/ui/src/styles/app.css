@@ -6905,3 +6905,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-lock { padding: 6px 12px; font-size: 12.5px; background: #fff4e5; color: #7a4b00; border-bottom: 1px solid #f3d9a4; }
 [data-theme='dark'] .make-lock { background: #3a2a10; color: #f5d9a8; border-color: #5a4320; }
 @media (max-width: 720px) { .make-head .make-presence { display: none; } }
+
+/* Аналитика публикации (roadmap-3 п.3) */
+.make-publish-stats { display: grid; gap: 4px; }
+.make-publish-bars { display: flex; align-items: flex-end; gap: 3px; height: 36px; padding: 2px 0; }
+.make-publish-bar { flex: 1 1 0; min-width: 4px; background: var(--accent); border-radius: 2px 2px 0 0; opacity: .85; }

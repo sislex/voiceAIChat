@@ -31,9 +31,15 @@ const SNAPSHOTS_DIR = '.snapshots'
 /** Файл публикации проекта (в его корне) и индекс токен → разговор (общий каталог). */
 const PUBLISH_FILE = '.publish.json'
 const COMMENTS_FILE = '.comments.json'
+
+/** Хост реферера для аналитики публикаций; пустой/невалидный/прямой заход → null. */
+export function refererHost(referer?: string | null): string | null {
+  if (!referer) return null
+  try { const h = new URL(referer).hostname.toLowerCase(); return h && h !== 'localhost' ? h : null } catch { return null }
+}
 const SHARE_FILE = '.share.json'
 /** Содержимое `.publish.json`; passwordHash = `<соль>:<sha256(соль:пароль)>`. */
-interface PublishRaw { token: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number; history?: MakePublishEntry[] }
+interface PublishRaw { token: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number; history?: MakePublishEntry[]; days?: Record<string, number>; referers?: Record<string, number> }
 const SHOTS_DIR = '.shots'
 const SHOTS_PER_STORY = 10
 const PUBLISHED_INDEX_DIR = '.published'
@@ -764,7 +770,11 @@ export class MakeWorkspaces {
       token: raw.token, publishedAt: raw.publishedAt ?? 0, url: makePublicUrl(raw.token),
       snapshotId: raw.snapshotId ?? null, snapshotLabel: raw.snapshotLabel ?? null,
       slug: raw.slug ?? null, slugUrl: raw.slug ? makeSlugUrl(raw.slug) : null,
-      passwordProtected: Boolean(raw.passwordHash), views: raw.views ?? 0, history: raw.history ?? []
+      passwordProtected: Boolean(raw.passwordHash), views: raw.views ?? 0, history: raw.history ?? [],
+      stats: {
+        days: Object.entries(raw.days ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([day, views]) => ({ day, views })),
+        referers: Object.entries(raw.referers ?? {}).sort(([, a], [, b]) => b - a).map(([host, views]) => ({ host, views }))
+      }
     }
   }
 
@@ -819,7 +829,7 @@ export class MakeWorkspaces {
     const history = [...(existing?.history ?? [])]
     const last = history[history.length - 1]
     if (!existing || !last || last.snapshotId !== snapshotId) history.push({ at: Date.now(), snapshotId, snapshotLabel })
-    const raw: PublishRaw = { token, publishedAt: Date.now(), snapshotId, snapshotLabel, slug, passwordHash, views: existing?.views ?? 0, history: history.slice(-30) }
+    const raw: PublishRaw = { token, publishedAt: Date.now(), snapshotId, snapshotLabel, slug, passwordHash, views: existing?.views ?? 0, history: history.slice(-30), days: existing?.days, referers: existing?.referers }
     await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8')
     return this.state(conversationId)
   }
@@ -857,10 +867,21 @@ export class MakeWorkspaces {
   }
 
   /** Счётчик просмотров: +1 на открытие index.html публикации. Гонки терпимы — это статистика, не биллинг. */
-  async countView(conversationId: string): Promise<void> {
+  async countView(conversationId: string, referer?: string | null, now = Date.now()): Promise<void> {
     const raw = await this.publishRaw(conversationId)
     if (!raw) return
     raw.views = (raw.views ?? 0) + 1
+    // Аналитика (roadmap-3 п.3): день в UTC и хост реферера; свои же адреса публикации не считаем.
+    const day = new Date(now).toISOString().slice(0, 10)
+    const days = raw.days ?? {}
+    days[day] = (days[day] ?? 0) + 1
+    raw.days = Object.fromEntries(Object.entries(days).sort(([a], [b]) => a.localeCompare(b)).slice(-90))
+    const host = refererHost(referer)
+    if (host) {
+      const refs = raw.referers ?? {}
+      refs[host] = (refs[host] ?? 0) + 1
+      raw.referers = Object.fromEntries(Object.entries(refs).sort(([, a], [, b]) => b - a).slice(0, 20))
+    }
     await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8').catch(() => undefined)
   }
 

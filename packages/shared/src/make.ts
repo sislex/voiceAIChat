@@ -51,6 +51,13 @@ export interface MakePublication {
   views?: number
   /** История публикаций (roadmap-2 п.11): что и когда было опубликовано; последняя запись — текущая. */
   history?: MakePublishEntry[]
+  /** Аналитика просмотров (roadmap-3 п.3): по дням (последние 90) и по хостам-рефererам (топ-20). */
+  stats?: MakePublishStats
+}
+
+export interface MakePublishStats {
+  days: Array<{ day: string; views: number }>
+  referers: Array<{ host: string; views: number }>
 }
 
 export interface MakePublishEntry {
