@@ -807,55 +807,15 @@ describe('ChatColumn — объявления для скринридера', ()
   })
 })
 
-describe('ChatColumn — кнопка «Использование БЗ»', () => {
-  it('без onOpenKbUsage кнопки нет', () => {
-    renderCol()
-    expect(screen.queryByTestId('kb-usage-open')).not.toBeInTheDocument()
-  })
-
-  it('кнопка открывает панель, число обращений — в aria-label', async () => {
-    const onOpen = vi.fn()
-    renderCol({ onOpenKbUsage: onOpen, kbUsageCount: 3 })
-    const btn = screen.getByTestId('kb-usage-open')
-    expect(btn).toHaveAccessibleName('Использование базы знаний — 3 новых обращения')
-    expect(screen.getByTestId('kb-usage-count')).toHaveTextContent('3')
-    await userEvent.click(btn)
-    expect(onOpen).toHaveBeenCalled()
-  })
-
-  it.each([[99, '99'], [100, '99+'], [128, '99+']] as const)(
-    'граница бейджа: %s новых → %s, точное число остаётся в подписи',
-    (count, visible) => {
-      renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: count })
-      expect(screen.getByTestId('kb-usage-count')).toHaveTextContent(visible)
-      expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName(
-        `Использование базы знаний — ${count} новых обращений`
-      )
+describe('ChatColumn — упрощённая шапка', () => {
+  it.each(['idle', 'thinking', 'speaking'] as const)(
+    'не показывает подпись VoiceState и элементы использования БЗ в состоянии %s',
+    (state) => {
+      renderCol({ state })
+      expect(document.querySelector('.mhead-right > .badge')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('kb-usage-open')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('kb-usage-live')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
     }
   )
-
-  it('при нуле бейджа нет, доступное имя сообщает об отсутствии новых обращений', () => {
-    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 0 })
-    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
-    expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName(
-      'Использование базы знаний — новых обращений нет'
-    )
-  })
-
-  it('активное обращение показывает индикатор вместо счётчика', () => {
-    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 2, kbUsageActive: true })
-    expect(screen.getByTestId('kb-usage-live')).toBeInTheDocument()
-    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
-    expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName(/идёт обращение/)
-  })
-
-  it('при выключенной БЗ кнопка доступна и объясняет пустоту', async () => {
-    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 0, kbContextMode: 'off' })
-    const btn = screen.getByTestId('kb-usage-open')
-    expect(btn).toBeEnabled()
-    expect(btn).toHaveAccessibleName(/база знаний выключена для этого чата/)
-    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
-    await expectNoViolations()
-    expectLabelledIconButtons()
-  })
 })

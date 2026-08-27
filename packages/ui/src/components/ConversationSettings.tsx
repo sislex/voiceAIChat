@@ -55,6 +55,8 @@ export interface ConversationSettingsProps {
     projectId: string | null
   }) => Promise<void>
   onAddSkill: (agentId: string, skill: AgentSkill) => Promise<void>
+  /** Открыть существующую панель статистики БЗ текущего разговора. */
+  onOpenKbUsage?: () => void
   onClose: () => void
 }
 
@@ -71,7 +73,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -414,7 +416,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
         </section>
 
         <section className="convsettings-card">
-          <div className="convsettings-sectionhead"><div><h2>База знаний проекта</h2><p>Как модель получает сведения об устройстве voiceAIChat. Политика проекта — искать в базе знаний до чтения кода.</p></div></div>
+          <div className="convsettings-sectionhead"><div><h2>База знаний проекта</h2><p>Как модель получает сведения об устройстве voiceAIChat. Политика проекта — искать в базе знаний до чтения кода.</p></div>{onOpenKbUsage && <Button variant="secondary" onClick={onOpenKbUsage}>Использование базы знаний</Button>}</div>
           <label className="convsettings-field"><span>Контекст KB</span>
             <select aria-label="Контекст базы знаний" value={kbContextMode} onChange={(e) => setKbContextMode(e.target.value as KbContextMode)}>
               <option value="auto">Авто-контекст + инструменты модели</option>
