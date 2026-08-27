@@ -2,7 +2,7 @@
 
 import { parseImages } from './images'
 import type { SttSegmentWire } from './protocol'
-import type { MessageRole, TaskLaunchProposal, TaskLaunchRequest, TurnMeta } from './types'
+import type { EditorContextPayload, MessageRole, TaskLaunchProposal, TaskLaunchRequest, TurnMeta } from './types'
 import type { PreviewElementPayload } from './previewInspector'
 import { normalizeClaudeModel } from './types'
 
@@ -20,6 +20,15 @@ export function withPreviewElementContext(body: string, element?: PreviewElement
     '--- END UNTRUSTED WEB PREVIEW ELEMENT ---'
   ].join('\n')
   return body ? `${body}\n\n${block}` : block
+}
+
+/** Контекст редактора Make: открытый файл и выделение — «правь здесь», а не «где-то в проекте». */
+export function withEditorContext(body: string, ctx?: EditorContextPayload): string {
+  if (!ctx?.path) return body
+  const where = ctx.startLine ? (ctx.endLine && ctx.endLine !== ctx.startLine ? `строки ${ctx.startLine}–${ctx.endLine}` : `строка ${ctx.startLine}`) : 'файл целиком'
+  const lines = [`[Контекст редактора Make] Открыт файл ${ctx.path}, ${where}. Если запрос не называет другой файл — правь именно здесь.`]
+  if (ctx.snippet) lines.push('Выделено:', '```', ctx.snippet.slice(0, 2000), '```')
+  return body ? `${body}\n\n${lines.join('\n')}` : lines.join('\n')
 }
 
 /** Добавляет к телу промпта просьбу прочитать вложенные файлы (пути абсолютные). */
@@ -111,7 +120,7 @@ export interface PromptMessage {
   role: MessageRole
   text: string
   /** Старые сообщения не имеют meta и остаются валидными. */
-  meta?: Pick<TurnMeta, 'previewElement'>
+  meta?: Pick<TurnMeta, 'previewElement' | 'editorContext'>
 }
 
 /**
@@ -130,7 +139,7 @@ export function buildConversationPrompt(
   const nonEmpty = messages
     .map((m) => m.role === 'ai'
       ? { ...m, text: parseImages(m.text).body }
-      : { ...m, text: withPreviewElementContext(m.text, m.meta?.previewElement) })
+      : { ...m, text: withEditorContext(withPreviewElementContext(m.text, m.meta?.previewElement), m.meta?.editorContext) })
     .filter((m) => m.text.trim().length > 0)
   let body: string
   if (nonEmpty.length <= 1) {

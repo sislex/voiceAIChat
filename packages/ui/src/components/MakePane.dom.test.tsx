@@ -54,6 +54,17 @@ describe('MakePane', () => {
     await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'styles.css' })).content).toBe(MAKE_SCAFFOLD['styles.css'] + 'h1{'))
   })
 
+  it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
+    const onEditorContext = vi.fn()
+    const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await waitFor(() => expect(onEditorContext).toHaveBeenCalledWith({ path: 'index.html' }))
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Файлы проекта' })).getByRole('button', { name: /^styles\.css/ }))
+    await waitFor(() => expect(onEditorContext).toHaveBeenLastCalledWith({ path: 'styles.css' }))
+    unmount()
+    expect(onEditorContext).toHaveBeenLastCalledWith(null)
+  })
+
   it('make.changed перезагружает превью и содержимое файла, если редактор не грязный', async () => {
     const { api, emit } = renderPane()
     await screen.findByTitle('Превью проекта')
