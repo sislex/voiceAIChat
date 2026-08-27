@@ -588,6 +588,18 @@ describe('REST: conversations/messages/settings', () => {
     expect(runner.statusCode).toBe(200)
     expect(runner.body).toContain('importmap')
     expect(runner.body).toContain('"Small"')
+    // Галерея и сториз: в превью (cookie/Bearer) и на публикации без входа.
+    const gallery = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__gallery__` })
+    expect(gallery.statusCode).toBe(200)
+    expect(gallery.body).toContain('Button.stories.jsx')
+    const pub2 = (await inj({ method: 'POST', url: `/api/make/${conv.id}/publish` })).json() as { published: { url: string } }
+    const pubGallery = await app.inject({ method: 'GET', url: `${pub2.published.url}__gallery__` })
+    expect(pubGallery.statusCode).toBe(200)
+    expect(pubGallery.body).toContain(`${pub2.published.url}__stories__?file=`)
+    const pubStory = await app.inject({ method: 'GET', url: `${pub2.published.url}__stories__?file=src/components/Button.stories.jsx&story=Primary` })
+    expect(pubStory.statusCode).toBe(200)
+    expect(pubStory.body).toContain('"Primary"')
+    await inj({ method: 'DELETE', url: `/api/make/${conv.id}/publish` })
     const search = (await inj({ method: 'GET', url: `/api/make/${conv.id}/search?q=btn--secondary` })).json() as { matches: Array<{ path: string; line: number }> }
     expect(search.matches.map((m) => m.path)).toContain('styles.css')
   })

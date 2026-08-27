@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: 220ecc03
+checked: 0574ce01
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -553,7 +553,8 @@ read-only, side-by-side) или построчный фолбэк в jsdom; сл
 **Вкладка «Компоненты»** (`mode: 'stories'`, `make-stories`): слева файлы `*.stories.(jsx|tsx)` из
 `make:stories` (заголовок из `title`, стори — именованные экспорты), справа iframe на страницу-раннер
 `REST.makeStoriesPage(conv)?file=&story=&rev=` (сервер собирает HTML: import map и `<link rel=stylesheet>`
-из index.html проекта, рендер одной стори через `react-dom/client`). Кнопка «Работать над компонентом»
+из index.html проекта, рендер одной стори через `react-dom/client`). Кнопки «Галерея» (`REST.makeGalleryPage`) и «Поделиться» (публичная ссылка на стори; без публикации открывает
+диалог «Опубликовать»). Кнопка «Работать над компонентом»
 вставляет в композер контекст «Работаем только над компонентом X (файл, стори)…» — так модель правит
 один файл. Список перечитывается при смене `state.rev`. **Controls** (`make-controls`): раннер после
 рендера шлёт `vc-make.story {args}` (функции/элементы — метки `[function]`/`[element]`), панель рисует поля

@@ -3,7 +3,7 @@
 // только в браузере пользователя. Страница-раннер собирается сервером: import map и
 // стили берём из index.html проекта, чтобы компонент выглядел как в приложении.
 
-import { MAKE_REACT_IMPORT_MAP, type MakeStoryFile } from '@voicechat/shared'
+import { MAKE_REACT_IMPORT_MAP, MAKE_STORIES_PAGE, type MakeStoryFile } from '@voicechat/shared'
 
 export function parseStoryFile(path: string, source: string): MakeStoryFile {
   const names: string[] = []
@@ -79,6 +79,38 @@ export function renderStoriesPage(file: string, story: string, indexHtml: string
       window.parent.postMessage({ type: 'vc-make.story', file: ${JSON.stringify(file)}, story: name, stories: names, args: serializable, options: enumOptions, argTypes: argTypes }, '*');
     } catch (error) { fail(String(error && error.message || error)); }
   </script>
+</body>
+</html>`
+}
+
+const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+
+/** Галерея всех стори проекта: сетка iframe-ов на раннер, каждая с подписью и ссылкой «открыть». */
+export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 'Компоненты'): string {
+  const cards = files.flatMap((f) => f.stories.map((name) => {
+    const href = `${base}${MAKE_STORIES_PAGE}?file=${encodeURIComponent(f.path)}&story=${encodeURIComponent(name)}`
+    return `<figure class="card"><iframe loading="lazy" title="${escapeHtml(f.title)} / ${escapeHtml(name)}" src="${href}"></iframe><figcaption><b>${escapeHtml(f.title)}</b> · ${escapeHtml(name)} <a href="${href}" target="_blank" rel="noreferrer">открыть</a></figcaption></figure>`
+  }))
+  return `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body { margin: 0; padding: 24px; font: 14px/1.5 system-ui, sans-serif; background: #f6f7fb; color: #1a1d23; }
+    h1 { margin: 0 0 16px; font-size: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .card { margin: 0; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgb(0 0 0 / .08); display: grid; }
+    .card iframe { width: 100%; height: 220px; border: 0; background: repeating-conic-gradient(#eee 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+    figcaption { padding: 8px 12px; font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
+    figcaption a { margin-left: auto; color: #4f7cff; }
+    .empty { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  ${cards.length ? `<div class="grid">${cards.join('')}</div>` : '<p class="empty">В проекте пока нет сториз (*.stories.jsx/tsx).</p>'}
 </body>
 </html>`
 }
