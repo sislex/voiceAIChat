@@ -1355,14 +1355,14 @@
     align-items: center;
   }
   .voicebar:not(.voicebar--expanded) .tin {
-    padding-top: 18px;
-    padding-bottom: 2px;
+    padding-top: 10px;
+    padding-bottom: 10px;
   }
 }
 .vrow > .vc-btn { flex: none; }
 .composer-send {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border-radius: 50%;
   background: #1667d9;
@@ -4036,7 +4036,12 @@ button.msgact-tokens:hover, button.msgact-tokens:focus-visible {
 }
 .mode-menu__trigger:hover:not(:disabled), .mode-menu__trigger[aria-expanded='true'] { background: var(--panel); color: var(--text); }
 .mode-menu__trigger:disabled { opacity: .55; cursor: default; }
-.mode-menu__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mode-menu__trigger > span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+.mode-menu__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.25; }
 .mode-menu__list {
   position: absolute;
   z-index: 40;
@@ -4076,8 +4081,7 @@ button.msgact-tokens:hover, button.msgact-tokens:focus-visible {
   .vrow { gap: 4px; }
   .mode-menu__trigger { max-width: 38px; padding-inline: 7px; }
   .mode-menu__label, .mode-menu__trigger > span:last-child { display: none; }
-  .composer-attach, .composer-mic { width: 34px; height: 34px; padding: 0; }
-  .composer-send { width: 38px; height: 38px; }
+  .composer-attach, .composer-mic, .composer-stop, .composer-send { width: 34px; height: 34px; padding: 0; }
   .mode-menu__list { right: -84px; max-width: calc(100vw - 24px); }
 }
 
@@ -4090,8 +4094,7 @@ button.msgact-tokens:hover, button.msgact-tokens:focus-visible {
   .vrow { gap: 4px; }
   .mode-menu__trigger { max-width: 40px; padding-inline: 7px; }
   .mode-menu__label, .mode-menu__trigger > span:last-child { display: none; }
-  .composer-attach, .composer-mic, .composer-wand { width: 34px; height: 34px; padding: 0; }
-  .composer-send { width: 38px; height: 38px; }
+  .composer-attach, .composer-mic, .composer-wand, .composer-stop, .composer-send { width: 34px; height: 34px; padding: 0; }
   .mode-menu__list { right: 0; max-width: calc(100cqw - 24px); }
 }
 

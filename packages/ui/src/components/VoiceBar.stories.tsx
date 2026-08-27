@@ -105,7 +105,7 @@ export const WaitingForModel: Story = {
   )
 }
 
-/** Пошёл стрим ответа: композер снова доступен под черновик, отправка — нет. */
+/** Пошёл стрим ответа: textarea доступна, следующий черновик отправляется в очередь, stop отменяет только текущий ответ. */
 export const ReplyStreaming: Story = {
   args: { state: 'thinking', replyStarted: true, draft: 'А ещё проверь кэш npm' }
 }
