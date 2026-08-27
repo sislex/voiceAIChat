@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 64 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 79 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-24 | ⚠ 5 коммит(ов) в areas после сверки: 8e522673 feat(make): скриншот превью или выбранного элемента во вложения чата (п.10) … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 11 коммит(ов) в areas после сверки: 8487fb08 Merge origin/main into CHAT-291 … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 12 коммит(ов) в areas после сверки: b088d0c5 test(make): E2E в headless Chromium — превью React, компоненты, Monaco, публикация (п.37) … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 59 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-25 | ⚠ 6 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 44 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) … |
@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 34 коммит(ов) в areas после сверки: 785a944e feat(make): diff-вью файла из снимка на Monaco DiffEditor … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 30 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 24 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 644 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 645 коммит(ов) в areas после сверки: b088d0c5 test(make): E2E в headless Chromium — превью React, компоненты, Monaco, публикация (п.37) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 108 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 35 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 25 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) … |
@@ -37,9 +37,9 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 7 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 49 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-27 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: b088d0c5 test(make): E2E в headless Chromium — превью React, компоненты, Monaco, публикация (п.37) |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: bde76bdd feat(make): публикация конкретного снимка — закреплённая версия по публичной ссылке (п.26) |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-27, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 

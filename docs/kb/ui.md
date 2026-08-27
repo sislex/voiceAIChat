@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: 8e522673
+checked: b088d0c5
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -506,6 +506,9 @@ read-only, side-by-side) или построчный фолбэк в jsdom; сл
 
 **Поиск** в дереве (`make-search-input`): по мере ввода фильтрует файлы по пути; Enter — поиск по
 содержимому через `make:search` (`make-matches`, клик по строке открывает файл), Esc сбрасывает.
+**Замена по проекту** (п.1): кнопка ⇄ открывает поле «Заменить на» и «Заменить все» → подтверждение →
+`make:replace` (`POST /api/make/:id/replace {query, replacement, matchCase}`; сервер `replaceAll` — подстрока
+без регистра во всех текстовых файлах, перед заменой снимок «Перед заменой «q» → «r»»).
 **Вкладка «Компоненты»** (`mode: 'stories'`, `make-stories`): слева файлы `*.stories.(jsx|tsx)` из
 `make:stories` (заголовок из `title`, стори — именованные экспорты), справа iframe на страницу-раннер
 `REST.makeStoriesPage(conv)?file=&story=&rev=` (сервер собирает HTML: import map и `<link rel=stylesheet>`

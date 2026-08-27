@@ -31,3 +31,4 @@ author: alexeyrozhnov
 П.10: скриншот превью/элемента во вложения чата (html2canvas, lazy).
 П.26: публикация конкретного снимка (закрепление, publicFile из .snapshots).
 П.37: E2E Make на Playwright (`npm run e2e:make`, вне CI).
+П.1: поиск и замена по всему проекту (make:replace, снимок перед заменой).

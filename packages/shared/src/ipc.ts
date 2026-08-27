@@ -152,6 +152,8 @@ export interface IpcInvokeMap {
   'make:upload': { arg: { conversationId: string; path: string; dataBase64: string }; result: MakeProjectState }
   'make:search': { arg: { conversationId: string; query: string }; result: { matches: MakeSearchMatch[] } }
   'make:stories': { arg: { conversationId: string }; result: { files: MakeStoryFile[] } }
+  /** Замена по всем текстовым файлам проекта; перед заменой — снимок. */
+  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean }; result: { files: number; replacements: number; state: MakeProjectState } }
   'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
   /** Текст файла из снимка — для diff-вью. */
   'make:snapshotFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeFileContent }
@@ -907,6 +909,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:upload',
   'make:search',
   'make:stories',
+  'make:replace',
   'make:snapshotDiff',
   'make:snapshotFile',
   'make:restoreFile',
