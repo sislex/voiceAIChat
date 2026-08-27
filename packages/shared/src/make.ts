@@ -152,8 +152,40 @@ export const MAKE_LIMITS = {
   /** Максимум хранимых снимков; старые удаляются. */
   maxSnapshots: 50,
   /** Максимальная глубина вложенности каталогов. */
-  maxDepth: 8
+  maxDepth: 8,
+  /** Квота проекта целиком: файлы + снимки + PNG-снимки стори (байты). */
+  maxProjectBytes: 64 * 1024 * 1024
 } as const
+
+/** Занятое место проекта (п.30) по составляющим — для полосы квоты и диалога очистки. */
+export interface MakeUsage {
+  filesBytes: number
+  filesCount: number
+  snapshotsBytes: number
+  snapshotsCount: number
+  shotsBytes: number
+  shotsCount: number
+  totalBytes: number
+  limitBytes: number
+  /** Бинарные файлы, на которые не ссылается ни один текстовый файл проекта. */
+  unusedAssets: { path: string; size: number }[]
+}
+
+export interface MakeCleanupOptions {
+  /** Оставить N последних снимков (остальные удалить); undefined — не трогать. */
+  keepSnapshots?: number
+  /** Удалить все PNG-снимки стори. */
+  shots?: boolean
+  /** Удалить неиспользуемые ассеты (по списку из usage). */
+  unusedAssets?: boolean
+}
+
+export interface MakeCleanupResult {
+  freedBytes: number
+  removed: { snapshots: number; shots: number; assets: number }
+  usage: MakeUsage
+  state: MakeProjectState
+}
 
 /** Расширения, которые панель считает текстом и открывает в редакторе. */
 export const MAKE_TEXT_EXTENSIONS = new Set([

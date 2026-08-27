@@ -259,4 +259,27 @@ describe('MakeWorkspaces', () => {
     expect(await ws.resolveMock(CONV, 'api/users', 'GET', true)).toMatchObject({ body: [{ id: 1 }] })
     expect(await ws.resolveMock(CONV, 'api/users', 'GET')).toMatchObject({ body: [{ id: 9 }] })
   })
+
+  it('место и очистка: usage по составляющим, неиспользуемые ассеты, cleanup бережёт закреплённый снимок', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.writeBuffer(CONV, 'img/used.png', Buffer.from('PNG1'))
+    await ws.writeBuffer(CONV, 'img/orphan.png', Buffer.from('PNG22'))
+    await ws.write(CONV, 'index.html', '<img src="img/used.png">')
+    const s1 = (await ws.snapshot(CONV, 's1')).snapshots[0]!
+    await ws.snapshot(CONV, 's2'); await ws.snapshot(CONV, 's3')
+    await ws.publish(CONV, { snapshotId: s1.id })
+    const u = await ws.usage(CONV)
+    expect(u.filesCount).toBe(5) // scaffold (3) + два png
+    expect(u.snapshotsCount).toBe(3)
+    expect(u.snapshotsBytes).toBeGreaterThan(0)
+    expect(u.totalBytes).toBe(u.filesBytes + u.snapshotsBytes + u.shotsBytes)
+    expect(u.unusedAssets).toEqual([{ path: 'img/orphan.png', size: 5 }])
+    const r = await ws.cleanup(CONV, { keepSnapshots: 0, unusedAssets: true })
+    expect(r.removed).toEqual({ snapshots: 2, shots: 0, assets: 1 })
+    expect(r.freedBytes).toBeGreaterThan(0)
+    expect(r.usage.snapshotsCount).toBe(1)
+    expect((await ws.snapshots(CONV))[0]!.id).toBe(s1.id)
+    expect(await ws.readBuffer(CONV, 'img/orphan.png')).toBeNull()
+  })
 })

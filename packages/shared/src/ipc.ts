@@ -1,7 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -163,6 +163,8 @@ export interface IpcInvokeMap {
   'make:libraryInsert': { arg: { conversationId: string; slug: string }; result: MakeProjectState }
   'make:libraryRemove': { arg: { slug: string }; result: { items: MakeLibraryItem[] } }
   'make:shots': { arg: { conversationId: string }; result: { shots: MakeStoryShot[] } }
+  'make:usage': { arg: { conversationId: string }; result: MakeUsage }
+  'make:cleanup': { arg: { conversationId: string } & MakeCleanupOptions; result: MakeCleanupResult }
   'make:shot': { arg: { conversationId: string; file: string; story: string; dataBase64: string }; result: { shots: MakeStoryShot[] } }
   'make:snapshotFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeFileContent }
   'make:restoreFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeProjectState }
@@ -912,6 +914,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:reset',
   'make:publish',
   'make:unpublish',
+  'make:usage',
+  'make:cleanup',
   'make:check',
   'make:template',
   'make:upload',

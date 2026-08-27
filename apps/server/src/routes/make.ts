@@ -75,7 +75,7 @@ export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
 
 function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof MakeError) {
-    const status = error.code === 'not_found' ? 404 : error.code === 'too_large' || error.code === 'too_many_files' ? 413 : error.code === 'exists' ? 409 : 400
+    const status = error.code === 'not_found' ? 404 : error.code === 'too_large' || error.code === 'too_many_files' ? 413 : error.code === 'exists' ? 409 : error.code === 'quota' ? 413 : 400
     return reply.code(status).send({ error: error.message, code: error.code })
   }
   throw error
@@ -248,6 +248,20 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null, slug: req.body?.slug, password: req.body?.password }) } catch (error) { return sendError(reply, error) }
   })
 
+  app.get<{ Params: { id: string } }>('/api/make/:id/usage', async (req, reply) => {
+    if (!own(uid(req), req.params.id, reply)) return reply
+    try { await workspaces.ensure(req.params.id); return await workspaces.usage(req.params.id) } catch (error) { return sendError(reply, error) }
+  })
+  app.post<{ Params: { id: string }; Body: { keepSnapshots?: number; shots?: boolean; unusedAssets?: boolean } | undefined }>('/api/make/:id/cleanup', async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    try {
+      await workspaces.ensure(req.params.id)
+      const result = await workspaces.cleanup(req.params.id, { keepSnapshots: req.body?.keepSnapshots, shots: req.body?.shots, unusedAssets: req.body?.unusedAssets })
+      hub.changed(userId, req.params.id, result.state.rev, [])
+      return result
+    } catch (error) { return sendError(reply, error) }
+  })
   app.delete<{ Params: { id: string } }>('/api/make/:id/publish', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try { return await workspaces.unpublish(req.params.id) } catch (error) { return sendError(reply, error) }
