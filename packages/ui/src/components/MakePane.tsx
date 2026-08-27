@@ -1427,7 +1427,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             <h3>Страница по адресу</h3>
             <p>Скачаем HTML и её стили/скрипты/картинки с того же домена — как стартовую точку для редизайна.</p>
             <div className="make-import-url">
-              <input type="url" aria-label="Адрес страницы" placeholder="https://example.com/" value={importUrl} onChange={(e) => setImportUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void runImport('url') }} disabled={importing} />
+              <input type="url" aria-label="Адрес страницы" placeholder="https://example.com/ или https://github.com/user/repo" value={importUrl} onChange={(e) => setImportUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void runImport('url') }} disabled={importing} />
               <Button size="sm" variant="primary" onClick={() => void runImport('url')} loading={importing} disabled={!importUrl.trim()}>Импортировать</Button>
             </div>
           </section>
