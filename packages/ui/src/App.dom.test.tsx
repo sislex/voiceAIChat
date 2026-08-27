@@ -341,9 +341,9 @@ describe('App — интеграция UI со стором и IPC', () => {
     expect(screen.getByText('Идеи для подарка')).toBeInTheDocument()
   })
 
-  it('в idle показывает бейдж «Готов» и сообщения активного разговора', async () => {
+  it('в idle не показывает статус в шапке и отображает сообщения активного разговора', async () => {
     await renderApp()
-    expect(screen.getByText('Готов')).toBeInTheDocument()
+    expect(screen.queryByText('Готов')).not.toBeInTheDocument()
     expect(
       screen.getByText(/какая сегодня погода обычно бывает в Лиссабоне/i)
     ).toBeInTheDocument()
@@ -356,12 +356,12 @@ describe('App — интеграция UI со стором и IPC', () => {
     expect(screen.queryByTestId('live-block')).not.toBeInTheDocument()
   })
 
-  it('отправка текста Enter создаёт сообщение и переводит в «Claude думает»', async () => {
+  it('отправка текста Enter создаёт сообщение без статуса модели в шапке', async () => {
     await renderApp()
     const input = screen.getByLabelText('Поле ввода сообщения')
     await userEvent.type(input, 'Привет!{Enter}')
-    expect(await screen.findByText('Claude думает', {}, { timeout: 10_000 })).toBeInTheDocument()
-    expect(screen.getByText('Привет!')).toBeInTheDocument()
+    expect(await screen.findByText('Привет!')).toBeInTheDocument()
+    expect(screen.queryByText('Claude думает')).not.toBeInTheDocument()
   })
 
   it('открытие и закрытие модалки настроек по кнопке ✕', async () => {
