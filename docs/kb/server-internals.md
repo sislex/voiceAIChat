@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
 updated: 2026-08-27
-checked: 38c1a131
+checked: a04ebf0d
 areas:
   - apps/server/src
 ---
@@ -85,7 +85,10 @@ MCP даёт `db.conversationOwner(id)`. Старый исследователь
 `*.stories.tsx`). **Сториз** (`make/stories.ts`): `parseStoryFile` — имена
 стори регуляркой по экспортам (код не исполняется на сервере), `renderStoriesPage` — HTML раннера
 для `GET /api/preview/make/:id/__stories__?file=&story=`; `GET /api/make/:id/stories`,
-`GET/POST /api/make/:id/shots` (визуальные снимки стори: PNG снимает клиент, сервер хранит в `.shots/<id>.png` +
+**Библиотека компонентов** (п.17, `make/library.ts`): `<dataDir>/make-library/<base64url(login)>/<slug>/{meta.json,
+files/…}`; `GET /api/make/library`, `POST /api/make/:id/library {name, paths}` (файлы читаются из проекта),
+`POST /api/make/:id/library/:slug/insert` (→ `importFiles(merge)` со снимком), `DELETE /api/make/library/:slug`;
+slug — транслит имени (`librarySlug`). `GET/POST /api/make/:id/shots` (визуальные снимки стори: PNG снимает клиент, сервер хранит в `.shots/<id>.png` +
 `meta.json`, ≤10 на стори, отдаёт `…/__shots__/<id>.png`; `.shots` не входит в список файлов и переживает reset;
 серверный Playwright для авто-снимков отложен — в прод-образе нет браузеров), `GET /api/preview/make/:id/__gallery__` (`renderGalleryPage` — сетка iframe-ов на раннер; те же `__stories__` и
 `__gallery__` отдаются и на публикации `/p/<token>/…` без входа, п.15) и

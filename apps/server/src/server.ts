@@ -42,6 +42,7 @@ import { registerRemoteBashMcp, RemoteFileBroker, REMOTE_BASH_MCP_PATH } from '.
 import { registerConsoleMcp, CONSOLE_MCP_PATH } from './mcp/consoleMcp.js'
 import { registerMakeMcp, MAKE_MCP_PATH } from './mcp/makeMcp.js'
 import { registerMakeRoutes } from './routes/make.js'
+import { MakeLibrary } from './make/library.js'
 import { MakeWorkspaces } from './make/workspace.js'
 import { MakeHub } from './make/hub.js'
 import { buildPublicMcpUrl } from './mcp/publicBase.js'
@@ -389,7 +390,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const makeWorkspaces = new MakeWorkspaces(opts.config.dataDir)
   const makeHub = new MakeHub()
   registerMakeMcp(app, { workspaces: makeWorkspaces, hub: makeHub, ownerOf: (id) => db.conversationOwner(id) }, mcpSecret)
-  registerMakeRoutes(app, { db, workspaces: makeWorkspaces, hub: makeHub })
+  registerMakeRoutes(app, { db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir) })
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
   // адресуется токеном ?turn= (его выдаёт и снимает TurnManager).
   registerKbMcp(app, {

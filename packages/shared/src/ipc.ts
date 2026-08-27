@@ -1,7 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -156,6 +156,12 @@ export interface IpcInvokeMap {
   'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean }; result: { files: number; replacements: number; state: MakeProjectState } }
   'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
   /** Текст файла из снимка — для diff-вью. */
+  'make:library': { arg: Record<string, never>; result: { items: MakeLibraryItem[] } }
+  /** Сохранить файлы проекта в библиотеку под именем. */
+  'make:libraryExport': { arg: { conversationId: string; name: string; paths: string[] }; result: { item: MakeLibraryItem } }
+  /** Вставить компонент из библиотеки в проект (существующие файлы перезаписываются). */
+  'make:libraryInsert': { arg: { conversationId: string; slug: string }; result: MakeProjectState }
+  'make:libraryRemove': { arg: { slug: string }; result: { items: MakeLibraryItem[] } }
   'make:shots': { arg: { conversationId: string }; result: { shots: MakeStoryShot[] } }
   'make:shot': { arg: { conversationId: string; file: string; story: string; dataBase64: string }; result: { shots: MakeStoryShot[] } }
   'make:snapshotFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeFileContent }
@@ -913,6 +919,10 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:stories',
   'make:replace',
   'make:snapshotDiff',
+  'make:library',
+  'make:libraryExport',
+  'make:libraryInsert',
+  'make:libraryRemove',
   'make:shots',
   'make:shot',
   'make:snapshotFile',

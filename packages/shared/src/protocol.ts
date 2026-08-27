@@ -162,6 +162,10 @@ export const REST = {
   makeImportUrl: (id: string) => `/api/make/${encodeURIComponent(id)}/import-url`,
   makeStories: (id: string) => `/api/make/${encodeURIComponent(id)}/stories`,
   /** Страница-раннер сториз внутри превью (cookie-аутентификация, как у превью). */
+  makeLibrary: '/api/make/library',
+  makeLibraryExport: (id: string) => `/api/make/${encodeURIComponent(id)}/library`,
+  makeLibraryInsert: (id: string, slug: string) => `/api/make/${encodeURIComponent(id)}/library/${encodeURIComponent(slug)}/insert`,
+  makeLibraryItem: (slug: string) => `/api/make/library/${encodeURIComponent(slug)}`,
   makeShots: (id: string) => `/api/make/${encodeURIComponent(id)}/shots`,
   makeShotImage: (id: string, shotId: string) => `/api/preview/make/${encodeURIComponent(id)}/__shots__/${encodeURIComponent(shotId)}.png`,
   makeGalleryPage: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/__gallery__`,

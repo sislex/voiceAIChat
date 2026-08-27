@@ -13,7 +13,7 @@ import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
 import { copyText } from '../lib/clipboard'
-import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
+import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -34,7 +34,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -643,6 +643,35 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) { toast.error(describeError(e)) } finally { setShooting2(false) }
   }
   const storyShots = useMemo(() => (story ? shots.filter((s) => s.file === story.file && s.story === story.name) : []), [shots, story])
+  // Библиотека компонентов (п.17): экспорт текущей стори (компонент + сториз) и вставка в проект.
+  const [libraryOpen, setLibraryOpen] = useState(false)
+  const [library, setLibrary] = useState<MakeLibraryItem[] | null>(null)
+  const loadLibrary = async (): Promise<void> => { try { setLibrary((await api['make:library']({})).items) } catch (e) { toast.error(describeError(e)) } }
+  const openLibrary = (): void => { setLibraryOpen(true); void loadLibrary() }
+  const exportStoryToLibrary = async (): Promise<void> => {
+    if (!story) return
+    const component = story.file.replace(/\.stories\.(jsx|tsx)$/i, (_m, ext: string) => `.${ext}`)
+    const name = component.slice(component.lastIndexOf('/') + 1).replace(/\.(jsx|tsx)$/i, '')
+    const paths = [story.file, ...(state?.files.some((f) => f.path === component) ? [component] : [])]
+    try {
+      const { item } = await api['make:libraryExport']({ conversationId, name, paths })
+      toast.success(`«${item.name}» сохранён в библиотеку (${item.files.length} файл.)`)
+    } catch (e) { toast.error(describeError(e)) }
+  }
+  const insertFromLibrary = async (item: MakeLibraryItem): Promise<void> => {
+    const clash = item.files.filter((p) => state?.files.some((f) => f.path === p))
+    if (clash.length > 0 && !(await confirm({ title: `Вставить «${item.name}»?`, message: `Файлы будут перезаписаны: ${clash.join(', ')}. Перед вставкой сохранится снимок.`, confirmLabel: 'Вставить' }))) return
+    try {
+      const next = await api['make:libraryInsert']({ conversationId, slug: item.slug })
+      setState(next); setPreviewRev(next.rev); setLibraryOpen(false)
+      toast.success(`«${item.name}» добавлен в проект`)
+      void loadStories()
+    } catch (e) { toast.error(describeError(e)) }
+  }
+  const removeFromLibrary = async (item: MakeLibraryItem): Promise<void> => {
+    if (!(await confirm({ title: `Удалить «${item.name}» из библиотеки?`, variant: 'danger', confirmLabel: 'Удалить' }))) return
+    try { setLibrary((await api['make:libraryRemove']({ slug: item.slug })).items) } catch (e) { toast.error(describeError(e)) }
+  }
   /** Публичная ссылка на стори (нужна публикация) — копируется в буфер. */
   const shareStory = async (): Promise<void> => {
     if (!story) return
@@ -812,6 +841,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {mode === 'stories' && story && onInsertToChat && <Button size="sm" variant="primary" onClick={sendStoryToChat}>Работать над компонентом</Button>}
       {mode === 'stories' && story && <Button size="sm" variant="ghost" loading={shooting2} onClick={() => void takeStoryShot()} title="Сохранить PNG текущей стори, чтобы потом сравнить «до/после»">📸 Снимок</Button>}
       {mode === 'stories' && storyShots.length > 0 && <Button size="sm" variant="ghost" aria-expanded={shotsOpen} onClick={() => setShotsOpen((v) => !v)}>Снимки ({storyShots.length})</Button>}
+      {mode === 'stories' && story && <Button size="sm" variant="ghost" onClick={() => void exportStoryToLibrary()} title="Сохранить компонент и его сториз в личную библиотеку — для вставки в другие проекты">В библиотеку</Button>}
+      {(mode === 'stories' || mode === 'code') && <Button size="sm" variant="ghost" onClick={openLibrary} title="Личная библиотека компонентов">Библиотека</Button>}
       {mode === 'stories' && <Button size="sm" variant="ghost" onClick={() => window.open(REST.makeGalleryPage(conversationId), '_blank', 'noopener')} title="Все стори проекта одной страницей">Галерея</Button>}
       {mode === 'stories' && story && <Button size="sm" variant="ghost" onClick={() => void shareStory()} title={state?.published ? 'Скопировать публичную ссылку на эту стори' : 'Сначала опубликуйте проект — ссылка будет без входа'}>Поделиться</Button>}
       {onInsertToChat && <IconButton size="sm" aria-label="Идеи для старта" title="Идеи: готовые промпты для приложений и сайтов" onClick={() => setIdeasOpen(true)}>✦</IconButton>}
@@ -1220,6 +1251,29 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           actions={<Button size="sm" variant="secondary" onClick={() => { void restoreFile(fileDiff.snapshotId, fileDiff.path); setFileDiff(null) }}>Вернуть файл из снимка</Button>}>
           <p className="make-ideas-lead">Слева — снимок «{fileDiff.label}», справа — текущая версия.</p>
           <CodeDiff path={fileDiff.path} original={fileDiff.original} modified={fileDiff.modified} />
+        </Dialog>
+      )}
+      {libraryOpen && (
+        <Dialog title="Библиотека компонентов" ariaLabel="Библиотека компонентов" size="md" onClose={() => setLibraryOpen(false)} testId="make-library">
+          <p className="make-ideas-lead">Компоненты, сохранённые из ваших проектов. «Вставить» копирует файлы в текущий проект (снимок сохраняется).</p>
+          {library === null ? <p className="make-diff-note">Загружаю…</p> : library.length === 0 ? (
+            <EmptyState title="Библиотека пуста" description="Откройте стори во вкладке «Компоненты» и нажмите «В библиотеку»." />
+          ) : (
+            <ul className="make-assets" aria-label="Компоненты библиотеки">
+              {library.map((item) => (
+                <li key={item.slug} className="make-asset make-library-item">
+                  <div className="make-asset-meta">
+                    <strong>{item.name}</strong>
+                    <small>{item.files.join(', ')} · {formatSize(item.bytes)} · {formatTime(item.updatedAt)}</small>
+                  </div>
+                  <span className="make-asset-actions">
+                    <Button size="sm" variant="primary" onClick={() => void insertFromLibrary(item)}>Вставить</Button>
+                    <IconButton size="sm" aria-label={`Удалить ${item.name} из библиотеки`} title="Удалить из библиотеки" onClick={() => void removeFromLibrary(item)}>✕</IconButton>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </Dialog>
       )}
       {assetsOpen && (

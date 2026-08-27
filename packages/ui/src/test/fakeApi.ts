@@ -1,4 +1,4 @@
-import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot } from '@shared/make'
+import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
@@ -34,6 +34,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   /** Содержимое файлов на момент снимка — для diff и восстановления одного файла. */
   const makeSnapContents = new Map<string, Map<string, string>>()
   const makeShots = new Map<string, MakeStoryShot[]>()
+  const library = new Map<string, MakeLibraryItem>()
+  const libraryFiles = new Map<string, Map<string, string>>()
   const makeRev = new Map<string, number>()
   const makePub = new Map<string, MakePublication>()
   const makeFiles = (id: string): Map<string, string> => {
@@ -274,6 +276,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       for (const [path, old] of snap ?? []) if (!now.has(path)) files.push({ path, status: 'removed', before: old.length, after: null })
       return { snapshotId, files: files.sort((a, b) => a.path.localeCompare(b.path)) }
     },
+    'make:library': async () => ({ items: [...library.values()] }),
+    'make:libraryExport': async ({ conversationId, name, paths }) => { const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); const item = { slug, name, files: paths, bytes: 0, sourceConversationId: conversationId, updatedAt: Date.now() }; library.set(slug, item); libraryFiles.set(slug, new Map(paths.map((p) => [p, makeFiles(conversationId).get(p) ?? '']))); return { item } },
+    'make:libraryInsert': async ({ conversationId, slug }) => { for (const [p, c] of libraryFiles.get(slug) ?? []) makeFiles(conversationId).set(p, c); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
+    'make:libraryRemove': async ({ slug }) => { library.delete(slug); return { items: [...library.values()] } },
     'make:shots': async ({ conversationId }) => ({ shots: makeShots.get(conversationId) ?? [] }),
     'make:shot': async ({ conversationId, file, story }) => { const list = [{ id: `sh${(makeShots.get(conversationId) ?? []).length + 1}`, file, story, at: Date.now(), rev: makeRev.get(conversationId) ?? 0 }, ...(makeShots.get(conversationId) ?? [])]; makeShots.set(conversationId, list); return { shots: list } },
     'make:snapshotFile': async ({ snapshotId, path }) => {
