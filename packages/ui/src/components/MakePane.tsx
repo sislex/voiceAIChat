@@ -10,6 +10,7 @@ import { captureIframeScreenshot } from '../lib/makeScreenshot'
 import { formatCode } from '../lib/formatCode'
 import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
+import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
 import { copyText } from '../lib/clipboard'
 import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
@@ -298,6 +299,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   // правку он делает через make_write_file.
   const [selection, setSelection] = useState<EditorSelection | null>(null)
   const [inlineOpen, setInlineOpen] = useState(false)
+  // Локальная история правок текущего файла (п.7).
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const localVersions: FileVersion[] = useMemo(() => (selectedPath && historyOpen ? readHistory(conversationId, selectedPath) : []), [conversationId, selectedPath, historyOpen, savedContent])
+  const restoreLocal = (v: FileVersion): void => { setContent(v.content); setHistoryOpen(false); toast.info('Версия подставлена в редактор — сохраните, чтобы применить') }
   const [inlineText, setInlineText] = useState('')
   const inlineInputRef = useRef<HTMLInputElement>(null)
   const openInline = (): void => { if (!selectedPath || !onAskAssistant) return; setInlineOpen(true); setTimeout(() => inlineInputRef.current?.focus(), 0) }
@@ -328,6 +333,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       // «Формат при сохранении» — вручной Cmd+S/кнопка; автосохранение (silent) не переформатирует под руками.
       const body = formatOnSave && !silent ? await formatCurrent(content, selectedPath, true) : content
       if (body !== content) setContent(body)
+      // Локальная история правок: запоминаем то, что было до перезаписи (к нему и хочется вернуться).
+      if (savedContent) pushHistory(conversationId, selectedPath, savedContent)
       const next = await api['make:write']({ conversationId, path: selectedPath, content: body })
       setSavedContent(body)
       setState(next)
@@ -343,7 +350,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } finally {
       setSaving(false)
     }
-  }, [api, conversationId, selectedPath, content, dirty, saving, toast, formatOnSave, formatCurrent])
+  }, [api, conversationId, selectedPath, content, dirty, saving, toast, formatOnSave, formatCurrent, savedContent])
   // Автосохранение: пауза после последней правки.
   const saveRef = useRef(save)
   saveRef.current = save
@@ -883,10 +890,22 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                     <label className="make-autosave"><input type="checkbox" checked={autosave} onChange={toggleAutosave} /> автосохранение</label>
                     <label className="make-autosave" title="Prettier перед сохранением по Cmd/Ctrl+S"><input type="checkbox" checked={formatOnSave} onChange={toggleFormatOnSave} /> формат при сохранении</label>
                     <Button size="sm" variant="ghost" loading={formatting} onClick={() => void formatNow()} title="Prettier (Shift+Alt+F в редакторе)">Форматировать</Button>
+                    <Button size="sm" variant="ghost" aria-expanded={historyOpen} onClick={() => setHistoryOpen((v) => !v)} title="Последние сохранённые версии этого файла в браузере">Версии</Button>
                     {onAskAssistant && <Button size="sm" variant="ghost" onClick={openInline} title="Cmd/Ctrl+I в редакторе: попросить ассистента изменить выделенное">✨ Правка ИИ{selection ? ` (${selection.endLine - selection.startLine + 1} стр.)` : ''}</Button>}
                     <span className={dirty ? 'make-editor-state dirty' : 'make-editor-state'}>{dirty ? 'не сохранено' : 'сохранено'}</span>
                   </span>
                 </div>
+                {historyOpen && (
+                  <div className="make-local-history" data-testid="make-local-history">
+                    {localVersions.length === 0
+                      ? <span className="make-diff-note">Локальных версий пока нет — они появляются после сохранений в этом браузере.</span>
+                      : localVersions.map((v, i) => (
+                        <button key={v.at + ':' + i} type="button" className="make-local-version" onClick={() => restoreLocal(v)} title={v.content.slice(0, 200)}>
+                          <span>{formatTime(v.at)}</span><small>{v.content.length} симв.</small>
+                        </button>
+                      ))}
+                  </div>
+                )}
                 {inlineOpen && (
                   <div className="make-inline" data-testid="make-inline" role="dialog" aria-label="Правка выделенного ассистентом">
                     <span className="make-inline-scope">{selection ? `Строки ${selection.startLine}–${selection.endLine}` : 'Весь файл'}</span>

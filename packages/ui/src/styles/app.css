@@ -6694,3 +6694,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-inline { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12.5px; }
 .make-inline-scope { color: var(--text-dim); white-space: nowrap; }
 .make-inline input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; background: var(--panel); color: var(--text); }
+
+/* Локальная история правок файла. */
+.make-local-history { display: flex; gap: 6px; flex-wrap: wrap; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12px; }
+.make-local-version { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; background: var(--panel); font: inherit; color: var(--text); cursor: pointer; }
+.make-local-version:hover { border-color: var(--accent); }
+.make-local-version small { color: var(--text-dim); }

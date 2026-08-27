@@ -407,4 +407,20 @@ describe('MakePane', () => {
     expect(onAskAssistant).toHaveBeenCalledWith(expect.stringContaining('Файл styles.css, строки 1–1'))
     expect(onAskAssistant.mock.calls[0]![0]).toContain('сделай переменной')
   })
+
+  it('локальные версии: после сохранения предыдущий текст доступен в «Версии» и подставляется в редактор', async () => {
+    renderPane()
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Файлы проекта' })).getByRole('button', { name: /^styles\.css/ }))
+    const editor = await screen.findByLabelText('Содержимое styles.css') as HTMLTextAreaElement
+    const original = editor.value
+    await userEvent.type(editor, '/* v2 */')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(screen.getByText('сохранено')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: 'Версии' }))
+    const panel = await screen.findByTestId('make-local-history')
+    await userEvent.click(within(panel).getAllByRole('button')[0]!)
+    expect((screen.getByLabelText('Содержимое styles.css') as HTMLTextAreaElement).value).toBe(original)
+  })
 })

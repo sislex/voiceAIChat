@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: d165b540
+checked: 17ccbe80
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -513,6 +513,10 @@ read-only, side-by-side) или построчный фолбэк в jsdom; сл
 
 **Поиск** в дереве (`make-search-input`): по мере ввода фильтрует файлы по пути; Enter — поиск по
 содержимому через `make:search` (`make-matches`, клик по строке открывает файл), Esc сбрасывает.
+**Локальные версии** (п.7): `lib/fileHistory.ts` — до 20 предыдущих сохранённых версий файла в localStorage
+(`vc.make.history:<conv>:<path>`, без дублей подряд, файлы > 200 K символов не пишутся); в `save()` перед
+перезаписью кладётся прежний `savedContent`. Кнопка «Версии» в шапке редактора показывает список, клик
+подставляет текст в редактор (сохранение — отдельно). Серверные снимки остаются источником правды.
 **Правка ИИ** (п.6): кнопка «✨ Правка ИИ» или Cmd/Ctrl+I в редакторе (⌘K занят палитрой команд) открывает строку
 `make-inline`: выделение (`onSelectionChange` из Monaco `onDidChangeCursorSelection` / `onSelect` textarea) +
 инструкция → `onAskAssistant` с файлом, строками и фрагментом; модель правит через make_read_file/make_write_file.
