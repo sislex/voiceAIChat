@@ -34,6 +34,13 @@ import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { BoardHub, NotificationHub } from './projects/boardHub.js'
 import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.js'
+
+/** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
+function cookieToken(header: string | undefined): string | undefined {
+  if (!header) return undefined
+  for (const item of header.split(';')) { const [k, ...rest] = item.trim().split('='); if (k === 'vc_session') return rest.join('=') }
+  return undefined
+}
 import { loadOrCreateSecret } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
@@ -1540,7 +1547,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         return
       }
       // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
-      const token = (request.query as { token?: string } | undefined)?.token
+      // Токен в query (desktop/старые клиенты) либо cookie-сессия web (п.5): браузер шлёт cookie при upgrade сам.
+      const token = (request.query as { token?: string } | undefined)?.token ?? cookieToken(request.headers.cookie)
       const user = resolveActiveUser(db, token, sessionSecret)
       if (!user) {
         socket.close()

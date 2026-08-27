@@ -11,14 +11,14 @@
 | 2 | Политика пароля: запрет пустого, минимум 10 символов; проверка по утечкам (HIBP k-anonymity) — опционально | ✅ `checkPasswordPolicy` (`@shared/passwordPolicy`: пустой/короче 10/повтор/частый/содержит логин) на создании пользователя → 400; HIBP k-anonymity при `VC_HIBP_CHECK=1` (fail-open, 3 с) |
 | 3 | Блокировка аккаунта после N неудач (счётчик в БД), уведомление админу | ✅ колонки `failed_logins/locked_until/lock_reason`: 5 подряд → замок 15 мин (423 + Retry-After), 10 → `blocked` с причиной `auto`; админка показывает «замок до…»/«заблокирован автоматически», в лог сервера — warn; разблокировка снимает всё |
 | 4 | Сессии с TTL и отзывом: таблица сессий (устройство, IP, last seen), «выйти везде», список в админке | ✅ таблица `sessions` (sid из токена, UA/IP/last_seen/expires 30 дней, отзыв), `/api/session/list|logout-all|:sid`, админ `GET users/:name/sessions`, `DELETE sessions/:sid`; диалог «Сессии и устройства» в меню аккаунта, раздел «Сессии» в админке |
-| 5 | Токен в HttpOnly-cookie + CSRF-токен для мутаций вместо localStorage | |
-| 6 | 2FA (TOTP) для admin; passkeys/WebAuthn как следующий шаг | |
-| 7 | Журнал безопасности: вход/выход/смена пароля/неудачи с IP и UA, страница в админке | |
+| 5 | Токен в HttpOnly-cookie + CSRF-токен для мутаций вместо localStorage | ✅ login ставит `vc_session` (HttpOnly, SameSite=Strict, Secure за https) и `vc_csrf`; мутации по cookie требуют `x-vc-csrf`; WS принимает cookie при upgrade; web хранит Bearer только в памяти, старый localStorage-токен переносится `POST /api/session/cookie` и удаляется; Bearer для desktop/агентов сохранён |
+| 6 | 2FA (TOTP) для admin; passkeys/WebAuthn как следующий шаг | ✅ TOTP RFC 6238 без зависимостей (`users/totp.ts`), `users.totp_secret`; логин → `{ requires2fa, ticket }` → `POST /api/session/2fa`; диалог «Двухфакторная защита» (otpauth-ссылка + ключ) для любого пользователя; passkeys — следующий шаг (⏸) |
+| 7 | Журнал безопасности: вход/выход/смена пароля/неудачи с IP и UA, страница в админке | ✅ таблица `security_events` (login/login_failed/login_locked/login_2fa_failed/logout/logout_all/password_set/twofactor_*/user_blocked/unblocked), `GET /api/admin/security?user=&limit=`, вкладка «Безопасность» у пользователя в админке |
 
 ## Регистрация и онбординг
 | № | Пункт | Статус |
 |---|---|---|
-| 8 | Саморегистрация по инвайт-ссылке (роль, срок, лимит использований) | |
+| 8 | Саморегистрация по инвайт-ссылке (роль, срок, лимит использований) | ✅ таблица `invites`, админ-роуты create/list/delete (+раздел «Инвайт-ссылки» в админке), публичные `GET /api/session/invite/:token` и `POST /api/session/register` (политика пароля, лимит 5/ч на IP), экран `#/invite/<token>` |
 | 9 | Приглашение по email с ссылкой на установку пароля (⏸ SMTP) | |
 | 10 | Сброс пароля: одноразовый код от админа / email (⏸ SMTP для email-варианта) | |
 | 11 | Обязательная смена временного пароля при первом входе (`mustChangePassword`) | |

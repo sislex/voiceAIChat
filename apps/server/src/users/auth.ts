@@ -9,12 +9,37 @@ import { SlidingWindowLimiter } from '../make/rateLimit.js'
 const LOGIN_LIMIT = 10
 const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
-import { REST, type SessionUser, SESSION_TTL_MS } from '@voicechat/shared'
+import { REST, type SessionUser, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
+import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js'
 
 const PREVIEW_SESSION_COOKIE = 'vc_preview_session'
 const PREVIEW_COOKIE_PATH = '/api/preview'
+
+/** Cookie-сессия (auth-roadmap п.5): HttpOnly-токен на весь /api + читаемый CSRF-токен для мутаций. */
+export const SESSION_COOKIE = 'vc_session'
+export const CSRF_COOKIE = 'vc_csrf'
+export const CSRF_HEADER = 'x-vc-csrf'
+function secureFlag(req: FastifyRequest): string {
+  const proto = String(req.headers['x-forwarded-proto'] ?? req.protocol)
+  return proto === 'https' ? '; Secure' : ''
+}
+export function sessionCookies(req: FastifyRequest, token: string, csrf: string, maxAgeSec: number): string[] {
+  return [
+    `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${secureFlag(req)}`,
+    `${CSRF_COOKIE}=${csrf}; Path=/; SameSite=Strict; Max-Age=${maxAgeSec}${secureFlag(req)}`
+  ]
+}
+export function clearSessionCookies(req: FastifyRequest): string[] {
+  return [`${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secureFlag(req)}`, `${CSRF_COOKIE}=; Path=/; SameSite=Strict; Max-Age=0${secureFlag(req)}`]
+}
+function cookieOf(req: FastifyRequest, name: string): string | undefined {
+  const header = req.headers.cookie
+  if (typeof header !== 'string') return undefined
+  for (const item of header.split(';')) { const [k, ...rest] = item.trim().split('='); if (k === name) return rest.join('=') }
+  return undefined
+}
 
 function previewCookie(token: string, maxAge?: number): string {
   return `${PREVIEW_SESSION_COOKIE}=${token}; Path=${PREVIEW_COOKIE_PATH}; HttpOnly; SameSite=Strict${maxAge === undefined ? '' : `; Max-Age=${maxAge}`}`
@@ -160,17 +185,31 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     }
     return resolveUser(db, token, secret)
   }
-  const sidOf = (req: FastifyRequest): string | null => verifyToken(bearer(req), secret)?.sid ?? null
+  const tokenOf = (req: FastifyRequest): string | undefined => bearer(req) ?? cookieOf(req, SESSION_COOKIE)
+  const sidOf = (req: FastifyRequest): string | null => verifyToken(tokenOf(req), secret)?.sid ?? null
   db.pruneSessions()
 
   app.addHook('preHandler', async (req, reply) => {
     const url = req.url.split('?')[0]
     if (!url.startsWith('/api/')) return // статика/SPA/ws — не трогаем
     if (isPublic(url)) return
-    const user = activeUser(bearer(req) ?? previewSession(req, url))
+    // Порядок: Bearer (desktop/агенты/старые клиенты) → cookie-сессия (web, п.5) → preview-cookie (iframe).
+    // Cookie авторизует мутации только с CSRF-заголовком, равным читаемой cookie: чужой сайт cookie отправит, заголовок — нет.
+    let token = bearer(req)
+    let viaCookie = false
+    if (!token) { token = cookieOf(req, SESSION_COOKIE); viaCookie = Boolean(token) }
+    if (!token) token = previewSession(req, url)
+    const user = activeUser(token)
     if (!user) {
       await reply.code(401).send({ error: 'unauthorized' })
       return reply
+    }
+    if (viaCookie && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      const csrf = cookieOf(req, CSRF_COOKIE)
+      if (!csrf || req.headers[CSRF_HEADER] !== csrf) {
+        await reply.code(403).send({ error: 'csrf' })
+        return reply
+      }
     }
     req.user = user
     const permission = projectPermissionForRequest(req.method, url)
@@ -197,7 +236,21 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   // окно скользящее, и брутфорс с одного адреса упирается в 429 независимо от того, угадал ли он пароль по пути.
   const loginByIp = new SlidingWindowLimiter(LOGIN_IP_LIMIT, LOGIN_WINDOW_MS)
   const loginByName = new SlidingWindowLimiter(LOGIN_LIMIT, LOGIN_WINDOW_MS)
+  const registerLimiter = new SlidingWindowLimiter(5, 60 * 60_000)
   app.decorate('resetLoginLimiters', () => { loginByIp.reset(); loginByName.reset() })
+  /** Ожидающие второго шага тикеты и незавершённые настройки 2FA — в памяти процесса, живут минуты. */
+  const pendingTwoFactor = new Map<string, { name: string; expires: number; attempts: number }>()
+  const pendingSetup = new Map<string, { secret: string; expires: number }>()
+  const issueSession = (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role']): { token: string; user: SessionUser; csrf: string } => {
+    const user: SessionUser = { name, role }
+    const sid = newSessionId()
+    const token = signToken(user, secret, sid)
+    db.createSession(sid, name, { ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), ttlMs: SESSION_TTL_MS })
+    db.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+    const csrf = newSessionId()
+    reply.header('set-cookie', [previewCookie(token), ...sessionCookies(req, token, csrf, Math.floor(SESSION_TTL_MS / 1000))])
+    return { token, user, csrf }
+  }
   app.post<{ Body: { name?: string; password?: string } }>(
     REST.sessionLogin,
     async (req, reply) => {
@@ -218,6 +271,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       if (!u) {
         if (existing) {
           const state = db.recordLoginFailure(existing.name)
+          db.logSecurityEvent({ user: existing.name, type: state?.lockedUntil || state?.blocked ? 'login_locked' : 'login_failed', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: state?.blocked ? 'блокировка после неудач' : state?.lockedUntil ? 'временный замок' : 'неверный пароль' })
           if (state?.blocked && !existing.blocked) app.log.warn({ user: existing.name, ip: req.ip }, 'auth: аккаунт заблокирован автоматически после неудачных входов')
           else if (state?.lockedUntil) app.log.warn({ user: existing.name, ip: req.ip, until: state.lockedUntil }, 'auth: временный замок после неудачных входов')
         }
@@ -226,55 +280,145 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       if (u.blocked) return reply.code(403).send({ error: u.lockReason === 'auto' ? 'учётная запись заблокирована после многократных неудачных входов — обратитесь к администратору' : 'учётная запись заблокирована' })
       db.resetLoginFailures(u.name)
       loginByName.forget(u.name.trim().toLowerCase())
-      const user: SessionUser = { name: u.name, role: u.role }
-      const sid = newSessionId()
-      const token = signToken(user, secret, sid)
-      db.createSession(sid, u.name, { ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), ttlMs: SESSION_TTL_MS })
-      reply.header('set-cookie', previewCookie(token))
-      return { token, user }
+      // 2FA (п.6): пароль верен, но сессию выдаём только после кода — клиенту уходит одноразовый тикет на 5 минут.
+      if (db.getUserTotpSecret(u.name)) {
+        const ticket = newSessionId()
+        pendingTwoFactor.set(ticket, { name: u.name, expires: Date.now() + 5 * 60_000, attempts: 0 })
+        return { requires2fa: true, ticket }
+      }
+      return issueSession(req, reply, u.name, u.role)
     }
   )
+
+  // Второй шаг входа (п.6): тикет + код TOTP → полноценная сессия. Тикет одноразовый, 5 попыток.
+  app.post<{ Body: { ticket?: string; code?: string } }>(REST.session2fa, async (req, reply) => {
+    const { ticket, code } = req.body ?? {}
+    const pending = ticket ? pendingTwoFactor.get(ticket) : undefined
+    if (!pending || pending.expires < Date.now()) { if (ticket) pendingTwoFactor.delete(ticket); return reply.code(401).send({ error: 'сессия входа истекла — введите пароль ещё раз' }) }
+    const secret = db.getUserTotpSecret(pending.name)
+    const u = db.getUser(pending.name)
+    if (!secret || !u || u.blocked) { pendingTwoFactor.delete(ticket!); return reply.code(401).send({ error: 'unauthorized' }) }
+    if (!verifyTotp(secret, String(code ?? ''))) {
+      pending.attempts += 1
+      db.logSecurityEvent({ user: pending.name, type: 'login_2fa_failed', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+      if (pending.attempts >= 5) pendingTwoFactor.delete(ticket!)
+      return reply.code(401).send({ error: 'неверный код подтверждения' })
+    }
+    pendingTwoFactor.delete(ticket!)
+    return issueSession(req, reply, u.name, u.role)
+  })
+  // Настройка 2FA: setup выдаёт секрет и otpauth-ссылку (ещё не включено), enable включает после верного кода, disable — по коду.
+  app.post(REST.session2faSetup, async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    const secretValue = newTotpSecret()
+    pendingSetup.set(user.name, { secret: secretValue, expires: Date.now() + 10 * 60_000 })
+    return { secret: secretValue, otpauth: otpauthUrl(user.name, secretValue), enabled: Boolean(db.getUserTotpSecret(user.name)) }
+  })
+  app.post<{ Body: { code?: string } }>(REST.session2faEnable, async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    const setup = pendingSetup.get(user.name)
+    if (!setup || setup.expires < Date.now()) return reply.code(400).send({ error: 'сначала запросите новый секрет' })
+    if (!verifyTotp(setup.secret, String(req.body?.code ?? ''))) return reply.code(400).send({ error: 'неверный код — проверьте время на устройстве и повторите' })
+    db.setUserTotpSecret(user.name, setup.secret)
+    pendingSetup.delete(user.name)
+    db.logSecurityEvent({ user: user.name, type: 'twofactor_enabled', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+    app.log.info({ user: user.name }, 'auth: включён второй фактор')
+    return { ok: true }
+  })
+  app.post<{ Body: { code?: string } }>(REST.session2faDisable, async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    const secretValue = db.getUserTotpSecret(user.name)
+    if (!secretValue) return { ok: true }
+    if (!verifyTotp(secretValue, String(req.body?.code ?? ''))) return reply.code(400).send({ error: 'неверный код' })
+    db.setUserTotpSecret(user.name, null)
+    db.logSecurityEvent({ user: user.name, type: 'twofactor_disabled', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+    app.log.info({ user: user.name }, 'auth: второй фактор выключен')
+    return { ok: true }
+  })
+  app.get(REST.session2fa, async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    return { enabled: Boolean(db.getUserTotpSecret(user.name)) }
+  })
 
   // Выпускает preview-cookie из действующего Bearer-токена. Login покрывает только
   // свежий вход; сессии из localStorage (и после перезапуска браузера — cookie
   // сессионная) без этого роута остаются без cookie, и iframe получает 401.
   // Путь публичный (префикс /api/session/), поэтому Bearer проверяется здесь.
   app.post(REST.sessionPreview, async (req, reply) => {
-    const user = activeUser(bearer(req))
+    const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     reply.header('set-cookie', previewCookie(signToken(user, secret)))
     return { ok: true }
   })
 
   app.get(REST.sessionMe, async (req) => {
-    const user = activeUser(bearer(req))
+    const user = activeUser(tokenOf(req))
     return user ? { user } : { user: null }
   })
 
   app.post(REST.sessionLogout, async (req, reply) => {
-    const token = bearer(req)
-    if (!activeUser(token)) return reply.code(401).send({ error: 'unauthorized' })
+    const token = tokenOf(req)
+    const who = activeUser(token)
+    if (!who) return reply.code(401).send({ error: 'unauthorized' })
     db.revokeSession(token!)
     const sid = sidOf(req)
     if (sid) db.revokeSessionById(sid)
-    reply.header('set-cookie', previewCookie('', 0))
+    db.logSecurityEvent({ user: who.name, type: 'logout', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+    reply.header('set-cookie', [previewCookie('', 0), ...clearSessionCookies(req)])
     return { ok: true }
+  })
+
+  // Саморегистрация по инвайту (auth-roadmap п.8): проверка ссылки и создание учётки с политикой пароля → сразу сессия.
+  app.get<{ Params: { token: string } }>('/api/session/invite/:token', async (req, reply) => {
+    const inv = db.inviteUsable(req.params.token)
+    if (!inv) return reply.code(404).send({ error: 'Приглашение недействительно или истекло' })
+    return { role: inv.role, expiresAt: inv.expiresAt, note: inv.note }
+  })
+  app.post<{ Body: { token?: string; name?: string; password?: string } }>(REST.sessionRegister, async (req, reply) => {
+    const { token, name, password } = req.body ?? {}
+    if (!registerLimiter.hit(req.ip).ok) return reply.code(429).send({ error: 'Слишком много регистраций — попробуйте позже' })
+    const inv = token ? db.inviteUsable(token) : null
+    if (!inv) return reply.code(404).send({ error: 'Приглашение недействительно или истекло' })
+    const login = (name ?? '').trim()
+    if (!/^[a-zA-Z0-9._-]{3,32}$/.test(login)) return reply.code(400).send({ error: 'Логин: 3–32 символа, латиница, цифры, точка, дефис, подчёркивание' })
+    if (db.getUser(login)) return reply.code(409).send({ error: 'Такой логин уже занят' })
+    const violation = checkPasswordPolicy(password ?? '', { name: login })
+    if (violation) return reply.code(400).send({ error: violation })
+    const u = db.createUser(login, password ?? '', inv.role)
+    db.consumeInvite(inv.token)
+    db.logSecurityEvent({ user: login, type: 'registered', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `по инвайту ${inv.createdBy}, роль ${inv.role}` })
+    return issueSession(req, reply, u.name, u.role)
+  })
+
+  // Перенос старой localStorage-сессии в cookie (п.5): Bearer → HttpOnly cookie + CSRF, токен из localStorage клиент удаляет.
+  app.post(REST.sessionCookie, async (req, reply) => {
+    const token = bearer(req)
+    if (!activeUser(token)) return reply.code(401).send({ error: 'unauthorized' })
+    const csrf = newSessionId()
+    reply.header('set-cookie', [previewCookie(token!), ...sessionCookies(req, token!, csrf, Math.floor(SESSION_TTL_MS / 1000))])
+    return { ok: true, csrf }
   })
 
   // Сессии пользователя (auth-roadmap п.4): список, «выйти везде» (кроме текущей), отзыв одной.
   app.get(REST.sessionList, async (req, reply) => {
-    const user = activeUser(bearer(req))
+    const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     const current = sidOf(req)
     return { sessions: db.listSessions(user.name).map((s) => ({ ...s, current: s.sid === current })) }
   })
   app.post(REST.sessionLogoutAll, async (req, reply) => {
-    const user = activeUser(bearer(req))
+    const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
-    return { revoked: db.revokeUserSessions(user.name, sidOf(req)) }
+    const revoked = db.revokeUserSessions(user.name, sidOf(req))
+    db.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}` })
+    return { revoked }
   })
   app.delete<{ Params: { sid: string } }>('/api/session/:sid', async (req, reply) => {
-    const user = activeUser(bearer(req))
+    const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     const s = db.getSession(req.params.sid)
     if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })

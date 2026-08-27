@@ -7037,3 +7037,15 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .uusage-disk--alert { color: #c0392b; font-weight: 600; }
 
 .ublock--lock { background: #fff4e0; color: #b26a00; }
+
+/* Журнал безопасности (auth-roadmap п.7) */
+.admin-security { width: 100%; border-collapse: collapse; font-size: 12px; }
+.admin-security th, .admin-security td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.admin-security--bad td:nth-child(2) { color: #c0392b; font-weight: 600; }
+
+/* Инвайты (auth-roadmap п.8) */
+.uadmin-invites { margin: 8px 0; }
+.uadmin-invite-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; font-size: 12px; }
+.uadmin-invite-form input[type=number] { width: 64px; margin-left: 4px; }
+.invite-url { display: block; font-size: 11px; color: var(--text-dim); word-break: break-all; }
+.invite--dead { opacity: .6; }

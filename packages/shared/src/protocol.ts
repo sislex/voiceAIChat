@@ -143,6 +143,13 @@ export const REST = {
   sessionLogout: '/api/session/logout',
   /** Сессии текущего пользователя и «выйти везде» (auth-roadmap п.4). */
   sessionList: '/api/session/list',
+  /** Bearer → HttpOnly cookie-сессия + CSRF (auth-roadmap п.5). */
+  sessionCookie: '/api/session/cookie',
+  /** Второй фактор TOTP (auth-roadmap п.6): код после пароля, настройка и отключение. */
+  session2fa: '/api/session/2fa',
+  session2faSetup: '/api/session/2fa/setup',
+  session2faEnable: '/api/session/2fa/enable',
+  session2faDisable: '/api/session/2fa/disable',
   sessionLogoutAll: '/api/session/logout-all',
   sessionRevoke: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
   adminSessions: (user: string) => `/api/admin/users/${encodeURIComponent(user)}/sessions`,
@@ -280,6 +287,13 @@ export const REST = {
   // --- Админ-страница пользователей (только admin) ---
   adminUsers: '/api/admin/users',
   adminUsersUsageSummary: '/api/admin/users/usage-summary',
+  /** Журнал безопасности (auth-roadmap п.7): `?user=&limit=`. */
+  adminSecurity: '/api/admin/security',
+  /** Инвайты на саморегистрацию (auth-roadmap п.8). */
+  adminInvites: '/api/admin/invites',
+  adminInvite: (token: string) => `/api/admin/invites/${encodeURIComponent(token)}`,
+  sessionInvite: (token: string) => `/api/session/invite/${encodeURIComponent(token)}`,
+  sessionRegister: '/api/session/register',
   adminUser: (name: string) => `/api/admin/users/${encodeURIComponent(name)}`,
   adminUserBlock: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/block`,
   adminUserLlmAccess: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/llm-access`,

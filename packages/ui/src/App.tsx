@@ -17,6 +17,8 @@ import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { MakePane } from './components/MakePane'
 import { SessionsDialog } from './components/SessionsDialog'
+import { TwoFactorDialog } from './components/TwoFactorDialog'
+import { InviteRegister } from './components/InviteRegister'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -246,6 +248,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const projectsActions = useProjectsActions()
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
   const [sessionsOpen, setSessionsOpen] = useState(false)
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
@@ -1385,12 +1388,19 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       </div>
     )
   }
+  const inviteToken = /^#\/invite\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
+  if (session.authRequired && !session.currentUser && inviteToken && window.session?.inviteInfo && window.session.register) {
+    return <InviteRegister token={decodeURIComponent(inviteToken)} api={{ inviteInfo: window.session.inviteInfo, register: window.session.register }} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} />
+  }
   if (session.authRequired && !session.currentUser) {
     return (
       <LoginScreen
         onLogin={(name, password) => void runtime.login(name, password)}
         error={session.authError}
         theme={settingsState.settings.theme}
+        twoFactor={Boolean(session.twoFactorTicket)}
+        onCode={(code) => void runtime.loginCode(code)}
+        onCancelTwoFactor={() => runtime.cancelTwoFactor()}
       />
     )
   }
@@ -1523,6 +1533,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenCi={session.authRequired ? menu(() => navigate('/ci')) : undefined}
         currentUser={session.currentUser}
         onOpenSessions={session.authRequired && window.session?.sessions ? () => setSessionsOpen(true) : undefined}
+        onOpenTwoFactor={session.authRequired && window.session?.twoFactor ? () => setTwoFactorOpen(true) : undefined}
         onLogout={session.authRequired ? async () => {
           const accepted = await confirm({
             title: 'Выйти из ChatAI?',
@@ -1726,6 +1737,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} />}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
+      {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
       {sessionsOpen && window.session?.sessions && window.session.logoutAll && window.session.revokeSession && <SessionsDialog load={window.session.sessions} revoke={window.session.revokeSession} logoutAll={window.session.logoutAll} onClose={() => setSessionsOpen(false)} />}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} />}
       {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
@@ -1991,6 +2003,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           sessions={admin.adminSessions}
           onLoadSessions={() => void adminActions.loadAdminSessions()}
           onRevokeSession={(sid) => void adminActions.revokeAdminSession(sid)}
+          security={admin.adminSecurity}
+          onLoadSecurity={() => void adminActions.loadAdminSecurity()}
+          invites={admin.adminInvites}
+          onLoadInvites={() => void adminActions.loadAdminInvites()}
+          onCreateInvite={(input) => void adminActions.createAdminInvite(input)}
+          onDeleteInvite={(token) => void adminActions.deleteAdminInvite(token)}
+          inviteBaseUrl={`${window.location.origin}${window.location.pathname}`}
           onOpenConversation={(id) => void adminActions.openAdminConversation(id)}
           llmAccess={admin.adminUserLlmAccess}
           onSaveLlmAccess={(access) => void adminActions.saveAdminUserLlmAccess(access)}

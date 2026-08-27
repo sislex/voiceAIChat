@@ -369,6 +369,9 @@ export interface SessionInfo {
   userAgent: string
   current?: boolean
 }
+/** Ответ логина при включённом втором факторе (auth-roadmap п.6): пароль верен, нужен код по одноразовому тикету. */
+export interface LoginChallenge { requires2fa: true; ticket: string }
+
 /** TTL сессии по умолчанию — 30 дней без активности; `remember=false` (п.15) даст короче. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000
 

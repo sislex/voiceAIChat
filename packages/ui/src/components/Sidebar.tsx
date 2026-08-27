@@ -270,6 +270,8 @@ export interface SidebarProps {
   onLogout?: () => void
   /** Сессии и устройства (auth-roadmap п.4); нет в desktop. */
   onOpenSessions?: () => void
+  /** Двухфакторная защита (auth-roadmap п.6); нет в desktop. */
+  onOpenTwoFactor?: () => void
   /** Режим списка: чаты или проекты. По умолчанию 'chats'. */
   mode?: SidebarMode
   /** Сегмент «Чаты | Проекты»; не задан — переключатель скрыт (desktop/local). */
@@ -332,6 +334,7 @@ export function Sidebar({
   currentUser,
   onLogout,
   onOpenSessions,
+  onOpenTwoFactor,
   mode = 'chats',
   onModeChange,
   activeProjectId = null,
@@ -832,6 +835,12 @@ export function Sidebar({
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenSessions)}>
                     <span className="footico">📱</span>
                     Сессии и устройства
+                  </Button>
+                )}
+                {onOpenTwoFactor && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenTwoFactor)}>
+                    <span className="footico">🔐</span>
+                    Двухфакторная защита
                   </Button>
                 )}
                 {onLogout && (

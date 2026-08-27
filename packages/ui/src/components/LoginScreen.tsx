@@ -8,18 +8,40 @@ export interface LoginScreenProps {
   error?: string | null
   /** Тема интерфейса (для обёртки). */
   theme?: 'light' | 'dark' | 'green'
+  /** Второй фактор (auth-roadmap п.6): пароль принят, ждём код из приложения-аутентификатора. */
+  twoFactor?: boolean
+  onCode?: (code: string) => void
+  onCancelTwoFactor?: () => void
 }
 
 /** Экран входа многопользовательского режима (web). Пароль может быть пустым. */
-export function LoginScreen({ onLogin, error, theme = 'light' }: LoginScreenProps): JSX.Element {
+export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false, onCode, onCancelTwoFactor }: LoginScreenProps): JSX.Element {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
 
   const submit = (e: FormEvent): void => {
     e.preventDefault()
     if (name.trim()) onLogin(name.trim(), password)
   }
 
+  if (twoFactor) {
+    return (
+      <div className="login-screen" data-theme={theme}>
+        <form className="login-card" onSubmit={(e) => { e.preventDefault(); if (/^\d{6}$/.test(code.replace(/\s+/g, ''))) onCode?.(code.replace(/\s+/g, '')) }}>
+          <h1 className="login-title">Код подтверждения</h1>
+          <p className="login-hint">Введите 6 цифр из приложения-аутентификатора.</p>
+          <label className="login-field">
+            <span>Код</span>
+            <input className="login-input" value={code} autoFocus inputMode="numeric" autoComplete="one-time-code" aria-label="Код подтверждения" maxLength={7} onChange={(e) => setCode(e.target.value)} />
+          </label>
+          {error && <p className="login-error" role="alert">{error}</p>}
+          <Button variant="primary" type="submit" disabled={!/^\d{6}$/.test(code.replace(/\s+/g, ''))}>Подтвердить</Button>
+          <Button variant="ghost" type="button" onClick={onCancelTwoFactor}>Назад к паролю</Button>
+        </form>
+      </div>
+    )
+  }
   return (
     <div className="login-screen" data-theme={theme}>
       <form className="login-card" onSubmit={submit}>
