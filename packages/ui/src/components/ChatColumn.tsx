@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
+import type { ClaudeLogEntry, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
 import type { WorkspaceView } from '@shared/projects'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
@@ -17,7 +17,6 @@ import {
   dateTimeTooltip,
   formatElapsed,
   speakerName,
-  statusBadge,
   type LiveSegment
 } from '../lib/view'
 import { Dots } from './animations'
@@ -67,16 +66,6 @@ function writeSavedScroll(conversationId: string, value: SavedScroll): void {
 
 const EDIT_MIN_ROWS = 2
 const EDIT_MAX_ROWS = 4
-
-/** Доступное имя кнопки сообщает именно непросмотренные обращения. */
-function kbUsageLabel(count: number, active: boolean, mode: KbContextMode): string {
-  const head = count > 0
-    ? `Использование базы знаний — ${count} новых обращени${count === 1 ? 'е' : count >= 2 && count <= 4 ? 'я' : 'й'}`
-    : 'Использование базы знаний — новых обращений нет'
-  if (active) return `${head}; идёт обращение`
-  if (mode === 'off') return `${head}; база знаний выключена для этого чата`
-  return head
-}
 
 function modeLabel(mode?: string): string {
   if (mode === 'plan') return 'Планирование'
@@ -160,14 +149,6 @@ export interface ChatColumnProps {
   onDownloadModel?: () => void
   /** Экспортировать текущий разговор (Markdown/JSON). */
   onExport?: (format: 'md' | 'json') => void
-  /** Открыть панель «Использование БЗ» этого чата. */
-  onOpenKbUsage?: () => void
-  /** Сколько обращений к базе знаний было в чате (надстрочный счётчик кнопки). */
-  kbUsageCount?: number
-  /** Идёт обращение к БЗ прямо сейчас — вместо счётчика показываем «думает». */
-  kbUsageActive?: boolean
-  /** Режим БЗ разговора — для подписи кнопки (при 'off' она объясняет, почему пусто). */
-  kbContextMode?: KbContextMode
   /** Мета последнего хода (длительность/токены/стоимость); null — не показывать. */
   turnMeta?: TurnMeta | null
   /** Голосовая панель, рендерится внизу колонки (как в прототипе). */
@@ -242,10 +223,6 @@ export function ChatColumn({
   downloadPercent = 0,
   onDownloadModel,
   onExport,
-  onOpenKbUsage,
-  kbUsageCount = 0,
-  kbUsageActive = false,
-  kbContextMode = 'auto',
   turnMeta,
   voiceBar,
   agents = [],
@@ -559,28 +536,6 @@ export function ChatColumn({
           </label>
         )}
         <span className="mhead-right">
-          {onOpenKbUsage && (
-            <span className="kbusewrap">
-              <IconButton
-                size="sm"
-                variant="secondary"
-                data-testid="kb-usage-open"
-                aria-label={kbUsageLabel(kbUsageCount, kbUsageActive, kbContextMode)}
-                title={kbUsageLabel(kbUsageCount, kbUsageActive, kbContextMode)}
-                onClick={onOpenKbUsage}
-              >
-                📚
-              </IconButton>
-              {/* Счётчик — украшение: число уже есть в aria-label кнопки,
-                  поэтому от скринридера он скрыт (иначе имя читается дважды). */}
-              {kbUsageActive ? (
-                <span className="kbusebadge kbusebadge--live" aria-hidden data-testid="kb-usage-live"><Dots /></span>
-              ) : kbUsageCount > 0 ? (
-                <span className="kbusebadge" aria-hidden data-testid="kb-usage-count">{kbUsageCount > 99 ? '99+' : kbUsageCount}</span>
-              ) : null}
-            </span>
-          )}
-          <span className="badge">{statusBadge(state, aiLabel)}</span>
           {onExport && messages.length > 0 && (
             <span className="exportwrap" ref={exportMenuRef}>
               <IconButton
