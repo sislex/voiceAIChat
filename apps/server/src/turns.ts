@@ -45,6 +45,9 @@ import { kbViewOf } from './kb/access.js'
 import { buildKbAutoContext } from './kb/autoContext.js'
 import type { KbUsageTracker } from './kb/usage.js'
 
+/** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
+export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
+
 export interface TurnManagerDeps {
   db: VoiceChatDb
   claude: LlmClient
@@ -502,7 +505,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Навыки: выключенные (skill-<encoded>) убираем из выбранных для этого хода.
     const effectiveSkills = (conv?.skillNames ?? []).filter((name) => !disabledContext.has(`skill-${encodeURIComponent(name)}`))
     // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
-    const disallowedTools = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
+    const disallowedTools: string[] = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
     const turnId = randomUUID()
     if (deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
@@ -742,7 +745,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
-    if (executionDisabled || (role !== 'admin' && !remote)) permissionMode = 'plan'
+    // Make без машины (roadmap-3 п.2): инструменты make_* не требуют машины и безопасны, а нативный
+    // plan-режим CLI их глушит. Для Claude запускаем default, но запрещаем все встроенные инструменты
+    // (shell/файлы сервера) — остаются только MCP. Codex в read-only sandbox блокирует HTTP-MCP, поэтому
+    // там остаётся план (ограничение задокументировано в KB).
+    const makeOnlyExecution = conv?.assistantKind === 'make' && provider === 'claude' && !executionDisabled
+      && role !== 'admin' && !remote && permissionMode !== 'plan'
+    if (executionDisabled || (role !== 'admin' && !remote && !makeOnlyExecution)) permissionMode = 'plan'
+    if (makeOnlyExecution) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
     // Полный контекст хода: все сообщения разговора на момент отправки
     // (реплика пользователя уже сохранена клиентом перед claude.send).
     const contextMessages = deps.db
