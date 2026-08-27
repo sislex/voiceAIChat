@@ -95,6 +95,16 @@ describe('MakePane', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '💬' })).toBeInTheDocument())
   })
 
+  it('read-only ссылка внутри ChatAI: создать и отозвать из диалога публикации (п.33)', async () => {
+    const { api } = renderPane()
+    await userEvent.click(await screen.findByRole('button', { name: 'Опубликовать' }))
+    await userEvent.click(within(screen.getByTestId('make-share')).getByRole('button', { name: 'Создать ссылку для чтения' }))
+    await waitFor(() => expect(screen.getByTestId('make-share-url')).toHaveTextContent('#/make-shared/share123'))
+    expect((await api['make:state']({ conversationId: CONV })).shared?.token).toBe('share123')
+    await userEvent.click(within(screen.getByTestId('make-share')).getByRole('button', { name: 'Отозвать' }))
+    await waitFor(() => expect(within(screen.getByTestId('make-share')).getByRole('button', { name: 'Создать ссылку для чтения' })).toBeInTheDocument())
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)

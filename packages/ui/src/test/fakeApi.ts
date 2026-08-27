@@ -1,4 +1,4 @@
-import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment } from '@shared/make'
+import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment, type MakeShare } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
@@ -35,6 +35,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const makeSnapContents = new Map<string, Map<string, string>>()
   const makeShots = new Map<string, MakeStoryShot[]>()
   const makeComments = new Map<string, MakeComment[]>()
+  const makeShare = new Map<string, MakeShare>()
   const library = new Map<string, MakeLibraryItem>()
   const libraryFiles = new Map<string, Map<string, string>>()
   const makeRev = new Map<string, number>()
@@ -54,7 +55,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     files: [...makeFiles(id).entries()].map(([path, content]) => ({ path, size: new TextEncoder().encode(content).length, updatedAt: 1 })).sort((x, y) => x.path.localeCompare(y.path)),
     snapshots: [...makeSnaps(id)],
     rev: makeRev.get(id) ?? 0,
-    published: makePub.get(id) ?? null
+    published: makePub.get(id) ?? null,
+    shared: makeShare.get(id) ?? null
   })
 
   let idCounter = 0
@@ -282,6 +284,16 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:libraryInsert': async ({ conversationId, slug }) => { for (const [p, c] of libraryFiles.get(slug) ?? []) makeFiles(conversationId).set(p, c); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
     'make:libraryRemove': async ({ slug }) => { library.delete(slug); return { items: [...library.values()] } },
     'make:shots': async ({ conversationId }) => ({ shots: makeShots.get(conversationId) ?? [] }),
+    'make:share': async ({ conversationId }) => { if (!makeShare.has(conversationId)) makeShare.set(conversationId, { token: 'share123', createdAt: 1, url: '#/make-shared/share123' }); return makeState(conversationId) },
+    'make:unshare': async ({ conversationId }) => { makeShare.delete(conversationId); return makeState(conversationId) },
+    'make:shared': async ({ token }) => {
+      const conv = [...makeShare.entries()].find(([, s]) => s.token === token)?.[0] ?? (token === 'share123' ? 'make-1' : null)
+      if (!conv) throw new Error('Ссылка недействительна или отозвана')
+      const st = makeState(conv)
+      return { token, owner: 'admin', title: 'Проект 1', files: st.files, snapshots: st.snapshots, rev: st.rev }
+    },
+    'make:sharedFile': async ({ path }) => { const content = makeFiles('make-1').get(path); if (content === undefined) throw new Error('Файл не найден'); return { path, content, size: new TextEncoder().encode(content).length, updatedAt: 1 } },
+    'make:sharedStories': async () => ({ files: [] }),
     'make:comments': async ({ conversationId }) => ({ comments: makeComments.get(conversationId) ?? [] }),
     'make:commentAdd': async ({ conversationId, selector, elementLabel, text }) => {
       const list = [{ id: `c${(makeComments.get(conversationId) ?? []).length + 1}`, selector, elementLabel, text, author: 'admin', createdAt: 1, resolved: false }, ...(makeComments.get(conversationId) ?? [])]

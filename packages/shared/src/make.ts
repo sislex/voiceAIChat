@@ -131,7 +131,29 @@ export interface MakeProjectState {
   /** Монотонный номер изменения — UI перезагружает превью, когда он растёт. */
   rev: number
   published: MakePublication | null
+  /** Read-only ссылка внутри ChatAI (п.33): любой вошедший пользователь видит проект без права правок. */
+  shared?: MakeShare | null
 }
+
+export interface MakeShare {
+  token: string
+  createdAt: number
+  /** Hash-маршрут приложения: `#/make-shared/<token>`. */
+  url: string
+}
+
+/** Что видит получатель read-only ссылки. */
+export interface MakeSharedState {
+  token: string
+  owner: string
+  title: string
+  files: MakeFileInfo[]
+  snapshots: MakeSnapshot[]
+  rev: number
+}
+
+export const MAKE_SHARED_ROUTE = '/make-shared/'
+export const makeSharedUrl = (token: string): string => `#${MAKE_SHARED_ROUTE}${encodeURIComponent(token)}`
 
 /** Публичный префикс публикаций: маршрут вне `/api/`, поэтому без Bearer/cookie. */
 export const MAKE_PUBLIC_PREFIX = '/p/'

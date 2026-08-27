@@ -6,7 +6,7 @@ import { monacoLanguageFor } from './monacoLang'
 import type { CodeEditorProps } from '../CodeEditor'
 
 /** Редактор на Monaco — настоящий VS Code: подсветка TSX/JSX, автодополнение, поиск, сворачивание. */
-export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLabel, markers, projectFiles, onSelectionChange, onInlineCommand }: CodeEditorProps): JSX.Element {
+export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLabel, markers, projectFiles, onSelectionChange, onInlineCommand, readOnly }: CodeEditorProps): JSX.Element {
   const monaco = useMemo(() => setupMonaco(), [])
   useEffect(() => { if (projectFiles) syncProjectModels(monaco, projectFiles) }, [monaco, projectFiles])
   const saveRef = useRef(onSave)
@@ -51,6 +51,7 @@ export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLa
         onMount={onMount}
         loading={<div className="make-monaco-loading">Загружаю редактор…</div>}
         options={{
+          readOnly: Boolean(readOnly),
           fontSize: 12.5,
           fontFamily: "'SF Mono', ui-monospace, Menlo, Consolas, monospace",
           tabSize: 2,

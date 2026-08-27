@@ -4,6 +4,7 @@ import { parseOperationsRoute } from '@voicechat/operations-app'
 import { parseProjectsRoute } from '@voicechat/projects-app'
 import type { RendererApi } from '@shared/ipc'
 import { summarizeConversationUsage } from '@shared/usageSummary'
+import { MakeSharedView } from './components/MakeSharedView'
 import type { EditorContextPayload, LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
@@ -128,7 +129,7 @@ export function appendWidgetAction(items: WidgetUserAction[], action: WidgetActi
 }
 
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
-const HOST_UTILITY_PAGES: readonly string[] = ['users', 'personalization']
+const HOST_UTILITY_PAGES: readonly string[] = ['users', 'personalization', 'make-shared']
 
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
@@ -202,7 +203,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const operationsRoute = parseOperationsRoute(path)
   const utilitySeg = operationsRoute
     ? operationsRoute.page === 'history' ? (operationsRoute.engine === 'claude' ? 'claude-code' : 'codex') : operationsRoute.page === 'knowledge' ? 'kb' : operationsRoute.page
-    : segments.length >= 1 && HOST_UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || (segments[0] === 'users' && segments.length === 2)) ? segments[0] : null
+    : segments.length >= 1 && HOST_UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || ((segments[0] === 'users' || segments[0] === 'make-shared') && segments.length === 2)) ? segments[0] : null
   const routeKbDocumentId = operationsRoute?.page === 'knowledge' ? (operationsRoute.documentId ?? null) : null
   const routeUserName = segments[0] === 'users' ? (segments[1] ?? null) : null
   const onUtilityPage = utilitySeg !== null
@@ -1934,6 +1935,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         />
       )}
 
+      {utilitySeg === 'make-shared' && segments[1] && window.api && (
+        <MakeSharedView key={segments[1]} token={segments[1]} api={window.api} ensurePreview={window.session?.ensurePreview} onBack={() => navigate('/')} />
+      )}
       {utilitySeg === 'users' && admin.usersOpen && (
         <Suspense fallback={<div role="status">Загрузка Administration…</div>}><UsersAdmin
           variant="page"

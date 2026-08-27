@@ -54,3 +54,4 @@ author: alexeyrozhnov
 П.32: комментарии к элементам превью — .comments.json, панель, метки/подсветка в iframe, промпт «Исправить все».
 П.39: rate-limit импорта ZIP/URL (скользящее окно, 429 + Retry-After).
 П.40: копии примитивов ui-kit в packages/ui/src/components/ui удалены (остался SidebarToggle).
+П.33: read-only шаринг внутри ChatAI — share-токен, /api/make/shared/*, страница #/make-shared/<token>.

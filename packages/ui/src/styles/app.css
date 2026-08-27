@@ -6812,3 +6812,16 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .make-preview-split { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
   .make-comments { border-left: 0; border-top: 1px solid var(--border); max-height: 45%; }
 }
+
+/* Read-only шаринг Make (п.33) */
+.make-share { margin-top: var(--space-3); padding-top: var(--space-2); border-top: 1px solid var(--border-soft); display: grid; gap: var(--space-1); }
+.make-share h4 { margin: 0; font-size: 13px; }
+.make-shared { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); }
+.make-shared-head { flex-wrap: wrap; }
+.make-shared-title { font-size: 14px; }
+.make-shared-badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--surface-hover); color: var(--text-dim); }
+.make-shared .make-frame-host { flex: 1; min-height: 0; }
+.make-shared-code { flex: 1; min-height: 0; }
+.make-snaps { list-style: none; margin: 0; padding: var(--space-3); display: grid; gap: var(--space-1); }
+.make-snap { display: grid; gap: 2px; padding: var(--space-2); border: 1px solid var(--border-soft); border-radius: var(--radius-medium); }
+.make-snap small { color: var(--text-dim); }

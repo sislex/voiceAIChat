@@ -18,6 +18,8 @@ export interface CodeEditorProps {
   onSelectionChange?: (sel: EditorSelection | null) => void
   /** Cmd/Ctrl+I в редакторе — «сделай с выделенным…» (⌘K занят палитрой команд приложения). */
   onInlineCommand?: () => void
+  /** Только чтение (read-only шаринг, п.33): правки и сохранение отключены. */
+  readOnly?: boolean
 }
 
 export interface EditorSelection { startLine: number; endLine: number; text: string }
@@ -37,7 +39,7 @@ export function CodeEditor(props: CodeEditorProps): JSX.Element {
 }
 
 /** Textarea + подсветка: прозрачный textarea поверх <pre> с теми же метриками, скролл синхронизирован. */
-export function FallbackEditor({ path, value, onChange, onSave, ariaLabel, onSelectionChange, onInlineCommand }: CodeEditorProps): JSX.Element {
+export function FallbackEditor({ path, value, onChange, onSave, ariaLabel, onSelectionChange, onInlineCommand, readOnly }: CodeEditorProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const highlightRef = useRef<HTMLPreElement | null>(null)
   const highlighted = useMemo(() => highlightCode(value, path), [value, path])
@@ -62,6 +64,7 @@ export function FallbackEditor({ path, value, onChange, onSave, ariaLabel, onSel
       <pre ref={highlightRef} className="make-highlight" aria-hidden="true"><code dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
       <textarea
         ref={textareaRef}
+        readOnly={readOnly}
         className="make-textarea"
         aria-label={ariaLabel}
         value={value}
