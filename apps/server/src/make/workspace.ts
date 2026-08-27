@@ -14,7 +14,7 @@ import {
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment } from '@voicechat/shared'
 import { mockCandidates, unwrapMockEnvelope } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
@@ -30,6 +30,7 @@ export class MakeError extends Error {
 const SNAPSHOTS_DIR = '.snapshots'
 /** Файл публикации проекта (в его корне) и индекс токен → разговор (общий каталог). */
 const PUBLISH_FILE = '.publish.json'
+const COMMENTS_FILE = '.comments.json'
 /** Содержимое `.publish.json`; passwordHash = `<соль>:<sha256(соль:пароль)>`. */
 interface PublishRaw { token: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number }
 const SHOTS_DIR = '.shots'
@@ -230,6 +231,45 @@ export class MakeWorkspaces {
     return out.sort((a, b) => b.createdAt - a.createdAt)
   }
 
+  // ---- Комментарии к элементам превью (п.32): .comments.json, переживает reset как .publish.json ----
+
+  async comments(conversationId: string): Promise<MakeComment[]> {
+    try {
+      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), COMMENTS_FILE), 'utf8')) as MakeComment[]
+      return Array.isArray(raw) ? raw : []
+    } catch { return [] }
+  }
+
+  private async saveComments(conversationId: string, list: MakeComment[]): Promise<MakeComment[]> {
+    await writeFile(join(this.dirOf(conversationId), COMMENTS_FILE), JSON.stringify(list), 'utf8')
+    return list
+  }
+
+  async addComment(conversationId: string, input: { selector: string; elementLabel: string; text: string; author: string }): Promise<MakeComment[]> {
+    const text = input.text.trim().slice(0, 2000)
+    const selector = input.selector.trim().slice(0, 500)
+    if (!text || !selector) throw new MakeError('invalid_path', 'Нужны селектор и текст комментария')
+    const list = await this.comments(conversationId)
+    if (list.length >= 500) throw new MakeError('too_many_files', 'Слишком много комментариев — удалите решённые')
+    const item: MakeComment = { id: `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`, selector, elementLabel: input.elementLabel.slice(0, 160), text, author: input.author, createdAt: Date.now(), resolved: false }
+    return this.saveComments(conversationId, [item, ...list])
+  }
+
+  async updateComment(conversationId: string, commentId: string, patch: { resolved?: boolean; text?: string }): Promise<MakeComment[]> {
+    const list = await this.comments(conversationId)
+    const idx = list.findIndex((c) => c.id === commentId)
+    if (idx < 0) throw new MakeError('not_found', 'Комментарий не найден')
+    const cur = list[idx]!
+    list[idx] = { ...cur, resolved: patch.resolved ?? cur.resolved, text: patch.text?.trim() ? patch.text.trim().slice(0, 2000) : cur.text }
+    return this.saveComments(conversationId, list)
+  }
+
+  async removeComment(conversationId: string, commentId: string): Promise<MakeComment[]> {
+    const list = await this.comments(conversationId)
+    if (!list.some((c) => c.id === commentId)) throw new MakeError('not_found', 'Комментарий не найден')
+    return this.saveComments(conversationId, list.filter((c) => c.id !== commentId))
+  }
+
   // ---- Квота и очистка (п.30) ---------------------------------------------
 
   private async dirBytes(dir: string): Promise<number> {
@@ -420,7 +460,7 @@ export class MakeWorkspaces {
   private async clearFiles(conversationId: string): Promise<void> {
     const root = this.dirOf(conversationId)
     for (const entry of await readdir(root)) {
-      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR) continue
+      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE) continue
       await rm(join(root, entry), { recursive: true, force: true })
     }
   }

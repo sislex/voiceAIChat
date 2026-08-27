@@ -77,6 +77,24 @@ describe('MakePane', () => {
     await waitFor(async () => expect((await api['make:state']({ conversationId: CONV })).published?.passwordProtected).toBe(false))
   })
 
+  it('комментарии к превью: кнопка 💬 открывает панель, выбранный элемент комментируется, счётчик открытых (п.32)', async () => {
+    const { api } = renderPane()
+    await userEvent.click(await screen.findByRole('button', { name: '💬' }))
+    const panel = screen.getByTestId('make-comments')
+    expect(within(panel).getByLabelText('Текст комментария')).toBeDisabled()
+    // Выбор элемента приходит из iframe сообщением инспектора.
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'vc-make.selected', selector: 'h1', tag: 'h1', text: 'Привет', html: '<h1>Привет</h1>' }, source: frame.contentWindow }))
+    await waitFor(() => expect(within(panel).getByLabelText('Текст комментария')).toBeEnabled())
+    await userEvent.type(within(panel).getByLabelText('Текст комментария'), 'Крупнее')
+    await userEvent.click(within(panel).getByRole('button', { name: 'Добавить' }))
+    await waitFor(() => expect(within(panel).getByText('Крупнее')).toBeInTheDocument())
+    expect((await api['make:comments']({ conversationId: CONV })).comments[0]).toMatchObject({ selector: 'h1', elementLabel: '<h1> Привет' })
+    expect(screen.getByRole('button', { name: '💬 1' })).toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Решено' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '💬' })).toBeInTheDocument())
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)

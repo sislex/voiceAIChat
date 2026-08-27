@@ -9,6 +9,7 @@ import { CodeEditor, type EditorSelection } from './CodeEditor'
 import { CodeDiff } from './CodeDiff'
 import { MakeTokensDialog } from './MakeTokensDialog'
 import { MakeUsageDialog } from './MakeUsageDialog'
+import { MakeCommentsPanel } from './MakeCommentsPanel'
 import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { MakeControlField, type ArgType } from './MakeControls'
 import { captureIframeScreenshot } from '../lib/makeScreenshot'
@@ -18,7 +19,7 @@ import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
 import { copyText } from '../lib/clipboard'
-import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
+import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -39,7 +40,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -192,6 +193,25 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
+  // Комментарии к элементам (п.32): список грузим один раз при открытии панели, метки шлём в превью на каждый ready.
+  const [comments, setComments] = useState<MakeComment[] | null>(null)
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const commentsRef = useRef<MakeComment[]>([])
+  const sendPins = (list: MakeComment[] = commentsRef.current): void => {
+    const open = list.filter((c) => !c.resolved)
+    frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.pins', items: list.map((c) => ({ selector: c.selector, n: open.indexOf(c) + 1, text: c.text, resolved: c.resolved })) }, '*')
+  }
+  const applyComments = (list: MakeComment[]): void => { commentsRef.current = list; setComments(list); sendPins(list) }
+  useEffect(() => {
+    let alive = true
+    api['make:comments']({ conversationId }).then((r) => { if (alive) applyComments(r.comments) }).catch(() => { if (alive) applyComments([]) })
+    return () => { alive = false }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId])
+  const commentAction = async (run: () => Promise<{ comments: MakeComment[] }>): Promise<void> => {
+    try { applyComments((await run()).comments) } catch (e) { toast.error(describeError(e)) }
+  }
+  const highlightInPreview = (selector: string): void => { setMode('preview'); frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.highlight', selector }, '*') }
   const [exportOpen, setExportOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [importUrl, setImportUrl] = useState('')
@@ -333,6 +353,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       }
       if (data.type === 'vc-make.ready') {
         frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.inspect', enabled: inspect }, '*')
+        if (commentsRef.current.length) sendPins()
         // Превью перезагрузилось (правка ассистента/своя) — вернуть скролл и якорь, чтобы не прыгать наверх.
         if (pageStateRef.current) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.restore', ...pageStateRef.current }, '*')
         if (envRef.current.scheme !== 'auto' || envRef.current.lang) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', ...envRef.current }, '*')
@@ -851,6 +872,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             {['ru', 'en', 'de', 'fr', 'es', 'zh', 'ar'].map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
           <IconButton size="sm" aria-label="Проверить доступность" title="axe-core внутри превью: контраст, alt, подписи, заголовки" disabled={a11yBusy} onClick={() => void runA11y()}>♿</IconButton>
+          <Button size="sm" variant={commentsOpen ? 'secondary' : 'ghost'} aria-pressed={commentsOpen} onClick={() => setCommentsOpen((v) => !v)} title="Комментарии к элементам превью">💬{comments && comments.some((c) => !c.resolved) ? ` ${comments.filter((c) => !c.resolved).length}` : ''}</Button>
           {onAttachImage && <IconButton size="sm" aria-label="Скриншот превью в чат" title={selected ? 'Скриншот выбранного элемента — во вложения чата' : 'Скриншот превью — во вложения чата'} disabled={shooting} onClick={() => void screenshotToChat()}>📷</IconButton>}
           <IconButton size="sm" aria-label="Открыть в новой вкладке" title="Открыть в новой вкладке" onClick={() => window.open(`${base}index.html`, '_blank', 'noopener')}>↗</IconButton>
         </>
@@ -922,6 +944,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               </div>
             </section>
           )}
+          <div className={commentsOpen ? 'make-preview-split' : undefined}>
           <div className={`make-frame-host make-frame-host--${device}`}>
             {previewReady && <iframe
               ref={frameRef}
@@ -933,6 +956,19 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"
               style={frameWidth ? { width: `${frameWidth}px` } : undefined}
             />}
+          </div>
+          {commentsOpen && (
+            <MakeCommentsPanel
+              comments={comments ?? []}
+              selected={selected ? { selector: selected.selector, tag: selected.tag, text: selected.text } : null}
+              onAdd={(text) => commentAction(() => api['make:commentAdd']({ conversationId, selector: selected!.selector, elementLabel: `<${selected!.tag}> ${selected!.text.slice(0, 60)}`.trim(), text }))}
+              onResolve={(id, resolved) => void commentAction(() => api['make:commentUpdate']({ conversationId, commentId: id, resolved }))}
+              onRemove={(id) => void commentAction(() => api['make:commentRemove']({ conversationId, commentId: id }))}
+              onHighlight={highlightInPreview}
+              onAskAssistant={onAskAssistant ?? onInsertToChat}
+              onClose={() => setCommentsOpen(false)}
+            />
+          )}
           </div>
           {a11y !== null && (
             <section className={a11y.length ? 'make-a11y make-a11y--bad' : 'make-a11y'} aria-label="Проверка доступности" data-testid="make-a11y">

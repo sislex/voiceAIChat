@@ -171,6 +171,18 @@ export interface MakeUsage {
   unusedAssets: { path: string; size: number }[]
 }
 
+/** Комментарий к элементу превью (п.32): привязан к селектору, автор — имя пользователя. */
+export interface MakeComment {
+  id: string
+  selector: string
+  /** Краткое описание элемента на момент комментария (тег + текст) — селектор может «уехать». */
+  elementLabel: string
+  text: string
+  author: string
+  createdAt: number
+  resolved: boolean
+}
+
 export interface MakeCleanupOptions {
   /** Оставить N последних снимков (остальные удалить); undefined — не трогать. */
   keepSnapshots?: number

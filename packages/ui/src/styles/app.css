@@ -6788,3 +6788,27 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-usage-clean legend { font-size: 12px; color: var(--text-dim); padding: 0 4px; }
 .make-usage-opt { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; }
 .make-usage-keep { width: 56px; padding: 2px 6px; }
+
+/* Комментарии к элементам превью (п.32) */
+.make-preview-split { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-2); min-height: 0; flex: 1; }
+.make-preview-split > .make-frame-host { min-width: 0; }
+.make-comments { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); border-left: 1px solid var(--border); background: var(--surface); min-height: 0; overflow: auto; font-size: 13px; }
+.make-comments-head { display: flex; align-items: center; gap: var(--space-2); }
+.make-comments-head small { color: var(--text-dim); }
+.make-comment-form { display: grid; gap: var(--space-1); }
+.make-comment-form textarea { resize: vertical; font: inherit; font-size: 13px; }
+.make-comment-target { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--accent); }
+.make-comment-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.make-comment { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: var(--space-2); align-items: start; padding: var(--space-1) 0; border-top: 1px solid var(--border-soft); }
+.make-comment.resolved { opacity: .6; }
+.make-comment-pin { width: 24px; height: 24px; border-radius: 12px; border: 0; background: var(--danger); color: var(--danger-fg); font: 600 12px/24px inherit; cursor: pointer; }
+.make-comment.resolved .make-comment-pin { background: var(--text-dim); }
+.make-comment-body { min-width: 0; display: grid; gap: 2px; }
+.make-comment-body p { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.make-comment-body small { color: var(--text-dim); font-size: 11px; }
+.make-comment-el { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.make-comment-actions { display: inline-flex; gap: 2px; align-items: center; }
+@media (max-width: 720px) {
+  .make-preview-split { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .make-comments { border-left: 0; border-top: 1px solid var(--border); max-height: 45%; }
+}

@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-27
-checked: 4fd3cae2
+checked: d55b165a
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -283,6 +283,8 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 **Мок-API проекта (п.29).** Если запрошенного файла нет, превью (`/api/preview/make/:id/*`) и публикация (`/p/…`, `/s/…`) ищут `mock/<путь>.<METHOD>.json` → `mock/<путь>.json` → `mock/<путь>/index[.<METHOD>].json` (`mockCandidates` в `@shared/makeMock`) и отдают JSON с `x-vc-mock: 1`. Файл — либо тело как есть, либо конверт `{ "$status", "$headers", "$delay" (≤ 5000 мс), "$body" }` (`unwrapMockEnvelope`). Не-GET методы (`POST/PUT/PATCH/DELETE`) на этих путях отдают только моки; на публикации `__auth__` обрабатывается тем же маршрутом (`publicMutation`). На публикации со закреплённым снимком моки берутся из снимка. Битый JSON мока → 500 с текстом ошибки. Прямой запрос файла `mock/…` мокам не подлежит (отдаётся как обычный файл).
 
 **Квота и очистка (п.30).** `MAKE_LIMITS.maxProjectBytes` (64 МБ) считается по файлам + `.snapshots` + `.shots`; превышение при записи — `MakeError('quota')` → 413 с подсказкой открыть «Место». `GET /api/make/:id/usage` → `MakeUsage` (байты/счётчики по составляющим, `unusedAssets` — бинарники, имя которых не встречается ни в одном текстовом файле ≤ 512 КБ). `POST /api/make/:id/cleanup` `{ keepSnapshots?, shots?, unusedAssets? }` → `MakeCleanupResult { freedBytes, removed, usage, state }`; снимок, закреплённый в публикации, не удаляется; после очистки рассылается `make.changed`. Мосты `make:usage` / `make:cleanup`.
+
+**Комментарии к элементам превью (п.32).** `GET/POST /api/make/:id/comments`, `PATCH/DELETE /api/make/:id/comments/:commentId` → `{ comments: MakeComment[] }` (`id, selector, elementLabel, text, author = uid, createdAt, resolved`); хранятся в `.comments.json` проекта (переживает `reset`, как `.publish.json`), лимит 500. Мосты `make:comments` / `make:commentAdd` / `make:commentUpdate` / `make:commentRemove`. Инспектор превью понимает два новых сообщения родителя: `vc-make.pins { items: [{ selector, n, text, resolved }] }` — рисует нумерованные метки поверх элементов (fixed-слой, пересчёт на scroll/resize) и `vc-make.highlight { selector }` — прокрутка к элементу и красная обводка на 1,6 с.
 `REST.makeUpload` (POST `/api/make/:id/upload {path, dataBase64}`, bodyLimit 4 МБ) → мост `make:upload` —
 бинарники из панели; на сервере `MakeWorkspaces.writeBuffer` (общие лимиты с `write`).
 `REST.makeSearch` (`GET …/search?q=` → `{matches: MakeSearchMatch[]}`), `REST.makeStories` (`GET …/stories` →
