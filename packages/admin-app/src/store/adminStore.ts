@@ -53,7 +53,9 @@ export interface AdminState {
 export interface AdminActions {
   openUsers(): Promise<void>
   closeUsers(): void
-  createUserAccount(name: string, password: string, role: UserRole): Promise<void>
+  createUserAccount(name: string, password: string, role: UserRole, mustChangePassword?: boolean): Promise<void>
+  /** Код сброса пароля (auth-roadmap п.10); null — клиент не умеет. */
+  issueResetCode(name: string): Promise<{ code: string; expiresAt: number } | null>
   updateUserRole(name: string, role: UserRole): Promise<void>
   setUserBlocked(name: string, blocked: boolean): Promise<void>
   deleteUserAccount(name: string): Promise<void>
@@ -316,13 +318,17 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     actions: {
       openUsers,
       closeUsers,
-      async createUserAccount(name, password, role) {
+      async createUserAccount(name, password, role, mustChangePassword) {
         try {
-          await client.createUser({ name, password, role })
+          await client.createUser({ name, password, role, ...(mustChangePassword ? { mustChangePassword: true } : {}) })
           await refreshAdminUsers()
         } catch (err) {
           fail(err)
         }
+      },
+      async issueResetCode(name) {
+        if (!client.resetCode) return null
+        try { return await client.resetCode({ name }) } catch (err) { fail(err, () => undefined); return null }
       },
       async updateUserRole(name, role) {
         try {

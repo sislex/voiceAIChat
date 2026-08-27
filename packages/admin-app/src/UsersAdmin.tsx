@@ -23,7 +23,7 @@ function AdminFrame({ variant, onClose, children }: { variant: 'modal' | 'page';
 }
 
 /** Подписи событий журнала безопасности (auth-roadmap п.7). */
-const SECURITY_LABEL: Record<SecurityEventType, string> = { invite_created: 'Создан инвайт', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
+const SECURITY_LABEL: Record<SecurityEventType, string> = { reset_code_issued: 'Выдан код сброса', password_reset: 'Пароль сброшен по коду', password_changed: 'Пароль изменён', invite_created: 'Создан инвайт', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
 
 export interface UsersAdminProps {
   variant?: 'modal' | 'page'
@@ -43,7 +43,9 @@ export interface UsersAdminProps {
   conversationId: string | null
   currentUserName: string
   onSelect: (name: string) => void
-  onCreate: (name: string, password: string, role: import('@shared/types').UserRole) => void
+  onCreate: (name: string, password: string, role: import('@shared/types').UserRole, mustChangePassword?: boolean) => void
+  /** Код сброса пароля (auth-roadmap п.10): возвращает код для передачи пользователю. */
+  onResetCode?: (name: string) => Promise<{ code: string; expiresAt: number } | null>
   onUpdateRole?: (name: string, role: import('@shared/types').UserRole) => void
   onSetBlocked: (name: string, blocked: boolean) => void
   onDelete: (name: string) => void
@@ -136,6 +138,7 @@ export function UsersAdmin({
   currentUserName,
   onSelect,
   onCreate,
+  onResetCode,
   onUpdateRole = () => undefined,
   onSetBlocked,
   onDelete,
@@ -180,6 +183,9 @@ export function UsersAdmin({
   const [inviteNote, setInviteNote] = useState('')
   const [invitesOpen, setInvitesOpen] = useState(false)
   const [copiedInvite, setCopiedInvite] = useState<string | null>(null)
+  /** Временный пароль при создании (п.11) и выданный код сброса (п.10). */
+  const [newTemp, setNewTemp] = useState(true)
+  const [resetInfo, setResetInfo] = useState<{ name: string; code: string; expiresAt: number } | null>(null)
   const [usageDays, setUsageDays] = useState<7 | 30 | null>(30)
   const [usageConversationId, setUsageConversationId] = useState('')
   const [engineDraft, setEngineDraft] = useState<AdminLlmEngineInput>(EMPTY_ENGINE)
@@ -215,7 +221,7 @@ export function UsersAdmin({
   const submitCreate = (): void => {
     const n = newName.trim()
     if (!n) return
-    onCreate(n, newPass, newRole)
+    onCreate(n, newPass, newRole, newTemp)
     setNewName('')
     setNewPass('')
     setNewRole('developer')
@@ -259,7 +265,7 @@ export function UsersAdmin({
           {users.map((u) => (
             <button key={u.name} className={u.name === selected ? 'cc-item on' : 'cc-item'} onClick={() => onSelect(u.name)} data-testid="user-item">
               <span className="cc-name">
-                {u.name} {u.blocked && <span className="ublock" title={u.lockReason === 'auto' ? 'Автоматически: слишком много неверных паролей подряд' : undefined}>{u.lockReason === 'auto' ? 'заблокирован автоматически' : 'заблокирован'}</span>}{!u.blocked && u.lockedUntil && u.lockedUntil > Date.now() && <span className="ublock ublock--lock" title="Временный замок после неудачных входов; снимается сам или разблокировкой">замок до {new Date(u.lockedUntil).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>}
+                {u.name} {u.mustChangePassword && <span className="ublock ublock--lock" title="Временный пароль — сменит при входе">временный пароль</span>}{u.blocked && <span className="ublock" title={u.lockReason === 'auto' ? 'Автоматически: слишком много неверных паролей подряд' : undefined}>{u.lockReason === 'auto' ? 'заблокирован автоматически' : 'заблокирован'}</span>}{!u.blocked && u.lockedUntil && u.lockedUntil > Date.now() && <span className="ublock ublock--lock" title="Временный замок после неудачных входов; снимается сам или разблокировкой">замок до {new Date(u.lockedUntil).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>}
               </span>
               <span className="cc-sub">{u.role} · {u.agents.length} маш. · {u.conversationCount} разг.</span>
             </button>
@@ -274,6 +280,7 @@ export function UsersAdmin({
               <option value="observer">observer</option>
               <option value="admin">admin</option>
             </select>
+            <label className="make-autosave" title="Пользователь обязан сменить пароль при первом входе"><input type="checkbox" aria-label="Временный пароль" checked={newTemp} onChange={(e) => setNewTemp(e.target.checked)} /> временный пароль</label>
             <Button variant="primary" disabled={!newName.trim()} onClick={submitCreate}>Создать</Button>
           </div>}
           {onLoadInvites && (
@@ -352,6 +359,7 @@ export function UsersAdmin({
                     <>
                       <select aria-label="Роль пользователя" value={cur.role} onChange={(event) => onUpdateRole(cur.name, event.target.value as import('@shared/types').UserRole)}><option value="admin">admin</option><option value="developer">developer</option><option value="tester">tester</option><option value="observer">observer</option></select>
                       <Button size="sm" onClick={() => setConfirmBlock({ name: cur.name, blocked: !cur.blocked })}>{cur.blocked ? 'Разблокировать' : 'Заблокировать'}</Button>
+                      {onResetCode && <Button size="sm" onClick={() => void onResetCode(cur.name).then((r) => { if (r) setResetInfo({ name: cur.name, ...r }) })} title="Одноразовый код на 24 часа: пользователь вводит его на экране входа вместо пароля">Код сброса</Button>}
                       {confirmDel === cur.name ? (
                         <>
                           <Button variant="danger" size="sm" onClick={() => onDelete(cur.name)}>Удалить всё</Button>
@@ -365,6 +373,9 @@ export function UsersAdmin({
                 </span>
               </div>
 
+              {resetInfo && resetInfo.name === cur.name && (
+                <p className="uusage-note" role="status" data-testid="admin-reset-code">Код сброса для <b>{cur.name}</b>: <code>{resetInfo.code}</code> — действует до {new Date(resetInfo.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}; передайте лично, повторно не показывается.</p>
+              )}
               {onLoadSessions && (
                 <details className="uadmin-sessions" data-testid="admin-sessions" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) onLoadSessions() }}>
                   <summary>Сессии{sessions ? ` (${sessions.length})` : ''}</summary>

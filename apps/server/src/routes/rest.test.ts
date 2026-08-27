@@ -341,6 +341,31 @@ describe('REST: аутентификация', () => {
     expect((await app.inject({ method: 'POST', url: '/api/admin/invites', payload: { role: 'tester' } })).statusCode).toBe(401)
   })
 
+  it('сброс кодом админа и смена своего пароля; временный пароль блокирует мутации до смены (auth-roadmap пп.10–12)', async () => {
+    // Временный пароль при создании.
+    await inj({ method: 'POST', url: '/api/admin/users', payload: { name: 'temp', password: 'initial-secret-2026-x', role: 'developer', mustChangePassword: true } })
+    const t = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'temp', password: 'initial-secret-2026-x' } })
+    expect(t.json().user).toEqual({ name: 'temp', role: 'developer', mustChangePassword: true })
+    const auth = { authorization: `Bearer ${t.json().token}` }
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: auth, payload: { title: 'x' } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: auth })).statusCode).toBe(200)
+    // Смена пароля: неверный текущий → 400, слабый → 400, ок → флаг снят.
+    expect((await app.inject({ method: 'POST', url: '/api/session/password', headers: auth, payload: { current: 'wrong', next: 'brand-new-password-1' } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'POST', url: '/api/session/password', headers: auth, payload: { current: 'initial-secret-2026-x', next: 'short' } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'POST', url: '/api/session/password', headers: auth, payload: { current: 'initial-secret-2026-x', next: 'brand-new-password-1' } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/session/me', headers: auth })).json().user.mustChangePassword).toBeUndefined()
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: auth, payload: { title: 'x' } })).statusCode).not.toBe(403)
+    // Код сброса от админа: неверный → 401, верный → сессия и новый пароль, повтор кода мёртв.
+    const issued = (await inj({ method: 'POST', url: '/api/admin/users/temp/reset-code' })).json() as { code: string }
+    expect(issued.code).toMatch(/^[A-Z0-9]{8}$/)
+    expect((await app.inject({ method: 'POST', url: '/api/session/reset', payload: { name: 'temp', code: 'NOPE1234', password: 'after-reset-password-1' } })).statusCode).toBe(401)
+    const reset = await app.inject({ method: 'POST', url: '/api/session/reset', payload: { name: 'temp', code: issued.code, password: 'after-reset-password-1' } })
+    expect(reset.statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/session/reset', payload: { name: 'temp', code: issued.code, password: 'after-reset-password-2' } })).statusCode).toBe(401)
+    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'temp', password: 'after-reset-password-1' } })).statusCode).toBe(200)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
   it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {
     db.createUser('user', '', 'developer')
     const login = await app.inject({

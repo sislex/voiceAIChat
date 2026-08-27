@@ -341,11 +341,13 @@ export interface IpcInvokeMap {
   'admin:invites': { arg: void; result: { invites: InviteInfo[] } }
   'admin:inviteCreate': { arg: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }; result: InviteInfo }
   'admin:inviteDelete': { arg: { token: string }; result: { ok: true } }
+  /** Одноразовый код сброса пароля (auth-roadmap п.10). */
+  'admin:resetCode': { arg: { name: string }; result: { code: string; expiresAt: number } }
   'admin:usageSummary': { arg: { from?: number; to?: number } | void; result: import('./admin').UserUsageSummary[] }
   'admin:makeStats': { arg: void; result: import('./admin').AdminMakeStats }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
-  'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole }; result: AdminUserInfo }
+  'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole; mustChangePassword?: boolean }; result: AdminUserInfo }
   'admin:updateUserRole': { arg: { name: string; role: import('./types').UserRole }; result: AdminUserInfo }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
@@ -792,6 +794,9 @@ export interface RendererSessionBridge {
   /** Вход: пользователь, `null` при отказе или вызов второго фактора (auth-roadmap п.6) — тогда нужен `login2fa`. */
   login(creds: { name: string; password: string }): Promise<SessionUser | LoginChallenge | null>
   login2fa?(input: { ticket: string; code: string }): Promise<SessionUser | null>
+  /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
+  resetPassword?(input: { name: string; code: string; password: string }): Promise<{ ok: true } | { error: string }>
+  changePassword?(input: { current: string; next: string }): Promise<{ ok: true } | { error: string }>
   /** Саморегистрация по инвайту (auth-roadmap п.8, web). */
   inviteInfo?(token: string): Promise<{ role: string; expiresAt: number; note: string } | null>
   register?(input: { token: string; name: string; password: string }): Promise<{ ok: true } | { error: string }>
@@ -1042,6 +1047,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:invites',
   'admin:inviteCreate',
   'admin:inviteDelete',
+  'admin:resetCode',
   'admin:makeStats',
   'admin:llmAccess',
   'admin:saveLlmAccess',

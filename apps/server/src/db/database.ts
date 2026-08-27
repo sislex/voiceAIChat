@@ -289,6 +289,8 @@ export interface UserRow {
   lockReason: string | null
   /** Включён ли второй фактор (auth-roadmap п.6); сам секрет наружу не отдаётся. */
   totpEnabled: boolean
+  /** Временный пароль — при входе требуется сменить (auth-roadmap п.11). */
+  mustChangePassword: boolean
 }
 
 /** Порог временной блокировки и её длительность; после `LOGIN_HARD_LOCK_FAILS` подряд — блокировка `blocked`. */
@@ -306,6 +308,9 @@ interface UserDbRow {
   locked_until?: number | null
   lock_reason?: string | null
   totp_secret?: string | null
+  reset_code_hash?: string | null
+  reset_code_expires?: number | null
+  must_change_password?: number | null
 }
 
 interface LlmEngineRow {
@@ -735,6 +740,10 @@ export class VoiceChatDb {
     if (userCols.length && !userCols.some((c) => c.name === 'lock_reason')) this.db.exec(`ALTER TABLE users ADD COLUMN lock_reason TEXT`)
     // 2FA (auth-roadmap п.6): base32-секрет TOTP; NULL — второй фактор выключен.
     if (userCols.length && !userCols.some((c) => c.name === 'totp_secret')) this.db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`)
+    // Сброс пароля кодом от админа (auth-roadmap п.10) и обязательная смена временного пароля (п.11).
+    if (userCols.length && !userCols.some((c) => c.name === 'reset_code_hash')) this.db.exec(`ALTER TABLE users ADD COLUMN reset_code_hash TEXT`)
+    if (userCols.length && !userCols.some((c) => c.name === 'reset_code_expires')) this.db.exec(`ALTER TABLE users ADD COLUMN reset_code_expires INTEGER`)
+    if (userCols.length && !userCols.some((c) => c.name === 'must_change_password')) this.db.exec(`ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0`)
     const taskLinkCols = this.db.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'source_task_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
     const improvementCols = this.db.prepare(`PRAGMA table_info(task_improvements)`).all() as Array<{ name: string }>
@@ -2466,7 +2475,24 @@ export class VoiceChatDb {
   // ---- Users (аккаунты приложения) --------------------------------------
 
   private mapUser(r: UserDbRow): UserRow {
-    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at, failedLogins: r.failed_logins ?? 0, lockedUntil: r.locked_until ?? null, lockReason: r.lock_reason ?? null, totpEnabled: Boolean(r.totp_secret) }
+    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at, failedLogins: r.failed_logins ?? 0, lockedUntil: r.locked_until ?? null, lockReason: r.lock_reason ?? null, totpEnabled: Boolean(r.totp_secret), mustChangePassword: Boolean(r.must_change_password) }
+  }
+
+  setMustChangePassword(name: string, value: boolean): void {
+    this.db.prepare(`UPDATE users SET must_change_password = ? WHERE name = ?`).run(value ? 1 : 0, name)
+  }
+
+  /** Одноразовый код сброса от администратора (п.10): хранится хеш, действует `ttlMs`. */
+  setResetCode(name: string, code: string, ttlMs: number): void {
+    this.db.prepare(`UPDATE users SET reset_code_hash = ?, reset_code_expires = ? WHERE name = ?`).run(hashPassword(code), Date.now() + ttlMs, name)
+  }
+
+  /** Проверяет код и при успехе ставит новый пароль, снимает код, замок и флаг смены; false — код неверен/истёк. */
+  redeemResetCode(name: string, code: string, newPassword: string): boolean {
+    const r = this.db.prepare(`SELECT reset_code_hash, reset_code_expires FROM users WHERE name = ?`).get(name) as { reset_code_hash?: string | null; reset_code_expires?: number | null } | undefined
+    if (!r?.reset_code_hash || !r.reset_code_expires || r.reset_code_expires < Date.now() || !verifyPassword(code, r.reset_code_hash)) return false
+    this.db.prepare(`UPDATE users SET password_hash = ?, reset_code_hash = NULL, reset_code_expires = NULL, must_change_password = 0, failed_logins = 0, locked_until = NULL, lock_reason = NULL WHERE name = ?`).run(hashPassword(newPassword), name)
+    return true
   }
 
   getUserTotpSecret(name: string): string | null {
@@ -2514,7 +2540,7 @@ export class VoiceChatDb {
     this.db
       .prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES (?, ?, ?, 0, ?)`)
       .run(name, hashPassword(password), role, this.now())
-    return { name, role, blocked: false, createdAt: this.now(), failedLogins: 0, lockedUntil: null, lockReason: null, totpEnabled: false }
+    return { name, role, blocked: false, createdAt: this.now(), failedLogins: 0, lockedUntil: null, lockReason: null, totpEnabled: false, mustChangePassword: false }
   }
 
   getUser(name: string): UserRow | null {
@@ -2550,7 +2576,7 @@ export class VoiceChatDb {
   }
 
   setUserPassword(name: string, password: string): void {
-    this.db.prepare(`UPDATE users SET password_hash = ? WHERE name = ?`).run(hashPassword(password), name)
+    this.db.prepare(`UPDATE users SET password_hash = ?, must_change_password = 0 WHERE name = ?`).run(hashPassword(password), name)
   }
 
   deleteUser(name: string): void {

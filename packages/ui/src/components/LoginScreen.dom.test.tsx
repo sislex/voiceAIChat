@@ -34,3 +34,25 @@ describe('LoginScreen — доступность', () => {
     expectLabelledIconButtons(container)
   })
 })
+
+describe('LoginScreen — сброс пароля кодом и второй фактор (auth-roadmap пп.6, 10)', () => {
+  it('ссылка переключает на форму сброса, отправка зовёт onReset с логином, кодом и паролем', async () => {
+    const onReset = vi.fn()
+    render(<LoginScreen onLogin={() => {}} onReset={onReset} />)
+    await userEvent.click(screen.getByRole('button', { name: /код сброса/ }))
+    await userEvent.type(screen.getByLabelText('Пользователь'), 'bob')
+    await userEvent.type(screen.getByLabelText('Код от администратора'), 'abcd1234')
+    await userEvent.type(screen.getByLabelText('Новый пароль'), 'new-strong-password-1')
+    await userEvent.click(screen.getByRole('button', { name: 'Сменить пароль и войти' }))
+    expect(onReset).toHaveBeenCalledWith('bob', 'ABCD1234', 'new-strong-password-1')
+  })
+  it('режим второго фактора: поле кода, «Подтвердить» активна только для 6 цифр', async () => {
+    const onCode = vi.fn()
+    render(<LoginScreen onLogin={() => {}} twoFactor onCode={onCode} onCancelTwoFactor={() => {}} />)
+    const btn = screen.getByRole('button', { name: 'Подтвердить' })
+    expect(btn).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('Код подтверждения'), '123 456')
+    await userEvent.click(btn)
+    expect(onCode).toHaveBeenCalledWith('123456')
+  })
+})

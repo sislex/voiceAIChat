@@ -252,6 +252,19 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       ws.reconnect()
       return user
     },
+    resetPassword: async ({ name, code, password }) => {
+      const r = await fetch(httpBase + REST.sessionReset, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, code, password }) })
+      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
+      const { token: t } = (await r.json()) as { token: string }
+      setToken(t)
+      ws.reconnect()
+      return { ok: true }
+    },
+    changePassword: async ({ current, next }) => {
+      const r = await fetch(httpBase + REST.sessionPassword, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ current, next }) })
+      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
+      return { ok: true }
+    },
     inviteInfo: async (token) => {
       const r = await fetch(httpBase + REST.sessionInvite(token))
       return r.ok ? ((await r.json()) as { role: string; expiresAt: number; note: string }) : null

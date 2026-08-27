@@ -356,6 +356,8 @@ export interface SessionUser {
   /** Логин (он же идентификатор владельца данных). */
   name: string
   role: UserRole
+  /** Временный пароль — до смены доступна только смена пароля (auth-roadmap п.11). */
+  mustChangePassword?: boolean
 }
 
 /** Сессия пользователя (auth-roadmap п.4): устройство, адрес, активность; `current` — та, с которой сделан запрос. */
@@ -702,6 +704,8 @@ export interface UserPersonalization {
   responseLanguage: string | null
   responseStyle: PersonalizationResponseStyle
   tone: PersonalizationTone
+  /** Аватар — эмодзи или 1–2 буквы (auth-roadmap п.12); null — стандартная иконка. */
+  avatar?: string | null
 }
 
 export const DEFAULT_PERSONALIZATION: UserPersonalization = {
@@ -711,7 +715,8 @@ export const DEFAULT_PERSONALIZATION: UserPersonalization = {
   birthYear: null,
   responseLanguage: null,
   responseStyle: 'normal',
-  tone: 'neutral'
+  tone: 'neutral',
+  avatar: null
 }
 
 /** Пользовательские настройки приложения. */

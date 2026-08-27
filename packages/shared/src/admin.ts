@@ -10,6 +10,8 @@ export interface AdminUserInfo {
   role: UserRole
   blocked: boolean
   createdAt: number
+  /** Временный пароль: пользователь обязан сменить его при входе (auth-roadmap п.11). */
+  mustChangePassword?: boolean
   /** Авто-блокировка после неудачных входов (auth-roadmap п.3). */
   failedLogins?: number
   lockedUntil?: number | null
@@ -178,7 +180,7 @@ export interface AdminMakeUserStat {
 export interface InviteInfo { token: string; role: UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string }
 
 /** Журнал безопасности (auth-roadmap п.7): входы, выходы, неудачи, блокировки, смена пароля, 2FA. */
-export type SecurityEventType = 'invite_created' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
+export type SecurityEventType = 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
 export interface SecurityEvent { id: number; at: number; user: string; type: SecurityEventType; ip: string; userAgent: string; details: string }
 
 /** Диск с данными (roadmap-4 п.40): `alert` — свободно меньше `MAKE_DISK_ALERT_BYTES`. */
