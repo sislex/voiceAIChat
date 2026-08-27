@@ -13,7 +13,7 @@ import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
 import { copyText } from '../lib/clipboard'
-import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
+import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -34,7 +34,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -615,6 +615,28 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) { toast.error(describeError(e)) }
   }, [api, conversationId, toast])
   useEffect(() => { if (mode === 'stories') void loadStories() }, [mode, loadStories, state?.rev])
+  // Визуальные снимки стори (п.16): PNG раннера через html2canvas → сервер; сравнение двух снимков рядом.
+  const [shots, setShots] = useState<MakeStoryShot[]>([])
+  const [shotsOpen, setShotsOpen] = useState(false)
+  const [shooting2, setShooting2] = useState(false)
+  const [compare, setCompare] = useState<[string, string] | null>(null)
+  const loadShots = useCallback(async (): Promise<void> => { try { setShots((await api['make:shots']({ conversationId })).shots) } catch { /* нет снимков */ } }, [api, conversationId])
+  useEffect(() => { if (mode === 'stories') void loadShots() }, [mode, loadShots])
+  const takeStoryShot = async (): Promise<void> => {
+    const doc = storyFrameRef.current?.contentDocument
+    if (!doc || !story) return
+    setShooting2(true)
+    try {
+      const file = await captureIframeScreenshot({ doc, width: storyFrameRef.current?.clientWidth }, 'story.png')
+      const bytes = new Uint8Array(await new Promise<ArrayBuffer>((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as ArrayBuffer); r.onerror = () => rej(r.error); r.readAsArrayBuffer(file) }))
+      let binary = ''
+      for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+      const { shots: next } = await api['make:shot']({ conversationId, file: story.file, story: story.name, dataBase64: btoa(binary) })
+      setShots(next); setShotsOpen(true)
+      toast.success('Снимок стори сохранён')
+    } catch (e) { toast.error(describeError(e)) } finally { setShooting2(false) }
+  }
+  const storyShots = useMemo(() => (story ? shots.filter((s) => s.file === story.file && s.story === story.name) : []), [shots, story])
   /** Публичная ссылка на стори (нужна публикация) — копируется в буфер. */
   const shareStory = async (): Promise<void> => {
     if (!story) return
@@ -782,6 +804,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
       {mode === 'history' && <Button size="sm" variant="secondary" onClick={takeSnapshot}>+ Снимок</Button>}
       {mode === 'stories' && story && onInsertToChat && <Button size="sm" variant="primary" onClick={sendStoryToChat}>Работать над компонентом</Button>}
+      {mode === 'stories' && story && <Button size="sm" variant="ghost" loading={shooting2} onClick={() => void takeStoryShot()} title="Сохранить PNG текущей стори, чтобы потом сравнить «до/после»">📸 Снимок</Button>}
+      {mode === 'stories' && storyShots.length > 0 && <Button size="sm" variant="ghost" aria-expanded={shotsOpen} onClick={() => setShotsOpen((v) => !v)}>Снимки ({storyShots.length})</Button>}
       {mode === 'stories' && <Button size="sm" variant="ghost" onClick={() => window.open(REST.makeGalleryPage(conversationId), '_blank', 'noopener')} title="Все стори проекта одной страницей">Галерея</Button>}
       {mode === 'stories' && story && <Button size="sm" variant="ghost" onClick={() => void shareStory()} title={state?.published ? 'Скопировать публичную ссылку на эту стори' : 'Сначала опубликуйте проект — ссылка будет без входа'}>Поделиться</Button>}
       {onInsertToChat && <IconButton size="sm" aria-label="Идеи для старта" title="Идеи: готовые промпты для приложений и сайтов" onClick={() => setIdeasOpen(true)}>✦</IconButton>}
@@ -1087,6 +1111,26 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             ) : storyFiles && storyFiles.length > 0 ? (
               <EmptyState title="Выберите стори" description="Слева — компоненты проекта и их состояния." />
             ) : null}
+            {story && shotsOpen && storyShots.length > 0 && (
+              <section className="make-shots" aria-label="Снимки стори" data-testid="make-shots">
+                <div className="make-shots-strip">
+                  {storyShots.map((s) => (
+                    <button key={s.id} type="button" className={`make-shot${compare?.includes(s.id) ? ' on' : ''}`} title={`${formatTime(s.at)} · rev ${s.rev}`}
+                      onClick={() => setCompare((c) => (!c ? [s.id, s.id] : c[0] === s.id ? null : [c[0] === c[1] ? c[0] : c[1], s.id]))}>
+                      <img src={REST.makeShotImage(conversationId, s.id)} alt={`Снимок ${formatTime(s.at)}`} />
+                      <small>{formatTime(s.at)}</small>
+                    </button>
+                  ))}
+                  <span className="make-shots-hint">Клик — выбрать «до», второй клик — «после».</span>
+                </div>
+                {compare && compare[0] !== compare[1] && (
+                  <div className="make-shots-compare" data-testid="make-shots-compare">
+                    <figure><img src={REST.makeShotImage(conversationId, compare[0])} alt="До" /><figcaption>до</figcaption></figure>
+                    <figure><img src={REST.makeShotImage(conversationId, compare[1])} alt="После" /><figcaption>после</figcaption></figure>
+                  </div>
+                )}
+              </section>
+            )}
             {story && storyArgs && (
               <section className="make-controls" aria-label="Controls: args стори" data-testid="make-controls">
                 <div className="make-controls-head">

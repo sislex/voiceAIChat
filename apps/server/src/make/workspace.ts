@@ -14,7 +14,7 @@ import {
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists'
@@ -29,6 +29,8 @@ export class MakeError extends Error {
 const SNAPSHOTS_DIR = '.snapshots'
 /** Файл публикации проекта (в его корне) и индекс токен → разговор (общий каталог). */
 const PUBLISH_FILE = '.publish.json'
+const SHOTS_DIR = '.shots'
+const SHOTS_PER_STORY = 10
 const PUBLISHED_INDEX_DIR = '.published'
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/
 
@@ -341,7 +343,7 @@ export class MakeWorkspaces {
   private async clearFiles(conversationId: string): Promise<void> {
     const root = this.dirOf(conversationId)
     for (const entry of await readdir(root)) {
-      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE) continue
+      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR) continue
       await rm(join(root, entry), { recursive: true, force: true })
     }
   }
@@ -386,6 +388,41 @@ export class MakeWorkspaces {
       this.bump(conversationId)
     }
     return { files, replacements, state: await this.state(conversationId) }
+  }
+
+  /** Визуальные снимки стори: PNG в `.shots/<id>.png` + `meta.json`; на стори — не больше SHOTS_PER_STORY. */
+  async shots(conversationId: string): Promise<MakeStoryShot[]> {
+    try {
+      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), SHOTS_DIR, 'meta.json'), 'utf8')) as MakeStoryShot[]
+      return Array.isArray(raw) ? raw.sort((a, b) => b.at - a.at) : []
+    } catch { return [] }
+  }
+
+  async addShot(conversationId: string, file: string, story: string, png: Buffer): Promise<MakeStoryShot[]> {
+    if (png.byteLength > MAKE_LIMITS.maxFileBytes * 2) throw new MakeError('too_large', 'Снимок больше 4 МБ')
+    if (!/^\x89PNG/.test(png.subarray(0, 4).toString('latin1'))) throw new MakeError('invalid_path', 'Ожидается PNG')
+    const dir = join(this.dirOf(conversationId), SHOTS_DIR)
+    await mkdir(dir, { recursive: true })
+    const id = `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`
+    await writeFile(join(dir, `${id}.png`), png)
+    const list = [{ id, file, story, at: Date.now(), rev: this.rev(conversationId) }, ...(await this.shots(conversationId))]
+    // Лимит на стори: старые снимки той же стори удаляем вместе с файлами.
+    const keep: MakeStoryShot[] = []
+    const perStory = new Map<string, number>()
+    for (const s of list) {
+      const k = `${s.file}::${s.story}`
+      const n = (perStory.get(k) ?? 0) + 1
+      perStory.set(k, n)
+      if (n <= SHOTS_PER_STORY) keep.push(s)
+      else await rm(join(dir, `${s.id}.png`), { force: true })
+    }
+    await writeFile(join(dir, 'meta.json'), JSON.stringify(keep), 'utf8')
+    return keep
+  }
+
+  async shotImage(conversationId: string, shotId: string): Promise<Buffer | null> {
+    if (!ID_RE.test(shotId)) return null
+    try { return await readFile(join(this.dirOf(conversationId), SHOTS_DIR, `${shotId}.png`)) } catch { return null }
   }
 
   /** Файлы сториз проекта с именами стори. */

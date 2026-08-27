@@ -1,7 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -156,6 +156,8 @@ export interface IpcInvokeMap {
   'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean }; result: { files: number; replacements: number; state: MakeProjectState } }
   'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
   /** Текст файла из снимка — для diff-вью. */
+  'make:shots': { arg: { conversationId: string }; result: { shots: MakeStoryShot[] } }
+  'make:shot': { arg: { conversationId: string; file: string; story: string; dataBase64: string }; result: { shots: MakeStoryShot[] } }
   'make:snapshotFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeFileContent }
   'make:restoreFile': { arg: { conversationId: string; snapshotId: string; path: string }; result: MakeProjectState }
   /** Импорт ZIP (base64) — replace очищает проект, merge дописывает поверх. */
@@ -911,6 +913,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:stories',
   'make:replace',
   'make:snapshotDiff',
+  'make:shots',
+  'make:shot',
   'make:snapshotFile',
   'make:restoreFile',
   'make:import',
