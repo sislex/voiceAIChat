@@ -592,11 +592,11 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   // ---- Превью и экспорт (cookie-аутентификация, см. users/auth.ts) ----------
 
-  app.get<{ Params: { id: string }; Querystring: { vite?: string } }>('/api/preview/make/:id/export.zip', async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { vite?: string; pwa?: string } }>('/api/preview/make/:id/export.zip', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try {
       await workspaces.ensure(req.params.id)
-      const zip = await workspaces.exportZip(req.params.id, { vite: req.query.vite === '1' })
+      const zip = await workspaces.exportZip(req.params.id, { vite: req.query.vite === '1', pwa: req.query.pwa === '1' })
       return reply
         .header('content-type', 'application/zip')
         .header('content-disposition', `attachment; filename="make-${req.params.id.slice(0, 8)}.zip"`)

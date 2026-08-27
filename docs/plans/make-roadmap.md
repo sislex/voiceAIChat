@@ -41,7 +41,7 @@
 | 32 | Комментарии к элементам превью | ✅ `.comments.json`, панель 💬, метки в превью, «Исправить все» |
 | 33 | Шаринг проекта read-only внутри ChatAI | ✅ share-токен, `#/make-shared/<token>`, `MakeSharedView` |
 | 34 | Мобильный редактор (fallback < 600px) | ✅ textarea-редактор + `<select>` файлов при ≤600px |
-| 35 | PWA в Vite-экспорте | |
+| 35 | PWA в Vite-экспорте | ✅ `?pwa=1`: manifest + sw.js + icon.svg (+ инъекция в index.html), для статики и Vite |
 | 36 | Electron-десктоп | |
 | 38 | Метрики использования в админке | |
 | 39 | Rate-limit импорта | ✅ `SlidingWindowLimiter`: 10 ZIP / 20 URL за 10 мин → 429 |
