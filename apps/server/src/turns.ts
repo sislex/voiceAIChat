@@ -600,9 +600,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       .filter((item) => !(conv?.assistantKind === 'make' && (item.kind === 'taskLaunch' || item.kind === 'console')))
     const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext ? await deps.makeContext(conversationId).catch(() => '') : ''
     const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '')
+    // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
+    const makeQuestion = conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
+    const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase
     const prompt = makeAutoPlan
       ? `${promptBase}\n\n## Режим плана (большая переделка)\nЗапрос затрагивает весь проект. Сначала изучи файлы (make_list_files/make_read_file) и ответь планом: какие файлы создашь/изменишь и что в них будет, 5–12 пунктов. Файлы в этом ходе менять нельзя. Закончи вопросом, подтверждает ли пользователь план — после «да» он пришлёт следующий запрос, и ты выполнишь его целиком.`
-      : promptBase
+      : promptQ
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
     const machine = deps.db.resolveConversationMachine(userId, conversationId, {

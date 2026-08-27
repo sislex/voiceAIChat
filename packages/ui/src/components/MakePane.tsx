@@ -56,6 +56,9 @@ export interface MakePaneProps {
   usage?: ConversationUsage | null
   /** Идёт ход ассистента: на старте снимаем «до», по окончании (после правок) — «после» (roadmap-2 п.8). */
   turnActive?: boolean
+  /** Режим вопроса (roadmap-4 п.4): следующий ход пойдёт в «План» — только ответ, без правок. */
+  askOnly?: boolean
+  onAskOnlyChange?: (on: boolean) => void
   /** База превью; по умолчанию — REST.makePreview (тест подменяет). */
   previewBase?: string
   /**
@@ -92,7 +95,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, askOnly = false, onAskOnlyChange, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -1041,6 +1044,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {mode === 'stories' && testFiles.length > 0 && <Button size="sm" variant={failedTests.length ? 'danger' : 'ghost'} loading={Boolean(runningTests)} onClick={() => runTests(testFiles.map((f) => f.path))} title="Запустить все *.test.tsx в раннере">Тесты ({testFiles.reduce((n, f) => n + f.names.length, 0)}){failedTests.length ? ` · ✗ ${failedTests.length}` : ''}</Button>}
       {others.length > 0 && <span className="make-presence" data-testid="make-presence" title={`Проект открыт ещё в ${others.length} ${others.length === 1 ? 'вкладке' : 'вкладках'}: ${others.map((c) => `${c.user}${c.path ? ` · ${c.path}${c.editing ? ' (правит)' : ''}` : ''}`).join('; ')}`}>👥 {others.length + 1}</span>}
       {usage && <span className="make-cost" data-testid="make-cost" title={`Расход на проект: ${usage.turns} ${usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'} · ↓ ${kilo(usage.inputTokens)} · ↑ ${kilo(usage.outputTokens)}${usage.estimated ? ' · часть суммы — расчёт по тарифам' : ''}${usage.unpriced ? ` · без цены: ${usage.unpriced}` : ''}`}>{formatUsd(usage.costUsd, usage.estimated)}<small>{usage.turns} {usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'}</small></span>}
+      {onAskOnlyChange && <IconButton size="sm" aria-label="Только спросить" title={askOnly ? 'Режим вопроса: следующий ответ без правок файлов (нажмите, чтобы выключить)' : 'Только спросить: следующий ход ответит без правок файлов — дешевле и безопаснее'} aria-pressed={askOnly} className={askOnly ? 'make-inspect on' : undefined} onClick={() => onAskOnlyChange(!askOnly)}>❓</IconButton>}
       <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>
       <div className="make-more" ref={moreRef}>
         <IconButton size="sm" aria-label="Ещё" title="Ещё действия" aria-haspopup="true" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>⋯</IconButton>
