@@ -15,7 +15,7 @@ import {
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
 import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakePublishEntry, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
-import { applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile } from '@voicechat/shared'
+import { applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists' | 'quota'
@@ -230,6 +230,31 @@ export class MakeWorkspaces {
       } catch { /* битый снимок пропускаем */ }
     }
     return out.sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  // ---- Вставка из библиотеки / дизайн-кита (roadmap-2 п.13) -----------------
+
+  /**
+   * Файлы компонентов копируются как при merge-импорте; файл токенов (`tokens.css`/`styles.css`) не затирает
+   * проектный — в его `:root` добавляются только отсутствующие переменные, чтобы кит не сломал текущую палитру.
+   */
+  async insertLibraryFiles(conversationId: string, files: Array<{ path: string; data: Buffer }>): Promise<{ state: MakeProjectState; mergedTokens: number }> {
+    const existing = new Set((await this.list(conversationId)).map((f) => f.path))
+    const isTokens = (p: string): boolean => p === 'tokens.css' || p === 'styles.css'
+    const plain = files.filter((f) => !(isTokens(f.path) && existing.has(f.path)))
+    const tokenFiles = files.filter((f) => isTokens(f.path) && existing.has(f.path))
+    let state = plain.length ? await this.importFiles(conversationId, plain, 'merge') : await this.state(conversationId)
+    let mergedTokens = 0
+    for (const tf of tokenFiles) {
+      const incoming = parseCssTokens(tf.data.toString('utf8'))
+      const current = await this.readBuffer(conversationId, tf.path)
+      if (!current) continue
+      let css = current.data.toString('utf8')
+      const have = new Set(parseCssTokens(css).map((t) => t.name))
+      for (const t of incoming) if (!have.has(t.name)) { css = setCssToken(css, t.name, t.value); mergedTokens += 1 }
+      if (mergedTokens) state = await this.write(conversationId, tf.path, css)
+    }
+    return { state, mergedTokens }
   }
 
   // ---- Контекст для промпта (roadmap-2 п.9) ----------------------------------

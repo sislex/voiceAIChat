@@ -383,4 +383,20 @@ describe('MakeWorkspaces', () => {
     expect((await ws.resolveMock(CONV, 'api/todos', 'POST', true, { text: 'c' }))?.status).toBe(405)
     expect((await ws.resolveMock(CONV, 'api/todos', 'GET', true))?.status).toBe(200)
   })
+
+  it('insertLibraryFiles: компоненты копируются, токены сливаются в существующий :root без затирания', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'styles.css', ':root { --accent: #f00; }\nbody { margin: 0 }')
+    const { state, mergedTokens } = await ws.insertLibraryFiles(CONV, [
+      { path: 'src/components/Kit.tsx', data: Buffer.from('export const Kit = () => null') },
+      { path: 'styles.css', data: Buffer.from(':root { --accent: #00f; --radius: 8px; }') }
+    ])
+    expect(mergedTokens).toBe(1)
+    expect(state.files.some((f) => f.path === 'src/components/Kit.tsx')).toBe(true)
+    const css = (await ws.read(CONV, 'styles.css')).content
+    expect(css).toContain('--accent: #f00')
+    expect(css).toContain('--radius: 8px')
+    expect(css).toContain('body { margin: 0 }')
+  })
 })
