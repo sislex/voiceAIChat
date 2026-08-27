@@ -690,12 +690,12 @@ describe('MakePane', () => {
     const post = vi.spyOn(frame.contentWindow!, 'postMessage')
     await openMore()
     await userEvent.click(screen.getByRole('button', { name: 'Тема превью' }))
-    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: '' }, '*')
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: '' }), '*')
     await openMore()
     await userEvent.selectOptions(screen.getByLabelText('Язык превью'), 'en')
-    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }, '*')
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }), '*')
     fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.ready' }, source: frame.contentWindow }))
-    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }, '*')
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }), '*')
   })
 
   it('♿ запускает axe в превью, показывает нарушения и отдаёт их ассистенту', async () => {
@@ -904,5 +904,64 @@ describe('MakePane: перетаскивание секций в превью (r
     await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toBe('<main>\n  <section id="b">B</section>\n  <section id="a">A</section>\n</main>'))
     send({ type: 'vc-make.reorder', moved: '<div>nope</div>', target: '<section id="b">B</section>', position: 'after' })
     await screen.findByText(/порядок в файле не изменён/)
+  })
+})
+
+describe('MakePane: эмуляция состояний превью (roadmap-4 п.20)', () => {
+  it('меню ⋯ переключает reduced motion и медленную сеть — в iframe уходит vc-make.env с флагами; состояние элемента доступно после выбора', async () => {
+    renderPane()
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    const post = vi.fn()
+    Object.defineProperty(frame, 'contentWindow', { value: { postMessage: post }, configurable: true })
+    await openMore()
+    expect(screen.getByRole('button', { name: 'Состояние элемента' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Reduced motion' }))
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', reducedMotion: true, slowMs: 0 }), '*')
+    await openMore()
+    await userEvent.click(screen.getByRole('button', { name: 'Медленная сеть' }))
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', reducedMotion: true, slowMs: 1500 }), '*')
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'vc-make.selected', selector: 'h1', tag: 'h1', text: 'Привет', html: '<h1>Привет</h1>' }, source: frame.contentWindow }))
+    await openMore()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Состояние элемента' })).toBeEnabled())
+    await userEvent.click(screen.getByRole('button', { name: 'Состояние элемента' }))
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', state: 'hover' }), '*')
+  })
+})
+
+describe('MakePane: три ширины рядом (roadmap-4 п.21)', () => {
+  it('режим ⫼ рисует три кадра; скролл одного уходит остальным как vc-make.restore, эхо не зацикливается', async () => {
+    renderPane()
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('button', { name: 'Три ширины рядом' }))
+    const main = screen.getByTitle('Превью проекта') as HTMLIFrameElement
+    const tablet = screen.getByTitle('Превью 820px') as HTMLIFrameElement
+    const phone = screen.getByTitle('Превью 390px') as HTMLIFrameElement
+    expect(main.style.width).toBe('1200px')
+    // source у MessageEvent должен быть настоящим Window — берём окна jsdom-кадров и подменяем им postMessage.
+    const posts = { main: vi.fn(), tablet: vi.fn(), phone: vi.fn() }
+    Object.defineProperty(main.contentWindow!, 'postMessage', { value: posts.main, configurable: true })
+    Object.defineProperty(tablet.contentWindow!, 'postMessage', { value: posts.tablet, configurable: true })
+    Object.defineProperty(phone.contentWindow!, 'postMessage', { value: posts.phone, configurable: true })
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'vc-make.state', x: 0, y: 240, hash: '' }, source: tablet.contentWindow }))
+    expect(posts.main).toHaveBeenCalledWith({ type: 'vc-make.restore', x: 0, y: 240 }, '*')
+    expect(posts.phone).toHaveBeenCalledWith({ type: 'vc-make.restore', x: 0, y: 240 }, '*')
+    expect(posts.tablet).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'vc-make.restore' }), '*')
+    // Ответный state от телефона в окне 300 мс — эхо, не пересылается.
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'vc-make.state', x: 0, y: 240, hash: '' }, source: phone.contentWindow }))
+    expect(posts.tablet).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'vc-make.restore' }), '*')
+  })
+})
+
+describe('MakePane: автогенерация сториз (roadmap-4 п.23)', () => {
+  it('компонент без сториз показан в группе «Без сториз»; клик создаёт stories-файл и открывает Default', async () => {
+    const { api, emit } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'src/components/Badge.tsx', content: "export interface BadgeProps {\n  text: string\n  tone?: 'ok' | 'warn'\n}\nexport function Badge({ text }: BadgeProps) { return <span>{text}</span> }\n" })
+    emit({ conversationId: CONV, rev: 1, paths: ['src/components/Badge.tsx'] })
+    await userEvent.click(screen.getByRole('tab', { name: 'Компоненты' }))
+    const orphans = await screen.findByTestId('make-orphans')
+    await userEvent.click(within(orphans).getByRole('button', { name: /сториз для Badge\.tsx/ }))
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'src/components/Badge.stories.tsx' })).content).toContain('export const Warn = () => <Badge tone="warn" text="Пример" />'))
+    await waitFor(() => expect(screen.queryByTestId('make-orphans')).toBeNull())
+    expect(await screen.findByText('Default')).toBeInTheDocument()
   })
 })
