@@ -6714,3 +6714,16 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Язык превью. */
 .make-lang { border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 12px; background: var(--surface); color: var(--text); max-width: 96px; }
 @media (max-width: 768px) { .make-lang { display: none; } }
+
+/* Проверка доступности превью. */
+.make-a11y { border-top: 1px solid var(--border); background: var(--panel); padding: 6px 12px; font-size: 12.5px; max-height: 32vh; overflow: auto; }
+.make-a11y--bad { background: rgb(248 81 73 / .06); }
+.make-a11y-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.make-a11y-actions { display: inline-flex; gap: 6px; align-items: center; }
+.make-a11y-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.make-a11y-row { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 8px; align-items: center; }
+.make-a11y-impact { font-size: 10px; text-transform: uppercase; color: var(--text-dim); }
+.make-a11y-row--critical .make-a11y-impact, .make-a11y-row--serious .make-a11y-impact { color: var(--danger); font-weight: 600; }
+.make-a11y-help { border: 0; background: transparent; padding: 0; font: inherit; color: var(--text); text-align: left; cursor: pointer; text-decoration: underline dotted; }
+.make-a11y-row small { color: var(--text-dim); }
+.make-a11y-row a { color: var(--text-dim); text-decoration: none; }

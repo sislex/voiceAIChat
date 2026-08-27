@@ -5,6 +5,7 @@ import { render } from '../test/uiRender'
 import { createFakeApi } from '../test/fakeApi'
 import { MAKE_SCAFFOLD } from '@shared/make'
 
+vi.mock('../lib/makeA11y', async (orig) => ({ ...(await orig<typeof import('../lib/makeA11y')>()), runAxeInFrame: vi.fn(async () => [{ id: 'image-alt', impact: 'critical', help: 'Images must have alternate text', helpUrl: 'https://dequeuniversity.com/rules/axe/image-alt', nodes: 1, target: 'img' }]) }))
 vi.mock('../lib/makeScreenshot', () => ({ captureIframeScreenshot: vi.fn(async (_t: unknown, name: string) => new File(['png'], name, { type: 'image/png' })) }))
 import { MakePane } from './MakePane'
 
@@ -460,5 +461,17 @@ describe('MakePane', () => {
     expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }, '*')
     fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.ready' }, source: frame.contentWindow }))
     expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }, '*')
+  })
+
+  it('♿ запускает axe в превью, показывает нарушения и отдаёт их ассистенту', async () => {
+    const onAskAssistant = vi.fn()
+    renderPane({ onAskAssistant })
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить доступность' }))
+    const panel = await screen.findByTestId('make-a11y')
+    expect(panel).toHaveTextContent('1 нарушений')
+    expect(within(panel).getByText('Images must have alternate text')).toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Исправить' }))
+    expect(onAskAssistant).toHaveBeenCalledWith(expect.stringContaining('image-alt'))
   })
 })

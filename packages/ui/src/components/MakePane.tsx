@@ -8,6 +8,7 @@ import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { MakeControlField, type ArgType } from './MakeControls'
 import { captureIframeScreenshot } from '../lib/makeScreenshot'
 import { formatCode } from '../lib/formatCode'
+import { a11yPrompt, runAxeInFrame, type A11yViolation } from '../lib/makeA11y'
 import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
@@ -638,6 +639,24 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const useStarter = (prompt: string): void => { onInsertToChat?.(prompt); setIdeasOpen(false) }
   // Скриншот превью (или выбранного элемента) — во вложения чата: визуальный баг проще показать, чем описать.
   const [shooting, setShooting] = useState(false)
+  // Доступность превью (п.13): axe внутри iframe, результат — панель под превью.
+  const [a11y, setA11y] = useState<A11yViolation[] | null>(null)
+  const [a11yBusy, setA11yBusy] = useState(false)
+  const runA11y = async (): Promise<void> => {
+    const doc = frameRef.current?.contentDocument
+    if (!doc) return
+    setA11yBusy(true)
+    try { setA11y(await runAxeInFrame(doc)) } catch (e) { toast.error(describeError(e)) } finally { setA11yBusy(false) }
+  }
+  useEffect(() => { setA11y(null) }, [previewRev])
+  const showA11yTarget = (target: string): void => {
+    const doc = frameRef.current?.contentDocument
+    const el = target ? doc?.querySelector(target) : null
+    if (!el) return
+    el.scrollIntoView({ block: 'center' })
+    ;(el as HTMLElement).style.outline = '3px solid #f85149'
+    setTimeout(() => { (el as HTMLElement).style.outline = '' }, 2000)
+  }
   const screenshotToChat = async (): Promise<void> => {
     const doc = frameRef.current?.contentDocument
     if (!doc || !onAttachImage) return
@@ -739,6 +758,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             <option value="">lang: авто</option>
             {['ru', 'en', 'de', 'fr', 'es', 'zh', 'ar'].map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
+          <IconButton size="sm" aria-label="Проверить доступность" title="axe-core внутри превью: контраст, alt, подписи, заголовки" disabled={a11yBusy} onClick={() => void runA11y()}>♿</IconButton>
           {onAttachImage && <IconButton size="sm" aria-label="Скриншот превью в чат" title={selected ? 'Скриншот выбранного элемента — во вложения чата' : 'Скриншот превью — во вложения чата'} disabled={shooting} onClick={() => void screenshotToChat()}>📷</IconButton>}
           <IconButton size="sm" aria-label="Открыть в новой вкладке" title="Открыть в новой вкладке" onClick={() => window.open(`${base}index.html`, '_blank', 'noopener')}>↗</IconButton>
         </>
@@ -813,6 +833,29 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               style={frameWidth ? { width: `${frameWidth}px` } : undefined}
             />}
           </div>
+          {a11y !== null && (
+            <section className={a11y.length ? 'make-a11y make-a11y--bad' : 'make-a11y'} aria-label="Проверка доступности" data-testid="make-a11y">
+              <div className="make-a11y-head">
+                <strong>{a11y.length === 0 ? '✓ Доступность: нарушений не найдено' : `Доступность: ${a11y.length} нарушений`}</strong>
+                <span className="make-a11y-actions">
+                  {a11y.length > 0 && (onAskAssistant || onInsertToChat) && <Button size="sm" variant="primary" onClick={() => { (onAskAssistant ?? onInsertToChat)!(a11yPrompt(a11y)) }}>Исправить</Button>}
+                  <IconButton size="sm" aria-label="Скрыть результат проверки доступности" title="Скрыть" onClick={() => setA11y(null)}>✕</IconButton>
+                </span>
+              </div>
+              {a11y.length > 0 && (
+                <ul className="make-a11y-list">
+                  {a11y.map((v) => (
+                    <li key={v.id} className={`make-a11y-row make-a11y-row--${v.impact}`}>
+                      <span className="make-a11y-impact">{v.impact}</span>
+                      <button type="button" className="make-a11y-help" onClick={() => showA11yTarget(v.target)} title={v.target}>{v.help}</button>
+                      <small>{v.nodes} элем.</small>
+                      <a href={v.helpUrl} target="_blank" rel="noreferrer">?</a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
           {showAutofix && (
             <div className="make-autofix" role="alert" data-testid="make-autofix">
               <span>После правки в консоли {recentErrors.length === 1 ? 'ошибка' : `ошибок: ${recentErrors.length}`} — <code>{recentErrors[recentErrors.length - 1]!.text.slice(0, 120)}</code></span>
