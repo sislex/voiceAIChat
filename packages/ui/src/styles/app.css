@@ -6873,3 +6873,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .make-token .vc-btn { grid-column: 3; }
   .make-token-value { grid-column: 1 / -1; }
 }
+
+/* Визуальный diff хода Make (roadmap-2 п.8) */
+.make-turn-diff { display: flex; align-items: center; gap: var(--space-2); padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.make-turn-diff-thumbs { display: inline-flex; gap: 6px; border: 0; background: none; padding: 0; cursor: zoom-in; }
+.make-turn-diff-thumbs span { display: grid; justify-items: center; gap: 2px; font-size: 11px; color: var(--text-dim); }
+.make-turn-diff-thumbs img { height: 44px; width: 70px; object-fit: cover; object-position: top; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.make-turn-diff-big { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.make-turn-diff-big figure { margin: 0; display: grid; gap: 6px; }
+.make-turn-diff-big img { width: 100%; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.make-turn-diff-big figcaption { text-align: center; color: var(--text-dim); font-size: 12px; }
+@media (max-width: 720px) { .make-turn-diff-big { grid-template-columns: 1fr; } }
