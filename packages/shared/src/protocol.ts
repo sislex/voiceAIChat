@@ -294,6 +294,11 @@ export const REST = {
   adminInvite: (token: string) => `/api/admin/invites/${encodeURIComponent(token)}`,
   sessionInvite: (token: string) => `/api/session/invite/${encodeURIComponent(token)}`,
   sessionRegister: '/api/session/register',
+  /** Открытая регистрация с подтверждением email: статус, заявка, подтверждение, повторное письмо; настройка в админке. */
+  sessionSignup: '/api/session/signup',
+  sessionSignupResend: '/api/session/signup/resend',
+  sessionVerify: '/api/session/verify',
+  adminSignup: '/api/admin/signup',
   /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
   sessionReset: '/api/session/reset',
   sessionPassword: '/api/session/password',

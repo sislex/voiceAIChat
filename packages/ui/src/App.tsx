@@ -20,6 +20,7 @@ import { SessionsDialog, describeUserAgent } from './components/SessionsDialog'
 import { TwoFactorDialog } from './components/TwoFactorDialog'
 import { InviteRegister } from './components/InviteRegister'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog'
+import { SignupScreen, VerifyScreen } from './components/SignupScreen'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -251,6 +252,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [sessionsOpen, setSessionsOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  // Открытая регистрация: спрашиваем сервер один раз, пока пользователь не вошёл.
+  const [signupOpen, setSignupOpen] = useState(() => window.location.hash === '#/signup')
+  const [signupEnabled, setSignupEnabled] = useState(false)
+  useEffect(() => {
+    if (!session.authRequired || session.currentUser || !window.session?.signupEnabled) return
+    let alive = true
+    void window.session.signupEnabled().then((v) => { if (alive) setSignupEnabled(v) })
+    return () => { alive = false }
+  }, [session.authRequired, session.currentUser])
   // Уведомление о входе с нового устройства (auth-roadmap п.16): после входа/восстановления сессии показываем и отмечаем просмотренными.
   useEffect(() => {
     const name = session.currentUser?.name
@@ -1403,6 +1413,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     )
   }
   const inviteToken = /^#\/invite\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
+  // Открытая регистрация с подтверждением email: #/signup — форма, #/verify/<token> — подтверждение из письма.
+  const verifyToken = /^#\/verify\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
+  if (session.authRequired && !session.currentUser && verifyToken && window.session?.verifyEmail) {
+    return <VerifyScreen token={decodeURIComponent(verifyToken)} verify={window.session.verifyEmail} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} onBack={() => { window.location.hash = '#/'; setSignupOpen(false) }} />
+  }
+  if (session.authRequired && !session.currentUser && signupOpen && window.session?.signup && window.session.signupResend) {
+    return <SignupScreen api={{ signup: window.session.signup, resend: window.session.signupResend }} theme={settingsState.settings.theme} onBack={() => setSignupOpen(false)} />
+  }
   if (session.authRequired && !session.currentUser && inviteToken && window.session?.inviteInfo && window.session.register) {
     return <InviteRegister token={decodeURIComponent(inviteToken)} api={{ inviteInfo: window.session.inviteInfo, register: window.session.register }} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} />
   }
@@ -1416,6 +1434,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onCode={(code) => void runtime.loginCode(code)}
         onCancelTwoFactor={() => runtime.cancelTwoFactor()}
         onReset={window.session?.resetPassword ? (name, code, password) => void runtime.resetPassword(name, code, password) : undefined}
+        onSignup={signupEnabled ? () => setSignupOpen(true) : undefined}
       />
     )
   }
@@ -2030,6 +2049,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onCreateInvite={(input) => void adminActions.createAdminInvite(input)}
           onDeleteInvite={(token) => void adminActions.deleteAdminInvite(token)}
           inviteBaseUrl={`${window.location.origin}${window.location.pathname}`}
+          signup={admin.adminSignup}
+          onLoadSignup={() => void adminActions.loadAdminSignup()}
+          onSetSignup={(input) => void adminActions.setAdminSignup(input)}
           onOpenConversation={(id) => void adminActions.openAdminConversation(id)}
           llmAccess={admin.adminUserLlmAccess}
           onSaveLlmAccess={(access) => void adminActions.saveAdminUserLlmAccess(access)}

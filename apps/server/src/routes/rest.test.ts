@@ -12,6 +12,8 @@ import { signToken } from '../users/accounts.js'
 import { isPublicAddress, previewInspectorScript, rewritePreviewBody, upstreamRequestHeaders } from './previewProxy.js'
 
 let app: FastifyInstance
+/** Письма фейкового мейлера — регистрация с подтверждением email. */
+const sentMails: Array<{ to: string; subject: string; text: string; html?: string }> = []
 let db: VoiceChatDb
 let token: string
 let dataDir: string
@@ -46,7 +48,9 @@ beforeEach(async () => {
   triggerDeploy.mockReset()
   agentRegistry = new AgentRegistry()
   triggerDeploy.mockResolvedValue({ status: 'accepted', message: 'deployment started' })
+  sentMails.length = 0
   app = await buildServer({
+    mailer: { configured: true, send: async (m) => { sentMails.push(m) } },
     config: loadConfig({
       PORT: '0',
       VC_DATA_DIR: dataDir,
@@ -400,6 +404,38 @@ describe('REST: аутентификация', () => {
     expect(r.json()).toMatchObject({ name: 'limited', role: 'developer', llmLimitUsd: 5 })
     expect(db.getUser('limited')!.llmLimitUsd).toBe(5)
     expect((await inj({ method: 'PATCH', url: '/api/admin/users/limited', payload: { llmLimitUsd: null } })).json().llmLimitUsd).toBeNull()
+  })
+
+  it('открытая регистрация: выключена → 404; админ включает; заявка шлёт письмо со ссылкой; verify создаёт учётку с email и сессию; повтор токена мёртв', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/session/signup' })).json()).toEqual({ enabled: false })
+    expect((await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'nina', email: 'nina@example.com', password: 'first-strong-pass-1' } })).statusCode).toBe(404)
+    const cfg = (await inj({ method: 'PUT', url: '/api/admin/signup', payload: { enabled: true, role: 'tester' } })).json()
+    expect(cfg).toMatchObject({ enabled: true, role: 'tester', mailConfigured: true })
+    expect((await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'nina', email: 'bad', password: 'first-strong-pass-1' } })).statusCode).toBe(400)
+    const req = await app.inject({ method: 'POST', url: '/api/session/signup', headers: { host: 'chat.example.com' }, payload: { name: 'nina', email: 'Nina@Example.com', password: 'first-strong-pass-1' } })
+    expect(req.json()).toEqual({ ok: true, mailSent: true })
+    expect(sentMails).toHaveLength(1)
+    expect(sentMails[0]!.to).toBe('nina@example.com')
+    const link = /https?:\/\/[^\s]+#\/verify\/([^\s"<]+)/.exec(sentMails[0]!.text)!
+    expect(link[0]).toContain('chat.example.com')
+    // Пользователя ещё нет; вход невозможен.
+    expect(db.getUser('nina')).toBeNull()
+    const ver = await app.inject({ method: 'POST', url: '/api/session/verify', payload: { token: decodeURIComponent(link[1]!) } })
+    expect(ver.statusCode).toBe(200)
+    expect(ver.json().user).toEqual({ name: 'nina', role: 'tester' })
+    expect(db.getUser('nina')!.email).toBe('nina@example.com')
+    expect((await app.inject({ method: 'POST', url: '/api/session/verify', payload: { token: decodeURIComponent(link[1]!) } })).statusCode).toBe(400)
+    // Тот же email снова: ответ одинаковый, письма нет; занятый логин — 409.
+    expect((await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'nina2', email: 'nina@example.com', password: 'second-strong-pass-1' } })).json()).toEqual({ ok: true, mailSent: true })
+    expect(sentMails).toHaveLength(1)
+    expect((await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'nina', email: 'other@example.com', password: 'third-strong-pass-2' } })).statusCode).toBe(409)
+    // Повторное письмо для ожидающей заявки.
+    await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'oleg', email: 'oleg@example.com', password: 'fourth-strong-pass-1' } })
+    await app.inject({ method: 'POST', url: '/api/session/signup/resend', payload: { email: 'oleg@example.com' } })
+    expect(sentMails.filter((m) => m.to === 'oleg@example.com')).toHaveLength(2)
+    const link2 = /#\/verify\/([^\s"<]+)/.exec(sentMails[sentMails.length - 1]!.text)!
+    expect((await app.inject({ method: 'POST', url: '/api/session/verify', payload: { token: decodeURIComponent(link2[1]!) } })).statusCode).toBe(200)
+    await inj({ method: 'PUT', url: '/api/admin/signup', payload: { enabled: false } })
   })
 
   it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {

@@ -3,6 +3,7 @@
 
 import { request } from 'node:http'
 import { randomBytes } from 'node:crypto'
+import { readSignupConfig } from '../users/auth.js'
 import { checkPasswordPolicy } from '@voicechat/shared'
 import { hibpEnabled, pwnedCount } from '../users/pwned.js'
 import type { AdminMakeStats } from '@voicechat/shared'
@@ -204,7 +205,8 @@ export function registerAdminRoutes(
   db: VoiceChatDb,
   registry: AgentRegistry,
   deployTrigger?: DeployTrigger,
-  makeStats?: () => Promise<AdminMakeStats>
+  makeStats?: () => Promise<AdminMakeStats>,
+  mailConfigured = false
 ): void {
   const guard = { preHandler: requireAdmin }
 
@@ -216,6 +218,15 @@ export function registerAdminRoutes(
   })
   app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
     return db.revokeSessionById(req.params.sid) ? { ok: true } : reply.code(404).send({ error: 'not found' })
+  })
+  // Открытая регистрация: включить/выключить и роль новых пользователей.
+  app.get(REST.adminSignup, guard, async () => ({ ...readSignupConfig(db), mailConfigured: Boolean(mailConfigured) }))
+  app.put<{ Body: { enabled?: boolean; role?: string } | undefined }>(REST.adminSignup, guard, async (req, reply) => {
+    const role = req.body?.role
+    if (role !== undefined && role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
+    if (typeof req.body?.enabled === 'boolean') db.setAppConfig('signup.enabled', req.body.enabled ? '1' : '0')
+    if (role) db.setAppConfig('signup.role', role)
+    return { ...readSignupConfig(db), mailConfigured: Boolean(mailConfigured) }
   })
   // Код сброса пароля (auth-roadmap п.10): администратор выдаёт одноразовый код на 24 часа, пользователь вводит его на экране входа.
   app.post<{ Params: { name: string } }>(REST.adminUserResetCode(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
@@ -253,12 +264,12 @@ export function registerAdminRoutes(
   })
 
   /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
-  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null } = {}): AdminUserInfo => {
+  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null; email?: string | null } = {}): AdminUserInfo => {
     const online = registry.onlineIds()
     const agents = db.listAgents(name).map((a) => ({ ...a, online: online.has(a.id) }))
     // Админу — все беседы пользователя: скрытие чатов завершённых задач это
     // фильтр сайдбара их владельца, а не свойство данных.
-    return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, mustChangePassword: Boolean(lock.mustChangePassword), lastLogin: lock.lastLogin ?? null, llmLimitUsd: lock.llmLimitUsd ?? null, name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
+    return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, mustChangePassword: Boolean(lock.mustChangePassword), lastLogin: lock.lastLogin ?? null, llmLimitUsd: lock.llmLimitUsd ?? null, email: lock.email ?? null, name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
   }
 
   app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> =>

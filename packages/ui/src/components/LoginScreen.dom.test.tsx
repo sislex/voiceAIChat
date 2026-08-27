@@ -74,3 +74,12 @@ describe('LoginScreen — UX входа (auth-roadmap пп.14–15)', () => {
     expect(onLogin).toHaveBeenCalledWith('anna', 'secret', false)
   })
 })
+
+describe('LoginScreen — ссылка на регистрацию', () => {
+  it('показывается только при onSignup и зовёт его', async () => {
+    const onSignup = vi.fn()
+    render(<LoginScreen onLogin={() => {}} onSignup={onSignup} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Зарегистрироваться' }))
+    expect(onSignup).toHaveBeenCalled()
+  })
+})

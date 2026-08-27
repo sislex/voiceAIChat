@@ -9,7 +9,7 @@ import type {
   UsageReport,
   UsageUnit,
   UserUsageSummary,
-  AdminMakeStats, SecurityEvent, SecurityEventType, InviteInfo } from '@shared/admin'
+  AdminMakeStats, SecurityEvent, SecurityEventType, InviteInfo, SignupConfig } from '@shared/admin'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { Conversation, Message, LlmProvider, SessionInfo } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
@@ -23,7 +23,7 @@ function AdminFrame({ variant, onClose, children }: { variant: 'modal' | 'page';
 }
 
 /** Подписи событий журнала безопасности (auth-roadmap п.7). */
-const SECURITY_LABEL: Record<SecurityEventType, string> = { login_new_device: 'Вход с нового устройства', inactive_blocked: 'Отключён за неактивность', reset_code_issued: 'Выдан код сброса', password_reset: 'Пароль сброшен по коду', password_changed: 'Пароль изменён', invite_created: 'Создан инвайт', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
+const SECURITY_LABEL: Record<SecurityEventType, string> = { signup_requested: 'Заявка на регистрацию', signup_verified: 'Email подтверждён', login_new_device: 'Вход с нового устройства', inactive_blocked: 'Отключён за неактивность', reset_code_issued: 'Выдан код сброса', password_reset: 'Пароль сброшен по коду', password_changed: 'Пароль изменён', invite_created: 'Создан инвайт', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
 
 export interface UsersAdminProps {
   variant?: 'modal' | 'page'
@@ -66,6 +66,10 @@ export interface UsersAdminProps {
   onDeleteInvite?: (token: string) => void
   /** База абсолютной ссылки инвайта (origin + путь) — admin-app не трогает window, её даёт хост. */
   inviteBaseUrl?: string
+  /** Открытая регистрация с подтверждением email. */
+  signup?: SignupConfig | null
+  onLoadSignup?: () => void
+  onSetSignup?: (input: { enabled?: boolean; role?: import('@shared/types').UserRole }) => void
   onOpenConversation: (id: string) => void
   engines: AdminLlmEngine[]
   enginesStatus?: LoadStatus
@@ -156,6 +160,9 @@ export function UsersAdmin({
   onCreateInvite,
   onDeleteInvite,
   inviteBaseUrl = '',
+  signup,
+  onLoadSignup,
+  onSetSignup,
   onOpenConversation,
   engines,
   enginesStatus = 'ready',
@@ -287,6 +294,18 @@ export function UsersAdmin({
             <label className="make-autosave" title="Пользователь обязан сменить пароль при первом входе"><input type="checkbox" aria-label="Временный пароль" checked={newTemp} onChange={(e) => setNewTemp(e.target.checked)} /> временный пароль</label>
             <Button variant="primary" disabled={!newName.trim()} onClick={submitCreate}>Создать</Button>
           </div>}
+          {onLoadSignup && (
+            <details className="uadmin-invites" data-testid="admin-signup" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) onLoadSignup() }}>
+              <summary>Открытая регистрация{signup ? (signup.enabled ? ' — включена' : ' — выключена') : ''}</summary>
+              {signup && (
+                <div className="uadmin-invite-form">
+                  <label className="make-autosave"><input type="checkbox" aria-label="Разрешить регистрацию по email" checked={signup.enabled} onChange={(e) => onSetSignup?.({ enabled: e.target.checked })} /> разрешить регистрацию с подтверждением email</label>
+                  <label>Роль новых <select aria-label="Роль новых пользователей" value={signup.role} onChange={(e) => onSetSignup?.({ role: e.target.value as import('@shared/types').UserRole })}><option value="developer">developer</option><option value="tester">tester</option><option value="observer">observer</option></select></label>
+                  {!signup.mailConfigured && <span className="ublock ublock--lock" title="Задайте VC_SMTP_URL и VC_MAIL_FROM на сервере">SMTP не настроен — письма пишутся в лог сервера</span>}
+                </div>
+              )}
+            </details>
+          )}
           {onLoadInvites && (
             <details className="uadmin-invites" data-testid="admin-invites" open={invitesOpen} onToggle={(e) => { const open = (e.currentTarget as HTMLDetailsElement).open; setInvitesOpen(open); if (open) onLoadInvites() }}>
               <summary>Инвайт-ссылки{invites ? ` (${invites.length})` : ''}</summary>

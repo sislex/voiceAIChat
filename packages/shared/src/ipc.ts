@@ -37,7 +37,7 @@ import type {
   LlmEngineOption,
   AdminUserInfo,
   UsageReport,
-  UsageUnit, SecurityEvent, InviteInfo } from './admin'
+  UsageUnit, SecurityEvent, InviteInfo, SignupConfig } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
@@ -351,6 +351,9 @@ export interface IpcInvokeMap {
   'admin:updateUserRole': { arg: { name: string; role: import('./types').UserRole }; result: AdminUserInfo }
   /** Месячный лимит расхода LLM (auth-roadmap п.17); null — без лимита. */
   'admin:setUserLlmLimit': { arg: { name: string; llmLimitUsd: number | null }; result: AdminUserInfo }
+  /** Открытая регистрация: настройка. */
+  'admin:signupConfig': { arg: void; result: SignupConfig }
+  'admin:setSignupConfig': { arg: { enabled?: boolean; role?: UserRole }; result: SignupConfig }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
@@ -802,6 +805,11 @@ export interface RendererSessionBridge {
   /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
   resetPassword?(input: { name: string; code: string; password: string }): Promise<{ ok: true } | { error: string }>
   changePassword?(input: { current: string; next: string }): Promise<{ ok: true } | { error: string }>
+  /** Открытая регистрация с подтверждением email (web). */
+  signupEnabled?(): Promise<boolean>
+  signup?(input: { name: string; email: string; password: string }): Promise<{ ok: true; mailSent: boolean } | { error: string }>
+  signupResend?(email: string): Promise<void>
+  verifyEmail?(token: string): Promise<{ ok: true } | { error: string }>
   /** Саморегистрация по инвайту (auth-roadmap п.8, web). */
   inviteInfo?(token: string): Promise<{ role: string; expiresAt: number; note: string } | null>
   register?(input: { token: string; name: string; password: string }): Promise<{ ok: true } | { error: string }>
@@ -1054,6 +1062,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:inviteDelete',
   'admin:resetCode',
   'admin:setUserLlmLimit',
+  'admin:signupConfig',
+  'admin:setSignupConfig',
   'admin:makeStats',
   'admin:llmAccess',
   'admin:saveLlmAccess',

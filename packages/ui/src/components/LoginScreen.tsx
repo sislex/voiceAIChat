@@ -16,10 +16,12 @@ export interface LoginScreenProps {
   onCancelTwoFactor?: () => void
   /** Сброс пароля кодом от администратора (auth-roadmap п.10). */
   onReset?: (name: string, code: string, password: string) => void
+  /** Открытая регистрация включена — показать ссылку «Зарегистрироваться». */
+  onSignup?: () => void
 }
 
 /** Экран входа многопользовательского режима (web). Пароль может быть пустым. */
-export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false, onCode, onCancelTwoFactor, onReset }: LoginScreenProps): JSX.Element {
+export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false, onCode, onCancelTwoFactor, onReset, onSignup }: LoginScreenProps): JSX.Element {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
@@ -112,6 +114,7 @@ export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false
         <Button variant="primary" type="submit" disabled={!name.trim()}>
           Войти
         </Button>
+        {onSignup && <p className="login-hint">Нет учётной записи? <button type="button" className="make-link" onClick={onSignup}>Зарегистрироваться</button></p>}
         {onReset && <p className="login-hint"><button type="button" className="make-link" onClick={() => { setResetMode(true); setPassword('') }}>Есть код сброса от администратора?</button></p>}
       </form>
     </div>

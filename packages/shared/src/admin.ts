@@ -12,6 +12,8 @@ export interface AdminUserInfo {
   createdAt: number
   /** Временный пароль: пользователь обязан сменить его при входе (auth-roadmap п.11). */
   mustChangePassword?: boolean
+  /** Подтверждённый email саморегистрации. */
+  email?: string | null
   /** Последний вход (п.18) и месячный лимит расхода LLM (п.17). */
   lastLogin?: number | null
   llmLimitUsd?: number | null
@@ -179,11 +181,14 @@ export interface AdminMakeUserStat {
   views: number
 }
 
+/** Настройка открытой регистрации: включена ли и какую роль получают новые пользователи. */
+export interface SignupConfig { enabled: boolean; role: UserRole; mailConfigured: boolean }
+
 /** Инвайт на саморегистрацию (auth-roadmap п.8): роль, срок, лимит использований. */
 export interface InviteInfo { token: string; role: UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string }
 
 /** Журнал безопасности (auth-roadmap п.7): входы, выходы, неудачи, блокировки, смена пароля, 2FA. */
-export type SecurityEventType = 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
+export type SecurityEventType = 'signup_requested' | 'signup_verified' | 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
 export interface SecurityEvent { id: number; at: number; user: string; type: SecurityEventType; ip: string; userAgent: string; details: string }
 
 /** Диск с данными (roadmap-4 п.40): `alert` — свободно меньше `MAKE_DISK_ALERT_BYTES`. */

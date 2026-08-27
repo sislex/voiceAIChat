@@ -86,6 +86,8 @@ export function createAdminClient(api: RendererApi): AdminClient {
       listInvites: () => api['admin:invites']().then((r) => r.invites),
       resetCode: ({ name }) => api['admin:resetCode']({ name }),
       setUserLlmLimit: (input) => api['admin:setUserLlmLimit'](input),
+      signupConfig: () => api['admin:signupConfig'](),
+      setSignupConfig: (input) => api['admin:setSignupConfig'](input),
       createInvite: (input) => api['admin:inviteCreate'](input),
       deleteInvite: ({ token }) => api['admin:inviteDelete']({ token }).then(() => undefined),
       makeStats: () => api['admin:makeStats'](),

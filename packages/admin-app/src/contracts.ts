@@ -1,6 +1,6 @@
 import type {
   AdminLlmEngine, AdminLlmEngineHealth, AdminLlmEngineInput, AdminUserInfo,
-  ModelPrice, ModelPriceInput, UsageReport, UsageUnit, UserUsageSummary, AdminMakeStats, SecurityEvent, InviteInfo } from '@shared/admin'
+  ModelPrice, ModelPriceInput, UsageReport, UsageUnit, UserUsageSummary, AdminMakeStats, SecurityEvent, InviteInfo, SignupConfig } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { Conversation, Message, SessionInfo, SessionUser, UserRole } from '@shared/types'
 
@@ -23,6 +23,9 @@ export interface AdminClient {
   resetCode?(input: { name: string }): Promise<{ code: string; expiresAt: number }>
   /** Месячный лимит расхода LLM (auth-roadmap п.17). */
   setUserLlmLimit?(input: { name: string; llmLimitUsd: number | null }): Promise<AdminUserInfo>
+  /** Открытая регистрация с подтверждением email. */
+  signupConfig?(): Promise<SignupConfig>
+  setSignupConfig?(input: { enabled?: boolean; role?: UserRole }): Promise<SignupConfig>
   updateUserRole(input: { name: string; role: UserRole }): Promise<AdminUserInfo>
   setUserBlocked(input: { name: string; blocked: boolean }): Promise<void>
   deleteUser(input: { name: string }): Promise<void>

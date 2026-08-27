@@ -12,7 +12,7 @@ import type {
   ModelPriceInput,
   UsageReport,
   UsageUnit,
-  UserUsageSummary, AdminMakeStats, SecurityEvent, InviteInfo } from '@shared/admin'
+  UserUsageSummary, AdminMakeStats, SecurityEvent, InviteInfo, SignupConfig } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
 
 export const EMPTY_LLM_ACCESS: readonly UserLlmAccess[] = Object.freeze([])
@@ -38,6 +38,8 @@ export interface AdminState {
   adminSecurity: SecurityEvent[] | null
   /** Инвайты (auth-roadmap п.8). */
   adminInvites: InviteInfo[] | null
+  /** Открытая регистрация. */
+  adminSignup: SignupConfig | null
   adminConversations: Conversation[]
   adminMessages: Message[]
   adminConversationId: string | null
@@ -65,6 +67,8 @@ export interface AdminActions {
   loadAdminSessions(): Promise<void>
   loadAdminSecurity(): Promise<void>
   loadAdminInvites(): Promise<void>
+  loadAdminSignup(): Promise<void>
+  setAdminSignup(input: { enabled?: boolean; role?: UserRole }): Promise<void>
   createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }): Promise<InviteInfo | null>
   deleteAdminInvite(token: string): Promise<void>
   revokeAdminSession(sid: string): Promise<void>
@@ -104,6 +108,7 @@ function initialState(): AdminState {
     adminSessions: null,
     adminSecurity: null,
     adminInvites: null,
+    adminSignup: null,
     adminConversations: [],
     adminMessages: [],
     adminConversationId: null,
@@ -174,6 +179,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     adminSessions: null,
     adminSecurity: null,
     adminInvites: null,
+    adminSignup: null,
       adminConversations: [],
       adminMessages: [],
       adminConversationId: null,
@@ -191,6 +197,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     adminSessions: null,
     adminSecurity: null,
     adminInvites: null,
+    adminSignup: null,
       adminConversations: [],
       adminMessages: [],
       adminConversationId: null,
@@ -252,6 +259,15 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     const name = getState().adminSelected
     if (!name || !client.securityEvents) return
     try { setState({ adminSecurity: await client.securityEvents({ user: name, limit: 200 }) }) } catch (err) { fail(err, () => void loadAdminSecurity()) }
+  }
+
+  async function loadAdminSignup(): Promise<void> {
+    if (!client.signupConfig) return
+    try { setState({ adminSignup: await client.signupConfig() }) } catch (err) { fail(err, () => void loadAdminSignup()) }
+  }
+  async function setAdminSignup(input: { enabled?: boolean; role?: UserRole }): Promise<void> {
+    if (!client.setSignupConfig) return
+    try { setState({ adminSignup: await client.setSignupConfig(input) }) } catch (err) { fail(err, () => void setAdminSignup(input)) }
   }
 
   async function loadAdminInvites(): Promise<void> {
@@ -364,6 +380,8 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       loadAdminSessions,
     loadAdminSecurity,
     loadAdminInvites,
+    loadAdminSignup,
+    setAdminSignup,
     createAdminInvite,
     deleteAdminInvite,
       revokeAdminSession,

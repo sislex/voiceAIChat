@@ -294,6 +294,8 @@ export interface UserRow {
   /** Последний успешный вход (п.18) и месячный лимит расхода LLM в USD (п.17; null — без лимита). */
   lastLogin: number | null
   llmLimitUsd: number | null
+  /** Подтверждённый email (саморегистрация); null — не указан. */
+  email: string | null
 }
 
 /** Порог временной блокировки и её длительность; после `LOGIN_HARD_LOCK_FAILS` подряд — блокировка `blocked`. */
@@ -317,6 +319,7 @@ interface UserDbRow {
   last_login?: number | null
   notices_seen_at?: number | null
   llm_limit_usd?: number | null
+  email?: string | null
 }
 
 interface LlmEngineRow {
@@ -754,6 +757,9 @@ export class VoiceChatDb {
     if (userCols.length && !userCols.some((c) => c.name === 'last_login')) this.db.exec(`ALTER TABLE users ADD COLUMN last_login INTEGER`)
     if (userCols.length && !userCols.some((c) => c.name === 'notices_seen_at')) this.db.exec(`ALTER TABLE users ADD COLUMN notices_seen_at INTEGER NOT NULL DEFAULT 0`)
     if (userCols.length && !userCols.some((c) => c.name === 'llm_limit_usd')) this.db.exec(`ALTER TABLE users ADD COLUMN llm_limit_usd REAL`)
+    // Email пользователя (регистрация с подтверждением); уникальность — через индекс.
+    if (userCols.length && !userCols.some((c) => c.name === 'email')) this.db.exec(`ALTER TABLE users ADD COLUMN email TEXT`)
+    this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL`)
     const taskLinkCols = this.db.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'source_task_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
     const improvementCols = this.db.prepare(`PRAGMA table_info(task_improvements)`).all() as Array<{ name: string }>
@@ -2485,7 +2491,59 @@ export class VoiceChatDb {
   // ---- Users (аккаунты приложения) --------------------------------------
 
   private mapUser(r: UserDbRow): UserRow {
-    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at, failedLogins: r.failed_logins ?? 0, lockedUntil: r.locked_until ?? null, lockReason: r.lock_reason ?? null, totpEnabled: Boolean(r.totp_secret), mustChangePassword: Boolean(r.must_change_password), lastLogin: r.last_login ?? null, llmLimitUsd: r.llm_limit_usd ?? null }
+    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at, failedLogins: r.failed_logins ?? 0, lockedUntil: r.locked_until ?? null, lockReason: r.lock_reason ?? null, totpEnabled: Boolean(r.totp_secret), mustChangePassword: Boolean(r.must_change_password), lastLogin: r.last_login ?? null, llmLimitUsd: r.llm_limit_usd ?? null, email: r.email ?? null }
+  }
+
+  // ---- Конфигурация приложения (ключ/значение) и регистрация по email ----------------
+
+  getAppConfig(key: string): string | null {
+    const r = this.db.prepare(`SELECT value FROM app_config WHERE key = ?`).get(key) as { value: string } | undefined
+    return r?.value ?? null
+  }
+
+  setAppConfig(key: string, value: string): void {
+    this.db.prepare(`INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value)
+  }
+
+  getUserByEmail(email: string): UserRow | null {
+    const row = this.db.prepare(`SELECT * FROM users WHERE email = ?`).get(email.toLowerCase()) as UserDbRow | undefined
+    return row ? this.mapUser(row) : null
+  }
+
+  /** Заявка на регистрацию: пароль уже хешируется, токен хранится хешем; повторная заявка на тот же email заменяет прежнюю. */
+  createEmailVerification(input: { token: string; name: string; email: string; password: string; ttlMs: number }): void {
+    this.db.prepare(`DELETE FROM email_verifications WHERE email = ? OR name = ?`).run(input.email.toLowerCase(), input.name)
+    this.db.prepare(`INSERT INTO email_verifications (token_hash, name, email, password_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(createHash('sha256').update(input.token).digest('hex'), input.name, input.email.toLowerCase(), hashPassword(input.password), Date.now(), Date.now() + input.ttlMs)
+  }
+
+  /** Подтверждение: создаёт пользователя из заявки и удаляет её; null — токен неизвестен/истёк/логин занят. */
+  redeemEmailVerification(token: string, role: UserRole): UserRow | null {
+    const hash = createHash('sha256').update(token).digest('hex')
+    const r = this.db.prepare(`SELECT * FROM email_verifications WHERE token_hash = ?`).get(hash) as { name: string; email: string; password_hash: string; expires_at: number } | undefined
+    if (!r) return null
+    this.db.prepare(`DELETE FROM email_verifications WHERE token_hash = ?`).run(hash)
+    if (r.expires_at < Date.now() || this.getUser(r.name) || this.getUserByEmail(r.email)) return null
+    this.db.prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at, email) VALUES (?, ?, ?, 0, ?, ?)`).run(r.name, r.password_hash, role, this.now(), r.email)
+    return this.getUser(r.name)
+  }
+
+  pendingVerificationByEmail(email: string): { name: string; expiresAt: number } | null {
+    const r = this.db.prepare(`SELECT name, expires_at FROM email_verifications WHERE email = ? AND expires_at > ?`).get(email.toLowerCase(), Date.now()) as { name: string; expires_at: number } | undefined
+    return r ? { name: r.name, expiresAt: r.expires_at } : null
+  }
+
+  getPendingVerificationRaw(email: string): { name: string } | null {
+    const r = this.db.prepare(`SELECT name FROM email_verifications WHERE email = ?`).get(email.toLowerCase()) as { name: string } | undefined
+    return r ?? null
+  }
+
+  replaceVerificationToken(email: string, token: string, ttlMs: number): void {
+    this.db.prepare(`UPDATE email_verifications SET token_hash = ?, expires_at = ? WHERE email = ?`).run(createHash('sha256').update(token).digest('hex'), Date.now() + ttlMs, email.toLowerCase())
+  }
+
+  pruneEmailVerifications(): number {
+    return this.db.prepare(`DELETE FROM email_verifications WHERE expires_at < ?`).run(Date.now()).changes
   }
 
   markLogin(name: string): void {
@@ -2577,7 +2635,7 @@ export class VoiceChatDb {
     this.db
       .prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES (?, ?, ?, 0, ?)`)
       .run(name, hashPassword(password), role, this.now())
-    return { name, role, blocked: false, createdAt: this.now(), failedLogins: 0, lockedUntil: null, lockReason: null, totpEnabled: false, mustChangePassword: false, lastLogin: null, llmLimitUsd: null }
+    return { name, role, blocked: false, createdAt: this.now(), failedLogins: 0, lockedUntil: null, lockReason: null, totpEnabled: false, mustChangePassword: false, lastLogin: null, llmLimitUsd: null, email: null }
   }
 
   getUser(name: string): UserRow | null {
