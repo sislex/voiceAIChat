@@ -1,7 +1,7 @@
 ---
 title: Данные и доступ: SQLite, пользователи, роли
-updated: 2026-08-18
-checked: 3ed7d99
+updated: 2026-08-27
+checked: 1ed1a106
 areas:
   - apps/server/src/db
   - apps/server/src/users
@@ -224,3 +224,5 @@ USD за 1M обычных/кэшированных/записанных в кэ
 видеть картинки, созданные CLI.
 
 **Проекты** (таблицы `projects`/`project_members`/`project_machines`/`kanban_columns`/`tasks`, доступ по членству, а не по единственному владельцу) — см. [projects.md](projects.md).
+
+**Rate-limit входа (auth-roadmap п.1).** `POST /api/session/login` считает попытки двумя `SlidingWindowLimiter` (`apps/server/src/make/rateLimit.ts`): по `req.ip` и по имени (в нижнем регистре), 10 за 10 минут каждый; превышение — 429 с заголовком `Retry-After` и телом `{ error, retryAfterSec }`. Успешный вход счётчик не сбрасывает (окно скользящее), поэтому 11-я попытка с одного IP за окно блокируется даже при верном пароле. Лимитеры живут в памяти процесса — после рестарта сервера обнуляются; за прокси нужен корректный `trustProxy`, иначе все клиенты делят один IP.

@@ -3,6 +3,10 @@
 // БД (таблица users). Плюс роуты сессии (login/me/logout) и guard requireAdmin.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { SlidingWindowLimiter } from '../make/rateLimit.js'
+
+const LOGIN_LIMIT = 10
+const LOGIN_WINDOW_MS = 10 * 60_000
 import { REST, type SessionUser } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { signToken, verifyTokenName } from './accounts.js'
@@ -158,10 +162,20 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     }
   })
 
+  // Rate-limit входа (auth-roadmap п.1): 10 попыток за 10 минут отдельно по IP и по имени; успешный вход счётчик не сбрасывает —
+  // окно скользящее, и брутфорс с одного адреса упирается в 429 независимо от того, угадал ли он пароль по пути.
+  const loginByIp = new SlidingWindowLimiter(LOGIN_LIMIT, LOGIN_WINDOW_MS)
+  const loginByName = new SlidingWindowLimiter(LOGIN_LIMIT, LOGIN_WINDOW_MS)
   app.post<{ Body: { name?: string; password?: string } }>(
     REST.sessionLogin,
     async (req, reply) => {
       const { name, password } = req.body ?? {}
+      const byIp = loginByIp.hit(req.ip)
+      const byName = name ? loginByName.hit(name.trim().toLowerCase()) : { ok: true, remaining: LOGIN_LIMIT, retryAfterSec: 0 }
+      if (!byIp.ok || !byName.ok) {
+        const retry = Math.max(byIp.retryAfterSec, byName.retryAfterSec)
+        return reply.code(429).header('retry-after', String(retry)).send({ error: `Слишком много попыток входа — подождите ${retry} с`, retryAfterSec: retry })
+      }
       const u = name ? db.verifyUserPassword(name, password ?? '') : null
       if (!u) return reply.code(401).send({ error: 'неверный логин или пароль' })
       if (u.blocked) return reply.code(403).send({ error: 'учётная запись заблокирована' })
