@@ -186,7 +186,7 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 
 ## Единый frontend quality gate
 
-Каноническая команда `npm run verify:frontend` последовательно запускает статический gate, typecheck и Vitest всех frontend-пакетов, Web build, bundle check, Storybook build и build Desktop renderer. Она использует только локальные fake clients/JSDOM fixtures и не требует backend, CLI, production credentials, SQLite, микрофона, машин или сети.
+Каноническая команда `npm run verify:frontend` последовательно запускает статический gate, typecheck и Vitest всех frontend-пакетов, Web build, bundle check, Storybook build и build Desktop renderer. Она использует только локальные fake clients/JSDOM fixtures и не требует backend, CLI, production credentials, SQLite, микрофона, машин или сети. Desktop намеренно не входит в корневые npm workspaces, поэтому `frontend:build-gates` перед его сборкой выполняет `npm ci --prefix apps/desktop`; свежий CI-checkout не должен зависеть от ранее созданного `apps/desktop/node_modules`.
 
 `scripts/frontend-quality.mjs` проверяет workspace dependency graph и циклы, запрет deep imports и product/host/platform/transport leaks, существование root/styles package exports, обязательную Storybook-матрицу пяти модулей, CSS imports/keyframes/unscoped selectors и dynamic imports всех product modules с role-gated Admin. Негативные fixtures и redaction отчёта покрыты `scripts/frontend-quality.test.mjs`. Безопасный машинный отчёт сохраняется в `artifacts/frontend-quality/report.json`; token, Bearer credentials и credential-bearing URLs редактируются.
 
