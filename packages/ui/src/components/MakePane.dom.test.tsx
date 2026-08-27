@@ -253,6 +253,23 @@ describe('MakePane', () => {
     } finally { URL.createObjectURL = origCreate; globalThis.fetch = origFetch; vi.useRealTimers() }
   })
 
+  it('после хода показываются чипы «Что дальше», клик отправляет промпт (roadmap-4 п.8)', async () => {
+    const onAsk = vi.fn()
+    const api = createFakeApi([])
+    const props = { conversationId: CONV, api, make: { onChanged: () => () => {} }, previewBase: `/api/preview/make/${CONV}/`, onAskAssistant: onAsk }
+    const { rerender } = render(<MakePane {...props} turnActive={false} />)
+    await screen.findByTitle('Превью проекта')
+    expect(screen.queryByTestId('make-next')).toBeNull()
+    rerender(<MakePane {...props} turnActive />)
+    rerender(<MakePane {...props} turnActive={false} />)
+    const strip = await screen.findByTestId('make-next')
+    const chips = within(strip).getAllByRole('button').filter((b) => b.className.includes('make-next-chip'))
+    expect(chips.length).toBe(3)
+    await userEvent.click(chips[0]!)
+    expect(onAsk).toHaveBeenCalled()
+    expect(screen.queryByTestId('make-next')).toBeNull()
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)
