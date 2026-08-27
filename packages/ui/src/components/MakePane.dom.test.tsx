@@ -309,4 +309,20 @@ describe('MakePane', () => {
     await userEvent.click(within(diff).getByRole('button', { name: 'Вернуть файл' }))
     await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toBe(MAKE_SCAFFOLD['index.html']))
   })
+
+  it('ошибка в консоли сразу после правки → баннер «Исправить» отправляет текст ассистенту', async () => {
+    const onAskAssistant = vi.fn()
+    const { emit } = renderPane({ onAskAssistant })
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    emit({ conversationId: CONV, rev: 5, paths: ['app.js'] })
+    // Превью пересоздаётся (key=rev) — ждём новый iframe, иначе source не совпадёт с frameRef.
+    await waitFor(() => expect(screen.getByTitle('Превью проекта')).not.toBe(frame))
+    const frame2 = screen.getByTitle('Превью проекта') as HTMLIFrameElement
+    fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.console', level: 'error', text: 'ReferenceError: foo is not defined', at: Date.now() }, source: frame2.contentWindow }))
+    const banner = await screen.findByTestId('make-autofix')
+    expect(banner).toHaveTextContent('ReferenceError')
+    await userEvent.click(within(banner).getByRole('button', { name: 'Исправить' }))
+    expect(onAskAssistant).toHaveBeenCalledWith(expect.stringContaining('foo is not defined'))
+    await waitFor(() => expect(screen.queryByTestId('make-autofix')).not.toBeInTheDocument())
+  })
 })

@@ -65,9 +65,11 @@ describe('makeMcp', () => {
     expect(events.filter((e) => e.t === 'make.changed')).toHaveLength(2)
     expect(events[0]).toMatchObject({ t: 'make.changed', conversationId: CONV, paths: ['index.html'] })
 
-    // Новый ход — новый снимок.
-    await rpc(call('make_write_file', { path: 'index.html', content: '<h1>b</h1>' }), `?k=${SECRET}&conv=${CONV}&turn=t2`)
-    expect((await workspaces.snapshots(CONV))).toHaveLength(2)
+    // Новый ход — новый снимок; с note подпись содержит запрос пользователя.
+    await rpc(call('make_write_file', { path: 'index.html', content: '<h1>b</h1>' }), `?k=${SECRET}&conv=${CONV}&turn=t2&note=${encodeURIComponent('сделай тёмную тему')}`)
+    const snaps = await workspaces.snapshots(CONV)
+    expect(snaps).toHaveLength(2)
+    expect(snaps[0]!.label).toBe('До правок: «сделай тёмную тему»')
   })
 
   it('read/rename/delete и ошибки путей возвращаются моделью текстом, ro=1 блокирует мутации', async () => {

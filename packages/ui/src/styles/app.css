@@ -6639,3 +6639,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-diff-fallback pre { margin: 0; padding: 8px; font-size: 12px; background: #0d1117; color: #c9d1d9; border-radius: 8px; overflow: auto; }
 .make-diff-removed { background: rgb(248 81 73 / .25); display: inline-block; width: 100%; }
 .make-diff-added { background: rgb(63 185 80 / .25); display: inline-block; width: 100%; }
+
+/* Make: предложение исправить ошибки консоли после правки. */
+.make-autofix { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 12px; border-top: 1px solid var(--border); background: rgb(248 81 73 / .08); font-size: 12.5px; flex-wrap: wrap; }
+.make-autofix code { font-size: 12px; color: var(--danger); }
+.make-autofix-actions { display: inline-flex; gap: 6px; align-items: center; }

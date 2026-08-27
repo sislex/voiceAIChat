@@ -685,7 +685,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // чтобы снимок «до правок ассистента» снимался один раз за ход.
     let makeMcpUrl: string | undefined
     if (conv?.assistantKind === 'make' && deps.makeMcpBaseUrl) {
-      makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(randomUUID())}`
+      // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
+      const note = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim().slice(0, 80)
+      makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(randomUUID())}${note ? `&note=${encodeURIComponent(note)}` : ''}`
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
