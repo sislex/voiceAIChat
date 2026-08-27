@@ -555,6 +555,10 @@ export async function registerAgentRoutes(
       withFs(req, reply, (id) => registry.fsRename(id, req.body?.from ?? '', req.body?.to ?? ''))
   )
   app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string } }>(
+    '/api/agents/:id/fs/trash',
+    async (req, reply) => withFs(req, reply, (id) => registry.fsTrash(id, req.body?.path ?? ''))
+  )
+  app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string } }>(
     '/api/agents/:id/fs/mkdir',
     async (req, reply) => withFs(req, reply, (id) => registry.fsMkdir(id, req.body?.path ?? ''))
   )

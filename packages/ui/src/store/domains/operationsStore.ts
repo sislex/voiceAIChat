@@ -84,6 +84,7 @@ export interface OperationsActions {
   fsRead(agentId: string, path: string): Promise<FsResult>
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult>
   fsRemove(agentId: string, path: string): Promise<FsResult>
+  fsTrash(agentId: string, path: string): Promise<FsResult>
   fsRename(agentId: string, from: string, to: string): Promise<FsResult>
   fsMkdir(agentId: string, path: string): Promise<FsResult>
   downloadFsFile(agentId: string, path: string, name: string): Promise<void>
@@ -341,6 +342,7 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
       fsWrite: (agentId, path, dataBase64) =>
         client.fs ? client.fs.write(agentId, path, dataBase64, projectId()) : noFs(),
       fsRemove: (agentId, path) => (client.fs ? client.fs.remove(agentId, path, projectId()) : noFs()),
+      fsTrash: (agentId, path) => (client.fs?.trash ? client.fs.trash(agentId, path, projectId()) : noFs()),
       fsRename: (agentId, from, to) => (client.fs ? client.fs.rename(agentId, from, to, projectId()) : noFs()),
       fsMkdir: (agentId, path) => (client.fs ? client.fs.mkdir(agentId, path, projectId()) : noFs()),
       async downloadFsFile(agentId, path, name) {

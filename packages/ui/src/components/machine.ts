@@ -9,6 +9,8 @@ export interface MachineOps {
   read(agentId: string, path: string): Promise<FsResult>
   write(agentId: string, path: string, dataBase64: string): Promise<FsResult>
   remove(agentId: string, path: string): Promise<FsResult>
+  /** Корзина машины (агент ≥ 0.15.0): элемент переезжает в `.voicechat_trash`, результат несёт trashedPath. */
+  trash?(agentId: string, path: string): Promise<FsResult>
   rename(agentId: string, from: string, to: string): Promise<FsResult>
   mkdir(agentId: string, path: string): Promise<FsResult>
   download(agentId: string, path: string, name: string): Promise<void>

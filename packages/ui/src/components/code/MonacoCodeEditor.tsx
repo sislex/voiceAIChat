@@ -54,7 +54,8 @@ export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLa
     <div className="make-monaco" data-testid="make-monaco" aria-label={ariaLabel} role="group">
       <Editor
         key={path}
-        path={`file:///${path}`}
+        // Абсолютные пути машины начинаются с `/` (или `C:\`): убираем ведущие слэши, иначе URI получает `////` и Monaco падает.
+        path={`file:///${path.replace(/^[\\/]+/, '')}`}
         language={monacoLanguageFor(path)}
         value={value}
         theme="vs-dark"
