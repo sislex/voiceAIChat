@@ -5,6 +5,7 @@ import { REST } from '@shared/protocol'
 import { CodeEditor } from './CodeEditor'
 import { CodeDiff } from './CodeDiff'
 import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
+import { MakeControlField, type ArgType } from './MakeControls'
 import { copyText } from '../lib/clipboard'
 import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
@@ -136,6 +137,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [storyArgs, setStoryArgs] = useState<Record<string, unknown> | null>(null)
   const [argOverrides, setArgOverrides] = useState<Record<string, unknown>>({})
   const [argOptions, setArgOptions] = useState<Record<string, string[]>>({})
+  const [argTypes, setArgTypes] = useState<Record<string, ArgType>>({})
   const [ideasOpen, setIdeasOpen] = useState(false)
   // Консоль превью: строки из iframe (console.* и ошибки), сбрасываются при перезагрузке превью.
   const [consoleLines, setConsoleLines] = useState<MakeConsoleLine[]>([])
@@ -162,8 +164,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const storyFrameRef = useRef<HTMLIFrameElement | null>(null)
   useEffect(() => {
     const onMessage = (e: MessageEvent): void => {
-      const d = e.data as { type?: string; args?: Record<string, unknown>; options?: Record<string, string[]> } | null
-      if (d?.type === 'vc-make.story' && e.source === storyFrameRef.current?.contentWindow) { setStoryArgs(d.args ?? {}); setArgOptions(d.options ?? {}); setArgOverrides({}) }
+      const d = e.data as { type?: string; args?: Record<string, unknown>; options?: Record<string, string[]>; argTypes?: Record<string, ArgType> } | null
+      if (d?.type === 'vc-make.story' && e.source === storyFrameRef.current?.contentWindow) { setStoryArgs(d.args ?? {}); setArgOptions(d.options ?? {}); setArgTypes(d.argTypes ?? {}); setArgOverrides({}) }
       if (d?.type === 'vc-make.console' && (e.source === frameRef.current?.contentWindow || e.source === storyFrameRef.current?.contentWindow)) {
         const line = d as unknown as MakeConsoleLine
         setConsoleLines((prev) => [...prev.slice(-199), { level: line.level, text: line.text, at: line.at }])
@@ -833,32 +835,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   <p className="make-controls-empty">У стори нет args — добавьте их в default-экспорт или в саму стори.</p>
                 ) : (
                   <div className="make-controls-grid">
-                    {Object.entries(storyArgs).map(([key, base]) => {
-                      const value = key in argOverrides ? argOverrides[key] : base
-                      const id = `make-arg-${key}`
-                      if (typeof base === 'boolean') {
-                        return <label key={key} className="make-control" htmlFor={id}><span>{key}</span><input id={id} type="checkbox" checked={Boolean(value)} onChange={(e) => setArg(key, e.target.checked)} /></label>
-                      }
-                      if (typeof base === 'number') {
-                        return <label key={key} className="make-control" htmlFor={id}><span>{key}</span><input id={id} type="number" value={Number(value)} onChange={(e) => setArg(key, Number(e.target.value))} /></label>
-                      }
-                      if (typeof base === 'string' && argOptions[key] && argOptions[key]!.length >= 2) {
-                        const opts = argOptions[key]!
-                        const current = String(value)
-                        return (
-                          <label key={key} className="make-control" htmlFor={id}><span>{key}</span>
-                            <select id={id} value={current} onChange={(e) => setArg(key, e.target.value)}>
-                              {!opts.includes(current) && <option value={current}>{current}</option>}
-                              {opts.map((o) => <option key={o} value={o}>{o}</option>)}
-                            </select>
-                          </label>
-                        )
-                      }
-                      if (typeof base === 'string' && !/^\[(function|element)\]$/.test(base)) {
-                        return <label key={key} className="make-control" htmlFor={id}><span>{key}</span><input id={id} type="text" value={String(value)} onChange={(e) => setArg(key, e.target.value)} /></label>
-                      }
-                      return <div key={key} className="make-control make-control--ro"><span>{key}</span><code>{typeof base === 'string' ? base : JSON.stringify(base)}</code></div>
-                    })}
+                    {Object.entries(storyArgs).map(([key, base]) => (
+                      <MakeControlField key={key} name={key} base={base} value={key in argOverrides ? argOverrides[key] : base} argType={argTypes[key]} enumOptions={argOptions[key]} onChange={(v) => setArg(key, v)} />
+                    ))}
                   </div>
                 )}
               </section>

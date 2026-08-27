@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: da9bf941
+checked: fe8ea077
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -511,7 +511,11 @@ read-only, side-by-side) или построчный фолбэк в jsdom; сл
 `vc-make.args {args}` — раннер перерисовывает стори с `{...args, ...overrides}`; файлы не меняются.
 «Сбросить» очищает переопределения, «Сохранить через ассистента» вставляет в чат просьбу зафиксировать
 args в стори. Enum-подобные args: раннер собирает строковые значения одного ключа по всем стори файла
-(`options`, ≥2 значений, кроме `children` и строк длиннее 32) — панель рисует `<select>`.
+(`options`, ≥2 значений, кроме `children` и строк длиннее 32) — панель рисует `<select>`. Поля рисует
+`MakeControls.tsx` (п.14): `controlKind` — сначала `argTypes` из CSF (`control: range|color|select|object`,
+`min/max/step/options`, раннер шлёт их в `vc-make.story.argTypes`), потом эвристика по значению: `#hex`/`rgb()`
+→ `<input type=color>`, массив/объект → JSON-textarea с проверкой (невалидный текст не уходит в раннер,
+`aria-invalid` + текст ошибки), `[function]`/`[element]` — read-only.
 **Стартовые идеи** (как главная Figma Make): в «свежем» проекте (файлы = `MAKE_SCAFFOLD` по байтам)
 над превью карточки `make-starters` (первые 6 из `MAKE_STARTER_PROMPTS`), кнопка ✦ в шапке открывает
 диалог `make-ideas` со всеми промптами по группам `MAKE_STARTER_GROUPS`; клик вставляет промпт в
