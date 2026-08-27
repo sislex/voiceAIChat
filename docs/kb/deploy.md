@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-08-28
-checked: bdee3724
+checked: d4c807cb
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -476,4 +476,4 @@ ls /app/scripts/ci-usage-report.mjs`). Лестницы хватает и на �
 
 **Кастомный домен публикаций Make (roadmap-4 п.33, ⏸).** Публикации живут на `/p/<token>/` и `/s/<slug>/` того же хоста. Свой домен на проект требует wildcard-DNS (`*.make.<домен>` → прод) и TLS-сертификата на wildcard в Caddy (`tls` с DNS-челленджем) плюс маршрут, который по `Host` подставляет slug; ни DNS-зоны, ни DNS-провайдера в окружении нет, поэтому пункт отложен. Когда появятся — точка входа: `servePublic` в `apps/server/src/routes/make.ts` (разрешение slug → token через `.published/slug-<slug>.json`).
 
-**Почта для регистрации.** Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='ChatAI <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
+**Почта для регистрации.** `docker-compose.yml` пробрасывает их из `.env` рядом с compose (`/root/voiceAIChat/.env`). Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='ChatAI <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
