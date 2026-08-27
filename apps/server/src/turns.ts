@@ -33,7 +33,8 @@ import {
   type LlmAttachment,
   type LlmProvider,
   type WidgetAssistantContext,
-  toolNameForContextId
+  toolNameForContextId,
+  isBigMakeRequest,
 } from '@voicechat/shared'
 import type { VoiceChatDb } from './db/database.js'
 import { relocateImagesToMachine } from './imageRelocate.js'
@@ -461,6 +462,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const sessionId = resumeIdFor(conv?.claudeSessionId ?? null, provider)
     // Режим прав: переопределение разговора приоритетнее общих настроек.
     let permissionMode = conv?.permissionMode ?? settings.permissionMode
+    // Большая переделка Make (п.20): ход идёт в режиме «План» (файлы только на чтение), модель отвечает
+    // планом и ждёт «да». Явно выставленный пользователем режим не трогаем — только default → plan.
+    const makeAutoPlan = conv?.assistantKind === 'make' && permissionMode !== 'plan'
+      && isBigMakeRequest(req.segments.map((s) => s.text).join(' '))
+    if (makeAutoPlan) permissionMode = 'plan'
     // Рабочий каталог разговора (`conv.workdir`) выбирается через проводник
     // МАШИНЫ — это путь на её хосте, и в контейнере сервера его нет. Он уходит
     // только в MCP-мост (`&cwd=`), где `remote.bash` делает `cd` на агенте.
@@ -585,7 +591,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     const instructions = effectiveChatInstructions(settings.chatInstructions, disabledContext)
       .filter((item) => !(conv?.assistantKind === 'console-reader' && item.kind === 'console'))
       .filter((item) => !(conv?.assistantKind === 'make' && (item.kind === 'taskLaunch' || item.kind === 'console')))
-    const prompt = appendChatInstructionHints(basePrompt, instructions)
+    const promptBase = appendChatInstructionHints(basePrompt, instructions)
+    const prompt = makeAutoPlan
+      ? `${promptBase}\n\n## Режим плана (большая переделка)\nЗапрос затрагивает весь проект. Сначала изучи файлы (make_list_files/make_read_file) и ответь планом: какие файлы создашь/изменишь и что в них будет, 5–12 пунктов. Файлы в этом ходе менять нельзя. Закончи вопросом, подтверждает ли пользователь план — после «да» он пришлёт следующий запрос, и ты выполнишь его целиком.`
+      : promptBase
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
     const machine = deps.db.resolveConversationMachine(userId, conversationId, {
@@ -686,8 +695,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     let makeMcpUrl: string | undefined
     if (conv?.assistantKind === 'make' && deps.makeMcpBaseUrl) {
       // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
-      const note = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim().slice(0, 80)
+      const userText = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim()
+      const note = userText.slice(0, 80)
       makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(randomUUID())}${note ? `&note=${encodeURIComponent(note)}` : ''}`
+
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
