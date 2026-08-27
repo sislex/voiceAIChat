@@ -267,6 +267,48 @@ export class MakeWorkspaces {
     return out.sort((a, b) => b.createdAt - a.createdAt)
   }
 
+  // ---- Транзакционные правки и патчи (roadmap-4 пп.1–2) -------------------------
+
+  /**
+   * Несколько файлов одной операцией: если после записи проверка находит ошибку компиляции в любом из них,
+   * все записанные файлы возвращаются к прежнему содержимому (удалённые — восстанавливаются), и наружу
+   * уходит список ошибок. Так модель не оставляет проект в полусобранном состоянии.
+   */
+  async applyChanges(conversationId: string, files: Array<{ path: string; content: string }>, deletes: string[] = []): Promise<{ state: MakeProjectState; issues: MakeCheckIssue[]; rolledBack: boolean }> {
+    const previous = new Map<string, string | null>()
+    const remember = async (path: string): Promise<void> => {
+      if (previous.has(path)) return
+      const cur = await this.readBuffer(conversationId, path).catch(() => null)
+      previous.set(path, cur ? cur.data.toString('utf8') : null)
+    }
+    for (const f of files) await remember(f.path)
+    for (const d of deletes) await remember(d)
+    for (const f of files) await this.write(conversationId, f.path, f.content)
+    for (const d of deletes) { try { await this.delete(conversationId, d) } catch { /* уже нет */ } }
+    const touched = new Set(files.map((f) => f.path))
+    const issues = (await this.check(conversationId).catch(() => [] as MakeCheckIssue[])).filter((i) => touched.has(i.path))
+    const fatal = issues.some((i) => i.kind === 'compile-error')
+    if (fatal) {
+      for (const [path, content] of previous) {
+        if (content === null) { try { await this.delete(conversationId, path) } catch { /* не было */ } } else await this.write(conversationId, path, content)
+      }
+    }
+    return { state: await this.state(conversationId), issues, rolledBack: fatal }
+  }
+
+  /** Точечная правка: заменить фрагмент `find` на `replace`; без `all` фрагмент должен встречаться ровно один раз. */
+  async editFile(conversationId: string, path: string, find: string, replace: string, all = false): Promise<{ state: MakeProjectState; replaced: number }> {
+    if (!find) throw new MakeError('invalid_path', 'Пустой фрагмент для поиска')
+    const cur = await this.readBuffer(conversationId, path)
+    if (!cur) throw new MakeError('not_found', `Файл ${path} не найден`)
+    const text = cur.data.toString('utf8')
+    const count = text.split(find).length - 1
+    if (count === 0) throw new MakeError('not_found', `Фрагмент не найден в ${path}. Перечитай файл make_read_file и передай точный текст.`)
+    if (count > 1 && !all) throw new MakeError('exists', `Фрагмент встречается ${count} раз в ${path}: расширь его до уникального или передай all=true`)
+    const next = all ? text.split(find).join(replace) : text.replace(find, () => replace)
+    return { state: await this.write(conversationId, path, next), replaced: all ? count : 1 }
+  }
+
   // ---- Вставка из библиотеки / дизайн-кита (roadmap-2 п.13) -----------------
 
   /**

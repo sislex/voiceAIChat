@@ -110,6 +110,46 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           } catch (error) { return text(describeError(error), true) }
         })
 
+        server.registerTool('make_apply_changes', {
+          description: 'Записать НЕСКОЛЬКО файлов одной транзакцией (и при необходимости удалить). Если хоть один записанный файл не компилируется, все изменения откатываются и возвращаются ошибки. Используй для связанных правок (компонент + сториз + стили) вместо серии make_write_file.',
+          inputSchema: {
+            files: z.array(z.object({ path: z.string(), content: z.string() })).min(1).max(30).describe('Полное содержимое каждого файла'),
+            delete: z.array(z.string()).max(30).optional().describe('Пути файлов, которые удалить')
+          }
+        }, async (args) => {
+          if (readOnly) return planBlocked()
+          try {
+            await workspaces.ensure(conv)
+            await beforeMutation()
+            const result = await workspaces.applyChanges(conv, args.files, args.delete ?? [])
+            afterMutation([...args.files.map((f) => f.path), ...(args.delete ?? [])])
+            if (result.rolledBack) return text(`Изменения откачены: ошибка компиляции.\n${result.issues.map((i) => `- ${i.path}: ${i.message}`).join('\n')}`, true)
+            const warn = result.issues.length ? `\nЗамечания:\n${result.issues.map((i) => `- ${i.path}: ${i.message}`).join('\n')}` : ''
+            return text(`Записано файлов: ${args.files.length}${args.delete?.length ? `, удалено: ${args.delete.length}` : ''}. Файлов в проекте: ${result.state.files.length}.${warn}`)
+          } catch (error) { return text(describeError(error), true) }
+        })
+
+        server.registerTool('make_edit_file', {
+          description: 'Точечная правка: заменить фрагмент текста в файле, не переписывая его целиком. Фрагмент должен встречаться ровно один раз (или передай all=true). Экономит токены на больших файлах.',
+          inputSchema: {
+            path: z.string(),
+            find: z.string().describe('Точный текст, который заменить (с переносами и отступами как в файле)'),
+            replace: z.string().describe('Новый текст'),
+            all: z.boolean().optional().describe('Заменить все вхождения')
+          }
+        }, async (args) => {
+          if (readOnly) return planBlocked()
+          try {
+            await workspaces.ensure(conv)
+            await beforeMutation()
+            const { replaced } = await workspaces.editFile(conv, args.path, args.find, args.replace, args.all ?? false)
+            afterMutation([args.path])
+            const issues = (await workspaces.check(conv).catch(() => [])).filter((i) => i.path === args.path)
+            const tail = issues.length ? `\nЗамечания по файлу:\n${issues.map((i) => `- ${i.message}`).join('\n')}` : ''
+            return text(`Заменено вхождений: ${replaced} в ${args.path}.${tail}`)
+          } catch (error) { return text(describeError(error), true) }
+        })
+
         server.registerTool('make_delete_file', {
           description: 'Удалить файл проекта.',
           inputSchema: { path: z.string().describe('Путь относительно корня проекта') }
