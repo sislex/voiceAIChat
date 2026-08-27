@@ -26,11 +26,22 @@ export interface EditorSelection { startLine: number; endLine: number; text: str
 
 export interface EditorMarker { line: number; column?: number; message: string }
 
+import { useMediaQuery } from '../lib/mediaQuery'
+
 const isJsdom = typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent)
+
+/** Телефонная ширина для редактора (п.34): Monaco на узком экране с виртуальной клавиатурой неудобен и тяжёл. */
+export const PHONE_EDITOR_QUERY = '(max-width: 600px)'
+
+/** Лёгкий редактор (textarea + подсветка) вместо Monaco: в jsdom и на телефоне. */
+export function shouldUseFallbackEditor(jsdom: boolean, phone: boolean): boolean {
+  return jsdom || phone
+}
 const MonacoCodeEditor = lazy(() => import('./code/MonacoCodeEditor'))
 
 export function CodeEditor(props: CodeEditorProps): JSX.Element {
-  if (isJsdom) return <FallbackEditor {...props} />
+  const phone = useMediaQuery(PHONE_EDITOR_QUERY)
+  if (shouldUseFallbackEditor(isJsdom, phone)) return <FallbackEditor {...props} />
   return (
     <Suspense fallback={<FallbackEditor {...props} />}>
       <MonacoCodeEditor {...props} />

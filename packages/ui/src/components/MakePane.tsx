@@ -5,7 +5,8 @@ import type { EditorContextPayload } from '@shared/types'
 import { formatUsd, type ConversationUsage } from '@shared/usageSummary'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
-import { CodeEditor, type EditorSelection } from './CodeEditor'
+import { CodeEditor, PHONE_EDITOR_QUERY, type EditorSelection } from './CodeEditor'
+import { useMediaQuery } from '../lib/mediaQuery'
 import { CodeDiff } from './CodeDiff'
 import { MakeTokensDialog } from './MakeTokensDialog'
 import { MakeUsageDialog } from './MakeUsageDialog'
@@ -193,6 +194,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
+  // Телефон (п.34): дерево файлов заменяет выпадающий список, редактор — лёгкий (см. CodeEditor).
+  const isPhone = useMediaQuery(PHONE_EDITOR_QUERY)
   // Комментарии к элементам (п.32): список грузим один раз при открытии панели, метки шлём в превью на каждый ready.
   const [comments, setComments] = useState<MakeComment[] | null>(null)
   const [commentsOpen, setCommentsOpen] = useState(false)
@@ -1054,7 +1057,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
 
       {mode === 'code' && (
-        <div className={dropActive ? 'make-code make-code--drop' : 'make-code'} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code">
+        <div className={`${dropActive ? 'make-code make-code--drop' : 'make-code'}${isPhone ? ' make-code--phone' : ''}`} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code">
           <nav className={dragPath ? 'make-tree make-tree--dragging' : 'make-tree'} aria-label="Файлы проекта" ref={treeRef}>
             <span className="vc-sr-only" role="status" aria-live="polite" data-testid="make-tree-live">{treeLive}</span>
             <div className="make-search">
@@ -1107,6 +1110,15 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             ))}
           </nav>
           <div className="make-editor">
+            {isPhone && state && (
+              <div className="make-file-picker">
+                <select aria-label="Файл проекта" value={selectedPath ?? ''} onChange={(e) => { if (e.target.value) void openFile(e.target.value) }}>
+                  {!selectedPath && <option value="">Выберите файл…</option>}
+                  {state.files.filter((f) => isMakeTextPath(f.path)).map((f) => <option key={f.path} value={f.path}>{f.path}</option>)}
+                </select>
+                <Button size="sm" variant="secondary" onClick={createFile}>+ Файл</Button>
+              </div>
+            )}
             {issues !== null && (
               <div className={issues.length ? 'make-issues make-issues--bad' : 'make-issues'} role="status" data-testid="make-issues">
                 {issues.length === 0 ? <span>✓ Проверка пройдена: index.html есть, ссылки на файлы проекта разрешаются.</span> : (
