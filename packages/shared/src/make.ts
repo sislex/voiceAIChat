@@ -71,6 +71,8 @@ export interface MakeStoryFile {
   /** `title` из default-экспорта или имя файла без суффикса. */
   title: string
   stories: string[]
+  /** Имена стори с play-функцией (интерактивный тест) — по регулярке в исходнике. */
+  withPlay?: string[]
 }
 
 /** Сравнение снимка с текущим проектом: по файлам. */

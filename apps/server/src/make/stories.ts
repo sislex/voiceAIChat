@@ -12,7 +12,15 @@ export function parseStoryFile(path: string, source: string): MakeStoryFile {
   }
   const titleMatch = source.match(/title\s*:\s*(['"`])([^'"`]+)\1/)
   const fallback = path.slice(path.lastIndexOf('/') + 1).replace(/\.stories\.(jsx|tsx)$/i, '')
-  return { path, title: titleMatch?.[2] ?? fallback, stories: names }
+  // `export const X = { ..., play: ... }` — грубо: у экспорта между его началом и следующим `export` есть `play`.
+  const withPlay: string[] = []
+  for (let i = 0; i < names.length; i++) {
+    const start = source.indexOf(`export`, source.search(new RegExp(`export\\s+(?:const|let|var|function)\\s+${names[i]}\\b`)))
+    const nextExport = source.indexOf('\nexport', start + 6)
+    const body = source.slice(start, nextExport < 0 ? undefined : nextExport)
+    if (/\bplay\s*[:(]/.test(body)) withPlay.push(names[i]!)
+  }
+  return { path, title: titleMatch?.[2] ?? fallback, stories: names, withPlay }
 }
 
 /** Import map и `<link rel="stylesheet">` из index.html проекта — либо React-дефолты. */
@@ -77,6 +85,18 @@ export function renderStoriesPage(file: string, story: string, indexHtml: string
       const enumOptions = Object.fromEntries(Object.entries(options).filter(([, set]) => set.size >= 2).map(([k, set]) => [k, [...set]]));
       window.addEventListener('message', (e) => { const d = e.data; if (d && d.type === 'vc-make.args') { try { draw(d.args || {}); } catch (error) { fail(String(error && error.message || error)); } } });
       window.parent.postMessage({ type: 'vc-make.story', file: ${JSON.stringify(file)}, story: name, stories: names, args: serializable, options: enumOptions, argTypes: argTypes }, '*');
+      // play-функция (CSF): интерактивный тест стори — клики/ввод/проверки внутри раннера; статус уходит родителю.
+      const play = story.play ?? meta.play;
+      if (typeof play === 'function') {
+        await new Promise((r) => setTimeout(r, 50));
+        const started = performance.now();
+        try {
+          await play({ canvasElement: document.getElementById('root'), args, step: async (label, fn) => fn() });
+          window.parent.postMessage({ type: 'vc-make.play', file: ${JSON.stringify(file)}, story: name, status: 'passed', ms: Math.round(performance.now() - started) }, '*');
+        } catch (error) {
+          window.parent.postMessage({ type: 'vc-make.play', file: ${JSON.stringify(file)}, story: name, status: 'failed', ms: Math.round(performance.now() - started), error: String(error && error.message || error).slice(0, 500) }, '*');
+        }
+      }
     } catch (error) { fail(String(error && error.message || error)); }
   </script>
 </body>

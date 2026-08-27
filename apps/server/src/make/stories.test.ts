@@ -4,8 +4,10 @@ import { extractHeadAssets, parseStoryFile, renderStoriesPage } from './stories'
 describe('make stories', () => {
   it('parseStoryFile: имена стори из экспортов, title из default или имени файла', () => {
     const parsed = parseStoryFile('src/components/Button.stories.jsx', "export default { title: 'UI/Button' }\nexport const Primary = {}\nexport function Big() {}\nconst hidden = 1")
-    expect(parsed).toEqual({ path: 'src/components/Button.stories.jsx', title: 'UI/Button', stories: ['Primary', 'Big'] })
+    expect(parsed).toEqual({ path: 'src/components/Button.stories.jsx', title: 'UI/Button', stories: ['Primary', 'Big'], withPlay: [] })
     expect(parseStoryFile('Card.stories.tsx', 'export const A = {}').title).toBe('Card')
+    const withPlay = parseStoryFile('B.stories.jsx', "export const A = {}\nexport const B = { play: async ({ canvasElement }) => {} }\nexport const C = {}")
+    expect(withPlay.withPlay).toEqual(['B'])
   })
 
   it('раннер берёт import map и стили из index.html, иначе дефолтный React-map', () => {
@@ -21,5 +23,6 @@ describe('make stories', () => {
     expect(page).toContain('vc-make.args')
     expect(page).toContain('enumOptions')
     expect(page).toContain('argTypes')
+    expect(page).toContain('vc-make.play')
   })
 })

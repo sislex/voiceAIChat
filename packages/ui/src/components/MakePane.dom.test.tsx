@@ -506,4 +506,21 @@ describe('MakePane', () => {
     await userEvent.click(a!); await userEvent.click(b!)
     expect(await screen.findByTestId('make-shots-compare')).toBeInTheDocument()
   })
+
+  it('play-функции: маркер ▷ у стори с play, результат из раннера → ✓/✗ и баннер с «Исправить»', async () => {
+    const onAskAssistant = vi.fn()
+    const { api, emit } = renderPane({ onAskAssistant })
+    await screen.findByTitle('Превью проекта')
+    const next = await api['make:write']({ conversationId: CONV, path: 'src/P.stories.jsx', content: "export default { title: 'P' }\nexport const Ok = { play: async () => {} }\nexport const Plain = {}" })
+    emit({ conversationId: CONV, rev: next.rev, paths: ['src/P.stories.jsx'] })
+    await userEvent.click(screen.getByRole('tab', { name: 'Компоненты' }))
+    const ok = await screen.findByRole('button', { name: /^Ok/ })
+    expect(ok).toHaveTextContent('▷')
+    const frame = await screen.findByTitle('Стори Ok') as HTMLIFrameElement
+    fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.play', file: 'src/P.stories.jsx', story: 'Ok', status: 'failed', ms: 12, error: 'expected 2 to be 1' }, source: frame.contentWindow }))
+    expect(await screen.findByTestId('make-play-failed')).toHaveTextContent('expected 2 to be 1')
+    expect(screen.getByRole('button', { name: /^Ok/ })).toHaveTextContent('✗')
+    await userEvent.click(within(screen.getByTestId('make-play-failed')).getByRole('button', { name: 'Исправить' }))
+    expect(onAskAssistant).toHaveBeenCalledWith(expect.stringContaining('упала play-функция'))
+  })
 })
