@@ -1,3 +1,4 @@
+import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine } from '@shared/makeSearch'
 import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment, type MakeShare, type MakePresenceClient, type MakeProjectNotes } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
@@ -244,21 +245,26 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (content === undefined) throw new Error(`Файл «${path}» не найден`)
       return { path, size: new TextEncoder().encode(content).length, updatedAt: 1, content }
     },
-    'make:search': async ({ conversationId, query }) => {
-      const needle = query.trim().toLocaleLowerCase()
+    'make:search': async ({ conversationId, query, regex, matchCase }) => {
+      if (!query.trim()) return { matches: [] }
+      const re = buildMakeSearchRegex(query, { regex, matchCase })
       const matches: { path: string; line: number; text: string }[] = []
-      for (const [path, content] of makeFiles(conversationId)) content.split('\n').forEach((text, i) => { if (needle && text.toLocaleLowerCase().includes(needle)) matches.push({ path, line: i + 1, text: text.trim() }) })
+      for (const [path, content] of makeFiles(conversationId)) content.split('\n').forEach((text, i) => { re.lastIndex = 0; if (re.test(text)) matches.push({ path, line: i + 1, text: text.trim() }) })
       return { matches }
     },
-    'make:replace': async ({ conversationId, query, replacement, matchCase }) => {
-      const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi')
+    'make:replace': async ({ conversationId, query, replacement, matchCase, regex, dryRun }) => {
+      const re = buildMakeSearchRegex(query, { regex, matchCase })
       let files = 0, replacements = 0
+      const preview: MakeReplacePreviewLine[] = []
       for (const [path, content] of makeFiles(conversationId)) {
+        re.lastIndex = 0
         const n = (content.match(re) ?? []).length
         if (n === 0) continue
         files += 1; replacements += n
-        makeFiles(conversationId).set(path, content.replace(re, () => replacement))
+        if (dryRun) { preview.push(...previewMakeReplace(path, content, re, regex ? replacement : () => replacement)); continue }
+        makeFiles(conversationId).set(path, regex ? content.replace(re, replacement) : content.replace(re, () => replacement))
       }
+      if (dryRun) return { files, replacements, state: makeState(conversationId), preview }
       if (files > 0) makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1)
       return { files, replacements, state: makeState(conversationId) }
     },

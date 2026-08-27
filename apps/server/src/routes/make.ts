@@ -435,18 +435,18 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
-  app.get<{ Params: { id: string }; Querystring: { q?: string } }>('/api/make/:id/search', async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { q?: string; regex?: string; matchCase?: string } }>('/api/make/:id/search', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
-    try { await workspaces.ensure(req.params.id); return { matches: await workspaces.search(req.params.id, req.query.q ?? '') } } catch (error) { return sendError(reply, error) }
+    try { await workspaces.ensure(req.params.id); return { matches: await workspaces.search(req.params.id, req.query.q ?? '', 200, { regex: req.query.regex === '1', matchCase: req.query.matchCase === '1' }) } } catch (error) { return sendError(reply, error) }
   })
 
-  app.post<{ Params: { id: string }; Body: { query?: string; replacement?: string; matchCase?: boolean } }>('/api/make/:id/replace', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { query?: string; replacement?: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean } }>('/api/make/:id/replace', async (req, reply) => {
     const userId = uid(req)
     if (!own(userId, req.params.id, reply)) return reply
-    const { query, replacement, matchCase } = req.body ?? {}
+    const { query, replacement, matchCase, regex, dryRun } = req.body ?? {}
     if (typeof query !== 'string' || typeof replacement !== 'string') return reply.code(400).send({ error: 'query и replacement обязательны' })
     try {
-      const result = await workspaces.replaceAll(req.params.id, query, replacement, { matchCase: Boolean(matchCase) })
+      const result = await workspaces.replaceAll(req.params.id, query, replacement, { matchCase: Boolean(matchCase), regex: Boolean(regex), dryRun: Boolean(dryRun) })
       if (result.files > 0) hub.changed(userId, req.params.id, result.state.rev, result.state.files.map((f) => f.path))
       return result
     } catch (error) { return sendError(reply, error) }

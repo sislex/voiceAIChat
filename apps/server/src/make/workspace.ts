@@ -15,6 +15,7 @@ import {
 import { parseStoryFile, parseTestFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
 import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, MakeProjectNotes, MakeAssistantMode, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
+import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine, type MakeSearchOptions } from '@voicechat/shared'
 import { MAKE_MODE_HINTS, applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
@@ -763,16 +764,17 @@ export class MakeWorkspaces {
   }
 
   /** Поиск по содержимому текстовых файлов: без регистра, до `limit` совпадений, строки обрезаны. */
-  async search(conversationId: string, query: string, limit = 200): Promise<MakeSearchMatch[]> {
-    const needle = query.trim().toLocaleLowerCase()
-    if (!needle) return []
+  async search(conversationId: string, query: string, limit = 200, options: MakeSearchOptions = {}): Promise<MakeSearchMatch[]> {
+    if (!query.trim()) return []
+    const re = this.searchRegex(query, options)
     const matches: MakeSearchMatch[] = []
     for (const file of await this.list(conversationId)) {
       if (!isMakeTextPath(file.path)) continue
       const { content } = await this.read(conversationId, file.path)
       const lines = content.split('\n')
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i]!.toLocaleLowerCase().includes(needle)) {
+        re.lastIndex = 0
+        if (re.test(lines[i]!)) {
           matches.push({ path: file.path, line: i + 1, text: lines[i]!.trim().slice(0, 200) })
           if (matches.length >= limit) return matches
         }
@@ -781,21 +783,32 @@ export class MakeWorkspaces {
     return matches
   }
 
-  /** Замена подстроки во всех текстовых файлах (без регулярных выражений); перед правкой — снимок. */
-  async replaceAll(conversationId: string, query: string, replacement: string, options: { matchCase?: boolean } = {}): Promise<{ files: number; replacements: number; state: MakeProjectState }> {
+  /** Невалидный regex пользователя — ошибка запроса, а не 500. */
+  private searchRegex(query: string, options: MakeSearchOptions): RegExp {
+    try { return buildMakeSearchRegex(query, options) } catch (e) { throw new MakeError('invalid_path', `Неверное выражение: ${(e as Error).message}`) }
+  }
+
+  /** Замена во всех текстовых файлах: подстрока или regex (`$1`-подстановки); перед правкой — снимок. `dryRun` — только предпросмотр. */
+  async replaceAll(conversationId: string, query: string, replacement: string, options: MakeSearchOptions & { dryRun?: boolean } = {}): Promise<{ files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[] }> {
     if (!query) throw new MakeError('invalid_path', 'Пустая строка поиска')
-    const flags = options.matchCase ? 'g' : 'gi'
-    const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags)
+    const re = this.searchRegex(query, options)
+    // Без regex подстановки `$1` в замене — обычный текст, поэтому подставляем через функцию.
+    const substitute = options.regex ? replacement : (): string => replacement
     let files = 0, replacements = 0
     const touched: Array<{ path: string; next: string }> = []
+    const preview: MakeReplacePreviewLine[] = []
     for (const file of await this.list(conversationId)) {
       if (!isMakeTextPath(file.path)) continue
       const { content } = await this.read(conversationId, file.path)
+      re.lastIndex = 0
       const count = (content.match(re) ?? []).length
       if (count === 0) continue
       files += 1; replacements += count
-      touched.push({ path: file.path, next: content.replace(re, () => replacement) })
+      if (options.dryRun) { if (preview.length < 500) preview.push(...previewMakeReplace(file.path, content, re, substitute)); continue }
+      re.lastIndex = 0
+      touched.push({ path: file.path, next: content.replace(re, substitute as string) })
     }
+    if (options.dryRun) return { files, replacements, state: await this.state(conversationId), preview }
     if (touched.length > 0) {
       await this.snapshot(conversationId, `Перед заменой «${query.slice(0, 30)}» → «${replacement.slice(0, 30)}»`)
       for (const t of touched) await writeFile(join(this.dirOf(conversationId), ...t.path.split('/')), t.next, 'utf8')

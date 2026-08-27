@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-27
-checked: 2d3ada98
+checked: 0e2a3b23
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -299,7 +299,7 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 **Импорт репозитория GitHub (п.27).** `POST /api/make/:id/import-url` распознаёт ссылки `github.com/<owner>/<repo>[/tree/<branch>[/<subdir>]]` (`parseGithubUrl` в `@shared/makeGit`) и вместо HTML-импорта скачивает ZIP ветки с `codeload.github.com` (`githubArchiveUrls`: указанная ветка, иначе `main`, при 404 — `master`; лимит 12 МБ), снимает общий корень архива (`stripCommonRoot`) и, если в ссылке подкаталог, оставляет только его (`importFromGithub` в `make/importUrl.ts`). Приватные репозитории и push в git не поддерживаются — нужны учётные данные пользователя.
 `REST.makeUpload` (POST `/api/make/:id/upload {path, dataBase64}`, bodyLimit 4 МБ) → мост `make:upload` —
 бинарники из панели; на сервере `MakeWorkspaces.writeBuffer` (общие лимиты с `write`).
-`REST.makeSearch` (`GET …/search?q=` → `{matches: MakeSearchMatch[]}`), `REST.makeStories` (`GET …/stories` →
+`REST.makeSearch` (`GET …/search?q=&regex=1&matchCase=1` → `{matches: MakeSearchMatch[]}`; `POST …/replace` принимает `regex`/`dryRun`, с `dryRun` возвращает `preview: MakeReplacePreviewLine[]` без записи), `REST.makeStories` (`GET …/stories` →
 `{files: MakeStoryFile[]}`), `REST.makeStoriesPage` (`/api/preview/make/:id/__stories__`, cookie) — мосты
 `make:search`, `make:stories`. Ещё: `REST.makeSnapshotDiff` (GET `…/snapshots/:sid/diff` → `MakeSnapshotDiff`),
 `REST.makeSnapshotFile` (GET `…/snapshots/:sid/file?path=` → `MakeFileContent`), `REST.makeRestoreFile` (POST `…/snapshots/:sid/restore-file {path}`), `REST.makeImport` (POST `…/import
