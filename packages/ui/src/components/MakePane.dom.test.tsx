@@ -156,6 +156,20 @@ describe('MakePane', () => {
     expect(screen.getByTestId('make-file-tab-flash')).toHaveTextContent('styles.css')
   })
 
+  it('история публикаций в диалоге: «Вернуть» переключает публикацию на прежний снимок (roadmap-2 п.11)', async () => {
+    const api = createFakeApi([])
+    await api['make:publish']({ conversationId: CONV })
+    const snap = (await api['make:snapshot']({ conversationId: CONV, label: 'v1' })).snapshots[0]!
+    await api['make:publish']({ conversationId: CONV, snapshotId: snap.id })
+    render(<MakePane conversationId={CONV} api={api} make={{ onChanged: () => () => {} }} previewBase={`/api/preview/make/${CONV}/`} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Опубликован' }))
+    const hist = await screen.findByTestId('make-publish-history')
+    await userEvent.click(within(hist).getByText(/История публикаций \(2\)/))
+    expect(within(hist).getByText(/снимок «v1»/)).toBeInTheDocument()
+    await userEvent.click(within(hist).getByRole('button', { name: 'Вернуть' }))
+    await waitFor(async () => expect((await api['make:state']({ conversationId: CONV })).published?.snapshotId).toBeNull())
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)

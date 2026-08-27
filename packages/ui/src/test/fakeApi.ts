@@ -362,7 +362,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const prev = makePub.get(conversationId)
       const nextSlug = slug === undefined ? prev?.slug ?? null : slug
       const protectedNow = password === undefined ? prev?.passwordProtected ?? false : Boolean(password)
-      makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/', snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null, slug: nextSlug, slugUrl: nextSlug ? `/s/${nextSlug}/` : null, passwordProtected: protectedNow, views: prev?.views ?? 7 })
+      const history = [...(prev?.history ?? [])]
+      if (!prev || history[history.length - 1]?.snapshotId !== (snap?.id ?? null)) history.push({ at: history.length + 1, snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null })
+      makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/', snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null, slug: nextSlug, slugUrl: nextSlug ? `/s/${nextSlug}/` : null, passwordProtected: protectedNow, views: prev?.views ?? 7, history })
       return makeState(conversationId)
     },
     'make:unpublish': async ({ conversationId }) => { makePub.delete(conversationId); return makeState(conversationId) },

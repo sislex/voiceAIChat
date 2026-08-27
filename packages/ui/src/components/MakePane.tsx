@@ -1579,6 +1579,21 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 <label className="make-ask-field"><span>Пароль {state.published.passwordProtected ? <small>установлен</small> : <small>нет — открыто по ссылке</small>}</span><input className="tin" type="password" aria-label="Пароль публикации" placeholder={state.published.passwordProtected ? 'новый пароль' : 'без пароля'} value={publishPassword} onChange={(e) => setPublishPassword(e.target.value)} autoComplete="new-password" /></label>
                 <p className="fsub make-publish-views">Просмотров: <strong data-testid="make-public-views">{state.published.views ?? 0}</strong></p>
               </div>
+              {(state.published.history?.length ?? 0) > 1 && (
+                <details className="make-publish-history" data-testid="make-publish-history">
+                  <summary>История публикаций ({state.published.history!.length})</summary>
+                  <ul role="list">
+                    {[...state.published.history!].reverse().map((e, i) => (
+                      <li key={`${e.at}-${i}`}>
+                        <span>{formatTime(e.at)} · {e.snapshotId ? `снимок «${e.snapshotLabel}»` : 'текущее состояние'}</span>
+                        {i === 0 ? <small>сейчас</small> : (e.snapshotId === null || state.snapshots.some((s) => s.id === e.snapshotId))
+                          ? <Button size="sm" variant="ghost" onClick={() => void publish(e.snapshotId, publishOptions())}>Вернуть</Button>
+                          : <small>снимок удалён</small>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               <div className="make-ask-actions">
                 <Button size="sm" variant="secondary" onClick={() => void publish((publishPick || state.published?.snapshotId) || null, publishOptions())}>Обновить публикацию</Button>
                 {state.published.passwordProtected && <Button size="sm" variant="ghost" onClick={() => void publish((publishPick || state.published?.snapshotId) || null, { password: null })}>Снять пароль</Button>}
