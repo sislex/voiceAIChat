@@ -1617,6 +1617,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 <label className="make-ask-field"><span>Адрес <small>/s/…/ — латиница, цифры, дефис</small></span><input className="tin" aria-label="Адрес публикации" placeholder="my-site" value={publishSlug ?? state.published.slug ?? ''} onChange={(e) => setPublishSlug(e.target.value.toLowerCase())} /></label>
                 <label className="make-ask-field"><span>Пароль {state.published.passwordProtected ? <small>установлен</small> : <small>нет — открыто по ссылке</small>}</span><input className="tin" type="password" aria-label="Пароль публикации" placeholder={state.published.passwordProtected ? 'новый пароль' : 'без пароля'} value={publishPassword} onChange={(e) => setPublishPassword(e.target.value)} autoComplete="new-password" /></label>
                 <p className="fsub make-publish-views">Просмотров: <strong data-testid="make-public-views">{state.published.views ?? 0}</strong></p>
+                {(state.published.stats?.days.length ?? 0) > 0 && (
+                  <div className="make-publish-stats" data-testid="make-publish-stats">
+                    <div className="make-publish-bars" role="img" aria-label={`Просмотры за последние ${Math.min(14, state.published.stats!.days.length)} дней`}>
+                      {state.published.stats!.days.slice(-14).map((d) => { const max = Math.max(...state.published!.stats!.days.slice(-14).map((x) => x.views), 1); return <span key={d.day} className="make-publish-bar" style={{ height: `${Math.max(8, Math.round((d.views / max) * 100))}%` }} title={`${d.day}: ${d.views}`} /> })}
+                    </div>
+                    {state.published.stats!.referers.length > 0 && <p className="fsub">Откуда приходят: {state.published.stats!.referers.slice(0, 5).map((r) => `${r.host} (${r.views})`).join(', ')}</p>}
+                  </div>
+                )}
               </div>
               {(state.published.history?.length ?? 0) > 1 && (
                 <details className="make-publish-history" data-testid="make-publish-history">

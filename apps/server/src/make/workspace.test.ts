@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MAKE_SCAFFOLD } from '@voicechat/shared'
-import { MakeError, MakeWorkspaces } from './workspace'
+import { MakeError, MakeWorkspaces, refererHost } from './workspace'
 
 const CONV = 'conv-1'
 
@@ -431,5 +431,21 @@ describe('MakeWorkspaces', () => {
     const r = await ws.sweep(30 * day, now)
     expect(r).toEqual({ projects: 1, snapshots: 1, shots: 0 })
     expect((await ws.snapshots(CONV)).map((s) => s.label).sort()).toEqual(['fresh', 'old2'])
+  })
+
+  it('аналитика публикации: просмотры по дням и хостам реферера, прямые заходы без реферера', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.publish(CONV)
+    const d1 = Date.UTC(2026, 7, 26, 12), d2 = Date.UTC(2026, 7, 27, 12)
+    await ws.countView(CONV, 'https://news.ycombinator.com/item?id=1', d1)
+    await ws.countView(CONV, null, d1)
+    await ws.countView(CONV, 'not a url', d2)
+    await ws.countView(CONV, 'https://t.co/x', d2)
+    const pub = (await ws.state(CONV)).published!
+    expect(pub.views).toBe(4)
+    expect(pub.stats?.days).toEqual([{ day: '2026-08-26', views: 2 }, { day: '2026-08-27', views: 2 }])
+    expect(pub.stats?.referers).toEqual([{ host: 'news.ycombinator.com', views: 1 }, { host: 't.co', views: 1 }])
+    expect(refererHost('http://localhost:8787/x')).toBeNull()
   })
 })

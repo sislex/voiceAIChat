@@ -552,7 +552,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       if (mock) return sendMock(reply, mock)
       return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
     }
-    if (path === 'index.html') void workspaces.countView(conversationId)
+    if (path === 'index.html') { const ref = typeof req.headers.referer === 'string' ? req.headers.referer : null; const own = ref && req.hostname && ref.includes(`//${req.hostname}`); void workspaces.countView(conversationId, own ? null : ref) }
     const body = isMakeTranspiledPath(file.path)
       ? await transpileForPreview(file.cacheKey, file.path, file.data.toString('utf8'), file.rev, () => true)
       : file.data
