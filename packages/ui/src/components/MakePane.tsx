@@ -3,6 +3,7 @@ import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@v
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import type { EditorContextPayload } from '@shared/types'
 import { formatUsd, type ConversationUsage } from '@shared/usageSummary'
+import { pickTokensFile } from '@shared/makeTokens'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
 import { CodeEditor, PHONE_EDITOR_QUERY, type EditorSelection } from './CodeEditor'
@@ -772,6 +773,22 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       toast.success(`«${item.name}» сохранён в библиотеку (${item.files.length} файл.)`)
     } catch (e) { toast.error(describeError(e)) }
   }
+  /** Весь дизайн-кит одним элементом (roadmap-2 п.13): компоненты со сториз + файл токенов. */
+  const kitPaths = (): string[] => {
+    const paths = (state?.files ?? []).map((f) => f.path)
+    const comps = paths.filter((p) => /^src\/components\/.+\.(jsx|tsx)$/i.test(p))
+    const tokens = pickTokensFile(paths)
+    return tokens ? [...comps, tokens] : comps
+  }
+  const exportKitToLibrary = async (): Promise<void> => {
+    const paths = kitPaths()
+    if (paths.length === 0) return
+    try {
+      const { item } = await api['make:libraryExport']({ conversationId, name: `Дизайн-кит · ${paths.length} файл.`, paths })
+      toast.success(`Кит «${item.name}» сохранён в библиотеку`)
+      void loadLibrary()
+    } catch (e) { toast.error(describeError(e)) }
+  }
   const insertFromLibrary = async (item: MakeLibraryItem): Promise<void> => {
     const clash = item.files.filter((p) => state?.files.some((f) => f.path === p))
     if (clash.length > 0 && !(await confirm({ title: `Вставить «${item.name}»?`, message: `Файлы будут перезаписаны: ${clash.join(', ')}. Перед вставкой сохранится снимок.`, confirmLabel: 'Вставить' }))) return
@@ -1441,7 +1458,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
       {libraryOpen && (
         <Dialog className="make-dialog" padded title="Библиотека компонентов" ariaLabel="Библиотека компонентов" size="md" onClose={() => setLibraryOpen(false)} testId="make-library">
-          <p className="make-ideas-lead">Компоненты, сохранённые из ваших проектов. «Вставить» копирует файлы в текущий проект (снимок сохраняется).</p>
+          <p className="make-ideas-lead">Компоненты, сохранённые из ваших проектов. «Вставить» копирует файлы в текущий проект (снимок сохраняется); у кита файл токенов не затирает ваш — добавляются только недостающие переменные.</p>
+          {kitPaths().length > 0 && <div className="make-ask-actions make-kit-actions"><Button size="sm" variant="secondary" onClick={() => void exportKitToLibrary()} title="Все компоненты со сториз и файл токенов — одним элементом библиотеки">Сохранить весь кит ({kitPaths().length} файл.)</Button></div>}
           {library === null ? <p className="make-diff-note">Загружаю…</p> : library.length === 0 ? (
             <EmptyState title="Библиотека пуста" description="Откройте стори во вкладке «Компоненты» и нажмите «В библиотеку»." />
           ) : (
@@ -1449,7 +1467,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               {library.map((item) => (
                 <li key={item.slug} className="make-asset make-library-item">
                   <div className="make-asset-meta">
-                    <strong>{item.name}</strong>
+                    <strong>{item.name}{item.files.some((p) => p === 'tokens.css' || p === 'styles.css') && <span className="make-kit-badge" title="Содержит файл токенов">кит</span>}</strong>
                     <small>{item.files.join(', ')} · {formatSize(item.bytes)} · {formatTime(item.updatedAt)}</small>
                   </div>
                   <span className="make-asset-actions">

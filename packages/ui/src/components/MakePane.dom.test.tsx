@@ -170,6 +170,20 @@ describe('MakePane', () => {
     await waitFor(async () => expect((await api['make:state']({ conversationId: CONV })).published?.snapshotId).toBeNull())
   })
 
+  it('библиотека: «Сохранить весь кит» отдаёт компоненты со сториз и файл токенов (roadmap-2 п.13)', async () => {
+    const api = createFakeApi([])
+    await api['make:write']({ conversationId: CONV, path: 'src/components/Btn.tsx', content: 'export const Btn = () => null' })
+    await api['make:write']({ conversationId: CONV, path: 'src/components/Btn.stories.tsx', content: 'export default { title: "Btn" }' })
+    const spy = vi.spyOn(api, 'make:libraryExport')
+    render(<MakePane conversationId={CONV} api={api} make={{ onChanged: () => () => {} }} previewBase={`/api/preview/make/${CONV}/`} />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Код' }))
+    await openMore()
+    await userEvent.click(screen.getByRole('button', { name: 'Библиотека' }))
+    await userEvent.click(await screen.findByRole('button', { name: /Сохранить весь кит \(3 файл\.\)/ }))
+    await waitFor(() => expect(spy).toHaveBeenCalledWith(expect.objectContaining({ paths: ['src/components/Btn.stories.tsx', 'src/components/Btn.tsx', 'styles.css'] })))
+    expect(await screen.findByText('кит')).toBeInTheDocument()
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)

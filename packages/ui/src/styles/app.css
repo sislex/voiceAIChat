@@ -6895,3 +6895,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-publish-history ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
 .make-publish-history li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; }
 .make-publish-history small { color: var(--text-dim); }
+
+/* Дизайн-кит в библиотеке (roadmap-2 п.13) */
+.make-kit-actions { justify-content: flex-start; margin-bottom: var(--space-2); }
+.make-kit-badge { margin-left: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); vertical-align: middle; }
