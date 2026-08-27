@@ -310,6 +310,60 @@ describe('voiceStore', () => {
     store.dispose()
   })
 
+  it('ручной TTS озвучивает вопрос и ответ и завершает active state', () => {
+    const speak = vi.fn()
+    const store = createVoiceStore({
+      stt: { enabled: true, inputEnabled: true },
+      tts: { enabled: true, speak, cancel: vi.fn() },
+      getSettings: () => settings
+    })
+    store.actions.replayMessage('u1', 'Вопрос.')
+    expect(speak).toHaveBeenCalledWith('Вопрос.', 'ru')
+    expect(store.getState().speakingMessageId).toBe('u1')
+    store.actions.applyTtsDone()
+    expect(store.getState().speakingMessageId).toBeNull()
+
+    store.actions.replayMessage('a1', 'Ответ.')
+    expect(speak).toHaveBeenLastCalledWith('Ответ.', 'ru')
+    store.actions.applyTtsError('сбой')
+    expect(store.getState().speakingMessageId).toBeNull()
+    store.dispose()
+  })
+
+  it('повтор останавливает, а другое сообщение отменяет прежнюю replay-сессию', () => {
+    const calls: string[] = []
+    const store = createVoiceStore({
+      stt: { enabled: true, inputEnabled: true },
+      tts: {
+        enabled: true,
+        speak: (_text) => calls.push('speak'),
+        cancel: () => calls.push('cancel')
+      },
+      getSettings: () => settings
+    })
+    store.actions.replayMessage('a1', 'Первый.')
+    store.actions.replayMessage('a1', 'Первый.')
+    expect(store.getState().speakingMessageId).toBeNull()
+    store.actions.replayMessage('a1', 'Первый.')
+    store.actions.replayMessage('u1', 'Второй.')
+    expect(calls.slice(-2)).toEqual(['cancel', 'speak'])
+    expect(store.getState().speakingMessageId).toBe('u1')
+    store.dispose()
+  })
+
+  it('пустой replay не создаёт зависшую сессию', () => {
+    const speak = vi.fn()
+    const store = createVoiceStore({
+      stt: { enabled: true, inputEnabled: true },
+      tts: { enabled: true, speak, cancel: vi.fn() },
+      getSettings: () => settings
+    })
+    store.actions.replayMessage('empty', '   ')
+    expect(speak).not.toHaveBeenCalled()
+    expect(store.getState().speakingMessageId).toBeNull()
+    store.dispose()
+  })
+
   it('dispose освобождает захват и прерывает синтез', () => {
     const stop = vi.fn(async () => {})
     const cancel = vi.fn()

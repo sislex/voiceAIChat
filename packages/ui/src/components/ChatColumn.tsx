@@ -22,8 +22,7 @@ import {
 } from '../lib/view'
 import { Dots } from './animations'
 import { QuestionsForm } from './QuestionsForm'
-import { Button } from '@voicechat/ui-kit'
-import { Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
+import { Button, Skeleton, RefreshIndicator } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { SidebarToggle } from './ui/IconButton'
 import { MessageMeta } from './MessageMeta'
@@ -85,6 +84,33 @@ function modeLabel(mode?: string): string {
   return 'Режим не записан'
 }
 
+function CopyIcon(): JSX.Element {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
+}
+
+function SpeakIcon({ stop = false }: { stop?: boolean }): JSX.Element {
+  return <svg viewBox="0 0 24 24" aria-hidden="true">{stop ? <rect x="7" y="7" width="10" height="10" rx="1"/> : <><path d="M5 10v4h4l5 4V6l-5 4H5z"/><path d="M17 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/></>}</svg>
+}
+
+function EditIcon(): JSX.Element {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4-1 11-11-3-3L5 16l-1 4zM14 7l3 3"/></svg>
+}
+
+function MoreIcon(): JSX.Element {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
+}
+
+function messageStats(m: Message, isAi: boolean, agents: AgentInfo[]): string[] {
+  const machine = m.execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === m.execTarget)?.name ?? 'Сервер'
+  const parts = [isAi ? 'Ответ' : 'Вопрос', machine, clockTime(m.createdAt)]
+  const meta = m.meta
+  if (typeof meta?.inputTokens === 'number') parts.push(`Вход ${meta.inputTokens.toLocaleString('ru')}`)
+  if (typeof meta?.outputTokens === 'number') parts.push(`Выход ${meta.outputTokens.toLocaleString('ru')}`)
+  if (typeof meta?.cacheReadTokens === 'number') parts.push(`Кэш чтение ${meta.cacheReadTokens.toLocaleString('ru')}`)
+  if (typeof meta?.cacheCreationTokens === 'number') parts.push(`Кэш запись ${meta.cacheCreationTokens.toLocaleString('ru')}`)
+  return parts
+}
+
 export interface ChatColumnProps {
   title: string
   /** Id нужен для независимого восстановления ручной позиции каждого разговора. */
@@ -103,8 +129,6 @@ export interface ChatColumnProps {
   workspace?: WorkspaceView | null
   /** Выполнить исходный запрос планового ответа в режиме разработки. */
   onExecutePlan?: (answerId: string) => void
-  /** Make: откатить правки этого ответа к снимку «До правок» (meta.makeSnapshotId). */
-  onMakeRestore?: (snapshotId: string) => void
   /** Разрешено ли эскалировать план (user без машины — нет). */
   canExecutePlan?: boolean
   state: VoiceState
@@ -220,7 +244,6 @@ export function ChatColumn({
   permissionMode = 'plan',
   workspace = null,
   onExecutePlan,
-  onMakeRestore,
   canExecutePlan = true,
   state,
   messages,
@@ -286,6 +309,11 @@ export function ChatColumn({
   // Хук один на колонку: редактируется всегда не больше одного сообщения.
   const editRef = useAutoGrow(editDraft, EDIT_MIN_ROWS, EDIT_MAX_ROWS)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [copyFailedId, setCopyFailedId] = useState<string | null>(null)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
+  const [metaOpenId, setMetaOpenId] = useState<string | null>(null)
+  const messageMenuRef = useRef<HTMLSpanElement>(null)
+  useDismissibleMenu(openMenuId !== null, messageMenuRef, () => setOpenMenuId(null))
   const [titleEditing, setTitleEditing] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   // Режим отображения хода по каждому сообщению (дефолт — minimal) и отдельный
@@ -335,7 +363,12 @@ export function ChatColumn({
   }
 
   const copyMessage = (m: Message): void => {
-    void copyText(m.text).then(() => {
+    setCopyFailedId(null)
+    void copyText(m.text).then((copied) => {
+      if (!copied) {
+        setCopyFailedId(m.id)
+        return
+      }
       setCopiedId(m.id)
       setTimeout(() => setCopiedId((id) => (id === m.id ? null : id)), 1500)
     })
@@ -708,7 +741,6 @@ export function ChatColumn({
                 {isAi ? (() => {
                   const msgModel = m.meta?.model ?? m.meta?.request?.model
                   const startMs = typeof m.meta?.durationMs === 'number' ? m.createdAt - m.meta.durationMs : null
-                  const hasActivity = Boolean(m.meta?.activity && m.meta.activity.length > 0)
                   const machineLabel = m.execTarget === 'none' ? 'Без машины' : agents.find((a) => a.id === m.execTarget)?.name ?? 'Сервер'
                   return (
                     <div className="msg-head">
@@ -719,14 +751,6 @@ export function ChatColumn({
                       </span>
                       {/* Машина выполнения — сразу за движком/моделью. */}
                       <span className="msg-machine-head" title="Машина выполнения этого ответа">{machineLabel}</span>
-                      {hasActivity && (
-                        <label className="msg-view">
-                          <span className="vc-sr-only">Вид ответа</span>
-                          <select aria-label="Вид ответа" value={modeOf(m.id)} onChange={(event) => setModeFor(m.id, event.target.value as TimelineMode)}>
-                            {TIMELINE_MODES.map((mode) => <option key={mode} value={mode}>{TIMELINE_MODE_LABEL[mode]}</option>)}
-                          </select>
-                        </label>
-                      )}
                       {/* Крайнее правое сверху — время начала ответа (тот же формат ЧЧ:ММ:СС). */}
                       <span className="msg-head-right">
                         {startMs !== null && <span className="msg-start" title={`Начало ответа: ${dateTimeTooltip(startMs)}`}>{clockTime(startMs)}</span>}
@@ -768,15 +792,6 @@ export function ChatColumn({
                   </div>
                 ) : isAi ? (
                   <div className="bub">
-                    {/* Копировать ответ — той же иконкой и в том же углу, что копия кода. */}
-                    <button
-                      className="copymsg"
-                      aria-label="Копировать ответ"
-                      title="Копировать ответ"
-                      onClick={() => copyMessage(m)}
-                    >
-                      {copiedId === m.id ? '✓' : '⧉'}
-                    </button>
                     {m.meta?.interrupted && (
                       <p className="msg-interrupted" data-testid="msg-interrupted">
                         ⚠️ Ответ прерван перезапуском сервера — сохранена набранная часть.
@@ -840,6 +855,9 @@ export function ChatColumn({
                           ))}
                         </div>
                       ))}
+                    {isLast && m.meta?.request?.permissionMode === 'plan' && onExecutePlan && canExecutePlan && state === 'idle' && (
+                      <button type="button" className="execute-plan-link" onClick={() => onExecutePlan(m.id)}>Выполнить план</button>
+                    )}
                   </div>
                 ) : (
                   <div className="bub">
@@ -866,58 +884,84 @@ export function ChatColumn({
                   </div>
                 )}
                 {!isEditing && (
-                  <div className="mfoot">
-                    {/* Слева: токены со стоимостью хода — наведение даёт сводку, клик открывает
-                        «Что было отправлено модели». */}
-                    {isAi && m.meta && (
-                      <MessageMeta meta={m.meta} messageId={m.id} {...(onOpenKbDocument ? { onOpenKbDocument } : {})} />
-                    )}
-                    {isAi && isLast && m.meta?.request?.permissionMode === 'plan' && onExecutePlan && canExecutePlan && state === 'idle' && (
-                      <Button size="sm" className="execute-plan" onClick={() => onExecutePlan(m.id)}>
-                        Выполнить план
-                      </Button>
-                    )}
-                    {isAi && m.meta?.makeSnapshotId && onMakeRestore && (
-                      <Button size="sm" variant="ghost" className="make-restore-turn" title="Вернуть файлы проекта к состоянию до правок этого ответа" onClick={() => onMakeRestore(m.meta!.makeSnapshotId!)}>
-                        Откатить правки
-                      </Button>
-                    )}
-                    {/* Справа: озвучить, удалить и — крайним правым — время окончания (ЧЧ:ММ:СС). */}
-                    <span className="mfoot-right">
-                      {isAi && canSpeak && onSpeakMessage && (
+                  <div className="mfoot" data-testid={`message-footer-${m.id}`}>
+                    <div className="msg-stats" aria-label={`Статистика сообщения: ${messageStats(m, isAi, agents).join(', ')}`}>
+                      {messageStats(m, isAi, agents).map((part) => <span key={part}>{part}</span>)}
+                    </div>
+                    <div className="msg-actions">
+                      <IconButton size="sm" aria-label={isAi ? 'Копировать ответ' : 'Копировать вопрос'} title={isAi ? 'Копировать ответ' : 'Копировать вопрос'} onClick={() => copyMessage(m)}>
+                        {copiedId === m.id ? <span aria-hidden="true">✓</span> : <CopyIcon />}
+                      </IconButton>
+                      {canSpeak && onSpeakMessage && m.text.trim() && (
                         <IconButton
                           size="sm"
-                          aria-label={
-                            speakingMessageId === m.id ? 'Остановить озвучку' : 'Озвучить ответ'
-                          }
-                          title={speakingMessageId === m.id ? 'Остановить' : 'Озвучить'}
-                          onClick={() => onSpeakMessage(m.id, aiText)}
+                          className={speakingMessageId === m.id ? 'is-active' : undefined}
+                          aria-pressed={speakingMessageId === m.id}
+                          aria-label={speakingMessageId === m.id ? 'Остановить озвучку' : isAi ? 'Озвучить ответ' : 'Озвучить вопрос'}
+                          title={speakingMessageId === m.id ? 'Остановить озвучку' : isAi ? 'Озвучить ответ' : 'Озвучить вопрос'}
+                          onClick={() => onSpeakMessage(m.id, isAi ? aiText : m.text)}
                         >
-                          {speakingMessageId === m.id ? '⏹' : '🔊'}
+                          <SpeakIcon stop={speakingMessageId === m.id} />
                         </IconButton>
                       )}
                       {!isAi && canEdit && onEditMessage && (
-                        <IconButton
-                          size="sm"
-                          aria-label="Изменить сообщение"
-                          title="Изменить и переспросить"
-                          onClick={() => startEdit(m)}
-                        >
-                          ✏️
+                        <IconButton size="sm" aria-label="Изменить сообщение" title="Изменить и переспросить" onClick={() => startEdit(m)}>
+                          <EditIcon />
                         </IconButton>
                       )}
-                      {onDeleteMessage && (
-                        <IconButton
-                          size="sm"
-                          aria-label="Удалить сообщение"
-                          title="Удалить из истории"
-                          onClick={() => onDeleteMessage(m.id)}
-                        >
-                          🗑
-                        </IconButton>
+                      {(onDeleteMessage || (isAi && Boolean(m.meta))) && (
+                        <span className="message-menu-wrap" ref={openMenuId === m.id ? messageMenuRef : undefined}>
+                          <IconButton
+                            size="sm"
+                            aria-label={isAi ? 'Ещё действия с ответом' : 'Ещё действия с вопросом'}
+                            title="Ещё действия"
+                            aria-haspopup="menu"
+                            aria-expanded={openMenuId === m.id}
+                            onClick={() => setOpenMenuId((id) => id === m.id ? null : m.id)}
+                          >
+                            <MoreIcon />
+                          </IconButton>
+                          {openMenuId === m.id && (
+                            <div className="message-menu" role="menu" onKeyDown={(event) => {
+                              if (event.key === 'Escape') {
+                                event.preventDefault()
+                                setOpenMenuId(null)
+                                messageMenuRef.current?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')?.focus()
+                                return
+                              }
+                              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                                event.preventDefault()
+                                const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+                                const current = items.indexOf(document.activeElement as HTMLButtonElement)
+                                const step = event.key === 'ArrowDown' ? 1 : -1
+                                items[(current + step + items.length) % items.length]?.focus()
+                              }
+                            }}>
+                              {isAi && m.meta && <button role="menuitem" autoFocus onClick={() => { setMetaOpenId(m.id); setOpenMenuId(null) }}>Сведения об ответе</button>}
+                              {isAi && (m.meta?.activity?.length ?? 0) > 0 && (
+                                <button role="menuitem" onClick={() => { const modes: TimelineMode[] = ['minimal', 'brief', 'detailed']; setModeFor(m.id, modes[(modes.indexOf(modeOf(m.id)) + 1) % modes.length]); setOpenMenuId(null) }}>
+                                  Переключить вид действий
+                                </button>
+                              )}
+                              {onDeleteMessage && <button role="menuitem" autoFocus={!isAi || !m.meta} onClick={() => { setOpenMenuId(null); onDeleteMessage(m.id) }}>Удалить сообщение</button>}
+                            </div>
+                          )}
+                        </span>
                       )}
-                      <p className="mtime" title={isAi ? `Конец ответа: ${dateTimeTooltip(m.createdAt)}` : dateTimeTooltip(m.createdAt)}>{clockTime(m.createdAt)}</p>
+                    </div>
+                    <span className="vc-sr-only" role="status" aria-live="polite">
+                      {copiedId === m.id ? 'Сообщение скопировано' : copyFailedId === m.id ? 'Не удалось скопировать сообщение' : ''}
                     </span>
+                    {isAi && m.meta && (
+                      <MessageMeta
+                        meta={m.meta}
+                        messageId={m.id}
+                        hideTrigger
+                        open={metaOpenId === m.id}
+                        onOpenChange={(open) => setMetaOpenId(open ? m.id : null)}
+                        {...(onOpenKbDocument ? { onOpenKbDocument } : {})}
+                      />
+                    )}
                   </div>
                 )}
               </div>
