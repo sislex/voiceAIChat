@@ -229,6 +229,30 @@ describe('MakePane', () => {
     expect(onAskOnlyChange).toHaveBeenCalledWith(true)
   })
 
+  it('«Сверить с запросом» шлёт скриншот «после» и исходный запрос ассистенту (roadmap-4 п.5)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const origCreate = URL.createObjectURL; const origFetch = globalThis.fetch
+    URL.createObjectURL = () => 'blob:x'; URL.revokeObjectURL = () => undefined
+    globalThis.fetch = (async () => new Response(new Blob(['png'], { type: 'image/png' }))) as typeof fetch
+    try {
+      const api = createFakeApi([])
+      const listeners: Array<(m: { conversationId: string; rev: number; paths: string[] }) => void> = []
+      const make = { onChanged: (cb: (m: { conversationId: string; rev: number; paths: string[] }) => void) => { listeners.push(cb); return () => {} } }
+      const onAttachImage = vi.fn(); const onAsk = vi.fn()
+      const props = { conversationId: CONV, api, make, previewBase: `/api/preview/make/${CONV}/`, onAttachImage, onAskAssistant: onAsk, lastRequest: 'Сделай кнопку синей' }
+      const { rerender } = render(<MakePane {...props} turnActive={false} />)
+      await screen.findByTitle('Превью проекта')
+      rerender(<MakePane {...props} turnActive />)
+      await vi.advanceTimersByTimeAsync(50)
+      listeners.forEach((l) => l({ conversationId: CONV, rev: 2, paths: ['styles.css'] }))
+      rerender(<MakePane {...props} turnActive={false} />)
+      await vi.advanceTimersByTimeAsync(1500)
+      await userEvent.click(await screen.findByRole('button', { name: 'Сверить с запросом' }))
+      await waitFor(() => expect(onAttachImage).toHaveBeenCalled())
+      expect(onAsk).toHaveBeenCalledWith(expect.stringContaining('Сделай кнопку синей'))
+    } finally { URL.createObjectURL = origCreate; globalThis.fetch = origFetch; vi.useRealTimers() }
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)

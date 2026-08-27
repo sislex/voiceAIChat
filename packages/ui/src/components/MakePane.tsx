@@ -56,6 +56,8 @@ export interface MakePaneProps {
   usage?: ConversationUsage | null
   /** Идёт ход ассистента: на старте снимаем «до», по окончании (после правок) — «после» (roadmap-2 п.8). */
   turnActive?: boolean
+  /** Текст последнего запроса пользователя — для самопроверки «Сверить с запросом» (roadmap-4 п.5). */
+  lastRequest?: string | null
   /** Режим вопроса (roadmap-4 п.4): следующий ход пойдёт в «План» — только ответ, без правок. */
   askOnly?: boolean
   onAskOnlyChange?: (on: boolean) => void
@@ -95,7 +97,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, askOnly = false, onAskOnlyChange, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, askOnly = false, onAskOnlyChange, lastRequest = null, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -263,6 +265,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnActive])
   const dismissDiff = (): void => { setTurnDiff((prev) => { if (prev) { URL.revokeObjectURL(prev.before); URL.revokeObjectURL(prev.after) } return null }); setDiffOpen(false) }
+  // Самопроверка (roadmap-4 п.5): скриншот «после» + исходный запрос уходят ассистенту — он сверяет результат с заданием.
+  const verifyResult = async (): Promise<void> => {
+    if (!turnDiff || !onAttachImage) return
+    const blob = await (await fetch(turnDiff.after)).blob()
+    onAttachImage(new File([blob], 'after.png', { type: 'image/png' }))
+    const ask = onAskAssistant ?? onInsertToChat
+    ask?.(`Самопроверка: на скриншоте — превью после твоих правок. Исходный запрос: «${(lastRequest ?? '').slice(0, 300)}». Сверь результат с запросом: что сделано, что нет или сделано иначе; если что-то не так — исправь файлы и кратко перечисли правки. `)
+  }
   const diffToChat = async (): Promise<void> => {
     if (!turnDiff || !onAttachImage) return
     for (const [key, name] of [['before', 'before.png'], ['after', 'after.png']] as const) {
@@ -1103,6 +1113,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 <span><img src={turnDiff.after} alt="Превью после правок" /><small>после</small></span>
               </button>
               <span className="make-head-spacer" />
+              {onAttachImage && lastRequest && (onAskAssistant || onInsertToChat) && <Button size="sm" variant="secondary" onClick={() => void verifyResult()} title="Отправить ассистенту скриншот «после» и исходный запрос — пусть сверит и исправит">Сверить с запросом</Button>}
               {onAttachImage && <Button size="sm" variant="ghost" onClick={() => void diffToChat()}>В чат</Button>}
               <IconButton size="sm" aria-label="Скрыть сравнение" title="Скрыть" onClick={dismissDiff}>✕</IconButton>
             </div>
