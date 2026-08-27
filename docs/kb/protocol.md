@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-27
-checked: a8c141af
+checked: d76cb141
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -278,7 +278,7 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 (`GET …/check` → `MakeCheckIssue[]`), `REST.makeTemplate` (POST `…/template {template}`), мосты
 `make:publish/unpublish/check/template`; `MakeProjectState.published: MakePublication|null`.
 Публичная раздача — `GET /p/<token>/*` (`MAKE_PUBLIC_PREFIX`, вне `/api`, без auth и без инспектора).
-Тот же контент по человекочитаемому адресу `GET /s/<slug>/*` (`MAKE_SLUG_PREFIX`, п.25): slug задаётся в `POST /api/make/:id/publish` (`{ snapshotId, slug, password }`; `slug`/`password` — `undefined` не трогать, `null` снять, строка установить; slug — `isValidMakeSlug`, занятый другим проектом → 409 `exists`). Публикация с паролем отдаёт на HTML-запросы форму (401), на остальное — 401 text; `POST /p/<token>/__auth__` и `/s/<slug>/__auth__` с urlencoded `password` ставят cookie `vc_pub_<token>` (sha256 от токена и хэша пароля — смена пароля разлогинивает всех) и редиректят на `?next`. Открытие `index.html` увеличивает `views` в `.publish.json`. Форма пароля ограничена `SlidingWindowLimiter` (10 попыток за 10 минут на `ip:token`, roadmap-2 п.3): сверх лимита `__auth__` отвечает 429 той же формой с текстом «подождите N с» и `Retry-After`; лимитер подменяется через `MakeRoutesDeps.passwordLimiter`. `MakePublication` содержит `slug`, `slugUrl`, `passwordProtected`, `views`; хэш пароля наружу не отдаётся.
+Тот же контент по человекочитаемому адресу `GET /s/<slug>/*` (`MAKE_SLUG_PREFIX`, п.25): slug задаётся в `POST /api/make/:id/publish` (`{ snapshotId, slug, password }`; `slug`/`password` — `undefined` не трогать, `null` снять, строка установить; slug — `isValidMakeSlug`, занятый другим проектом → 409 `exists`). Публикация с паролем отдаёт на HTML-запросы форму (401), на остальное — 401 text; `POST /p/<token>/__auth__` и `/s/<slug>/__auth__` с urlencoded `password` ставят cookie `vc_pub_<token>` (sha256 от токена и хэша пароля — смена пароля разлогинивает всех) и редиректят на `?next`. Открытие `index.html` увеличивает `views` в `.publish.json`. Форма пароля ограничена `SlidingWindowLimiter` (10 попыток за 10 минут на `ip:token`, roadmap-2 п.3): сверх лимита `__auth__` отвечает 429 той же формой с текстом «подождите N с» и `Retry-After`; лимитер подменяется через `MakeRoutesDeps.passwordLimiter`. `MakePublication` содержит `slug`, `slugUrl`, `passwordProtected`, `views` и `history` (roadmap-2 п.11: записи `{ at, snapshotId, snapshotLabel }` добавляются, когда меняется, что отдаётся — снимок или «живая»; смена slug/пароля историю не пополняет; хранится до 30 последних); хэш пароля наружу не отдаётся.
 
 **Мок-API проекта (п.29).** Если запрошенного файла нет, превью (`/api/preview/make/:id/*`) и публикация (`/p/…`, `/s/…`) ищут `mock/<путь>.<METHOD>.json` → `mock/<путь>.json` → `mock/<путь>/index[.<METHOD>].json` (`mockCandidates` в `@shared/makeMock`) и отдают JSON с `x-vc-mock: 1`. Файл — либо тело как есть, либо конверт `{ "$status", "$headers", "$delay" (≤ 5000 мс), "$body" }` (`unwrapMockEnvelope`). Не-GET методы (`POST/PUT/PATCH/DELETE`) на этих путях отдают только моки; на публикации `__auth__` обрабатывается тем же маршрутом (`publicMutation`). На публикации со закреплённым снимком моки берутся из снимка. Битый JSON мока → 500 с текстом ошибки. Прямой запрос файла `mock/…` мокам не подлежит (отдаётся как обычный файл).
 

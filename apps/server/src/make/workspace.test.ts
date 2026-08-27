@@ -355,4 +355,17 @@ describe('MakeWorkspaces', () => {
     expect(ctx).toContain('1. <h1> Привет (селектор `h1`): Крупнее')
     expect(ctx).not.toContain('Решено уже')
   })
+
+  it('история публикаций: запись при смене снимка/живой, слуг и пароль историю не пополняют', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.publish(CONV)
+    const s1 = (await ws.snapshot(CONV, 'v1')).snapshots[0]!
+    await ws.publish(CONV, { snapshotId: s1.id })
+    await ws.publish(CONV, { slug: 'my-site' })
+    await ws.publish(CONV, { snapshotId: null })
+    const h = (await ws.state(CONV)).published!.history!
+    expect(h.map((e) => e.snapshotId)).toEqual([null, s1.id, null])
+    expect(h[1]!.snapshotLabel).toBe('v1')
+  })
 })

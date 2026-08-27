@@ -14,7 +14,7 @@ import {
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakePublishEntry, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
 import { mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
@@ -33,7 +33,7 @@ const PUBLISH_FILE = '.publish.json'
 const COMMENTS_FILE = '.comments.json'
 const SHARE_FILE = '.share.json'
 /** Содержимое `.publish.json`; passwordHash = `<соль>:<sha256(соль:пароль)>`. */
-interface PublishRaw { token: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number }
+interface PublishRaw { token: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number; history?: MakePublishEntry[] }
 const SHOTS_DIR = '.shots'
 const SHOTS_PER_STORY = 10
 const PUBLISHED_INDEX_DIR = '.published'
@@ -674,7 +674,7 @@ export class MakeWorkspaces {
       token: raw.token, publishedAt: raw.publishedAt ?? 0, url: makePublicUrl(raw.token),
       snapshotId: raw.snapshotId ?? null, snapshotLabel: raw.snapshotLabel ?? null,
       slug: raw.slug ?? null, slugUrl: raw.slug ? makeSlugUrl(raw.slug) : null,
-      passwordProtected: Boolean(raw.passwordHash), views: raw.views ?? 0
+      passwordProtected: Boolean(raw.passwordHash), views: raw.views ?? 0, history: raw.history ?? []
     }
   }
 
@@ -725,7 +725,11 @@ export class MakeWorkspaces {
         passwordHash = `${salt}:${createHash('sha256').update(`${salt}:${options.password}`).digest('hex')}`
       }
     }
-    const raw: PublishRaw = { token, publishedAt: Date.now(), snapshotId, snapshotLabel, slug, passwordHash, views: existing?.views ?? 0 }
+    // История (roadmap-2 п.11): новая запись только когда меняется, что именно отдаётся (снимок/живая); слуг и пароль историю не трогают.
+    const history = [...(existing?.history ?? [])]
+    const last = history[history.length - 1]
+    if (!existing || !last || last.snapshotId !== snapshotId) history.push({ at: Date.now(), snapshotId, snapshotLabel })
+    const raw: PublishRaw = { token, publishedAt: Date.now(), snapshotId, snapshotLabel, slug, passwordHash, views: existing?.views ?? 0, history: history.slice(-30) }
     await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8')
     return this.state(conversationId)
   }

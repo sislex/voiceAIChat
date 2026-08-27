@@ -49,6 +49,15 @@ export interface MakePublication {
   passwordProtected?: boolean
   /** Сколько раз открывали index.html публикации. */
   views?: number
+  /** История публикаций (roadmap-2 п.11): что и когда было опубликовано; последняя запись — текущая. */
+  history?: MakePublishEntry[]
+}
+
+export interface MakePublishEntry {
+  at: number
+  /** null — «живая» публикация текущих файлов. */
+  snapshotId: string | null
+  snapshotLabel: string | null
 }
 
 /** Замечание статической проверки проекта (битые ссылки, отсутствующие файлы…). */
