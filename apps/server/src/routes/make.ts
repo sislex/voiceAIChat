@@ -6,6 +6,7 @@
 // разговор принадлежит пользователю; изменения рассылаются владельцу `make.changed`.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { SlidingWindowLimiter } from '../make/rateLimit.js'
 import { MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse } from '@voicechat/shared'
 import { transpileForPreview } from '../make/transpile.js'
 import { renderGalleryPage, renderStoriesPage } from '../make/stories.js'
@@ -21,6 +22,9 @@ export interface MakeRoutesDeps {
   workspaces: MakeWorkspaces
   hub: MakeHub
   library: MakeLibrary
+  /** Ограничители импорта — подменяются в тестах. */
+  importLimiter?: SlidingWindowLimiter
+  importUrlLimiter?: SlidingWindowLimiter
 }
 
 /** Скрипт «выбрать элемент» для превью: по сообщению родителя подсвечивает элементы и отдаёт выбранный. */
@@ -207,9 +211,19 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   })
 
   // Импорт ZIP: base64 в JSON — архив до ~8 МБ (лимит тела с запасом на base64).
+  // Rate-limit импорта (п.39): 10 ZIP и 20 URL на пользователя за 10 минут; 429 + Retry-After.
+  const importLimiter = deps.importLimiter ?? new SlidingWindowLimiter(10, 10 * 60_000)
+  const importUrlLimiter = deps.importUrlLimiter ?? new SlidingWindowLimiter(20, 10 * 60_000)
+  const limited = (limiter: SlidingWindowLimiter, userId: string, reply: FastifyReply): boolean => {
+    const v = limiter.hit(userId)
+    if (v.ok) return false
+    void reply.code(429).header('retry-after', String(v.retryAfterSec)).send({ error: `Слишком много импортов — повторите через ${v.retryAfterSec} с` })
+    return true
+  }
   app.post<{ Params: { id: string }; Body: { dataBase64?: string; mode?: string } }>('/api/make/:id/import', { bodyLimit: 12 * 1024 * 1024 }, async (req, reply) => {
     const userId = uid(req)
     if (!own(userId, req.params.id, reply)) return reply
+    if (limited(importLimiter, userId, reply)) return reply
     if (typeof req.body?.dataBase64 !== 'string') return reply.code(400).send({ error: 'dataBase64 обязателен' })
     const mode = req.body.mode === 'merge' ? 'merge' : 'replace'
     try {
@@ -226,6 +240,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   app.post<{ Params: { id: string }; Body: { url?: string; mode?: string } }>('/api/make/:id/import-url', async (req, reply) => {
     const userId = uid(req)
     if (!own(userId, req.params.id, reply)) return reply
+    if (limited(importUrlLimiter, userId, reply)) return reply
     if (typeof req.body?.url !== 'string') return reply.code(400).send({ error: 'url обязателен' })
     const mode = req.body.mode === 'merge' ? 'merge' : 'replace'
     try {
