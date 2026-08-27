@@ -145,7 +145,7 @@ export interface IpcInvokeMap {
   'make:restore': { arg: { conversationId: string; snapshotId: string }; result: MakeProjectState }
   'make:reset': { arg: { conversationId: string }; result: MakeProjectState }
   /** snapshotId — закрепить публикацию за снимком; null/отсутствует — публиковать текущее состояние. */
-  'make:publish': { arg: { conversationId: string; snapshotId?: string | null; slug?: string | null; password?: string | null }; result: MakeProjectState }
+  'make:publish': { arg: { conversationId: string; snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean }; result: MakeProjectState }
   'make:unpublish': { arg: { conversationId: string }; result: MakeProjectState }
   'make:check': { arg: { conversationId: string }; result: { issues: MakeCheckIssue[] } }
   'make:template': { arg: { conversationId: string; templateId: string }; result: MakeProjectState }
@@ -181,7 +181,7 @@ export interface IpcInvokeMap {
   /** Heartbeat presence (каждые ~15 с и при смене файла/грязности); ответ — все живые вкладки. */
   'make:presence': { arg: { conversationId: string; clientId: string; path: string | null; editing: boolean; leave?: boolean }; result: { clients: MakePresenceClient[] } }
   'make:commentAdd': { arg: { conversationId: string; selector: string; elementLabel: string; text: string }; result: { comments: MakeComment[] } }
-  'make:commentUpdate': { arg: { conversationId: string; commentId: string; resolved?: boolean; text?: string }; result: { comments: MakeComment[] } }
+  'make:commentUpdate': { arg: { conversationId: string; commentId: string; resolved?: boolean; text?: string; status?: 'pending' | 'approved' }; result: { comments: MakeComment[] } }
   'make:commentRemove': { arg: { conversationId: string; commentId: string }; result: { comments: MakeComment[] } }
   'make:cleanup': { arg: { conversationId: string } & MakeCleanupOptions; result: MakeCleanupResult }
   'make:shot': { arg: { conversationId: string; file: string; story: string; dataBase64: string }; result: { shots: MakeStoryShot[] } }

@@ -175,6 +175,8 @@ export const REST = {
   makeComments: (id: string) => `/api/make/${encodeURIComponent(id)}/comments`,
   makePresence: (id: string) => `/api/make/${encodeURIComponent(id)}/presence`,
   makeComment: (id: string, commentId: string) => `/api/make/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
+  /** Комментарии зрителей публикации (roadmap-4 п.34): GET — одобренные, POST — новый (в модерацию). */
+  makePublicComments: (token: string) => `/p/${encodeURIComponent(token)}/__comments__`,
   makeCleanup: (id: string) => `/api/make/${encodeURIComponent(id)}/cleanup`,
   makeShotImage: (id: string, shotId: string) => `/api/preview/make/${encodeURIComponent(id)}/__shots__/${encodeURIComponent(shotId)}.png`,
   makeGalleryPage: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/__gallery__`,

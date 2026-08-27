@@ -7,7 +7,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SlidingWindowLimiter } from '../make/rateLimit.js'
-import { MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse, MAKE_TESTS_PAGE } from '@voicechat/shared'
+import { MAKE_COMMENTS_SYNC_PATH as COMMENTS_SYNC_PATH, MAKE_GALLERY_PAGE, MAKE_PUBLIC_COMMENTS_PAGE, MAKE_SNAPSHOT_PREVIEW, MAKE_PUBLIC_PREFIX, MAKE_SLUG_PREFIX, MAKE_STORIES_PAGE, isMakeTranspiledPath, makeMimeType, normalizeMakePath, type MockResponse, MAKE_TESTS_PAGE } from '@voicechat/shared'
 import { transpileForPreview } from '../make/transpile.js'
 import { renderGalleryPage, renderStoriesPage, renderTestsPage, storyUsageSnippets } from '../make/stories.js'
 import { readZip, ZipReadError } from '../make/zipRead.js'
@@ -38,6 +38,20 @@ async function galleryUsage(workspaces: MakeWorkspaces, conversationId: string):
     if (src) out[f.path] = storyUsageSnippets(f.path, src.content)
   }
   return out
+}
+
+/** Плавающая кнопка «Комментарий» на странице публикации (п.34): имя + текст → POST __comments__, без window.prompt. */
+function guestCommentsWidget(base: string): string {
+  return `<div data-vc-guest-comments style="position:fixed;right:16px;bottom:16px;z-index:2147483000;font:14px/1.4 system-ui,sans-serif">
+<button type="button" data-vc-gc-open style="border:0;border-radius:24px;padding:10px 16px;background:#4f7cff;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,.2);cursor:pointer">💬 Комментарий</button>
+<form data-vc-gc-form hidden style="width:280px;background:#fff;color:#1a1d23;border-radius:12px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);display:grid;gap:8px">
+<strong>Комментарий автору</strong>
+<input name="name" placeholder="Ваше имя (необязательно)" maxlength="60" style="padding:6px 8px;border:1px solid #d5d8e0;border-radius:6px;font:inherit">
+<textarea name="text" required rows="3" maxlength="2000" placeholder="Что поправить или что понравилось?" style="padding:6px 8px;border:1px solid #d5d8e0;border-radius:6px;font:inherit"></textarea>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" data-vc-gc-cancel style="border:1px solid #d5d8e0;background:#fff;border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer">Отмена</button><button type="submit" style="border:0;background:#4f7cff;color:#fff;border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer">Отправить</button></div>
+<small data-vc-gc-status style="color:#666"></small>
+</form></div>
+<script>(function(){var root=document.querySelector('[data-vc-guest-comments]');if(!root)return;var open=root.querySelector('[data-vc-gc-open]'),form=root.querySelector('[data-vc-gc-form]'),status=root.querySelector('[data-vc-gc-status]');open.addEventListener('click',function(){form.hidden=false;open.hidden=true;form.querySelector('textarea').focus()});root.querySelector('[data-vc-gc-cancel]').addEventListener('click',function(){form.hidden=true;open.hidden=false});form.addEventListener('submit',function(e){e.preventDefault();var fd=new FormData(form);status.textContent='Отправляю…';fetch(${JSON.stringify(base)}+'__comments__',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({name:fd.get('name'),text:fd.get('text'),elementLabel:document.title||'страница'})}).then(function(r){if(!r.ok)throw new Error(r.status===429?'Слишком много сообщений, попробуйте позже':'Не удалось отправить');status.textContent='Спасибо! Комментарий появится после проверки автором.';form.querySelector('textarea').value='';setTimeout(function(){form.hidden=true;open.hidden=false;status.textContent=''},2500)}).catch(function(err){status.textContent=err.message})})})();</script>`
 }
 
 export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
@@ -270,6 +284,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   // Rate-limit импорта (п.39): 10 ZIP и 20 URL на пользователя за 10 минут; 429 + Retry-After.
   const importLimiter = deps.importLimiter ?? new SlidingWindowLimiter(10, 10 * 60_000)
   const passwordLimiter = deps.passwordLimiter ?? new SlidingWindowLimiter(10, 10 * 60_000)
+  // Комментарии зрителей (roadmap-4 п.34): не больше 10 за 10 минут с одного IP на публикацию.
+  const guestCommentLimiter = new SlidingWindowLimiter(10, 10 * 60_000)
   const importUrlLimiter = deps.importUrlLimiter ?? new SlidingWindowLimiter(20, 10 * 60_000)
   const limited = (limiter: SlidingWindowLimiter, userId: string, reply: FastifyReply): boolean => {
     const v = limiter.hit(userId)
@@ -323,9 +339,9 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     } catch (error) { return sendError(reply, error) }
   })
 
-  app.post<{ Params: { id: string }; Body: { snapshotId?: string | null; slug?: string | null; password?: string | null } | undefined }>('/api/make/:id/publish', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean } | undefined }>('/api/make/:id/publish', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
-    try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null, slug: req.body?.slug, password: req.body?.password }) } catch (error) { return sendError(reply, error) }
+    try { await workspaces.ensure(req.params.id); return await workspaces.publish(req.params.id, { snapshotId: req.body?.snapshotId ?? null, slug: req.body?.slug, password: req.body?.password, allowComments: typeof req.body?.allowComments === 'boolean' ? req.body.allowComments : undefined }) } catch (error) { return sendError(reply, error) }
   })
 
   // Read-only ссылка внутри ChatAI (п.33): владелец создаёт/отзывает, любой вошедший читает по токену.
@@ -419,11 +435,11 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       return { comments }
     } catch (error) { return sendError(reply, error) }
   })
-  app.patch<{ Params: { id: string; commentId: string }; Body: { resolved?: boolean; text?: string } | undefined }>('/api/make/:id/comments/:commentId', async (req, reply) => {
+  app.patch<{ Params: { id: string; commentId: string }; Body: { resolved?: boolean; text?: string; status?: 'pending' | 'approved' } | undefined }>('/api/make/:id/comments/:commentId', async (req, reply) => {
     const userId = uid(req)
     if (!(await access(userId, req.params.id, reply, 'editor'))) return reply
     try {
-      const comments = await workspaces.updateComment(req.params.id, req.params.commentId, { resolved: req.body?.resolved, text: req.body?.text })
+      const comments = await workspaces.updateComment(req.params.id, req.params.commentId, { resolved: req.body?.resolved, text: req.body?.text, status: req.body?.status === 'approved' || req.body?.status === 'pending' ? req.body.status : undefined })
       hub.changed(userId, req.params.id, workspaces.rev(req.params.id), [COMMENTS_SYNC_PATH])
       return { comments }
     } catch (error) { return sendError(reply, error) }
@@ -612,6 +628,22 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       return reply.code(401).header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
         .send(passwordPage(`${base}__auth__?next=${encodeURIComponent(raw)}`, q.wrong === '1'))
     }
+    // Комментарии зрителей (roadmap-4 п.34): GET — одобренные, POST — в модерацию; только если владелец включил.
+    if (raw === MAKE_PUBLIC_COMMENTS_PAGE) {
+      const pub = await workspaces.publication(conversationId)
+      if (!pub?.allowComments) return reply.code(404).send({ error: 'Комментарии зрителей выключены' })
+      if (req.method === 'GET') return reply.header('cache-control', 'no-store').send({ comments: await workspaces.publicComments(conversationId) })
+      if (req.method !== 'POST') return reply.code(405).send({ error: 'method not allowed' })
+      if (!guestCommentLimiter.hit(`${req.ip}:${token}`).ok) return reply.code(429).send({ error: 'Слишком много комментариев — попробуйте позже' })
+      const b = (req.body ?? {}) as { text?: string; name?: string; selector?: string; elementLabel?: string }
+      if (typeof b.text !== 'string' || !b.text.trim()) return reply.code(400).send({ error: 'Нужен текст комментария' })
+      try {
+        const item = await workspaces.addGuestComment(conversationId, { selector: String(b.selector ?? 'body').slice(0, 500), elementLabel: String(b.elementLabel ?? '').slice(0, 160), text: b.text, guestName: String(b.name ?? '').slice(0, 60) })
+        const owner = db.conversationOwner(conversationId)
+        if (owner) hub.changed(owner, conversationId, 0, [COMMENTS_SYNC_PATH])
+        return reply.code(201).send({ ok: true, id: item.id, pending: true })
+      } catch (error) { return sendError(reply, error) }
+    }
     // Публичные сториз и галерея (п.15): те же страницы, что в превью, но без входа; файлы — с публикации.
     if (raw === MAKE_STORIES_PAGE || raw === MAKE_GALLERY_PAGE) {
       const headers = (r: FastifyReply): FastifyReply => r.header('content-type', 'text/html; charset=utf-8').header('cache-control', 'no-store').header('x-robots-tag', 'noindex')
@@ -630,9 +662,14 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
     }
     if (path === 'index.html') { const ref = typeof req.headers.referer === 'string' ? req.headers.referer : null; const own = ref && req.hostname && ref.includes(`//${req.hostname}`); void workspaces.countView(conversationId, own ? null : ref) }
-    const body = isMakeTranspiledPath(file.path)
+    let body: Buffer | string = isMakeTranspiledPath(file.path)
       ? await transpileForPreview(file.cacheKey, file.path, file.data.toString('utf8'), file.rev, () => true)
       : file.data
+    // Виджет комментариев зрителей (roadmap-4 п.34) — только на HTML публикации с включёнными комментариями.
+    if (path === 'index.html' && (await workspaces.publication(conversationId))?.allowComments) {
+      const html = body.toString('utf8')
+      body = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, `${guestCommentsWidget(base)}</body>`) : html + guestCommentsWidget(base)
+    }
     return reply
       .header('content-type', makeMimeType(file.path))
       .header('cache-control', 'no-store')
@@ -662,6 +699,8 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
   /** Не-GET на публикации: `__auth__` — форма пароля, остальное — моки (после проверки пропуска). */
   const publicMutation = async (token: string, rawPath: string, base: string, req: FastifyRequest, reply: FastifyReply): Promise<unknown> => {
     if (rawPath === '__auth__') return authPublic(token, base, req, reply)
+    // POST комментария зрителя (п.34) — тот же обработчик, что и GET списка.
+    if (rawPath === MAKE_PUBLIC_COMMENTS_PAGE) return servePublic(token, rawPath, base, req, reply)
     const conversationId = await workspaces.publishedTarget(token)
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
     const gate = await workspaces.publicGate(conversationId)
@@ -697,11 +736,12 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
 
   // ---- Превью и экспорт (cookie-аутентификация, см. users/auth.ts) ----------
 
-  app.get<{ Params: { id: string }; Querystring: { vite?: string; pwa?: string } }>('/api/preview/make/:id/export.zip', async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { vite?: string; pwa?: string; deploy?: string } }>('/api/preview/make/:id/export.zip', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply
     try {
       await workspaces.ensure(req.params.id)
-      const zip = await workspaces.exportZip(req.params.id, { vite: req.query.vite === '1', pwa: req.query.pwa === '1' })
+      const deploy = req.query.deploy === 'netlify' || req.query.deploy === 'vercel' ? req.query.deploy : null
+      const zip = await workspaces.exportZip(req.params.id, { vite: req.query.vite === '1', pwa: req.query.pwa === '1', deploy })
       return reply
         .header('content-type', 'application/zip')
         .header('content-disposition', `attachment; filename="make-${req.params.id.slice(0, 8)}.zip"`)
@@ -714,6 +754,19 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (!own(uid(req), req.params.id, reply)) return reply
     await workspaces.ensure(req.params.id)
     const raw = req.params['*'] || 'index.html'
+    // Превью снимка (roadmap-4 п.37): `__snapshot__/<id>/<файл>` — файлы версии, транспиляция с отдельным ключом кэша.
+    if (raw.startsWith(`${MAKE_SNAPSHOT_PREVIEW}/`)) {
+      const [snapshotId, ...rest] = raw.slice(MAKE_SNAPSHOT_PREVIEW.length + 1).split('/')
+      const snapPath = rest.join('/') || 'index.html'
+      const file = snapshotId ? await workspaces.snapshotBuffer(req.params.id, snapshotId, snapPath.endsWith('/') ? `${snapPath}index.html` : snapPath) : null
+      if (!file) return reply.code(404).type('text/plain; charset=utf-8').send(`В снимке нет файла: ${snapPath}`)
+      const snapBase = `/api/preview/make/${encodeURIComponent(req.params.id)}/${MAKE_SNAPSHOT_PREVIEW}/${encodeURIComponent(snapshotId!)}/`
+      const body = isMakeTranspiledPath(file.path)
+        ? await transpileForPreview(`${req.params.id}:snap:${snapshotId}`, file.path, file.data.toString('utf8'), 0, () => true)
+        : file.path === 'index.html' ? file.data.toString('utf8').replace(/<head([^>]*)>/i, `<head$1><base href="${snapBase}">`) : file.data
+      return reply.header('content-type', makeMimeType(file.path)).header('cache-control', 'no-store').header('x-content-type-options', 'nosniff')
+        .header('content-security-policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-ancestors 'self'").send(body)
+    }
     if (raw.startsWith('__shots__/') && raw.endsWith('.png')) {
       const img = await workspaces.shotImage(req.params.id, raw.slice('__shots__/'.length, -4))
       if (!img) return reply.code(404).type('text/plain; charset=utf-8').send('Снимок не найден')

@@ -13,6 +13,8 @@ import { componentsWithoutStories, generateStoriesSource } from '@shared/makeSto
 import { loadImageData, pixelDiff } from '../lib/pixelDiff'
 import { MakeMockTable, mockTableFor } from './MakeMockTable'
 import { makeMockPrompt } from '@shared/makeMockPrompt'
+import { MAKE_DEPLOY_TARGETS, type MakeDeployTarget } from '@shared/makeDeploy'
+import { MAKE_SNAPSHOT_PREVIEW } from '@shared/make'
 import { EMPTY_MAKE_SELECTION, pruneMakeSelection, toggleMakeSelection, type MakeSelectionState } from '@shared/makeSelection'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
@@ -352,7 +354,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
   // PWA в экспорте (п.35): манифест + service worker + иконка, ссылки инъектируются в копию index.html.
   const [exportPwa, setExportPwa] = useState(false)
-  const exportUrl = (vite: boolean): string => `${REST.makeExport(conversationId)}?${vite ? 'vite=1&' : ''}${exportPwa ? 'pwa=1' : ''}`.replace(/[?&]$/, '')
+  /** Хостинг для экспорта (roadmap-4 п.36): netlify.toml / vercel.json добавляются в архив. */
+  const [exportDeploy, setExportDeploy] = useState<MakeDeployTarget | ''>('')
+  const exportUrl = (vite: boolean): string => `${REST.makeExport(conversationId)}?${vite ? 'vite=1&' : ''}${exportPwa ? 'pwa=1&' : ''}${exportDeploy ? `deploy=${exportDeploy}` : ''}`.replace(/[?&]$/, '')
   // Телефон (п.34): дерево файлов заменяет выпадающий список, редактор — лёгкий (см. CodeEditor).
   const isPhone = useMediaQuery(PHONE_EDITOR_QUERY)
   // Комментарии к элементам (п.32): список грузим один раз при открытии панели, метки шлём в превью на каждый ready.
@@ -363,7 +367,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const open = list.filter((c) => !c.resolved)
     frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.pins', items: list.map((c) => ({ selector: c.selector, n: open.indexOf(c) + 1, text: c.text, resolved: c.resolved })) }, '*')
   }
-  const applyComments = (list: MakeComment[]): void => { commentsRef.current = list; setComments(list); sendPins(list) }
+  const applyComments = (list: MakeComment[]): void => {
+    // Уведомление владельцу (roadmap-4 п.35): новые комментарии зрителей приходят по make.changed — показываем тост.
+    const prevPending = new Set((commentsRef.current ?? []).filter((c) => c.status === 'pending').map((c) => c.id))
+    const fresh = commentsRef.current ? list.filter((c) => c.status === 'pending' && !prevPending.has(c.id)) : []
+    if (fresh.length) toast.info(fresh.length === 1 ? `Новый комментарий зрителя${fresh[0]!.guestName ? ` (${fresh[0]!.guestName})` : ''}: «${fresh[0]!.text.slice(0, 80)}» — на модерации` : `Новых комментариев зрителей: ${fresh.length} — на модерации`)
+    commentsRef.current = list; setComments(list); sendPins(list)
+  }
   useEffect(() => {
     let alive = true
     api['make:comments']({ conversationId }).then((r) => { if (alive) applyComments(r.comments) }).catch(() => { if (alive) applyComments([]) })
@@ -851,11 +861,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   // Адрес и пароль публикации (п.25): slug пустой → снять адрес; пароль пустой → не менять, «Снять пароль» → null.
   const [publishSlug, setPublishSlug] = useState<string | null>(null)
   const [publishPassword, setPublishPassword] = useState('')
-  const publish = async (snapshotId: string | null = null, extra: { slug?: string | null; password?: string | null } = {}): Promise<void> => {
+  const publish = async (snapshotId: string | null = null, extra: { slug?: string | null; password?: string | null; allowComments?: boolean } = {}): Promise<void> => {
     try {
       setState(await api['make:publish']({ conversationId, snapshotId, ...extra }))
       setPublishPassword('')
-      toast.success(extra.password === null ? 'Пароль снят' : snapshotId ? 'Публикация закреплена за снимком' : state?.published ? 'Публикация обновлена' : 'Проект опубликован')
+      toast.success(extra.allowComments !== undefined ? (extra.allowComments ? 'Комментарии зрителей включены' : 'Комментарии зрителей выключены') : extra.password === null ? 'Пароль снят' : snapshotId ? 'Публикация закреплена за снимком' : state?.published ? 'Публикация обновлена' : 'Проект опубликован')
     } catch (e) { toast.error(describeError(e)) }
   }
   const publishOptions = (): { slug?: string | null; password?: string | null } => ({
@@ -863,6 +873,25 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     ...(publishPassword ? { password: publishPassword } : {})
   })
   const [publishPick, setPublishPick] = useState<string>('')
+  /** Сравнение версий публикации (roadmap-4 п.37): снимок из истории рядом с текущим состоянием + карта различий. */
+  const [versionCompare, setVersionCompare] = useState<string | null>(null)
+  const [versionDiff, setVersionDiff] = useState<{ url: string; mismatch: number } | null>(null)
+  const versionFrames = useRef<{ a: HTMLIFrameElement | null; b: HTMLIFrameElement | null }>({ a: null, b: null })
+  const computeVersionDiff = async (): Promise<void> => {
+    const a = versionFrames.current.a?.contentDocument, b = versionFrames.current.b?.contentDocument
+    if (!a || !b) return
+    try {
+      const [pa, pb] = await Promise.all([captureIframeScreenshot({ doc: a, width: 720 }, 'a.png'), captureIframeScreenshot({ doc: b, width: 720 }, 'b.png')])
+      const ua = URL.createObjectURL(pa), ub = URL.createObjectURL(pb)
+      try {
+        const r = pixelDiff(await loadImageData(ua), await loadImageData(ub))
+        const canvas = document.createElement('canvas'); canvas.width = r.width; canvas.height = r.height
+        const ctx = canvas.getContext('2d'); if (!ctx) return
+        const image = ctx.createImageData(r.width, r.height); image.data.set(r.diff); ctx.putImageData(image, 0, 0)
+        setVersionDiff({ url: canvas.toDataURL('image/png'), mismatch: r.mismatch })
+      } finally { URL.revokeObjectURL(ua); URL.revokeObjectURL(ub) }
+    } catch (e) { toast.error(describeError(e)) }
+  }
   const unpublish = async (): Promise<void> => {
     const ok = await confirm({ title: 'Снять проект с публикации?', message: 'Ссылка перестанет открываться.', variant: 'danger', confirmLabel: 'Снять' })
     if (!ok) return
@@ -1391,6 +1420,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               selected={selected ? { selector: selected.selector, tag: selected.tag, text: selected.text } : null}
               onAdd={(text) => commentAction(() => api['make:commentAdd']({ conversationId, selector: selected!.selector, elementLabel: `<${selected!.tag}> ${selected!.text.slice(0, 60)}`.trim(), text }))}
               onResolve={(id, resolved) => void commentAction(() => api['make:commentUpdate']({ conversationId, commentId: id, resolved }))}
+              onApprove={(id) => void commentAction(() => api['make:commentUpdate']({ conversationId, commentId: id, status: 'approved' }))}
               onRemove={(id) => void commentAction(() => api['make:commentRemove']({ conversationId, commentId: id }))}
               onHighlight={highlightInPreview}
               onAskAssistant={onAskAssistant ?? onInsertToChat}
@@ -1907,6 +1937,16 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           )}
         </Dialog>
       )}
+      {versionCompare && (
+        <Dialog className="make-dialog make-version-dialog" padded title="Сравнение версий публикации" ariaLabel="Сравнение версий публикации" size="lg" onClose={() => { setVersionCompare(null); setVersionDiff(null) }} testId="make-version-compare"
+          footer={<><Button size="sm" variant="secondary" onClick={() => void computeVersionDiff()}>Карта различий</Button>{versionDiff && <span className={versionDiff.mismatch > 0.005 ? 'make-shots-diff--bad' : 'make-shots-diff--ok'}>{versionDiff.mismatch === 0 ? 'различий нет' : `отличается ${(versionDiff.mismatch * 100).toFixed(2)}% пикселей`}</span>}</>}>
+          <div className="make-version-grid">
+            <figure><figcaption>Снимок «{state?.snapshots.find((s) => s.id === versionCompare)?.label ?? versionCompare}»</figcaption><iframe ref={(el) => { versionFrames.current.a = el }} title="Версия из истории" sandbox="allow-scripts allow-same-origin" src={`${base}${MAKE_SNAPSHOT_PREVIEW}/${encodeURIComponent(versionCompare)}/index.html`} /></figure>
+            <figure><figcaption>Текущее состояние</figcaption><iframe ref={(el) => { versionFrames.current.b = el }} title="Текущая версия" sandbox="allow-scripts allow-same-origin" src={previewSrc} /></figure>
+            {versionDiff && <figure data-testid="make-version-diff"><figcaption>Карта различий</figcaption><img src={versionDiff.url} alt="Карта различий версий" /></figure>}
+          </div>
+        </Dialog>
+      )}
       {exportOpen && (
         <Dialog className="make-dialog" padded title="Скачать проект" ariaLabel="Скачать проект" size="sm" onClose={() => setExportOpen(false)} testId="make-export">
           <div className="make-export-options">
@@ -1919,6 +1959,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               <span>Плюс package.json, vite.config и README: распаковать, <code>npm install</code>, <code>npm run dev</code> — и продолжать в своём редакторе.</span>
             </button>
           </div>
+          <label className="make-export-pwa">Хостинг: <select aria-label="Хостинг для экспорта" value={exportDeploy} onChange={(e) => setExportDeploy(e.target.value as MakeDeployTarget | '')}><option value="">без конфига</option>{MAKE_DEPLOY_TARGETS.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select> <small>— в архив добавятся конфиг и DEPLOY.md</small></label>
           <label className="make-export-pwa"><input type="checkbox" checked={exportPwa} onChange={(e) => setExportPwa(e.target.checked)} /> Добавить PWA: манифест, service worker и иконку — сайт можно «установить» на телефон и открывать офлайн</label>
         </Dialog>
       )}
@@ -2003,7 +2044,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                       <li key={`${e.at}-${i}`}>
                         <span>{formatTime(e.at)} · {e.snapshotId ? `снимок «${e.snapshotLabel}»` : 'текущее состояние'}</span>
                         {i === 0 ? <small>сейчас</small> : (e.snapshotId === null || state.snapshots.some((s) => s.id === e.snapshotId))
-                          ? <Button size="sm" variant="ghost" onClick={() => void publish(e.snapshotId, publishOptions())}>Вернуть</Button>
+                          ? <><Button size="sm" variant="ghost" onClick={() => void publish(e.snapshotId, publishOptions())}>Вернуть</Button>{e.snapshotId && <Button size="sm" variant="ghost" onClick={() => setVersionCompare(e.snapshotId!)} title="Открыть эту версию и текущую рядом, с картой различий">Сравнить</Button>}</>
                           : <small>снимок удалён</small>}
                       </li>
                     ))}
@@ -2013,6 +2054,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               <div className="make-ask-actions">
                 <Button size="sm" variant="secondary" onClick={() => void publish((publishPick || state.published?.snapshotId) || null, publishOptions())}>Обновить публикацию</Button>
                 {state.published.passwordProtected && <Button size="sm" variant="ghost" onClick={() => void publish((publishPick || state.published?.snapshotId) || null, { password: null })}>Снять пароль</Button>}
+                <label className="make-autosave" title="На странице публикации появится кнопка «Комментарий»; сообщения зрителей попадают в модерацию в панели комментариев"><input type="checkbox" aria-label="Комментарии зрителей" checked={Boolean(state.published.allowComments)} onChange={(e) => void publish((publishPick || state.published?.snapshotId) || null, { allowComments: e.target.checked })} /> комментарии зрителей</label>
               </div>
               <div className="make-ask-actions"><Button size="sm" variant="danger" onClick={() => void unpublish()}>Снять с публикации</Button></div>
             </div>

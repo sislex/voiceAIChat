@@ -597,10 +597,28 @@ describe('REST: conversations/messages/settings', () => {
     expect(String(login.headers['set-cookie'])).toContain('vc_mock_session=anna')
     expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/api/me` })).statusCode).toBe(401)
     expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/api/me`, headers: { cookie: 'vc_mock_session=anna' } })).json()).toMatchObject({ role: 'admin', user: { username: 'anna' } })
+    // Превью снимка (roadmap-4 п.37): index.html версии с <base>, чужой снимок — 404.
+    const snapState = (await inj({ method: 'POST', url: `/api/make/${conv.id}/snapshots`, payload: { label: 'v1' } })).json() as { snapshots: Array<{ id: string }> }
+    const snapPage = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__snapshot__/${snapState.snapshots[0]!.id}/index.html` })
+    expect(snapPage.statusCode).toBe(200)
+    expect(snapPage.body).toContain(`<base href="/api/preview/make/${conv.id}/__snapshot__/${snapState.snapshots[0]!.id}/">`)
+    expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__snapshot__/nope/index.html` })).statusCode).toBe(404)
     const gallery = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__gallery__` })
     expect(gallery.statusCode).toBe(200)
     expect(gallery.body).toContain('Button.stories.jsx')
     const pub2 = (await inj({ method: 'POST', url: `/api/make/${conv.id}/publish` })).json() as { published: { url: string } }
+    // Комментарии зрителей (roadmap-4 п.34): выключены → 404; включены → виджет в HTML, POST → pending, GET отдаёт только одобренные.
+    expect((await app.inject({ method: 'GET', url: `${pub2.published.url}__comments__` })).statusCode).toBe(404)
+    await inj({ method: 'POST', url: `/api/make/${conv.id}/publish`, payload: { allowComments: true } })
+    expect((await app.inject({ method: 'GET', url: `${pub2.published.url}index.html` })).body).toContain('data-vc-guest-comments')
+    const guest = await app.inject({ method: 'POST', url: `${pub2.published.url}__comments__`, payload: { name: 'Зритель', text: 'Кнопка мелкая' } })
+    expect(guest.statusCode).toBe(201)
+    expect((await app.inject({ method: 'GET', url: `${pub2.published.url}__comments__` })).json()).toEqual({ comments: [] })
+    const mine = (await inj({ method: 'GET', url: `/api/make/${conv.id}/comments` })).json() as { comments: Array<{ id: string; status?: string; guestName?: string; author: string }> }
+    const pending = mine.comments.find((c) => c.status === 'pending')!
+    expect(pending).toMatchObject({ author: 'guest', guestName: 'Зритель' })
+    await inj({ method: 'PATCH', url: `/api/make/${conv.id}/comments/${pending.id}`, payload: { status: 'approved' } })
+    expect(((await app.inject({ method: 'GET', url: `${pub2.published.url}__comments__` })).json() as { comments: unknown[] }).comments).toHaveLength(1)
     const pubGallery = await app.inject({ method: 'GET', url: `${pub2.published.url}__gallery__` })
     expect(pubGallery.statusCode).toBe(200)
     expect(pubGallery.body).toContain(`${pub2.published.url}__stories__?file=`)

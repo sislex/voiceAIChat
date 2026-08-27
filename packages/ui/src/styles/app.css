@@ -7020,3 +7020,18 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-mock-table-hint { flex-basis: 100%; font-size: 11px; color: var(--text-dim); }
 .make-mock-table-empty { padding: 12px; color: var(--text-dim); }
 .make-mock-view { display: inline-flex; gap: 2px; margin-right: 8px; }
+
+/* Комментарии зрителей (roadmap-4 п.34) */
+.make-comment--pending { background: #fff8e6; border-left: 3px solid #f0ad4e; }
+.make-comment-pending-count { color: #b26a00; }
+
+/* Сравнение версий публикации (roadmap-4 п.37) */
+.make-version-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.make-version-grid figure { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.make-version-grid figcaption { font-size: 12px; color: var(--text-dim); }
+.make-version-grid iframe { width: 100%; height: 420px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.make-version-grid img { width: 100%; border: 1px solid var(--border); border-radius: 8px; }
+.make-version-grid figure:last-child:nth-child(3) { grid-column: 1 / -1; }
+
+/* Диск с данными Make в админке (roadmap-4 п.40) */
+.uusage-disk--alert { color: #c0392b; font-weight: 600; }

@@ -1001,3 +1001,66 @@ describe('MakePane: мок из описания (roadmap-4 п.30)', () => {
     expect(text).toContain('7 правдоподобных записей')
   })
 })
+
+describe('MakePane: комментарии зрителей и модерация (roadmap-4 пп.34–35)', () => {
+  it('pending-комментарий показан отдельно, «Одобрить» переводит его в общий список; новый pending по make.changed даёт тост; флажок публикации шлёт allowComments', async () => {
+    const { api, emit } = renderPane()
+    await api['make:commentAdd']({ conversationId: CONV, selector: 'body', elementLabel: 'страница', text: 'Кнопка мелкая' })
+    const list = (await api['make:comments']({ conversationId: CONV })).comments
+    await api['make:commentUpdate']({ conversationId: CONV, commentId: list[0]!.id, status: 'pending' })
+    await screen.findByTitle('Превью проекта')
+    emit({ conversationId: CONV, rev: 0, paths: ['.comments.json'] })
+    await userEvent.click(screen.getByRole('button', { name: /💬/ }))
+    const panel = await screen.findByTestId('make-comments')
+    await waitFor(() => expect(within(panel).getByTestId('make-comments-pending')).toHaveTextContent('1 на модерации'))
+    expect(within(panel).queryByRole('button', { name: 'Исправить все' })).toBeNull()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Одобрить' }))
+    await waitFor(() => expect(within(panel).queryByTestId('make-comments-pending')).toBeNull())
+    // Новый комментарий зрителя приходит по make.changed → тост владельцу (п.35).
+    await api['make:commentAdd']({ conversationId: CONV, selector: 'body', elementLabel: 'страница', text: 'Ещё одно замечание' })
+    const fresh = (await api['make:comments']({ conversationId: CONV })).comments[0]!
+    await api['make:commentUpdate']({ conversationId: CONV, commentId: fresh.id, status: 'pending' })
+    emit({ conversationId: CONV, rev: 0, paths: ['.comments.json'] })
+    await waitFor(() => expect(screen.getAllByText(/Новый комментарий зрителя/).length).toBeGreaterThan(0))
+    expect(screen.getAllByText(/Ещё одно замечание/).length).toBeGreaterThan(0)
+    // Флажок в публикации.
+    await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }))
+    const dlg = await screen.findByTestId('make-publish')
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Опубликовать' }))
+    const box = await within(dlg).findByLabelText('Комментарии зрителей')
+    expect(box).not.toBeChecked()
+    await userEvent.click(box)
+    await waitFor(() => expect(within(dlg).getByLabelText('Комментарии зрителей')).toBeChecked())
+  })
+})
+
+describe('MakePane: экспорт под хостинг и сравнение версий (roadmap-4 пп.36–37)', () => {
+  it('селект «Хостинг» добавляет deploy= в ссылку экспорта', async () => {
+    renderPane()
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    await screen.findByTitle('Превью проекта')
+    await openMore()
+    await userEvent.click(screen.getByRole('button', { name: 'Скачать проект (ZIP)' }))
+    const dlg = await screen.findByTestId('make-export')
+    await userEvent.selectOptions(within(dlg).getByLabelText('Хостинг для экспорта'), 'netlify')
+    await userEvent.click(within(dlg).getByRole('button', { name: /Статика как есть/ }))
+    expect(open).toHaveBeenCalledWith(expect.stringContaining('deploy=netlify'), '_blank', 'noopener')
+    open.mockRestore()
+  })
+  it('«Сравнить» в истории публикаций открывает снимок и текущее состояние рядом', async () => {
+    const { api, emit } = renderPane()
+    await api['make:snapshot']({ conversationId: CONV, label: 'v1' })
+    const snap = (await api['make:state']({ conversationId: CONV })).snapshots[0]!
+    await api['make:publish']({ conversationId: CONV, snapshotId: snap.id })
+    await api['make:publish']({ conversationId: CONV, snapshotId: null })
+    await screen.findByTitle('Превью проекта')
+    emit({ conversationId: CONV, rev: 1, paths: ['index.html'] })
+    await userEvent.click(await screen.findByRole('button', { name: 'Опубликован' }))
+    const dlg = await screen.findByTestId('make-publish')
+    await userEvent.click(within(dlg).getByText(/История публикаций/))
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Сравнить' }))
+    const cmp = await screen.findByTestId('make-version-compare')
+    expect((within(cmp).getByTitle('Версия из истории') as HTMLIFrameElement).getAttribute('src')).toContain(`/__snapshot__/${snap.id}/index.html`)
+    expect((within(cmp).getByTitle('Текущая версия') as HTMLIFrameElement).getAttribute('src')).toContain('index.html?rev=')
+  })
+})
