@@ -1,7 +1,7 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState, MakePresenceClient } from './make'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -170,6 +170,8 @@ export interface IpcInvokeMap {
   'make:sharedFile': { arg: { token: string; path: string }; result: MakeFileContent }
   'make:sharedStories': { arg: { token: string }; result: { files: MakeStoryFile[] } }
   'make:comments': { arg: { conversationId: string }; result: { comments: MakeComment[] } }
+  /** Heartbeat presence (каждые ~15 с и при смене файла/грязности); ответ — все живые вкладки. */
+  'make:presence': { arg: { conversationId: string; clientId: string; path: string | null; editing: boolean; leave?: boolean }; result: { clients: MakePresenceClient[] } }
   'make:commentAdd': { arg: { conversationId: string; selector: string; elementLabel: string; text: string }; result: { comments: MakeComment[] } }
   'make:commentUpdate': { arg: { conversationId: string; commentId: string; resolved?: boolean; text?: string }; result: { comments: MakeComment[] } }
   'make:commentRemove': { arg: { conversationId: string; commentId: string }; result: { comments: MakeComment[] } }
@@ -820,6 +822,8 @@ export interface RendererFilesBridge {
 /** Мост Make (web): сервер сообщает об изменении файлов проекта — панель обновляет превью и дерево. */
 export interface RendererMakeBridge {
   onChanged(cb: (m: { conversationId: string; rev: number; paths: string[] }) => void): () => void
+  /** Presence вкладок (roadmap-2 п.14); у старых хостов может отсутствовать. */
+  onPresence?(cb: (m: { conversationId: string; clients: MakePresenceClient[] }) => void): () => void
 }
 
 export interface RendererPtyBridge {
@@ -932,6 +936,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:sharedFile',
   'make:sharedStories',
   'make:comments',
+  'make:presence',
   'make:commentAdd',
   'make:commentUpdate',
   'make:commentRemove',

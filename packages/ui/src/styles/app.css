@@ -6899,3 +6899,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Дизайн-кит в библиотеке (roadmap-2 п.13) */
 .make-kit-actions { justify-content: flex-start; margin-bottom: var(--space-2); }
 .make-kit-badge { margin-left: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); vertical-align: middle; }
+
+/* Presence и мягкая блокировка файла (roadmap-2 п.14) */
+.make-presence { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-hover); color: var(--text); white-space: nowrap; cursor: help; }
+.make-lock { padding: 6px 12px; font-size: 12.5px; background: #fff4e5; color: #7a4b00; border-bottom: 1px solid #f3d9a4; }
+[data-theme='dark'] .make-lock { background: #3a2a10; color: #f5d9a8; border-color: #5a4320; }
+@media (max-width: 720px) { .make-head .make-presence { display: none; } }

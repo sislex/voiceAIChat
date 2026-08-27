@@ -123,6 +123,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:sharedFile': ({ token, path }) => req(REST.makeSharedFile(token, path)),
     'make:sharedStories': ({ token }) => req(REST.makeSharedStories(token)),
     'make:comments': ({ conversationId }) => req(REST.makeComments(conversationId)),
+    'make:presence': ({ conversationId, ...body }) => req(REST.makePresence(conversationId), { method: 'POST', body: JSON.stringify(body) }),
     'make:commentAdd': ({ conversationId, ...body }) => req(REST.makeComments(conversationId), { method: 'POST', body: JSON.stringify(body) }),
     'make:commentUpdate': ({ conversationId, commentId, ...body }) => req(REST.makeComment(conversationId, commentId), { method: 'PATCH', body: JSON.stringify(body) }),
     'make:commentRemove': ({ conversationId, commentId }) => req(REST.makeComment(conversationId, commentId), { method: 'DELETE' }),
