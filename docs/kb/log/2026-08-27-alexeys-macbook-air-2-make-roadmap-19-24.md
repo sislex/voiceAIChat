@@ -27,3 +27,4 @@ author: alexeyrozhnov
 П.22: баннер «Исправить» после ошибок консоли в 8-секундном окне после правки; автоотправка через `onAskAssistant`.
 П.8: панель стилей выбранного элемента (live inline через postMessage + запись правила в CSS).
 П.3+п.2: типы React в Monaco (extraLibs из node_modules через ?raw), модели всех файлов проекта; фикс конфликта глобального .main с suggest-widget.
+П.14: controls по argTypes (range/color/select/object) + JSON-редактор массивов/объектов.

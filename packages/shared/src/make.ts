@@ -386,7 +386,13 @@ export function App() {
 `,
       'src/components/Button.stories.jsx': `import { Button } from './Button.jsx'
 
-export default { title: 'Button', component: Button, args: { children: 'Кнопка', variant: 'primary', size: 'md' } }
+export default {
+  title: 'Button',
+  component: Button,
+  args: { children: 'Кнопка', variant: 'primary', size: 'md' },
+  // argTypes — как в Storybook: панель «Компоненты» рисует по ним селекты и ползунки.
+  argTypes: { variant: { control: 'select', options: ['primary', 'secondary'] }, size: { control: 'select', options: ['sm', 'md'] } }
+}
 
 export const Primary = {}
 export const Secondary = { args: { variant: 'secondary' } }
