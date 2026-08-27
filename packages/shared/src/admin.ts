@@ -10,6 +10,10 @@ export interface AdminUserInfo {
   role: UserRole
   blocked: boolean
   createdAt: number
+  /** Авто-блокировка после неудачных входов (auth-roadmap п.3). */
+  failedLogins?: number
+  lockedUntil?: number | null
+  lockReason?: string | null
   conversationCount: number
   /** Машины-агенты пользователя с онлайн-статусом. */
   agents: AgentInfo[]

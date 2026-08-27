@@ -24,3 +24,5 @@ author: alexeyrozhnov
 -
 
 П.1 (auth-roadmap): rate-limit входа 10/10 мин по IP и имени, 429 + Retry-After.
+П.2 (auth-roadmap): политика пароля (10+, не пустой, не логин, не частый) + опциональный HIBP.
+П.3 (auth-roadmap): блокировка после неудач (5 → замок 15 мин/423, 10 → blocked auto), бейджи в админке.
