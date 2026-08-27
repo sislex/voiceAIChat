@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: 893efd7e
+checked: d165b540
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -513,6 +513,9 @@ read-only, side-by-side) или построчный фолбэк в jsdom; сл
 
 **Поиск** в дереве (`make-search-input`): по мере ввода фильтрует файлы по пути; Enter — поиск по
 содержимому через `make:search` (`make-matches`, клик по строке открывает файл), Esc сбрасывает.
+**Правка ИИ** (п.6): кнопка «✨ Правка ИИ» или Cmd/Ctrl+I в редакторе (⌘K занят палитрой команд) открывает строку
+`make-inline`: выделение (`onSelectionChange` из Monaco `onDidChangeCursorSelection` / `onSelect` textarea) +
+инструкция → `onAskAssistant` с файлом, строками и фрагментом; модель правит через make_read_file/make_write_file.
 **Перенос файлов между папками** (п.5): строка дерева — `onPointerDown` → `usePointerDrag` из `lib/dnd.ts`
 (мышь/палец, порог 6px); цель — `.make-tree-group[data-dir]` под указателем (`pointInRect`) или корень дерева;
 на drop — `make:rename` в `moveTargetPath(path, dir)` (`lib/makeTree.ts`), подсветка `make-tree-group--drop`,

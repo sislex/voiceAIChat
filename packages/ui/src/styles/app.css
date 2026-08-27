@@ -6689,3 +6689,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-tree-group--drop { background: var(--surface-hover); outline-color: var(--accent) !important; }
 .make-tree-item--drag { opacity: .5; }
 .make-tree-item { touch-action: pan-y; }
+
+/* Inline-команда ассистенту (Cmd+K). */
+.make-inline { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--surface); font-size: 12.5px; }
+.make-inline-scope { color: var(--text-dim); white-space: nowrap; }
+.make-inline input { flex: 1 1 auto; min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; font: inherit; font-size: 13px; background: var(--panel); color: var(--text); }

@@ -6,12 +6,14 @@ import { monacoLanguageFor } from './monacoLang'
 import type { CodeEditorProps } from '../CodeEditor'
 
 /** Редактор на Monaco — настоящий VS Code: подсветка TSX/JSX, автодополнение, поиск, сворачивание. */
-export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLabel, markers, projectFiles }: CodeEditorProps): JSX.Element {
+export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLabel, markers, projectFiles, onSelectionChange, onInlineCommand }: CodeEditorProps): JSX.Element {
   const monaco = useMemo(() => setupMonaco(), [])
   useEffect(() => { if (projectFiles) syncProjectModels(monaco, projectFiles) }, [monaco, projectFiles])
   const saveRef = useRef(onSave)
   saveRef.current = onSave
   const editorRef = useRef<MonacoNs.editor.IStandaloneCodeEditor | null>(null)
+  const selRef = useRef(onSelectionChange); selRef.current = onSelectionChange
+  const inlineRef = useRef(onInlineCommand); inlineRef.current = onInlineCommand
   // Маркеры ошибок компиляции: приходят из make_check после сохранения.
   useEffect(() => {
     const model = editorRef.current?.getModel()
@@ -26,6 +28,14 @@ export default function MonacoCodeEditor({ path, value, onChange, onSave, ariaLa
   const onMount: OnMount = (editor, m) => {
     editorRef.current = editor
     editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => saveRef.current?.())
+    editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyI, () => inlineRef.current?.())
+    editor.onDidChangeCursorSelection((e) => {
+      const model = editor.getModel()
+      if (!model || !selRef.current) return
+      const s = e.selection
+      if (s.isEmpty()) { selRef.current(null); return }
+      selRef.current({ startLine: s.startLineNumber, endLine: s.endLineNumber, text: model.getValueInRange(s) })
+    })
     attachJsxAutoClose(editor, m)
     editor.focus()
   }

@@ -14,7 +14,13 @@ export interface CodeEditorProps {
   markers?: EditorMarker[]
   /** Остальные текстовые файлы проекта — модели для резолва импортов (переход к определению). */
   projectFiles?: ReadonlyArray<{ path: string; content: string }>
+  /** Выделение изменилось (для inline-команды ассистенту); null — пустое. */
+  onSelectionChange?: (sel: EditorSelection | null) => void
+  /** Cmd/Ctrl+I в редакторе — «сделай с выделенным…» (⌘K занят палитрой команд приложения). */
+  onInlineCommand?: () => void
 }
+
+export interface EditorSelection { startLine: number; endLine: number; text: string }
 
 export interface EditorMarker { line: number; column?: number; message: string }
 
@@ -31,7 +37,7 @@ export function CodeEditor(props: CodeEditorProps): JSX.Element {
 }
 
 /** Textarea + подсветка: прозрачный textarea поверх <pre> с теми же метриками, скролл синхронизирован. */
-export function FallbackEditor({ path, value, onChange, onSave, ariaLabel }: CodeEditorProps): JSX.Element {
+export function FallbackEditor({ path, value, onChange, onSave, ariaLabel, onSelectionChange, onInlineCommand }: CodeEditorProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const highlightRef = useRef<HTMLPreElement | null>(null)
   const highlighted = useMemo(() => highlightCode(value, path), [value, path])
@@ -41,6 +47,7 @@ export function FallbackEditor({ path, value, onChange, onSave, ariaLabel }: Cod
   }
   const onKey = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); onSave?.(); return }
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'i') { event.preventDefault(); onInlineCommand?.(); return }
     if (event.key === 'Tab') {
       event.preventDefault()
       const el = event.currentTarget
@@ -62,6 +69,14 @@ export function FallbackEditor({ path, value, onChange, onSave, ariaLabel }: Cod
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKey}
         onScroll={syncScroll}
+        onSelect={(e) => {
+          const el = e.currentTarget
+          if (!onSelectionChange) return
+          if (el.selectionStart === el.selectionEnd) { onSelectionChange(null); return }
+          const before = value.slice(0, el.selectionStart).split('\n').length
+          const lines = value.slice(el.selectionStart, el.selectionEnd).split('\n').length
+          onSelectionChange({ startLine: before, endLine: before + lines - 1, text: value.slice(el.selectionStart, el.selectionEnd) })
+        }}
       />
     </div>
   )
