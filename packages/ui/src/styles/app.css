@@ -6747,3 +6747,19 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-play--pending { color: var(--text-dim); }
 
 .make-library-item { grid-template-columns: 1fr auto; }
+
+/* Дизайн-токены Make (п.23) */
+.make-tokens-group { margin-top: var(--space-3); }
+.make-tokens-group h4 { margin: 0 0 var(--space-1); font-size: 12px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+.make-tokens { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.make-token { display: grid; grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1.4fr) auto; align-items: center; gap: var(--space-2); }
+.make-token-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.make-token input[type='color'] { width: 28px; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-small); background: none; }
+.make-token-swatch { width: 28px; height: 28px; border-radius: var(--radius-small); border: 1px solid var(--border); }
+.make-token-value, .make-token-add input { min-width: 0; font: inherit; font-size: 13px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--surface); color: var(--text); }
+.make-token-add { display: grid; grid-template-columns: 1fr 1fr auto; gap: var(--space-2); margin-top: var(--space-3); }
+@media (max-width: 720px) {
+  .make-token { grid-template-columns: 1fr auto auto; }
+  .make-token-value { grid-column: 1 / -1; }
+  .make-token-add { grid-template-columns: 1fr; }
+}
