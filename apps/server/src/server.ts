@@ -34,6 +34,7 @@ import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { BoardHub, NotificationHub } from './projects/boardHub.js'
 import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.js'
+import { ensureDefaultChatBinding, ensureDefaultStorage } from './agents/defaultStorage.js'
 import { createMailer, type Mailer } from './users/mailer.js'
 
 /** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
@@ -572,19 +573,33 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // только принимает байты запроса и пересылает агенту; без машины сохраняется
   // совместимый локальный режим.
   const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'))
-  const managedChatStorage = (userId: string, conversationId: string) => resolveManagedChatStorage(userId, conversationId, {
-    getBinding: (uid, id) => db.getChatStorageBinding(uid, id),
-    listStorages: (uid, machineId) => db.listMachineStorages(uid, machineId),
-    ownsMachine: (uid, machineId) => db.listAgents(uid).some((agent) => agent.id === machineId),
-    isOnline: (machineId) => agentRegistry.isOnline(machineId),
-    verifyRoot: async (machineId, rootPath) => {
-      const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
-      const marker = await agentRegistry.fsRead(machineId, `${rootPath.replace(/[/\\]$/, '')}${separator}.voicechat${separator}storage.json`)
-      const parsed = JSON.parse(Buffer.from(marker.dataBase64 ?? '', 'base64').toString('utf8')) as { id?: string }
-      const binding = db.getChatStorageBinding(userId, conversationId)
-      if (!binding || parsed.id !== binding.storageId) throw new Error('Marker привязанного хранилища отсутствует или конфликтует')
-    }
+  // Каталог ChatAI по умолчанию: при подключении машины и перед первой записью файлов чата.
+  const defaultStorageDeps = { db, registry: agentRegistry, log: (m: string, extra?: Record<string, unknown>) => app.log.info(extra ?? {}, m) }
+  agentRegistry.onAgentReady((agentId) => {
+    const owner = db.agentOwnerId(agentId)
+    if (owner) void ensureDefaultStorage(defaultStorageDeps, owner, agentId)
   })
+  const ensureChatStorage = (userId: string, conversationId: string, machineId: string) => ensureDefaultChatBinding(defaultStorageDeps, userId, conversationId, machineId)
+  // Вложения/ретушь/публикация: чат без привязки сначала привязывается к ChatAI машины разговора (если она в сети).
+  const managedChatStorage = async (userId: string, conversationId: string) => {
+    if (!db.getChatStorageBinding(userId, conversationId)) {
+      const machine = db.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
+      if (machine?.agentId && machine.source !== 'disabled') await ensureChatStorage(userId, conversationId, machine.agentId)
+    }
+    return resolveManagedChatStorage(userId, conversationId, {
+      getBinding: (uid, id) => db.getChatStorageBinding(uid, id),
+      listStorages: (uid, machineId) => db.listMachineStorages(uid, machineId),
+      ownsMachine: (uid, machineId) => db.listAgents(uid).some((agent) => agent.id === machineId),
+      isOnline: (machineId) => agentRegistry.isOnline(machineId),
+      verifyRoot: async (machineId, rootPath) => {
+        const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
+        const marker = await agentRegistry.fsRead(machineId, `${rootPath.replace(/[/\\]$/, '')}${separator}.voicechat${separator}storage.json`)
+        const parsed = JSON.parse(Buffer.from(marker.dataBase64 ?? '', 'base64').toString('utf8')) as { id?: string }
+        const binding = db.getChatStorageBinding(userId, conversationId)
+        if (!binding || parsed.id !== binding.storageId) throw new Error('Marker привязанного хранилища отсутствует или конфликтует')
+      }
+    })
+  }
   const generatedCleanup = new GeneratedCleanupService({
     targets: () => db.listGeneratedCleanupTargets(),
     ttlDays: (userId) => db.getSettings(userId).generatedFilesTtlDays,
@@ -866,6 +881,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       fsMkdir: (id, path) => agentRegistry.fsMkdir(id, path),
       fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data)
     },
+    ensureChatStorage,
     readServerFile: async (userId, path) => {
       if (runnerFs) return runnerFs.readFile(userId, path)
       const settings = db.getSettings(userId)

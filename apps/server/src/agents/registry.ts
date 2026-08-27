@@ -213,8 +213,18 @@ export class AgentRegistry {
   /** Сохраняет свежую телеметрию агента и уведомляет подписчиков (пуш веб-клиенту). */
   private setTelemetry(agentId: string, t: AgentTelemetry): void {
     if (!this.online.has(agentId)) return
+    const first = !this.telemetry.has(agentId)
     this.telemetry.set(agentId, t)
     this.emitChange()
+    // Первая телеметрия после подключения — момент, когда известен homePath: сервер заводит каталог ChatAI по умолчанию.
+    if (first) for (const cb of this.onlineListeners) { try { cb(agentId) } catch { /* слушатель не должен ронять реестр */ } }
+  }
+
+  private readonly onlineListeners = new Set<(agentId: string) => void>()
+  /** Подписка «машина подключилась и прислала телеметрию». */
+  onAgentReady(cb: (agentId: string) => void): () => void {
+    this.onlineListeners.add(cb)
+    return () => { this.onlineListeners.delete(cb) }
   }
 
   /**
