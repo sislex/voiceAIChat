@@ -6656,3 +6656,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-style-color code { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .make-style-actions { display: flex; gap: 6px; margin-top: 8px; }
 @media (max-width: 768px) { .make-style-grid { grid-template-columns: 1fr; } }
+
+/* Monaco использует классы .main/.left/.right в строках подсказок — наши глобальные правила раскладки
+   (.main { height: 100vh; flex-direction: column }) ломали suggest-widget: текст уезжал ниже строки. */
+.monaco-editor .monaco-list-row .main { position: static; display: flex; flex-direction: row; height: auto; min-height: 0; }
+.monaco-editor .monaco-list-row .left, .monaco-editor .monaco-list-row .right { height: auto; }

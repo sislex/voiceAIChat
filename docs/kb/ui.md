@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: ed0ff46f
+checked: da9bf941
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -458,6 +458,15 @@ contribution-модулями — полный пакет тянул 4 МБ; в�
 `.make-monaco` нужна явная высота (обёртка `@monaco-editor/react` — height:100%), поэтому `> section`
 позиционируется абсолютно. Чанк `monaco` выделен в `apps/web/vite.config.ts` (`manualChunks`).
 Подсветка фолбэка знает `jsx`→javascript, `tsx`→typescript.
+**Типы React в Monaco** (п.3): `code/monacoTypes.ts` импортирует d.ts `@types/react`, `@types/react-dom`,
+`csstype` как текст (Vite `?raw`) **относительными путями к корневому node_modules** — у `@types/react`
+закрытый `exports`, deep-import по имени пакета Vite не резолвит; d.ts подкладываются `addExtraLib` под
+`file:///node_modules/...`, декларация `*?raw` — в `vite-worker.d.ts`. Текст типов (~1,1 МБ) лежит в
+lazy-чанке `monacoSetup`. **Модели проекта** (п.2): `syncProjectModels` создаёт `file:///<path>` для всех
+текстовых файлов (MakePane читает их при входе в «Код» и по `state.rev`) — TS резолвит
+`./components/Button.tsx`, работают автодополнение и peek definition; `<Editor path>` тоже `file:///…`.
+Глобальные `.main/.left/.right` в app.css ломали suggest-widget Monaco (строки подсказок используют те же
+классы) — есть скоуп-сброс `.monaco-editor .monaco-list-row .main`.
 **Вкладки открытых файлов** (`make-tabs-bar`, `tabs: string[]`): `openFile` добавляет, ✕ закрывает
 (активная — переключение на соседнюю), rename/delete обновляют список. **Автосохранение** — чекбокс в шапке
 редактора (`localStorage vc.make.autosave`, по умолчанию включено): через `autosaveDelayMs` (1500, проп для

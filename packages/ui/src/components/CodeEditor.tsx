@@ -12,6 +12,8 @@ export interface CodeEditorProps {
   ariaLabel: string
   /** Маркеры ошибок (строка с 1) — подчёркивание в Monaco; фолбэк их не рисует. */
   markers?: EditorMarker[]
+  /** Остальные текстовые файлы проекта — модели для резолва импортов (переход к определению). */
+  projectFiles?: ReadonlyArray<{ path: string; content: string }>
 }
 
 export interface EditorMarker { line: number; column?: number; message: string }
