@@ -284,6 +284,9 @@ describe('REST: аутентификация', () => {
     const mig = await app.inject({ method: 'POST', url: '/api/session/cookie', headers: { authorization: `Bearer ${login.json().token}` } })
     expect(mig.statusCode).toBe(200)
     expect(String(mig.headers['set-cookie'])).toContain('vc_session=')
+    // Logout по cookie без CSRF-заголовка не проходит и cookie не гасит (защита от «выхода» чужой вкладкой/сайтом).
+    expect((await app.inject({ method: 'POST', url: '/api/session/logout', headers: { cookie } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { cookie } })).statusCode).toBe(200)
     const out = await app.inject({ method: 'POST', url: '/api/session/logout', headers: { cookie, 'x-vc-csrf': login.json().csrf } })
     expect(out.statusCode).toBe(200)
     expect(String(out.headers['set-cookie'])).toContain('vc_session=; Path=/')
