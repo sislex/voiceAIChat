@@ -7,6 +7,7 @@ import { CodeDiff } from './CodeDiff'
 import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { MakeControlField, type ArgType } from './MakeControls'
 import { captureIframeScreenshot } from '../lib/makeScreenshot'
+import { formatCode } from '../lib/formatCode'
 import { copyText } from '../lib/clipboard'
 import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
@@ -119,6 +120,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     return () => { cancelled = true }
   }, [mode, state?.rev, conversationId, api, state])
   const [autosave, setAutosave] = useState<boolean>(() => { try { return localStorage.getItem('vc.make.autosave') !== 'off' } catch { return true } })
+  const [formatOnSave, setFormatOnSave] = useState<boolean>(() => { try { return localStorage.getItem('vc.make.formatOnSave') === 'on' } catch { return false } })
+  const toggleFormatOnSave = (): void => { setFormatOnSave((v) => { const next = !v; try { localStorage.setItem('vc.make.formatOnSave', next ? 'on' : 'off') } catch { /* приватный режим */ } return next }) }
   const toggleAutosave = (): void => { setAutosave((v) => { const next = !v; try { localStorage.setItem('vc.make.autosave', next ? 'on' : 'off') } catch { /* приватный режим */ } return next }) }
   const [saving, setSaving] = useState(false)
   /** Превью готово к загрузке: cookie выпущена (или гейта нет). */
@@ -288,12 +291,29 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.inspect', enabled: inspect }, '*')
   }, [inspect, previewRev])
 
+  const [formatting, setFormatting] = useState(false)
+  /** Prettier по кнопке/при сохранении: синтаксическая ошибка — тост, текст не трогаем. */
+  const formatCurrent = useCallback(async (source: string, path: string, quiet = false): Promise<string> => {
+    try {
+      const formatted = await formatCode(path, source)
+      if (formatted === null) { if (!quiet) toast.info('Для этого типа файла форматирование недоступно'); return source }
+      return formatted
+    } catch (e) { if (!quiet) toast.error(`Форматирование: ${describeError(e).split('\n')[0]}`); return source }
+  }, [toast])
+  const formatNow = async (): Promise<void> => {
+    if (!selectedPath) return
+    setFormatting(true)
+    try { const next = await formatCurrent(content, selectedPath); if (next !== content) setContent(next) } finally { setFormatting(false) }
+  }
   const save = useCallback(async (silent = false): Promise<void> => {
     if (!selectedPath || !dirty || saving) return
     setSaving(true)
     try {
-      const next = await api['make:write']({ conversationId, path: selectedPath, content })
-      setSavedContent(content)
+      // «Формат при сохранении» — вручной Cmd+S/кнопка; автосохранение (silent) не переформатирует под руками.
+      const body = formatOnSave && !silent ? await formatCurrent(content, selectedPath, true) : content
+      if (body !== content) setContent(body)
+      const next = await api['make:write']({ conversationId, path: selectedPath, content: body })
+      setSavedContent(body)
       setState(next)
       setPreviewRev(next.rev)
       if (!silent) toast.success('Сохранено')
@@ -307,7 +327,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } finally {
       setSaving(false)
     }
-  }, [api, conversationId, selectedPath, content, dirty, saving, toast])
+  }, [api, conversationId, selectedPath, content, dirty, saving, toast, formatOnSave, formatCurrent])
   // Автосохранение: пауза после последней правки.
   const saveRef = useRef(save)
   saveRef.current = save
@@ -814,6 +834,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   <code>{selectedPath}</code>
                   <span className="make-editor-tools">
                     <label className="make-autosave"><input type="checkbox" checked={autosave} onChange={toggleAutosave} /> автосохранение</label>
+                    <label className="make-autosave" title="Prettier перед сохранением по Cmd/Ctrl+S"><input type="checkbox" checked={formatOnSave} onChange={toggleFormatOnSave} /> формат при сохранении</label>
+                    <Button size="sm" variant="ghost" loading={formatting} onClick={() => void formatNow()} title="Prettier (Shift+Alt+F в редакторе)">Форматировать</Button>
                     <span className={dirty ? 'make-editor-state dirty' : 'make-editor-state'}>{dirty ? 'не сохранено' : 'сохранено'}</span>
                   </span>
                 </div>
