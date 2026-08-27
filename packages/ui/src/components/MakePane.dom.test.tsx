@@ -222,6 +222,13 @@ describe('MakePane', () => {
     expect(onAsk).toHaveBeenCalledWith(expect.stringContaining('Button.test.tsx › клик: expected 1 toBe 2'))
   })
 
+  it('«Только спросить» переключает режим вопроса через onAskOnlyChange (roadmap-4 п.4)', async () => {
+    const onAskOnlyChange = vi.fn()
+    render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} previewBase={`/api/preview/make/${CONV}/`} askOnly={false} onAskOnlyChange={onAskOnlyChange} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Только спросить' }))
+    expect(onAskOnlyChange).toHaveBeenCalledWith(true)
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)

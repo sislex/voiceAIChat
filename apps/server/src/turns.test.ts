@@ -174,6 +174,23 @@ describe('turns: инструкции чата', () => {
     db.close()
   })
 
+  it('Make в режиме «План» по выбору пользователя получает хинт «Режим вопроса», а не плана (roadmap-4 п.4)', async () => {
+    const db = freshDb()
+    const conv = db.createConversation(U, 'Проект', 'make')
+    db.setConversationExecTarget(U, conv.id, null, undefined, undefined, undefined, undefined, 'plan')
+    db.addMessage(U, conv.id, 'u0', 'почему кнопка красная?', '10:00')
+    const rec = recorder()
+    const turns = createTurnManager({ db, claude: rec.client, agents: onlineAgents, mcpBaseUrl: 'http://127.0.0.1:8787/mcp/remote-bash?k=secret', makeMcpBaseUrl: 'http://127.0.0.1:8787/mcp/make?k=secret' })
+    await new Promise<void>((resolve) => {
+      const off = turns.subscribe((m) => { if (m.t === 'claude.done' || m.t === 'claude.error') { off(); resolve() } })
+      turns.start({ userId: U, conversationId: conv.id, segments: [{ speakerId: 1, text: 'почему кнопка красная?' }] })
+    })
+    expect(rec.last()?.prompt).toContain('## Режим вопроса')
+    expect(rec.last()?.prompt).not.toContain('## Режим плана')
+    expect(rec.last()?.makeMcpUrl).toContain('ro=1')
+    db.close()
+  })
+
   it('инструкция, выключенная в инспекторе разговора, не попадает в промпт при включённой настройке', async () => {
     const db = freshDb()
     const conv = db.createConversation(U, 'Чат')
