@@ -114,7 +114,7 @@ export class FeaturePreviewManager {
   }
   private save(): void {
     mkdirSync(dirname(this.deps.storePath), { recursive: true })
-    const temp = `${this.deps.storePath}.tmp`
+    const temp = `${this.deps.storePath}.${process.pid}.${randomUUID()}.tmp`
     writeFileSync(temp, JSON.stringify(this.data, null, 2))
     renameSync(temp, this.deps.storePath)
   }

@@ -383,6 +383,8 @@ export function createVoiceStore(deps: VoiceDeps): VoiceStore {
 
   function replayMessage(id: string, text: string): void {
     if (!ttsEnabled || !deps.tts.speak) return
+    const chunks = flushSpeakable(text)
+    if (chunks.length === 0) return
     if (getState().speakingMessageId === id) {
       resetTts() // повторный клик — стоп
       return
@@ -393,7 +395,7 @@ export function createVoiceStore(deps: VoiceDeps): VoiceStore {
     resetTts()
     ttsSession = { kind: 'replay', messageId: id, queued: 0, played: 0, sourceComplete: false }
     setState({ speakingMessageId: id })
-    for (const c of flushSpeakable(text)) enqueueSpeak(c)
+    for (const c of chunks) enqueueSpeak(c)
     ttsSession.sourceComplete = true
     finishTtsSessionIfDone()
   }
