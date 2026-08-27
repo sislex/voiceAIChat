@@ -23,7 +23,7 @@ import type {
   RendererMakeBridge
 } from '@shared/ipc'
 import { REST, type DesktopMigrationBundle, type ServerFileInfo } from '@shared/protocol'
-import type { FsResult } from '@shared/agentProtocol'
+import type { FsResult, FsCopyResult } from '@shared/agentProtocol'
 import type { SessionUser, SessionInfo } from '@shared/types'
 import { WsClient } from './wsClient'
 import { createHttpApi, createCiRest, createKbUsageRest } from './httpApi'
@@ -429,6 +429,18 @@ export function makeFsBridge(httpBase: string): RendererFsBridge {
         headers: authHeaders({ 'content-type': 'application/json' }),
         body: JSON.stringify({ path })
       }).then(asResult),
+    copyTo: async (id, path, targetAgentId, targetDir, projectId) => {
+      const res = await fetch(`${httpBase}${REST.agentFsCopyTo(id)}${projectOnlyQuery(projectId)}`, {
+        method: 'POST',
+        headers: authHeaders({ 'content-type': 'application/json' }),
+        body: JSON.stringify({ path, targetAgentId, ...(targetDir ? { targetDir } : {}) })
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error ?? `HTTP ${res.status}`)
+      }
+      return res.json() as Promise<FsCopyResult>
+    },
     rename: (id, from, to, projectId) =>
       fetch(`${httpBase}${REST.agentFsRename(id)}${projectOnlyQuery(projectId)}`, {
         method: 'POST',

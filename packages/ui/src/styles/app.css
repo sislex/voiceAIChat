@@ -2536,7 +2536,11 @@
 .fspreview-editor { min-height: 180px; height: 320px; resize: vertical; overflow: auto; border: 1px solid var(--border, #3a3a3a); border-radius: 6px; }
 .fspreview-editor { display: flex; flex-direction: column; }
 .fspreview-editor .make-monaco, .fspreview-editor .make-editor-body, .fspreview-editor .make-diff { height: 100%; min-height: 200px; }
-.fstrashed { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+.fstrashed { display: flex; align-items: center; gap: 8px; margin: 6px 0; padding: 0 12px; font-size: 13px; flex-wrap: wrap; }
+.fstrashed code { word-break: break-all; }
+.fscopy { display: flex; align-items: center; gap: 8px; margin: 6px 0; padding: 0 12px; font-size: 13px; flex-wrap: wrap; }
+.fscopy input { flex: 1 1 200px; min-width: 160px; }
+.fscopy-error { color: var(--danger, #e5484d); }
 .fspreview-image { display: block; max-width: 100%; max-height: 360px; margin: 8px auto; }
 .fspreview-unavailable { color: var(--text-dim); }
 

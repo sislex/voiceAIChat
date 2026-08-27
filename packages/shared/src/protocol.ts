@@ -273,6 +273,7 @@ export const REST = {
   agentFsRename: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/rename`,
   agentFsMkdir: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/mkdir`,
   agentFsTrash: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/trash`,
+  agentFsCopyTo: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/copy-to`,
   agentExec: (id: string) => `/api/agents/${encodeURIComponent(id)}/exec`,
   /** Последняя доступная версия агента (публично; для «Проверить обновления»). */
   agentLatestVersion: '/api/agents/version',

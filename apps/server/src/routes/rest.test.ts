@@ -180,6 +180,29 @@ describe('REST: хранилище машины', () => {
     expect(written.some((p) => p.endsWith('/project.json'))).toBe(true)
   })
 
+  it('copy-to копирует файл на другую машину: в указанный каталог или в ChatAI/incoming цели', async () => {
+    const source = db.createAgent(U, 'Мак')
+    const target = db.createAgent(U, 'Прод')
+    const sourceFs = connectFs(source.id)
+    const targetFs = connectFs(target.id)
+    sourceFs.files.set('/Users/me/report.txt', Buffer.from('hello').toString('base64'))
+    const explicit = await inj({ method: 'POST', url: `/api/agents/${source.id}/fs/copy-to`, payload: { path: '/Users/me/report.txt', targetAgentId: target.id, targetDir: '/srv/inbox/' } })
+    expect(explicit.statusCode).toBe(200)
+    expect(explicit.json()).toEqual({ path: '/srv/inbox/report.txt', targetAgentId: target.id, size: 5 })
+    expect(targetFs.files.get('/srv/inbox/report.txt')).toBe(Buffer.from('hello').toString('base64'))
+    expect(targetFs.directories.has('/srv/inbox/')).toBe(true)
+    // без targetDir — в incoming хранилища цели
+    const storage = (await inj({ method: 'POST', url: `/api/agents/${target.id}/storages`, payload: { rootPath: '/root/ChatAI' } })).json()
+    expect(storage.rootPath).toBe('/root/ChatAI')
+    const auto = await inj({ method: 'POST', url: `/api/agents/${source.id}/fs/copy-to`, payload: { path: '/Users/me/report.txt', targetAgentId: target.id } })
+    expect(auto.statusCode).toBe(200)
+    expect(auto.json().path).toBe('/root/ChatAI/incoming/report.txt')
+    // та же машина и офлайн-цель отклоняются
+    expect((await inj({ method: 'POST', url: `/api/agents/${source.id}/fs/copy-to`, payload: { path: '/Users/me/report.txt', targetAgentId: source.id } })).statusCode).toBe(400)
+    const offline = db.createAgent(U, 'Спит')
+    expect((await inj({ method: 'POST', url: `/api/agents/${source.id}/fs/copy-to`, payload: { path: '/Users/me/report.txt', targetAgentId: offline.id } })).statusCode).toBe(409)
+  })
+
   it('GET storage отдаёт карточке чата абсолютные каталоги и статус хранилища', async () => {
     const machine = db.createAgent(U, 'Мак')
     connectFs(machine.id)

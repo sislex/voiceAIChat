@@ -42,6 +42,7 @@ function makeOps(): MachineOps {
     write: vi.fn().mockResolvedValue(listing),
     remove: vi.fn().mockResolvedValue(listing),
     trash: vi.fn().mockResolvedValue({ ...listing, trashedPath: '/r/.voicechat_trash/20260828-101112__a.txt' }),
+    copyTo: vi.fn().mockResolvedValue({ path: '/root/ChatAI/incoming/a.txt', targetAgentId: 'm2', size: 5 }),
     rename: vi.fn().mockResolvedValue(listing),
     mkdir: vi.fn().mockResolvedValue(listing),
     download: vi.fn().mockResolvedValue(undefined),
@@ -271,5 +272,27 @@ describe('FileExplorer (самодостаточный)', () => {
     expect(screen.getByTestId('fs-diff')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Скрыть изменения' }))
     expect(screen.queryByTestId('fs-diff')).toBeNull()
+  })
+
+  it('копирует файл на другую машину и предлагает открыть каталог назначения', async () => {
+    const ops = makeOps()
+    const onSwitchUtility = vi.fn()
+    const other: AgentInfo = { ...agent(), id: 'm2', name: 'Прод' }
+    render(<FileExplorer agents={[agent(), other]} initialAgentId="m1" ops={ops} variant="embedded" onSwitchUtility={onSwitchUtility} />)
+    await screen.findByText(/a\.txt/)
+    await userEvent.click(screen.getByLabelText('Копировать a.txt на другую машину'))
+    expect(screen.getByRole('combobox', { name: 'Целевая машина' })).toHaveValue('m2')
+    await userEvent.type(screen.getByLabelText('Каталог на целевой машине'), '/srv/inbox')
+    await userEvent.click(screen.getByRole('button', { name: 'Копировать' }))
+    await waitFor(() => expect(ops.copyTo).toHaveBeenCalledWith('m1', '/r/a.txt', 'm2', '/srv/inbox'))
+    expect(await screen.findByTestId('fs-copied')).toHaveTextContent('Скопировано на «Прод»')
+    await userEvent.click(screen.getByRole('button', { name: 'Открыть' }))
+    expect(onSwitchUtility).toHaveBeenCalledWith('explorer', 'm2', '/root/ChatAI/incoming')
+  })
+
+  it('без второй машины в сети кнопка копирования не показывается', async () => {
+    render(<FileExplorer agents={[agent()]} initialAgentId="m1" ops={makeOps()} variant="embedded" />)
+    await screen.findByText(/a\.txt/)
+    expect(screen.queryByLabelText('Копировать a.txt на другую машину')).toBeNull()
   })
 })

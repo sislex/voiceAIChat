@@ -42,7 +42,7 @@ import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
-import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult } from './agentProtocol'
+import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult } from './agentProtocol'
 import type {
   Board,
   KanbanColumn,
@@ -840,6 +840,8 @@ export interface RendererFsBridge {
   remove(agentId: string, path: string, projectId?: string): Promise<FsResult>
   /** Корзина машины (агент ≥ 0.15.0): результат содержит trashedPath для отката. */
   trash?(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  /** Скопировать файл на другую машину (targetDir пуст — `ChatAI/incoming` целевой машины). */
+  copyTo?(agentId: string, path: string, targetAgentId: string, targetDir?: string, projectId?: string): Promise<FsCopyResult>
   rename(agentId: string, from: string, to: string, projectId?: string): Promise<FsResult>
   mkdir(agentId: string, path: string, projectId?: string): Promise<FsResult>
   /**

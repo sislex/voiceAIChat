@@ -7,7 +7,7 @@
 // Live-tail и локальные подписки закрываются при уходе со страницы, смене
 // выбранной сущности, logout и dispose.
 
-import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult } from '@shared/agentProtocol'
+import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult } from '@shared/agentProtocol'
 import type { ConversationWithMessages, ServerFileInfo } from '@shared/protocol'
 import type { CcItem, CcProject, CcSession } from '@shared/cc'
 import type { CxItem, CxProject, CxSession } from '@shared/codexSessions'
@@ -85,6 +85,7 @@ export interface OperationsActions {
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult>
   fsRemove(agentId: string, path: string): Promise<FsResult>
   fsTrash(agentId: string, path: string): Promise<FsResult>
+  fsCopyTo(agentId: string, path: string, targetAgentId: string, targetDir?: string): Promise<FsCopyResult>
   fsRename(agentId: string, from: string, to: string): Promise<FsResult>
   fsMkdir(agentId: string, path: string): Promise<FsResult>
   downloadFsFile(agentId: string, path: string, name: string): Promise<void>
@@ -343,6 +344,7 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
         client.fs ? client.fs.write(agentId, path, dataBase64, projectId()) : noFs(),
       fsRemove: (agentId, path) => (client.fs ? client.fs.remove(agentId, path, projectId()) : noFs()),
       fsTrash: (agentId, path) => (client.fs?.trash ? client.fs.trash(agentId, path, projectId()) : noFs()),
+      fsCopyTo: (agentId, path, targetAgentId, targetDir) => (client.fs?.copyTo ? client.fs.copyTo(agentId, path, targetAgentId, targetDir, projectId()) : noFs()),
       fsRename: (agentId, from, to) => (client.fs ? client.fs.rename(agentId, from, to, projectId()) : noFs()),
       fsMkdir: (agentId, path) => (client.fs ? client.fs.mkdir(agentId, path, projectId()) : noFs()),
       async downloadFsFile(agentId, path, name) {
