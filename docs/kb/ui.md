@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: f7190d96
+checked: 220ecc03
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -480,6 +480,12 @@ lazy-чанке `monacoSetup`. **Модели проекта** (п.2): `syncProj
 тестов) после последней правки `save(silent)` без тоста; Cmd/Ctrl+S — как раньше. После сохранения jsx/tsx/ts
 панель вызывает `make:check` и, если есть проблемы, показывает баннер; ошибки `compile-error` текущего файла
 уходят в `CodeEditor` пропом `markers` → `monaco.editor.setModelMarkers` (красные подчёркивания).
+
+**Доступность превью** (п.13): кнопка ♿ — `lib/makeA11y.ts` лениво читает `axe-core/axe.min.js?raw` (относительный
+путь к корневому node_modules, как у типов React), инжектирует `<script>` в документ iframe и вызывает
+`axe.run` там (правило `region` выключено); панель `make-a11y` под превью — нарушения по impact, клик по тексту
+подсвечивает первый узел в превью, «Исправить» отдаёт список ассистенту (`a11yPrompt`). Сбрасывается при
+смене `previewRev`. В тестах модуль мокается.
 
 **Тема и язык превью** (п.12): кнопка 🌓/🌙/☀️ (авто→тёмная→светлая) и `<select>` lang шлют `vc-make.env
 {scheme, lang}`; скрипт превью переписывает `mediaText` правил с `prefers-color-scheme` (dark→`all`,
