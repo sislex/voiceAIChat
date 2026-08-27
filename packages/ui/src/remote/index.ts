@@ -97,7 +97,8 @@ export function makeClaudeBridge(ws: WsClient): RendererClaudeBridge {
 
 function makeMakeBridge(ws: WsClient): RendererMakeBridge {
   return {
-    onChanged: (cb) => ws.on('make.changed', (m) => cb({ conversationId: m.conversationId, rev: m.rev, paths: m.paths }))
+    onChanged: (cb) => ws.on('make.changed', (m) => cb({ conversationId: m.conversationId, rev: m.rev, paths: m.paths })),
+    onPresence: (cb) => ws.on('make.presence', (m) => cb({ conversationId: m.conversationId, clients: m.clients }))
   }
 }
 

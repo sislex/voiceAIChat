@@ -1,4 +1,4 @@
-import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment, type MakeShare } from '@shared/make'
+import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment, type MakeShare, type MakePresenceClient } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
@@ -36,6 +36,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   const makeShots = new Map<string, MakeStoryShot[]>()
   const makeComments = new Map<string, MakeComment[]>()
   const makeShare = new Map<string, MakeShare>()
+  const makePresence = new Map<string, Map<string, MakePresenceClient>>()
   const library = new Map<string, MakeLibraryItem>()
   const libraryFiles = new Map<string, Map<string, string>>()
   const makeRev = new Map<string, number>()
@@ -294,6 +295,11 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'make:sharedFile': async ({ path }) => { const content = makeFiles('make-1').get(path); if (content === undefined) throw new Error('Файл не найден'); return { path, content, size: new TextEncoder().encode(content).length, updatedAt: 1 } },
     'make:sharedStories': async () => ({ files: [] }),
+    'make:presence': async ({ conversationId, clientId, path, editing, leave }) => {
+      const map = makePresence.get(conversationId) ?? new Map<string, MakePresenceClient>()
+      if (leave) map.delete(clientId); else map.set(clientId, { clientId, user: 'admin', path, editing, at: Date.now() })
+      makePresence.set(conversationId, map); return { clients: [...map.values()] }
+    },
     'make:comments': async ({ conversationId }) => ({ comments: makeComments.get(conversationId) ?? [] }),
     'make:commentAdd': async ({ conversationId, selector, elementLabel, text }) => {
       const list = [{ id: `c${(makeComments.get(conversationId) ?? []).length + 1}`, selector, elementLabel, text, author: 'admin', createdAt: 1, resolved: false }, ...(makeComments.get(conversationId) ?? [])]

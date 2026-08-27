@@ -21,7 +21,7 @@ import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
 import { copyText } from '../lib/clipboard'
-import { MAKE_COMMENTS_SYNC_PATH, MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment } from '@shared/make'
+import { MAKE_COMMENTS_SYNC_PATH, MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment, type MakePresenceClient } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -42,7 +42,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:presence'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -326,6 +326,23 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     void uploadFiles(e.dataTransfer.files)
   }
   const dirty = content !== savedContent
+  // Presence (roadmap-2 п.14): heartbeat раз в 15 с и при смене файла/грязности; список приходит WS-кадром
+  // make.presence (или ответом heartbeat). Другая вкладка с несохранёнными правками того же файла — мягкая
+  // блокировка: редактор read-only, чтобы две вкладки не затирали друг друга автосохранением.
+  const clientIdRef = useRef(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
+  const [presence, setPresence] = useState<MakePresenceClient[]>([])
+  const others = presence.filter((c) => c.clientId !== clientIdRef.current)
+  const lockedBy = selectedPath ? others.find((c) => c.editing && c.path === selectedPath) ?? null : null
+  useEffect(() => {
+    if (!api['make:presence']) return
+    let alive = true
+    const beat = (): void => { void api['make:presence']({ conversationId, clientId: clientIdRef.current, path: mode === 'code' ? selectedPath : null, editing: mode === 'code' && dirty }).then((r) => { if (alive) setPresence(r.clients) }).catch(() => undefined) }
+    beat()
+    const t = window.setInterval(beat, 15_000)
+    return () => { alive = false; window.clearInterval(t) }
+  }, [api, conversationId, mode, selectedPath, dirty])
+  useEffect(() => () => { void api['make:presence']?.({ conversationId, clientId: clientIdRef.current, path: null, editing: false, leave: true }).catch(() => undefined) }, [api, conversationId])
+  useEffect(() => make?.onPresence?.((m) => { if (m.conversationId === conversationId) setPresence(m.clients) }), [make, conversationId])
   const base = previewBase ?? REST.makePreview(conversationId)
 
   const describeError = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -978,6 +995,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {mode === 'stories' && story && onInsertToChat && <Button size="sm" variant="primary" onClick={sendStoryToChat}>Работать над компонентом</Button>}
       {mode === 'stories' && story && <Button size="sm" variant="ghost" loading={shooting2} onClick={() => void takeStoryShot()} title="Сохранить PNG текущей стори, чтобы потом сравнить «до/после»">📸 Снимок</Button>}
       {mode === 'stories' && storyShots.length > 0 && <Button size="sm" variant="ghost" aria-expanded={shotsOpen} onClick={() => setShotsOpen((v) => !v)}>Снимки ({storyShots.length})</Button>}
+      {others.length > 0 && <span className="make-presence" data-testid="make-presence" title={`Проект открыт ещё в ${others.length} ${others.length === 1 ? 'вкладке' : 'вкладках'}: ${others.map((c) => `${c.user}${c.path ? ` · ${c.path}${c.editing ? ' (правит)' : ''}` : ''}`).join('; ')}`}>👥 {others.length + 1}</span>}
       {usage && <span className="make-cost" data-testid="make-cost" title={`Расход на проект: ${usage.turns} ${usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'} · ↓ ${kilo(usage.inputTokens)} · ↑ ${kilo(usage.outputTokens)}${usage.estimated ? ' · часть суммы — расчёт по тарифам' : ''}${usage.unpriced ? ` · без цены: ${usage.unpriced}` : ''}`}>{formatUsd(usage.costUsd, usage.estimated)}<small>{usage.turns} {usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'}</small></span>}
       <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>
       <div className="make-more" ref={moreRef}>
@@ -1226,6 +1244,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             ))}
           </nav>
           <div className="make-editor">
+            {lockedBy && (
+              <div className="make-lock" role="status" data-testid="make-lock">🔒 Файл сейчас правится в другой вкладке ({lockedBy.user}) — здесь он только для чтения, чтобы автосохранение не затёрло правки.</div>
+            )}
             {isPhone && state && (
               <div className="make-file-picker">
                 <select aria-label="Файл проекта" value={selectedPath ?? ''} onChange={(e) => { if (e.target.value) void openFile(e.target.value) }}>
@@ -1300,7 +1321,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                     <IconButton size="sm" aria-label="Закрыть правку ИИ" title="Закрыть" onClick={() => setInlineOpen(false)}>✕</IconButton>
                   </div>
                 )}
-                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} projectFiles={projectFiles} onSelectionChange={setSelection} onInlineCommand={openInline} />
+                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} projectFiles={projectFiles} onSelectionChange={setSelection} onInlineCommand={openInline} readOnly={Boolean(lockedBy)} />
               </>
             ) : (
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />

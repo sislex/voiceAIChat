@@ -1,3 +1,4 @@
+import type { MakePresenceClient } from './make'
 // Контракт клиент↔сервер (Ф1). HTTP REST — запрос/ответ; WebSocket — стриминг.
 // Семантика соответствует прежним Electron-IPC каналам (1:1), но транспорт-нейтральна.
 
@@ -169,6 +170,7 @@ export const REST = {
   makeShots: (id: string) => `/api/make/${encodeURIComponent(id)}/shots`,
   makeUsage: (id: string) => `/api/make/${encodeURIComponent(id)}/usage`,
   makeComments: (id: string) => `/api/make/${encodeURIComponent(id)}/comments`,
+  makePresence: (id: string) => `/api/make/${encodeURIComponent(id)}/presence`,
   makeComment: (id: string, commentId: string) => `/api/make/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
   makeCleanup: (id: string) => `/api/make/${encodeURIComponent(id)}/cleanup`,
   makeShotImage: (id: string, shotId: string) => `/api/preview/make/${encodeURIComponent(id)}/__shots__/${encodeURIComponent(shotId)}.png`,
@@ -586,6 +588,8 @@ export type ServerMessage =
   | { t: 'preview.action'; conversationId: string; requestId: string; action: PreviewAction }
   /** Make: файлы проекта изменились (ассистентом или пользователем) — превью и дерево обновляются. */
   | { t: 'make.changed'; conversationId: string; rev: number; paths: string[] }
+  /** Presence вкладок проекта Make (roadmap-2 п.14): кто открыл проект и какой файл правит. */
+  | { t: 'make.presence'; conversationId: string; clients: MakePresenceClient[] }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']

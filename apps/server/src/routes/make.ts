@@ -331,6 +331,17 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
       .send(await previewBody(conversationId, file))
   })
 
+  // Presence вкладок (roadmap-2 п.14): heartbeat от каждой вкладки; ответ и WS-кадр — всем сокетам владельца.
+  app.post<{ Params: { id: string }; Body: { clientId?: string; path?: string | null; editing?: boolean; leave?: boolean } | undefined }>('/api/make/:id/presence', async (req, reply) => {
+    const userId = uid(req)
+    if (!own(userId, req.params.id, reply)) return reply
+    const clientId = String(req.body?.clientId ?? '').slice(0, 64)
+    if (!clientId) return reply.code(400).send({ error: 'clientId обязателен' })
+    const clients = hub.heartbeat(req.params.id, { clientId, user: userId, path: typeof req.body?.path === 'string' ? req.body.path.slice(0, 300) : null, editing: Boolean(req.body?.editing), at: Date.now() }, Boolean(req.body?.leave))
+    hub.broadcastPresence(userId, req.params.id, clients)
+    return { clients }
+  })
+
   // Комментарии к элементам превью (п.32).
   app.get<{ Params: { id: string } }>('/api/make/:id/comments', async (req, reply) => {
     if (!own(uid(req), req.params.id, reply)) return reply

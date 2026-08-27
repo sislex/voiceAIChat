@@ -8,6 +8,7 @@ import { MAKE_SCAFFOLD } from '@shared/make'
 vi.mock('../lib/makeA11y', async (orig) => ({ ...(await orig<typeof import('../lib/makeA11y')>()), runAxeInFrame: vi.fn(async () => [{ id: 'image-alt', impact: 'critical', help: 'Images must have alternate text', helpUrl: 'https://dequeuniversity.com/rules/axe/image-alt', nodes: 1, target: 'img' }]) }))
 vi.mock('../lib/makeScreenshot', () => ({ captureIframeScreenshot: vi.fn(async (_t: unknown, name: string) => new File(['png'], name, { type: 'image/png' })) }))
 import { MakePane } from './MakePane'
+import type { MakePresenceClient } from '@shared/make'
 
 const CONV = 'make-1'
 
@@ -182,6 +183,23 @@ describe('MakePane', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Сохранить весь кит \(3 файл\.\)/ }))
     await waitFor(() => expect(spy).toHaveBeenCalledWith(expect.objectContaining({ paths: ['src/components/Btn.stories.tsx', 'src/components/Btn.tsx', 'styles.css'] })))
     expect(await screen.findByText('кит')).toBeInTheDocument()
+  })
+
+  it('presence: чип с числом вкладок и read-only при чужом редактировании файла (roadmap-2 п.14)', async () => {
+    const api = createFakeApi([])
+    const listeners: Array<(m: { conversationId: string; clients: MakePresenceClient[] }) => void> = []
+    const make = { onChanged: () => () => {}, onPresence: (cb: (m: { conversationId: string; clients: MakePresenceClient[] }) => void) => { listeners.push(cb); return () => {} } }
+    render(<MakePane conversationId={CONV} api={api} make={make} previewBase={`/api/preview/make/${CONV}/`} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const editor = await screen.findByLabelText('Содержимое index.html') as HTMLTextAreaElement
+    expect(screen.queryByTestId('make-presence')).toBeNull()
+    listeners.forEach((l) => l({ conversationId: CONV, clients: [{ clientId: 'other', user: 'admin', path: 'index.html', editing: true, at: Date.now() }] }))
+    expect(await screen.findByTestId('make-presence')).toHaveTextContent('👥 2')
+    expect(screen.getByTestId('make-lock')).toBeInTheDocument()
+    expect(editor.readOnly).toBe(true)
+    listeners.forEach((l) => l({ conversationId: CONV, clients: [{ clientId: 'other', user: 'admin', path: 'styles.css', editing: true, at: Date.now() }] }))
+    await waitFor(() => expect(screen.queryByTestId('make-lock')).toBeNull())
+    expect(editor.readOnly).toBe(false)
   })
 
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
