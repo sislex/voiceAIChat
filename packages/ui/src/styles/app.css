@@ -6840,3 +6840,39 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* PWA в экспорте (п.35) */
 .make-export-pwa { display: flex; gap: 8px; align-items: flex-start; margin-top: var(--space-2); font-size: 12.5px; color: var(--text-dim); }
 .make-export-pwa input { margin-top: 2px; }
+
+/* Ревизия стилей Make: меню «⋯» в шапке, отступы диалогов, читаемый мелкий текст */
+.make-more { position: relative; flex: 0 0 auto; }
+.make-more-menu { min-width: 240px; right: 0; }
+.make-more-menu hr { border: 0; border-top: 1px solid var(--border-soft); margin: 4px 0; }
+.make-more-menu > button[disabled] { opacity: .5; cursor: default; }
+.make-more-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; font-size: 13px; }
+.make-more-row .make-lang { display: inline-block; }
+.make-dialog > :not(.mdhead):not(.vc-dialog-foot) { padding-left: 22px; padding-right: 22px; }
+.make-dialog > .mdhead + :not(.vc-dialog-foot) { padding-top: 14px; }
+.make-dialog > :last-child:not(.vc-dialog-foot) { padding-bottom: 18px; }
+.make-dialog .fsub, .make-dialog .make-ask-field, .make-dialog .make-publish-pin label { font-size: 12.5px; line-height: 1.45; }
+.make-dialog .tin, .make-dialog textarea.tin { width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13.5px; background: var(--surface); color: var(--text); }
+.make-dialog .tin:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.make-dialog .make-ask-field span { font-weight: 500; color: var(--text); }
+.make-comments-head { flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .make-head .make-devices, .make-head .make-cost { display: none; }
+  .make-head { gap: 4px; }
+  .make-tab { padding: 4px 8px; font-size: 12.5px; }
+}
+
+/* Обёртка превью (комментарии справа): без неё iframe терял высоту, когда панель комментариев закрыта. */
+.make-preview-body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.make-preview-body > .make-frame-host { flex: 1 1 auto; min-width: 0; }
+.make-preview-body.make-preview-split { display: grid; }
+.make-share, .make-publish-link { min-width: 0; }
+.make-publish-link code { white-space: normal; overflow-wrap: anywhere; }
+/* Токены на телефоне: имя · образец · ✕ в одной строке, значение — под ними на всю ширину. */
+@media (max-width: 720px) {
+  .make-token { grid-template-columns: 1fr auto auto; }
+  .make-token-name { grid-column: 1; }
+  .make-token input[type='color'], .make-token-swatch { grid-column: 2; }
+  .make-token .vc-btn { grid-column: 3; }
+  .make-token-value { grid-column: 1 / -1; }
+}

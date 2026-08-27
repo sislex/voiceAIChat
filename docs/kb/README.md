@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 42 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 40 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 34 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 672 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 673 коммит(ов) в areas после сверки: b26bd346 feat(make): импорт репозитория GitHub по ссылке (п.27); статусы 28/31/36 в roadmap … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 127 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 57 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 35 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
@@ -33,13 +33,13 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 50 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 55 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 10 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 24 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 11 коммит(ов) в areas после сверки: b26bd346 feat(make): импорт репозитория GitHub по ссылке (п.27); статусы 28/31/36 в roadmap … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 25 коммит(ов) в areas после сверки: b26bd346 feat(make): импорт репозитория GitHub по ссылке (п.27); статусы 28/31/36 в roadmap … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 51 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: b088d0c5 test(make): E2E в headless Chromium — превью React, компоненты, Monaco, публикация (п.37) |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ⚠ 3 коммит(ов) в areas после сверки: 9a3f54d0 feat(make): метрики Make в админке — /api/admin/make/stats и секция дашборда (п.38) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-27, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 

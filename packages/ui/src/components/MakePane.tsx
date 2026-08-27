@@ -859,6 +859,20 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const frameWidth = DEVICE_WIDTH[device]
   const previewSrc = `${base}index.html?rev=${previewRev}`
 
+  // Меню «⋯» (ревизия стилей): второстепенные действия убраны из шапки, чтобы она не переносилась
+  // на две-четыре строки — особенно на телефоне. Закрывается по клику вне и по Esc.
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!moreOpen) return
+    const onDoc = (e: MouseEvent): void => { if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false) }
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setMoreOpen(false) }
+    document.addEventListener('mousedown', onDoc); document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
+  }, [moreOpen])
+  const item = (label: string, onClick: () => void, opts: { ariaLabel?: string; disabled?: boolean; title?: string } = {}): JSX.Element => (
+    <button key={opts.ariaLabel ?? label} type="button" aria-label={opts.ariaLabel} title={opts.title} disabled={opts.disabled} onClick={() => { setMoreOpen(false); onClick() }}>{label}</button>
+  )
   const header = (
     <div className="make-head" role="toolbar" aria-label="Панель проекта">
       <div className="make-tabs" role="tablist" aria-label="Режим панели">
@@ -880,43 +894,62 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           </div>
           <IconButton size="sm" aria-label="Выбрать элемент" title="Выбрать элемент на странице и попросить ассистента его изменить" aria-pressed={inspect} className={inspect ? 'make-inspect on' : undefined} onClick={() => setInspect((v) => !v)}>⌖</IconButton>
           <IconButton size="sm" aria-label="Обновить превью" title="Обновить превью" onClick={() => setPreviewRev((r) => r + 1)}>⟳</IconButton>
-          <IconButton size="sm" aria-label="Тема превью" title={`Тема превью: ${previewScheme === 'auto' ? 'как в системе' : previewScheme === 'dark' ? 'тёмная' : 'светлая'} — переключить`} aria-pressed={previewScheme !== 'auto'} onClick={cycleScheme}>{previewScheme === 'dark' ? '🌙' : previewScheme === 'light' ? '☀️' : '🌓'}</IconButton>
-          <select className="make-lang" aria-label="Язык превью" value={previewLang} onChange={(e) => { setPreviewLang(e.target.value); sendEnv(previewScheme, e.target.value) }} title="Атрибут lang документа превью">
-            <option value="">lang: авто</option>
-            {['ru', 'en', 'de', 'fr', 'es', 'zh', 'ar'].map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-          <IconButton size="sm" aria-label="Проверить доступность" title="axe-core внутри превью: контраст, alt, подписи, заголовки" disabled={a11yBusy} onClick={() => void runA11y()}>♿</IconButton>
           <Button size="sm" variant={commentsOpen ? 'secondary' : 'ghost'} aria-pressed={commentsOpen} onClick={() => setCommentsOpen((v) => !v)} title="Комментарии к элементам превью">💬{comments && comments.some((c) => !c.resolved) ? ` ${comments.filter((c) => !c.resolved).length}` : ''}</Button>
-          {onAttachImage && <IconButton size="sm" aria-label="Скриншот превью в чат" title={selected ? 'Скриншот выбранного элемента — во вложения чата' : 'Скриншот превью — во вложения чата'} disabled={shooting} onClick={() => void screenshotToChat()}>📷</IconButton>}
-          <IconButton size="sm" aria-label="Открыть в новой вкладке" title="Открыть в новой вкладке" onClick={() => window.open(`${base}index.html`, '_blank', 'noopener')}>↗</IconButton>
         </>
       )}
       {mode === 'code' && (
         <>
           <Button size="sm" variant="ghost" onClick={() => void runCheck()} loading={checking}>Проверить</Button>
           <Button size="sm" variant="secondary" onClick={createFile}>+ Файл</Button>
-          <Button size="sm" variant="ghost" onClick={() => uploadInputRef.current?.click()}>Загрузить</Button>
-          <Button size="sm" variant="ghost" onClick={() => setAssetsOpen(true)}>Ассеты{assets.length > 0 ? ` (${assets.length})` : ''}</Button>
-          <Button size="sm" variant="ghost" onClick={() => setTokensOpen(true)} title="Дизайн-токены: CSS-переменные :root — цвета, отступы, шрифты">Токены</Button>
-          <input ref={uploadInputRef} type="file" multiple hidden aria-label="Загрузить файлы в проект" data-testid="make-upload-input" onChange={(e) => void uploadFiles(e.target.files)} />
           <Button size="sm" variant="primary" disabled={!dirty || saving} onClick={() => void save()} title="Сохранить (Ctrl/Cmd+S)">{saving ? 'Сохраняю…' : 'Сохранить'}</Button>
         </>
       )}
+      <input ref={uploadInputRef} type="file" multiple hidden aria-label="Загрузить файлы в проект" data-testid="make-upload-input" onChange={(e) => void uploadFiles(e.target.files)} />
       {mode === 'history' && <Button size="sm" variant="secondary" onClick={takeSnapshot}>+ Снимок</Button>}
       {mode === 'history' && <Button size="sm" variant="ghost" onClick={() => setUsageOpen(true)} title="Сколько места занимает проект и очистка снимков">Место</Button>}
       {mode === 'stories' && story && onInsertToChat && <Button size="sm" variant="primary" onClick={sendStoryToChat}>Работать над компонентом</Button>}
       {mode === 'stories' && story && <Button size="sm" variant="ghost" loading={shooting2} onClick={() => void takeStoryShot()} title="Сохранить PNG текущей стори, чтобы потом сравнить «до/после»">📸 Снимок</Button>}
       {mode === 'stories' && storyShots.length > 0 && <Button size="sm" variant="ghost" aria-expanded={shotsOpen} onClick={() => setShotsOpen((v) => !v)}>Снимки ({storyShots.length})</Button>}
-      {mode === 'stories' && story && <Button size="sm" variant="ghost" onClick={() => void exportStoryToLibrary()} title="Сохранить компонент и его сториз в личную библиотеку — для вставки в другие проекты">В библиотеку</Button>}
-      {(mode === 'stories' || mode === 'code') && <Button size="sm" variant="ghost" onClick={openLibrary} title="Личная библиотека компонентов">Библиотека</Button>}
-      {mode === 'stories' && <Button size="sm" variant="ghost" onClick={() => window.open(REST.makeGalleryPage(conversationId), '_blank', 'noopener')} title="Все стори проекта одной страницей">Галерея</Button>}
-      {mode === 'stories' && story && <Button size="sm" variant="ghost" onClick={() => void shareStory()} title={state?.published ? 'Скопировать публичную ссылку на эту стори' : 'Сначала опубликуйте проект — ссылка будет без входа'}>Поделиться</Button>}
-      {onInsertToChat && <IconButton size="sm" aria-label="Идеи для старта" title="Идеи: готовые промпты для приложений и сайтов" onClick={() => setIdeasOpen(true)}>✦</IconButton>}
-      <IconButton size="sm" aria-label="Шаблоны проекта" title="Начать с шаблона" onClick={() => setTemplatesOpen(true)}>▤</IconButton>
       {usage && <span className="make-cost" data-testid="make-cost" title={`Расход на проект: ${usage.turns} ${usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'} · ↓ ${kilo(usage.inputTokens)} · ↑ ${kilo(usage.outputTokens)}${usage.estimated ? ' · часть суммы — расчёт по тарифам' : ''}${usage.unpriced ? ` · без цены: ${usage.unpriced}` : ''}`}>{formatUsd(usage.costUsd, usage.estimated)}<small>{usage.turns} {usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'}</small></span>}
       <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>
-      <IconButton size="sm" aria-label="Импорт проекта" title="Импорт: ZIP или страница по URL" onClick={() => setImportOpen(true)}>⇪</IconButton>
-      <IconButton size="sm" aria-label="Скачать проект (ZIP)" title="Скачать: статика или Vite-проект" onClick={() => setExportOpen(true)}>⇩</IconButton>
+      <div className="make-more" ref={moreRef}>
+        <IconButton size="sm" aria-label="Ещё" title="Ещё действия" aria-haspopup="true" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>⋯</IconButton>
+        {moreOpen && (
+          <div className="jcard-menu make-more-menu" role="group" aria-label="Ещё действия" data-testid="make-more-menu">
+            {mode === 'preview' && <>
+              {item(`Тема: ${previewScheme === 'auto' ? 'как в системе' : previewScheme === 'dark' ? 'тёмная' : 'светлая'}`, () => cycleScheme(), { ariaLabel: 'Тема превью', title: 'Переключить тему превью' })}
+              <label className="make-more-row"><span>Язык превью</span>
+                <select className="make-lang" aria-label="Язык превью" value={previewLang} onChange={(e) => { setPreviewLang(e.target.value); sendEnv(previewScheme, e.target.value) }} title="Атрибут lang документа превью">
+                  <option value="">авто</option>
+                  {['ru', 'en', 'de', 'fr', 'es', 'zh', 'ar'].map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </label>
+              {item('♿ Проверить доступность', () => void runA11y(), { ariaLabel: 'Проверить доступность', disabled: a11yBusy, title: 'axe-core внутри превью: контраст, alt, подписи, заголовки' })}
+              {onAttachImage && item(selected ? '📷 Скриншот элемента в чат' : '📷 Скриншот превью в чат', () => void screenshotToChat(), { ariaLabel: 'Скриншот превью в чат', disabled: shooting })}
+              {item('↗ Открыть в новой вкладке', () => window.open(`${base}index.html`, '_blank', 'noopener'), { ariaLabel: 'Открыть в новой вкладке' })}
+              <hr />
+            </>}
+            {mode === 'code' && <>
+              {item('Загрузить файлы…', () => uploadInputRef.current?.click(), { ariaLabel: 'Загрузить' })}
+              {item(`Ассеты${assets.length > 0 ? ` (${assets.length})` : ''}`, () => setAssetsOpen(true))}
+              {item('Токены дизайна', () => setTokensOpen(true), { ariaLabel: 'Токены', title: 'Дизайн-токены: CSS-переменные :root — цвета, отступы, шрифты' })}
+              {item('Библиотека компонентов', () => openLibrary(), { ariaLabel: 'Библиотека' })}
+              <hr />
+            </>}
+            {mode === 'stories' && <>
+              {story && item('В библиотеку', () => void exportStoryToLibrary(), { title: 'Сохранить компонент и его сториз в личную библиотеку' })}
+              {item('Библиотека компонентов', () => openLibrary(), { ariaLabel: 'Библиотека' })}
+              {item('Галерея всех стори', () => window.open(REST.makeGalleryPage(conversationId), '_blank', 'noopener'), { ariaLabel: 'Галерея' })}
+              {story && item('Ссылка на стори', () => void shareStory(), { ariaLabel: 'Поделиться',  title: state?.published ? 'Скопировать публичную ссылку на эту стори' : 'Сначала опубликуйте проект — ссылка будет без входа' })}
+              <hr />
+            </>}
+            {onInsertToChat && item('✦ Идеи для старта', () => setIdeasOpen(true), { ariaLabel: 'Идеи для старта' })}
+            {item('▤ Шаблоны проекта', () => setTemplatesOpen(true), { ariaLabel: 'Шаблоны проекта' })}
+            {item('⇪ Импорт проекта', () => setImportOpen(true), { ariaLabel: 'Импорт проекта', title: 'Импорт: ZIP, страница по URL или репозиторий GitHub' })}
+            {item('⇩ Скачать проект (ZIP)', () => setExportOpen(true), { ariaLabel: 'Скачать проект (ZIP)' })}
+          </div>
+        )}
+      </div>
       <IconButton size="sm" aria-label={fullscreen ? 'Свернуть панель' : 'На весь экран'} title={fullscreen ? 'Свернуть панель' : 'На весь экран'} aria-pressed={fullscreen} onClick={() => setFullscreen((v) => !v)}>⛶</IconButton>
     </div>
   )
@@ -958,7 +991,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               </div>
             </section>
           )}
-          <div className={commentsOpen ? 'make-preview-split' : undefined}>
+          <div className={commentsOpen ? 'make-preview-body make-preview-split' : 'make-preview-body'}>
           <div className={`make-frame-host make-frame-host--${device}`}>
             {previewReady && <iframe
               ref={frameRef}
@@ -1337,14 +1370,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
 
       {fileDiff && (
-        <Dialog title={`Сравнение: ${fileDiff.path}`} ariaLabel={`Сравнение ${fileDiff.path}`} size="lg" onClose={() => setFileDiff(null)} testId="make-file-diff"
+        <Dialog className="make-dialog" title={`Сравнение: ${fileDiff.path}`} ariaLabel={`Сравнение ${fileDiff.path}`} size="lg" onClose={() => setFileDiff(null)} testId="make-file-diff"
           actions={<Button size="sm" variant="secondary" onClick={() => { void restoreFile(fileDiff.snapshotId, fileDiff.path); setFileDiff(null) }}>Вернуть файл из снимка</Button>}>
           <p className="make-ideas-lead">Слева — снимок «{fileDiff.label}», справа — текущая версия.</p>
           <CodeDiff path={fileDiff.path} original={fileDiff.original} modified={fileDiff.modified} />
         </Dialog>
       )}
       {libraryOpen && (
-        <Dialog title="Библиотека компонентов" ariaLabel="Библиотека компонентов" size="md" onClose={() => setLibraryOpen(false)} testId="make-library">
+        <Dialog className="make-dialog" title="Библиотека компонентов" ariaLabel="Библиотека компонентов" size="md" onClose={() => setLibraryOpen(false)} testId="make-library">
           <p className="make-ideas-lead">Компоненты, сохранённые из ваших проектов. «Вставить» копирует файлы в текущий проект (снимок сохраняется).</p>
           {library === null ? <p className="make-diff-note">Загружаю…</p> : library.length === 0 ? (
             <EmptyState title="Библиотека пуста" description="Откройте стори во вкладке «Компоненты» и нажмите «В библиотеку»." />
@@ -1369,7 +1402,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {usageOpen && <MakeUsageDialog conversationId={conversationId} api={api} onClose={() => setUsageOpen(false)} onChanged={(next) => { setState(next); setPreviewRev(next.rev) }} />}
       {tokensOpen && state && <MakeTokensDialog conversationId={conversationId} api={api} files={state.files.map((f) => f.path)} onClose={() => setTokensOpen(false)} onWritten={(next) => { setState(next); setPreviewRev(next.rev) }} />}
       {assetsOpen && (
-        <Dialog title="Ассеты проекта" ariaLabel="Ассеты проекта" size="md" onClose={() => setAssetsOpen(false)} testId="make-assets">
+        <Dialog className="make-dialog" title="Ассеты проекта" ariaLabel="Ассеты проекта" size="md" onClose={() => setAssetsOpen(false)} testId="make-assets">
           <p className="make-ideas-lead">Картинки и другие бинарные файлы проекта. Путь или тег вставляются в буфер — дальше в код или в просьбу ассистенту.</p>
           {assets.length === 0 ? (
             <EmptyState title="Ассетов пока нет" description="Загрузите картинки кнопкой «Загрузить» или перетащите их в дерево файлов." actionLabel="Загрузить" onAction={() => { setAssetsOpen(false); uploadInputRef.current?.click() }} />
@@ -1396,7 +1429,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </Dialog>
       )}
       {exportOpen && (
-        <Dialog title="Скачать проект" ariaLabel="Скачать проект" size="sm" onClose={() => setExportOpen(false)} testId="make-export">
+        <Dialog className="make-dialog" title="Скачать проект" ariaLabel="Скачать проект" size="sm" onClose={() => setExportOpen(false)} testId="make-export">
           <div className="make-export-options">
             <button type="button" className="make-idea" onClick={() => { window.open(exportUrl(false), '_blank', 'noopener'); setExportOpen(false) }}>
               <strong>Статика как есть</strong>
@@ -1411,7 +1444,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </Dialog>
       )}
       {importOpen && (
-        <Dialog title="Импорт проекта" ariaLabel="Импорт проекта" size="sm" onClose={() => setImportOpen(false)} testId="make-import" closeOnOverlay={false}>
+        <Dialog className="make-dialog" title="Импорт проекта" ariaLabel="Импорт проекта" size="sm" onClose={() => setImportOpen(false)} testId="make-import" closeOnOverlay={false}>
           <p className="make-ideas-lead">Перед импортом сохранится снимок — откатиться можно во вкладке «История».</p>
           <fieldset className="make-import-mode">
             <legend>Как применить</legend>
@@ -1434,7 +1467,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </Dialog>
       )}
       {ideasOpen && (
-        <Dialog title="Идеи для старта" ariaLabel="Идеи для старта" size="md" onClose={() => setIdeasOpen(false)} testId="make-ideas">
+        <Dialog className="make-dialog" title="Идеи для старта" ariaLabel="Идеи для старта" size="md" onClose={() => setIdeasOpen(false)} testId="make-ideas">
           <p className="make-ideas-lead">Готовые промпты в духе Figma Make: клик вставляет текст в композер, дальше можно отредактировать и отправить.</p>
           {(Object.keys(MAKE_STARTER_GROUPS) as Array<keyof typeof MAKE_STARTER_GROUPS>).map((group) => (
             <section key={group} className="make-ideas-group">
@@ -1450,7 +1483,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </Dialog>
       )}
       {publishOpen && (
-        <Dialog title="Публикация проекта" ariaLabel="Публикация проекта" size="sm" onClose={() => setPublishOpen(false)} testId="make-publish">
+        <Dialog className="make-dialog" title="Публикация проекта" ariaLabel="Публикация проекта" size="sm" onClose={() => setPublishOpen(false)} testId="make-publish">
           {state?.published ? (
             <div className="make-publish">
               <p className="fsub">Ссылка открывается без входа — у всех, кто её знает.{' '}
@@ -1504,7 +1537,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
 
       {templatesOpen && (
-        <Dialog title="Шаблоны проекта" ariaLabel="Шаблоны проекта" size="md" onClose={() => setTemplatesOpen(false)} testId="make-templates">
+        <Dialog className="make-dialog" title="Шаблоны проекта" ariaLabel="Шаблоны проекта" size="md" onClose={() => setTemplatesOpen(false)} testId="make-templates">
           <ul className="make-templates" aria-label="Шаблоны">
             {MAKE_TEMPLATES.map((t) => (
               <li key={t.id} className="make-template">
@@ -1517,7 +1550,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
 
       {ask && (
-        <Dialog title={ask.title} ariaLabel={ask.title} size="sm" onClose={() => setAsk(null)} testId="make-ask">
+        <Dialog className="make-dialog" title={ask.title} ariaLabel={ask.title} size="sm" onClose={() => setAsk(null)} testId="make-ask">
           <form className="make-ask" onSubmit={(e) => { e.preventDefault(); const value = askValue.trim(); setAsk(null); if (value) ask.onSubmit(value) }}>
             <label className="make-ask-field"><span>{ask.label}</span><input className="tin" autoFocus value={askValue} aria-label={ask.label} onChange={(e) => setAskValue(e.target.value)} /></label>
             <div className="make-ask-actions">
