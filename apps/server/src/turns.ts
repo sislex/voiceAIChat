@@ -88,6 +88,8 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
+  /** Реестр снимков «До правок» по id хода — для meta.makeSnapshotId. */
+  makeHub?: { turnSnapshot(turn: string): string | undefined }
   /** Брокер токенов инструментов превью: токен живёт ровно один ход. */
   previewTool?: {
     register(token: string, entry: { userId: string; conversationId: string }): void
@@ -697,7 +699,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       // Первые слова запроса — подпись снимка «До правок: «…»», чтобы история читалась без открытия чата.
       const userText = req.segments.map((s) => s.text).join(' ').replace(/\s+/g, ' ').trim()
       const note = userText.slice(0, 80)
-      makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(randomUUID())}${note ? `&note=${encodeURIComponent(note)}` : ''}`
+      makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
 
     }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
@@ -843,6 +845,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
             // live-снапшот: так счётчики не теряются при различиях форматов CLI.
             ...turn.usage,
             ...meta,
+            ...(deps.makeHub?.turnSnapshot(turnId) ? { makeSnapshotId: deps.makeHub.turnSnapshot(turnId) } : {}),
             // Длительность из CLI, а если её нет — измеряем по стенным часам.
             durationMs: meta?.durationMs ?? now() - startedAt,
             model: resolvedModel,

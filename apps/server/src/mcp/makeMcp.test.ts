@@ -62,6 +62,9 @@ describe('makeMcp', () => {
     await rpc(call('make_write_file', { path: 'app.js', content: 'x' }))
     const state = await workspaces.state(CONV)
     expect(state.snapshots.map((s) => s.label)).toEqual(['До правок ассистента'])
+    // Ход → снимок (roadmap-2 п.2): turns.ts кладёт этот id в meta ответа.
+    expect(hub.turnSnapshot('t1')).toBe(state.snapshots[0]!.id)
+    expect(hub.turnSnapshot('nope')).toBeUndefined()
     expect(events.filter((e) => e.t === 'make.changed')).toHaveLength(2)
     expect(events[0]).toMatchObject({ t: 'make.changed', conversationId: CONV, paths: ['index.html'] })
 

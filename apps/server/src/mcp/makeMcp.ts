@@ -57,7 +57,8 @@ export function registerMakeMcp(app: FastifyInstance, deps: MakeMcpDeps, secret:
           if (turn && !snapshotDone.has(key)) {
             snapshotDone.add(key)
             if (snapshotDone.size > 5_000) snapshotDone.clear()
-            await workspaces.snapshot(conv, note ? `До правок: «${note}»` : 'До правок ассистента')
+            const snapped = await workspaces.snapshot(conv, note ? `До правок: «${note}»` : 'До правок ассистента')
+            if (snapped.snapshots[0]) hub.rememberTurnSnapshot(turn, snapped.snapshots[0].id)
           }
         }
         const afterMutation = (paths: string[]): void => {
