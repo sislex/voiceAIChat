@@ -35,3 +35,4 @@ author: alexeyrozhnov
 П.13 (auth-roadmap): OAuth ⏸ — нет client id/secret; описана точка входа.
 Пп.14–18 (auth-roadmap): UX входа, «запомнить меня», уведомление о новом устройстве, observer без ходов + лимит LLM, суточный sweep учёток/сессий/инвайтов.
 Релиз 0.1.171 (roadmap-4 пп.29–40 + auth 1–8) задеплоен на прод (health 0.1.171). Итог auth-roadmap: 15 ✅, 3 ⏸ (email-инвайты, OAuth, email-уведомления — нет SMTP/OAuth-клиентов). Запущен релиз 0.1.172 (auth 9–18).
+Релиз 0.1.172 (auth 9–18 + KB) задеплоен на прод (health 0.1.172); e2e:make зелёный на стенде. Оба roadmap-а закрыты.
