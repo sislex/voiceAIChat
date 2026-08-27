@@ -87,6 +87,23 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [fullscreen, setFullscreen] = useState(false)
   const [inspect, setInspect] = useState(false)
   const [selected, setSelected] = useState<MakeSelectedElement | null>(null)
+  // Последнее известное состояние страницы превью (скролл/hash) — восстанавливается после перезагрузки (п.11).
+  const pageStateRef = useRef<{ x: number; y: number; hash: string } | null>(null)
+  // Опрос same-origin iframe: события scroll из родителя ненадёжны, а прямое чтение — всегда работает.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const w = frameRef.current?.contentWindow
+      try { if (w && w.document?.readyState === 'complete') pageStateRef.current = { x: w.scrollX, y: w.scrollY, hash: w.location.hash } } catch { /* чужой origin — не наш случай */ }
+    }, 500)
+    return () => clearInterval(timer)
+  }, [])
+  const restorePageState = (): void => {
+    const w = frameRef.current?.contentWindow
+    const s = pageStateRef.current
+    if (!w || !s) return
+    const apply = (): void => { try { if (s.hash && w.location.hash !== s.hash) w.location.hash = s.hash; w.scrollTo(s.x, s.y) } catch { /* ignore */ } }
+    apply(); setTimeout(apply, 250); setTimeout(apply, 800)
+  }
   const [styleOpen, setStyleOpen] = useState(false)
   const previewStyles = (values: StyleValues): void => { frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.style', values }, '*') }
   /** Дописать правило в главную таблицу стилей проекта (первый <link rel=stylesheet> из index.html, иначе styles.css). */
@@ -285,8 +302,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       if (event.source !== frameRef.current?.contentWindow) return
       const data = event.data as { type?: string; selector?: string; tag?: string; text?: string; html?: string; id?: string; className?: string; styles?: StyleValues } | null
       if (!data || typeof data !== 'object') return
+      if (data.type === 'vc-make.state' && event.source === frameRef.current?.contentWindow) {
+        const s = data as unknown as { x: number; y: number; hash: string }
+        pageStateRef.current = { x: s.x, y: s.y, hash: s.hash }
+      }
       if (data.type === 'vc-make.ready') {
         frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.inspect', enabled: inspect }, '*')
+        // Превью перезагрузилось (правка ассистента/своя) — вернуть скролл и якорь, чтобы не прыгать наверх.
+        if (pageStateRef.current) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.restore', ...pageStateRef.current }, '*')
       } else if (data.type === 'vc-make.selected' && data.selector) {
         setSelected({ selector: data.selector, tag: data.tag ?? '', text: data.text ?? '', html: data.html ?? '', id: data.id, className: data.className, styles: data.styles })
         setStyleOpen(false)
@@ -772,6 +795,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               className="make-frame"
               title="Превью проекта"
               src={previewSrc}
+              onLoad={restorePageState}
               sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"
               style={frameWidth ? { width: `${frameWidth}px` } : undefined}
             />}
