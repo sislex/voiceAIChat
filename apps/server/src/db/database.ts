@@ -291,6 +291,9 @@ export interface UserRow {
   totpEnabled: boolean
   /** Временный пароль — при входе требуется сменить (auth-roadmap п.11). */
   mustChangePassword: boolean
+  /** Последний успешный вход (п.18) и месячный лимит расхода LLM в USD (п.17; null — без лимита). */
+  lastLogin: number | null
+  llmLimitUsd: number | null
 }
 
 /** Порог временной блокировки и её длительность; после `LOGIN_HARD_LOCK_FAILS` подряд — блокировка `blocked`. */
@@ -311,6 +314,9 @@ interface UserDbRow {
   reset_code_hash?: string | null
   reset_code_expires?: number | null
   must_change_password?: number | null
+  last_login?: number | null
+  notices_seen_at?: number | null
+  llm_limit_usd?: number | null
 }
 
 interface LlmEngineRow {
@@ -744,6 +750,10 @@ export class VoiceChatDb {
     if (userCols.length && !userCols.some((c) => c.name === 'reset_code_hash')) this.db.exec(`ALTER TABLE users ADD COLUMN reset_code_hash TEXT`)
     if (userCols.length && !userCols.some((c) => c.name === 'reset_code_expires')) this.db.exec(`ALTER TABLE users ADD COLUMN reset_code_expires INTEGER`)
     if (userCols.length && !userCols.some((c) => c.name === 'must_change_password')) this.db.exec(`ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0`)
+    // Последний вход и просмотренные уведомления (пп.16, 18), лимит LLM-расхода в месяц (п.17).
+    if (userCols.length && !userCols.some((c) => c.name === 'last_login')) this.db.exec(`ALTER TABLE users ADD COLUMN last_login INTEGER`)
+    if (userCols.length && !userCols.some((c) => c.name === 'notices_seen_at')) this.db.exec(`ALTER TABLE users ADD COLUMN notices_seen_at INTEGER NOT NULL DEFAULT 0`)
+    if (userCols.length && !userCols.some((c) => c.name === 'llm_limit_usd')) this.db.exec(`ALTER TABLE users ADD COLUMN llm_limit_usd REAL`)
     const taskLinkCols = this.db.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'source_task_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
     const improvementCols = this.db.prepare(`PRAGMA table_info(task_improvements)`).all() as Array<{ name: string }>
@@ -2475,7 +2485,34 @@ export class VoiceChatDb {
   // ---- Users (аккаунты приложения) --------------------------------------
 
   private mapUser(r: UserDbRow): UserRow {
-    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at, failedLogins: r.failed_logins ?? 0, lockedUntil: r.locked_until ?? null, lockReason: r.lock_reason ?? null, totpEnabled: Boolean(r.totp_secret), mustChangePassword: Boolean(r.must_change_password) }
+    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at, failedLogins: r.failed_logins ?? 0, lockedUntil: r.locked_until ?? null, lockReason: r.lock_reason ?? null, totpEnabled: Boolean(r.totp_secret), mustChangePassword: Boolean(r.must_change_password), lastLogin: r.last_login ?? null, llmLimitUsd: r.llm_limit_usd ?? null }
+  }
+
+  markLogin(name: string): void {
+    this.db.prepare(`UPDATE users SET last_login = ? WHERE name = ?`).run(Date.now(), name)
+  }
+
+  setUserLlmLimit(name: string, usd: number | null): void {
+    this.db.prepare(`UPDATE users SET llm_limit_usd = ? WHERE name = ?`).run(usd, name)
+  }
+
+  /** Непросмотренные уведомления безопасности (п.16): входы с нового устройства после отметки «видел». */
+  unseenSecurityNotices(name: string): SecurityEvent[] {
+    const r = this.db.prepare(`SELECT notices_seen_at FROM users WHERE name = ?`).get(name) as { notices_seen_at?: number } | undefined
+    const since = r?.notices_seen_at ?? 0
+    return this.listSecurityEvents({ user: name, limit: 50 }).filter((e) => e.type === 'login_new_device' && e.at > since)
+  }
+
+  markNoticesSeen(name: string): void {
+    this.db.prepare(`UPDATE users SET notices_seen_at = ? WHERE name = ?`).run(Date.now(), name)
+  }
+
+  /** Автоотключение неактивных (п.18): не входили дольше `days` (или никогда, но созданы давно) → blocked с причиной inactive; admin не трогаем. */
+  blockInactiveUsers(days: number): string[] {
+    const cutoff = Date.now() - days * 24 * 60 * 60_000
+    const rows = this.db.prepare(`SELECT name FROM users WHERE blocked = 0 AND name != 'admin' AND role != 'admin' AND COALESCE(last_login, created_at) < ?`).all(cutoff) as Array<{ name: string }>
+    for (const r of rows) this.db.prepare(`UPDATE users SET blocked = 1, lock_reason = 'inactive' WHERE name = ?`).run(r.name)
+    return rows.map((r) => r.name)
   }
 
   setMustChangePassword(name: string, value: boolean): void {
@@ -2540,7 +2577,7 @@ export class VoiceChatDb {
     this.db
       .prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES (?, ?, ?, 0, ?)`)
       .run(name, hashPassword(password), role, this.now())
-    return { name, role, blocked: false, createdAt: this.now(), failedLogins: 0, lockedUntil: null, lockReason: null, totpEnabled: false, mustChangePassword: false }
+    return { name, role, blocked: false, createdAt: this.now(), failedLogins: 0, lockedUntil: null, lockReason: null, totpEnabled: false, mustChangePassword: false, lastLogin: null, llmLimitUsd: null }
   }
 
   getUser(name: string): UserRow | null {

@@ -374,8 +374,9 @@ export interface SessionInfo {
 /** Ответ логина при включённом втором факторе (auth-roadmap п.6): пароль верен, нужен код по одноразовому тикету. */
 export interface LoginChallenge { requires2fa: true; ticket: string }
 
-/** TTL сессии по умолчанию — 30 дней без активности; `remember=false` (п.15) даст короче. */
+/** TTL сессии: «запомнить меня» — 30 дней без активности; без него — 12 часов (auth-roadmap п.15). */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60_000
+export const SESSION_SHORT_TTL_MS = 12 * 60 * 60_000
 
 /**
  * Режим прав агента (передаётся в `claude --permission-mode`). Безопасный для

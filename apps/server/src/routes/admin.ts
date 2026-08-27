@@ -253,12 +253,12 @@ export function registerAdminRoutes(
   })
 
   /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
-  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean } = {}): AdminUserInfo => {
+  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null } = {}): AdminUserInfo => {
     const online = registry.onlineIds()
     const agents = db.listAgents(name).map((a) => ({ ...a, online: online.has(a.id) }))
     // Админу — все беседы пользователя: скрытие чатов завершённых задач это
     // фильтр сайдбара их владельца, а не свойство данных.
-    return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, mustChangePassword: Boolean(lock.mustChangePassword), name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
+    return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, mustChangePassword: Boolean(lock.mustChangePassword), lastLogin: lock.lastLogin ?? null, llmLimitUsd: lock.llmLimitUsd ?? null, name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
   }
 
   app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> =>
@@ -311,10 +311,18 @@ export function registerAdminRoutes(
     }
   )
 
-  app.patch<{ Params: { name: string }; Body: { role?: string } }>(
+  app.patch<{ Params: { name: string }; Body: { role?: string; llmLimitUsd?: number | null } }>(
     REST.adminUser(':name').replace('%3Aname', ':name'),
     guard,
     async (req, reply) => {
+      // Лимит расхода LLM (п.17) можно менять отдельно от роли: тело только с llmLimitUsd.
+      if ('llmLimitUsd' in (req.body ?? {}) && req.body?.role === undefined) {
+        if (!db.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
+        const v = req.body?.llmLimitUsd
+        db.setUserLlmLimit(req.params.name, v === null || v === undefined ? null : Math.max(0, Number(v)))
+        const u = db.getUser(req.params.name)!
+        return toInfo(u.name, u.role, u.blocked, u.createdAt, u)
+      }
       const role = req.body?.role
       if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
       const user = db.setUserRole(req.params.name, role)

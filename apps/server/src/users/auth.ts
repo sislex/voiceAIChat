@@ -9,7 +9,7 @@ import { SlidingWindowLimiter } from '../make/rateLimit.js'
 const LOGIN_LIMIT = 10
 const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
-import { REST, type SessionUser, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
+import { REST, type SessionUser, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
 import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js'
@@ -25,10 +25,12 @@ function secureFlag(req: FastifyRequest): string {
   const proto = String(req.headers['x-forwarded-proto'] ?? req.protocol)
   return proto === 'https' ? '; Secure' : ''
 }
-export function sessionCookies(req: FastifyRequest, token: string, csrf: string, maxAgeSec: number): string[] {
+/** `maxAgeSec: null` — сессионная cookie без Max-Age (живёт до закрытия браузера). */
+export function sessionCookies(req: FastifyRequest, token: string, csrf: string, maxAgeSec: number | null): string[] {
+  const age = maxAgeSec === null ? '' : `; Max-Age=${maxAgeSec}`
   return [
-    `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${secureFlag(req)}`,
-    `${CSRF_COOKIE}=${csrf}; Path=/; SameSite=Strict; Max-Age=${maxAgeSec}${secureFlag(req)}`
+    `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict${age}${secureFlag(req)}`,
+    `${CSRF_COOKIE}=${csrf}; Path=/; SameSite=Strict${age}${secureFlag(req)}`
   ]
 }
 export function clearSessionCookies(req: FastifyRequest): string[] {
@@ -179,7 +181,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     if (!parsed) return null
     if (parsed.sid) {
       const s = db.getSession(parsed.sid)
-      if (s) { if (s.expiresAt < Date.now()) return null; db.touchSession(parsed.sid, SESSION_TTL_MS) }
+      if (s) { if (s.expiresAt < Date.now()) return null; db.touchSession(parsed.sid, Math.max(SESSION_SHORT_TTL_MS, s.expiresAt - s.lastSeen)) }
       else if (db.hasSessionRow(parsed.sid)) return null // отозвана или истекла
       else if (db.getUser(parsed.name)) db.createSession(parsed.sid, parsed.name, { ip: '', userAgent: 'legacy', ttlMs: SESSION_TTL_MS })
     }
@@ -244,23 +246,32 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   const registerLimiter = new SlidingWindowLimiter(5, 60 * 60_000)
   app.decorate('resetLoginLimiters', () => { loginByIp.reset(); loginByName.reset() })
   /** Ожидающие второго шага тикеты и незавершённые настройки 2FA — в памяти процесса, живут минуты. */
-  const pendingTwoFactor = new Map<string, { name: string; expires: number; attempts: number }>()
+  const pendingTwoFactor = new Map<string, { name: string; expires: number; attempts: number; remember: boolean }>()
   const pendingSetup = new Map<string, { secret: string; expires: number }>()
-  const issueSession = (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role']): { token: string; user: SessionUser; csrf: string } => {
+  const issueSession = (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role'], remember = true): { token: string; user: SessionUser; csrf: string } => {
     const row = db.getUser(name)
     const user: SessionUser = { name, role, ...(row?.mustChangePassword ? { mustChangePassword: true } : {}) }
     const sid = newSessionId()
     const token = signToken(user, secret, sid)
-    db.createSession(sid, name, { ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), ttlMs: SESSION_TTL_MS })
-    db.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? '') })
+    // «Запомнить меня» (п.15): 30 дней и cookie с Max-Age; иначе 12 часов и сессионная cookie (умирает с браузером).
+    const ttl = remember ? SESSION_TTL_MS : SESSION_SHORT_TTL_MS
+    const ua = String(req.headers['user-agent'] ?? '')
+    // Новое устройство (п.16): среди живых сессий нет ни одной с таким же User-Agent и IP — событие + уведомление в другие сессии.
+    const known = db.listSessions(name)
+    const isNew = known.length > 0 && !known.some((s) => s.userAgent === ua && s.ip === req.ip) && !known.every((s) => s.userAgent === 'legacy')
+    db.createSession(sid, name, { ip: req.ip, userAgent: ua, ttlMs: ttl })
+    db.markLogin(name)
+    db.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: ua })
+    if (isNew) db.logSecurityEvent({ user: name, type: 'login_new_device', ip: req.ip, userAgent: ua, details: 'вход с нового устройства' })
     const csrf = newSessionId()
-    reply.header('set-cookie', [previewCookie(token), ...sessionCookies(req, token, csrf, Math.floor(SESSION_TTL_MS / 1000))])
+    reply.header('set-cookie', [previewCookie(token), ...sessionCookies(req, token, csrf, remember ? Math.floor(ttl / 1000) : null)])
     return { token, user, csrf }
   }
-  app.post<{ Body: { name?: string; password?: string } }>(
+  app.post<{ Body: { name?: string; password?: string; remember?: boolean } }>(
     REST.sessionLogin,
     async (req, reply) => {
       const { name, password } = req.body ?? {}
+      const remember = req.body?.remember !== false
       const byIp = loginByIp.hit(req.ip)
       const byName = name ? loginByName.hit(name.trim().toLowerCase()) : { ok: true, remaining: LOGIN_LIMIT, retryAfterSec: 0 }
       if (!byIp.ok || !byName.ok) {
@@ -289,10 +300,10 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       // 2FA (п.6): пароль верен, но сессию выдаём только после кода — клиенту уходит одноразовый тикет на 5 минут.
       if (db.getUserTotpSecret(u.name)) {
         const ticket = newSessionId()
-        pendingTwoFactor.set(ticket, { name: u.name, expires: Date.now() + 5 * 60_000, attempts: 0 })
+        pendingTwoFactor.set(ticket, { name: u.name, expires: Date.now() + 5 * 60_000, attempts: 0, remember })
         return { requires2fa: true, ticket }
       }
-      return issueSession(req, reply, u.name, u.role)
+      return issueSession(req, reply, u.name, u.role, remember)
     }
   )
 
@@ -311,7 +322,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       return reply.code(401).send({ error: 'неверный код подтверждения' })
     }
     pendingTwoFactor.delete(ticket!)
-    return issueSession(req, reply, u.name, u.role)
+    return issueSession(req, reply, u.name, u.role, pending.remember)
   })
   // Настройка 2FA: setup выдаёт секрет и otpauth-ссылку (ещё не включено), enable включает после верного кода, disable — по коду.
   app.post(REST.session2faSetup, async (req, reply) => {
@@ -363,7 +374,14 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
 
   app.get(REST.sessionMe, async (req) => {
     const user = activeUser(tokenOf(req))
-    return user ? { user } : { user: null }
+    // Вместе с пользователем — непросмотренные уведомления безопасности (п.16): клиент покажет тостом и отметит.
+    return user ? { user, notices: db.unseenSecurityNotices(user.name) } : { user: null }
+  })
+  app.post(REST.sessionNoticesSeen, async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    db.markNoticesSeen(user.name)
+    return { ok: true }
   })
 
   app.post(REST.sessionLogout, async (req, reply) => {

@@ -604,6 +604,20 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     makeSweepTimer.unref()
     app.addHook('onClose', async () => clearInterval(makeSweepTimer))
     queueMicrotask(() => { void makeSweep() })
+    // Учётки и сессии (auth-roadmap п.18): раз в сутки чистим истёкшие сессии/инвайты и отключаем неактивных (VC_INACTIVE_DAYS, 0 — выкл).
+    const inactiveDays = Number(process.env.VC_INACTIVE_DAYS ?? 180)
+    const accountsSweep = (): void => {
+      try {
+        const sessions = db.pruneSessions(), invites = db.pruneInvites()
+        const blocked = inactiveDays > 0 ? db.blockInactiveUsers(inactiveDays) : []
+        for (const name of blocked) db.logSecurityEvent({ user: name, type: 'inactive_blocked', details: `нет входов ${inactiveDays} дн.` })
+        if (sessions || invites || blocked.length) app.log.info({ event: 'accounts_sweep', sessions, invites, blocked }, 'accounts sweep')
+      } catch (error) { app.log.warn({ error }, 'accounts sweep failed') }
+    }
+    accountsSweep()
+    const accountsTimer = setInterval(accountsSweep, 24 * 60 * 60 * 1000)
+    accountsTimer.unref()
+    app.addHook('onClose', async () => clearInterval(accountsTimer))
     const cleanupTimer = setInterval(() => { void generatedCleanup.run() }, 6 * 60 * 60 * 1000)
     cleanupTimer.unref()
     app.addHook('onClose', async () => clearInterval(cleanupTimer))

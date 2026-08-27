@@ -66,6 +66,9 @@ afterEach(async () => {
   db.close()
 })
 
+// Лимитеры входа живут в процессе: между тестами сбрасываем, чтобы порядок тестов не давал 429.
+beforeEach(() => { (app as unknown as { resetLoginLimiters?: () => void }).resetLoginLimiters?.() })
+
 describe('REST: хранилище машины', () => {
   function connectFs(machineId: string, failMkdir = false, failWrite = false) {
     const directories = new Set<string>()
@@ -364,6 +367,39 @@ describe('REST: аутентификация', () => {
     expect((await app.inject({ method: 'POST', url: '/api/session/reset', payload: { name: 'temp', code: issued.code, password: 'after-reset-password-2' } })).statusCode).toBe(401)
     expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'temp', password: 'after-reset-password-1' } })).statusCode).toBe(200)
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('«запомнить меня»: без флага cookie сессионная (без Max-Age) и TTL 12 ч, с флагом — Max-Age 30 дней (auth-roadmap п.15)', async () => {
+    db.createUser('rem', 'remember-pass-2026', 'developer')
+    const short = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'rem', password: 'remember-pass-2026', remember: false } })
+    const shortCookie = ([] as string[]).concat(short.headers['set-cookie'] as string[]).find((c) => c.startsWith('vc_session='))!
+    expect(shortCookie).not.toContain('Max-Age')
+    const list = (await app.inject({ method: 'GET', url: '/api/session/list', headers: { authorization: `Bearer ${short.json().token}` } })).json() as { sessions: Array<{ current?: boolean; expiresAt: number; createdAt: number }> }
+    const cur = list.sessions.find((s) => s.current)!
+    expect(cur.expiresAt - cur.createdAt).toBeLessThanOrEqual(12 * 60 * 60_000 + 5000)
+    const long = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'rem', password: 'remember-pass-2026', remember: true } })
+    expect(([] as string[]).concat(long.headers['set-cookie'] as string[]).find((c) => c.startsWith('vc_session='))).toContain(`Max-Age=${30 * 24 * 60 * 60}`)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('новое устройство: второй вход с другим UA/IP даёт login_new_device и уведомление в /me, «seen» его гасит (auth-roadmap п.16)', async () => {
+    db.createUser('dev', 'device-pass-2026-x', 'developer')
+    const a = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Phone/1' } })
+    const b = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Laptop/2' } })
+    const me = (await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${a.json().token}` } })).json() as { notices: Array<{ type: string; userAgent: string }> }
+    expect(me.notices.map((n) => n.userAgent)).toEqual(['Laptop/2'])
+    await app.inject({ method: 'POST', url: '/api/session/notices/seen', headers: { authorization: `Bearer ${a.json().token}` } })
+    expect(((await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${b.json().token}` } })).json() as { notices: unknown[] }).notices).toEqual([])
+    expect(db.getUser('dev')!.lastLogin).toBeGreaterThan(0)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('лимит LLM в месяц ставится PATCH-ом без роли и виден в списке (auth-roadmap п.17)', async () => {
+    db.createUser('limited', 'limited-pass-2026', 'developer')
+    const r = await inj({ method: 'PATCH', url: '/api/admin/users/limited', payload: { llmLimitUsd: 5 } })
+    expect(r.json()).toMatchObject({ name: 'limited', role: 'developer', llmLimitUsd: 5 })
+    expect(db.getUser('limited')!.llmLimitUsd).toBe(5)
+    expect((await inj({ method: 'PATCH', url: '/api/admin/users/limited', payload: { llmLimitUsd: null } })).json().llmLimitUsd).toBeNull()
   })
 
   it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {

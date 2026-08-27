@@ -23,7 +23,7 @@ function AdminFrame({ variant, onClose, children }: { variant: 'modal' | 'page';
 }
 
 /** Подписи событий журнала безопасности (auth-roadmap п.7). */
-const SECURITY_LABEL: Record<SecurityEventType, string> = { reset_code_issued: 'Выдан код сброса', password_reset: 'Пароль сброшен по коду', password_changed: 'Пароль изменён', invite_created: 'Создан инвайт', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
+const SECURITY_LABEL: Record<SecurityEventType, string> = { login_new_device: 'Вход с нового устройства', inactive_blocked: 'Отключён за неактивность', reset_code_issued: 'Выдан код сброса', password_reset: 'Пароль сброшен по коду', password_changed: 'Пароль изменён', invite_created: 'Создан инвайт', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
 
 export interface UsersAdminProps {
   variant?: 'modal' | 'page'
@@ -46,6 +46,8 @@ export interface UsersAdminProps {
   onCreate: (name: string, password: string, role: import('@shared/types').UserRole, mustChangePassword?: boolean) => void
   /** Код сброса пароля (auth-roadmap п.10): возвращает код для передачи пользователю. */
   onResetCode?: (name: string) => Promise<{ code: string; expiresAt: number } | null>
+  /** Месячный лимит расхода LLM в USD (auth-roadmap п.17). */
+  onSetLlmLimit?: (name: string, llmLimitUsd: number | null) => void
   onUpdateRole?: (name: string, role: import('@shared/types').UserRole) => void
   onSetBlocked: (name: string, blocked: boolean) => void
   onDelete: (name: string) => void
@@ -139,6 +141,7 @@ export function UsersAdmin({
   onSelect,
   onCreate,
   onResetCode,
+  onSetLlmLimit,
   onUpdateRole = () => undefined,
   onSetBlocked,
   onDelete,
@@ -186,6 +189,7 @@ export function UsersAdmin({
   /** Временный пароль при создании (п.11) и выданный код сброса (п.10). */
   const [newTemp, setNewTemp] = useState(true)
   const [resetInfo, setResetInfo] = useState<{ name: string; code: string; expiresAt: number } | null>(null)
+  const [limitDraft, setLimitDraft] = useState<string>('')
   const [usageDays, setUsageDays] = useState<7 | 30 | null>(30)
   const [usageConversationId, setUsageConversationId] = useState('')
   const [engineDraft, setEngineDraft] = useState<AdminLlmEngineInput>(EMPTY_ENGINE)
@@ -373,6 +377,12 @@ export function UsersAdmin({
                 </span>
               </div>
 
+              {onSetLlmLimit && (
+                <p className="uusage-note uadmin-limit" data-testid="admin-llm-limit">
+                  Последний вход: {cur.lastLogin ? new Date(cur.lastLogin).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'не было'} · Лимит LLM в месяц, $: <input className="login-input uadmin-limit-input" type="number" min={0} step={1} aria-label="Лимит LLM в месяц, USD" placeholder={cur.llmLimitUsd === null || cur.llmLimitUsd === undefined ? 'без лимита' : String(cur.llmLimitUsd)} value={limitDraft} onChange={(e) => setLimitDraft(e.target.value)} />
+                  <Button size="sm" onClick={() => { onSetLlmLimit(cur.name, limitDraft.trim() === '' ? null : Number(limitDraft)); setLimitDraft('') }}>Сохранить</Button>
+                </p>
+              )}
               {resetInfo && resetInfo.name === cur.name && (
                 <p className="uusage-note" role="status" data-testid="admin-reset-code">Код сброса для <b>{cur.name}</b>: <code>{resetInfo.code}</code> — действует до {new Date(resetInfo.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}; передайте лично, повторно не показывается.</p>
               )}

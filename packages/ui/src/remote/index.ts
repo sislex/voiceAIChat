@@ -223,11 +223,11 @@ export async function migrateDesktopLegacy(httpBase: string, token: string): Pro
 export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessionBridge {
   const authHeaders = (): Record<string, string> => sessionHeaders()
   return {
-    login: async ({ name, password }) => {
+    login: async ({ name, password, remember }) => {
       const res = await fetch(httpBase + REST.sessionLogin, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, password })
+        body: JSON.stringify({ name, password, remember: remember !== false })
       })
       if (!res.ok) return null
       const body = (await res.json()) as { token?: string; user?: SessionUser; requires2fa?: true; ticket?: string }
@@ -252,6 +252,13 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       ws.reconnect()
       return user
     },
+    securityNotices: async () => {
+      const r = await fetch(httpBase + REST.sessionMe, { headers: authHeaders() })
+      if (!r.ok) return []
+      const { notices } = (await r.json()) as { notices?: Array<{ at: number; ip: string; userAgent: string }> }
+      return notices ?? []
+    },
+    securityNoticesSeen: async () => { await fetch(httpBase + REST.sessionNoticesSeen, { method: 'POST', headers: authHeaders() }) },
     resetPassword: async ({ name, code, password }) => {
       const r = await fetch(httpBase + REST.sessionReset, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, code, password }) })
       if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }

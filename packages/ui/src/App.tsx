@@ -16,7 +16,7 @@ import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration,
 import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { MakePane } from './components/MakePane'
-import { SessionsDialog } from './components/SessionsDialog'
+import { SessionsDialog, describeUserAgent } from './components/SessionsDialog'
 import { TwoFactorDialog } from './components/TwoFactorDialog'
 import { InviteRegister } from './components/InviteRegister'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog'
@@ -251,6 +251,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [sessionsOpen, setSessionsOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  // Уведомление о входе с нового устройства (auth-roadmap п.16): после входа/восстановления сессии показываем и отмечаем просмотренными.
+  useEffect(() => {
+    const name = session.currentUser?.name
+    if (!name || !window.session?.securityNotices) return
+    let alive = true
+    void window.session.securityNotices().then((list) => {
+      if (!alive || list.length === 0) return
+      for (const n of list.slice(-3)) toast.info(`Вход в ваш аккаунт с нового устройства: ${describeUserAgent(n.userAgent)} · ${n.ip || 'адрес неизвестен'} · ${new Date(n.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}. Не вы — завершите сессии в меню аккаунта.`)
+      void window.session?.securityNoticesSeen?.()
+    }).catch(() => undefined)
+    return () => { alive = false }
+  }, [session.currentUser?.name]) // eslint-disable-line react-hooks/exhaustive-deps
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
@@ -1397,7 +1409,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   if (session.authRequired && !session.currentUser) {
     return (
       <LoginScreen
-        onLogin={(name, password) => void runtime.login(name, password)}
+        onLogin={(name, password, remember) => void runtime.login(name, password, remember)}
         error={session.authError}
         theme={settingsState.settings.theme}
         twoFactor={Boolean(session.twoFactorTicket)}
@@ -2003,6 +2015,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void adminActions.selectAdminUser(name) }}
           onCreate={(name, password, role, mustChangePassword) => void adminActions.createUserAccount(name, password, role, mustChangePassword)}
           onResetCode={(name) => adminActions.issueResetCode(name)}
+          onSetLlmLimit={(name, usd) => void adminActions.setUserLlmLimit(name, usd)}
           onUpdateRole={(name, role) => void adminActions.updateUserRole(name, role)}
           onSetBlocked={(name, blocked) => void adminActions.setUserBlocked(name, blocked)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}

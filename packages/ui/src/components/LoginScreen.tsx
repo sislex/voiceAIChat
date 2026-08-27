@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react'
+import type React from 'react'
 import { Button } from '@voicechat/ui-kit'
 import { checkPasswordPolicy } from '@shared/passwordPolicy'
 
 export interface LoginScreenProps {
-  /** Вход по логину/паролю. */
-  onLogin: (name: string, password: string) => void
+  /** Вход по логину/паролю; `remember` — длинная сессия (auth-roadmap п.15). */
+  onLogin: (name: string, password: string, remember: boolean) => void
   /** Текст ошибки прошлой попытки (null — нет). */
   error?: string | null
   /** Тема интерфейса (для обёртки). */
@@ -24,11 +25,16 @@ export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false
   const [code, setCode] = useState('')
   const [resetMode, setResetMode] = useState(false)
   const [resetCode, setResetCode] = useState('')
+  // UX входа (auth-roadmap п.14): показать пароль, предупреждение о Caps Lock, «запомнить меня».
+  const [showPassword, setShowPassword] = useState(false)
+  const [capsLock, setCapsLock] = useState(false)
+  const [remember, setRemember] = useState(true)
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>): void => { if (typeof e.getModifierState === 'function') setCapsLock(e.getModifierState('CapsLock')) }
   const policy = resetMode && password ? checkPasswordPolicy(password, { name }) : null
 
   const submit = (e: FormEvent): void => {
     e.preventDefault()
-    if (name.trim()) onLogin(name.trim(), password)
+    if (name.trim()) onLogin(name.trim(), password, remember)
   }
 
   if (resetMode && onReset) {
@@ -82,15 +88,22 @@ export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false
         </label>
         <label className="login-field">
           <span>Пароль</span>
-          <input
-            className="login-input"
-            type="password"
-            value={password}
-            autoComplete="current-password"
-            aria-label="Пароль"
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <span className="login-password">
+            <input
+              className="login-input"
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              autoComplete="current-password"
+              aria-label="Пароль"
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={onKey}
+              onKeyUp={onKey}
+            />
+            <button type="button" className="login-eye" aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'} title={showPassword ? 'Скрыть пароль' : 'Показать пароль'} aria-pressed={showPassword} onClick={() => setShowPassword((v) => !v)}>{showPassword ? '🙈' : '👁'}</button>
+          </span>
+          {capsLock && <span className="login-caps" role="status">Включён Caps Lock</span>}
         </label>
+        <label className="login-remember"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Запомнить меня на этом устройстве <small>(иначе сессия — до закрытия браузера)</small></label>
         {error && (
           <p className="login-error" role="alert">
             {error}

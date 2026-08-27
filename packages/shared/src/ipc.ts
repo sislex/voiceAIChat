@@ -349,6 +349,8 @@ export interface IpcInvokeMap {
   'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole; mustChangePassword?: boolean }; result: AdminUserInfo }
   'admin:updateUserRole': { arg: { name: string; role: import('./types').UserRole }; result: AdminUserInfo }
+  /** Месячный лимит расхода LLM (auth-roadmap п.17); null — без лимита. */
+  'admin:setUserLlmLimit': { arg: { name: string; llmLimitUsd: number | null }; result: AdminUserInfo }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
@@ -792,8 +794,11 @@ export interface RendererBrowserBridge {
 
 export interface RendererSessionBridge {
   /** Вход: пользователь, `null` при отказе или вызов второго фактора (auth-roadmap п.6) — тогда нужен `login2fa`. */
-  login(creds: { name: string; password: string }): Promise<SessionUser | LoginChallenge | null>
+  login(creds: { name: string; password: string; remember?: boolean }): Promise<SessionUser | LoginChallenge | null>
   login2fa?(input: { ticket: string; code: string }): Promise<SessionUser | null>
+  /** Уведомления безопасности — входы с нового устройства (auth-roadmap п.16): получить непросмотренные и отметить. */
+  securityNotices?(): Promise<Array<{ at: number; ip: string; userAgent: string }>>
+  securityNoticesSeen?(): Promise<void>
   /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
   resetPassword?(input: { name: string; code: string; password: string }): Promise<{ ok: true } | { error: string }>
   changePassword?(input: { current: string; next: string }): Promise<{ ok: true } | { error: string }>
@@ -1048,6 +1053,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:inviteCreate',
   'admin:inviteDelete',
   'admin:resetCode',
+  'admin:setUserLlmLimit',
   'admin:makeStats',
   'admin:llmAccess',
   'admin:saveLlmAccess',

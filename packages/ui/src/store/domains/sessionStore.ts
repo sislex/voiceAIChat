@@ -32,7 +32,7 @@ export interface SessionActions {
   /** Проверить сохранённую сессию. Возвращает пользователя или null. */
   check(): Promise<SessionUser | null>
   /** Войти по логину/паролю (web). */
-  login(name: string, password: string): Promise<SessionUser | null>
+  login(name: string, password: string, remember?: boolean): Promise<SessionUser | null>
   /** Второй шаг входа: код TOTP по тикету. */
   loginCode(code: string): Promise<SessionUser | null>
   /** Отменить второй шаг и вернуться к паролю. */
@@ -99,10 +99,10 @@ export function createSessionStore(deps: SessionDeps = {}): SessionStore {
         else setState({ currentUser: null })
         return user
       },
-      async login(name, password) {
+      async login(name, password, remember = true) {
         if (!client) return null
         setState({ authError: null })
-        const result = await client.login({ name, password }).catch(() => null)
+        const result = await client.login({ name, password, remember }).catch(() => null)
         if (core.disposed()) return null
         if (result && 'requires2fa' in result) {
           setState({ twoFactorTicket: result.ticket, authError: null })
