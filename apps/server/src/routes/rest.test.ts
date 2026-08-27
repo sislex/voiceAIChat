@@ -589,6 +589,14 @@ describe('REST: conversations/messages/settings', () => {
     expect(runner.body).toContain('importmap')
     expect(runner.body).toContain('"Small"')
     // Галерея и сториз: в превью (cookie/Bearer) и на публикации без входа.
+    // Auth-мок (roadmap-4 п.32): логин ставит cookie, защищённый мок читает её из запроса.
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'mock/api/login.POST.json', content: JSON.stringify({ $auth: { users: [{ username: 'anna', password: '1' }] } }) } })
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'mock/api/me.json', content: JSON.stringify({ $auth: { require: true }, $body: { role: 'admin' } }) } })
+    const login = await inj({ method: 'POST', url: `/api/preview/make/${conv.id}/api/login`, payload: { username: 'anna', password: '1' } })
+    expect(login.statusCode).toBe(200)
+    expect(String(login.headers['set-cookie'])).toContain('vc_mock_session=anna')
+    expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/api/me` })).statusCode).toBe(401)
+    expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/api/me`, headers: { cookie: 'vc_mock_session=anna' } })).json()).toMatchObject({ role: 'admin', user: { username: 'anna' } })
     const gallery = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__gallery__` })
     expect(gallery.statusCode).toBe(200)
     expect(gallery.body).toContain('Button.stories.jsx')

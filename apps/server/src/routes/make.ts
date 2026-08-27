@@ -666,7 +666,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (!conversationId) return reply.code(404).type('text/plain; charset=utf-8').send('Публикация не найдена или снята')
     const gate = await workspaces.publicGate(conversationId)
     if (gate && cookieValue(req, gateCookieName(token)) !== gate) return reply.code(401).type('text/plain; charset=utf-8').send('Публикация защищена паролем')
-    const mock = await workspaces.resolveMock(conversationId, rawPath, req.method, true)
+    const mock = await workspaces.resolveMock(conversationId, rawPath, req.method, true, (req as FastifyRequest & { body?: unknown }).body, req.headers.cookie)
     if (!mock) return reply.code(404).type('text/plain; charset=utf-8').send('Мок не найден')
     return sendMock(reply, mock)
   }
@@ -745,7 +745,7 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     let file
     try { file = await workspaces.readBuffer(req.params.id, path) } catch (error) { return sendError(reply, error) }
     if (!file) {
-      const mock = await workspaces.resolveMock(req.params.id, path, 'GET')
+      const mock = await workspaces.resolveMock(req.params.id, path, 'GET', false, undefined, req.headers.cookie)
       if (mock) return sendMock(reply, mock)
       return reply.code(404).type('text/plain; charset=utf-8').send(`Файл не найден: ${path}`)
     }
