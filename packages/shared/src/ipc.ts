@@ -54,7 +54,7 @@ import type {
   TaskPriority,
   WorkItemDefaultSkills,
   MachineStorage,
-  ChatStorageBinding,
+  ChatStorageBinding, ChatStorageView,
   ProjectMachineDirectoryAssignments,
   ProjectMachineDirectoryKind
 } from './projects'
@@ -258,7 +258,7 @@ export interface IpcInvokeMap {
     }
     result: Conversation
   }
-  'conversations:getStorage': { arg: { id: string }; result: ChatStorageBinding | null }
+  'conversations:getStorage': { arg: { id: string }; result: ChatStorageView | null }
   'conversations:setStorage': { arg: { id: string; machineId: string; storageId: string; relativePath?: string }; result: ChatStorageBinding }
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { canTransitionWorkflow, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
+import { canTransitionWorkflow, chatStorageDirectories, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
   sanitizeProjectTestUsers
 } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
@@ -311,5 +311,22 @@ describe('sanitizeProjectTestUsers', () => {
     expect(() => sanitizeProjectTestUsers([{ name: 'a', password: 5 }])).toThrow()
     expect(() => sanitizeProjectTestUsers([{ name: 'a', password: 'x'.repeat(300) }])).toThrow()
     expect(() => sanitizeProjectTestUsers(Array.from({ length: 33 }, (_, i) => ({ name: 'u' + i, password: '' })))).toThrow()
+  })
+})
+
+describe('chatStorageDirectories', () => {
+  it('строит абсолютные каталоги чата под корнем POSIX', () => {
+    expect(chatStorageDirectories('/home/bob/ChatAI/', 'chats/c1')).toEqual({
+      chatRoot: '/home/bob/ChatAI/chats/c1',
+      attachments: '/home/bob/ChatAI/chats/c1/attachments',
+      artifacts: '/home/bob/ChatAI/chats/c1/artifacts',
+      generated: '/home/bob/ChatAI/chats/c1/.generated'
+    })
+  })
+
+  it('для Windows-корня использует обратный слэш и отклоняет небезопасный относительный путь', () => {
+    expect(chatStorageDirectories('C:\\Users\\bob\\ChatAI', 'projects/p1/chats/c1').attachments).toBe('C:\\Users\\bob\\ChatAI\\projects\\p1\\chats\\c1\\attachments')
+    expect(() => chatStorageDirectories('/x', '../etc')).toThrow()
+    expect(() => chatStorageDirectories('', 'chats/c1')).toThrow()
   })
 })

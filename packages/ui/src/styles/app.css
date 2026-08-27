@@ -7064,3 +7064,18 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 .uadmin-limit { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .uadmin-limit-input { width: 110px; }
+
+/* Каталог результатов чата (machines-roadmap п.7): чип в шапке и карточка в настройках */
+.chat-storage-chip { flex-shrink: 0; margin-left: 8px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border, #3a3a3a); background: transparent; color: inherit; cursor: pointer; }
+.chat-storage-chip:disabled { cursor: default; opacity: 0.6; }
+.chat-storage-chip--offline { border-style: dashed; }
+.chat-storage-card { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--border, #3a3a3a); border-radius: 8px; }
+.chat-storage-path code { font-size: 12px; word-break: break-all; }
+.chat-storage-meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; opacity: 0.85; }
+.chat-storage-status--offline, .chat-storage-status--unavailable { color: var(--danger, #e5484d); }
+.chat-storage-status--read-only { color: var(--warning, #e0a800); }
+.chat-storage-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.chat-storage-dirs { margin: 0; padding-left: 18px; font-size: 12px; opacity: 0.85; }
+.chat-storage-dirs code { word-break: break-all; }
+.convsettings-subtitle { margin: 12px 0 6px; font-size: 14px; }
+@media (max-width: 720px) { .chat-storage-chip { display: none; } }
