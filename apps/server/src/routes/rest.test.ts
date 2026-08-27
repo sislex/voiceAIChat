@@ -199,6 +199,18 @@ describe('REST: аутентификация', () => {
     expect(bad.statusCode).toBe(401)
   })
 
+  it('rate-limit входа: 11-я попытка за окно → 429 с Retry-After, по имени и по IP (auth-roadmap п.1)', async () => {
+    db.createUser('victim', 'secret-pass', 'developer')
+    let last = 0
+    for (let i = 0; i < 10; i++) last = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'victim', password: 'wrong' } })).statusCode
+    expect(last).toBe(401)
+    const blocked = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'victim', password: 'secret-pass' } })
+    expect(blocked.statusCode).toBe(429)
+    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
+    // Другое имя с того же IP тоже упирается в лимит по IP.
+    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'other', password: '' } })).statusCode).toBe(429)
+  })
+
   it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {
     db.createUser('user', '', 'developer')
     const login = await app.inject({
