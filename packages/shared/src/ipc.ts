@@ -325,6 +325,7 @@ export interface IpcInvokeMap {
   // --- Админ-страница пользователей (только admin) ---
   'admin:users': { arg: void; result: AdminUserInfo[] }
   'admin:usageSummary': { arg: { from?: number; to?: number } | void; result: import('./admin').UserUsageSummary[] }
+  'admin:makeStats': { arg: void; result: import('./admin').AdminMakeStats }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole }; result: AdminUserInfo }
@@ -1000,6 +1001,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'cx:transcript',
   'cx:resume',
   'admin:users',
+  'admin:makeStats',
   'admin:llmAccess',
   'admin:saveLlmAccess',
   'admin:createUser',

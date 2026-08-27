@@ -14,7 +14,7 @@ import {
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare } from '@voicechat/shared'
+import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
 import { mockCandidates, unwrapMockEnvelope } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
@@ -230,6 +230,42 @@ export class MakeWorkspaces {
       } catch { /* битый снимок пропускаем */ }
     }
     return out.sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  // ---- Метрики для админки (п.38) -----------------------------------------
+
+  /** Обход всех проектов на диске; владелец — из БД через колбэк (каталог знает только id разговора). */
+  async adminStats(ownerOf: (conversationId: string) => string | null): Promise<AdminMakeStats> {
+    const root = join(this.rootDir, 'make')
+    let ids: string[] = []
+    try { ids = (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name) } catch { ids = [] }
+    const projects: AdminMakeProjectStat[] = []
+    const totals = { filesBytes: 0, snapshotsBytes: 0, shotsBytes: 0, published: 0, shared: 0, views: 0 }
+    for (const id of ids) {
+      if (!ID_RE.test(id)) continue
+      try {
+        const [files, snapshots, pub, shared, snapshotsBytes, shotsBytes] = await Promise.all([
+          this.list(id), this.snapshots(id), this.publication(id), this.share(id), this.dirBytes(join(root, id, SNAPSHOTS_DIR)), this.dirBytes(join(root, id, SHOTS_DIR))
+        ])
+        const filesBytes = files.reduce((s, f) => s + f.size, 0)
+        totals.filesBytes += filesBytes; totals.snapshotsBytes += snapshotsBytes; totals.shotsBytes += shotsBytes
+        if (pub) { totals.published += 1; totals.views += pub.views ?? 0 }
+        if (shared) totals.shared += 1
+        projects.push({ conversationId: id, owner: ownerOf(id), filesCount: files.length, bytes: filesBytes + snapshotsBytes + shotsBytes, snapshots: snapshots.length, published: Boolean(pub), shared: Boolean(shared), views: pub?.views ?? 0, updatedAt: files.reduce((m, f) => Math.max(m, f.updatedAt), 0) })
+      } catch { /* битый каталог — пропускаем */ }
+    }
+    const byUserMap = new Map<string, AdminMakeUserStat>()
+    for (const p of projects) {
+      const key = p.owner ?? '—'
+      const cur = byUserMap.get(key) ?? { user: key, projects: 0, bytes: 0, published: 0, views: 0 }
+      cur.projects += 1; cur.bytes += p.bytes; cur.published += p.published ? 1 : 0; cur.views += p.views
+      byUserMap.set(key, cur)
+    }
+    return {
+      projects: projects.length, bytes: totals.filesBytes + totals.snapshotsBytes + totals.shotsBytes, ...totals, limitBytes: MAKE_LIMITS.maxProjectBytes,
+      byUser: [...byUserMap.values()].sort((a, b) => b.bytes - a.bytes),
+      top: [...projects].sort((a, b) => b.bytes - a.bytes).slice(0, 10)
+    }
   }
 
   // ---- Read-only ссылка внутри ChatAI (п.33): .share.json + индекс share-<token> → разговор ----

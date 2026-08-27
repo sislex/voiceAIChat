@@ -1943,6 +1943,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           variant="page"
           users={admin.adminUsers}
           usageSummary={admin.adminUsageSummary}
+          makeStats={admin.adminMakeStats}
           isAdmin={session.currentUser?.role === 'admin'}
           status={admin.adminUsersStatus}
           error={admin.adminUsersError}
