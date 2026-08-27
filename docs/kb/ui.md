@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: b088d0c5
+checked: fd195bb9
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -458,6 +458,13 @@ contribution-модулями — полный пакет тянул 4 МБ; в�
 `.make-monaco` нужна явная высота (обёртка `@monaco-editor/react` — height:100%), поэтому `> section`
 позиционируется абсолютно. Чанк `monaco` выделен в `apps/web/vite.config.ts` (`manualChunks`).
 Подсветка фолбэка знает `jsx`→javascript, `tsx`→typescript.
+**Форматирование** (п.4): `lib/formatCode.ts` — Prettier standalone + плагины по расширению (babel/estree,
+typescript, html+postcss, markdown, yaml), всё lazy (чанк `prettier`, ~470 КБ gzip); настройки проекта —
+без `;`, одинарные кавычки, printWidth 100. `monacoSetup` регистрирует `DocumentFormattingEditProvider` на
+наши языки (путь берётся из URI модели) → Shift+Alt+F; чекбокс «формат при сохранении» (`vc.make.formatOnSave`)
+делает `formatDocument` перед сохранением по Cmd/Ctrl+S. Синтаксическая ошибка → Prettier бросает, формат не
+применяется (маркер компиляции подскажет где).
+
 **Типы React в Monaco** (п.3): `code/monacoTypes.ts` импортирует d.ts `@types/react`, `@types/react-dom`,
 `csstype` как текст (Vite `?raw`) **относительными путями к корневому node_modules** — у `@types/react`
 закрытый `exports`, deep-import по имени пакета Vite не резолвит; d.ts подкладываются `addExtraLib` под

@@ -32,6 +32,7 @@ export default defineConfig({
           if (id.includes('node_modules/@xterm')) return 'terminal'
           if (id.includes('node_modules/monaco-editor') || id.includes('node_modules/@monaco-editor')) return 'monaco'
           if (id.includes('node_modules/html2canvas')) return 'screenshot'
+          if (id.includes('node_modules/prettier')) return 'prettier'
           if (
             id.includes('node_modules/react-markdown') ||
             id.includes('node_modules/remark-') ||

@@ -379,4 +379,16 @@ describe('MakePane', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Заменить' }))
     await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toContain('Мой сайт'))
   })
+
+  it('«Форматировать» прогоняет файл через Prettier', async () => {
+    const { api, emit } = renderPane()
+    await screen.findByTitle('Превью проекта')
+    const next = await api['make:write']({ conversationId: CONV, path: 'ugly.css', content: 'body{margin:0;padding:0}' })
+    emit({ conversationId: CONV, rev: next.rev, paths: ['ugly.css'] })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await userEvent.click((await screen.findAllByRole('button', { name: /ugly\.css/ }))[0]!)
+    await screen.findByLabelText('Содержимое ugly.css')
+    await userEvent.click(screen.getByRole('button', { name: 'Форматировать' }))
+    await waitFor(() => expect((screen.getByLabelText('Содержимое ugly.css') as HTMLTextAreaElement).value).toBe('body {\n  margin: 0;\n  padding: 0;\n}\n'))
+  }, 30_000)
 })

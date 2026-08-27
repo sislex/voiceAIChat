@@ -30,6 +30,7 @@ import 'monaco-editor/esm/vs/editor/contrib/indentation/browser/indentation'
 import 'monaco-editor/esm/vs/editor/contrib/linkedEditing/browser/linkedEditing'
 import { jsxClosingTagFor } from './monacoLang'
 import { REACT_TYPE_LIBS } from './monacoTypes'
+import { formatCode } from '../../lib/formatCode'
 import { loader } from '@monaco-editor/react'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
@@ -52,6 +53,18 @@ export function setupMonaco(): typeof monaco {
     }
   }
   loader.config({ monaco: monaco as unknown as Parameters<typeof loader.config>[0]['monaco'] })
+  // Форматирование Prettier (Shift+Alt+F и «формат при сохранении»): один провайдер на все наши языки,
+  // путь файла берём из URI модели — по нему выбирается парсер.
+  for (const language of ['html', 'css', 'javascript', 'typescript', 'json', 'markdown', 'yaml']) {
+    monaco.languages.registerDocumentFormattingEditProvider(language, {
+      async provideDocumentFormattingEdits(model) {
+        const path = model.uri.path.replace(/^\//, '')
+        const formatted = await formatCode(path, model.getValue()).catch(() => null)
+        if (formatted === null || formatted === model.getValue()) return []
+        return [{ range: model.getFullModelRange(), text: formatted }]
+      }
+    })
+  }
   // JSX/TSX без установленных типов React: синтаксис проверяем, семантику — нет (иначе всё красное).
   for (const defaults of [monaco.languages.typescript.typescriptDefaults, monaco.languages.typescript.javascriptDefaults]) {
     defaults.setCompilerOptions({

@@ -32,3 +32,4 @@ author: alexeyrozhnov
 П.26: публикация конкретного снимка (закрепление, publicFile из .snapshots).
 П.37: E2E Make на Playwright (`npm run e2e:make`, вне CI).
 П.1: поиск и замена по всему проекту (make:replace, снимок перед заменой).
+П.4: Prettier в Monaco (Shift+Alt+F, формат при сохранении).
