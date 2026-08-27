@@ -105,20 +105,43 @@ export function renderStoriesPage(file: string, story: string, indexHtml: string
 
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
+/** Простые пары `key: 'строка' | число | true/false` из текста объекта args — без вложенных структур. */
+function simpleArgs(text: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!text) return out
+  for (const m of text.matchAll(/(\w+)\s*:\s*(?:'([^']*)'|"([^"]*)"|(-?\d+(?:\.\d+)?)|(true|false))/g)) {
+    const key = m[1]!
+    if (m[2] !== undefined || m[3] !== undefined) out[key] = `"${m[2] ?? m[3]}"`
+    else out[key] = `{${m[4] ?? m[5]}}`
+  }
+  return out
+}
+
+function attrsOf(args: Record<string, string>, component: string): string {
+  const children = args.children
+  const attrs = Object.entries(args).filter(([k]) => k !== 'children').map(([k, v]) => `${k}=${v}`).join(' ')
+  const open = `<${component}${attrs ? ' ' + attrs : ''}`
+  return children ? `${open}>${children.replace(/^"|"$/g, '')}</${component}>` : `${open} />`
+}
+
 /**
- * Код использования для витрины (roadmap-4 п.28): из `export const Name = () => <X … />` берём JSX после стрелки
- * и добавляем import компонента относительно корня проекта. Объектные стори (CSF `{ args }`) — только import.
+ * Код использования для витрины (roadmap-4 п.28): для стрелочных стори берём JSX после стрелки, для объектных
+ * (CSF3 `{ args }`) собираем `<X prop="…">` из args default-экспорта и стори; плюс import компонента от корня проекта.
  */
 export function storyUsageSnippets(path: string, source: string): Record<string, string> {
   const out: Record<string, string> = {}
   const importPath = './' + path.replace(/\.stories\.(jsx|tsx)$/i, '')
   const component = /component\s*:\s*([A-Z][A-Za-z0-9_]*)/.exec(source)?.[1] ?? /import\s*\{\s*([A-Z][A-Za-z0-9_]*)/.exec(source)?.[1] ?? null
   const importLine = component ? `import { ${component} } from '${importPath}'` : null
+  const defaultArgs = simpleArgs(/export\s+default\s*\{[\s\S]*?\bargs\s*:\s*\{([^}]*)\}/.exec(source)?.[1])
   for (const m of source.matchAll(/export\s+const\s+([A-Z]\w*)\s*=\s*(?:\([^)]*\)|\w+)?\s*=>\s*\(?\s*(<[\s\S]*?>)\s*\)?\s*(?=\n|$)/g)) {
-    const jsx = m[2]!.trim().replace(/\)\s*$/, '')
-    out[m[1]!] = [importLine, jsx].filter(Boolean).join('\n\n')
+    out[m[1]!] = [importLine, m[2]!.trim()].filter(Boolean).join('\n\n')
   }
-  for (const m of source.matchAll(/export\s+const\s+([A-Z]\w*)\s*=\s*\{/g)) if (!out[m[1]!] && importLine) out[m[1]!] = importLine
+  for (const m of source.matchAll(/export\s+const\s+([A-Z]\w*)\s*=\s*\{([\s\S]*?)\}\s*(?=\n|$)/g)) {
+    if (out[m[1]!] || !component) continue
+    const storyArgs = simpleArgs(/\bargs\s*:\s*\{([^}]*)\}/.exec(m[2]!)?.[1])
+    out[m[1]!] = `${importLine}\n\n${attrsOf({ ...defaultArgs, ...storyArgs }, component)}`
+  }
   return out
 }
 

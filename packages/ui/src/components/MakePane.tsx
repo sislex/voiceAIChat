@@ -11,6 +11,8 @@ import { escapeMarkupText, replaceUniqueText } from '@shared/makeTextEdit'
 import { reorderMarkup } from '@shared/makeReorder'
 import { componentsWithoutStories, generateStoriesSource } from '@shared/makeStoriesGen'
 import { loadImageData, pixelDiff } from '../lib/pixelDiff'
+import { MakeMockTable, mockTableFor } from './MakeMockTable'
+import { makeMockPrompt } from '@shared/makeMockPrompt'
 import { EMPTY_MAKE_SELECTION, pruneMakeSelection, toggleMakeSelection, type MakeSelectionState } from '@shared/makeSelection'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
@@ -225,6 +227,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [notesOpen, setNotesOpen] = useState(false)
   /** Строки открытого файла, изменённые последней записью ассистента (roadmap-4 п.9). */
   const [changedLines, setChangedLines] = useState<number[]>([])
+  /** Таблица коллекции моков (roadmap-4 п.29): для mock/*.json с массивом объектов — вид «Таблица» по умолчанию. */
+  const [mockView, setMockView] = useState<'table' | 'json'>('table')
+  const mockTable = useMemo(() => (selectedPath ? mockTableFor(selectedPath, content) : null), [selectedPath, content])
   /** Сплит «код | превью» и zen-режим (roadmap-4 п.16): доля редактора хранится между сессиями. */
   const [split, setSplit] = useState<boolean>(() => { try { return localStorage.getItem('vc.make.split') === 'on' } catch { return false } })
   const [splitPct, setSplitPct] = useState<number>(() => { try { const v = Number(localStorage.getItem('vc.make.splitPct')); return v >= 25 && v <= 80 ? v : 55 } catch { return 55 } })
@@ -1283,6 +1288,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               {item(`Ассеты${assets.length > 0 ? ` (${assets.length})` : ''}`, () => setAssetsOpen(true))}
               {item('Токены дизайна', () => setTokensOpen(true), { ariaLabel: 'Токены', title: 'Дизайн-токены: CSS-переменные :root — цвета, отступы, шрифты' })}
               {item('Библиотека компонентов', () => openLibrary(), { ariaLabel: 'Библиотека' })}
+              {(onAskAssistant || onInsertToChat) && item('✦ Мок из описания', () => openAsk('Мок-данные из описания', 'Что за данные: например, «товары: название, цена, категория, 10 штук»', '', 'Сгенерировать', (desc) => { const n = /(\d{1,3})\s*(шт|запис|штук|элемент|строк)/i.exec(desc)?.[1]; const { prompt } = makeMockPrompt(desc, n ? { count: Number(n) } : {}); (onAskAssistant ?? onInsertToChat)!(prompt) }), { ariaLabel: 'Мок из описания', title: 'Ассистент создаст коллекцию mock/api/<имя>.json с правдоподобными записями' })}
               <hr />
             </>}
             {mode === 'stories' && <>
@@ -1599,6 +1605,12 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   <code>{selectedPath}</code>
                   <span className="make-editor-tools">
                     <label className="make-autosave"><input type="checkbox" checked={autosave} onChange={toggleAutosave} /> автосохранение</label>
+                    {mockTable && (
+                      <span className="make-mock-view" role="group" aria-label="Вид мока">
+                        <button type="button" className={mockView === 'table' ? 'make-tab on' : 'make-tab'} aria-pressed={mockView === 'table'} onClick={() => setMockView('table')}>Таблица</button>
+                        <button type="button" className={mockView === 'json' ? 'make-tab on' : 'make-tab'} aria-pressed={mockView === 'json'} onClick={() => setMockView('json')}>JSON</button>
+                      </span>
+                    )}
                     <label className="make-autosave" title="Prettier перед сохранением по Cmd/Ctrl+S"><input type="checkbox" checked={formatOnSave} onChange={toggleFormatOnSave} /> формат при сохранении</label>
                     <Button size="sm" variant="ghost" loading={formatting} onClick={() => void formatNow()} title="Prettier (Shift+Alt+F в редакторе)">Форматировать</Button>
                     <Button size="sm" variant="ghost" aria-expanded={historyOpen} onClick={() => setHistoryOpen((v) => !v)} title="Последние сохранённые версии этого файла в браузере">Версии</Button>
@@ -1625,7 +1637,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                     <IconButton size="sm" aria-label="Закрыть правку ИИ" title="Закрыть" onClick={() => setInlineOpen(false)}>✕</IconButton>
                   </div>
                 )}
+                {mockTable && mockView === 'table' ? (
+                  <MakeMockTable path={selectedPath} value={content} onChange={(v) => setContent(v)} readOnly={Boolean(lockedBy)} />
+                ) : (
                 <CodeEditor path={selectedPath} value={content} onChange={(v) => { setContent(v); if (changedLines.length) setChangedLines([]) }} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} projectFiles={projectFiles} onSelectionChange={setSelection} onInlineCommand={openInline} readOnly={Boolean(lockedBy)} changedLines={changedLines} />
+                )}
               </>
             ) : (
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />

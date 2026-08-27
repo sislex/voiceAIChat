@@ -17,7 +17,7 @@ import { compileDiagnostics } from './transpile.js'
 import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, MakeProjectNotes, MakeAssistantMode, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
 import { lintMakeFile, addComponentImports, componentExports, pickEntryFile, type AutoImportSpec } from '@voicechat/shared'
 import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine, type MakeSearchOptions } from '@voicechat/shared'
-import { MAKE_MODE_HINTS, applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
+import { MAKE_MODE_HINTS, applyAuthMock, applyCollectionRequest, collectionCandidates, isAuthMock, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists' | 'quota'
@@ -1028,7 +1028,7 @@ export class MakeWorkspaces {
    * Мок-API (п.29): для отсутствующего файла ищет `mock/<путь>[.<METHOD>].json`; `publicMode` — файлы с публикации
    * (закреплённый снимок), иначе текущие. Возвращает разобранный ответ или null, если мока нет / JSON битый.
    */
-  async resolveMock(conversationId: string, rawPath: string, method: string, publicMode = false, body: unknown = undefined): Promise<MockResponse | null> {
+  async resolveMock(conversationId: string, rawPath: string, method: string, publicMode = false, body: unknown = undefined, cookieHeader: string | undefined = undefined): Promise<MockResponse | null> {
     // Persist-коллекция (roadmap-2 п.12): `mock/<база>.json` с `$collection` — CRUD по id с записью в файл.
     // На публикации коллекция только читается: анонимные посетители не должны менять файлы проекта.
     for (const { file: colPath, id } of collectionCandidates(rawPath)) {
@@ -1047,7 +1047,10 @@ export class MakeWorkspaces {
       let file: { data: Buffer } | null = null
       try { file = publicMode ? await this.publicFile(conversationId, candidate) : await this.readBuffer(conversationId, candidate) } catch { file = null }
       if (!file) continue
-      try { return unwrapMockEnvelope(JSON.parse(file.data.toString('utf8'))) } catch { return { status: 500, body: { error: `Мок ${candidate}: невалидный JSON` }, headers: {}, delayMs: 0 } }
+      let json: unknown
+      try { json = JSON.parse(file.data.toString('utf8')) } catch { return { status: 500, body: { error: `Мок ${candidate}: невалидный JSON` }, headers: {}, delayMs: 0 } }
+      // Auth-мок (roadmap-4 п.32): логин ставит cookie сессии, защищённые ресурсы требуют её.
+      return isAuthMock(json) ? applyAuthMock(json, method, body, cookieHeader) : unwrapMockEnvelope(json)
     }
     return null
   }
