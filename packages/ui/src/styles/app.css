@@ -6971,3 +6971,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Предпросмотр замены (roadmap-4 п.11) */
 .make-match-text--before { text-decoration: line-through; opacity: .6; display: block; }
 .make-match-text--after { display: block; color: var(--accent); }
+
+/* Замечания линтера (roadmap-4 п.12) */
+.make-issues--warn { background: #fff8e6; }
+.make-issue--warn { opacity: .9; }
+.make-issue-rule { color: var(--text-dim); font-size: 11px; }

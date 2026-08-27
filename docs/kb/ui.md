@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-27
-checked: 0e2a3b23
+checked: fa06c781
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -809,6 +809,12 @@ Browser-действие от моста исполняется только к�
 **Комментарии к превью (п.32).** Кнопка «💬 N» в режиме превью открывает `MakeCommentsPanel` справа от iframe (`.make-preview-split`; на телефоне ≤720px — нижняя шторка `position: fixed`, до 60vh, с ручкой, roadmap-3 п.4). Инспектор в iframe на touch-устройствах подсвечивает элемент под пальцем по `touchstart` (passive), выбор — тапом через обычный `click`. Новый комментарий привязывается к выбранному элементу инспектора (`selected`), номер метки = позиция среди открытых; клик по номеру шлёт `vc-make.highlight`, метки (`vc-make.pins`) отправляются при каждом `vc-make.ready` и после любого изменения списка. «Исправить все» собирает `commentsPrompt` (нумерованный список открытых замечаний с селекторами) и отдаёт в `onAskAssistant`.
 
 **Визуальный diff хода (roadmap-2 п.8).** `App` передаёт `MakePane` проп `turnActive = voice.voice === 'thinking'`. На старте хода панель снимает превью (`captureIframeScreenshot` → `URL.createObjectURL`), запоминает, менялись ли файлы за ход (`make.changed` при активном ходе), и через 1,2 с после окончания хода (превью успевает перезагрузиться) снимает «после». Пара показывается полосой `.make-turn-diff` над превью: миниатюры до/после (клик — окно сравнения `size="lg"`), «В чат» прикладывает оба PNG во вложения, ✕ освобождает blob-URL. Ход без правок файлов полосы не даёт; данные живут только в памяти вкладки. Кнопка «Сверить с запросом» (roadmap-4 п.5) прикладывает скриншот «после» во вложения и отправляет ассистенту исходный запрос (`lastRequest` — текст последней реплики пользователя из `chat.messages`) с просьбой сверить результат и исправить расхождения. Полностью автоматическая самопроверка внутри хода ждёт серверных скриншотов (Playwright ⏸): клиентский html2canvas модели недоступен.
+
+**Сниппеты (roadmap-4 п.15).** `components/code/monacoSnippets.ts` — чистые описания (`MAKE_SNIPPETS`, `snippetsFor(language)`, `snippetWordAt`), `monacoSetup` регистрирует `CompletionItemProvider` для typescript/javascript (`rfc` — компонент с пропсами, `story` — стори для раннера) и css (`token` — переменная в `:root`); вставка — `InsertAsSnippet`, табстопы `${1:…}`/`$0`. Fallback-редактор (телефон, jsdom) сниппетов не имеет.
+
+**Линтер (roadmap-4 п.12).** `check()` сервера дополняет ошибки замечаниями `lintMakeFile` (`@shared/makeLint`, чистые эвристики без eslint/stylelint: `no-console`, `no-debugger`, `no-var`, `eqeqeq`, `no-danger`, `img-alt`, `jsx-key`; CSS — `no-important`, `color-hex`, `no-duplicate-property`, `no-empty-block`). Они идут как `kind: 'lint'`, `severity: 'warning'`, с `rule` и строкой; `applyChanges` откатывает только `compile-error`. В панели такие пункты помечены ⚠ (`.make-issues--warn`, заголовок «Ошибок нет; замечания линтера (N)»), в Monaco — маркер `Warning` (`EditorMarker.severity`). Скаффолд `app.js` больше не содержит `console.log`, чтобы новый проект проходил проверку чисто.
+
+**Автоимпорт из библиотеки (roadmap-4 п.13).** При вставке кита `insertLibraryFiles` находит точку входа (`pickEntryFile`: `src/App.tsx` → `src/main.tsx` → …), собирает экспорты вставленных `*.tsx/jsx` (`componentExports`; сториз и тесты пропускаются) и добавляет недостающие `import` после последнего import (`addComponentImports`, `relativeImportPath`); уже импортированные модули и имена, встречающиеся в файле, не дублируются. `make:libraryInsert` теперь возвращает `{ state, mergedTokens, autoImported }`, тост перечисляет добавленные имена.
 
 **Мультивыбор в дереве (roadmap-4 п.10).** Ctrl/Cmd-клик по файлу переключает его в наборе, Shift-клик добирает диапазон от якоря в порядке дерева (`toggleMakeSelection`/`pruneMakeSelection` в `@shared/makeSelection`); выбранные подсвечены `.make-tree-item--picked`, над деревом панель `.make-bulk` («Выбрано: N», «В папку…» → `renameFileTo` для каждого, «Удалить» → один confirm и последовательные `make:delete`, «Снять»). Набор чистится от пропавших путей при каждом обновлении списка файлов.
 

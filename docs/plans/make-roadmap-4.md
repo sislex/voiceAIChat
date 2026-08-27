@@ -21,10 +21,10 @@
 | 9 | Inline-diff изменений хода в редакторе | ✅ `changedLines` (LCS по строкам) в shared; Monaco подсвечивает строки, записанные ассистентом за ход; плашка «скрыть» |
 | 10 | Мультивыбор файлов в дереве (Shift-клик) → массовые операции | ✅ Ctrl/Cmd-клик и Shift-диапазон (`@shared/makeSelection`), панель «Выбрано: N» — В папку…/Удалить/Снять |
 | 11 | Поиск и замена по проекту с regex и предпросмотром | ✅ флажки `.*`/`Aa`, `make:replace` с `regex`/`dryRun` → предпросмотр строк до/после, `$1`-подстановки |
-| 12 | Линтер: правила для JSX/TS через esbuild-диагностику + базовый stylelint для CSS | |
-| 13 | Автоимпорт компонентов при вставке из библиотеки | |
-| 14 | Форматирование CSS/HTML по сохранению (Prettier postcss/html) | |
-| 15 | Сниппеты `rfc`, `story`, `token` | |
+| 12 | Линтер: правила для JSX/TS через esbuild-диагностику + базовый stylelint для CSS | ✅ `lintMakeFile` (no-console/no-var/eqeqeq/img-alt/jsx-key; CSS: !important, дубли, битый hex, пустые правила) → `kind: 'lint'`, `severity: 'warning'`, маркеры Warning в Monaco; транзакцию не откатывает |
+| 13 | Автоимпорт компонентов при вставке из библиотеки | ✅ `insertLibraryFiles` добавляет `import` компонентов кита в точку входа (`pickEntryFile` → src/App.tsx…), `make:libraryInsert` возвращает `autoImported` |
+| 14 | Форматирование CSS/HTML по сохранению (Prettier postcss/html) | ✅ уже было: `prettierParserFor` знает `html`/`css`, флажок «формат при сохранении» (Cmd/Ctrl+S; автосохранение не форматирует намеренно); тесты `formatCode.test.ts` |
+| 15 | Сниппеты `rfc`, `story`, `token` | ✅ `monacoSnippets.ts` + CompletionItemProvider (TS/JS: rfc, story; CSS: token), тела в VS Code snippet-синтаксисе |
 | 16 | Zen-режим редактора и сплит «код | превью» с перетаскиваемой границей | |
 
 ## C. Превью и инспектор

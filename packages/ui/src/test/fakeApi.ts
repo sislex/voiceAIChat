@@ -1,3 +1,4 @@
+import { lintMakeFile } from '@shared/makeLint'
 import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine } from '@shared/makeSearch'
 import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment, type MakeShare, type MakePresenceClient, type MakeProjectNotes } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
@@ -289,7 +290,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     },
     'make:library': async () => ({ items: [...library.values()] }),
     'make:libraryExport': async ({ conversationId, name, paths }) => { const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-'); const item = { slug, name, files: paths, bytes: 0, sourceConversationId: conversationId, updatedAt: Date.now() }; library.set(slug, item); libraryFiles.set(slug, new Map(paths.map((p) => [p, makeFiles(conversationId).get(p) ?? '']))); return { item } },
-    'make:libraryInsert': async ({ conversationId, slug }) => { for (const [p, c] of libraryFiles.get(slug) ?? []) makeFiles(conversationId).set(p, c); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return makeState(conversationId) },
+    'make:libraryInsert': async ({ conversationId, slug }) => { for (const [p, c] of libraryFiles.get(slug) ?? []) makeFiles(conversationId).set(p, c); makeRev.set(conversationId, (makeRev.get(conversationId) ?? 0) + 1); return { state: makeState(conversationId), mergedTokens: 0, autoImported: [] } },
     'make:libraryRemove': async ({ slug }) => { library.delete(slug); return { items: [...library.values()] } },
     'make:notes': async ({ conversationId }) => makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' },
     'make:setNotes': async ({ conversationId, notes, mode }) => { const cur = makeNotes.get(conversationId) ?? { notes: '', mode: 'balanced' as const }; const next = { notes: notes ?? cur.notes, mode: mode ?? cur.mode }; makeNotes.set(conversationId, next); return next },
@@ -397,6 +398,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         const idx = content.split('\n').findIndex((l) => l.includes('SYNTAX_ERROR'))
         if (idx >= 0) issues.push({ path, kind: 'compile-error', message: `Ошибка компиляции (строка ${idx + 1}): Unexpected token`, line: idx + 1, column: 1 })
       }
+      // Линтер (roadmap-4 п.12) — тот же чистый модуль, что на сервере.
+      for (const [path, content] of makeFiles(conversationId)) for (const w of lintMakeFile(path, content)) issues.push({ path, kind: 'lint', severity: 'warning', rule: w.rule, message: w.message, line: w.line, column: w.column })
       return { issues }
     },
     'make:template': async ({ conversationId, templateId }) => { const files = makeFiles(conversationId); files.clear(); files.set('index.html', `<h1>${templateId}</h1>`); return makeState(conversationId) },

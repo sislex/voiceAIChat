@@ -605,8 +605,8 @@ describe('REST: conversations/messages/settings', () => {
     expect(exp.item.slug).toBe('button')
     expect(((await inj({ method: 'GET', url: '/api/make/library' })).json() as { items: unknown[] }).items).toHaveLength(1)
     const other = db.createConversation(U, 'Другой', 'make')
-    const inserted = (await inj({ method: 'POST', url: `/api/make/${other.id}/library/button/insert` })).json() as { files: Array<{ path: string }> }
-    expect(inserted.files.map((f) => f.path)).toContain('src/components/Button.stories.jsx')
+    const inserted = (await inj({ method: 'POST', url: `/api/make/${other.id}/library/button/insert` })).json() as { state: { files: Array<{ path: string }> } }
+    expect(inserted.state.files.map((f) => f.path)).toContain('src/components/Button.stories.jsx')
     expect(((await inj({ method: 'DELETE', url: '/api/make/library/button' })).json() as { items: unknown[] }).items).toHaveLength(0)
     const search = (await inj({ method: 'GET', url: `/api/make/${conv.id}/search?q=btn--secondary` })).json() as { matches: Array<{ path: string; line: number }> }
     expect(search.matches.map((m) => m.path)).toContain('styles.css')

@@ -480,9 +480,9 @@ export function registerMakeRoutes(app: FastifyInstance, deps: MakeRoutesDeps): 
     if (!own(userId, req.params.id, reply)) return reply
     try {
       const files = await library.files(userId, req.params.slug)
-      const { state } = await workspaces.insertLibraryFiles(req.params.id, files)
+      const { state, mergedTokens, autoImported } = await workspaces.insertLibraryFiles(req.params.id, files)
       hub.changed(userId, req.params.id, state.rev, files.map((f) => f.path))
-      return state
+      return { state, mergedTokens, autoImported }
     } catch (error) { return sendError(reply, error) }
   })
 
