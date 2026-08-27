@@ -53,6 +53,8 @@ export interface MakePaneProps {
   onEditorContext?: (ctx: EditorContextPayload | null) => void
   /** Расход беседы проекта — суммарная стоимость в шапке (п.24). */
   usage?: ConversationUsage | null
+  /** Идёт ход ассистента: на старте снимаем «до», по окончании (после правок) — «после» (roadmap-2 п.8). */
+  turnActive?: boolean
   /** База превью; по умолчанию — REST.makePreview (тест подменяет). */
   previewBase?: string
   /**
@@ -89,7 +91,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -194,6 +196,41 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
+  // Визуальный diff хода (roadmap-2 п.8): «до» снимаем при старте хода, «после» — когда ход кончился и
+  // превью перезагрузилось после правок. Только если файлы менялись; хранится в памяти вкладки.
+  const [turnDiff, setTurnDiff] = useState<{ before: string; after: string } | null>(null)
+  const [diffOpen, setDiffOpen] = useState(false)
+  const turnShotRef = useRef<{ before: string | null; changed: boolean; active: boolean }>({ before: null, changed: false, active: false })
+  const snapPreview = async (): Promise<string | null> => {
+    const doc = frameRef.current?.contentDocument
+    if (!doc || typeof URL.createObjectURL !== 'function') return null
+    try { return URL.createObjectURL(await captureIframeScreenshot({ doc, width: frameRef.current?.clientWidth }, 'turn.png')) } catch { return null }
+  }
+  useEffect(() => {
+    const st = turnShotRef.current
+    if (turnActive && !st.active) {
+      st.active = true; st.changed = false; st.before = null
+      void snapPreview().then((url) => { st.before = url })
+    } else if (!turnActive && st.active) {
+      st.active = false
+      if (!st.changed || !st.before) return
+      const before = st.before
+      // Даём превью перезагрузиться по make.changed (key={previewRev}) и отрисоваться.
+      const t = window.setTimeout(() => { void snapPreview().then((after) => { if (after) { setTurnDiff((prev) => { if (prev) { URL.revokeObjectURL(prev.before); URL.revokeObjectURL(prev.after) } return { before, after } }) } }) }, 1200)
+      return () => window.clearTimeout(t)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnActive])
+  const dismissDiff = (): void => { setTurnDiff((prev) => { if (prev) { URL.revokeObjectURL(prev.before); URL.revokeObjectURL(prev.after) } return null }); setDiffOpen(false) }
+  const diffToChat = async (): Promise<void> => {
+    if (!turnDiff || !onAttachImage) return
+    for (const [key, name] of [['before', 'before.png'], ['after', 'after.png']] as const) {
+      const blob = await (await fetch(turnDiff[key])).blob()
+      onAttachImage(new File([blob], name, { type: 'image/png' }))
+    }
+    onInsertToChat?.('На скриншотах — превью до и после последней правки: ')
+    toast.success('Оба скриншота добавлены во вложения')
+  }
   // PWA в экспорте (п.35): манифест + service worker + иконка, ссылки инъектируются в копию index.html.
   const [exportPwa, setExportPwa] = useState(false)
   const exportUrl = (vite: boolean): string => `${REST.makeExport(conversationId)}?${vite ? 'vite=1&' : ''}${exportPwa ? 'pwa=1' : ''}`.replace(/[?&]$/, '')
@@ -343,6 +380,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       if (m.conversationId !== conversationId) return
       // Комментарии из другой вкладки/окна (roadmap-2 п.7): файлы не менялись — только перечитать список.
       if (m.paths.includes(MAKE_COMMENTS_SYNC_PATH)) { void api['make:comments']({ conversationId }).then((r) => applyComments(r.comments)).catch(() => undefined); return }
+      if (turnShotRef.current.active) turnShotRef.current.changed = true
       setPreviewRev(m.rev)
       void refresh()
       if (selectedPath && m.paths.includes(selectedPath) && !dirty) void openFile(selectedPath)
@@ -963,6 +1001,18 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
 
       {mode === 'preview' && (
         <div className="make-preview" data-testid="make-preview">
+          {turnDiff && (
+            <div className="make-turn-diff" data-testid="make-turn-diff">
+              <strong>Изменения последнего ответа</strong>
+              <button type="button" className="make-turn-diff-thumbs" onClick={() => setDiffOpen(true)} title="Сравнить крупно">
+                <span><img src={turnDiff.before} alt="Превью до правок" /><small>до</small></span>
+                <span><img src={turnDiff.after} alt="Превью после правок" /><small>после</small></span>
+              </button>
+              <span className="make-head-spacer" />
+              {onAttachImage && <Button size="sm" variant="ghost" onClick={() => void diffToChat()}>В чат</Button>}
+              <IconButton size="sm" aria-label="Скрыть сравнение" title="Скрыть" onClick={dismissDiff}>✕</IconButton>
+            </div>
+          )}
           {selected && (
             <div className="make-selected" data-testid="make-selected">
               <code className="make-selected-sel" title={selected.selector}>&lt;{selected.tag}&gt; {selected.selector}</code>
@@ -1402,6 +1452,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </Dialog>
       )}
       {usageOpen && <MakeUsageDialog conversationId={conversationId} api={api} onClose={() => setUsageOpen(false)} onChanged={(next) => { setState(next); setPreviewRev(next.rev) }} />}
+      {diffOpen && turnDiff && (
+        <Dialog className="make-dialog" padded title="До и после" ariaLabel="До и после" size="lg" onClose={() => setDiffOpen(false)} testId="make-turn-diff-dialog">
+          <div className="make-turn-diff-big">
+            <figure><img src={turnDiff.before} alt="Превью до правок" /><figcaption>До</figcaption></figure>
+            <figure><img src={turnDiff.after} alt="Превью после правок" /><figcaption>После</figcaption></figure>
+          </div>
+        </Dialog>
+      )}
       {tokensOpen && state && <MakeTokensDialog conversationId={conversationId} api={api} files={state.files.map((f) => f.path)} onClose={() => setTokensOpen(false)} onWritten={(next) => { setState(next); setPreviewRev(next.rev) }} />}
       {assetsOpen && (
         <Dialog className="make-dialog" padded title="Ассеты проекта" ariaLabel="Ассеты проекта" size="md" onClose={() => setAssetsOpen(false)} testId="make-assets">

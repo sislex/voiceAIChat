@@ -116,6 +116,31 @@ describe('MakePane', () => {
     expect(screen.getByRole('button', { name: '💬 1' })).toBeInTheDocument()
   })
 
+  it('визуальный diff хода: «до» на старте, «после» по окончании, только если файлы менялись (roadmap-2 п.8)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const origCreate = URL.createObjectURL
+    let n = 0
+    URL.createObjectURL = () => `blob:shot-${++n}`
+    URL.revokeObjectURL = () => undefined
+    try {
+      const api = createFakeApi([])
+      const listeners: Array<(m: { conversationId: string; rev: number; paths: string[] }) => void> = []
+      const make = { onChanged: (cb: (m: { conversationId: string; rev: number; paths: string[] }) => void) => { listeners.push(cb); return () => {} } }
+      const { rerender } = render(<MakePane conversationId={CONV} api={api} make={make} previewBase={`/api/preview/make/${CONV}/`} turnActive={false} />)
+      await screen.findByTitle('Превью проекта')
+      rerender(<MakePane conversationId={CONV} api={api} make={make} previewBase={`/api/preview/make/${CONV}/`} turnActive />)
+      await waitFor(() => expect(n).toBe(1))
+      listeners.forEach((l) => l({ conversationId: CONV, rev: 2, paths: ['index.html'] }))
+      rerender(<MakePane conversationId={CONV} api={api} make={make} previewBase={`/api/preview/make/${CONV}/`} turnActive={false} />)
+      await vi.advanceTimersByTimeAsync(1500)
+      expect(await screen.findByTestId('make-turn-diff')).toBeInTheDocument()
+      expect(screen.getByAltText('Превью до правок').getAttribute('src')).toBe('blob:shot-1')
+      expect(screen.getByAltText('Превью после правок').getAttribute('src')).toBe('blob:shot-2')
+      await userEvent.click(screen.getByRole('button', { name: 'Скрыть сравнение' }))
+      expect(screen.queryByTestId('make-turn-diff')).toBeNull()
+    } finally { URL.createObjectURL = origCreate; vi.useRealTimers() }
+  })
+
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
     const onEditorContext = vi.fn()
     const { unmount } = render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} onEditorContext={onEditorContext} previewBase={`/api/preview/make/${CONV}/`} />)
