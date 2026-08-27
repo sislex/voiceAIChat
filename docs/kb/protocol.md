@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-27
-checked: d154a403
+checked: 6f746d36
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -294,7 +294,7 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 
 **PWA в экспорте (п.35).** `GET /api/preview/make/:id/export.zip?vite=1&pwa=1` (оба флага независимы): `exportZip({ vite, pwa })` добавляет `manifest.webmanifest`, `sw.js` (index — network-first, остальное — cache-first) и `icon.svg` (первая буква названия на `theme-color`) — для Vite в `public/` с абсолютными ссылками, для статики рядом с `index.html` с относительными. Ссылки (`<link rel=manifest>`, `theme-color`, `apple-mobile-web-app-capable`, регистрация SW не на `file:`) инъектируются только в копию `index.html` в архиве — файлы проекта не меняются. Название и цвет — `detectPwaMeta` (`<title>`, `meta theme-color`, иначе `--accent` из CSS). Чистые функции — `@shared/makePwa`.
 
-**Метрики Make в админке (п.38).** `GET /api/admin/make/stats` (только admin) → `AdminMakeStats`: число проектов, байты по составляющим (файлы/снимки/PNG стори), публикации, read-only ссылки, просмотры, квота, `byUser[]` (владелец через `db.conversationOwner`) и `top[]` — 10 самых тяжёлых проектов. Считается обходом `<dataDir>/make/*` в `MakeWorkspaces.adminStats(ownerOf)`; `registerAdminRoutes` получает замыкание пятым аргументом. Мост `admin:makeStats`; `AdminClient.makeStats?` необязателен — `adminStore` грузит метрики вместе со списком пользователей и при ошибке кладёт `null`, не роняя дашборд. UI — секция «Make-проекты» в `UsersAdmin` (только для admin, когда пользователь не выбран).
+**Метрики Make в админке (п.38).** `GET /api/admin/make/stats` (только admin) → `AdminMakeStats`: число проектов, байты по составляющим (файлы/снимки/PNG стори), публикации, read-only ссылки, просмотры, квота, `byUser[]` (владелец через `db.conversationOwner`) и `top[]` — 10 самых тяжёлых проектов. Считается обходом `<dataDir>/make/*` в `MakeWorkspaces.adminStats(ownerOf)`; `registerAdminRoutes` получает замыкание пятым аргументом. Мост `admin:makeStats`; `AdminClient.makeStats?` необязателен — `adminStore` грузит метрики вместе со списком пользователей и при ошибке кладёт `null`, не роняя дашборд. UI — секция «Make-проекты» в `UsersAdmin` (только для admin, когда пользователь не выбран). Те же цифры для Prometheus — `GET /api/admin/make/metrics` (roadmap-2 п.17): `text/plain; version=0.0.4`, гейджи `voicechat_make_*` (проекты, байты по составляющим, публикации, просмотры, квоты, по пользователям с меткой `user`), формат — чистая `formatMakeMetrics` в `apps/server/src/make/metrics.ts`; скрейпер ходит с Bearer-токеном администратора (`/api/health` остался публичным и данных о проектах не раскрывает).
 
 **Импорт репозитория GitHub (п.27).** `POST /api/make/:id/import-url` распознаёт ссылки `github.com/<owner>/<repo>[/tree/<branch>[/<subdir>]]` (`parseGithubUrl` в `@shared/makeGit`) и вместо HTML-импорта скачивает ZIP ветки с `codeload.github.com` (`githubArchiveUrls`: указанная ветка, иначе `main`, при 404 — `master`; лимит 12 МБ), снимает общий корень архива (`stripCommonRoot`) и, если в ссылке подкаталог, оставляет только его (`importFromGithub` в `make/importUrl.ts`). Приватные репозитории и push в git не поддерживаются — нужны учётные данные пользователя.
 `REST.makeUpload` (POST `/api/make/:id/upload {path, dataBase64}`, bodyLimit 4 МБ) → мост `make:upload` —

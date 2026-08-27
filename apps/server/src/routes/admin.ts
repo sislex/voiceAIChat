@@ -3,6 +3,7 @@
 
 import { request } from 'node:http'
 import type { AdminMakeStats } from '@voicechat/shared'
+import { formatMakeMetrics } from '../make/metrics.js'
 import type { FastifyInstance } from 'fastify'
 import {
   LLM_RUNNER,
@@ -208,6 +209,11 @@ export function registerAdminRoutes(
   app.get(REST.adminMakeStats, guard, async (_req, reply) => {
     if (!makeStats) return reply.code(404).send({ error: 'Make недоступен' })
     return makeStats()
+  })
+  // Те же цифры в формате Prometheus (roadmap-2 п.17) — для скрейпа с Bearer-токеном администратора.
+  app.get(REST.adminMakeMetrics, guard, async (_req, reply) => {
+    if (!makeStats) return reply.code(404).send({ error: 'Make недоступен' })
+    return reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8').send(formatMakeMetrics(await makeStats()))
   })
 
   /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
