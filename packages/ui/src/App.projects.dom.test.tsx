@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App, { appendWidgetAction } from './App'
 import { createFakeApi, type FakeApi } from './test/fakeApi'
@@ -327,6 +327,7 @@ describe('App — чаты завершённых задач в сайдбаре
     const list = await chatList()
     await waitFor(() => expect(within(list).queryByText('Задача Скролл')).not.toBeInTheDocument())
 
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
     const filter = screen.getByRole('button', { name: 'Показывать чаты завершённых задач' })
     await userEvent.click(filter)
     expect(await within(list).findByText('Задача Скролл')).toBeInTheDocument()
@@ -365,6 +366,7 @@ describe('App — чаты завершённых задач в сайдбаре
     const dev = board.columns.find((c) => c.semanticType !== 'done')!
     await api['tasks:move']({ projectId, taskId, columnId: dev.id })
     // Перечитываем список тем же путём, что и UI, — переключением фильтра туда-обратно.
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
     const filter = screen.getByRole('button', { name: 'Показывать чаты завершённых задач' })
     await userEvent.click(filter)
     await userEvent.click(filter)
@@ -426,7 +428,7 @@ describe('App — вход в раздел «Проекты»', () => {
     await renderApp()
     expect(await screen.findByTestId('projects-empty')).toBeInTheDocument()
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Проект' }))
+    await userEvent.click(await screen.findByRole('button', { name: '+ Новый проект' }))
     await userEvent.type(screen.getByLabelText('Название нового проекта'), 'Свежий{enter}')
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/projects\/.+/))
     const page = await screen.findByTestId('project-page')
@@ -534,7 +536,7 @@ describe('App — виджет задачи только в своём чате'
     await withTaskChat()
     expect(await screen.findByTestId('task-chat-header')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: '+ Новый' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Создать разговор' }))
     await waitFor(() => expect(screen.queryByTestId('task-chat-header')).not.toBeInTheDocument())
     expect(screen.getByTestId('scroll')).toBeInTheDocument()
