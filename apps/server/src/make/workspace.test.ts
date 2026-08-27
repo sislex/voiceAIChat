@@ -80,6 +80,13 @@ describe('MakeWorkspaces', () => {
     expect(zip.readUInt32LE(0)).toBe(0x04034b50)
     expect(zip.toString('latin1')).toContain('index.html')
     expect(zip.readUInt32LE(zip.length - 22)).toBe(0x06054b50)
+    // Хостинг (roadmap-4 п.36): конфиг и DEPLOY.md попадают в архив.
+    expect((await ws.exportZip(CONV, { deploy: 'netlify' })).toString('latin1')).toContain('netlify.toml')
+    expect((await ws.exportZip(CONV, { deploy: 'vercel', vite: true })).toString('latin1')).toContain('vercel.json')
+    // Превью снимка (п.37): файлы снимка читаются буфером, чужой путь — null.
+    const snap = (await ws.snapshot(CONV, 'v1')).snapshots[0]!
+    expect((await ws.snapshotBuffer(CONV, snap.id, 'index.html'))?.data.toString('utf8')).toContain('<!doctype html>')
+    expect(await ws.snapshotBuffer(CONV, snap.id, 'nope.html')).toBeNull()
   })
 
   it('публикация: токен, индекс токен→разговор, снятие; файл публикации переживает reset', async () => {
@@ -370,6 +377,9 @@ describe('MakeWorkspaces', () => {
     await ws.publish(CONV)
     await ws.countView(CONV)
     const stats = await ws.adminStats((id) => (id === CONV ? 'alice' : 'bob'))
+    // Диск (roadmap-4 п.40): statfs корня данных даёт положительные числа и флаг тревоги по порогу 10 ГБ.
+    expect(stats.disk!.totalBytes).toBeGreaterThan(0)
+    expect(stats.disk!.alert).toBe(stats.disk!.freeBytes < 10 * 1024 ** 3)
     expect(stats.projects).toBe(2)
     expect(stats.published).toBe(1)
     expect(stats.views).toBe(1)

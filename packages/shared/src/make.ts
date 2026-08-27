@@ -53,6 +53,8 @@ export interface MakePublication {
   history?: MakePublishEntry[]
   /** Аналитика просмотров (roadmap-3 п.3): по дням (последние 90) и по хостам-рефererам (топ-20). */
   stats?: MakePublishStats
+  /** Зрители могут оставлять комментарии (roadmap-4 п.34): виджет на странице публикации, модерация владельцем. */
+  allowComments?: boolean
 }
 
 export interface MakePublishStats {
@@ -135,6 +137,10 @@ export const isMakeStoriesPath = (path: string): boolean => /\.stories\.(jsx|tsx
 export const MAKE_STORIES_PAGE = '__stories__'
 /** Галерея всех стори проекта (на превью и на публикации). */
 export const MAKE_GALLERY_PAGE = '__gallery__'
+/** Комментарии зрителей публикации (roadmap-4 п.34): `/p/<token>/__comments__` GET/POST. */
+export const MAKE_PUBLIC_COMMENTS_PAGE = '__comments__'
+/** Превью файлов снимка (roadmap-4 п.37): `/api/preview/make/<id>/__snapshot__/<snapshotId>/<файл>`. */
+export const MAKE_SNAPSHOT_PREVIEW = '__snapshot__'
 /** Раннер тестов компонентов (roadmap-4 п.3): `?file=<*.test.tsx>` — выполняет все test() файла, шлёт vc-make.test. */
 export const MAKE_TESTS_PAGE = '__tests__'
 export const isMakeTestPath = (path: string): boolean => /\.test\.(jsx|tsx|js|ts)$/i.test(path)
@@ -239,7 +245,14 @@ export interface MakeComment {
   author: string
   createdAt: number
   resolved: boolean
+  /** Комментарии зрителей публикации (roadmap-4 п.34): `pending` до одобрения владельцем; свои — `approved` (по умолчанию). */
+  status?: 'pending' | 'approved'
+  /** Имя, которое назвал анонимный зритель. */
+  guestName?: string
 }
+
+/** Комментарий, отдаваемый зрителям публикации: без селектора-внутренностей и автора-логина. */
+export interface MakePublicComment { id: string; elementLabel: string; text: string; createdAt: number; guestName?: string }
 
 /** Псевдопуть в `make.changed`, по которому вкладки узнают об изменении комментариев (roadmap-2 п.7); rev не меняется. */
 export const MAKE_COMMENTS_SYNC_PATH = '.comments.json'

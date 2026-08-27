@@ -321,8 +321,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       const list = [{ id: `c${(makeComments.get(conversationId) ?? []).length + 1}`, selector, elementLabel, text, author: 'admin', createdAt: 1, resolved: false }, ...(makeComments.get(conversationId) ?? [])]
       makeComments.set(conversationId, list); return { comments: list }
     },
-    'make:commentUpdate': async ({ conversationId, commentId, resolved, text }) => {
-      const list = (makeComments.get(conversationId) ?? []).map((c) => (c.id === commentId ? { ...c, resolved: resolved ?? c.resolved, text: text ?? c.text } : c))
+    'make:commentUpdate': async ({ conversationId, commentId, resolved, text, status }) => {
+      const list = (makeComments.get(conversationId) ?? []).map((c) => (c.id === commentId ? { ...c, resolved: resolved ?? c.resolved, text: text ?? c.text, ...(status ? { status } : {}) } : c))
       makeComments.set(conversationId, list); return { comments: list }
     },
     'make:commentRemove': async ({ conversationId, commentId }) => {
@@ -379,14 +379,14 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'make:rename': async ({ conversationId, from, to }) => { const files = makeFiles(conversationId); const c = files.get(from) ?? ''; files.delete(from); files.set(to, c); return makeState(conversationId) },
     'make:snapshot': async ({ conversationId, label }) => { const id = `s${Date.now()}-${makeSnaps(conversationId).length}`; makeSnapContents.set(id, new Map(makeFiles(conversationId))); makeSnaps(conversationId).unshift({ id, createdAt: Date.now(), label: label ?? 'Снимок', files: makeFiles(conversationId).size }); return makeState(conversationId) },
     'make:restore': async ({ conversationId }) => makeState(conversationId),
-    'make:publish': async ({ conversationId, snapshotId, slug, password }) => {
+    'make:publish': async ({ conversationId, snapshotId, slug, password, allowComments }) => {
       const snap = snapshotId ? makeSnaps(conversationId).find((s) => s.id === snapshotId) : null
       const prev = makePub.get(conversationId)
       const nextSlug = slug === undefined ? prev?.slug ?? null : slug
       const protectedNow = password === undefined ? prev?.passwordProtected ?? false : Boolean(password)
       const history = [...(prev?.history ?? [])]
       if (!prev || history[history.length - 1]?.snapshotId !== (snap?.id ?? null)) history.push({ at: history.length + 1, snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null })
-      makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/', snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null, slug: nextSlug, slugUrl: nextSlug ? `/s/${nextSlug}/` : null, passwordProtected: protectedNow, views: prev?.views ?? 7, history, stats: { days: [{ day: '2026-08-26', views: 3 }, { day: '2026-08-27', views: 4 }], referers: [{ host: 'news.ycombinator.com', views: 5 }] } })
+      makePub.set(conversationId, { token: 'tok123', publishedAt: 1, url: '/p/tok123/', snapshotId: snap?.id ?? null, snapshotLabel: snap?.label ?? null, slug: nextSlug, slugUrl: nextSlug ? `/s/${nextSlug}/` : null, passwordProtected: protectedNow, allowComments: allowComments ?? prev?.allowComments ?? false, views: prev?.views ?? 7, history, stats: { days: [{ day: '2026-08-26', views: 3 }, { day: '2026-08-27', views: 4 }], referers: [{ host: 'news.ycombinator.com', views: 5 }] } })
       return makeState(conversationId)
     },
     'make:unpublish': async ({ conversationId }) => { makePub.delete(conversationId); return makeState(conversationId) },

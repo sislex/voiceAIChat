@@ -7,15 +7,16 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile, statfs } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
   MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, detectPwaMeta, injectPwaIntoHtml, pwaFiles, isMakeTextPath, isMakeTestPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
 import { parseStoryFile, parseTestFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, MakeProjectNotes, MakeAssistantMode, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
+import type { AdminDiskStats, MakePublicComment, MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, MakeProjectNotes, MakeAssistantMode, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
 import { lintMakeFile, addComponentImports, componentExports, pickEntryFile, type AutoImportSpec } from '@voicechat/shared'
+import { MAKE_DISK_ALERT_BYTES, deployConfigFiles, type MakeDeployTarget } from '@voicechat/shared'
 import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine, type MakeSearchOptions } from '@voicechat/shared'
 import { MAKE_MODE_HINTS, applyAuthMock, applyCollectionRequest, collectionCandidates, isAuthMock, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
@@ -42,7 +43,7 @@ export function refererHost(referer?: string | null): string | null {
 const SHARE_FILE = '.share.json'
 const NOTES_DIR = '.make'
 /** Содержимое `.publish.json`; passwordHash = `<соль>:<sha256(соль:пароль)>`. */
-interface PublishRaw { token: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number; history?: MakePublishEntry[]; days?: Record<string, number>; referers?: Record<string, number> }
+interface PublishRaw { token: string; allowComments?: boolean; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number; history?: MakePublishEntry[]; days?: Record<string, number>; referers?: Record<string, number> }
 const SHOTS_DIR = '.shots'
 const SHOTS_PER_STORY = 10
 const PUBLISHED_INDEX_DIR = '.published'
@@ -455,6 +456,15 @@ export class MakeWorkspaces {
   // ---- Метрики для админки (п.38) -----------------------------------------
 
   /** Обход всех проектов на диске; владелец — из БД через колбэк (каталог знает только id разговора). */
+  /** Свободное место на разделе с данными (roadmap-4 п.40): statfs корня данных, порог тревоги — 10 ГБ. */
+  async diskStats(): Promise<AdminDiskStats | null> {
+    try {
+      const st = await statfs(this.rootDir)
+      const total = Number(st.blocks) * Number(st.bsize), free = Number(st.bavail) * Number(st.bsize)
+      return { totalBytes: total, freeBytes: free, alert: free < MAKE_DISK_ALERT_BYTES }
+    } catch { return null }
+  }
+
   async adminStats(ownerOf: (conversationId: string) => string | null): Promise<AdminMakeStats> {
     const root = join(this.rootDir, 'make')
     let ids: string[] = []
@@ -482,6 +492,7 @@ export class MakeWorkspaces {
       byUserMap.set(key, cur)
     }
     return {
+      disk: await this.diskStats(),
       projects: projects.length, bytes: totals.filesBytes + totals.snapshotsBytes + totals.shotsBytes, ...totals, limitBytes: MAKE_LIMITS.maxProjectBytes, userLimitBytes: this.limits.maxUserBytes,
       byUser: [...byUserMap.values()].sort((a, b) => b.bytes - a.bytes),
       top: [...projects].sort((a, b) => b.bytes - a.bytes).slice(0, 10)
@@ -562,23 +573,37 @@ export class MakeWorkspaces {
     return list
   }
 
-  async addComment(conversationId: string, input: { selector: string; elementLabel: string; text: string; author: string }): Promise<MakeComment[]> {
+  async addComment(conversationId: string, input: { selector: string; elementLabel: string; text: string; author: string; status?: 'pending' | 'approved'; guestName?: string }): Promise<MakeComment[]> {
     const text = input.text.trim().slice(0, 2000)
     const selector = input.selector.trim().slice(0, 500)
     if (!text || !selector) throw new MakeError('invalid_path', 'Нужны селектор и текст комментария')
     const list = await this.comments(conversationId)
     if (list.length >= 500) throw new MakeError('too_many_files', 'Слишком много комментариев — удалите решённые')
-    const item: MakeComment = { id: `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`, selector, elementLabel: input.elementLabel.slice(0, 160), text, author: input.author, createdAt: Date.now(), resolved: false }
+    const item: MakeComment = { id: `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`, selector, elementLabel: input.elementLabel.slice(0, 160), text, author: input.author, createdAt: Date.now(), resolved: false, ...(input.status ? { status: input.status } : {}), ...(input.guestName ? { guestName: input.guestName.trim().slice(0, 60) } : {}) }
     return this.saveComments(conversationId, [item, ...list])
   }
 
-  async updateComment(conversationId: string, commentId: string, patch: { resolved?: boolean; text?: string }): Promise<MakeComment[]> {
+  async updateComment(conversationId: string, commentId: string, patch: { resolved?: boolean; text?: string; status?: 'pending' | 'approved' }): Promise<MakeComment[]> {
     const list = await this.comments(conversationId)
     const idx = list.findIndex((c) => c.id === commentId)
     if (idx < 0) throw new MakeError('not_found', 'Комментарий не найден')
     const cur = list[idx]!
-    list[idx] = { ...cur, resolved: patch.resolved ?? cur.resolved, text: patch.text?.trim() ? patch.text.trim().slice(0, 2000) : cur.text }
+    list[idx] = { ...cur, resolved: patch.resolved ?? cur.resolved, text: patch.text?.trim() ? patch.text.trim().slice(0, 2000) : cur.text, ...(patch.status ? { status: patch.status } : {}) }
     return this.saveComments(conversationId, list)
+  }
+
+  /** Комментарии для зрителей публикации (roadmap-4 п.34): только одобренные, без селекторов и логинов. */
+  async publicComments(conversationId: string): Promise<MakePublicComment[]> {
+    return (await this.comments(conversationId)).filter((c) => c.status !== 'pending' && !c.resolved)
+      .map((c) => ({ id: c.id, elementLabel: c.elementLabel, text: c.text, createdAt: c.createdAt, ...(c.guestName ? { guestName: c.guestName } : {}) }))
+  }
+
+  /** Комментарий зрителя: попадает в модерацию (`pending`), автор — `guest`; публикация должна разрешать комментарии. */
+  async addGuestComment(conversationId: string, input: { selector: string; elementLabel: string; text: string; guestName: string }): Promise<MakeComment> {
+    const raw = await this.publishRaw(conversationId)
+    if (!raw?.allowComments) throw new MakeError('invalid_path', 'Комментарии зрителей выключены')
+    const list = await this.addComment(conversationId, { selector: input.selector || 'body', elementLabel: input.elementLabel, text: input.text, author: 'guest', status: 'pending', guestName: input.guestName || 'Гость' })
+    return list[0]!
   }
 
   async removeComment(conversationId: string, commentId: string): Promise<MakeComment[]> {
@@ -726,6 +751,16 @@ export class MakeWorkspaces {
     if (!existsSync(src)) throw new MakeError('not_found', `В снимке нет файла «${path}»`)
     const data = await readFile(src)
     return { path, size: data.byteLength, updatedAt: (await stat(src)).mtimeMs, content: data.toString('utf8') }
+  }
+
+  /** Любой файл снимка как буфер (roadmap-4 п.37: превью версии публикации) — `null`, если нет. */
+  async snapshotBuffer(conversationId: string, snapshotId: string, rawPath: string): Promise<{ path: string; data: Buffer } | null> {
+    if (!ID_RE.test(snapshotId)) return null
+    const path = normalizeMakePath(rawPath)
+    if (!path) return null
+    const src = join(this.dirOf(conversationId), SNAPSHOTS_DIR, snapshotId, 'files', ...path.split('/'))
+    if (!existsSync(src)) return null
+    return { path, data: await readFile(src) }
   }
 
   /** Вернуть один файл из снимка, остальное не трогая. */
@@ -909,7 +944,7 @@ export class MakeWorkspaces {
       token: raw.token, publishedAt: raw.publishedAt ?? 0, url: makePublicUrl(raw.token),
       snapshotId: raw.snapshotId ?? null, snapshotLabel: raw.snapshotLabel ?? null,
       slug: raw.slug ?? null, slugUrl: raw.slug ? makeSlugUrl(raw.slug) : null,
-      passwordProtected: Boolean(raw.passwordHash), views: raw.views ?? 0, history: raw.history ?? [],
+      passwordProtected: Boolean(raw.passwordHash), views: raw.views ?? 0, history: raw.history ?? [], allowComments: Boolean(raw.allowComments),
       stats: {
         days: Object.entries(raw.days ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([day, views]) => ({ day, views })),
         referers: Object.entries(raw.referers ?? {}).sort(([, a], [, b]) => b - a).map(([host, views]) => ({ host, views }))
@@ -922,7 +957,7 @@ export class MakeWorkspaces {
    * Опубликовать: токен создаётся один раз и не меняется; `snapshotId` закрепляет публикацию за снимком
    * (ссылка отдаёт его файлы, пока публикацию не обновят), null — «живая» публикация текущих файлов.
    */
-  async publish(conversationId: string, options: { snapshotId?: string | null; slug?: string | null; password?: string | null } = {}): Promise<MakeProjectState> {
+  async publish(conversationId: string, options: { snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean } = {}): Promise<MakeProjectState> {
     const existing = await this.publishRaw(conversationId)
     const token = existing?.token ?? randomUUID().replace(/-/g, '')
     if (!existing) {
@@ -968,7 +1003,7 @@ export class MakeWorkspaces {
     const history = [...(existing?.history ?? [])]
     const last = history[history.length - 1]
     if (!existing || !last || last.snapshotId !== snapshotId) history.push({ at: Date.now(), snapshotId, snapshotLabel })
-    const raw: PublishRaw = { token, publishedAt: Date.now(), snapshotId, snapshotLabel, slug, passwordHash, views: existing?.views ?? 0, history: history.slice(-30), days: existing?.days, referers: existing?.referers }
+    const raw: PublishRaw = { token, publishedAt: Date.now(), snapshotId, snapshotLabel, slug, passwordHash, views: existing?.views ?? 0, history: history.slice(-30), days: existing?.days, referers: existing?.referers, allowComments: options.allowComments ?? existing?.allowComments ?? false }
     await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8')
     return this.state(conversationId)
   }
@@ -1160,12 +1195,18 @@ export class MakeWorkspaces {
   }
 
   /** ZIP всех файлов проекта (без снимков) — «Скачать код». */
-  async exportZip(conversationId: string, options: { vite?: boolean; pwa?: boolean } = {}): Promise<Buffer> {
+  async exportZip(conversationId: string, options: { vite?: boolean; pwa?: boolean; deploy?: MakeDeployTarget | null } = {}): Promise<Buffer> {
     const files = await this.list(conversationId)
     const entries: Array<{ path: string; data: Buffer; mtime?: Date }> = []
     for (const file of files) {
       const data = await readFile(join(this.dirOf(conversationId), ...file.path.split('/')))
       entries.push({ path: file.path, data, mtime: new Date(file.updatedAt) })
+    }
+    // Хостинг (roadmap-4 п.36): конфиг Netlify/Vercel рядом с файлами — статика как есть или сборка Vite.
+    if (options.deploy) {
+      for (const [path, text] of Object.entries(deployConfigFiles(options.deploy, { vite: Boolean(options.vite), hasMocks: files.some((f) => f.path.startsWith('mock/')) }))) {
+        if (!files.some((f) => f.path === path)) entries.push({ path, data: Buffer.from(text, 'utf8') })
+      }
     }
     if (options.pwa) {
       // PWA (п.35): манифест + SW + иконка, ссылки — в копию index.html внутри архива (проект не трогаем).
