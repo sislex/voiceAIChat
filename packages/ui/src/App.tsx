@@ -562,6 +562,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Режим списка сайдбара: маршрут ведёт его автоматически, ручной выбор
   // (переключатель) живёт до следующей смены маршрута.
   const [sidebarMode, setSidebarMode] = useState<'chats' | 'projects'>('chats')
+  const [sidebarWidth, setSidebarWidth] = useState(264)
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
   useVoiceCues(voice.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
@@ -1382,6 +1383,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         inMake && 'app--make'
       ].filter(Boolean).join(' ')}
       data-theme={settingsState.settings.theme}
+      style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
     >
       {release?.version && (() => {
         const details = [
@@ -1436,6 +1438,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       />
       <Sidebar
         open={sidebarOpen}
+        width={sidebarWidth}
+        onWidthChange={setSidebarWidth}
         onToggleCollapse={() => shellActions.setSidebarCollapsed(true)}
         conversations={chat.conversations.filter((conversation) => conversation.assistantKind !== 'web-recorder' && !conversation.previewUrl)}
         conversationsStatus={chat.conversationsStatus}

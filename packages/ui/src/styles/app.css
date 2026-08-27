@@ -121,7 +121,7 @@
 
 .app {
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width, 264px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   height: 100vh;
   background: var(--bg);
@@ -155,6 +155,8 @@
   flex-direction: column;
   min-height: 0;
   height: 100vh;
+  min-width: 0;
+  position: relative;
 }
 .sidehead {
   padding: 20px 18px 14px 18px;
@@ -1960,7 +1962,7 @@
 
 /* ---- Панель консоли (режим прозрачности агента) ---- */
 .app--console {
-  grid-template-columns: 264px 1fr auto;
+  grid-template-columns: var(--sidebar-width, 264px) minmax(0, 1fr) auto;
 }
 .console {
   background: #14140f;
@@ -3198,6 +3200,7 @@ button.msgact-tokens:hover, button.msgact-tokens:focus-visible {
     transform: translateX(-100%);
     transition: transform 0.2s ease;
   }
+  .side-resize { display: none; }
   .side--open {
     transform: translateX(0);
     box-shadow: 0 0 42px rgba(0, 0, 0, 0.35);
@@ -4312,8 +4315,9 @@ button.msgact-tokens:hover, button.msgact-tokens:focus-visible {
   border-radius: 10px;
   box-shadow: 0 10px 34px rgba(0, 0, 0, 0.18);
   z-index: 40;
-  max-height: min(70vh, 460px);
+  max-height: calc(100dvh - max(16px, env(safe-area-inset-top)) - 64px);
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 /* Разделитель между инструментами-виджетами и управлением в меню аккаунта. */
 .acct-sep {
@@ -4744,11 +4748,34 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 
 /* ===== Сайдбар: переключатель «Чаты | Проекты» и список проектов ========= */
-.sideswitch { display: flex; gap: 4px; padding: 8px 12px 0; }
-.sideswitch button { flex: 1; border: none; background: rgba(128, 128, 128, 0.12); color: inherit; font-size: 13px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.side-primary-action { padding: 0 12px 4px; min-width: 0; }
+.side-primary-action .projcreate { width: 100%; margin: 0; }
+.sideswitch { display: flex; gap: 4px; padding: 4px 12px 8px; }
+.sideswitch button { flex: 0 0 auto; min-width: 0; border: none; background: transparent; color: inherit; font-size: 13px; padding: 6px 4px; border-radius: 6px; cursor: pointer; }
+.sideswitch button.on { flex: 1 1 auto; }
 .sideswitch button:hover { background: rgba(128, 128, 128, 0.22); }
 .sideswitch button.on { background: #e9f2ff; color: #0052cc; font-weight: 600; }
 [data-theme='dark'] .sideswitch button.on { background: #1c2b41; color: #579dff; }
+.side-controls {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 160ms ease, opacity 120ms ease;
+  pointer-events: none;
+}
+.side-controls--open { max-height: 160px; opacity: 1; pointer-events: auto; }
+.side-resize {
+  position: absolute;
+  z-index: 50;
+  top: 0;
+  right: -5px;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+.side-resize::after { content: ''; position: absolute; inset: 0 4px; background: transparent; transition: background 120ms ease; }
+.side-resize:hover::after, .side-resize:focus-visible::after { background: var(--accent); }
 .projlist { padding-top: 8px; }
 .projitem { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: none; background: none; color: inherit; cursor: pointer; }
 .projitem .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
