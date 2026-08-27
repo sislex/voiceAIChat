@@ -208,6 +208,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [notesOpen, setNotesOpen] = useState(false)
   /** Строки открытого файла, изменённые последней записью ассистента (roadmap-4 п.9). */
   const [changedLines, setChangedLines] = useState<number[]>([])
+  /** Содержимое открытого файла на старте хода — база для diff: за ход ассистент может записать файл несколько раз. */
+  const turnBaseRef = useRef<{ path: string | null; content: string }>({ path: null, content: '' })
   // Чипы «следующий шаг» (roadmap-4 п.8): показываем после завершения хода ассистента, пока пользователь не отправил следующий.
   const [nextStepsOpen, setNextStepsOpen] = useState(false)
   const prevTurnRef = useRef(false)
@@ -263,6 +265,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const st = turnShotRef.current
     if (turnActive && !st.active) {
       st.active = true; st.changed = false; st.before = null
+      turnBaseRef.current = { path: selectedPath, content: savedContent }
       void snapPreview().then((url) => { st.before = url })
     } else if (!turnActive && st.active) {
       st.active = false
@@ -464,7 +467,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       void refresh()
       if (selectedPath && m.paths.includes(selectedPath) && !dirty) {
         // Inline-diff (roadmap-4 п.9): сравниваем прежнее содержимое с тем, что записал ассистент.
-        const before = savedContent
+        const base = turnBaseRef.current
+        const before = base.path === selectedPath ? base.content : savedContent
         void api['make:read']({ conversationId, path: selectedPath }).then((file) => {
           setContent(file.content); setSavedContent(file.content)
           setChangedLines(turnShotRef.current.active ? diffLines(before, file.content) : [])
