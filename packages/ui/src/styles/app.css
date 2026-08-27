@@ -1445,10 +1445,6 @@
   .voicebar:not(.voicebar--expanded) .vrow {
     align-items: center;
   }
-  .voicebar:not(.voicebar--expanded) .tin {
-    padding-top: 18px;
-    padding-bottom: 2px;
-  }
 }
 .vrow > .vc-btn { flex: none; }
 .composer-send {
@@ -1547,7 +1543,7 @@
   min-width: 0;
   border: 0;
   border-radius: 0;
-  padding: 12px 6px 8px;
+  padding: 10px 6px;
   font-size: 14px;
   font-family: inherit;
   background: transparent;
@@ -4124,6 +4120,11 @@ button.msgact-tokens:hover, button.msgact-tokens:focus-visible {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+.mode-menu__trigger > span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 .mode-menu__trigger:hover:not(:disabled), .mode-menu__trigger[aria-expanded='true'] { background: var(--panel); color: var(--text); }
 .mode-menu__trigger:disabled { opacity: .55; cursor: default; }
