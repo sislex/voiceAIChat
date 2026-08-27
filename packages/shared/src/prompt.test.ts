@@ -6,7 +6,8 @@ import {
   CHANGE_AUTHORIZATION_HINT,
   claudeModelAlias,
   parseTaskLaunchRequest,
-  withPreviewElementContext
+  withPreviewElementContext,
+  withEditorContext
 } from './prompt'
 
 describe('buildPrompt', () => {
@@ -171,5 +172,23 @@ describe('buildConversationPrompt (пересбор истории)', () => {
   it('добавляет пути вложений', () => {
     const p = buildConversationPrompt([{ role: 'u1', text: 'смотри' }], ['/data/a.png'])
     expect(p).toContain('/data/a.png')
+  })
+})
+
+describe('editor context (Make)', () => {
+  it('без контекста текст не меняется', () => {
+    expect(withEditorContext('Сделай кнопку', undefined)).toBe('Сделай кнопку')
+  })
+
+  it('добавляет файл, строки и выделение', () => {
+    const prompt = withEditorContext('Сделай кнопку', { path: 'src/App.tsx', startLine: 3, endLine: 5, snippet: 'const a = 1' })
+    expect(prompt).toContain('Открыт файл src/App.tsx, строки 3–5')
+    expect(prompt).toContain('const a = 1')
+    expect(prompt.startsWith('Сделай кнопку')).toBe(true)
+  })
+
+  it('восстанавливается из meta истории', () => {
+    const prompt = buildConversationPrompt([{ role: 'u1', text: 'Поправь', meta: { editorContext: { path: 'styles.css' } } }])
+    expect(prompt).toContain('Открыт файл styles.css, файл целиком')
   })
 })

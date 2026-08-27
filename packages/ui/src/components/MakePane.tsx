@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { Button, Dialog, EmptyState, IconButton, useConfirm, useToast } from '@voicechat/ui-kit'
 import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
+import type { EditorContextPayload } from '@shared/types'
 import { REST } from '@shared/protocol'
 import { CodeEditor, type EditorSelection } from './CodeEditor'
 import { CodeDiff } from './CodeDiff'
@@ -42,6 +43,8 @@ export interface MakePaneProps {
   onAskAssistant?: (text: string) => void
   /** Приложить файл к сообщению чата (скриншот превью). */
   onAttachImage?: (file: File) => void
+  /** Открытый файл и выделение — хост подмешивает в следующее сообщение чата (п.21). */
+  onEditorContext?: (ctx: EditorContextPayload | null) => void
   /** База превью; по умолчанию — REST.makePreview (тест подменяет). */
   previewBase?: string
   /**
@@ -78,7 +81,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -343,6 +346,15 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   // правку он делает через make_write_file.
   const [selection, setSelection] = useState<EditorSelection | null>(null)
   const [inlineOpen, setInlineOpen] = useState(false)
+  // Контекст редактора для чата: файл + выделение; при закрытии панели — сброс.
+  useEffect(() => {
+    if (!onEditorContext) return
+    if (!selectedPath) { onEditorContext(null); return }
+    onEditorContext(selection
+      ? { path: selectedPath, startLine: selection.startLine, endLine: selection.endLine, snippet: selection.text.slice(0, 2000) }
+      : { path: selectedPath })
+  }, [selectedPath, selection, onEditorContext])
+  useEffect(() => () => onEditorContext?.(null), [onEditorContext])
   // Локальная история правок текущего файла (п.7).
   const [historyOpen, setHistoryOpen] = useState(false)
   const localVersions: FileVersion[] = useMemo(() => (selectedPath && historyOpen ? readHistory(conversationId, selectedPath) : []), [conversationId, selectedPath, historyOpen, savedContent])

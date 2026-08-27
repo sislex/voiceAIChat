@@ -477,6 +477,8 @@ export interface SessionUsage extends TurnUsage {
 export interface TurnMeta extends TurnUsage {
   /** DOM-область, выбранная пользователем в веб-превью для этой реплики. */
   previewElement?: PreviewElementPayload
+  /** Контекст редактора Make: какой файл открыт и что выделено (п.21). */
+  editorContext?: EditorContextPayload
   /** Длительность хода, мс. */
   durationMs?: number
   /** Число ходов агента (num_turns). */
@@ -900,4 +902,13 @@ export interface SttResult {
   text: string
   /** true — финальный результат; false — частичная гипотеза. */
   isFinal: boolean
+}
+
+/** Открытый файл и выделение в редакторе Make — уходит модели вместе с сообщением как контекст «правь здесь». */
+export interface EditorContextPayload {
+  path: string
+  startLine?: number
+  endLine?: number
+  /** Фрагмент выделения (обрезан до 2000 символов). */
+  snippet?: string
 }
