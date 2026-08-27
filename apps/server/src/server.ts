@@ -389,6 +389,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // уходят владельцу кадром make.changed через MakeHub.
   const makeWorkspaces = new MakeWorkspaces(opts.config.dataDir)
   const makeHub = new MakeHub()
+  // Квота на пользователя (roadmap-2 п.15): все проекты Make владельца разговора.
+  makeWorkspaces.setProjectsOfOwner((id) => {
+    const owner = db.conversationOwner(id)
+    return owner ? db.listConversations(owner, { includeCompleted: true }).filter((c) => c.assistantKind === 'make').map((c) => c.id) : null
+  })
   registerMakeMcp(app, { workspaces: makeWorkspaces, hub: makeHub, ownerOf: (id) => db.conversationOwner(id) }, mcpSecret)
   registerMakeRoutes(app, { db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir) })
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход

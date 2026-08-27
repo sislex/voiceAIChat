@@ -399,4 +399,16 @@ describe('MakeWorkspaces', () => {
     expect(css).toContain('--radius: 8px')
     expect(css).toContain('body { margin: 0 }')
   })
+
+  it('квота на пользователя: сумма по проектам владельца, превышение — MakeError quota', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'vc-make-'))
+    const ws = new MakeWorkspaces(dir, { maxUserBytes: 3000 })
+    ws.setProjectsOfOwner(() => [CONV, 'conv-2'])
+    await ws.ensure(CONV); await ws.ensure('conv-2')
+    const used = (await ws.usage(CONV)).totalBytes + (await ws.usage('conv-2')).totalBytes
+    expect(used).toBeLessThan(3000)
+    await expect(ws.write(CONV, 'big.txt', 'x'.repeat(3000 - used + 1))).rejects.toMatchObject({ code: 'quota' })
+    await ws.write(CONV, 'ok.txt', 'y')
+    expect((await ws.adminStats(() => 'u')).userLimitBytes).toBe(3000)
+  })
 })
