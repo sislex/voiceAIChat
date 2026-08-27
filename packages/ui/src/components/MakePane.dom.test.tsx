@@ -423,4 +423,18 @@ describe('MakePane', () => {
     await userEvent.click(within(panel).getAllByRole('button')[0]!)
     expect((screen.getByLabelText('Содержимое styles.css') as HTMLTextAreaElement).value).toBe(original)
   })
+
+  it('вкладка «Сеть»: запросы из превью, счётчик незагруженных, «В чат»', async () => {
+    const { onInsertToChat } = renderPane()
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    const post = (entry: object) => fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.network', ...entry }, source: frame.contentWindow }))
+    post({ kind: 'fetch', method: 'GET', url: 'styles.css', status: 200, ok: true, ms: 12, at: 1 })
+    post({ kind: 'fetch', method: 'GET', url: 'img/missing.png', status: 404, ok: false, ms: 7, at: 2 })
+    expect(await screen.findByTestId('make-network-failed')).toHaveTextContent('1 не загрузилось')
+    await userEvent.click(screen.getByTestId('make-network-toggle'))
+    const list = await screen.findByTestId('make-network')
+    expect(within(list).getByText('img/missing.png')).toBeInTheDocument()
+    await userEvent.click(within(screen.getByTestId('make-console')).getByRole('button', { name: 'В чат' }))
+    expect(onInsertToChat).toHaveBeenCalledWith(expect.stringContaining('img/missing.png → 404'))
+  })
 })

@@ -12,7 +12,7 @@ import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
 import { copyText } from '../lib/clipboard'
-import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
+import { MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeSnapshotDiff, type MakeImportMode } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -151,6 +151,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   // Консоль превью: строки из iframe (console.* и ошибки), сбрасываются при перезагрузке превью.
   const [consoleLines, setConsoleLines] = useState<MakeConsoleLine[]>([])
   const [consoleOpen, setConsoleOpen] = useState(false)
+  const [network, setNetwork] = useState<MakeNetworkEntry[]>([])
+  const [bottomTab, setBottomTab] = useState<'console' | 'network'>('console')
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -175,6 +177,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const onMessage = (e: MessageEvent): void => {
       const d = e.data as { type?: string; args?: Record<string, unknown>; options?: Record<string, string[]>; argTypes?: Record<string, ArgType> } | null
       if (d?.type === 'vc-make.story' && e.source === storyFrameRef.current?.contentWindow) { setStoryArgs(d.args ?? {}); setArgOptions(d.options ?? {}); setArgTypes(d.argTypes ?? {}); setArgOverrides({}) }
+      if (d?.type === 'vc-make.network' && e.source === frameRef.current?.contentWindow) {
+        const n = d as unknown as MakeNetworkEntry
+        setNetwork((prev) => [...prev.slice(-199), n])
+      }
       if (d?.type === 'vc-make.console' && (e.source === frameRef.current?.contentWindow || e.source === storyFrameRef.current?.contentWindow)) {
         const line = d as unknown as MakeConsoleLine
         setConsoleLines((prev) => [...prev.slice(-199), { level: line.level, text: line.text, at: line.at }])
@@ -613,7 +619,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       toast.success('Скриншот добавлен во вложения')
     } catch (e) { toast.error(describeError(e)) } finally { setShooting(false) }
   }
-  useEffect(() => { setConsoleLines([]) }, [previewRev])
+  useEffect(() => { setConsoleLines([]); setNetwork([]) }, [previewRev])
+  const networkFailed = network.filter((n) => !n.ok).length
   // Итеративная правка: после перезагрузки превью (правка ассистента или своя) 8 секунд слушаем консоль;
   // появились ошибки — предлагаем «Исправить» одной кнопкой, текст ошибок уходит ассистенту сразу.
   const [autofix, setAutofix] = useState<{ rev: number; dismissed: boolean }>({ rev: 0, dismissed: false })
@@ -631,6 +638,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const errors = consoleLines.filter((l) => l.level === 'error' || l.level === 'warn').slice(-5)
     if (!onInsertToChat || errors.length === 0) return
     onInsertToChat(`В консоли превью ошибки:\n${errors.map((l) => `- [${l.level}] ${l.text.slice(0, 300)}`).join('\n')}\nИсправь. `)
+  }
+  const sendNetworkToChat = (): void => {
+    const failed = network.filter((n) => !n.ok).slice(-8)
+    if (!onInsertToChat || failed.length === 0) return
+    onInsertToChat(`В превью не загрузились ресурсы:\n${failed.map((n) => `- ${n.method} ${n.url} → ${n.status || 'сеть'}`).join('\n')}\nПоправь пути или запросы. `)
   }
   const assets = useMemo(() => (state?.files ?? []).filter((f) => !isMakeTextPath(f.path)), [state])
   const copyAsset = async (text: string, what: string): Promise<void> => { toast[(await copyText(text)) ? 'success' : 'error'](`${what} скопирован`) }
@@ -776,16 +788,37 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           )}
           <section className={consoleOpen ? 'make-console make-console--open' : 'make-console'} aria-label="Консоль превью" data-testid="make-console">
             <div className="make-console-head">
-              <button type="button" className="make-console-toggle" aria-expanded={consoleOpen} onClick={() => setConsoleOpen((v) => !v)}>
-                {consoleOpen ? '▾' : '▸'} Консоль <span className="make-console-count">{consoleLines.length}</span>
-                {consoleErrors > 0 && <span className="make-console-errors" data-testid="make-console-errors">{consoleErrors} ошибок</span>}
-              </button>
+              <span className="make-console-tabs">
+                <button type="button" className={`make-console-toggle${bottomTab === 'console' ? ' on' : ''}`} aria-expanded={consoleOpen && bottomTab === 'console'} onClick={() => { if (bottomTab === 'console') setConsoleOpen((v) => !v); else { setBottomTab('console'); setConsoleOpen(true) } }}>
+                  {consoleOpen && bottomTab === 'console' ? '▾' : '▸'} Консоль <span className="make-console-count">{consoleLines.length}</span>
+                  {consoleErrors > 0 && <span className="make-console-errors" data-testid="make-console-errors">{consoleErrors} ошибок</span>}
+                </button>
+                <button type="button" className={`make-console-toggle${bottomTab === 'network' ? ' on' : ''}`} aria-expanded={consoleOpen && bottomTab === 'network'} onClick={() => { if (bottomTab === 'network') setConsoleOpen((v) => !v); else { setBottomTab('network'); setConsoleOpen(true) } }} data-testid="make-network-toggle">
+                  {consoleOpen && bottomTab === 'network' ? '▾' : '▸'} Сеть <span className="make-console-count">{network.length}</span>
+                  {networkFailed > 0 && <span className="make-console-errors" data-testid="make-network-failed">{networkFailed} не загрузилось</span>}
+                </button>
+              </span>
               <span className="make-console-actions">
-                {onInsertToChat && consoleErrors > 0 && <Button size="sm" variant="secondary" onClick={sendConsoleToChat}>В чат</Button>}
-                {consoleLines.length > 0 && <Button size="sm" variant="ghost" onClick={() => setConsoleLines([])}>Очистить</Button>}
+                {onInsertToChat && bottomTab === 'console' && consoleErrors > 0 && <Button size="sm" variant="secondary" onClick={sendConsoleToChat}>В чат</Button>}
+                {onInsertToChat && bottomTab === 'network' && networkFailed > 0 && <Button size="sm" variant="secondary" onClick={sendNetworkToChat}>В чат</Button>}
+                {bottomTab === 'console' && consoleLines.length > 0 && <Button size="sm" variant="ghost" onClick={() => setConsoleLines([])}>Очистить</Button>}
+                {bottomTab === 'network' && network.length > 0 && <Button size="sm" variant="ghost" onClick={() => setNetwork([])}>Очистить</Button>}
               </span>
             </div>
-            {consoleOpen && (
+            {consoleOpen && bottomTab === 'network' && (
+              <ol className="make-console-lines make-network" data-testid="make-network">
+                {network.length === 0 && <li className="make-console-empty">Пусто — fetch/XHR из превью появятся здесь.</li>}
+                {network.map((n, i) => (
+                  <li key={`${n.at}-${i}`} className={`make-network-row${n.ok ? '' : ' make-network-row--bad'}`}>
+                    <span className="make-network-status">{n.status || '—'}</span>
+                    <span className="make-network-method">{n.method}</span>
+                    <code className="make-network-url" title={n.url}>{n.url}</code>
+                    <small>{n.ms} мс · {n.kind}</small>
+                  </li>
+                ))}
+              </ol>
+            )}
+            {consoleOpen && bottomTab === 'console' && (
               <ol className="make-console-lines">
                 {consoleLines.length === 0 && <li className="make-console-empty">Пусто — console.log и ошибки страницы появятся здесь.</li>}
                 {consoleLines.map((l, i) => <li key={`${l.at}-${i}`} className={`make-console-line make-console-line--${l.level}`}><span className="make-console-level">{l.level}</span><code>{l.text}</code></li>)}
