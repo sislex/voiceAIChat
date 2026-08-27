@@ -260,7 +260,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (voice.voice !== 'idle' || !askRestoreRef.current) return
     const prev = askRestoreRef.current; askRestoreRef.current = null
     setMakeAskOnly(false)
-    void changeConversationMode(prev)
+    // Возврат режима без диалога подтверждения: пользователь его не менял, это откат нашего временного «Плана».
+    if (activeConversation) void chatActions.setConversationExecTarget(activeConversation.id, activeConversation.execTarget ?? null, undefined, undefined, undefined, undefined, prev)
+    else void settingsActions.updateSettings({ permissionMode: prev })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voice.voice])
   const makeUsage = useMemo(() => (inMake ? summarizeConversationUsage(chat.messages) : null), [inMake, chat.messages])
