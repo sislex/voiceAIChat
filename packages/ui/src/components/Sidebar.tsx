@@ -298,6 +298,9 @@ export interface SidebarProps {
   /** Сбой чтения приглашений: показываем причину вместо исчезнувшего блока. */
   invitationsError?: string | null
   onRetryInvitations?: () => void
+  /** То же для самого списка проектов. */
+  projectsError?: string | null
+  onRetryProjects?: () => void
   /** Открыть командную палитру (кнопка «⌘K» рядом с поиском); не задан — кнопки нет. */
   onOpenCommandPalette?: () => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
@@ -363,6 +366,8 @@ export function Sidebar({
   invitations,
   invitationsError,
   onRetryInvitations,
+  projectsError,
+  onRetryProjects,
   onAcceptInvitation,
   onDeclineInvitation,
   onOpenCommandPalette,
@@ -744,12 +749,22 @@ export function Sidebar({
               </ul>
             </section>
           )}
-          {visibleProjects.length === 0 && (
+          {projectsError && projects.length === 0 && (
+            <ErrorState
+              compact
+              message="Не удалось загрузить проекты"
+              detail={projectsError}
+              {...(onRetryProjects ? { onRetry: onRetryProjects } : {})}
+            />
+          )}
+          {!projectsError && visibleProjects.length === 0 && (
             <EmptyState
               compact
               icon="🗂"
-              title="Проектов пока нет"
-              description="Создайте первый — доска, задачи и CI появятся внутри него."
+              title={projects.length ? 'Ничего не найдено' : 'Проектов пока нет'}
+              description={projects.length
+                ? 'Измените запрос — поиск идёт по имени и типу проекта.'
+                : 'Создайте первый — доска, задачи и CI появятся внутри него.'}
             />
           )}
           {visibleProjects.map((p) => (
