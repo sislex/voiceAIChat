@@ -73,11 +73,11 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
     async (req, reply) => {
       const b = req.body ?? {}
       const name = (b.name ?? '').trim()
-      if (!name) return badReq(reply, 'name required')
+      if (!name) return badReq(reply, 'Укажите название типа')
       const parentId = b.parentId ?? null
       // Родителем может быть только видимый узел: иначе через чужой личный узел
       // можно было бы вслепую нащупать дерево другого пользователя.
-      if (parentId && !db.listProjectTypes(uid(req)).some((t) => t.id === parentId)) return badReq(reply, 'unknown parent type')
+      if (parentId && !db.listProjectTypes(uid(req)).some((t) => t.id === parentId)) return badReq(reply, 'Родительский тип недоступен')
       try {
         return db.createProjectType(uid(req), {
           parentId,
@@ -99,7 +99,7 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
       if (!node) return notFound(reply)
       const b = req.body ?? {}
       if (b.parentId !== undefined && b.parentId && !db.listProjectTypes(uid(req)).some((t) => t.id === b.parentId)) {
-        return badReq(reply, 'unknown parent type')
+        return badReq(reply, 'Родительский тип недоступен')
       }
       try {
         return db.updateProjectType(req.params.id, {
@@ -155,7 +155,7 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
    */
   app.post<{ Params: { id: string }; Body: { name?: string } }>('/api/projects/:id/derive-type', async (req, reply) => {
     const name = (req.body?.name ?? '').trim()
-    if (!name) return badReq(reply, 'name required')
+    if (!name) return badReq(reply, 'Укажите название подтипа')
     try {
       return db.deriveProjectType(uid(req), req.params.id, name) ?? notFound(reply)
     } catch (error) {

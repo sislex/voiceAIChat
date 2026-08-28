@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
 import { ProjectTypesSettings, flattenTypeTree } from './ProjectTypesSettings'
@@ -115,5 +115,37 @@ describe('ProjectTypesSettings — состояния загрузки', () => {
     expect(screen.getByText('Список типов мог устареть')).toBeInTheDocument()
     // Дерево остаётся на экране: подменять его баннером — терять контекст.
     expect(screen.getAllByRole('listitem').length).toBeGreaterThan(0)
+  })
+})
+
+describe('ProjectTypesSettings — ошибка создания', () => {
+  it('текст ошибки виден под полем, имя не теряется', async () => {
+    const onCreate = vi.fn().mockResolvedValue('Такой тип уже есть')
+    render(<ProjectTypesSettings types={builtin} currentUsername="bob" onCreate={onCreate} />)
+    await userEvent.type(screen.getByLabelText('Название подтипа'), 'Дубль')
+    await userEvent.click(screen.getByRole('button', { name: 'Создать подтип' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Такой тип уже есть')
+    // Перенабирать имя заново незачем — ошибка чаще всего в нём.
+    expect(screen.getByLabelText('Название подтипа')).toHaveValue('Дубль')
+  })
+
+  it('успех очищает поле и не оставляет ошибку', async () => {
+    const onCreate = vi.fn().mockResolvedValue(null)
+    render(<ProjectTypesSettings types={builtin} currentUsername="bob" onCreate={onCreate} />)
+    await userEvent.type(screen.getByLabelText('Название подтипа'), 'Новый')
+    await userEvent.click(screen.getByRole('button', { name: 'Создать подтип' }))
+    await waitFor(() => expect(screen.getByLabelText('Название подтипа')).toHaveValue(''))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('правка имени убирает прежнюю ошибку', async () => {
+    const onCreate = vi.fn().mockResolvedValue('Занято')
+    render(<ProjectTypesSettings types={builtin} currentUsername="bob" onCreate={onCreate} />)
+    await userEvent.type(screen.getByLabelText('Название подтипа'), 'X')
+    await userEvent.click(screen.getByRole('button', { name: 'Создать подтип' }))
+    await screen.findByRole('alert')
+    await userEvent.type(screen.getByLabelText('Название подтипа'), 'Y')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

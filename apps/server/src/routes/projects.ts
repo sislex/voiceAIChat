@@ -136,7 +136,7 @@ export function registerProjectRoutes(
     // Тип берётся только из каталога, видимого этому пользователю: чужой личный
     // узел нельзя назначить, даже зная его id.
     if (b.typeId !== undefined && !db.listProjectTypes(uid(req)).some((t) => t.id === b.typeId)) {
-      return badReq(reply, 'unknown project type')
+      return badReq(reply, 'Тип проекта недоступен')
     }
     return db.createProject(uid(req), {
       name,
@@ -213,7 +213,7 @@ export function registerProjectRoutes(
     if (body.releaseTimeouts !== undefined) { try { const { validateReleaseTimeouts } = await import('@voicechat/shared'); validateReleaseTimeouts(body.releaseTimeouts) } catch(error) { return badReq(reply,errMessage(error)) } }
     // Тип — только из видимого пользователю каталога (см. POST выше).
     if (body.typeId !== undefined && !db.listProjectTypes(uid(req)).some((t) => t.id === body.typeId)) {
-      return badReq(reply, 'unknown project type')
+      return badReq(reply, 'Тип проекта недоступен')
     }
     try {
       return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)

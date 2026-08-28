@@ -7274,3 +7274,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Поиск по каталогу типов: появляется, когда дерево перестаёт помещаться глазом. */
 .ptypes-search { display: block; margin-bottom: var(--space-2, 8px); }
 .ptypes-search input { width: 100%; }
+
+/* Ошибка создания подтипа — под полем, а не только тостом. */
+.ptypes-create-error { margin: 0; font-size: 12px; color: var(--danger); }

@@ -25,7 +25,12 @@ export interface ProjectTypesSettingsProps {
   onRetry?: () => void
   /** Логин текущего пользователя: свои узлы можно править и публиковать. */
   currentUsername?: string
-  onCreate?: (input: { name: string; parentId: string | null }) => void | Promise<void>
+  /**
+   * Создание подтипа. Возвращённая строка — текст ошибки: он показывается под
+   * полем, а не только тостом. Тост исчезает, а форма остаётся заполненной, и
+   * человек не понимает, что пошло не так.
+   */
+  onCreate?: (input: { name: string; parentId: string | null }) => void | Promise<void | string | null>
   onDelete?: (id: string) => void | Promise<void>
   onPublish?: (id: string) => void | Promise<void>
   onUnpublish?: (id: string) => void | Promise<void>
@@ -55,6 +60,8 @@ export function ProjectTypesSettings({ types, status = 'ready', error = null, on
   const [name, setName] = useState('')
   const [parentId, setParentId] = useState('')
   const [query, setQuery] = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
   const allRows = useMemo(() => flattenTypeTree(types), [types])
   // Фильтр не рвёт дерево: под совпавшим узлом остаются его потомки, иначе
   // подтип находился бы «в воздухе», без родителя.
@@ -87,11 +94,22 @@ export function ProjectTypesSettings({ types, status = 'ready', error = null, on
     return resolveProjectTypeFeatures(chain)
   }
 
-  const submit = (): void => {
+  const submit = async (): Promise<void> => {
     const trimmed = name.trim()
-    if (!trimmed || !onCreate) return
-    void onCreate({ name: trimmed, parentId: parentId || null })
-    setName('')
+    if (!trimmed || !onCreate || creating) return
+    setCreating(true)
+    setCreateError(null)
+    try {
+      const problem = await onCreate({ name: trimmed, parentId: parentId || null })
+      if (typeof problem === 'string' && problem) {
+        // Имя не стираем: ошибка чаще всего в нём, и перенабирать заново незачем.
+        setCreateError(problem)
+        return
+      }
+      setName('')
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (
@@ -195,7 +213,15 @@ export function ProjectTypesSettings({ types, status = 'ready', error = null, on
         <div className="ptypes-create">
           <label className="proj-invite-field">
             <span className="proj-field-label">Название подтипа</span>
-            <input className="login-input" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') submit() }} placeholder="Например, Бэкенд-сервис" />
+            <input
+              className="login-input"
+              value={name}
+              aria-invalid={createError ? true : undefined}
+              aria-describedby={createError ? 'ptypes-create-error' : undefined}
+              onChange={(e) => { setName(e.target.value); setCreateError(null) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void submit() }}
+              placeholder="Например, Бэкенд-сервис"
+            />
           </label>
           <label className="proj-invite-field">
             <span className="proj-field-label">Родитель</span>
@@ -206,7 +232,8 @@ export function ProjectTypesSettings({ types, status = 'ready', error = null, on
               ))}
             </select>
           </label>
-          <Button onClick={submit} disabled={!name.trim()}>Создать подтип</Button>
+          {createError && <p className="ptypes-create-error" id="ptypes-create-error" role="alert">{createError}</p>}
+          <Button onClick={() => void submit()} loading={creating} disabled={!name.trim()}>Создать подтип</Button>
         </div>
       )}
     </div>
