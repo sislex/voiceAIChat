@@ -7123,3 +7123,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .mhealth-warnings { list-style: none; margin: 0 auto 6px; padding: 6px 10px; max-width: 720px; font-size: 12px; border-radius: 8px; background: rgba(224, 168, 0, 0.12); border: 1px solid rgba(224, 168, 0, 0.5); }
 .mhealth-warnings ul { list-style: none; margin: 0; padding: 0; }
 .mhealth-warnings li + li { margin-top: 2px; }
+
+/* Мастер подключения машины (machines-roadmap п.13) */
+.agcmd-steps { display: grid; gap: 6px; margin-top: 8px; }
+.agcmd-step { margin: 0; font-size: 13px; }
+.agcmd-step--ok { color: #3fb950; }
+.agcmd-out { margin: 6px 0 0; padding: 6px 8px; font-size: 12px; white-space: pre-wrap; background: rgba(0,0,0,0.06); border-radius: 4px; max-height: 160px; overflow: auto; }

@@ -2048,6 +2048,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onGetConnectionString={operationsActions.getAgentConnectionString}
           onUpdateAgent={operationsActions.updateAgent}
           onLoadCommands={(id, filter) => (window.api ? window.api['agents:commands']({ id, ...filter }) : Promise.resolve([]))}
+          onExecTest={(id) => operationsActions.agentExec(id, 'uname -a 2>/dev/null || ver')}
           onOpenConversation={(conversationId) => navigate(`/chat/${conversationId}`)}
           onDeleteAgent={(id) => void operationsActions.deleteAgent(id)}
           defaultAgentId={settingsState.settings.defaultAgentId}
