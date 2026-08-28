@@ -107,10 +107,12 @@ describe('VoiceBar — состояния', () => {
     expect(props.onSubmitText).not.toHaveBeenCalled()
   })
 
-  it('send и stop имеют единую sm hit-area и компактную графику', () => {
+  it('attach, send и stop имеют единые компактные контейнеры без уменьшения иконок', () => {
     setup('thinking', { draft: 'следующий вопрос' })
+    const attach = screen.getByLabelText('Прикрепить файл')
     const send = screen.getByLabelText('Добавить сообщение в очередь')
     const stop = screen.getByLabelText('Остановить ответ')
+    expect(attach).toHaveClass('vc-btn--sm', 'composer-attach')
     expect(send).toHaveClass('vc-btn--sm', 'vc-btn--primary', 'composer-send')
     expect(stop).toHaveClass('vc-btn--sm', 'vc-btn--danger', 'composer-stop')
     expect(send.querySelector('svg')).toHaveAttribute('width', '16')
