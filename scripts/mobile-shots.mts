@@ -21,8 +21,13 @@ const INVITE = process.env.VC_SHOTS_INVITE ?? ''
 
 /** iPhone 14 — самый узкий из актуальных; проходит он, пройдут и шире. */
 const VIEWPORT = { width: 390, height: 844 }
-/** Ниже этого пальцем попадать неудобно (рекомендация — 44px, 32 — жёсткий минимум). */
-const MIN_TAP_HEIGHT = 32
+/**
+ * Ниже этого пальцем попадать неудобно. Рекомендация Apple и Google — 44px;
+ * берём 40 как компромисс с плотностью списков. Порог сделан падающим
+ * (`process.exitCode = 1`), поэтому регресс раскладки виден сразу, а не «когда
+ * кто-нибудь посмотрит скриншоты».
+ */
+const MIN_TAP_HEIGHT = Number(process.env.VC_SHOTS_MIN_TAP ?? 40)
 
 interface Problem { screen: string; kind: 'overflow' | 'tap'; detail: string }
 const problems: Problem[] = []
@@ -35,7 +40,19 @@ async function shot(page: Page, name: string): Promise<void> {
   }
   const small = await page.evaluate((min) => [...document.querySelectorAll('button, a, select, input')]
     .filter((el) => (el as HTMLElement).offsetParent !== null)
-    .map((el) => ({ label: (el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 40), h: Math.round(el.getBoundingClientRect().height) }))
+    .map((el) => {
+      // Считаем ЭФФЕКТИВНУЮ цель: чекбокс 20px внутри 40px-подписи нажимается по
+      // всей подписи, и ругаться на него — ложная тревога. Берём ближайшего
+      // предка-обёртку, если он кликабелен вместе с элементом.
+      const wrapper = el.closest('label, button') as HTMLElement | null
+      const box = (wrapper ?? el).getBoundingClientRect()
+      return {
+        label: (el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 40),
+        // Класс обёртки — чтобы чинить точечно, а не подбирать селектор вслепую.
+        cls: ((wrapper ?? el).className || el.className || '').toString().slice(0, 60),
+        h: Math.round(Math.max(box.height, el.getBoundingClientRect().height))
+      }
+    })
     .filter((t) => t.h > 0 && t.h < min), MIN_TAP_HEIGHT)
   if (small.length) problems.push({ screen: name, kind: 'tap', detail: JSON.stringify(small) })
   console.log(`✓ ${name}`)

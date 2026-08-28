@@ -7186,3 +7186,78 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .ptypes-actions .vc-btn { flex: 1 1 auto; min-height: 40px; }
   .ptypes-create .vc-btn { width: 100%; min-height: 40px; }
 }
+
+@media (max-width: 720px) {
+  /* Мобильный минимум цели нажатия по разделу «Проекты». Рекомендация Apple и
+     Google — 44px; берём 40 как компромисс с плотностью списков, но ниже не
+     опускаемся: прогон scripts/mobile-shots.mts падает на таких элементах.
+     Раньше вкладки были 30px, чекбоксы фильтров 13px, ⋯ меню колонки 22px. */
+  .sideswitch button,
+  .projtabs button,
+  .proj-settings-tabs button,
+  .jfilter > summary,
+  .kanban-col-menu button,
+  .proj-members .vc-btn,
+  .proj-danger .vc-btn { min-height: 40px; }
+
+  /* Фильтры доски: подпись с чекбоксом — одна цель нажатия, сам квадрат крупнее. */
+  .jboard-filters .jquick,
+  .jboard-filters .jfilter > summary,
+  .jcol-filter-option { min-height: 40px; display: inline-flex; align-items: center; gap: var(--space-2, 8px); }
+  .jboard-filters input[type='checkbox'],
+  .jcol-filter-option input[type='checkbox'] { width: 20px; height: 20px; }
+  .jboard-filters .jsearch { min-height: 40px; }
+
+  /* Управление колонкой: ⋯, фильтр исполнителей, значок автоматизации, «+ Создать». */
+  .jcol-head .jcard-reveal,
+  .jcol-assignee-filter,
+  .jcol-automation-info-button { min-height: 40px; min-width: 40px; }
+  .jcompose-open { min-height: 40px; }
+}
+
+@media (max-width: 720px) {
+  /* Общий мобильный минимум для контролов раздела проектов и окон настроек.
+     Точечные селекторы выше остаются: они задают геометрию конкретных мест, а
+     это правило страхует всё остальное — новые кнопки не появятся мелкими. */
+  .projpage button,
+  .projpage select,
+  .projpage input:not([type='checkbox']):not([type='radio']),
+  .proj-detail button,
+  .proj-detail select,
+  .proj-detail input:not([type='checkbox']):not([type='radio']),
+  .side-primary-action .vc-btn,
+  .sidefoot .acct-toggle,
+  .settnav button,
+  .settpane button,
+  .settpane select,
+  .settpane input:not([type='checkbox']):not([type='radio']) { min-height: 40px; }
+  .sidesearch input,
+  .side-collapse,
+  .side .vc-btn--icon { min-height: 40px; }
+  /* Быстрые фильтры доски и опции фильтра исполнителей — цель по всей подписи.
+     display обязателен: у строчного элемента min-height не действует вовсе. */
+  .jquick,
+  .jcol-filter-option,
+  .kanban-showhidden,
+  .kanban-showcompleted,
+  .jfilter-menu label { display: inline-flex; align-items: center; gap: var(--space-2, 6px); min-height: 40px; }
+  /* Кнопки подвала окон (Dialog) — вне .projpage, поэтому отдельным правилом. */
+  .vc-dialog button,
+  .vc-dialog select,
+  .vc-dialog input:not([type='checkbox']):not([type='radio']) { min-height: 40px; }
+
+  /* Фильтр исполнителей колонки: цель — вся кнопка вместе со значком. */
+  .jcol-assignee-filter,
+  .jcol-assignee-filter > button { min-height: 40px; }
+}
+
+/* Свёрнутые фильтры доски на телефоне: один пункт с числом активных. */
+.jboard-filters-shell { border-bottom: 1px solid var(--border-soft, var(--border)); }
+.jboard-filters-shell > summary {
+  display: flex; align-items: center; gap: var(--space-2, 8px);
+  min-height: 44px; padding: 0 var(--space-3, 12px);
+  cursor: pointer; font-weight: 600; list-style: none;
+}
+.jboard-filters-shell > summary::-webkit-details-marker { display: none; }
+.jboard-filters-shell > summary::before { content: '⌄'; transition: transform 0.15s ease; }
+.jboard-filters-shell[open] > summary::before { transform: rotate(180deg); }

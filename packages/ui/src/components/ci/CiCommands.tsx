@@ -3,6 +3,7 @@
 // страница (variant="page"), стиль близок к Jira/Bitbucket Pipelines на токенах.
 
 import { useEffect, useMemo, useState } from 'react'
+import { formatDate } from '../../lib/dateFormat'
 import type {
   CiCommand,
   CiCommandInput,
@@ -302,7 +303,7 @@ export function CiCommands(props: CiCommandsProps): JSX.Element {
                       {c.description && <div className="ci-row-desc">{c.description}</div>}
                     </td>
                     <td><span className="ci-lozenge ci-lozenge--neutral">{c.scope === 'global' ? 'глоб.' : 'проект'}</span></td>
-                    <td>{new Date(c.updatedAt).toLocaleDateString()}</td>
+                    <td>{formatDate(c.updatedAt)}</td>
                     <td>{c.createdBy}</td>
                     <td><IconButton size="sm" aria-label={`Удалить команду «${c.name}»`} title="Удалить" onClick={(e) => { e.stopPropagation(); void remove(c) }}>🗑</IconButton></td>
                   </tr>
