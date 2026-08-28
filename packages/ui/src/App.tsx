@@ -1709,6 +1709,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         }}
         invitations={projects.myInvitations}
         invitationsError={projects.myInvitationsError}
+        projectsError={projects.projectsError}
+        onRetryProjects={() => void projectsActions.openProjects()}
         onRetryInvitations={() => void projectsActions.loadMyInvitations()}
         onAcceptInvitation={async (invitation) => {
           // Токен приглашённому не отдаётся: принимаем по id, сервер сверит адресата.
@@ -2460,7 +2462,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           projectTypesError={projects.projectTypesError}
           onRetryProjectTypes={() => void projectsActions.loadProjectTypes()}
           {...(session.currentUser?.name ? { currentUsername: session.currentUser.name } : {})}
-          onCreateProjectType={async (input) => { await projectsActions.createProjectType(input) }}
+          onCreateProjectType={async (input) => {
+            try {
+              await projectsActions.createProjectType(input)
+              return null
+            } catch (error) {
+              return error instanceof Error ? error.message : 'Не удалось создать подтип'
+            }
+          }}
           onDeleteProjectType={(id) => projectsActions.deleteProjectType(id)}
           onPublishProjectType={(id) => projectsActions.publishProjectType(id)}
           onUnpublishProjectType={(id) => projectsActions.unpublishProjectType(id)}

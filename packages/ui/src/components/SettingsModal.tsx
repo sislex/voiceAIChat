@@ -61,7 +61,7 @@ export interface SettingsModalProps {
   projectTypesError?: string | null
   onRetryProjectTypes?: () => void
   currentUsername?: string
-  onCreateProjectType?: (input: { name: string; parentId: string | null }) => void | Promise<void>
+  onCreateProjectType?: (input: { name: string; parentId: string | null }) => void | Promise<void | string | null>
   onDeleteProjectType?: (id: string) => void | Promise<void>
   onPublishProjectType?: (id: string) => void | Promise<void>
   onUnpublishProjectType?: (id: string) => void | Promise<void>
