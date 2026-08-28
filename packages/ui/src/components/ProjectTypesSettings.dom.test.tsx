@@ -93,3 +93,27 @@ describe('ProjectTypesSettings', () => {
     await expectNoViolations()
   })
 })
+
+describe('ProjectTypesSettings — состояния загрузки', () => {
+  it('первая загрузка показывает скелетон, а не «типов нет»', () => {
+    render(<ProjectTypesSettings types={[]} status="loading" />)
+    expect(screen.queryByText('Типов пока нет')).not.toBeInTheDocument()
+  })
+
+  it('ошибка отличается от пустоты и предлагает повторить', async () => {
+    const onRetry = vi.fn()
+    render(<ProjectTypesSettings types={[]} status="error" error="Сеть недоступна" onRetry={onRetry} />)
+    // Раньше сбой загрузки выглядел как «типов нет» — и человек шёл создавать дубль.
+    expect(screen.queryByText('Типов пока нет')).not.toBeInTheDocument()
+    expect(screen.getByText('Не удалось загрузить типы проектов')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(onRetry).toHaveBeenCalled()
+  })
+
+  it('ошибка при уже показанном списке не прячет данные', () => {
+    render(<ProjectTypesSettings types={builtin} status="error" error="Сеть недоступна" currentUsername="bob" />)
+    expect(screen.getByText('Список типов мог устареть')).toBeInTheDocument()
+    // Дерево остаётся на экране: подменять его баннером — терять контекст.
+    expect(screen.getAllByRole('listitem').length).toBeGreaterThan(0)
+  })
+})

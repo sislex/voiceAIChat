@@ -6,7 +6,8 @@
 // их в настройках конкретного проекта значило бы прятать общий каталог внутри
 // частного случая.
 import { useMemo, useState } from 'react'
-import { Button, EmptyState, IconButton } from '@voicechat/ui-kit'
+import { loadView, type LoadStatus } from '../lib/loadState'
+import { Button, EmptyState, ErrorState, IconButton, Skeleton } from '@voicechat/ui-kit'
 import {
   PROJECT_FEATURES,
   PROJECT_FEATURE_LABELS,
@@ -18,6 +19,10 @@ import {
 
 export interface ProjectTypesSettingsProps {
   types: ProjectTypeNode[]
+  /** Состояние загрузки: «пусто» и «сломалось» — разные экраны, не один. */
+  status?: LoadStatus
+  error?: string | null
+  onRetry?: () => void
   /** Логин текущего пользователя: свои узлы можно править и публиковать. */
   currentUsername?: string
   onCreate?: (input: { name: string; parentId: string | null }) => void | Promise<void>
@@ -46,13 +51,15 @@ export function flattenTypeTree(types: ProjectTypeNode[]): Array<{ node: Project
   return out
 }
 
-export function ProjectTypesSettings({ types, currentUsername, onCreate, onDelete, onPublish, onUnpublish }: ProjectTypesSettingsProps): JSX.Element {
+export function ProjectTypesSettings({ types, status = 'ready', error = null, onRetry, currentUsername, onCreate, onDelete, onPublish, onUnpublish }: ProjectTypesSettingsProps): JSX.Element {
   const [name, setName] = useState('')
   const [parentId, setParentId] = useState('')
   const [query, setQuery] = useState('')
   const allRows = useMemo(() => flattenTypeTree(types), [types])
   // Фильтр не рвёт дерево: под совпавшим узлом остаются его потомки, иначе
   // подтип находился бы «в воздухе», без родителя.
+  // Порядок состояний один на пакет: loading → (data | empty | error).
+  const view = loadView(status, types.length > 0)
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase()
     if (!needle) return allRows
@@ -107,7 +114,20 @@ export function ProjectTypesSettings({ types, currentUsername, onCreate, onDelet
         </label>
       )}
 
-      {rows.length === 0 ? (
+      {view.state === 'skeleton' && <Skeleton variant="list" count={3} height={72} lines={2} />}
+      {view.state === 'error' && (
+        <ErrorState
+          compact
+          message="Не удалось загрузить типы проектов"
+          detail={error}
+          {...(onRetry ? { onRetry } : {})}
+        />
+      )}
+      {view.staleError && (
+        <ErrorState compact message="Список типов мог устареть" detail={error} {...(onRetry ? { onRetry } : {})} />
+      )}
+
+      {view.state !== 'skeleton' && view.state !== 'error' && (rows.length === 0 ? (
         <EmptyState
           compact
           icon="🗂"
@@ -169,7 +189,7 @@ export function ProjectTypesSettings({ types, currentUsername, onCreate, onDelet
             )
           })}
         </ul>
-      )}
+      ))}
 
       {onCreate && (
         <div className="ptypes-create">
