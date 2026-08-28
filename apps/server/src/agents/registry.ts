@@ -48,6 +48,12 @@ interface PtySession {
   idleTimer: NodeJS.Timeout | null
   /** Последний живой контекст сессии (cwd/foreground/altScreen) — для консоли с ассистентом. */
   context: import('@voicechat/shared').PtyContext | null
+  /** Таймер простоя по вводу (политика ptyIdleMinutes) — тикает и при подписанном браузере. */
+  inputIdleTimer: NodeJS.Timeout | null
+  /** Набираемая строка (по нажатиям) — чтобы поймать `sudo …` перед Enter. */
+  line: string
+  /** Команда с sudo ждёт подтверждения y/N; Enter к shell ещё не ушёл. */
+  pendingSudo: string | null
 }
 
 /** Кап кольцевого буфера PTY: достаточно для восстановления экрана, но без роста памяти. */
@@ -626,14 +632,73 @@ export class AgentRegistry {
       emit({ t: 'pty.error', ptyId, message: ve.message })
       return
     }
-    this.ptys.set(ptyId, { agentId, emit, output: [], outputBytes: 0, idleTimer: null, context: null })
+    const policy = this.online.get(agentId)?.policy
+    const max = policy?.ptyMaxSessions ?? 0
+    if (max > 0) {
+      const count = [...this.ptys.values()].filter((s) => s.agentId === agentId).length
+      if (count >= max) {
+        emit({ t: 'pty.error', ptyId, message: `Лимит одновременных терминалов на машине — ${max}. Закройте другой сеанс или поднимите лимит в политике.` })
+        return
+      }
+    }
+    this.ptys.set(ptyId, { agentId, emit, output: [], outputBytes: 0, idleTimer: null, context: null, inputIdleTimer: null, line: '', pendingSudo: null })
     this.send(agentId, { t: 'pty.start', ptyId, cols, rows, ...(cwd ? { cwd } : {}) })
+    this.armPtyInputIdle(ptyId)
+  }
+
+  /** Политика ptyIdleMinutes: сеанс без ввода дольше N минут убивается, даже если вкладка открыта. */
+  private armPtyInputIdle(ptyId: string): void {
+    const sess = this.ptys.get(ptyId)
+    if (!sess) return
+    if (sess.inputIdleTimer) clearTimeout(sess.inputIdleTimer)
+    sess.inputIdleTimer = null
+    const minutes = this.online.get(sess.agentId)?.policy.ptyIdleMinutes ?? 0
+    if (minutes <= 0) return
+    sess.inputIdleTimer = setTimeout(() => {
+      sess.emit?.({ t: 'pty.output', ptyId, data: `\r\n\x1b[33m[Голос·Чат] Сеанс закрыт: нет ввода ${minutes} мин (политика машины).\x1b[0m\r\n` })
+      this.ptyKill(ptyId)
+    }, minutes * 60_000)
+    sess.inputIdleTimer.unref?.()
   }
 
   /** Ввод пользователя (нажатия клавиш) в PTY. */
   ptyInput(ptyId: string, data: string): void {
     const sess = this.ptys.get(ptyId)
-    if (sess) this.send(sess.agentId, { t: 'pty.input', ptyId, data })
+    if (!sess) return
+    this.armPtyInputIdle(ptyId)
+    const confirmSudo = this.online.get(sess.agentId)?.policy.ptyConfirmSudo === true
+    if (!confirmSudo) {
+      this.send(sess.agentId, { t: 'pty.input', ptyId, data })
+      return
+    }
+    // Ответ на вопрос «выполнить sudo?»: y — отправляем задержанный Enter, иначе стираем строку (Ctrl-U).
+    if (sess.pendingSudo !== null) {
+      const yes = /^[yYдД]$/.test(data)
+      sess.pendingSudo = null
+      sess.line = ''
+      sess.emit?.({ t: 'pty.output', ptyId, data: yes ? 'y\r\n' : 'n\r\n' })
+      this.send(sess.agentId, { t: 'pty.input', ptyId, data: yes ? '\r' : '\x15' })
+      return
+    }
+    // Ведём набираемую строку по нажатиям; Enter с `sudo …` в начале строки задерживаем до подтверждения.
+    let forward = ''
+    for (let i = 0; i < data.length; i++) {
+      const ch = data[i]!
+      if (ch === '\r' || ch === '\n') {
+        if (/^\s*sudo\b/.test(sess.line)) {
+          sess.pendingSudo = sess.line
+          if (forward) this.send(sess.agentId, { t: 'pty.input', ptyId, data: forward })
+          sess.emit?.({ t: 'pty.output', ptyId, data: '\r\n\x1b[33m[Голос·Чат] Команда с sudo — выполнить? (y/N) \x1b[0m' })
+          return
+        }
+        sess.line = ''
+      } else if (ch === '\x7f' || ch === '\b') sess.line = sess.line.slice(0, -1)
+      else if (ch === '\x15' || ch === '\x03') sess.line = ''
+      else if (ch === '\x1b') { const m = /^\x1b\[[0-9;]*[A-Za-z~]/.exec(data.slice(i)); if (m) { forward += m[0]; i += m[0].length - 1; continue } }
+      else if (ch >= ' ') sess.line += ch
+      forward += ch
+    }
+    if (forward) this.send(sess.agentId, { t: 'pty.input', ptyId, data: forward })
   }
 
   /** Изменение размеров терминала. */
@@ -671,6 +736,7 @@ export class AgentRegistry {
     if (!sess) return
     this.ptys.delete(ptyId)
     if (sess.idleTimer) clearTimeout(sess.idleTimer)
+    if (sess.inputIdleTimer) clearTimeout(sess.inputIdleTimer)
     this.send(sess.agentId, { t: 'pty.kill', ptyId })
   }
 

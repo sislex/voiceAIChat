@@ -206,6 +206,12 @@ export interface AgentPolicy {
   allowPatterns: string[]
   /** Навыки — именованные разрешённые скрипты. */
   skills: AgentSkill[]
+  /** PTY: убить сеанс без ввода дольше N минут (0/нет — не ограничивать). */
+  ptyIdleMinutes?: number
+  /** PTY: не больше N одновременных сеансов на машину (0/нет — без лимита). */
+  ptyMaxSessions?: number
+  /** PTY: строка, начинающаяся с sudo, выполняется только после подтверждения y/N в терминале. */
+  ptyConfirmSudo?: boolean
 }
 
 export const DEFAULT_AGENT_POLICY: AgentPolicy = {
