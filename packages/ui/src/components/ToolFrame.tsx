@@ -19,6 +19,11 @@ export interface ToolFrameControl {
 export interface ToolFrameProps {
   /** Заголовок в шапке; он же aria-label диалога/карточки. */
   title: string
+  /**
+   * Дополнение к заголовку (бейдж, ярлык). Рендерится рядом с `h2`, а не внутри:
+   * `title` остаётся доступным именем окна, а бейдж не попадает в имя заголовка.
+   */
+  titleExtra?: ReactNode
   variant?: UtilityVariant | 'page'
   /** Закрытие: крестик в шапке и (для modal) клик по фону. Нет — крестика нет. */
   onClose?: () => void
@@ -44,6 +49,7 @@ export interface ToolFrameProps {
 /** Рамка тула: шапка + содержимое, с разворотом на весь экран. */
 export function ToolFrame({
   title,
+  titleExtra,
   variant = 'modal',
   onClose,
   testId,
@@ -76,7 +82,10 @@ export function ToolFrame({
   const head = (
     <div className="mdhead">
       {leading}
+      {/* titleExtra — рядом с заголовком, а не внутри: иначе бейдж попадает в
+          доступное имя («Мой проект РАЗРАБОТКА ПО») и ломает поиск по заголовку. */}
       <h2 className="mdh">{title}</h2>
+      {titleExtra}
       <span className="util-head-btns">
         {typeof actions === 'function' ? actions(ctl) : actions}
         {variant !== 'page' && (

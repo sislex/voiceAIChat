@@ -84,6 +84,11 @@ export interface ProjectTypeNode {
   createdBy: string
   createdAt: number
   updatedAt: number
+  /**
+   * Сколько проектов используют узел. Заполняется только в каталоге: владелец
+   * иначе узнаёт об этом лишь по отказу при удалении.
+   */
+  usageCount?: number
 }
 
 /**
