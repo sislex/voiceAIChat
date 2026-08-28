@@ -64,6 +64,74 @@ function sendDmg(
     .send(createReadStream(path))
 }
 
+/** Внешний адрес сервера, каким его видит машина (учитывает x-forwarded-*). */
+function externalBase(req: FastifyRequest): string {
+  const fwdProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim()
+  const fwdHost = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim()
+  const proto = fwdProto || req.protocol
+  const host = fwdHost || req.headers.host || ''
+  return `${proto}://${host}`
+}
+
+/** Локальные адреса машине недостижимы — тогда нужен VC_PUBLIC_URL. */
+function reachableFromMachine(base: string): boolean {
+  try {
+    const host = new URL(base).hostname.replace(/^\[|\]$/g, '')
+    return !(host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost'))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Обновление агента на машине: тот же установщик, что при первой установке, запущенный detached,
+ * чтобы пережить смерть старого агента. Общий для владельца (`/api/agents/:id/update`) и админки
+ * (`/api/admin/machines/:id/update`). Ошибки возвращаются как {status, error} — роут решает, как ответить.
+ */
+export async function updateAgentOnMachine(registry: AgentRegistry, id: string, req: FastifyRequest): Promise<{ ok: true; os: string; output: string } | { status: number; error: string }> {
+  if (!registry.isOnline(id)) {
+    return { status: 409, error: 'Машина не в сети — обновить можно только запущенного агента' }
+  }
+  const telemetry = registry.telemetryOf(id)
+  const os = telemetry ? agentOsFromPlatform(telemetry.os.platform, telemetry.os.isAndroid) : null
+  if (!os) {
+    return { status: 409, error: 'Не удалось определить ОС машины (нужна телеметрия агента 0.4+). Обновите вручную командой из настроек.'
+    }
+  }
+  // Адрес, по которому машина достанет установщик. Берём тот, по которому пришёл
+  // запрос; если он локальный (dev, проброс порта) — нужен явный VC_PUBLIC_URL,
+  // иначе команда уйдёт в саму машину и обновление тихо не случится.
+  const requestBase = externalBase(req)
+  const base = reachableFromMachine(requestBase)
+    ? requestBase
+    : (process.env.VC_PUBLIC_URL ?? '').replace(/\/+$/, '')
+  if (!base) {
+    return { status: 409, error: `Сервер видит себя как ${requestBase} — с машины такой адрес недостижим. ` +
+        'Задайте VC_PUBLIC_URL или скопируйте команду обновления и запустите её на машине.'
+    }
+  }
+  // Установщик должен пережить смерть агента, который его запустил: на unix —
+  // setsid+nohup, на Windows — Start-Process (он и так отвязывает процесс).
+  const detached =
+    os === 'windows'
+      ? `powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Join-Path $env:TEMP 'vc-agent-install.ps1'; ` +
+        `curl.exe -fsSLk ${installScriptUrl(os, base)} -o $p; ` +
+        `Start-Process -WindowStyle Hidden powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$p -RedirectStandardOutput \"$env:USERPROFILE\\voicechat-update.log\" -RedirectStandardError \"$env:USERPROFILE\\voicechat-update.err.log\""`
+      : `(setsid nohup bash -lc ${shellQuote(installCommand(os, base))} > "$HOME/voicechat-update.log" 2>&1 < /dev/null &) ; echo update-started`
+  try {
+    const res = await registry.exec(id, detached, UPDATE_EXEC_TIMEOUT_MS)
+    return { ok: true as const, os, output: res.output.slice(0, 2000) }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Гейт политики проверяется и на сервере, и на агенте: обновление качает
+    // скрипт и пишет файлы, поэтому машине с запретом сети/записи оно не пройдёт.
+    const hint = msg.includes('политикой')
+      ? ' Разрешите машине сеть и запись файлов (или обновите вручную командой из списка машин).'
+      : ''
+    return { status: 502, error: msg + hint }
+  }
+}
+
 export async function registerAgentRoutes(
   app: FastifyInstance,
   db: VoiceChatDb,
@@ -366,22 +434,7 @@ export async function registerAgentRoutes(
    * команда на телефоне ушла бы в него самого (реальный случай: curl молча не
    * находил сервер, обновление «проходило» без эффекта).
    */
-  const reachableFromMachine = (base: string): boolean => {
-    try {
-      const host = new URL(base).hostname.replace(/^\[|\]$/g, '')
-      return !(host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost'))
-    } catch {
-      return false
-    }
-  }
 
-  const externalBase = (req: FastifyRequest): string => {
-    const fwdProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim()
-    const fwdHost = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim()
-    const proto = fwdProto || req.protocol
-    const host = fwdHost || req.headers.host || ''
-    return `${proto}://${host}`
-  }
 
   // Установщики агента (Termux/Android — bash, Windows — PowerShell) с адресом сервера.
   // Строка подключения передаётся аргументом при запуске, в endpoint не вшивается.
@@ -462,50 +515,9 @@ export async function registerAgentRoutes(
     const u = uid(req)
     const id = req.params.id
     if (!ownsAgent(u, id)) return reply.code(404).send({ error: 'not found' })
-    if (!registry.isOnline(id)) {
-      return reply.code(409).send({ error: 'Машина не в сети — обновить можно только запущенного агента' })
-    }
-    const telemetry = registry.telemetryOf(id)
-    const os = telemetry ? agentOsFromPlatform(telemetry.os.platform, telemetry.os.isAndroid) : null
-    if (!os) {
-      return reply.code(409).send({
-        error: 'Не удалось определить ОС машины (нужна телеметрия агента 0.4+). Обновите вручную командой из настроек.'
-      })
-    }
-    // Адрес, по которому машина достанет установщик. Берём тот, по которому пришёл
-    // запрос; если он локальный (dev, проброс порта) — нужен явный VC_PUBLIC_URL,
-    // иначе команда уйдёт в саму машину и обновление тихо не случится.
-    const requestBase = externalBase(req)
-    const base = reachableFromMachine(requestBase)
-      ? requestBase
-      : (process.env.VC_PUBLIC_URL ?? '').replace(/\/+$/, '')
-    if (!base) {
-      return reply.code(409).send({
-        error:
-          `Сервер видит себя как ${requestBase} — с машины такой адрес недостижим. ` +
-          'Задайте VC_PUBLIC_URL или скопируйте команду обновления и запустите её на машине.'
-      })
-    }
-    // Установщик должен пережить смерть агента, который его запустил: на unix —
-    // setsid+nohup, на Windows — Start-Process (он и так отвязывает процесс).
-    const detached =
-      os === 'windows'
-        ? `powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Join-Path $env:TEMP 'vc-agent-install.ps1'; ` +
-          `curl.exe -fsSLk ${installScriptUrl(os, base)} -o $p; ` +
-          `Start-Process -WindowStyle Hidden powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$p -RedirectStandardOutput \"$env:USERPROFILE\\voicechat-update.log\" -RedirectStandardError \"$env:USERPROFILE\\voicechat-update.err.log\""`
-        : `(setsid nohup bash -lc ${shellQuote(installCommand(os, base))} > "$HOME/voicechat-update.log" 2>&1 < /dev/null &) ; echo update-started`
-    try {
-      const res = await registry.exec(id, detached, UPDATE_EXEC_TIMEOUT_MS)
-      return { ok: true, os, output: res.output.slice(0, 2000) }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      // Гейт политики проверяется и на сервере, и на агенте: обновление качает
-      // скрипт и пишет файлы, поэтому машине с запретом сети/записи оно не пройдёт.
-      const hint = msg.includes('политикой')
-        ? ' Разрешите машине сеть и запись файлов (или обновите вручную командой из списка машин).'
-        : ''
-      return reply.code(502).send({ error: msg + hint })
-    }
+    const result = await updateAgentOnMachine(registry, id, req)
+    if ('status' in result) return reply.code(result.status).send({ error: result.error })
+    return result
   })
 
   // Перевыпуск токена: старый перестаёт работать, текущее соединение рвём.

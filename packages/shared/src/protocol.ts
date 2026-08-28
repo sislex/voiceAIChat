@@ -318,6 +318,7 @@ export const REST = {
   adminLlmEngines: '/api/admin/llm-engines',
   adminModelPrices: '/api/admin/model-prices',
   adminMakeStats: '/api/admin/make/stats',
+  adminMachineUpdate: (id: string) => `/api/admin/machines/${encodeURIComponent(id)}/update`,
   adminMakeMetrics: '/api/admin/make/metrics',
   adminModelPrice: (provider: string, model: string) => '/api/admin/model-prices/' + encodeURIComponent(provider) + '/' + encodeURIComponent(model),
   adminLlmEngine: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}`,

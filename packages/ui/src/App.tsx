@@ -8,6 +8,7 @@ import { MakeSharedView } from './components/MakeSharedView'
 import type { EditorContextPayload, LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type ChatStorageView, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
+import { AGENT_VERSION } from '@shared/version'
 import type { PreparationClarificationNotification } from '@shared/qa'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
@@ -2064,6 +2065,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <Suspense fallback={<div role="status">Загрузка Administration…</div>}><UsersAdmin
           variant="page"
           users={admin.adminUsers}
+          latestAgentVersion={AGENT_VERSION}
+          onUpdateMachine={async (id) => { try { await window.api!['admin:updateMachine']({ id }); return null } catch (err) { return err instanceof Error ? err.message : String(err) } }}
           usageSummary={admin.adminUsageSummary}
           makeStats={admin.adminMakeStats}
           isAdmin={session.currentUser?.role === 'admin'}

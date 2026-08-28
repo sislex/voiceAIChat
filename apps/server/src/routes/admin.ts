@@ -28,6 +28,7 @@ import {
 import type { VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { requireAdmin, uid } from '../users/auth.js'
+import { updateAgentOnMachine } from './agents.js'
 
 const UNITS: UsageUnit[] = ['hour', 'day', 'week']
 const ENGINE_KINDS: LlmEngineKind[] = ['claude', 'codex']
@@ -266,7 +267,8 @@ export function registerAdminRoutes(
   /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
   const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null; email?: string | null } = {}): AdminUserInfo => {
     const online = registry.onlineIds()
-    const agents = db.listAgents(name).map((a) => ({ ...a, online: online.has(a.id) }))
+    // Версия нужна админке для «обновить до актуальной» (п.16); у офлайн-машины её нет.
+    const agents = db.listAgents(name).map((a) => ({ ...a, online: online.has(a.id), ...(online.has(a.id) && registry.versionOf(a.id) ? { version: registry.versionOf(a.id) } : {}) }))
     // Админу — все беседы пользователя: скрытие чатов завершённых задач это
     // фильтр сайдбара их владельца, а не свойство данных.
     return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, mustChangePassword: Boolean(lock.mustChangePassword), lastLogin: lock.lastLogin ?? null, llmLimitUsd: lock.llmLimitUsd ?? null, email: lock.email ?? null, name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
@@ -275,6 +277,14 @@ export function registerAdminRoutes(
   app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> =>
     db.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u))
   )
+
+  // Обновление агента на любой машине (machines-roadmap п.16): владение не требуется — админ.
+  app.post<{ Params: { id: string } }>(REST.adminMachineUpdate(':id').replace('%3Aid', ':id'), guard, async (req, reply) => {
+    if (!db.agentOwnerId(req.params.id)) return reply.code(404).send({ error: 'not found' })
+    const result = await updateAgentOnMachine(registry, req.params.id, req)
+    if ('status' in result) return reply.code(result.status).send({ error: result.error })
+    return result
+  })
 
   app.post(REST.adminDeploy, guard, async (_req, reply) => {
     if (!deployTrigger) return reply.code(503).send({ error: 'deploy API is not configured' })
