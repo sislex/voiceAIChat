@@ -1488,6 +1488,25 @@ describe('REST: журнал команд машины', () => {
   })
 })
 
+describe('REST: политика команд проекта и роли (п.10)', () => {
+  it('deny проекта отклоняет команду консоли с 403 до exec; PATCH проекта и PUT ролей сохраняют правила', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const socket = { close: vi.fn(), send(data: string) { const m = JSON.parse(data) as { t: string; execId?: string }; if (m.t === 'exec.start') agentRegistry.handleMessage(created.id, { t: 'exec.done', execId: m.execId!, exitCode: 0 }) } }
+    agentRegistry.register(created.id, 'M', socket, db.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
+    const project = db.createProject(U, { name: 'P' })
+    const patched = await inj({ method: 'PATCH', url: `/api/projects/${project.id}`, payload: { commandPolicy: { denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true } } })
+    expect(patched.statusCode).toBe(200)
+    expect(patched.json().commandPolicy).toEqual({ denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true })
+    const denied = await inj({ method: 'POST', url: `/api/agents/${created.id}/exec?projectId=${project.id}`, payload: { command: 'docker ps' } })
+    expect(denied.statusCode).toBe(403)
+    expect(denied.json().error).toContain('политикой проекта')
+    expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/exec?projectId=${project.id}`, payload: { command: 'ls' } })).statusCode).toBe(200)
+    const put = await inj({ method: 'PUT', url: '/api/admin/command-policy', payload: { roles: { tester: { denyPatterns: ['git push'], allowPatterns: [] }, junk: { denyPatterns: ['x'] } } } })
+    expect(put.json()).toEqual({ roles: { tester: { denyPatterns: ['git push'], allowPatterns: [] } } })
+    expect((await inj({ method: 'GET', url: '/api/admin/command-policy' })).json().roles.tester.denyPatterns).toEqual(['git push'])
+  })
+})
+
 describe('REST: токены агентов (срок, отзыв, привязка к IP)', () => {
   it('перевыпуск с ttlDays задаёт срок, отзыв закрывает вход, события попадают в журнал безопасности', async () => {
     const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()

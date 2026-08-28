@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-28
-checked: 220c26f8
+checked: 0f4a4dac
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -306,6 +306,24 @@ UI — кнопка «Журнал» в строке машины на стра�
 «Экспорт CSV» собирает файл на клиенте из загруженных записей (`commandsToCsv`).
 
 ## Политика команд
+
+### Слои поверх политики машины (machines-roadmap п.10)
+
+`packages/shared/src/commandPolicy.ts`: `ProjectCommandPolicy {denyPatterns, allowPatterns, confirmDangerous}`
+(колонка `projects.command_policy`, JSON; редактор — fieldset «Команды на машинах проекта» в `ProjectSettings`,
+PATCH `/api/projects/:id {commandPolicy}`), `RoleCommandPolicies` (app_config `commandPolicy.roles`,
+`GET/PUT /api/admin/command-policy`, редактор «Команды по ролям» на дашборде админа), `DANGEROUS_COMMAND_PATTERNS`
+и `isDangerousCommand` (rm -rf, force-push, reset --hard, DROP/TRUNCATE, mkfs/dd, shutdown, chmod 777, fork bomb,
+удаление контейнеров). `evaluateCommandLayers` проверяет слои по очереди: любой deny — отказ, каждый непустой allow
+обязан пропустить; политика машины остаётся последним слоем в `registry.exec`. Сервер собирает всё в
+`agents/commandGate.ts` (`createCommandGate({projectPolicy, rolePolicies, userRole})`): консольный `POST /api/agents/:id/exec`
+отвечает 403 «Запрещено: …политикой проекта/роли», MCP-инструмент `bash` возвращает `isError` с текстом
+`commandGateMessage`. Опасные команды из чата при `confirmDangerous` (по умолчанию включено, даже без проекта) отклоняются
+с инструкцией модели: объяснить пользователю, дождаться согласия и повторить вызов с `confirm: true` (новый параметр
+схемы `bash`); в консоли подтверждение не требуется — пользователь сам за клавиатурой. PTY-терминал этими слоями не
+ограничивается (там доверенный shell + собственные ограничения п.12). Тесты — `commandPolicy.test.ts`, `commandGate.test.ts`,
+`rest.test.ts › политика команд проекта и роли`.
+
 
 `AgentPolicy` (`agentProtocol.ts`): `allowedDirs`, `allowNetwork`, `allowWrite`,
 `denyPatterns`, `allowPatterns`, `skills`. Проверка — чистая функция

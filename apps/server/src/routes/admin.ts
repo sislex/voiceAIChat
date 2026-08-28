@@ -6,7 +6,8 @@ import { randomBytes } from 'node:crypto'
 import { readSignupConfig } from '../users/auth.js'
 import { checkPasswordPolicy } from '@voicechat/shared'
 import { hibpEnabled, pwnedCount } from '../users/pwned.js'
-import type { AdminMakeStats, AdminMachineStats, AdminMachineStat } from '@voicechat/shared'
+import type { AdminMakeStats, AdminMachineStats, AdminMachineStat, RoleCommandPolicies } from '@voicechat/shared'
+import { parseRoleCommandPolicies } from '@voicechat/shared'
 import { formatMakeMetrics } from '../make/metrics.js'
 import { formatMachineMetrics } from '../agents/metrics.js'
 import type { FastifyInstance } from 'fastify'
@@ -301,6 +302,14 @@ export function registerAdminRoutes(
   }
   app.get(REST.adminMachineStats, guard, async () => machineStats())
   app.get(REST.adminMachineMetrics, guard, async (_req, reply) => reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8').send(formatMachineMetrics(machineStats())))
+
+  // Ролевые правила команд (п.10): deny/allow-паттерны на роль поверх политики машины и проекта.
+  app.get(REST.adminCommandPolicy, guard, async () => ({ roles: db.getRoleCommandPolicies() }))
+  app.put<{ Body: { roles?: RoleCommandPolicies } | undefined }>(REST.adminCommandPolicy, guard, async (req) => {
+    const roles = parseRoleCommandPolicies(JSON.stringify(req.body?.roles ?? {}))
+    db.setRoleCommandPolicies(roles)
+    return { roles }
+  })
 
   // Отзыв токена любой машины из админки (п.11).
   app.post<{ Params: { id: string } }>(REST.adminMachineTokenRevoke(':id').replace('%3Aid', ':id'), guard, async (req, reply) => {

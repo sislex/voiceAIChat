@@ -1,4 +1,5 @@
-import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource } from '@voicechat/shared'
+import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies } from '@voicechat/shared'
+import { parseProjectCommandPolicy, parseRoleCommandPolicies } from '@voicechat/shared'
 import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
@@ -448,6 +449,7 @@ interface ProjectRow {
   merge_transport: string
   agent_plan_approval_mode: string
   test_command: string
+  command_policy?: string | null
   production_deploy_command: string
   production_agent_id: string | null
   production_environment_mode: string
@@ -1079,6 +1081,7 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'commit_policy')) this.db.exec(`ALTER TABLE projects ADD COLUMN commit_policy TEXT NOT NULL DEFAULT 'agent_commits'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'merge_transport')) this.db.exec(`ALTER TABLE projects ADD COLUMN merge_transport TEXT NOT NULL DEFAULT 'local'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'command_policy')) this.db.exec(`ALTER TABLE projects ADD COLUMN command_policy TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_agent_id')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_agent_id TEXT`)
@@ -2571,6 +2574,16 @@ export class VoiceChatDb {
 
   // ---- Конфигурация приложения (ключ/значение) и регистрация по email ----------------
 
+  /** Политика команд проекта (п.10); null — проекта нет. */
+  getProjectCommandPolicy(projectId: string): ProjectCommandPolicy | null {
+    const r = this.db.prepare(`SELECT command_policy FROM projects WHERE id = ?`).get(projectId) as { command_policy?: string | null } | undefined
+    return r ? parseProjectCommandPolicy(r.command_policy) : null
+  }
+
+  /** Ролевые правила команд (п.10) — одна JSON-запись app_config. */
+  getRoleCommandPolicies(): RoleCommandPolicies { return parseRoleCommandPolicies(this.getAppConfig('commandPolicy.roles')) }
+  setRoleCommandPolicies(roles: RoleCommandPolicies): void { this.setAppConfig('commandPolicy.roles', JSON.stringify(roles)) }
+
   getAppConfig(key: string): string | null {
     const r = this.db.prepare(`SELECT value FROM app_config WHERE key = ?`).get(key) as { value: string } | undefined
     return r?.value ?? null
@@ -3282,6 +3295,7 @@ export class VoiceChatDb {
       mergeTransport: r.merge_transport === 'github_pull_request' ? 'github_pull_request' : 'local',
       agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
       testCommand: r.test_command || undefined,
+      commandPolicy: parseProjectCommandPolicy(r.command_policy),
       productionDeployCommand: r.production_deploy_command || undefined,
       productionAgentId: r.production_agent_id,
       productionEnvironmentMode: r.production_environment_mode === 'managed' ? 'managed' : 'legacy',
@@ -3503,6 +3517,7 @@ export class VoiceChatDb {
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
       productionDeployCommand?: string
       productionAgentId?: string | null
       productionEnvironmentMode?: 'legacy' | 'managed'
@@ -3563,6 +3578,7 @@ export class VoiceChatDb {
       vals.push(fields.agentPlanApprovalMode)
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
+    if (fields.commandPolicy !== undefined) { set.push('command_policy = ?'); vals.push(JSON.stringify(fields.commandPolicy)) }
     if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
     if (fields.productionAgentId !== undefined) { set.push('production_agent_id = ?'); vals.push(fields.productionAgentId) }
     if (fields.productionEnvironmentMode !== undefined) { set.push('production_environment_mode = ?'); vals.push(fields.productionEnvironmentMode) }

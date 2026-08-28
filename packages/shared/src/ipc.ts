@@ -356,6 +356,9 @@ export interface IpcInvokeMap {
   /** Метрики машин для дашборда админа (п.5). */
   'admin:machineStats': { arg: void; result: import('./admin').AdminMachineStats }
   'admin:revokeMachineToken': { arg: { id: string }; result: { ok: true } }
+  /** Ролевые правила команд (п.10). */
+  'admin:commandPolicy': { arg: void; result: { roles: import('./commandPolicy').RoleCommandPolicies } }
+  'admin:setCommandPolicy': { arg: { roles: import('./commandPolicy').RoleCommandPolicies }; result: { roles: import('./commandPolicy').RoleCommandPolicies } }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole; mustChangePassword?: boolean }; result: AdminUserInfo }
@@ -1090,6 +1093,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:updateMachine',
   'admin:machineStats',
   'admin:revokeMachineToken',
+  'admin:commandPolicy',
+  'admin:setCommandPolicy',
   'admin:llmAccess',
   'admin:saveLlmAccess',
   'admin:createUser',

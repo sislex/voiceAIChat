@@ -14,6 +14,8 @@ import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { Conversation, Message, LlmProvider, SessionInfo } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { AgentFleetUpdate } from './AgentFleetUpdate'
+import { RoleCommandPolicyEditor } from './RoleCommandPolicyEditor'
+import type { RoleCommandPolicies } from '@shared/commandPolicy'
 import { Button, Dialog, Skeleton, RefreshIndicator, EmptyState, ErrorState, ConfirmDialog } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from './loadState'
 
@@ -34,6 +36,9 @@ export interface UsersAdminProps {
   makeStats?: AdminMakeStats | null
   /** Метрики машин (machines-roadmap п.5). */
   machineStats?: AdminMachineStats | null
+  /** Ролевые правила команд (п.10): текущие и сохранение. */
+  roleCommandPolicies?: RoleCommandPolicies | null
+  onSaveRoleCommandPolicies?: (roles: RoleCommandPolicies) => Promise<void>
   /** Обычный пользователь видит только собственную статистику без машин и админских действий. */
   isAdmin?: boolean
   /** Обновление агентов машин (machines-roadmap п.16): актуальная версия и запуск обновления. */
@@ -139,6 +144,8 @@ export function UsersAdmin({
   usageSummary = NO_USAGE_SUMMARY,
   makeStats = null,
   machineStats = null,
+  roleCommandPolicies = null,
+  onSaveRoleCommandPolicies,
   isAdmin = true,
   status = 'ready',
   error = null,
@@ -374,6 +381,9 @@ export function UsersAdmin({
                 ))}
               </tbody></table>
             </section>
+          )}
+          {isAdmin && !cur && roleCommandPolicies && onSaveRoleCommandPolicies && (
+            <RoleCommandPolicyEditor roles={roleCommandPolicies} onSave={onSaveRoleCommandPolicies} />
           )}
           {isAdmin && !cur && makeStats && (
             <section className="uadmin-sec" data-testid="make-stats">
