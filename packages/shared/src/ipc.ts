@@ -403,9 +403,10 @@ export interface IpcInvokeMap {
   'projects:invitations': { arg: { id: string }; result: import('./projects').ProjectInvitation[] }
   'projects:invite': {
     arg: { id: string; invitee: string; role?: import('./projects').ProjectRole }
-    result: { invitation: import('./projects').ProjectInvitation; mailed: boolean }
+    /** `link` — одноразовая ссылка приглашения; в списках её нет. */
+    result: { invitation: import('./projects').ProjectInvitation; mailed: boolean; link: string }
   }
-  'projects:resendInvitation': { arg: { id: string; invitationId: string }; result: { invitation: import('./projects').ProjectInvitation; mailed: boolean } }
+  'projects:resendInvitation': { arg: { id: string; invitationId: string }; result: { invitation: import('./projects').ProjectInvitation; mailed: boolean; link: string } }
   'projects:revokeInvitation': { arg: { id: string; invitationId: string }; result: { ok: true } }
   /** Мои приглашения: адрес вне проекта — приглашённый ещё не участник. */
   'invitations:list': { arg: void; result: import('./projects').ProjectInvitationForUser[] }

@@ -182,3 +182,26 @@ describe('приглашения: ответ из интерфейса по id',
     expect(db.listInvitationsForUser('bob')).toEqual([])
   })
 })
+
+describe('удаление пользователя и приглашения', () => {
+  it('живые приглашения удалённого пользователя закрываются', () => {
+    withEmail('hank', 'hank@example.com')
+    const p = db.createProject('alice', { name: 'P' })
+    db.createProjectInvitation('alice', p.id, 'hank')
+    expect(db.listInvitationsForUser('hank').length).toBe(1)
+
+    db.deleteUserData('hank')
+    // Повторная регистрация того же логина не должна возвращать чужое приглашение.
+    withEmail('hank', 'hank@example.com')
+    expect(db.listInvitationsForUser('hank')).toEqual([])
+  })
+
+  it('приглашение на адрес удалённого пользователя тоже закрывается', () => {
+    withEmail('iris', 'iris@example.com')
+    const p = db.createProject('alice', { name: 'P' })
+    db.createProjectInvitation('alice', p.id, 'iris@example.com')
+    db.deleteUserData('iris')
+    withEmail('iris', 'iris@example.com')
+    expect(db.listInvitationsForUser('iris')).toEqual([])
+  })
+})
