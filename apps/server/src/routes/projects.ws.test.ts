@@ -58,6 +58,20 @@ function waitBoardChanged(ws: WebSocket, projectId: string, ms = 1000): Promise<
   })
 }
 
+/** Кадр «изменились мои приглашения»: у него нет projectId — он адресный. */
+function waitInvitationsInvalidation(ws: WebSocket, ms = 800): Promise<boolean> {
+  return new Promise((resolve) => {
+    const onMsg = (data: Buffer) => {
+      const message = JSON.parse(data.toString()) as ServerMessage
+      if (message.t !== 'invitations.invalidate') return
+      ws.off('message', onMsg)
+      resolve(true)
+    }
+    ws.on('message', onMsg)
+    setTimeout(() => { ws.off('message', onMsg); resolve(false) }, ms)
+  })
+}
+
 function waitNotificationInvalidation(ws: WebSocket, ms = 600): Promise<Extract<ServerMessage, { t: 'task-preparation.notifications.invalidate' }> | null> {
   return new Promise((resolve) => {
     const onMsg = (data: Buffer) => {
@@ -178,5 +192,47 @@ describe('WS: живое обновление доски', () => {
     })
     expect(await changed).toBeNull()
     ws.close()
+  })
+})
+
+describe('WS: приглашение приходит живьём', () => {
+  it('приглашённый получает invitations.invalidate, не будучи участником проекта', async () => {
+    const project = (await app.inject({
+      method: 'POST', url: '/api/projects', payload: { name: 'Живое приглашение' },
+      headers: { authorization: `Bearer ${adminTok}` }
+    })).json() as ProjectDetail
+
+    const bobWs = await connect(bobTok)
+    try {
+      const invalidated = waitInvitationsInvalidation(bobWs)
+      await app.inject({
+        method: 'POST', url: `/api/projects/${project.id}/invitations`, payload: { invitee: 'bob' },
+        headers: { authorization: `Bearer ${adminTok}` }
+      })
+      // Боб не участник — по членству его бы не нашли, кадр адресный.
+      expect(await invalidated).toBe(true)
+      expect(db.getProject('bob', project.id)).toBeNull()
+    } finally {
+      bobWs.close()
+    }
+  })
+
+  it('посторонний пользователь кадра не получает', async () => {
+    db.createUser('carol', '', 'developer')
+    const carolWs = await connect(signToken({ name: 'carol', role: 'developer' }, SECRET))
+    const project = (await app.inject({
+      method: 'POST', url: '/api/projects', payload: { name: 'Чужое' },
+      headers: { authorization: `Bearer ${adminTok}` }
+    })).json() as ProjectDetail
+    try {
+      const invalidated = waitInvitationsInvalidation(carolWs, 400)
+      await app.inject({
+        method: 'POST', url: `/api/projects/${project.id}/invitations`, payload: { invitee: 'bob' },
+        headers: { authorization: `Bearer ${adminTok}` }
+      })
+      expect(await invalidated).toBe(false)
+    } finally {
+      carolWs.close()
+    }
   })
 })

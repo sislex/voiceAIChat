@@ -165,6 +165,9 @@ export function createSession(deps: SessionDeps): WsHandlers {
         unsubPreparationNotifications = deps.preparationNotifications.subscribe((event) => {
           if (event.userId ? event.userId !== deps.user.name : !deps.preparationNotifications!.canAccess(event.projectId)) return
           ctx.send({ t: 'task-preparation.notifications.invalidate', v: 1, projectId: event.projectId })
+          // Адресное событие может касаться приглашения — а приглашённый ещё не
+          // участник проекта, и по членству его не найти.
+          if (event.userId) ctx.send({ t: 'invitations.invalidate', v: 1 })
         })
       }
       if (deps.board) {

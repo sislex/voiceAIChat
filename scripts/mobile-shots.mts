@@ -83,6 +83,13 @@ async function openSidebar(page: Page): Promise<void> {
   if (await toggle.count()) {
     await toggle.first().click()
     await page.waitForTimeout(600)
+    return
+  }
+  // Панель может быть свёрнута и без переключателя в шапке (экраны без ToolFrame).
+  const hamburger = page.locator('button[aria-label="Открыть боковую панель"]')
+  if (await hamburger.count()) {
+    await hamburger.first().click()
+    await page.waitForTimeout(600)
   }
 }
 
@@ -127,6 +134,22 @@ try {
     await shot(page, '3-new-project-dialog')
     await page.keyboard.press('Escape')
 
+    // Список приглашений в сайдбаре: самый новый экран, снимаем отдельно.
+    await page.goto(`${BASE}/#/projects`, { waitUntil: 'networkidle' })
+    await openSidebar(page)
+    if (await page.locator('.proj-invites-inbox').count()) {
+      await shot(page, '7-invitations-inbox')
+    }
+
+    // Экран приглашения у вошедшего: принять или отклонить.
+    if (INVITE) {
+      await page.goto(`${BASE}/#/project-invite/${INVITE}`, { waitUntil: 'networkidle' })
+      await page.waitForTimeout(800)
+      if (await page.locator('[data-testid="invite-screen"]').count()) {
+        await shot(page, '8-invite-authed')
+      }
+    }
+
     if (PROJECT) {
       await page.goto(`${BASE}/#/projects/${PROJECT}/settings`, { waitUntil: 'networkidle' })
       await page.waitForTimeout(1500)
@@ -136,8 +159,11 @@ try {
       await shot(page, '5-settings-members')
     }
 
-    // Каталог типов в пользовательских настройках.
+    // Каталог типов в пользовательских настройках. Меню аккаунта живёт в
+    // боковой панели, поэтому её надо раскрыть заново: предыдущие шаги могли
+    // увести на другой маршрут и закрыть её.
     await page.goto(`${BASE}/#/projects`, { waitUntil: 'networkidle' })
+    await page.waitForTimeout(600)
     await openSidebar(page)
     const account = page.locator('.acct-toggle')
     if (await account.count()) {
