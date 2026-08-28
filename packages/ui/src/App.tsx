@@ -525,7 +525,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const onVisible = (): void => { if (document.visibilityState === 'visible') schedule() }
     const realtime = window.realtime
     const unsubs = realtime
-      ? [realtime.onConnected(schedule), realtime.onTaskPreparationNotificationsInvalidated(schedule)]
+      ? [
+          realtime.onConnected(schedule),
+          realtime.onTaskPreparationNotificationsInvalidated(schedule),
+          // Приглашение приходит, пока человек уже в приложении: без этого он
+          // увидел бы его только после перезагрузки страницы.
+          ...(realtime.onInvitationsInvalidated ? [realtime.onInvitationsInvalidated(() => { void projectsActions.loadMyInvitations() })] : [])
+        ]
       : []
 
     // Авторизация — первая контрольная точка; connect того же тика схлопнется debounce.

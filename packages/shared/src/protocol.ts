@@ -627,6 +627,12 @@ export type ServerMessage =
   | { t: 'task.repositories.updated'; projectId: string; taskId: string }
   /** Снимок уведомлений подготовки изменился; содержимое читается только по HTTP. */
   | { t: 'task-preparation.notifications.invalidate'; v: 1; projectId: string }
+  /**
+   * Изменились приглашения текущего пользователя. Отдельный кадр, а не общий
+   * канал уведомлений проекта: приглашённый ещё НЕ участник, и проверка членства
+   * его бы отсекла.
+   */
+  | { t: 'invitations.invalidate'; v: 1 }
   | { t: 'ci.snapshot'; runId: string; detail: CiRunDetail; log: CiLogLine[] }
   | { t: 'ci.run'; runId: string; run: CiRun }
   | { t: 'ci.step'; runId: string; step: CiRunStep }
@@ -726,6 +732,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'preparation.run.updated',
   'task.repositories.updated',
   'task-preparation.notifications.invalidate',
+  'invitations.invalidate',
   'ci.snapshot',
   'ci.run',
   'ci.step',
