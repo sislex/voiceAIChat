@@ -15,13 +15,13 @@ import type { LlmEngineOption } from '@shared/admin'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
 import { Button } from '@voicechat/ui-kit'
-import { IconButton } from '@voicechat/ui-kit'
+import { IconButton, useConfirm } from '@voicechat/ui-kit'
 import { SettingsPage } from './SettingsPage'
 import { ProjectMachinesSettings } from './ProjectMachinesSettings'
 import { ProjectMachineGitAccess } from './ProjectMachineGitAccess'
 
 import { DEFAULT_PROJECT_COMMAND_POLICY, type ProjectCommandPolicy } from '@shared/commandPolicy'
-import { ALL_PROJECT_FEATURES, PROJECT_FEATURE_LABELS, PROJECT_FEATURES, projectTypeChainLabel, type ProjectTypeNode } from '@shared/projectTypes'
+import { ALL_PROJECT_FEATURES, PROJECT_FEATURE_LABELS, PROJECT_FEATURES, projectTypeChainLabel, resolveProjectTypeFeatures, type ProjectTypeNode } from '@shared/projectTypes'
 export interface ProjectSettingsProps {
   detail: ProjectDetail
   /** Каталог типов для селекта; пусто — селект не показываем. */
@@ -35,7 +35,8 @@ export interface ProjectSettingsProps {
   onUpdate: (id: string, fields: { typeId?: string; name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; testUsers?: ProjectTestUser[]; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null; commandPolicy?: ProjectCommandPolicy }) => void
 
   onDelete: (id: string) => void
-  onAddMember: (id: string, username: string) => void
+  // onAddMember убран намеренно: участник добавляется только приглашением, а
+  // молчаливое добавление осталось REST-роутом для админских сценариев и тестов.
   /** Живые приглашения проекта (владельцу). */
   invitations?: ProjectInvitation[]
   /** Пригласить по логину или email; нет обработчика — блок не показываем. */
@@ -57,6 +58,17 @@ export interface ProjectSettingsProps {
   gitAccessApi?: Pick<RendererApi, 'projects:gitAccessStatus' | 'projects:configureGitAccess' | 'projects:verifyGitAccess' | 'projects:deleteGitAccess' | 'projects:gitAccessDiagnostics'>
   managedProductionApi?: Pick<RendererApi, 'releases:managedPreflight' | 'releases:managedConfirm' | 'projects:bootstrapProduction' | 'projects:get'>
   onManagedProductionConfirmed?: (detail: ProjectDetail) => void | Promise<void>
+}
+
+/** Эффективные возможности узла с учётом цепочки родителей. */
+function effectiveFeatures(node: ProjectTypeNode, all: ProjectTypeNode[]): ReturnType<typeof resolveProjectTypeFeatures> {
+  const chain: ProjectTypeNode[] = []
+  let current: ProjectTypeNode | undefined = node
+  while (current) {
+    chain.unshift(current)
+    current = current.parentId ? all.find((t) => t.id === current!.parentId) : undefined
+  }
+  return resolveProjectTypeFeatures(chain)
 }
 
 /** Подпись опции — путь от корня: одноимённые подтипы иначе не различить. */
@@ -145,9 +157,32 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   const [confirmDel, setConfirmDel] = useState(false)
   type SettingsTab = 'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const confirm = useConfirm()
   const [inviteRole, setInviteRole] = useState<ProjectRole>('member')
   const [deriveOpen, setDeriveOpen] = useState(false)
   const [deriveName, setDeriveName] = useState('')
+  /**
+   * Смена типа. Если новый тип что-то выключает, спрашиваем: сузить набор —
+   * значит убрать со страницы целые разделы, и молчаливое переключение
+   * выглядит как поломка.
+   */
+  const changeType = async (typeId: string): Promise<void> => {
+    if (typeId === detail.typeId) return
+    const next = props.projectTypes?.find((t) => t.id === typeId)
+    const lost = next
+      ? PROJECT_FEATURES.filter((feature) => features[feature] && !effectiveFeatures(next, props.projectTypes ?? [])[feature])
+      : []
+    if (lost.length) {
+      const ok = await confirm({
+        title: 'Сменить тип проекта?',
+        message: `Станут недоступны: ${lost.map((feature) => PROJECT_FEATURE_LABELS[feature].split(',')[0].toLowerCase()).join(', ')}. Данные не удаляются — разделы вернутся, если выбрать тип обратно.`,
+        confirmLabel: 'Сменить тип'
+      })
+      if (!ok) return
+    }
+    props.onUpdate(detail.id, { typeId })
+  }
+
   const submitDerive = (): void => {
     const name = deriveName.trim()
     if (!name || !props.onDeriveType) return
@@ -257,7 +292,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
             <select
             className="login-input"
             value={detail.typeId}
-            onChange={(e) => props.onUpdate(detail.id, { typeId: e.target.value })}
+            onChange={(e) => void changeType(e.target.value)}
           >
             {(props.projectTypes ?? []).map((type) => (
               <option key={type.id} value={type.id}>{typeOptionLabel(type, props.projectTypes ?? [])}</option>

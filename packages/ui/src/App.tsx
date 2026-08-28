@@ -1912,7 +1912,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       )}
 
       {/* Проектов нет вообще: редиректу некуда вести — показываем, что делать. */}
-      {inProjects && !routeProjectId && firstProjectId === null && <ProjectsEmptyPage />}
+      {inProjects && !routeProjectId && firstProjectId === null && <ProjectsEmptyPage invitationCount={projects.myInvitations.length} />}
 
       {inProjects && routeProjectId && projectMissing && <ProjectNotFoundPage />}
 
@@ -1922,6 +1922,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <ProjectPage
           projectName={routeProjectName}
           features={projects.projectDetail?.typeChain.features}
+          {...(projects.projectDetail?.typeChain.nodes.length
+            ? { typeLabel: projects.projectDetail.typeChain.nodes[projects.projectDetail.typeChain.nodes.length - 1].name }
+            : {})}
           // Недоступный раздел в адресе не оставляем: тип мог измениться, а ссылка — остаться.
           section={routeSettings ? 'settings' : routeReleases && projectFeatures.releases ? 'releases' : 'board'}
           onSectionChange={(section) =>
@@ -1943,7 +1946,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 projectTypes={projects.projectTypes}
                 invitations={projects.projectInvitations}
                 onDeriveType={async (id, name) => { await projectsActions.deriveProjectType(id, name) }}
-                onInvite={async (id, invitee, role) => { await projectsActions.inviteToProject(id, invitee, role) }}
+                onInvite={async (id, invitee, role) => {
+                  const result = await projectsActions.inviteToProject(id, invitee, role)
+                  if (!result) return
+                  // Владелец должен понимать, ушло ли письмо: без этого он не
+                  // знает, почему приглашённый молчит.
+                  toast.success(result.mailed && result.email
+                    ? `Приглашение отправлено на ${result.email}`
+                    : 'Приглашение создано. Письма не было — попросите принять его в приложении')
+                }}
                 onResendInvitation={(id, invitationId) => projectsActions.resendProjectInvitation(id, invitationId)}
                 onRevokeInvitation={(id, invitationId) => projectsActions.revokeProjectInvitation(id, invitationId)}
                 agents={operations.agents}
@@ -1959,7 +1970,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                     navigate(next ? `/projects/${next}` : '/projects', { replace: true })
                   })
                 }}
-                onAddMember={(id, username) => void projectsActions.addProjectMember(id, username)}
                 onUpdateMemberRole={(id, username, role) => void projectsActions.updateProjectMemberRole(id, username, role)}
                 onRemoveMember={(id, username) => void projectsActions.removeProjectMember(id, username)}
                 onLinkMachine={(id, agentId) => void projectsActions.linkProjectMachine(id, agentId)}
