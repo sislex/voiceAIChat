@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PreviewEnvironment, PreviewAccessResult, PreviewOperation, PreviewServiceKind } from '@shared/preview'
 import type { ProjectMachine } from '@shared/projects'
 import { isPreviewBusy, previewActions } from '@shared/preview'
@@ -25,7 +25,9 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
   const [logsOpen, setLogsOpen] = useState(false)
   const [scenario, setScenario] = useState('basic-user')
   const [machines, setMachines] = useState<ProjectMachine[]>([])
+  const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null)
   const [selectedAgentId, setSelectedAgentId] = useState('')
+  const selectionTouched = useRef(false)
   const [opening, setOpening] = useState<PreviewServiceKind | null>(null)
   const [readerOpening, setReaderOpening] = useState(false)
   const [connection, setConnection] = useState<PreviewAccessResult | null>(null)
@@ -36,7 +38,9 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
     if (!api) return
     try {
       const value = await api.get(props.projectId, props.taskId)
-      setEnvironment(value); setSelectedAgentId((current) => current || value?.agentId || ''); setError(null)
+      setEnvironment(value)
+      if (value) setSelectedAgentId(value.agentId)
+      setError(null)
     }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setLoading(false) }
@@ -47,11 +51,20 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
     void (window.api?.['projects:get']({ id: props.projectId }) ?? Promise.resolve(null)).then((project) => {
       if (!cancelled && project) {
         setMachines(project.machines)
-        setSelectedAgentId((current) => current || project.defaultAgentId || project.machines[0]?.agentId || '')
+        setDefaultAgentId(project.defaultAgentId)
       }
     })
     return () => { cancelled = true }
   }, [props.projectId])
+  useEffect(() => {
+    if (environment) {
+      setSelectedAgentId(environment.agentId)
+      return
+    }
+    if (!selectionTouched.current) {
+      setSelectedAgentId(defaultAgentId && machines.some((machine) => machine.agentId === defaultAgentId) ? defaultAgentId : '')
+    }
+  }, [defaultAgentId, environment, machines])
   useEffect(() => {
     if (!environment || !isPreviewBusy(environment.state)) return
     const timer = window.setInterval(() => void load(), 1500)
@@ -68,6 +81,7 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
   const actions = previewActions(state)
   const operate = async (operation: PreviewOperation): Promise<void> => {
     if (launching || isPreviewBusy(state)) return
+    if (operation === 'start' && !environment && !machines.some((machine) => machine.agentId === selectedAgentId)) return
     if ((operation === 'remove' || operation === 'reset' || operation === 'docker_install') && !(await confirm({
       title: operation === 'remove' ? 'Удалить тестовое окружение?' : operation === 'docker_install' ? 'Установить Docker на выбранной машине?' : 'Сбросить тестовые данные?',
       confirmLabel: operation === 'remove' ? 'Удалить' : operation === 'docker_install' ? 'Установить Docker' : 'Сбросить',
@@ -130,6 +144,8 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
   const elapsed = `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, '0')}`
   const current = environment?.expectedCommitSha && environment.expectedCommitSha === environment.currentCommitSha && environment.currentCommitSha === environment.builtCommitSha
   const canOpen = state === 'running' && environment?.healthStatus === 'healthy'
+  const selectedMachineIsAvailable = machines.some((machine) => machine.agentId === selectedAgentId)
+  const actualMachineLabel = environment ? machines.find((machine) => machine.agentId === environment.agentId)?.name?.trim() || environment.agentId : null
   return <section className={`feature-preview feature-preview--${state}`} data-testid="feature-preview">
     <div className="feature-preview__head">
       <div>
@@ -150,9 +166,10 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
       <Button size="sm" variant="ghost" aria-expanded={logsOpen} onClick={() => setLogsOpen((value) => !value)}>Подробнее</Button>
     </div>}
     <label className="feature-preview__scenario">Машина для окружения
-      <select aria-label="Машина для тестового окружения" value={selectedAgentId} disabled={isPreviewBusy(state) || state === 'running'} onChange={(event) => setSelectedAgentId(event.target.value)}>
+      <select aria-label="Машина для тестового окружения" value={selectedAgentId} disabled={isPreviewBusy(state) || state === 'running'} onChange={(event) => { selectionTouched.current = true; setSelectedAgentId(event.target.value) }}>
         <option value="">Выберите машину</option>
-        {machines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machine.agentId}</option>)}
+        {environment && !machines.some((machine) => machine.agentId === environment.agentId) && <option value={environment.agentId}>{environment.agentId}</option>}
+        {machines.map((machine) => <option key={machine.agentId} value={machine.agentId}>{machine.name?.trim() || machine.agentId}</option>)}
       </select>
     </label>
     {environment && <>
@@ -163,7 +180,7 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
         <div><dt>Текущий SHA</dt><dd><code>{environment.currentCommitSha?.slice(0, 10) ?? '—'}</code></dd></div>
         <div><dt>Собранный SHA</dt><dd><code>{environment.builtCommitSha?.slice(0, 10) ?? '—'}</code></dd></div>
         <div><dt>Git</dt><dd>{environment.gitStatus}</dd></div>
-        <div><dt>Машина</dt><dd>{environment.agentId}</dd></div>
+        <div><dt>Машина</dt><dd>{actualMachineLabel}</dd></div>
         <div><dt>Health</dt><dd>{environment.healthStatus}</dd></div>
         <div><dt>Данные</dt><dd>{environment.selectedSeedScenario ?? 'не подготовлены'}</dd></div>
       </dl>
@@ -190,7 +207,7 @@ export function FeaturePreviewSection(props: { projectId: string; taskId: string
     </>}
     {error && <p className="feature-preview__error">{error}</p>}
     <div className="feature-preview__actions">
-      {actions.includes('start') && <Button variant="primary" size="sm" disabled={launching} aria-busy={launching} onClick={() => void operate('start')}>{launching ? 'Запускаем тестовый контейнер…' : state === 'stopped' ? 'Запустить снова' : 'Запустить тестовый контейнер'}</Button>}
+      {actions.includes('start') && <Button variant="primary" size="sm" disabled={launching || (!environment && !selectedMachineIsAvailable)} aria-busy={launching} onClick={() => void operate('start')}>{launching ? 'Запускаем тестовый контейнер…' : state === 'stopped' ? 'Запустить снова' : 'Запустить тестовый контейнер'}</Button>}
       {actions.includes('rebuild') && <Button size="sm" onClick={() => void operate('rebuild')}>Пересобрать</Button>}
       {actions.includes('stop') && <Button size="sm" onClick={() => void operate('stop')}>Остановить</Button>}
       {canOpen && environment?.appUrl && <Button variant="primary" size="sm" disabled={opening !== null} onClick={() => void openService('app')}>{opening === 'app' ? 'Создаём подключение…' : 'Открыть проект'}</Button>}
