@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 75 коммит(ов) в areas после сверки: b865b51c feat(machines): уровень доступа участников к машине проекта — полный или только чтение (roadmap п.18) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 77 коммит(ов) в areas после сверки: b865b51c feat(machines): уровень доступа участников к машине проекта — полный или только чтение (roadmap п.18) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 74 коммит(ов) в areas после сверки: b865b51c feat(machines): уровень доступа участников к машине проекта — полный или только чтение (roadmap п.18) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 760 коммит(ов) в areas после сверки: b865b51c feat(machines): уровень доступа участников к машине проекта — полный или только чтение (roadmap п.18) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 762 коммит(ов) в areas после сверки: 600a5373 docs(kb): журнал — релиз 0.1.179 задеплоен, machines-roadmap закрыт (18/18) … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 184 коммит(ов) в areas после сверки: b865b51c feat(machines): уровень доступа участников к машине проекта — полный или только чтение (roadmap п.18) … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 29 коммит(ов) в areas после сверки: b865b51c feat(machines): уровень доступа участников к машине проекта — полный или только чтение (roadmap п.18) … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 7 коммит(ов) в areas после сверки: b865b51c feat(machines): уровень доступа участников к машине проекта — полный или только чтение (roadmap п.18) … |
@@ -39,7 +39,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-27 | ⚠ 3 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 24 коммит(ов) в areas после сверки: b865b51c feat(machines): уровень доступа участников к машине проекта — полный или только чтение (roadmap п.18) … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-28 | ⚠ 3 коммит(ов) в areas после сверки: ceeaca5c Merge task 8dbc9732-106c-491a-a919-144c8f3936f3 … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-28 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-28, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -57,10 +57,11 @@
 
 ## Журнал сессий
 
-Всего записей: 396. Последние:
+Всего записей: 397. Последние:
 
 - [2026-08-28-macbook-air-user-task-modal-brief-validation.md](log/2026-08-28-macbook-air-user-task-modal-brief-validation.md) — task-modal-brief-validation
 - [2026-08-28-macbook-air-user-simplify-chat-header-kb-usage.md](log/2026-08-28-macbook-air-user-simplify-chat-header-kb-usage.md) — simplify-chat-header-kb-usage
+- [2026-08-28-macbook-air-user-sidebar-project-filter-all.md](log/2026-08-28-macbook-air-user-sidebar-project-filter-all.md) — sidebar-project-filter-all
 - [2026-08-28-macbook-air-user-feature-preview-machine-selection.md](log/2026-08-28-macbook-air-user-feature-preview-machine-selection.md) — feature-preview-machine-selection
 - [2026-08-28-macbook-air-user-desktop-sidebar.md](log/2026-08-28-macbook-air-user-desktop-sidebar.md) — desktop-sidebar
 - [2026-08-28-alexeys-macbook-air-2-machines-roadmap-9.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-9.md) — machines-roadmap-9
@@ -68,7 +69,6 @@
 - [2026-08-28-alexeys-macbook-air-2-machines-roadmap-7.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-7.md) — machines-roadmap-7
 - [2026-08-28-alexeys-macbook-air-2-machines-roadmap-5.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-5.md) — machines-roadmap-5
 - [2026-08-28-alexeys-macbook-air-2-machines-roadmap-4.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-4.md) — machines-roadmap-4
-- [2026-08-28-alexeys-macbook-air-2-machines-roadmap-3.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-3.md) — machines-roadmap-3
 
 ## Исторические планы
 
