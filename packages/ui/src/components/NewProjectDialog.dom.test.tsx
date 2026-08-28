@@ -27,6 +27,20 @@ describe('typeCascadeLevels', () => {
   it('у листа следующего уровня нет', () => {
     expect(typeCascadeLevels(builtin(), [BUILTIN_PROJECT_TYPE_IDS.general]).length).toBe(1)
   })
+
+  it('три уровня: подтип подтипа открывает третий селект', () => {
+    // Ровно то, что получается после «Сохранить проект как подтип» у веб-проекта.
+    const deep: ProjectTypeNode[] = [...builtin(), {
+      id: 'own-deep', parentId: BUILTIN_PROJECT_TYPE_IDS.web, name: 'Лендинги',
+      description: '', features: {}, defaults: {}, builtin: false, ownerId: 'bob',
+      status: 'private', reviewNote: '', createdBy: 'bob', createdAt: 0, updatedAt: 0
+    }]
+    const levels = typeCascadeLevels(deep, [BUILTIN_PROJECT_TYPE_IDS.software, BUILTIN_PROJECT_TYPE_IDS.web])
+    expect(levels.length).toBe(3)
+    expect(levels[2].map((t) => t.id)).toEqual(['own-deep'])
+    // И четвёртого уровня не появляется: у листа детей нет.
+    expect(typeCascadeLevels(deep, [BUILTIN_PROJECT_TYPE_IDS.software, BUILTIN_PROJECT_TYPE_IDS.web, 'own-deep']).length).toBe(3)
+  })
 })
 
 describe('NewProjectDialog', () => {
