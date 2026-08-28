@@ -1455,6 +1455,39 @@ describe('REST: conversations/messages/settings', () => {
   })
 })
 
+describe('REST: журнал команд машины', () => {
+  it('exec через REST попадает в журнал; фильтр по подстроке и CSV-экспорт', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const socket = {
+      close: vi.fn(),
+      send(data: string) {
+        const message = JSON.parse(data) as { t: string; execId?: string; command?: string }
+        if (message.t === 'exec.start') {
+          agentRegistry.handleMessage(created.id, { t: 'exec.chunk', execId: message.execId!, stream: 'stdout', data: `ran ${message.command}` })
+          agentRegistry.handleMessage(created.id, { t: 'exec.done', execId: message.execId!, exitCode: message.command === 'false' ? 1 : 0 })
+        }
+      }
+    }
+    agentRegistry.register(created.id, 'M', socket, db.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
+    expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/exec`, payload: { command: 'uptime' } })).statusCode).toBe(200)
+    expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/exec`, payload: { command: 'false' } })).statusCode).toBe(200)
+    const all = (await inj({ method: 'GET', url: `/api/agents/${created.id}/commands` })).json()
+    expect(all.map((r: { command: string }) => r.command)).toEqual(['false', 'uptime'])
+    expect(all[1]).toMatchObject({ source: 'console', userId: U, exitCode: 0, outputExcerpt: 'ran uptime', conversationId: null })
+    expect(all[0].exitCode).toBe(1)
+    const filtered = (await inj({ method: 'GET', url: `/api/agents/${created.id}/commands?q=upt&source=console` })).json()
+    expect(filtered).toHaveLength(1)
+    const csv = await inj({ method: 'GET', url: `/api/agents/${created.id}/commands?format=csv` })
+    expect(csv.headers['content-type']).toContain('text/csv')
+    expect(csv.body.split('\n')[0]).toBe('startedAt,user,source,command,exitCode,timedOut,durationMs,conversationId,error')
+    expect(csv.body).toContain('"uptime","0"')
+    // чужая машина — 404
+    db.createUser('user2', '', 'developer')
+    const other = db.createAgent('user2', 'X')
+    expect((await inj({ method: 'GET', url: `/api/agents/${other.id}/commands` })).statusCode).toBe(404)
+  })
+})
+
 describe('REST: утилиты машины (exec/fs)', () => {
   it('exec: 404 на чужую машину; 400 на офлайн-машину владельца', async () => {
     // Своя офлайн-машина: exec → 400 (не в сети).

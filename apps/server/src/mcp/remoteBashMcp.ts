@@ -224,7 +224,7 @@ export function registerRemoteBashMcp(
     scope.addContentTypeParser('*', (_req, _payload, done) => {
       done(null, undefined)
     })
-    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; ro?: string; project?: string; files?: string } }>(
+    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; ro?: string; project?: string; files?: string; conv?: string } }>(
       REMOTE_BASH_MCP_PATH,
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
@@ -360,7 +360,7 @@ export function registerRemoteBashMcp(
               const shellCommand = cwd
                 ? `cd -- '${quoteCwd(cwd, registry.platformOf(target.agentId))}' && ${command}`
                 : command
-              const res = await registry.exec(target.agentId, shellCommand, timeoutMs, abort.signal)
+              const res = await registry.exec(target.agentId, shellCommand, timeoutMs, abort.signal, { source: 'chat', conversationId: req.query.conv ?? null })
               const tail = `[exit code: ${res.exitCode ?? '?'}${res.timedOut ? ', таймаут' : ''}]`
               // Вывод сжимаем ДО приписки с кодом выхода: код и хвост лога —
               // самое ценное для fix-loop, и терять их из-за обрезки нельзя.
@@ -509,7 +509,7 @@ export function registerRemoteBashMcp(
               const target = remotePath(machineTarget.cwd, path ?? '.')
               const include = glob ? ` --include=${quoteShell(glob)}` : ''
               const command = `grep -rn --binary-files=without-match${include} -- ${quoteShell(pattern)} ${quoteShell(target)}`
-              const res = await registry.exec(machineTarget.agentId, command, DEFAULT_TIMEOUT_MS, abort.signal)
+              const res = await registry.exec(machineTarget.agentId, command, DEFAULT_TIMEOUT_MS, abort.signal, { source: 'chat', conversationId: req.query.conv ?? null })
               if (res.exitCode !== 0 && res.exitCode !== 1) {
                 throw new Error(res.output.trim() || `grep завершился с кодом ${res.exitCode ?? '?'}`)
               }

@@ -259,6 +259,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'agents:regenerateToken': ({ id }) => req(REST.agentToken(id), { method: 'POST' }),
     'agents:update': ({ id }) => req(REST.agentUpdate(id), { method: 'POST' }),
+    'agents:commands': ({ id, limit, q, source }) => {
+      const params = new URLSearchParams()
+      if (limit) params.set('limit', String(limit))
+      if (q) params.set('q', q)
+      if (source) params.set('source', source)
+      const query = params.toString()
+      return req(`${REST.agentCommands(id)}${query ? `?${query}` : ''}`)
+    },
     'downloads:url': async ({ kind }) => {
       const path =
         kind === 'desktop'

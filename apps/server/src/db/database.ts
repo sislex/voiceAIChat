@@ -1,4 +1,4 @@
-import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo } from '@voicechat/shared'
+import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource } from '@voicechat/shared'
 import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
@@ -2722,6 +2722,29 @@ export class VoiceChatDb {
   }
 
   // ---- Журнал безопасности (auth-roadmap п.7) --------------------------------
+
+  // ---- Журнал команд машин (machines-roadmap п.4) ----------------------------
+
+  addMachineCommand(rec: Omit<MachineCommandRecord, 'id'>): MachineCommandRecord {
+    const info = this.db.prepare(`INSERT INTO machine_commands (machine_id, user_id, source, command, exit_code, timed_out, error, duration_ms, started_at, conversation_id, output_excerpt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(rec.machineId, rec.userId, rec.source, rec.command.slice(0, 4000), rec.exitCode, rec.timedOut ? 1 : 0, rec.error ? rec.error.slice(0, 500) : null, rec.durationMs, rec.startedAt, rec.conversationId, rec.outputExcerpt.slice(0, 500))
+    // Журнал не растёт бесконечно: по 5000 последних записей на машину.
+    if (Math.random() < 0.02) this.db.prepare(`DELETE FROM machine_commands WHERE machine_id = ? AND id < (SELECT COALESCE(MAX(id), 0) - 5000 FROM machine_commands WHERE machine_id = ?)`).run(rec.machineId, rec.machineId)
+    return { ...rec, id: Number(info.lastInsertRowid) }
+  }
+
+  listMachineCommands(machineId: string, filter: { limit?: number; q?: string; source?: MachineCommandSource } = {}): MachineCommandRecord[] {
+    const limit = Math.min(Math.max(filter.limit ?? 200, 1), 2000)
+    const where = ['machine_id = ?']
+    const params: unknown[] = [machineId]
+    if (filter.source) { where.push('source = ?'); params.push(filter.source) }
+    if (filter.q?.trim()) { where.push('command LIKE ?'); params.push(`%${filter.q.trim()}%`) }
+    const rows = this.db.prepare(`SELECT * FROM machine_commands WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`).all(...params, limit) as Array<{
+      id: number; machine_id: string; user_id: string; source: MachineCommandSource; command: string; exit_code: number | null; timed_out: number; error: string | null; duration_ms: number; started_at: number; conversation_id: string | null; output_excerpt: string
+    }>
+    return rows.map((r) => ({ id: r.id, machineId: r.machine_id, userId: r.user_id, source: r.source, command: r.command, exitCode: r.exit_code, timedOut: r.timed_out === 1, error: r.error, durationMs: r.duration_ms, startedAt: r.started_at, conversationId: r.conversation_id, outputExcerpt: r.output_excerpt }))
+  }
 
   logSecurityEvent(e: { user: string; type: SecurityEventType; ip?: string; userAgent?: string; details?: string }): void {
     this.db.prepare(`INSERT INTO security_events (at, user_name, type, ip, user_agent, details) VALUES (?, ?, ?, ?, ?, ?)`)

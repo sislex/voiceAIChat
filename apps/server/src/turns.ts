@@ -751,7 +751,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       }
       remote = {
         mcpUrl:
-          `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}` +
+          `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}&conv=${encodeURIComponent(conversationId)}` +
           `${remoteFileToken ? `&files=${encodeURIComponent(remoteFileToken)}` : ''}` +
           `${(conv?.workdir ?? (conv?.projectId ? projectMachines.find((m) => m.agentId === target)?.path : null)) ? `&cwd=${encodeURIComponent((conv?.workdir ?? projectMachines.find((m) => m.agentId === target)?.path)!)}` : ''}` +
           `${conv?.projectId && otherMachines.length ? `&project=${encodeURIComponent(conv.projectId)}` : ''}`,

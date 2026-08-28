@@ -611,8 +611,27 @@ export async function registerAgentRoutes(
         if (!reply.raw.writableEnded) abort.abort()
       })
       return withFs(req, reply, (id) =>
-        registry.exec(id, req.body?.command ?? '', EXEC_TIMEOUT_MS, abort.signal)
+        registry.exec(id, req.body?.command ?? '', EXEC_TIMEOUT_MS, abort.signal, { source: 'console', userId: uid(req) })
       )
+    }
+  )
+
+  // Журнал команд машины (п.4): новые сверху, фильтр по подстроке и источнику; ?format=csv — экспорт.
+  app.get<{ Params: { id: string }; Querystring: { projectId?: string; limit?: string; q?: string; source?: string; format?: string } }>(
+    '/api/agents/:id/commands',
+    async (req, reply) => {
+      const u = uid(req)
+      if (!canUseAgent(u, req.params.id, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
+      const source = req.query.source === 'console' || req.query.source === 'chat' || req.query.source === 'system' ? req.query.source : undefined
+      const limit = req.query.limit ? Number(req.query.limit) : undefined
+      const rows = db.listMachineCommands(req.params.id, { limit: Number.isFinite(limit) ? limit : undefined, q: req.query.q, source })
+      if (req.query.format === 'csv') {
+        const cell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`
+        const lines = ['startedAt,user,source,command,exitCode,timedOut,durationMs,conversationId,error']
+        for (const r of rows) lines.push([new Date(r.startedAt).toISOString(), r.userId, r.source, r.command, r.exitCode ?? '', r.timedOut, r.durationMs, r.conversationId ?? '', r.error ?? ''].map(cell).join(','))
+        return reply.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="commands-${req.params.id}.csv"`).send(lines.join('\n') + '\n')
+      }
+      return rows
     }
   )
 }

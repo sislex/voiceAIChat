@@ -18,8 +18,7 @@ import {
   type FsResult,
   type GitAccessRequest,
   type GitAccessResult,
-  type ServerToAgent
-} from '@voicechat/shared'
+  type ServerToAgent, type MachineCommandRecord, type MachineCommandSource } from '@voicechat/shared'
 
 /** Минимальный интерфейс сокета агента (реальный ws.WebSocket ему соответствует). */
 export interface AgentSocket {
@@ -138,6 +137,9 @@ interface TunnelSession {
 }
 const TUNNEL_START_TIMEOUT_MS = 10_000
 const TUNNEL_IDLE_TTL_MS = 30 * 60_000
+
+/** Кто и откуда запустил команду — попадает в журнал команд машины. */
+export interface ExecMeta { source: MachineCommandSource; userId?: string; conversationId?: string | null }
 
 export class AgentRegistry {
   private readonly online = new Map<string, OnlineAgent>()
@@ -340,7 +342,34 @@ export class AgentRegistry {
    * резолвится по exec.done/exec.error, дисконнекту или страховочному таймауту.
    * `signal` отменяет только эту команду (напр., оборвался HTTP-запрос claude).
    */
+  /** Кто и откуда запустил команду — для журнала команд машины. */
+  private readonly commandListeners = new Set<(rec: Omit<MachineCommandRecord, 'id'>) => void>()
+  onCommand(cb: (rec: Omit<MachineCommandRecord, 'id'>) => void): () => void {
+    this.commandListeners.add(cb)
+    return () => { this.commandListeners.delete(cb) }
+  }
+  private recordCommand(rec: Omit<MachineCommandRecord, 'id'>): void {
+    for (const cb of this.commandListeners) { try { cb(rec) } catch { /* журнал не должен ронять exec */ } }
+  }
+
   exec(
+    agentId: string,
+    command: string,
+    timeoutMs: number,
+    signal?: AbortSignal,
+    meta?: ExecMeta
+  ): Promise<ExecResult> {
+    const startedAt = Date.now()
+    const promise = this.execInner(agentId, command, timeoutMs, signal)
+    const base = { machineId: agentId, userId: meta?.userId ?? '', source: meta?.source ?? 'system', command, startedAt, conversationId: meta?.conversationId ?? null } as const
+    promise.then(
+      (r) => this.recordCommand({ ...base, exitCode: r.exitCode, timedOut: r.timedOut, error: null, durationMs: Date.now() - startedAt, outputExcerpt: r.output.slice(0, 500) }),
+      (err: unknown) => this.recordCommand({ ...base, exitCode: null, timedOut: false, error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - startedAt, outputExcerpt: '' })
+    )
+    return promise
+  }
+
+  private execInner(
     agentId: string,
     command: string,
     timeoutMs: number,

@@ -2017,6 +2017,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onRegenerateToken={operationsActions.regenerateAgentToken}
           onGetConnectionString={operationsActions.getAgentConnectionString}
           onUpdateAgent={operationsActions.updateAgent}
+          onLoadCommands={(id, filter) => (window.api ? window.api['agents:commands']({ id, ...filter }) : Promise.resolve([]))}
+          onOpenConversation={(conversationId) => navigate(`/chat/${conversationId}`)}
           onDeleteAgent={(id) => void operationsActions.deleteAgent(id)}
           defaultAgentId={settingsState.settings.defaultAgentId}
           onSetDefault={(id) => void settingsActions.updateSettings({ defaultAgentId: id })}

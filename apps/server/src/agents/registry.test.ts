@@ -38,6 +38,23 @@ describe('AgentRegistry', () => {
     await expect(p).resolves.toEqual({ exitCode: 0, output: 'диск warn', timedOut: false })
   })
 
+  it('exec: onCommand получает запись журнала с источником, кодом выхода и длительностью; отказ политики — тоже', async () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock)
+    const records: Array<Parameters<Parameters<AgentRegistry['onCommand']>[0]>[0]> = []
+    reg.onCommand((rec) => records.push(rec))
+    const p = reg.exec('a1', 'ls', 1000, undefined, { source: 'console', userId: 'bob' })
+    reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: 'a.txt' })
+    reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
+    await p
+    expect(records[0]).toMatchObject({ machineId: 'a1', userId: 'bob', source: 'console', command: 'ls', exitCode: 0, timedOut: false, error: null, outputExcerpt: 'a.txt', conversationId: null })
+    reg.updatePolicy('a1', { allowedDirs: [], allowNetwork: true, allowWrite: false, denyPatterns: [], allowPatterns: [], skills: [] })
+    await expect(reg.exec('a1', 'rm -rf x', 1000, undefined, { source: 'chat', conversationId: 'c1' })).rejects.toThrow()
+    expect(records[1]).toMatchObject({ source: 'chat', conversationId: 'c1', exitCode: null })
+    expect(records[1]!.error).toContain('политикой')
+  })
+
   it('exec: офлайн-агент → reject сразу', async () => {
     const reg = makeRegistry()
     await expect(reg.exec('нет', 'ls', 1000)).rejects.toThrow('не в сети')

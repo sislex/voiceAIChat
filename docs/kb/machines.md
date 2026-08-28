@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-28
-checked: 022b22ff
+checked: c40016dc
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -211,6 +211,21 @@ UI показывает доступную v0.12.0, кнопку обновле�
 телеметрия появилась в 0.4.0. Старый агент → инструмент не выполняется, UI просит
 обновиться. **Добавил возможность агента — бампни `AGENT_VERSION` и допиши
 `TOOL_MIN_VERSION`**, иначе сервер разрешит вызов агенту, который его не умеет.
+
+## Журнал команд машины
+
+Всё, что проходит через `AgentRegistry.exec`, попадает в `machine_commands` (`db.addMachineCommand`,
+по 5000 последних записей на машину): `registry.exec(agentId, command, timeoutMs, signal, meta)` принимает
+`ExecMeta {source: 'console'|'chat'|'system', userId?, conversationId?}` и после завершения (в том числе отказа
+политикой или «не в сети») вызывает подписчиков `onCommand` — сервер (`server.ts`) пишет запись, подставляя
+владельца машины, если `userId` не передан. Консоль (`POST /api/agents/:id/exec`) даёт `source: console`,
+MCP-инструменты `remoteBashMcp.ts` — `chat` с `conversationId` из `&conv=` в MCP-URL (`turns.ts`), остальные
+вызовы (обновление агента, релиз KB, health превью) — `system`. Стриминговый `execStream` PTY в журнал не пишет.
+
+Чтение: `GET /api/agents/:id/commands?limit&q&source[&format=csv]` (`canUseAgent`), мост `agents:commands`.
+UI — кнопка «Журнал» в строке машины на странице «Машины» (`MachineCommandLog.tsx`): поиск по подстроке,
+фильтр источника, клик по строке раскрывает первые 500 символов вывода/ошибку, «↗ чат» ведёт в разговор,
+«Экспорт CSV» собирает файл на клиенте из загруженных записей (`commandsToCsv`).
 
 ## Политика команд
 

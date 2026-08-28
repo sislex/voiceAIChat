@@ -35,6 +35,29 @@ export interface FsResult {
   trashedPath?: string
 }
 
+/** Откуда пришла команда машины: консоль пользователя, инструмент модели в чате или сам сервер (обновление, релиз). */
+export type MachineCommandSource = 'console' | 'chat' | 'system'
+
+/** Запись журнала команд машины (machines-roadmap п.4). */
+export interface MachineCommandRecord {
+  id: number
+  machineId: string
+  /** Кто выполнял; для системных команд — владелец машины. */
+  userId: string
+  source: MachineCommandSource
+  command: string
+  exitCode: number | null
+  timedOut: boolean
+  /** Команда отклонена/упала до запуска (политика, офлайн) — текст ошибки. */
+  error: string | null
+  durationMs: number
+  startedAt: number
+  /** Чат, из которого модель выполнила команду (source = chat). */
+  conversationId: string | null
+  /** Первые ~500 символов вывода — чтобы понять, что произошло, без полного лога. */
+  outputExcerpt: string
+}
+
 /** Результат копирования файла между машинами (`POST /api/agents/:id/fs/copy-to`): сервер читает с одной и пишет на другую. */
 export interface FsCopyResult {
   /** Абсолютный путь файла на целевой машине. */

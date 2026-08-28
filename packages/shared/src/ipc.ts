@@ -42,7 +42,7 @@ import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
-import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult } from './agentProtocol'
+import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource } from './agentProtocol'
 import type {
   Board,
   KanbanColumn,
@@ -301,6 +301,8 @@ export interface IpcInvokeMap {
   'agents:regenerateToken': { arg: { id: string }; result: { token: string } }
   /** Обновить агента на машине: сервер выполняет на ней команду установки. */
   'agents:update': { arg: { id: string }; result: { ok: true; os: string } }
+  /** Журнал команд машины: новые сверху; q — подстрока команды, source — фильтр источника. */
+  'agents:commands': { arg: { id: string; limit?: number; q?: string; source?: MachineCommandSource }; result: MachineCommandRecord[] }
   /** Абсолютный URL артефакта для скачивания (десктоп/агент-приложение/скрипт). */
   'downloads:url': { arg: { kind: 'desktop' | 'agent-app' | 'agent-script' }; result: string }
   /** Строка подключения (адрес+токен) для настройки агента (приложение и скрипт). */
@@ -1047,6 +1049,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'agents:setPolicy',
   'agents:regenerateToken',
   'agents:update',
+  'agents:commands',
   'downloads:url',
   'agents:connectionString',
   'cc:projects',

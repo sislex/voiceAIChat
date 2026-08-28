@@ -233,6 +233,22 @@ CREATE TABLE IF NOT EXISTS invites (
   note TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS machine_commands (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  machine_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  source TEXT NOT NULL,
+  command TEXT NOT NULL,
+  exit_code INTEGER,
+  timed_out INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  started_at INTEGER NOT NULL,
+  conversation_id TEXT,
+  output_excerpt TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_machine_commands_machine ON machine_commands(machine_id, id DESC);
+
 CREATE TABLE IF NOT EXISTS security_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   at INTEGER NOT NULL,
