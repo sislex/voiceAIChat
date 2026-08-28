@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
 import type { ChatStorageView, WorkspaceView } from '@shared/projects'
 import { ChatStorageCard } from './ChatStorageCard'
+import { MachineHealthBadge, MachineHealthWarnings } from './MachineHealthBadge'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages, isImagePath } from '@shared/images'
@@ -532,9 +533,9 @@ export function ChatColumn({
             {title}
           </h1>
         )}
-        <span className="mtitle-machine" data-testid="head-machine" title="Машина этого разговора">
-          {execTarget === 'none' ? 'Без машины' : execTarget ? (agents.find((a) => a.id === execTarget)?.name ?? execTarget) : 'Сервер'}
-        </span>
+        {execTarget && execTarget !== 'none'
+          ? <MachineHealthBadge agent={agents.find((a) => a.id === execTarget)} onClick={onOpenMachines} />
+          : <span className="mtitle-machine" data-testid="head-machine" title="Машина этого разговора">{execTarget === 'none' ? 'Без машины' : 'Сервер'}</span>}
         <ChatStorageCard compact storage={storage} onOpenExplorer={onOpenImageInExplorer} />
         {onRunSkill && execTarget && execTarget !== 'none' && (() => {
           const machine = agents.find((a) => a.id === execTarget)
@@ -1071,6 +1072,7 @@ export function ChatColumn({
         </div>
       )}
 
+      {execTarget && execTarget !== 'none' && <MachineHealthWarnings agent={agents.find((a) => a.id === execTarget)} />}
       <div className={(composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')) === 'centered' ? 'chat-composer chat-composer--centered' : 'chat-composer chat-composer--docked'}>
         {voiceBar}
       </div>

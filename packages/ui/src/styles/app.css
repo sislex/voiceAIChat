@@ -7113,3 +7113,13 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .ac-num { display: grid; gap: 4px; font-size: 12px; flex: 1 1 200px; }
 .ac-num input { max-width: 120px; }
 .ac-check { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-top: 6px; }
+
+/* Здоровье машины хода в шапке чата (machines-roadmap п.2) */
+.mhealth { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 0; color: inherit; cursor: pointer; padding: 0; font: inherit; font-size: 12px; }
+.mhealth:disabled { cursor: default; }
+.mhealth-dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; flex-shrink: 0; }
+.mhealth--warn .mhealth-dot { background: #e0a800; }
+.mhealth--offline .mhealth-dot { background: #e5484d; }
+.mhealth-warnings { list-style: none; margin: 0 auto 6px; padding: 6px 10px; max-width: 720px; font-size: 12px; border-radius: 8px; background: rgba(224, 168, 0, 0.12); border: 1px solid rgba(224, 168, 0, 0.5); }
+.mhealth-warnings ul { list-style: none; margin: 0; padding: 0; }
+.mhealth-warnings li + li { margin-top: 2px; }
