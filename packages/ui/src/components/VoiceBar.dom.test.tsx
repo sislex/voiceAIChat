@@ -4,7 +4,10 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { VoiceBar } from './VoiceBar'
+import { readFileSync } from 'node:fs'
 import '../styles/app.css'
+
+const appCss = readFileSync('src/styles/app.css', 'utf8')
 
 function setup(state: Parameters<typeof VoiceBar>[0]['state'], overrides = {}) {
   const props = makeProps(state, overrides)
@@ -110,11 +113,14 @@ describe('VoiceBar — состояния', () => {
   it('attach, send и stop имеют единые компактные контейнеры без уменьшения иконок', () => {
     setup('thinking', { draft: 'следующий вопрос' })
     const attach = screen.getByLabelText('Прикрепить файл')
+    const mic = screen.getByLabelText('Говорить')
     const send = screen.getByLabelText('Добавить сообщение в очередь')
     const stop = screen.getByLabelText('Остановить ответ')
     expect(attach).toHaveClass('vc-btn--sm', 'composer-attach')
+    expect(mic).toHaveClass('vc-btn--sm', 'composer-mic')
     expect(send).toHaveClass('vc-btn--sm', 'vc-btn--primary', 'composer-send')
     expect(stop).toHaveClass('vc-btn--sm', 'vc-btn--danger', 'composer-stop')
+    expect(appCss).toMatch(/\.voicebar \.composer-mic\.vc-btn--circle,[\s\S]*?width: 32px;[\s\S]*?height: 32px;[\s\S]*?border-radius: 12px;/)
     expect(send.querySelector('svg')).toHaveAttribute('width', '16')
     expect(stop.querySelector('svg')).toHaveAttribute('width', '16')
   })

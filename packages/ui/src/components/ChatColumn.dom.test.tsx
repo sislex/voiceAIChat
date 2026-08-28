@@ -66,14 +66,39 @@ describe('ChatColumn — копирование ответа', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
     renderCol()
-    const btn = screen.getByLabelText('Копировать ответ')
+    const btn = screen.getAllByLabelText('Копировать сообщение')[1]!
     await userEvent.click(btn)
     expect(writeText).toHaveBeenCalledWith('Ответ **жирный**')
   })
 
-  it('у сообщения пользователя кнопки копирования нет', () => {
+  it('копирует полный исходный текст сообщений обеих ролей и подтверждает выбранное', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
     renderCol()
-    expect(screen.getAllByLabelText('Копировать ответ')).toHaveLength(1) // только ai
+
+    const buttons = screen.getAllByLabelText('Копировать сообщение')
+    expect(buttons).toHaveLength(2)
+    await userEvent.click(buttons[0]!)
+    expect(writeText).toHaveBeenLastCalledWith(messages[0]!.text)
+    expect(buttons[0]).toHaveTextContent('✓')
+    expect(buttons[1]).toHaveTextContent('⧉')
+
+    await userEvent.click(buttons[1]!)
+    expect(writeText).toHaveBeenLastCalledWith(messages[1]!.text)
+    expect(buttons[0]).toHaveTextContent('⧉')
+    expect(buttons[1]).toHaveTextContent('✓')
+  })
+
+  it('не показывает ложное подтверждение при отказе Clipboard API и fallback', async () => {
+    Object.assign(navigator, { clipboard: { writeText: vi.fn().mockRejectedValue(new DOMException('Нет прав', 'NotAllowedError')) } })
+    const execCommand = vi.fn().mockReturnValue(false)
+    Object.assign(document, { execCommand })
+    renderCol()
+
+    const button = screen.getAllByLabelText('Копировать сообщение')[0]!
+    await userEvent.click(button)
+    expect(execCommand).toHaveBeenCalledWith('copy')
+    expect(button).toHaveTextContent('⧉')
   })
 })
 
@@ -251,7 +276,7 @@ describe('ChatColumn — простой/подробный вид ответа',
     const msg = makeAiMessage({ id: 'ai-head', engine: 'claude', meta: { model: 'opus', durationMs: 5000, costUsd: 0.1234, activity: [] } })
     renderCol({ messages: [msg] })
     // Копировать — в шапке ответа.
-    expect(screen.getByLabelText('Копировать ответ')).toBeInTheDocument()
+    expect(screen.getByLabelText('Копировать сообщение')).toBeInTheDocument()
     // Движок с моделью: title и скрытый спан модели.
     const engine = document.querySelector('.msg-engine') as HTMLElement
     expect(engine.getAttribute('title')).toContain('opus')
