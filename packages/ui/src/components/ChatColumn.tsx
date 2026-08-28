@@ -104,6 +104,8 @@ export interface ChatColumnProps {
   workspace?: WorkspaceView | null
   /** Каталог результатов чата (привязка к хранилищу машины) — чип в шапке. */
   storage?: ChatStorageView | null
+  /** Выполнить сохранённую команду (навык) машины хода: открывает консоль и запускает её. */
+  onRunSkill?: (agentId: string, command: string) => void
   /** Выполнить исходный запрос планового ответа в режиме разработки. */
   onExecutePlan?: (answerId: string) => void
   /** Make: откатить правки этого ответа к снимку «До правок» (meta.makeSnapshotId). */
@@ -223,6 +225,7 @@ export function ChatColumn({
   permissionMode = 'plan',
   workspace = null,
   storage = null,
+  onRunSkill,
   onExecutePlan,
   onMakeRestore,
   canExecutePlan = true,
@@ -533,6 +536,22 @@ export function ChatColumn({
           {execTarget === 'none' ? 'Без машины' : execTarget ? (agents.find((a) => a.id === execTarget)?.name ?? execTarget) : 'Сервер'}
         </span>
         <ChatStorageCard compact storage={storage} onOpenExplorer={onOpenImageInExplorer} />
+        {onRunSkill && execTarget && execTarget !== 'none' && (() => {
+          const machine = agents.find((a) => a.id === execTarget)
+          if (!machine || !machine.online || machine.policy.skills.length === 0) return null
+          return (
+            <select
+              className="chat-skills"
+              aria-label="Навыки машины"
+              title="Сохранённые команды машины: выбор открывает консоль и выполняет команду"
+              value=""
+              onChange={(e) => { const skill = machine.policy.skills.find((s) => s.name === e.target.value); if (skill) onRunSkill(machine.id, skill.command) }}
+            >
+              <option value="">⚡ Навыки</option>
+              {machine.policy.skills.map((s) => <option key={s.name} value={s.name} title={s.command}>{s.name}</option>)}
+            </select>
+          )
+        })()}
         {workspace && (
           <span
             className={`mode-badge workspace-badge workspace-badge--${workspace.state}`}

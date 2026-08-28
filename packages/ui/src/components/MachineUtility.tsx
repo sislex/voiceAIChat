@@ -45,6 +45,7 @@ export function MachineUtility({
           agents={agents}
           initialAgentId={tool.agentId ?? null}
           initialCwd={tool.path}
+          initialCommand={tool.command}
           projectId={tool.projectId}
           pty={pty}
           variant={variant}
@@ -61,6 +62,7 @@ export function MachineUtility({
         exec={ops.exec}
         {...(consoleHistory ? { historyStore: consoleHistory } : {})}
         initialCwd={tool.path}
+        initialCommand={tool.command}
         variant={variant}
         onClose={onClose}
         onSwitchUtility={onSwitchUtility}
