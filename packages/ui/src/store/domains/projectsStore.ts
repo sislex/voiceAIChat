@@ -71,6 +71,9 @@ export interface ProjectsState {
   projects: ProjectSummary[]
   /** Список прочитан с сервера — иначе «проекта нет» не отличить от «не грузили». */
   projectsLoaded: boolean
+  /** По той же причине: сбой чтения не должен выглядеть как «проектов нет». */
+  projectsStatus: LoadStatus
+  projectsError: string | null
   projectDetail: ProjectDetail | null
   /** Каталог типов, видимый пользователю: встроенные, опубликованные и свои. */
   projectTypes: ProjectTypeNode[]
@@ -232,6 +235,8 @@ function initialState(): ProjectsState {
     projectsOpen: false,
     projects: [],
     projectsLoaded: false,
+  projectsStatus: 'idle',
+  projectsError: null,
     projectDetail: null,
     projectTypes: [],
     projectTypesLoaded: false,
@@ -369,9 +374,16 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   // --- Проекты --------------------------------------------------------------
 
   async function refreshProjects(): Promise<ProjectSummary[]> {
-    const projects = await client['projects:list']()
-    setState({ projects, projectsLoaded: true })
-    return projects
+    setState({ projectsStatus: 'loading', projectsError: null })
+    try {
+      const projects = await client['projects:list']()
+      setState({ projects, projectsLoaded: true, projectsStatus: 'ready', projectsError: null })
+      return projects
+    } catch (err) {
+      // Ошибку держим в сторе: пустой список и сломанное чтение — разные экраны.
+      setState({ projectsStatus: 'error', projectsError: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
   }
 
   async function refreshBoard(): Promise<void> {
@@ -688,8 +700,10 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           await actions.loadProjectTypes()
           return node
         } catch (err) {
+          // Тост оставляем (он для момента), но текст отдаём и вызывающему:
+          // форма покажет его под полем и не потеряет введённое имя.
           fail(err)
-          return null
+          throw err
         }
       },
       async deriveProjectType(id, name) {
