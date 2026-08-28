@@ -66,6 +66,43 @@ describe.skipIf(!existsSync(WEB_DIST))('Make E2E', () => {
     if (dataDir) await rm(dataDir, { recursive: true, force: true })
   })
 
+  it('desktop split удерживает узкий чат и MakePane внутри viewport', async () => {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.locator('.chat-split').evaluate((el) => {
+      ;(el as HTMLElement).style.setProperty('--preview-width', '72%')
+    })
+    await expect.poll(async () => page.locator('.voicebar').evaluate(
+      (el) => el.scrollWidth <= el.clientWidth,
+    )).toBe(true)
+
+    for (const selector of ['.chat-split', '.make-pane']) {
+      const box = await page.locator(selector).boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.x + box!.width).toBeLessThanOrEqual(1280)
+      expect(box!.y + box!.height).toBeLessThanOrEqual(800)
+    }
+  })
+
+  it('mobile Make tabs отдают всю область только активной панели', async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.getByRole('tab', { name: 'Проект' }).click()
+    await expect.poll(() => page.locator('.make-pane').isVisible()).toBe(true)
+    await expect.poll(() => page.locator('.chat-split-chat').isVisible()).toBe(false)
+    const pane = await page.locator('.make-pane').evaluate((el) => ({
+      client: el.clientWidth,
+      scroll: el.scrollWidth,
+      bottom: el.getBoundingClientRect().bottom,
+    }))
+    expect(pane.scroll).toBeLessThanOrEqual(pane.client)
+    expect(pane.bottom).toBeLessThanOrEqual(844)
+
+    await page.getByRole('tab', { name: 'Чат' }).click()
+    await expect.poll(() => page.locator('.chat-split-chat').isVisible()).toBe(true)
+    await expect.poll(() => page.locator('.make-pane').isVisible()).toBe(false)
+    await page.getByRole('tab', { name: 'Проект' }).click()
+    await page.setViewportSize({ width: 1400, height: 900 })
+  })
+
   it('превью рендерит React-шаблон (TSX транспилирован сервером, React из esm.sh)', async () => {
     const frame = page.frameLocator('.make-frame')
     await expect.poll(async () => frame.locator('h2').first().textContent().catch(() => null), { timeout: 60_000 }).toContain('Счётчик')

@@ -48,9 +48,9 @@ export function decl(selector: string, prop: string): string | null {
   return value
 }
 
-/** Тело @media-блока с точно таким условием (для мобильных переопределений). */
-export function mediaBody(condition: string): string {
-  const at = css.indexOf(`@media ${condition}`)
+/** Тело произвольного вложенного at-rule с точным заголовком. */
+export function atRuleBody(rule: string): string {
+  const at = css.indexOf(rule)
   if (at < 0) return ''
   const open = css.indexOf('{', at)
   let depth = 1
@@ -61,4 +61,30 @@ export function mediaBody(condition: string): string {
     j++
   }
   return css.slice(open + 1, j - 1)
+}
+
+/** Все тела повторяющихся at-rule с точным заголовком. */
+export function atRuleBodies(rule: string): string[] {
+  const bodies: string[] = []
+  let from = 0
+  while (from < css.length) {
+    const at = css.indexOf(rule, from)
+    if (at < 0) break
+    const open = css.indexOf('{', at)
+    let depth = 1
+    let j = open + 1
+    while (j < css.length && depth > 0) {
+      if (css[j] === '{') depth++
+      else if (css[j] === '}') depth--
+      j++
+    }
+    bodies.push(css.slice(open + 1, j - 1))
+    from = j
+  }
+  return bodies
+}
+
+/** Тело первого @media-блока с точно таким условием. */
+export function mediaBody(condition: string): string {
+  return atRuleBody(`@media ${condition}`)
 }
