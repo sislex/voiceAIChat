@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-28
-checked: 9bb1eea0
+checked: 78503ee0
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -205,6 +205,18 @@ prefix). Существующие пользовательские опреде�
 «Выполнить uname -a» (`onExecTest` → `operationsActions.agentExec`, попадает в журнал как `console`) с выводом
 и кодом выхода. Шаги рендерятся только когда передан `online` — встраивания без живого статуса видят старый
 блок. Тест — `AgentCommands.dom.test.tsx`.
+
+## Обновление агентов из админки
+
+`routes/agents.ts:updateAgentOnMachine(registry, id, req)` — общая функция обновления (detached-установщик через
+`exec`, адрес сервера из `x-forwarded-*`/`VC_PUBLIC_URL`); ею пользуются роут владельца `/api/agents/:id/update`
+и админский `POST /api/admin/machines/:id/update` (`requireAdmin`, 404 для неизвестной машины). Админка
+(`packages/admin-app/src/AgentFleetUpdate.tsx`, внутри вкладки «Машины пользователя» в `UsersAdmin`) показывает все
+машины всех пользователей с версиями (`AdminUserInfo.agents[].version` — только у online) и ведёт канареечное
+обновление: «Канарейка: обновить одну» берёт первую устаревшую машину в сети, пока она не вернётся с
+`AGENT_VERSION` компонент раз в 5 с дёргает `onRefresh` (список пользователей), затем открывает «обновить остальные (N)».
+Есть и построчная кнопка. Транспорт — через пропсы `latestAgentVersion`/`onUpdateMachine` из `App.tsx`
+(`admin:updateMachine`), как требует граница admin-app. Тесты — `AgentFleetUpdate.dom.test.tsx`.
 
 ## Версии и гейтинг возможностей
 

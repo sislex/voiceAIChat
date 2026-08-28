@@ -13,6 +13,7 @@ import type {
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { Conversation, Message, LlmProvider, SessionInfo } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
+import { AgentFleetUpdate } from './AgentFleetUpdate'
 import { Button, Dialog, Skeleton, RefreshIndicator, EmptyState, ErrorState, ConfirmDialog } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from './loadState'
 
@@ -33,6 +34,9 @@ export interface UsersAdminProps {
   makeStats?: AdminMakeStats | null
   /** Обычный пользователь видит только собственную статистику без машин и админских действий. */
   isAdmin?: boolean
+  /** Обновление агентов машин (machines-roadmap п.16): актуальная версия и запуск обновления. */
+  latestAgentVersion?: string
+  onUpdateMachine?: (machineId: string) => Promise<string | null>
   status?: LoadStatus
   error?: string | null
   onRetry?: () => void
@@ -179,8 +183,7 @@ export function UsersAdmin({
   llmAccess = NO_LLM_ACCESS,
   onSaveLlmAccess = () => undefined,
   onClose,
-  variant = 'modal'
-}: UsersAdminProps): JSX.Element {
+  variant = 'modal', latestAgentVersion, onUpdateMachine }: UsersAdminProps): JSX.Element {
   const [newName, setNewName] = useState('')
   const [newPass, setNewPass] = useState('')
   const [newRole, setNewRole] = useState<import('@shared/types').UserRole>('developer')
@@ -434,9 +437,10 @@ export function UsersAdmin({
                 {cur.agents.map((a) => (
                   <p key={a.id} className="uagent">
                     <span className={`exectarget-dot ${a.online ? 'remote' : 'server'}`} aria-hidden />
-                    {a.name} — {a.online ? 'в сети' : 'офлайн'}
+                    {a.name} — {a.online ? 'в сети' : 'офлайн'}{a.version ? ` · v${a.version}` : ''}
                   </p>
                 ))}
+                {latestAgentVersion && onUpdateMachine && <AgentFleetUpdate users={users} latestVersion={latestAgentVersion} onUpdate={onUpdateMachine} onRefresh={onRetry} />}
               </section>}
 
               {tab === 'access' && <section className="uadmin-sec" data-testid="user-llm-access">
