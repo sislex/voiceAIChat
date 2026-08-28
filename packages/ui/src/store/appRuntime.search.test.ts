@@ -66,7 +66,7 @@ describe('voiceStore — поиск по сообщениям', () => {
     await vi.advanceTimersByTimeAsync(DEBOUNCE)
 
     expect(spy).toHaveBeenCalledTimes(1)
-    expect(spy.mock.calls[0][0]).toMatchObject({ query: 'миграция', projectId: null })
+    expect(spy.mock.calls[0][0]).toMatchObject({ query: 'миграция', projectId: undefined })
     expect(store.getState().messageSearch).toMatchObject({
       query: 'миграция',
       status: 'ready',
