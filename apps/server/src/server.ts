@@ -575,6 +575,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'))
   // Каталог ChatAI по умолчанию: при подключении машины и перед первой записью файлов чата.
   const defaultStorageDeps = { db, registry: agentRegistry, log: (m: string, extra?: Record<string, unknown>) => app.log.info(extra ?? {}, m) }
+  // Журнал команд машины: пишем всё, что прошло через registry.exec (консоль, чат, системные вызовы).
+  agentRegistry.onCommand((rec) => {
+    try { db.addMachineCommand({ ...rec, userId: rec.userId || (db.agentOwnerId(rec.machineId) ?? '') }) } catch (error) { app.log.warn({ error }, 'machine command log failed') }
+  })
   agentRegistry.onAgentReady((agentId) => {
     const owner = db.agentOwnerId(agentId)
     if (owner) void ensureDefaultStorage(defaultStorageDeps, owner, agentId)

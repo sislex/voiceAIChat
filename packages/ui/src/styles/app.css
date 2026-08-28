@@ -7086,3 +7086,18 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .chat-storage-dirs code { word-break: break-all; }
 .convsettings-subtitle { margin: 12px 0 6px; font-size: 14px; }
 @media (max-width: 720px) { .chat-storage-chip { display: none; } }
+
+/* Журнал команд машины (machines-roadmap п.4) */
+.mcmdlog { display: grid; gap: 8px; padding: 8px 4px; }
+.mcmdlog-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mcmdlog-toolbar input { flex: 1 1 200px; min-width: 160px; }
+.mcmdlog-count, .mcmdlog-empty { font-size: 12px; opacity: 0.75; }
+.mcmdlog-error { color: var(--danger, #e5484d); font-size: 13px; }
+.mcmdlog-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mcmdlog-table th { text-align: left; padding: 4px 6px; opacity: 0.7; font-weight: 500; }
+.mcmdlog-table td { padding: 4px 6px; vertical-align: top; border-top: 1px solid var(--border, #3a3a3a); }
+.mcmdlog-row { cursor: pointer; }
+.mcmdlog-row--failed td:nth-child(5) { color: var(--danger, #e5484d); font-weight: 600; }
+.mcmdlog-cmd code { word-break: break-all; }
+.mcmdlog-out { margin: 4px 0 0; padding: 6px; max-height: 160px; overflow: auto; font-size: 11px; white-space: pre-wrap; background: rgba(0,0,0,0.06); border-radius: 4px; }
+.mcmdlog-link { margin-left: 6px; border: 0; background: none; color: var(--accent, #4c6ef5); cursor: pointer; font-size: 12px; padding: 0; }

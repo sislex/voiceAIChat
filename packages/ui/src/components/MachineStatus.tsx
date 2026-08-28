@@ -13,6 +13,8 @@ import { recommendedMachineStoragePath, type MachineStorage } from '@shared/proj
 import { copyText } from '../lib/clipboard'
 import { AgentCard } from './AgentCard'
 import { AgentCommands } from './AgentCommands'
+import { MachineCommandLog } from './MachineCommandLog'
+import type { MachineCommandRecord, MachineCommandSource } from '@shared/agentProtocol'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
@@ -45,6 +47,10 @@ export interface MachineStatusProps {
   onGetConnectionString?: (token: string) => Promise<string | null>
   /** Обновить агента на машине (сервер выполнит на ней команду установки). */
   onUpdateAgent?: (id: string) => Promise<string | null>
+  /** Журнал команд машины (п.4); нет — кнопка «Журнал» скрыта. */
+  onLoadCommands?: (id: string, filter: { q?: string; source?: MachineCommandSource; limit?: number }) => Promise<MachineCommandRecord[]>
+  /** Открыть чат из записи журнала. */
+  onOpenConversation?: (conversationId: string) => void
   /**
    * Удалить машину: токен отзывается, цель выполнения и машина по умолчанию
    * сбрасываются. Нет — удаления в таблице нет (режим только-просмотр).
@@ -281,6 +287,8 @@ export function MachineStatus({
   onRegenerateToken,
   onGetConnectionString,
   onUpdateAgent,
+  onLoadCommands,
+  onOpenConversation,
   onDeleteAgent,
   defaultAgentId,
   onSetDefault,
@@ -296,6 +304,7 @@ export function MachineStatus({
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null)
   /** Машина с раскрытым редактором политики (одна на таблицу). */
   const [policyId, setPolicyId] = useState<string | null>(null)
+  const [logId, setLogId] = useState<string | null>(null)
   const [storageId, setStorageId] = useState<string | null>(null)
   const [storageDraft, setStorageDraft] = useState<Record<string, string>>({})
   const [storageBusy, setStorageBusy] = useState<string | null>(null)
@@ -445,6 +454,11 @@ export function MachineStatus({
                           {policyId === a.id ? '▾' : '▸'}
                         </IconButton>
                         {a.name}
+                        {onLoadCommands && (
+                          <Button size="sm" aria-expanded={logId === a.id} aria-label={`Журнал команд ${a.name}`} title="Журнал команд машины: кто, когда и что выполнял" onClick={() => setLogId((cur) => (cur === a.id ? null : a.id))}>
+                            {logId === a.id ? 'Журнал ▾' : 'Журнал'}
+                          </Button>
+                        )}
                       </span>
                     </td>
                     <td>
@@ -585,6 +599,13 @@ export function MachineStatus({
                     <tr className="mst-policyrow" data-testid={`machine-policy-${a.id}`}>
                       <td colSpan={cols}>
                         <AgentCard agent={a} onSetPolicy={onSetPolicy} />
+                      </td>
+                    </tr>
+                  )}
+                  {logId === a.id && onLoadCommands && (
+                    <tr className="mst-policyrow" data-testid={`machine-log-${a.id}`}>
+                      <td colSpan={cols}>
+                        <MachineCommandLog machineId={a.id} machineName={a.name} load={(filter) => onLoadCommands(a.id, filter)} onOpenConversation={onOpenConversation} />
                       </td>
                     </tr>
                   )}
