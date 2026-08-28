@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { ProjectTypesSettings } from './ProjectTypesSettings'
+import type { ProjectTypeNode } from '@shared/projectTypes'
 import { Dialog } from '@voicechat/ui-kit'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
@@ -34,7 +36,7 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'instructions' | 'storage' | 'ui'
+type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'instructions' | 'storage' | 'ui' | 'projectTypes'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'llm', label: 'LLM' },
   { id: 'aiAssist', label: 'AI-помощник' },
@@ -44,11 +46,21 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'dialog', label: 'Голосовой диалог' },
   { id: 'instructions', label: 'Инструкции' },
   { id: 'storage', label: 'Хранилище' },
-  { id: 'ui', label: 'Интерфейс' }
+  { id: 'ui', label: 'Интерфейс' },
+  // Типы переживают проекты и не принадлежат ни одному из них — место каталогу
+  // в пользовательских настройках, а не внутри конкретного проекта.
+  { id: 'projectTypes', label: 'Типы проектов' }
 ]
 
 export interface SettingsModalProps {
   settings: Settings
+  /** Каталог типов проекта для раздела «Типы проектов». */
+  projectTypes?: ProjectTypeNode[]
+  currentUsername?: string
+  onCreateProjectType?: (input: { name: string; parentId: string | null }) => void | Promise<void>
+  onDeleteProjectType?: (id: string) => void | Promise<void>
+  onPublishProjectType?: (id: string) => void | Promise<void>
+  onUnpublishProjectType?: (id: string) => void | Promise<void>
   engines?: LlmEngineOption[]
   mics: MicOption[]
   /** Реальные голоса TTS активного движка. */
@@ -88,6 +100,12 @@ export interface SettingsModalProps {
 }
 
 export function SettingsModal({
+  projectTypes = [],
+  currentUsername,
+  onCreateProjectType,
+  onDeleteProjectType,
+  onPublishProjectType,
+  onUnpublishProjectType,
   settings,
   engines = [],
   mics,
@@ -574,6 +592,17 @@ export function SettingsModal({
                   onKeyDown={(event) => { if (event.key === 'Enter') saveTtl() }}
                 />
               </div>
+            )}
+
+            {section === 'projectTypes' && (
+              <ProjectTypesSettings
+                types={projectTypes}
+                {...(currentUsername ? { currentUsername } : {})}
+                {...(onCreateProjectType ? { onCreate: onCreateProjectType } : {})}
+                {...(onDeleteProjectType ? { onDelete: onDeleteProjectType } : {})}
+                {...(onPublishProjectType ? { onPublish: onPublishProjectType } : {})}
+                {...(onUnpublishProjectType ? { onUnpublish: onUnpublishProjectType } : {})}
+              />
             )}
 
             {section === 'ui' && (

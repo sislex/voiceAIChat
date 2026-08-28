@@ -148,6 +148,21 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
     }
   })
 
+  /**
+   * «Сохранить проект как подтип»: узел из текущего состояния проекта. Владельца
+   * проверяет сам метод БД; гейт возможностей сюда не лезет — это операция над
+   * каталогом типов, а не над подсистемой проекта.
+   */
+  app.post<{ Params: { id: string }; Body: { name?: string } }>('/api/projects/:id/derive-type', async (req, reply) => {
+    const name = (req.body?.name ?? '').trim()
+    if (!name) return badReq(reply, 'name required')
+    try {
+      return db.deriveProjectType(uid(req), req.params.id, name) ?? notFound(reply)
+    } catch (error) {
+      return badReq(reply, errMessage(error))
+    }
+  })
+
   // --- Очередь на утверждение (только admin: гейтит общий hook по /api/admin/) ---
 
   app.get('/api/admin/project-types', async () => db.listPendingProjectTypes())

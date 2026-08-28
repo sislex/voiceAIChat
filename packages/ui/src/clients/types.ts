@@ -176,6 +176,7 @@ export type ProjectsClient = Pick<
   | 'projectTypes:create'
   | 'projectTypes:update'
   | 'projectTypes:delete'
+  | 'projects:deriveType'
   | 'projectTypes:publish'
   | 'projectTypes:unpublish'
   | 'projects:update'

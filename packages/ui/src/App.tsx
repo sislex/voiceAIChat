@@ -441,6 +441,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   useEffect(() => {
     if (!admin.usersOpen || !window.api || session.currentUser?.role !== 'admin') return
     window.api['admin:commandPolicy']().then((r) => setRoleCommandPolicies(r.roles)).catch(() => setRoleCommandPolicies({}))
+    // Очередь типов на утверждение — там же, при открытии админки.
+    void adminActions.refreshPendingProjectTypes()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [admin.usersOpen, session.currentUser?.role])
   // Watchdog: машина пропала дольше порога / вернулась.
   useEffect(() => {
@@ -952,6 +955,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     navigate(`/projects/${firstProjectId}`, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects, routeProjectId, firstProjectId])
+  // Каталог типов нужен разделу «Типы проектов» в пользовательских настройках.
+  useEffect(() => {
+    if (authed && shell.settingsOpen && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, shell.settingsOpen])
   useEffect(() => {
     if (!authed) return
     if (routeSettings || routeReleases) {
@@ -1934,6 +1942,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 detail={projects.projectDetail!}
                 projectTypes={projects.projectTypes}
                 invitations={projects.projectInvitations}
+                onDeriveType={async (id, name) => { await projectsActions.deriveProjectType(id, name) }}
                 onInvite={async (id, invitee, role) => { await projectsActions.inviteToProject(id, invitee, role) }}
                 onResendInvitation={(id, invitationId) => projectsActions.resendProjectInvitation(id, invitationId)}
                 onRevokeInvitation={(id, invitationId) => projectsActions.revokeProjectInvitation(id, invitationId)}
@@ -2197,6 +2206,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onOpenConversation={(id) => void adminActions.openAdminConversation(id)}
           llmAccess={admin.adminUserLlmAccess}
           onSaveLlmAccess={(access) => void adminActions.saveAdminUserLlmAccess(access)}
+          pendingProjectTypes={admin.pendingProjectTypes}
+          onReviewProjectType={(input) => adminActions.reviewProjectType(input)}
           engines={admin.adminLlmEngines}
           enginesStatus={admin.adminLlmEnginesStatus}
           enginesError={admin.adminLlmEnginesError}
@@ -2407,6 +2418,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
       {shell.settingsOpen && (
         <SettingsModal
+          projectTypes={projects.projectTypes}
+          {...(session.currentUser?.name ? { currentUsername: session.currentUser.name } : {})}
+          onCreateProjectType={async (input) => { await projectsActions.createProjectType(input) }}
+          onDeleteProjectType={(id) => projectsActions.deleteProjectType(id)}
+          onPublishProjectType={(id) => projectsActions.publishProjectType(id)}
+          onUnpublishProjectType={(id) => projectsActions.unpublishProjectType(id)}
           settings={settingsState.settings}
           engines={settingsState.llmEngines}
           mics={settingsState.mics}

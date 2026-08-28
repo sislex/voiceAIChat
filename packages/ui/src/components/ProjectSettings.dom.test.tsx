@@ -226,6 +226,22 @@ describe('ProjectSettings — тип проекта', () => {
     expect(screen.getByText('Разработка ПО')).toBeInTheDocument()
   })
 
+  it('«Сохранить как подтип» просит имя и отдаёт его наверх', async () => {
+    const onDeriveType = vi.fn()
+    render(<ProjectSettings {...props({ projectTypes: types, onDeriveType })} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить как подтип…' }))
+    await userEvent.type(screen.getByLabelText('Название нового подтипа'), '  Мой шаблон  ')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    expect(onDeriveType).toHaveBeenCalledWith('p1', 'Мой шаблон')
+    // Форма закрылась — повторное нажатие не отправит дубль.
+    expect(screen.queryByLabelText('Название нового подтипа')).not.toBeInTheDocument()
+  })
+
+  it('участник сохранить подтип не может', () => {
+    render(<ProjectSettings {...props({ projectTypes: types, onDeriveType: vi.fn(), detail: detail({ role: 'member' }) })} />)
+    expect(screen.queryByRole('button', { name: 'Сохранить как подтип…' })).not.toBeInTheDocument()
+  })
+
   it('«Общий проект»: нет вкладок CI и машин, нет полей git, превью и тестовых учёток', () => {
     render(<ProjectSettings {...props({
       projectTypes: types,
