@@ -1,5 +1,5 @@
 import { lintMakeFile } from '@shared/makeLint'
-import { BUILTIN_PROJECT_TYPES, BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain, type ProjectTypeNode } from '@voicechat/shared'
+import { BUILTIN_PROJECT_TYPES, BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain, type ProjectTypeNode, type ProjectInvitation } from '@voicechat/shared'
 import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine } from '@shared/makeSearch'
 import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment, type MakeShare, type MakePresenceClient, type MakeProjectNotes } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
@@ -136,6 +136,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
   }
   const projects: FProject[] = []
   const customTypes: ProjectTypeNode[] = []
+  const invitations: ProjectInvitation[] = []
   const builtinTypeNodes = (): ProjectTypeNode[] =>
     BUILTIN_PROJECT_TYPES.map((node) => ({
       ...node,
@@ -864,6 +865,49 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'releases:deploy': async ({ projectId, branch }) => ({ id: 'release-1', projectId, branch, version: branch.slice('release/'.length), sha: 'a'.repeat(40), status: 'queued', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: Date.now(), releasedAt: null, steps: [] }),
     // Каталог типов: встроенное дерево + узлы, заведённые в тесте. Данные настоящие
     // (BUILTIN_PROJECT_TYPES), поэтому витрина и тесты не расходятся с сервером.
+    // Приглашения: токен фейк отдаёт в результате создания — в настоящем API его
+    // нет, он уходит только письмом; тестам нужен способ пройти сценарий целиком.
+    'projects:invitations': async ({ id }) => invitations.filter((i) => i.projectId === id && i.status === 'pending'),
+    'projects:invite': async ({ id, invitee, role }) => {
+      const invitation = {
+        id: `inv-${invitations.length + 1}`,
+        projectId: id,
+        email: invitee.includes('@') ? invitee.toLowerCase() : null,
+        invitedUsername: invitee.includes('@') ? null : invitee,
+        role: role === 'owner' ? ('owner' as const) : ('member' as const),
+        status: 'pending' as const,
+        invitedBy: 'admin',
+        createdAt: tick(),
+        expiresAt: tick() + 7 * 24 * 60 * 60_000,
+        respondedAt: null
+      }
+      invitations.push(invitation)
+      return { invitation, mailed: Boolean(invitation.email) }
+    },
+    'projects:resendInvitation': async ({ invitationId }) => {
+      const invitation = invitations.find((i) => i.id === invitationId)
+      if (!invitation) throw new Error('not found')
+      return { invitation, mailed: Boolean(invitation.email) }
+    },
+    'projects:revokeInvitation': async ({ invitationId }) => {
+      const invitation = invitations.find((i) => i.id === invitationId)
+      if (invitation) invitation.status = 'revoked'
+      return { ok: true as const }
+    },
+    'invitations:list': async () => invitations
+      .filter((i) => i.status === 'pending')
+      .map((i) => ({ ...i, projectName: projects.find((p) => p.id === i.projectId)?.name ?? 'Проект' })),
+    'invitations:accept': async ({ token }) => {
+      const invitation = invitations.find((i) => i.id === token || i.projectId === token)
+      if (!invitation) throw new Error('Приглашение недействительно')
+      invitation.status = 'accepted'
+      return { projectId: invitation.projectId }
+    },
+    'invitations:decline': async ({ token }) => {
+      const invitation = invitations.find((i) => i.id === token || i.projectId === token)
+      if (invitation) invitation.status = 'declined'
+      return { ok: Boolean(invitation) }
+    },
     'projectTypes:list': async () => [...builtinTypeNodes(), ...customTypes],
     'projectTypes:create': async ({ name, parentId, description, features, defaults }) => {
       const node: ProjectTypeNode = {
