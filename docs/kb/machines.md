@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-28
-checked: 78503ee0
+checked: 17f149cf
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -205,6 +205,20 @@ prefix). Существующие пользовательские опреде�
 «Выполнить uname -a» (`onExecTest` → `operationsActions.agentExec`, попадает в журнал как `console`) с выводом
 и кодом выхода. Шаги рендерятся только когда передан `online` — встраивания без живого статуса видят старый
 блок. Тест — `AgentCommands.dom.test.tsx`.
+
+## Метрики машин (админка и Prometheus)
+
+`db.machineStatsRows(now)` агрегирует `machine_commands` (всего, за 24 ч, ошибок = ненулевой код/таймаут/отказ,
+средняя длительность, последняя команда) и `machine_events` (тревоги watchdog и суммарный простой за 30 дней);
+`routes/admin.ts` дополняет их живыми online/версией/телеметрией реестра → `AdminMachineStats`
+(`GET /api/admin/machines/stats`, мост `admin:machineStats`, стор `adminMachineStats`, секция «Машины» на дашборде
+`UsersAdmin`, когда пользователь не выбран). `GET /api/admin/machines/metrics` (`agents/metrics.ts:formatMachineMetrics`)
+отдаёт Prometheus-текст: `voicechat_machines[_online]`, per-machine `voicechat_machine_online`, `…_commands_total`,
+`…_commands_24h`, `…_command_errors_24h`, `…_command_avg_duration_ms_24h`, `…_offline_events_30d`, `…_offline_ms_30d`,
+`…_cpu_load_pct`, `…_mem_used_ratio`, `…_disk_free_bytes` с метками `machine`, `machine_id`, `owner`. Онлайн-время
+как непрерывный счётчик не хранится — его заменяют тревоги/простой watchdog; объём переданных файлов не считается,
+потому что fs-операции (upload/copy/write) в журнал команд не попадают. Тесты — `agents/metrics.test.ts`,
+`rest.test.ts › метрики машин`.
 
 ## Обновление агентов из админки
 

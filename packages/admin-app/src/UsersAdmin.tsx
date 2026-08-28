@@ -9,7 +9,7 @@ import type {
   UsageReport,
   UsageUnit,
   UserUsageSummary,
-  AdminMakeStats, SecurityEvent, SecurityEventType, InviteInfo, SignupConfig } from '@shared/admin'
+  AdminMakeStats, AdminMachineStats, SecurityEvent, SecurityEventType, InviteInfo, SignupConfig } from '@shared/admin'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
 import type { Conversation, Message, LlmProvider, SessionInfo } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
@@ -32,6 +32,8 @@ export interface UsersAdminProps {
   usageSummary?: UserUsageSummary[]
   /** Метрики Make (п.38): место, публикации, просмотры — секция дашборда для админа. */
   makeStats?: AdminMakeStats | null
+  /** Метрики машин (machines-roadmap п.5). */
+  machineStats?: AdminMachineStats | null
   /** Обычный пользователь видит только собственную статистику без машин и админских действий. */
   isAdmin?: boolean
   /** Обновление агентов машин (machines-roadmap п.16): актуальная версия и запуск обновления. */
@@ -136,6 +138,7 @@ export function UsersAdmin({
   users,
   usageSummary = NO_USAGE_SUMMARY,
   makeStats = null,
+  machineStats = null,
   isAdmin = true,
   status = 'ready',
   error = null,
@@ -354,6 +357,21 @@ export function UsersAdmin({
                     <td>{summary?.byModel.map((model) => model.model).join(', ') || '—'}</td>
                   </tr>
                 })}
+              </tbody></table>
+            </section>
+          )}
+          {isAdmin && !cur && machineStats && machineStats.machines.length > 0 && (
+            <section className="uadmin-sec" data-testid="machine-stats">
+              <div className="uusage-heading"><div><h3 className="uadmin-h">Машины</h3><p className="uusage-note">В сети {machineStats.totals.online} из {machineStats.totals.machines} · команд за 24 ч: {machineStats.totals.commands24h} · с ошибкой: {machineStats.totals.errors24h} · Prometheus: <code>/api/admin/machines/metrics</code></p></div></div>
+              <table className="utable"><thead><tr><th>Машина</th><th>Владелец</th><th>Статус</th><th>Команд 24 ч / всего</th><th>Ошибок 24 ч</th><th>Ср. длительность</th><th>Тревог 30 д</th><th>CPU</th><th>Память</th><th>Диск</th></tr></thead><tbody>
+                {machineStats.machines.map((m) => (
+                  <tr key={m.id} className={m.errors24h > 0 || m.offlineEvents30d > 0 ? 'uadmin-warn' : undefined}>
+                    <td>{m.name}{m.version ? ` · v${m.version}` : ''}</td><td>{m.owner}</td><td>{m.online ? 'в сети' : 'офлайн'}</td>
+                    <td>{m.commands24h} / {m.commandsTotal}</td><td>{m.errors24h}</td><td>{m.avgDurationMs24h ? `${(m.avgDurationMs24h / 1000).toFixed(1)} с` : '—'}</td>
+                    <td>{m.offlineEvents30d}{m.offlineMs30d ? ` (${Math.round(m.offlineMs30d / 60000)} мин)` : ''}</td>
+                    <td>{m.cpuLoadPct !== undefined ? `${Math.round(m.cpuLoadPct)}%` : '—'}</td><td>{m.memUsedRatio !== undefined ? `${Math.round(m.memUsedRatio * 100)}%` : '—'}</td><td>{m.diskFreeBytes !== undefined ? `${mb(m.diskFreeBytes)} своб.` : '—'}</td>
+                  </tr>
+                ))}
               </tbody></table>
             </section>
           )}

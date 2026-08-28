@@ -2332,6 +2332,24 @@ export class VoiceChatDb {
     }
   }
 
+  /** Агрегаты по командам и тревогам машины (machines-roadmap п.5); без online/версии/телеметрии — их знает реестр. */
+  machineStatsRows(now = Date.now()): Array<{ machineId: string; commandsTotal: number; commands24h: number; errors24h: number; avgDurationMs24h: number; lastCommandAt: number | null; offlineEvents30d: number; offlineMs30d: number }> {
+    const dayAgo = now - 24 * 60 * 60_000
+    const monthAgo = now - 30 * 24 * 60 * 60_000
+    const cmd = this.db.prepare(`SELECT machine_id AS machineId, COUNT(*) AS total,
+        SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END) AS day,
+        SUM(CASE WHEN started_at >= ? AND (error IS NOT NULL OR timed_out = 1 OR (exit_code IS NOT NULL AND exit_code <> 0)) THEN 1 ELSE 0 END) AS errors,
+        AVG(CASE WHEN started_at >= ? THEN duration_ms END) AS avgMs,
+        MAX(started_at) AS lastAt
+      FROM machine_commands GROUP BY machine_id`).all(dayAgo, dayAgo, dayAgo) as Array<{ machineId: string; total: number; day: number; errors: number; avgMs: number | null; lastAt: number | null }>
+    const ev = this.db.prepare(`SELECT machine_id AS machineId, COUNT(*) AS n, COALESCE(SUM(offline_for_ms), 0) AS ms FROM machine_events WHERE state = 'offline' AND at >= ? GROUP BY machine_id`).all(monthAgo) as Array<{ machineId: string; n: number; ms: number }>
+    const byId = new Map<string, { machineId: string; commandsTotal: number; commands24h: number; errors24h: number; avgDurationMs24h: number; lastCommandAt: number | null; offlineEvents30d: number; offlineMs30d: number }>()
+    const get = (id: string) => { let r = byId.get(id); if (!r) { r = { machineId: id, commandsTotal: 0, commands24h: 0, errors24h: 0, avgDurationMs24h: 0, lastCommandAt: null, offlineEvents30d: 0, offlineMs30d: 0 }; byId.set(id, r) } return r }
+    for (const c of cmd) { const r = get(c.machineId); r.commandsTotal = c.total; r.commands24h = c.day ?? 0; r.errors24h = c.errors ?? 0; r.avgDurationMs24h = Math.round(c.avgMs ?? 0); r.lastCommandAt = c.lastAt }
+    for (const e of ev) { const r = get(e.machineId); r.offlineEvents30d = e.n; r.offlineMs30d = e.ms }
+    return [...byId.values()]
+  }
+
   /** Все машины всех пользователей — для серверного watchdog. */
   listAllAgents(): AgentRecord[] {
     const rows = this.db.prepare(`SELECT * FROM agents ORDER BY created_at ASC`).all() as AgentRow[]

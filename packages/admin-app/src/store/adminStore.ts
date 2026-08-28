@@ -12,7 +12,7 @@ import type {
   ModelPriceInput,
   UsageReport,
   UsageUnit,
-  UserUsageSummary, AdminMakeStats, SecurityEvent, InviteInfo, SignupConfig } from '@shared/admin'
+  UserUsageSummary, AdminMakeStats, AdminMachineStats, SecurityEvent, InviteInfo, SignupConfig } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
 
 export const EMPTY_LLM_ACCESS: readonly UserLlmAccess[] = Object.freeze([])
@@ -28,6 +28,7 @@ export interface AdminState {
   adminUsers: AdminUserInfo[]
   adminUsageSummary: UserUsageSummary[]
   adminMakeStats: AdminMakeStats | null
+  adminMachineStats: AdminMachineStats | null
   adminUsersStatus: LoadStatus
   adminUsersError: string | null
   adminSelected: string | null
@@ -101,6 +102,7 @@ function initialState(): AdminState {
     adminUsers: [],
     adminUsageSummary: [],
     adminMakeStats: null,
+    adminMachineStats: null,
     adminUsersStatus: 'loading',
     adminUsersError: null,
     adminSelected: null,
@@ -130,13 +132,14 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
   async function refreshAdminUsers(): Promise<void> {
     setState({ adminUsersStatus: 'loading', adminUsersError: null })
     try {
-      const [adminUsers, adminUsageSummary, adminMakeStats] = await Promise.all([
+      const [adminUsers, adminUsageSummary, adminMakeStats, adminMachineStats] = await Promise.all([
         client.listUsers(),
         client.usageSummary(),
-        // Метрики Make — необязательная часть дашборда: их отказ не должен ронять список пользователей.
-        client.makeStats ? client.makeStats().catch(() => null) : Promise.resolve(null)
+        // Метрики Make и машин — необязательная часть дашборда: их отказ не должен ронять список пользователей.
+        client.makeStats ? client.makeStats().catch(() => null) : Promise.resolve(null),
+        client.machineStats ? client.machineStats().catch(() => null) : Promise.resolve(null)
       ])
-      setState({ adminUsers, adminUsageSummary, adminMakeStats, adminUsersStatus: 'ready', adminUsersError: null })
+      setState({ adminUsers, adminUsageSummary, adminMakeStats, adminMachineStats, adminUsersStatus: 'ready', adminUsersError: null })
     } catch (err) {
       setState({
         adminUsersStatus: 'error',
