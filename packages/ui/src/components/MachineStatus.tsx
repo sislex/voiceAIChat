@@ -6,7 +6,7 @@
 // Данные приходят живым пушем (state.agents).
 
 import { Fragment, useState } from 'react'
-import type { AgentCreated, AgentInfo, AgentPolicy, AgentTelemetry, DiskUsage } from '@shared/agentProtocol'
+import type { AgentCreated, AgentInfo, AgentPolicy, AgentTelemetry, DiskUsage, BatchExecResult } from '@shared/agentProtocol'
 import { AGENT_VERSION, compareVersions } from '@shared/version'
 import { agentOsFromPlatform, installCommand, UPDATE_HINT } from '@shared/agentInstall'
 import { recommendedMachineStoragePath, type MachineStorage } from '@shared/projects'
@@ -14,6 +14,7 @@ import { copyText } from '../lib/clipboard'
 import { AgentCard } from './AgentCard'
 import { AgentCommands } from './AgentCommands'
 import { MachineCommandLog } from './MachineCommandLog'
+import { MachineBatchCommand } from './MachineBatchCommand'
 import type { MachineCommandRecord, MachineCommandSource } from '@shared/agentProtocol'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
@@ -57,6 +58,8 @@ export interface MachineStatusProps {
   onOpenConversation?: (conversationId: string) => void
   /** Мастер подключения: пробная команда на только что созданной машине. */
   onExecTest?: (id: string) => Promise<{ exitCode: number | null; output: string }>
+  /** Групповая команда (п.15): одна команда на несколько машин. */
+  onExecBatch?: (machineIds: string[], command: string) => Promise<BatchExecResult>
   /**
    * Удалить машину: токен отзывается, цель выполнения и машина по умолчанию
    * сбрасываются. Нет — удаления в таблице нет (режим только-просмотр).
@@ -312,6 +315,7 @@ export function MachineStatus({
   onLoadCommands,
   onOpenConversation,
   onExecTest,
+  onExecBatch,
   onDeleteAgent,
   defaultAgentId,
   onSetDefault,
@@ -644,6 +648,8 @@ export function MachineStatus({
             {note}
           </p>
         )}
+
+        {onExecBatch && agents.length > 1 && <MachineBatchCommand agents={agents} onRun={onExecBatch} />}
 
         {created && onGetConnectionString && (
           <AgentCommands

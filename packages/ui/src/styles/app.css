@@ -7140,3 +7140,19 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .pset-cmdpolicy legend { font-size: 13px; padding: 0 4px; }
 .pset-cmdpolicy textarea { width: 100%; font-family: ui-monospace, monospace; font-size: 12px; }
 .pset-check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+
+/* Групповая команда по машинам (machines-roadmap п.15) */
+.mbatch { display: grid; gap: 8px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border, #3a3a3a); border-radius: 8px; }
+.mbatch-h { margin: 0; font-size: 14px; }
+.mbatch-note { margin: 0; font-size: 12px; opacity: 0.8; }
+.mbatch-machines { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 13px; }
+.mbatch-machine { display: inline-flex; align-items: center; gap: 4px; }
+.mbatch-form { display: flex; gap: 8px; }
+.mbatch-form input { flex: 1 1 auto; font-family: ui-monospace, monospace; }
+.mbatch-err { color: var(--danger, #e5484d); font-size: 13px; margin: 0; }
+.mbatch-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mbatch-table th { text-align: left; padding: 4px 6px; opacity: 0.7; font-weight: 500; }
+.mbatch-table td { padding: 4px 6px; border-top: 1px solid var(--border, #3a3a3a); vertical-align: top; }
+.mbatch-row--bad td:nth-child(2) { color: var(--danger, #e5484d); font-weight: 600; }
+.mbatch-out { margin: 4px 0 0; padding: 6px; max-height: 200px; overflow: auto; font-size: 11px; white-space: pre-wrap; background: rgba(0,0,0,0.06); border-radius: 4px; }
+.mbatch-link { border: 0; background: none; padding: 0; color: var(--accent, #4c6ef5); cursor: pointer; font-size: 12px; }

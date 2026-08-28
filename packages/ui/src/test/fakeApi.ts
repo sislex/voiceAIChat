@@ -713,6 +713,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'admin:commandPolicy': async () => ({ roles: {} }),
     'admin:setCommandPolicy': async ({ roles }) => ({ roles }),
     'agents:commands': async () => [],
+    'agents:execBatch': async ({ machineIds, command }) => ({ command, startedAt: 1, items: [], totals: { requested: machineIds.length, ok: 0, failed: 0, skipped: 0 } }),
     'downloads:url': async ({ kind }) => `http://localhost/api/download/${kind}`,
     'agents:connectionString': async ({ token }) => `vcagent:fake-${token}`,
     'cc:projects': async () => [],

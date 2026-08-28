@@ -275,6 +275,7 @@ export const REST = {
   agentFsTrash: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/trash`,
   agentFsCopyTo: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/copy-to`,
   agentExec: (id: string) => `/api/agents/${encodeURIComponent(id)}/exec`,
+  agentsExecBatch: '/api/agents/exec-batch',
   agentCommands: (id: string) => `/api/agents/${encodeURIComponent(id)}/commands`,
   /** Последняя доступная версия агента (публично; для «Проверить обновления»). */
   agentLatestVersion: '/api/agents/version',

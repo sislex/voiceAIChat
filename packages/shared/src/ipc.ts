@@ -42,7 +42,7 @@ import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
-import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource, MachineCommandEvent, MachineStatusEvent } from './agentProtocol'
+import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource, MachineCommandEvent, MachineStatusEvent, BatchExecResult } from './agentProtocol'
 import type {
   Board,
   KanbanColumn,
@@ -305,6 +305,8 @@ export interface IpcInvokeMap {
   'agents:setPinIp': { arg: { id: string; pin: boolean }; result: { ok: true } }
   /** Обновить агента на машине: сервер выполняет на ней команду установки. */
   'agents:update': { arg: { id: string }; result: { ok: true; os: string } }
+  /** Одна команда на несколько машин со сводкой (machines-roadmap п.15). */
+  'agents:execBatch': { arg: { machineIds: string[]; command: string; projectId?: string }; result: BatchExecResult }
   /** Журнал команд машины: новые сверху; q — подстрока команды, source — фильтр источника. */
   'agents:commands': { arg: { id: string; limit?: number; q?: string; source?: MachineCommandSource }; result: MachineCommandRecord[] }
   /** Абсолютный URL артефакта для скачивания (десктоп/агент-приложение/скрипт). */
@@ -1068,6 +1070,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'agents:setPinIp',
   'agents:update',
   'agents:commands',
+  'agents:execBatch',
   'downloads:url',
   'agents:connectionString',
   'cc:projects',
