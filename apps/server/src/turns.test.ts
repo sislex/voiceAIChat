@@ -1093,7 +1093,7 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
-  it('ошибка активного хода ставит очередь на паузу и не продвигает следующий элемент', async () => {
+  it('ошибка активного хода фиксируется и однократно продвигает следующий элемент', async () => {
     const db = freshDb()
     const conversation = db.createConversation(U, 'queue')
     const active = db.addMessage(U, conversation.id, 'u1', 'Активный', '10:00')
@@ -1106,10 +1106,17 @@ describe('turns: управляемая персистентная очеред�
     llm.handlers[0]!.onError('runner failed')
     await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-    expect(llm.handlers).toHaveLength(1)
-    expect(db.isTurnQueuePaused(U, conversation.id)).toBe(true)
+    expect(llm.handlers).toHaveLength(2)
+    expect(llm.requests[1]?.prompt).toContain('Следующий')
+    expect(db.isTurnQueuePaused(U, conversation.id)).toBe(false)
     expect(db.listQueuedTurns(U, conversation.id)).toEqual([
-      expect.objectContaining({ messageId: queued.id, status: 'queued' }),
+      expect.objectContaining({ messageId: active.id, status: 'failed' })
+    ])
+
+    llm.handlers[1]!.onDone('Ответ следующего')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(llm.handlers).toHaveLength(2)
+    expect(db.listQueuedTurns(U, conversation.id)).toEqual([
       expect.objectContaining({ messageId: active.id, status: 'failed' })
     ])
     db.close()
