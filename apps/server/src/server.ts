@@ -275,7 +275,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   // Реестр создаётся до REST: task-chat context обязан показывать ту же effective
   // online-машину, которую затем использует фактический ход.
-  const agentRegistry = opts.agentRegistry ?? new AgentRegistry()
+  const agentRegistry = opts.agentRegistry ?? new AgentRegistry({ offlineGraceMs: opts.config.agentOfflineGraceMs })
   await registerRest(app, db, opts.config.dataDir, {
     runnerFs: runnerFs ?? undefined,
     authStatus,
@@ -595,6 +595,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       listStorages: (uid, machineId) => db.listMachineStorages(uid, machineId),
       ownsMachine: (uid, machineId) => db.listAgents(uid).some((agent) => agent.id === machineId),
       isOnline: (machineId) => agentRegistry.isOnline(machineId),
+      waitOnline: (machineId) => agentRegistry.waitForOnline(machineId),
       verifyRoot: async (machineId, rootPath) => {
         const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
         const marker = await agentRegistry.fsRead(machineId, `${rootPath.replace(/[/\\]$/, '')}${separator}.voicechat${separator}storage.json`)
@@ -878,6 +879,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     agents: {
       isOnline: (id) => agentRegistry.isOnline(id),
+      waitOnline: (id) => agentRegistry.waitForOnline(id),
       nameOf: (id) => agentRegistry.nameOf(id),
       policyOf: (id) => agentRegistry.policyOf(id),
       fsList: (id, path) => agentRegistry.fsList(id, path),

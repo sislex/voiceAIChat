@@ -111,6 +111,8 @@ export interface TurnManagerDeps {
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
   agents?: {
     isOnline(id: string): boolean
+    /** Подождать возврата офлайн-машины перед сохранением файлов (см. registry.waitForOnline). */
+    waitOnline?(id: string): Promise<boolean>
     nameOf(id: string): string | undefined
     policyOf(id: string): AgentPolicy | undefined
     /** Файловые операции машины — нужны, чтобы переложить туда картинки хода. */
@@ -981,6 +983,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
                 listStorages: (uid, machineId) => deps.db.listMachineStorages(uid, machineId),
                 ownsMachine: (uid, machineId) => deps.db.listAgents(uid).some((agent) => agent.id === machineId),
                 isOnline: (machineId) => a.isOnline(machineId),
+                waitOnline: a.waitOnline ? (machineId) => a.waitOnline!(machineId) : undefined,
                 verifyRoot: async (machineId, rootPath) => {
                   await a.fsList!(machineId, rootPath)
                   if (!a.fsRead) throw new Error('Проверка marker MachineStorage недоступна')

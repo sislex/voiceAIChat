@@ -9,37 +9,37 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 97 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 108 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 98 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 109 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: a8c141af fix(desktop): зелёный typecheck — фикстура Settings через DEFAULT_SETTINGS, типы ?worker (roadmap-2 п.6) |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 12 коммит(ов) в areas после сверки: b088d0c5 test(make): E2E в headless Chromium — превью React, компоненты, Monaco, публикация (п.37) … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-28 | ⚠ 2 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-28 | ⚠ 1 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 106 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ⚠ 33 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 135 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 69 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 62 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 64 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 57 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 733 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 162 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 4 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 61 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 81 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-28 | ⚠ 3 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-28 | ⚠ 2 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 107 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ⚠ 34 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 136 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 70 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 63 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 65 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 58 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 734 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 163 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 5 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 62 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 82 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 6 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 10 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 11 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ✓ |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 63 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 94 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 9 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 6 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 4 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 61 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 64 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 95 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 10 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 7 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 5 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 62 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: 43f3b3c7 chore(compose): проброс VC_SMTP_URL/VC_MAIL_FROM/VC_PUBLIC_URL в server для регистрации по email |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 14 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ⚠ 6 коммит(ов) в areas после сверки: c40016dc feat(machines): копирование файла на другую машину из проводника (roadmap п.8) … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 15 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ⚠ 7 коммит(ов) в areas после сверки: e3cb7fa4 feat(machines): журнал команд машины — таблица, хук registry.onCommand, REST/CSV, панель на странице машин (roadmap п.4) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-28, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -57,18 +57,18 @@
 
 ## Журнал сессий
 
-Всего записей: 379. Последние:
+Всего записей: 380. Последние:
 
 - [2026-08-28-alexeys-macbook-air-2-machines-roadmap-9.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-9.md) — machines-roadmap-9
 - [2026-08-28-alexeys-macbook-air-2-machines-roadmap-8.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-8.md) — machines-roadmap-8
 - [2026-08-28-alexeys-macbook-air-2-machines-roadmap-7.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-7.md) — machines-roadmap-7
 - [2026-08-28-alexeys-macbook-air-2-machines-roadmap-4.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-4.md) — machines-roadmap-4
+- [2026-08-28-alexeys-macbook-air-2-machines-roadmap-3.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-3.md) — machines-roadmap-3
 - [2026-08-28-alexeys-macbook-air-2-default-chatai-storage.md](log/2026-08-28-alexeys-macbook-air-2-default-chatai-storage.md) — default-chatai-storage
 - [2026-08-27-alexeys-macbook-air-2-make-roadmap-4.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-4.md) — make-roadmap-4
 - [2026-08-27-alexeys-macbook-air-2-make-roadmap-3.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-3.md) — make-roadmap-3
 - [2026-08-27-alexeys-macbook-air-2-make-roadmap-2.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-2.md) — make-roadmap-2
 - [2026-08-27-alexeys-macbook-air-2-make-roadmap-19-24.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-19-24.md) — make-roadmap-19-24
-- [2026-08-27-alexeys-macbook-air-2-make-react-storybook-search.md](log/2026-08-27-alexeys-macbook-air-2-make-react-storybook-search.md) — make-react-storybook-search
 
 ## Исторические планы
 

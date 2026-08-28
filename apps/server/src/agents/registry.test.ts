@@ -55,6 +55,25 @@ describe('AgentRegistry', () => {
     expect(records[1]!.error).toContain('политикой')
   })
 
+  it('offlineGraceMs: exec и fs ждут возврата машины и продолжают после register; по таймауту — «не в сети»', async () => {
+    let n = 0
+    const reg = new AgentRegistry({ newId: () => `exec-${++n}`, offlineGraceMs: 200 })
+    const sock = fakeSocket()
+    // машина офлайн: команда не падает, а ждёт
+    const p = reg.exec('a1', 'uptime', 1000)
+    const fsP = reg.fsList('a1', '/')
+    expect(sock.sent).toHaveLength(0)
+    reg.register('a1', 'Мак', sock, undefined, '0.15.0')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(sock.sent.map((m) => m.t)).toEqual(['exec.start', 'fs.list'])
+    reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
+    reg.handleMessage('a1', { t: 'fs.result', opId: 'exec-2', result: { root: '/', cwd: '/', entries: [] } })
+    await expect(p).resolves.toMatchObject({ exitCode: 0 })
+    await expect(fsP).resolves.toMatchObject({ root: '/' })
+    // никто не подключился — отказ с указанием, сколько ждали
+    await expect(reg.exec('a2', 'uptime', 1000)).rejects.toThrow('не в сети')
+  })
+
   it('exec: офлайн-агент → reject сразу', async () => {
     const reg = makeRegistry()
     await expect(reg.exec('нет', 'ls', 1000)).rejects.toThrow('не в сети')
