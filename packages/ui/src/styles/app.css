@@ -1260,7 +1260,10 @@
 }
 .voicebar--expanded .vinner {
   flex: 1;
+  width: 100%;
+  max-width: none;
   max-height: 100%;
+  margin-inline: 0;
 }
 .voicebar--expanded .vrow {
   flex: 1;
@@ -1292,18 +1295,26 @@
   .voicebar:not(.voicebar--expanded) .vrow {
     align-items: center;
   }
-  .voicebar:not(.voicebar--expanded) .tin {
-    padding-top: 18px;
-    padding-bottom: 2px;
-  }
 }
 .vrow > .vc-btn { flex: none; }
-/* Send и stop используют одну 44×44 hit-area UI Kit; компактность задаёт
-   одинаковая 16px-графика, а состояния и темы — варианты primary/danger. */
+/* Контейнеры основных действий компактны и одинаковы; размер графики
+   задаётся самой иконкой и не уменьшается вместе с кнопкой. */
+.composer-attach,
+.composer-send,
+.composer-stop {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.composer-attach .vc-btn__ico,
 .composer-send .vc-btn__ico,
 .composer-stop .vc-btn__ico {
-  width: 16px;
-  height: 16px;
+  flex: none;
 }
 .composer-send svg,
 .composer-stop svg {
@@ -1394,7 +1405,7 @@
   min-width: 0;
   border: 0;
   border-radius: 0;
-  padding: 12px 6px 8px;
+  padding: 10px 6px;
   font-size: 14px;
   font-family: inherit;
   background: transparent;
@@ -4004,9 +4015,10 @@ button.conscmd:hover {
   .vrow { gap: 4px; }
   .mode-menu__trigger { max-width: 38px; padding-inline: 7px; }
   .mode-menu__label, .mode-menu__trigger > span:last-child { display: none; }
-  .composer-attach, .composer-mic { width: 34px; height: 34px; padding: 0; }
+  .composer-mic { width: 34px; height: 34px; padding: 0; }
+  .composer-attach,
   .composer-send,
-  .composer-stop { width: 44px; height: 44px; }
+  .composer-stop { width: 32px; height: 32px; min-width: 32px; }
   .mode-menu__list { right: -84px; max-width: calc(100vw - 24px); }
 }
 
