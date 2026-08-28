@@ -320,6 +320,8 @@ export const REST = {
   adminMakeStats: '/api/admin/make/stats',
   adminMachineUpdate: (id: string) => `/api/admin/machines/${encodeURIComponent(id)}/update`,
   adminMachineStats: '/api/admin/machines/stats',
+  adminMachineTokenRevoke: (id: string) => `/api/admin/machines/${encodeURIComponent(id)}/token/revoke`,
+  agentPinIp: (id: string) => `/api/agents/${encodeURIComponent(id)}/pin-ip`,
   adminMachineMetrics: '/api/admin/machines/metrics',
   adminMakeMetrics: '/api/admin/make/metrics',
   adminModelPrice: (provider: string, model: string) => '/api/admin/model-prices/' + encodeURIComponent(provider) + '/' + encodeURIComponent(model),

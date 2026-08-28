@@ -1635,8 +1635,9 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       }
       attachWs(socket, makeHandlers(user))
     })
-    scoped.get('/agent', { websocket: true }, (socket) => {
-      attachAgentWs(socket, db, agentRegistry)
+    scoped.get('/agent', { websocket: true }, (socket, request) => {
+      const fwd = String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim()
+      attachAgentWs(socket, db, agentRegistry, { ip: fwd || request.socket.remoteAddress || '' })
     })
   })
 

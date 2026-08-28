@@ -7129,3 +7129,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .agcmd-step { margin: 0; font-size: 13px; }
 .agcmd-step--ok { color: #3fb950; }
 .agcmd-out { margin: 6px 0 0; padding: 6px 8px; font-size: 12px; white-space: pre-wrap; background: rgba(0,0,0,0.06); border-radius: 4px; max-height: 160px; overflow: auto; }
+
+/* Токен агента (machines-roadmap п.11) */
+.mst-token { font-size: 11px; opacity: 0.75; white-space: nowrap; }
+.mst-token--expired { color: var(--danger, #e5484d); opacity: 1; }
+.mst-pin { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; opacity: 0.85; white-space: nowrap; }

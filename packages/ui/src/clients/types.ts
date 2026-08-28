@@ -126,6 +126,8 @@ export type OperationsClient = Pick<
   | 'agents:delete'
   | 'agents:setPolicy'
   | 'agents:regenerateToken'
+  | 'agents:revokeToken'
+  | 'agents:setPinIp'
   | 'agents:update'
   | 'agents:connectionString'
   | 'downloads:url'

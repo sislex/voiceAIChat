@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-28
-checked: 17f149cf
+checked: 220c26f8
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -91,6 +91,19 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 колонка внешнего ключа не имеет, и CI-ран проекта уходил бы в никуда). Стор
 повторяет сброс `execTarget`/`defaultAgentId` в своём состоянии — иначе селекторы
 показывали бы удалённую машину до перезагрузки страницы.
+
+## Токены агентов: срок, отзыв, привязка к IP
+
+Колонки `agents.token_expires_at`, `token_issued_at`, `last_ip`, `pin_ip` (миграция `ALTER TABLE` в `database.ts`).
+`POST /api/agents/:id/token {ttlDays?}` перевыпускает токен со сроком (UI шлёт `AGENT_TOKEN_DEFAULT_TTL_DAYS` = 90;
+без тела — бессрочный, как раньше; старые токены с `NULL` не истекают), `DELETE /api/agents/:id/token` — отзыв
+(`db.revokeAgentToken`: случайный хэш + «уже истёк», `registry.disconnect`), `POST /api/agents/:id/pin-ip {pin}` —
+привязка к `last_ip`; админ отзывает чужой токен `POST /api/admin/machines/:id/token/revoke`. `wsAgent.ts` получает
+IP подключения (`x-forwarded-for` → `remoteAddress`) из `server.ts`, при `agent.register` отказывает истёкшему токену и,
+если `pin_ip`, — другому IP; успешный вход пишет `last_ip`. Все исходы — в `security_events` владельца:
+`agent_connected`, `agent_rejected`, `agent_token_rotated`, `agent_token_revoked` (подписи в `UsersAdmin`, вкладка
+«Безопасность»). В таблице машин: «токен до дд.мм.гггг»/«токен истёк», «✕ токен», чекбокс «IP …».
+Тесты — `wsAgent.test.ts`, `rest.test.ts › токены агентов`.
 
 ## Установка и обновление агента (одна команда на ОС)
 

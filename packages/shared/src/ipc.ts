@@ -298,7 +298,11 @@ export interface IpcInvokeMap {
   /** Задать политику возможностей машины. */
   'agents:setPolicy': { arg: { id: string; policy: AgentPolicy }; result: void }
   /** Перевыпустить токен (старый перестаёт работать); токен возвращается один раз. */
-  'agents:regenerateToken': { arg: { id: string }; result: { token: string } }
+  'agents:regenerateToken': { arg: { id: string; ttlDays?: number }; result: { token: string } }
+  /** Отозвать токен машины: агент отключается, новый токен — через перевыпуск (п.11). */
+  'agents:revokeToken': { arg: { id: string }; result: { ok: true } }
+  /** Привязать токен к IP последнего подключения. */
+  'agents:setPinIp': { arg: { id: string; pin: boolean }; result: { ok: true } }
   /** Обновить агента на машине: сервер выполняет на ней команду установки. */
   'agents:update': { arg: { id: string }; result: { ok: true; os: string } }
   /** Журнал команд машины: новые сверху; q — подстрока команды, source — фильтр источника. */
@@ -351,6 +355,7 @@ export interface IpcInvokeMap {
   'admin:updateMachine': { arg: { id: string }; result: { ok: true; os: string } }
   /** Метрики машин для дашборда админа (п.5). */
   'admin:machineStats': { arg: void; result: import('./admin').AdminMachineStats }
+  'admin:revokeMachineToken': { arg: { id: string }; result: { ok: true } }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole; mustChangePassword?: boolean }; result: AdminUserInfo }
@@ -1056,6 +1061,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'agents:delete',
   'agents:setPolicy',
   'agents:regenerateToken',
+  'agents:revokeToken',
+  'agents:setPinIp',
   'agents:update',
   'agents:commands',
   'downloads:url',
@@ -1082,6 +1089,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:makeStats',
   'admin:updateMachine',
   'admin:machineStats',
+  'admin:revokeMachineToken',
   'admin:llmAccess',
   'admin:saveLlmAccess',
   'admin:createUser',

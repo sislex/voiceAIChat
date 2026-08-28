@@ -8,6 +8,7 @@
 // выбранной сущности, logout и dispose.
 
 import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult } from '@shared/agentProtocol'
+import { AGENT_TOKEN_DEFAULT_TTL_DAYS } from '@shared/agentProtocol'
 import type { ConversationWithMessages, ServerFileInfo } from '@shared/protocol'
 import type { CcItem, CcProject, CcSession } from '@shared/cc'
 import type { CxItem, CxProject, CxSession } from '@shared/codexSessions'
@@ -90,6 +91,9 @@ export interface OperationsActions {
   fsRemove(agentId: string, path: string): Promise<FsResult>
   fsTrash(agentId: string, path: string): Promise<FsResult>
   fsCopyTo(agentId: string, path: string, targetAgentId: string, targetDir?: string): Promise<FsCopyResult>
+  /** Токен машины (п.11): отзыв и привязка к IP; после обоих список машин перечитывается. */
+  revokeAgentToken(id: string): Promise<void>
+  setAgentPinIp(id: string, pin: boolean): Promise<void>
   fsRename(agentId: string, from: string, to: string): Promise<FsResult>
   fsMkdir(agentId: string, path: string): Promise<FsResult>
   downloadFsFile(agentId: string, path: string, name: string): Promise<void>
@@ -273,7 +277,7 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
       },
       async regenerateAgentToken(id) {
         try {
-          const { token } = await client['agents:regenerateToken']({ id })
+          const { token } = await client['agents:regenerateToken']({ id, ttlDays: AGENT_TOKEN_DEFAULT_TTL_DAYS })
           return token
         } catch (err) {
           fail(err)
@@ -351,6 +355,8 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
         client.fs ? client.fs.write(agentId, path, dataBase64, projectId()) : noFs(),
       fsRemove: (agentId, path) => (client.fs ? client.fs.remove(agentId, path, projectId()) : noFs()),
       fsTrash: (agentId, path) => (client.fs?.trash ? client.fs.trash(agentId, path, projectId()) : noFs()),
+      async revokeAgentToken(id) { await client['agents:revokeToken']({ id }); await refreshAgents() },
+      async setAgentPinIp(id, pin) { await client['agents:setPinIp']({ id, pin }); await refreshAgents() },
       fsCopyTo: (agentId, path, targetAgentId, targetDir) => (client.fs?.copyTo ? client.fs.copyTo(agentId, path, targetAgentId, targetDir, projectId()) : noFs()),
       fsRename: (agentId, from, to) => (client.fs ? client.fs.rename(agentId, from, to, projectId()) : noFs()),
       fsMkdir: (agentId, path) => (client.fs ? client.fs.mkdir(agentId, path, projectId()) : noFs()),

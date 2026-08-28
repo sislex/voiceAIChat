@@ -225,6 +225,9 @@ export interface AgentPolicy {
   ptyConfirmSudo?: boolean
 }
 
+/** Срок жизни токена агента при перевыпуске из UI, дней (п.11). */
+export const AGENT_TOKEN_DEFAULT_TTL_DAYS = 90
+
 export const DEFAULT_AGENT_POLICY: AgentPolicy = {
   allowedDirs: [],
   allowNetwork: true,
@@ -333,6 +336,11 @@ export interface AgentInfo {
   effectiveSource?: 'personal_default' | 'fallback'
   /** Версия подключённого агента (только когда online; иначе не задана). */
   version?: string
+  /** Срок токена (UNIX мс); нет — бессрочный (machines-roadmap п.11). */
+  tokenExpiresAt?: number | null
+  /** IP последнего подключения агента и флаг привязки: при включённой привязке другой IP отвергается. */
+  lastIp?: string | null
+  pinIp?: boolean
   /** Последняя телеметрия машины (только когда online; иначе не задана). */
   telemetry?: AgentTelemetry
   /** Раздача картинок машиной (только когда online и агент это умеет). */

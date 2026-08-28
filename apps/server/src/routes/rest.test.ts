@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
-import { VoiceChatDb } from '../db/database.js'
+import { VoiceChatDb, hashAgentToken } from '../db/database.js'
 import { AgentRegistry } from '../agents/registry.js'
 import { signToken } from '../users/accounts.js'
 import { isPublicAddress, previewInspectorScript, rewritePreviewBody, upstreamRequestHeaders } from './previewProxy.js'
@@ -1485,6 +1485,27 @@ describe('REST: журнал команд машины', () => {
     db.createUser('user2', '', 'developer')
     const other = db.createAgent('user2', 'X')
     expect((await inj({ method: 'GET', url: `/api/agents/${other.id}/commands` })).statusCode).toBe(404)
+  })
+})
+
+describe('REST: токены агентов (срок, отзыв, привязка к IP)', () => {
+  it('перевыпуск с ttlDays задаёт срок, отзыв закрывает вход, события попадают в журнал безопасности', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const rotated = (await inj({ method: 'POST', url: `/api/agents/${created.id}/token`, payload: { ttlDays: 30 } })).json()
+    expect(rotated.expiresAt).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60_000)
+    const listed = (await inj({ method: 'GET', url: '/api/agents' })).json()
+    expect(listed[0].tokenExpiresAt).toBe(rotated.expiresAt)
+    expect(db.findAgentByTokenHash(hashAgentToken(rotated.token))?.id).toBe(created.id)
+    expect((await inj({ method: 'DELETE', url: `/api/agents/${created.id}/token` })).json()).toEqual({ ok: true })
+    expect(db.findAgentByTokenHash(hashAgentToken(rotated.token))).toBeNull()
+    expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/pin-ip`, payload: { pin: true } })).statusCode).toBe(200)
+    expect((await inj({ method: 'GET', url: '/api/agents' })).json()[0].pinIp).toBe(true)
+    const events = (await inj({ method: 'GET', url: '/api/admin/security' })).json().events.map((e: { type: string }) => e.type)
+    expect(events).toEqual(expect.arrayContaining(['agent_token_rotated', 'agent_token_revoked']))
+    db.createUser('user3', '', 'developer')
+    const other = db.createAgent('user3', 'X')
+    expect((await inj({ method: 'DELETE', url: `/api/agents/${other.id}/token` })).statusCode).toBe(404)
+    expect((await inj({ method: 'POST', url: `/api/admin/machines/${other.id}/token/revoke` })).json()).toEqual({ ok: true })
   })
 })
 
