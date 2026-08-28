@@ -58,6 +58,21 @@ export interface MachineCommandRecord {
   outputExcerpt: string
 }
 
+/** Событие «долгая команда завершилась»: то же, что запись журнала, плюс имя машины и путь сохранённого лога. */
+export interface MachineCommandEvent {
+  machineId: string
+  machineName: string
+  source: MachineCommandSource
+  command: string
+  exitCode: number | null
+  timedOut: boolean
+  error: string | null
+  durationMs: number
+  conversationId: string | null
+  /** Полный вывод сохранён на машине (команды из чата) — открыть в проводнике. */
+  logPath?: string
+}
+
 /** Результат копирования файла между машинами (`POST /api/agents/:id/fs/copy-to`): сервер читает с одной и пишет на другую. */
 export interface FsCopyResult {
   /** Абсолютный путь файла на целевой машине. */

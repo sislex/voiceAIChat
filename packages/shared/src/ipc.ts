@@ -42,7 +42,7 @@ import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
-import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource } from './agentProtocol'
+import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource, MachineCommandEvent } from './agentProtocol'
 import type {
   Board,
   KanbanColumn,
@@ -731,6 +731,8 @@ export interface RendererRealtimeBridge {
   connected(): boolean
   /** Invalidation-only событие; полный снимок читается по HTTP. */
   onTaskPreparationNotificationsInvalidated(cb: (m: { projectId: string }) => void): () => void
+  /** Долгая команда машины завершилась — тост/уведомление (machines-roadmap п.17). */
+  onMachineCommand?(cb: (event: MachineCommandEvent) => void): () => void
 }
 
 export interface RendererBoardBridge {
