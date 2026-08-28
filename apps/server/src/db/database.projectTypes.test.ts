@@ -194,6 +194,31 @@ describe('миграция существующей базы', () => {
     }
   })
 
+  it('перезапуск не дописывает «Общему проекту» конвейер разработки', () => {
+    // Канонизация workflow-колонок гарантирует конвейер dev-проектам; для типа,
+    // который его выключил, она обязана молчать — иначе короткая доска не
+    // переживает ни одного перезапуска сервера.
+    const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-cols-'))
+    const file = join(dir, 'db.sqlite')
+    try {
+      const first = new VoiceChatDb(file)
+      first.createUser('alice', '', 'developer')
+      const general = first.createProject('alice', { name: 'Общий', typeId: BUILTIN_PROJECT_TYPE_IDS.general })
+      const software = first.createProject('alice', { name: 'Разработка' })
+      expect(first.getBoard('alice', general.id)!.columns.length).toBe(5)
+      first.close()
+
+      const second = new VoiceChatDb(file)
+      const semantics = second.getBoard('alice', general.id)!.columns.map((c) => c.semanticType)
+      expect(semantics).toEqual(['backlog', 'development', 'done', 'cancelled', 'decision_required'])
+      // А dev-проекту канонизация по-прежнему гарантирует полный конвейер.
+      expect(second.getBoard('alice', software.id)!.columns.length).toBe(13)
+      second.close()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('посев не затирает пользовательские узлы', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-user-'))
     const file = join(dir, 'db.sqlite')

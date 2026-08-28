@@ -4694,6 +4694,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .projitem { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: none; background: none; color: inherit; cursor: pointer; }
 .projitem .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .projitem-role { font-size: 11px; opacity: 0.6; flex: 0 0 auto; }
+/* Тип и роль в строке проекта: одна колонка справа, тип сверху. */
+.projitem-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex: 0 0 auto; min-width: 0; }
+.projitem-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-dim);
+  max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .projadd { display: block; width: calc(100% - 24px); margin: 0 12px 8px; border: 1px dashed rgba(128, 128, 128, 0.5); background: none; color: inherit; font-size: 13px; padding: 6px 8px; border-radius: 6px; cursor: pointer; opacity: 0.85; }
 .projadd:hover { opacity: 1; background: rgba(128, 128, 128, 0.1); }
 .projcreate { display: block; width: calc(100% - 24px); margin: 0 12px 8px; box-sizing: border-box; }
@@ -7064,3 +7068,36 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .mbatch-row--bad td:nth-child(2) { color: var(--danger, #e5484d); font-weight: 600; }
 .mbatch-out { margin: 4px 0 0; padding: 6px; max-height: 200px; overflow: auto; font-size: 11px; white-space: pre-wrap; background: rgba(0,0,0,0.06); border-radius: 4px; }
 .mbatch-link { border: 0; background: none; padding: 0; color: var(--accent, #4c6ef5); cursor: pointer; font-size: 12px; }
+
+/* Окно создания проекта: имя + каскад типов. Геометрия на токенах, чтобы
+   плотность совпадала с остальными формами настроек. */
+.newproj { display: flex; flex-direction: column; gap: var(--space-4, 12px); }
+.newproj-field { display: flex; flex-direction: column; gap: var(--space-1, 4px); }
+.newproj-label { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.newproj-field select.login-input { appearance: auto; }
+.newproj-summary {
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: var(--radius-medium, 8px);
+  padding: var(--space-3, 10px) var(--space-4, 12px);
+  background: var(--surface-hover);
+}
+.newproj-desc { margin: 0 0 var(--space-2, 6px); }
+.newproj-features { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: var(--space-2, 6px); }
+.newproj-chip {
+  font-size: 11px; line-height: 1.6; padding: 0 var(--space-2, 8px);
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 999px; color: var(--text-dim); background: var(--bg);
+}
+.newproj-chip--muted { font-style: italic; }
+.newproj-actions { display: flex; gap: var(--space-2, 8px); justify-content: flex-end; }
+
+@media (max-width: 720px) {
+  /* На телефоне окно полноэкранное: кнопки растягиваем, чтобы попадать пальцем. */
+  .newproj-actions { flex-direction: column-reverse; }
+  .newproj-actions .vc-btn { width: 100%; }
+}
+
+/* Тип проекта в настройках: подпись над селектом, чипы возможностей под ним. */
+.proj-type-field { display: flex; flex-direction: column; gap: var(--space-1, 4px); margin-bottom: var(--space-2, 8px); }
+.proj-type-current { margin: 0 0 var(--space-2, 8px); display: flex; flex-direction: column; gap: var(--space-1, 4px); }
+

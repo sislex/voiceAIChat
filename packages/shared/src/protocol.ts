@@ -334,6 +334,13 @@ export const REST = {
   // --- Проекты + канбан ---
   projects: '/api/projects',
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
+  // Дерево типов проекта: каталог общий, решения по публикации — под /api/admin/.
+  projectTypes: '/api/project-types',
+  projectType: (id: string) => `/api/project-types/${encodeURIComponent(id)}`,
+  projectTypePublish: (id: string) => `/api/project-types/${encodeURIComponent(id)}/publish`,
+  projectTypeUnpublish: (id: string) => `/api/project-types/${encodeURIComponent(id)}/unpublish`,
+  adminProjectTypes: '/api/admin/project-types',
+  adminProjectTypeReview: (id: string) => `/api/admin/project-types/${encodeURIComponent(id)}/review`,
   projectMembers: (id: string) => `/api/projects/${encodeURIComponent(id)}/members`,
   projectMember: (id: string, username: string) =>
     `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(username)}`,

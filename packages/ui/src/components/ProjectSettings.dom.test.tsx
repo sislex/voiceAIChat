@@ -3,12 +3,15 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
 import type { ProjectDetail } from '@shared/projects'
+import { BUILTIN_PROJECT_TYPES, BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@shared/projectTypes'
 import { ProjectSettings, type ProjectSettingsProps } from './ProjectSettings'
 import { createFakeCi } from '../test/fakeApi'
 
 function detail(over: Partial<ProjectDetail> = {}): ProjectDetail {
   return {
-    id: 'p1', name: 'Проект', description: '', gitUrl: null, technologies: [], skills: [],
+    id: 'p1', name: 'Проект', description: '',
+    typeId: BUILTIN_PROJECT_TYPE_IDS.software, typeChain: builtinProjectTypeChain(),
+    gitUrl: null, technologies: [], skills: [],
     defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 1, updatedAt: 1,
     role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual',
     members: [{ username: 'admin', role: 'owner', addedAt: 1 }], machines: [], defaultAgentId: null,
@@ -194,5 +197,54 @@ describe('ProjectSettings — тестовые пользователи', () => 
     })} />)
     expect(screen.getByText('tester — admin (полный доступ)')).toBeInTheDocument()
     expect(screen.queryByLabelText('Логин тестового пользователя 1')).not.toBeInTheDocument()
+  })
+})
+
+describe('ProjectSettings — тип проекта', () => {
+  const generalChain = builtinProjectTypeChain(BUILTIN_PROJECT_TYPE_IDS.general)
+  const types = BUILTIN_PROJECT_TYPES.map((node) => ({
+    ...node, builtin: true, ownerId: null, status: 'published' as const,
+    reviewNote: '', createdBy: 'system', createdAt: 0, updatedAt: 0
+  }))
+
+  it('владелец меняет тип, значение уходит в onUpdate', async () => {
+    const onUpdate = vi.fn()
+    render(<ProjectSettings {...props({ projectTypes: types, onUpdate })} />)
+    await userEvent.selectOptions(screen.getByLabelText('Тип проекта'), BUILTIN_PROJECT_TYPE_IDS.general)
+    expect(onUpdate).toHaveBeenCalledWith('p1', { typeId: BUILTIN_PROJECT_TYPE_IDS.general })
+  })
+
+  it('опции подписаны путём от корня — одноимённые подтипы различимы', () => {
+    render(<ProjectSettings {...props({ projectTypes: types })} />)
+    const select = screen.getByLabelText('Тип проекта') as HTMLSelectElement
+    expect(Array.from(select.options).map((o) => o.text)).toContain('Разработка ПО / Веб-приложение')
+  })
+
+  it('участник видит тип текстом, без селекта', () => {
+    render(<ProjectSettings {...props({ projectTypes: types, detail: detail({ role: 'member' }) })} />)
+    expect(screen.queryByLabelText('Тип проекта')).not.toBeInTheDocument()
+    expect(screen.getByText('Разработка ПО')).toBeInTheDocument()
+  })
+
+  it('«Общий проект»: нет вкладок CI и машин, нет полей git, превью и тестовых учёток', () => {
+    render(<ProjectSettings {...props({
+      projectTypes: types,
+      detail: detail({ typeId: BUILTIN_PROJECT_TYPE_IDS.general, typeChain: generalChain })
+    })} />)
+    const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
+    expect(tabs).toEqual(['Общее', 'LLM', 'Доска', 'Участники'])
+    expect(screen.queryByLabelText('Git-репозиторий')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('URL веб-превью')).not.toBeInTheDocument()
+    expect(screen.queryByText('Тестовые пользователи')).not.toBeInTheDocument()
+    // И честно сказано, что осталось.
+    expect(screen.getByText('только доска и задачи')).toBeInTheDocument()
+  })
+
+  it('у «Разработки ПО» вкладки и поля на месте', () => {
+    render(<ProjectSettings {...props({ projectTypes: types })} />)
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent))
+      .toEqual(['Общее', 'LLM', 'Доска', 'Workflow и CI', 'Участники', 'Машины'])
+    expect(screen.getByLabelText('Git-репозиторий')).toBeInTheDocument()
+    expect(screen.getByLabelText('URL веб-превью')).toBeInTheDocument()
   })
 })

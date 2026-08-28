@@ -7,6 +7,7 @@
 // Chat разговаривает только через порт, который выдаёт AppRuntime.
 
 import type { Board, ProjectDetail, ProjectSummary, Task, TaskChatBadge, WorkItemType, TaskPriority, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
+import type { ProjectTypeNode } from '@shared/projectTypes'
 import type {
   CiCommand,
   CiCommandInput,
@@ -70,6 +71,9 @@ export interface ProjectsState {
   /** Список прочитан с сервера — иначе «проекта нет» не отличить от «не грузили». */
   projectsLoaded: boolean
   projectDetail: ProjectDetail | null
+  /** Каталог типов, видимый пользователю: встроенные, опубликованные и свои. */
+  projectTypes: ProjectTypeNode[]
+  projectTypesLoaded: boolean
   activeProjectId: string | null
   projectSettingsOpen: boolean
   board: Board | null
@@ -97,6 +101,13 @@ export interface ProjectsActions {
   loadNavigation(): Promise<void>
   selectProject(id: string): Promise<void>
   createProject(input: Parameters<ProjectsClient['projects:create']>[0]): Promise<ProjectDetail | null>
+  /** Загрузить каталог типов (идемпотентно; повторный вызов обновляет список). */
+  loadProjectTypes(): Promise<ProjectTypeNode[]>
+  createProjectType(input: Parameters<ProjectsClient['projectTypes:create']>[0]): Promise<ProjectTypeNode | null>
+  updateProjectType(id: string, fields: Omit<Parameters<ProjectsClient['projectTypes:update']>[0], 'id'>): Promise<void>
+  deleteProjectType(id: string): Promise<void>
+  publishProjectType(id: string): Promise<void>
+  unpublishProjectType(id: string): Promise<void>
   updateProject(id: string, fields: Omit<Parameters<ProjectsClient['projects:update']>[0], 'id'>): Promise<void>
   deleteProject(id: string): Promise<void>
   addProjectMember(id: string, username: string): Promise<void>
@@ -202,6 +213,8 @@ function initialState(): ProjectsState {
     projects: [],
     projectsLoaded: false,
     projectDetail: null,
+    projectTypes: [],
+    projectTypesLoaded: false,
     activeProjectId: null,
     projectSettingsOpen: false,
     board: null,
@@ -565,6 +578,59 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           setState({ projectDetail: await client['projects:get']({ id }) })
         } catch (err) {
           fail(err, () => void actions.selectProject(id))
+        }
+      },
+      async loadProjectTypes() {
+        try {
+          const types = await client['projectTypes:list']()
+          setState({ projectTypes: types, projectTypesLoaded: true })
+          return types
+        } catch (err) {
+          // Чтение — идемпотентно, поэтому даём «Повторить».
+          fail(err, () => void actions.loadProjectTypes())
+          return []
+        }
+      },
+      async createProjectType(input) {
+        try {
+          const node = await client['projectTypes:create'](input)
+          await actions.loadProjectTypes()
+          return node
+        } catch (err) {
+          fail(err)
+          return null
+        }
+      },
+      async updateProjectType(id, fields) {
+        try {
+          await client['projectTypes:update']({ id, ...fields })
+          await actions.loadProjectTypes()
+        } catch (err) {
+          fail(err)
+        }
+      },
+      async deleteProjectType(id) {
+        try {
+          await client['projectTypes:delete']({ id })
+          await actions.loadProjectTypes()
+        } catch (err) {
+          fail(err)
+        }
+      },
+      async publishProjectType(id) {
+        try {
+          await client['projectTypes:publish']({ id })
+          await actions.loadProjectTypes()
+        } catch (err) {
+          fail(err)
+        }
+      },
+      async unpublishProjectType(id) {
+        try {
+          await client['projectTypes:unpublish']({ id })
+          await actions.loadProjectTypes()
+        } catch (err) {
+          fail(err)
         }
       },
       async createProject(input) {

@@ -23,6 +23,8 @@ import { TwoFactorDialog } from './components/TwoFactorDialog'
 import { InviteRegister } from './components/InviteRegister'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog'
 import { SignupScreen, VerifyScreen } from './components/SignupScreen'
+import { NewProjectDialog } from './components/NewProjectDialog'
+import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -249,6 +251,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const operationsActions = useOperationsActions()
   const adminActions = useAdminActions()
   const projectsActions = useProjectsActions()
+  // Возможности типа открытого проекта: пока detail не загружен, считаем всё
+  // доступным — иначе разделы мигали бы «скрыто → показано» на каждом входе.
+  const projectFeatures = projects.projectDetail?.typeChain.features ?? ALL_PROJECT_FEATURES
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
   const [sessionsOpen, setSessionsOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
@@ -677,6 +682,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
   // Командная палитра (⌘K) и шпаргалка (?) — окна поверх всего остального.
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [creatingProject, setCreatingProject] = useState(false)
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false)
 
   const stopOrCancel = (): void => {
@@ -942,7 +949,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [authed, inProjects, routeProjectId, firstProjectId])
   useEffect(() => {
     if (!authed) return
-    if (routeSettings || routeReleases) { if (!projects.projectSettingsOpen) projectsActions.openProjectSettings() }
+    if (routeSettings || routeReleases) {
+      if (!projects.projectSettingsOpen) projectsActions.openProjectSettings()
+      // Каталог нужен селекту типа на вкладке «Общее».
+      if (routeSettings && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
+    }
     else if (projects.projectSettingsOpen) projectsActions.closeProjectSettings()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, routeSettings, routeReleases])
@@ -1655,17 +1666,36 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           setSidebarOpen(false)
           navigate(`/projects/${id}`)
         }}
-        onCreateProject={(name) => {
+        onCreateProject={() => {
           setSidebarOpen(false)
-          void projectsActions.createProject({ name }).then((detail) => {
-            if (detail) navigate(`/projects/${detail.id}`)
-          })
+          setNewProjectOpen(true)
+          // Каталог типов нужен окну сразу; повторное открытие обновит список.
+          void projectsActions.loadProjectTypes()
         }}
         onOpenCommandPalette={() => {
           setSidebarOpen(false)
           setPaletteOpen(true)
         }}
       />
+      {newProjectOpen && (
+        <NewProjectDialog
+          types={projects.projectTypes}
+          busy={creatingProject}
+          onClose={() => setNewProjectOpen(false)}
+          onCreate={async (name, typeId) => {
+            setCreatingProject(true)
+            try {
+              const detail = await projectsActions.createProject({ name, ...(typeId ? { typeId } : {}) })
+              if (detail) {
+                setNewProjectOpen(false)
+                navigate(`/projects/${detail.id}`)
+              }
+            } finally {
+              setCreatingProject(false)
+            }
+          }}
+        />
+      )}
       {sidebarOpen && (
         <div className="side-backdrop" aria-hidden onClick={() => closeMobileSidebar()} />
       )}
@@ -1840,7 +1870,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inProjects && !inTaskChat && routeProjectId && !projectMissing && (
         <ProjectPage
           projectName={routeProjectName}
-          section={routeSettings ? 'settings' : routeReleases ? 'releases' : 'board'}
+          features={projects.projectDetail?.typeChain.features}
+          // Недоступный раздел в адресе не оставляем: тип мог измениться, а ссылка — остаться.
+          section={routeSettings ? 'settings' : routeReleases && projectFeatures.releases ? 'releases' : 'board'}
           onSectionChange={(section) =>
             navigate(section === 'settings' ? `/projects/${routeProjectId}/settings` : section === 'releases' ? `/projects/${routeProjectId}/releases` : `/projects/${routeProjectId}`)
           }
@@ -1857,6 +1889,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             projects.projectDetail?.id === routeProjectId ? (
               <ProjectSettings
                 detail={projects.projectDetail!}
+                projectTypes={projects.projectTypes}
                 agents={operations.agents}
                 currentUsername={session.currentUser?.name}
                 llmAccess={settingsState.llmAccess}
@@ -1915,6 +1948,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 onSelect={setAssistantConversationId}
               />}
               widget={<ProjectBoard
+                projectFeatures={projectFeatures}
               initialOpenTaskId={routeTaskId}
               initialOpenTaskTab={segments[4] === 'preparation' ? 'preparation' : undefined}
               onOpenTaskRouteChange={(taskId, tab) => navigate(taskId ? `/projects/${routeProjectId}/task/${taskId}${tab ? `/${tab}` : ''}` : `/projects/${routeProjectId}`)}

@@ -12,6 +12,7 @@
 // проговаривается в aria-live. Колонка = статус.
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ProjectFeatureSet } from '@shared/projectTypes'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { compareTasksInColumn, TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
@@ -155,6 +156,12 @@ function bodyKey(laneId: string | null, columnId: string): string {
 }
 
 export interface KanbanBoardProps {
+  /**
+   * Возможности типа проекта: вкладки выключенных подсистем в карточке задачи не
+   * показываем. Не передан — показываем всё (витрина, старые вызовы).
+   */
+  projectFeatures?: ProjectFeatureSet
+
   projectName: string
   /** Область сохранения прокрутки: не даёт применить позицию другой доски при навигации. */
   scrollScopeId?: string
@@ -1566,6 +1573,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         <TaskModal
           task={openTask}
           board={board}
+          projectFeatures={props.projectFeatures}
           projectName={props.projectName}
           members={members}
           onUpdate={props.onUpdateTask}

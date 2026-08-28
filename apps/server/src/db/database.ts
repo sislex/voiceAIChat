@@ -1019,6 +1019,23 @@ export class VoiceChatDb {
     // канонический порядок, legacy-колонки безопасно сливаются с новыми, custom
     // остаются после системы. Транзакция и стабильный выбор первой колонки делают
     // повторный запуск идемпотентным.
+    // Дерево типов проекта. Стоит ДО канонизации колонок ниже: та обязана знать тип
+    // проекта, иначе «Общему проекту» на каждом открытии базы дописывался бы весь
+    // конвейер разработки. Порядок внутри тоже важен: сначала узлы, потом колонка,
+    // потом проставление типа старым проектам — иначе FK укажет в пустоту.
+    // ALTER с REFERENCES в SQLite разрешён только при DEFAULT NULL (foreign_keys
+    // включены), поэтому колонка nullable, а не NOT NULL DEFAULT.
+    this.seedBuiltinProjectTypes()
+    const projectTypeCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
+    if (projectTypeCols.length && !projectTypeCols.some((c) => c.name === 'project_type_id')) {
+      this.db.exec(`ALTER TABLE projects ADD COLUMN project_type_id TEXT REFERENCES project_types(id)`)
+    }
+    // Существующие проекты — на КОРЕНЬ «Разработка ПО», а не на «Веб-приложение»:
+    // возможности у них совпадают (подтип наследует всё), поведение не меняется,
+    // и мы не объявляем задним числом чужой бэкенд веб-проектом.
+    this.db.prepare(`UPDATE projects SET project_type_id = ? WHERE project_type_id IS NULL OR project_type_id = ''`)
+      .run(DEFAULT_PROJECT_TYPE_ID)
+
     const workflowColumns: Array<[KanbanColumnSemanticType, string]> = [
       ['backlog', 'Бэклог'],
       ['preparation', 'Подготовка к разработке'],
@@ -1056,7 +1073,16 @@ export class VoiceChatDb {
         this.db.prepare(`DELETE FROM kanban_columns WHERE project_id=? AND id IN (${placeholders})`).run(projectId, ...sourceIds)
       }
 
+      const typeOf = this.db.prepare(`SELECT project_type_id FROM projects WHERE id = ?`)
       for (const { id: projectId } of projectIds) {
+        // Обязательный набор колонок задаёт ТИП проекта. Раньше конвейер разработки
+        // дописывался всем подряд, и у «Общего проекта» короткая доска не пережила
+        // бы ни одного перезапуска сервера.
+        const typeId = (typeOf.get(projectId) as { project_type_id: string | null } | undefined)?.project_type_id || DEFAULT_PROJECT_TYPE_ID
+        const typeColumns = this.projectTypeDefaults(typeId).columns
+        const requiredColumns: Array<[KanbanColumnSemanticType, string]> = typeColumns?.length
+          ? typeColumns.map((column) => [column.semanticType, column.name])
+          : workflowColumns
         let columns = loadColumns(projectId)
         // Сохранённая семантика (и тем самым id существующей системной колонки) —
         // основной признак. Только если её ещё нет, старую системную колонку можно
@@ -1069,7 +1095,7 @@ export class VoiceChatDb {
           }
         }
         let nextPosition = Math.max(0, ...columns.map(column => column.position)) + RANK_STEP
-        for (const [semantic, name] of workflowColumns) {
+        for (const [semantic, name] of requiredColumns) {
           if (columns.some(column => column.semantic_type === semantic)) continue
           this.db.prepare(
             `INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`
@@ -1171,19 +1197,6 @@ export class VoiceChatDb {
     // дефолт 14 дней (DEFAULT в ALTER заполняет старые строки).
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'done_retention_days')) this.db.exec(`ALTER TABLE projects ADD COLUMN done_retention_days INTEGER DEFAULT ${DEFAULT_DONE_RETENTION_DAYS}`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_test_fix_cycle_limit')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_test_fix_cycle_limit INTEGER NOT NULL DEFAULT 10`)
-    // Дерево типов проекта. Порядок важен: сначала сеем встроенные узлы, потом
-    // добавляем колонку, потом проставляем её старым проектам — иначе FK укажет
-    // в пустоту. ALTER с REFERENCES в SQLite разрешён только при DEFAULT NULL
-    // (foreign_keys включены), поэтому колонка nullable, а не NOT NULL DEFAULT.
-    this.seedBuiltinProjectTypes()
-    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'project_type_id')) {
-      this.db.exec(`ALTER TABLE projects ADD COLUMN project_type_id TEXT REFERENCES project_types(id)`)
-    }
-    // Существующие проекты — на КОРЕНЬ «Разработка ПО», а не на «Веб-приложение»:
-    // возможности у них совпадают (подтип наследует всё), поведение не меняется,
-    // и мы не объявляем задним числом чужой бэкенд веб-проектом.
-    this.db.prepare(`UPDATE projects SET project_type_id = ? WHERE project_type_id IS NULL OR project_type_id = ''`)
-      .run(DEFAULT_PROJECT_TYPE_ID)
     const ciWorkspaceCols = this.db.prepare(`PRAGMA table_info(ci_workspaces)`).all() as Array<{ name: string }>
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'branch')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN branch TEXT`)
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'commit_sha')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN commit_sha TEXT`)

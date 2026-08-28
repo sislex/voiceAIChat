@@ -13,6 +13,7 @@ import { makeReportStep, makeRunReport, makeTaskReport, makeUsageTotals } from '
 import type { KbTaskUsageReport } from '@shared/kb'
 import type { TaskPreparationRun } from '@shared/qa'
 import { MOBILE_QUERY } from '../../lib/mediaQuery'
+import { ALL_PROJECT_FEATURES, NO_PROJECT_FEATURES } from '@shared/projectTypes'
 
 function mkTask(over: Partial<Task> = {}): Task {
   return {
@@ -1243,5 +1244,36 @@ describe('TaskModal — вкладка Merge', () => {
     expect(screen.queryByTestId('merge-machines-skeleton-list')).not.toBeInTheDocument()
     expect(getTaskMachines).toHaveBeenCalledTimes(taskMachineCalls + 1)
     expect(getMergeMachines).toHaveBeenCalledTimes(mergeMachineCalls + 1)
+  })
+})
+
+describe('TaskModal — вкладки по возможностям типа проекта', () => {
+  const tabNames = (): string[] => screen.getAllByRole('tab').map((tab) => tab.textContent ?? '')
+
+  it('без возможностей типа остаются только вкладки, не зависящие от подсистем', () => {
+    render(<TaskModal {...props({ projectFeatures: NO_PROJECT_FEATURES })} />)
+    expect(tabNames()).toEqual(['Общее', 'Временная шкала', 'Настройки', 'Ход выполнения'])
+  })
+
+  it('с полным набором возвращаются CI, QA и merge', () => {
+    render(<TaskModal {...props({ projectFeatures: ALL_PROJECT_FEATURES })} />)
+    const tabs = tabNames()
+    expect(tabs).toContain('Ручное QA')
+    expect(tabs).toContain('Merge')
+    expect(tabs).toContain('Лента рана')
+  })
+
+  it('только QA: merge и лента рана скрыты, ручное QA на месте', () => {
+    render(<TaskModal {...props({ projectFeatures: { ...NO_PROJECT_FEATURES, qa: true } })} />)
+    const tabs = tabNames()
+    expect(tabs).toContain('Ручное QA')
+    expect(tabs).not.toContain('Merge')
+    expect(tabs).not.toContain('Лента рана')
+  })
+
+  it('скрытая вкладка не выбирается по умолчанию', () => {
+    // Активный ран обычно открывает «Ленту рана»; без CI такой вкладки нет.
+    render(<TaskModal {...props({ projectFeatures: NO_PROJECT_FEATURES, ciSummary: mkSummary() })} />)
+    expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
   })
 })

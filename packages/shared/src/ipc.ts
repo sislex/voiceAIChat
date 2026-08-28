@@ -389,11 +389,27 @@ export interface IpcInvokeMap {
   /** Проекты, где текущий пользователь — участник. */
   'projects:list': { arg: void; result: ProjectSummary[] }
   'projects:create': {
-    arg: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
+    arg: { name: string; typeId?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
     result: ProjectDetail
   }
 
   'projects:get': { arg: { id: string }; result: ProjectDetail | null }
+
+  // --- Дерево типов проекта ---
+  /** Каталог: встроенные, опубликованные и собственные узлы пользователя. */
+  'projectTypes:list': { arg: void; result: import('./projectTypes').ProjectTypeNode[] }
+  'projectTypes:create': {
+    arg: { name: string; parentId?: string | null; description?: string; features?: import('./projectTypes').ProjectFeatureOverride; defaults?: import('./projectTypes').ProjectTypeDefaults }
+    result: import('./projectTypes').ProjectTypeNode
+  }
+  'projectTypes:update': {
+    arg: { id: string; name?: string; parentId?: string | null; description?: string; features?: import('./projectTypes').ProjectFeatureOverride; defaults?: import('./projectTypes').ProjectTypeDefaults }
+    result: import('./projectTypes').ProjectTypeNode
+  }
+  'projectTypes:delete': { arg: { id: string }; result: { ok: boolean } }
+  /** Отправка на утверждение администратором. */
+  'projectTypes:publish': { arg: { id: string }; result: import('./projectTypes').ProjectTypeNode }
+  'projectTypes:unpublish': { arg: { id: string }; result: import('./projectTypes').ProjectTypeNode }
   'releases:branches': { arg: { projectId: string }; result: import('./release').ReleaseBranch[] }
   'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string }; result: import('./release').ProjectRelease }
   'releases:list': { arg: { projectId: string }; result: import('./release').ProjectReleaseSummary[] }
@@ -406,6 +422,8 @@ export interface IpcInvokeMap {
   'projects:update': {
     arg: {
       id: string
+      /** Узел дерева типов: меняет живые возможности, доску не трогает. */
+      typeId?: string
       name?: string
       description?: string
       gitUrl?: string | null
@@ -1117,6 +1135,12 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:list',
   'projects:create',
   'projects:get',
+  'projectTypes:list',
+  'projectTypes:create',
+  'projectTypes:update',
+  'projectTypes:delete',
+  'projectTypes:publish',
+  'projectTypes:unpublish',
   'releases:branches',
   'releases:createBranch',
   'releases:list',

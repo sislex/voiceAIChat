@@ -20,13 +20,16 @@ import { ProjectMachinesSettings } from './ProjectMachinesSettings'
 import { ProjectMachineGitAccess } from './ProjectMachineGitAccess'
 
 import { DEFAULT_PROJECT_COMMAND_POLICY, type ProjectCommandPolicy } from '@shared/commandPolicy'
+import { ALL_PROJECT_FEATURES, PROJECT_FEATURE_LABELS, PROJECT_FEATURES, projectTypeChainLabel, type ProjectTypeNode } from '@shared/projectTypes'
 export interface ProjectSettingsProps {
   detail: ProjectDetail
+  /** Каталог типов для селекта; пусто — селект не показываем. */
+  projectTypes?: ProjectTypeNode[]
   agents: AgentInfo[]
   currentUsername?: string
   llmAccess?: UserLlmAccess[]
   llmEngines?: LlmEngineOption[]
-  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; testUsers?: ProjectTestUser[]; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null; commandPolicy?: ProjectCommandPolicy }) => void
+  onUpdate: (id: string, fields: { typeId?: string; name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; testUsers?: ProjectTestUser[]; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null; commandPolicy?: ProjectCommandPolicy }) => void
 
   onDelete: (id: string) => void
   onAddMember: (id: string, username: string) => void
@@ -45,6 +48,17 @@ export interface ProjectSettingsProps {
   gitAccessApi?: Pick<RendererApi, 'projects:gitAccessStatus' | 'projects:configureGitAccess' | 'projects:verifyGitAccess' | 'projects:deleteGitAccess' | 'projects:gitAccessDiagnostics'>
   managedProductionApi?: Pick<RendererApi, 'releases:managedPreflight' | 'releases:managedConfirm' | 'projects:bootstrapProduction' | 'projects:get'>
   onManagedProductionConfirmed?: (detail: ProjectDetail) => void | Promise<void>
+}
+
+/** Подпись опции — путь от корня: одноимённые подтипы иначе не различить. */
+function typeOptionLabel(type: ProjectTypeNode, all: ProjectTypeNode[]): string {
+  const chain: ProjectTypeNode[] = []
+  let current: ProjectTypeNode | undefined = type
+  while (current) {
+    chain.unshift(current)
+    current = current.parentId ? all.find((t) => t.id === current!.parentId) : undefined
+  }
+  return projectTypeChainLabel(chain)
 }
 
 /** Редактор списка тегов (технологии/навыки). */
@@ -114,7 +128,25 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   }
   const [newMember, setNewMember] = useState('')
   const [confirmDel, setConfirmDel] = useState(false)
-  const [activeTab, setActiveTab] = useState<'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'>('general')
+  type SettingsTab = 'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  // Возможности типа: вкладки выключенных подсистем не показываем — сервер такие
+  // запросы всё равно отклоняет (409 feature_unavailable).
+  // Пока цепочка типа не пришла (устаревший кэш, заглушки), считаем всё доступным:
+  // пустой экран настроек — худший из возможных ответов на отсутствие данных.
+  const features = detail.typeChain?.features ?? ALL_PROJECT_FEATURES
+  const tabs = ([
+    { id: 'general' as const, label: 'Общее' },
+    { id: 'llm' as const, label: 'LLM' },
+    { id: 'board' as const, label: 'Доска' },
+    { id: 'workflow' as const, label: 'Workflow и CI', feature: 'ci' as const },
+    { id: 'members' as const, label: 'Участники' },
+    { id: 'machines' as const, label: 'Машины', feature: 'machines' as const }
+  ]).filter((tab) => !tab.feature || features[tab.feature]).map(({ id, label }) => ({ id, label }))
+  // Тип могли сменить, пока открыта вкладка выключенной подсистемы.
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.id === activeTab)) setActiveTab('general')
+  }, [tabs.map((t) => t.id).join(','), activeTab])
   const [selectedGitMachineId, setSelectedGitMachineId] = useState('')
   const [machineTab, setMachineTab] = useState<'settings' | 'git'>('settings')
   const [managedPreflight, setManagedPreflight] = useState<ManagedPreflightConfirmation | null>(null)
@@ -190,22 +222,47 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         ariaLabel="Разделы настроек проекта"
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        tabs={[
-          { id: 'general', label: 'Общее' },
-          { id: 'llm', label: 'LLM' },
-          { id: 'board', label: 'Доска' },
-          { id: 'workflow', label: 'Workflow и CI' },
-          { id: 'members', label: 'Участники' },
-          { id: 'machines', label: 'Машины' }
-        ]}
+        tabs={tabs}
       />
       {activeTab === 'general' && <>
+      <section className="proj-section" aria-label="Тип и возможности проекта">
+        {isOwner && (props.projectTypes?.length ?? 0) > 0 ? (
+          <label className="proj-type-field">
+            <span className="proj-field-label">Тип проекта</span>
+            <select
+            className="login-input"
+            value={detail.typeId}
+            onChange={(e) => props.onUpdate(detail.id, { typeId: e.target.value })}
+          >
+            {(props.projectTypes ?? []).map((type) => (
+              <option key={type.id} value={type.id}>{typeOptionLabel(type, props.projectTypes ?? [])}</option>
+            ))}
+            </select>
+          </label>
+        ) : (
+          <p className="proj-type-current"><span className="proj-field-label">Тип проекта</span> {detail.typeChain?.label || '—'}</p>
+        )}
+        <ul className="newproj-features" role="list">
+          {PROJECT_FEATURES.filter((feature) => features[feature]).map((feature) => (
+            <li key={feature} className="newproj-chip" title={PROJECT_FEATURE_LABELS[feature]}>{feature}</li>
+          ))}
+          {PROJECT_FEATURES.every((feature) => !features[feature]) && (
+            <li className="newproj-chip newproj-chip--muted">только доска и задачи</li>
+          )}
+        </ul>
+        {/* Подсказка — после поля: сначала что выбрано, потом что это значит. */}
+        <p className="proj-hint">
+          Тип задаёт доступные подсистемы. Смена типа сразу открывает или скрывает разделы, но
+          ничего не удаляет: доска, теги и настройки CI остались с момента создания и не
+          перезаписываются.
+        </p>
+      </section>
       {isOwner ? (
         <div className="proj-meta-edit">
           <input className="login-input" aria-label="Название проекта" value={name} onChange={(e) => setName(e.target.value)} onBlur={saveMeta} />
           <textarea className="login-input" aria-label="Описание" placeholder="Описание" value={description} onChange={(e) => setDescription(e.target.value)} onBlur={saveMeta} />
-          <input className="login-input" aria-label="Git-репозиторий" placeholder="git@…" value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} onBlur={saveMeta} />
-          <input className="login-input" type="url" aria-label="URL веб-превью" placeholder="https://example.com" value={previewUrl} onChange={(e) => setPreviewUrl(e.target.value)} onBlur={savePreviewUrl} onKeyDown={(e) => { if (e.key === 'Enter') savePreviewUrl() }} />
+          {features.git && <input className="login-input" aria-label="Git-репозиторий" placeholder="git@…" value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} onBlur={saveMeta} />}
+          {features.preview && <input className="login-input" type="url" aria-label="URL веб-превью" placeholder="https://example.com" value={previewUrl} onChange={(e) => setPreviewUrl(e.target.value)} onBlur={savePreviewUrl} onKeyDown={(e) => { if (e.key === 'Enter') savePreviewUrl() }} />}
         </div>
       ) : (
         <div className="proj-meta-ro">
@@ -217,7 +274,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
       <TagEditor label="Технологии" tags={detail.technologies} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { technologies: next })} />
       <TagEditor label="Навыки" tags={detail.skills} editable={isOwner} onChange={(next) => props.onUpdate(detail.id, { skills: next })} />
 
-      <section className="proj-section" aria-label="Тестовые пользователи">
+      {features.preview && <section className="proj-section" aria-label="Тестовые пользователи">
         <p className="proj-field-label">Тестовые пользователи</p>
         <p className="proj-hint">
           Учётные записи для входа в тестовые окружения проекта из Web Reader: модель получает их
@@ -242,7 +299,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
             + Добавить тестового пользователя
           </Button>
         )}
-      </section>
+      </section>}
       </>}
 
       {activeTab === 'board' && <>

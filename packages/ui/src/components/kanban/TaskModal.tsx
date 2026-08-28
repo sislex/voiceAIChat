@@ -12,6 +12,7 @@
 // разная, поэтому ширина проверяется через useMediaQuery, а не только в CSS.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ALL_PROJECT_FEATURES, type ProjectFeatureSet } from '@shared/projectTypes'
 import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { normalizeAcceptanceCriteria, TASK_PRIORITIES } from '@shared/projects'
 import type { ModifierPrompt } from '@shared/types'
@@ -85,6 +86,8 @@ export interface TaskModalProps {
   onStartCi?: (taskId: string) => void | Promise<void>
   onStartPreparation?: (taskId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
   initialTab?: TaskModalTab
+  /** Возможности типа проекта: CI/QA/merge-вкладки прячутся вместе с подсистемой. */
+  projectFeatures?: ProjectFeatureSet
   loadPreparationRuns?: (taskId: string) => Promise<TaskPreparationRun[]>
   loadPreparationRun?: (runId: string) => Promise<TaskPreparationRun | null>
   onRetryPreparation?: (runId: string, selection: TaskPreparationLlmSelection) => Promise<TaskPreparationRun | void>
@@ -242,7 +245,18 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     if (stage === 'component_qa' || stage === 'integration_tests' || stage === 'automated_qa') return stage
     return (props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || task.activeMergeRunId ? 'feed' : 'general'
   }
-  const [activeTab, setActiveTab] = useState<TaskTab>(defaultTab)
+  // Возможности типа: не переданы — показываем всё (витрина, старые вызовы).
+  const features = props.projectFeatures ?? ALL_PROJECT_FEATURES
+  // Вкладка по умолчанию не должна оказаться скрытой.
+  const [activeTab, setActiveTab] = useState<TaskTab>(() => {
+    const wanted = defaultTab()
+    const allowedByFeature: Partial<Record<TaskTab, keyof ProjectFeatureSet>> = {
+      preparation: 'ci', improvements: 'ci', feed: 'ci',
+      component_qa: 'qa', integration_tests: 'qa', automated_qa: 'qa', qa: 'qa', merge: 'git'
+    }
+    const need = allowedByFeature[wanted]
+    return need && !features[need] ? 'general' : wanted
+  })
   const [improvements, setImprovements] = useState<TaskImprovement[]>([])
   const [improvementsError, setImprovementsError] = useState<string | null>(null)
   const [improvementPending, setImprovementPending] = useState<string | null>(null)
@@ -613,10 +627,13 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       {!props.draft && <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
         {([
           ['general','Общее'],['timeline','Временная шкала'],
-          ...(preparationVisible ? [['preparation','Подготовка к разработке'] as const] : []),
-          ['settings','Настройки'],['progress','Ход выполнения'],['improvements', `Улучшения${improvements.filter((item) => item.status === 'new').length ? ` (${improvements.filter((item) => item.status === 'new').length})` : ''}`],
-          ...qaStageOrder.filter(qaStageVisible).map((stage) => [stage, stage === 'component_qa' ? 'Component QA' : stage === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA'] as const),
-          ['qa','Ручное QA'],['merge','Merge'],['feed','Лента рана']
+          ...(preparationVisible && features.ci ? [['preparation','Подготовка к разработке'] as const] : []),
+          ['settings','Настройки'],['progress','Ход выполнения'],
+          ...(features.ci ? [['improvements', `Улучшения${improvements.filter((item) => item.status === 'new').length ? ` (${improvements.filter((item) => item.status === 'new').length})` : ''}`] as const] : []),
+          ...(features.qa ? qaStageOrder.filter(qaStageVisible).map((stage) => [stage, stage === 'component_qa' ? 'Component QA' : stage === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA'] as const) : []),
+          ...(features.qa ? [['qa','Ручное QA'] as const] : []),
+          ...(features.git ? [['merge','Merge'] as const] : []),
+          ...(features.ci ? [['feed','Лента рана'] as const] : [])
         ] as Array<readonly [TaskTab, string]>).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={activeTab === id} className={activeTab === id ? 'task-tab task-tab--active' : 'task-tab'} onClick={() => setActiveTab(id)}>{label}</button>
         ))}
