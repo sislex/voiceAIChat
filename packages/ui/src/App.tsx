@@ -23,6 +23,9 @@ import { TwoFactorDialog } from './components/TwoFactorDialog'
 import { InviteRegister } from './components/InviteRegister'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog'
 import { SignupScreen, VerifyScreen } from './components/SignupScreen'
+import { NewProjectDialog } from './components/NewProjectDialog'
+import { InviteScreen } from './components/InviteScreen'
+import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -249,6 +252,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const operationsActions = useOperationsActions()
   const adminActions = useAdminActions()
   const projectsActions = useProjectsActions()
+  // Возможности типа открытого проекта: пока detail не загружен, считаем всё
+  // доступным — иначе разделы мигали бы «скрыто → показано» на каждом входе.
+  const projectFeatures = projects.projectDetail?.typeChain.features ?? ALL_PROJECT_FEATURES
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
   const [sessionsOpen, setSessionsOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
@@ -677,6 +683,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
   // Командная палитра (⌘K) и шпаргалка (?) — окна поверх всего остального.
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [creatingProject, setCreatingProject] = useState(false)
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false)
 
   const stopOrCancel = (): void => {
@@ -911,7 +919,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
   useEffect(() => {
     if (!authed) return
-    if (inProjects) { if (!projects.projectsOpen) void projectsActions.openProjects() }
+    if (inProjects) {
+      if (!projects.projectsOpen) void projectsActions.openProjects()
+      // Свои приглашения нужны бейджу в сайдбаре и списку на пустой странице.
+      void projectsActions.loadMyInvitations()
+    }
     else if (projects.projectsOpen) projectsActions.closeProjects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects])
@@ -942,7 +954,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }, [authed, inProjects, routeProjectId, firstProjectId])
   useEffect(() => {
     if (!authed) return
-    if (routeSettings || routeReleases) { if (!projects.projectSettingsOpen) projectsActions.openProjectSettings() }
+    if (routeSettings || routeReleases) {
+      if (!projects.projectSettingsOpen) projectsActions.openProjectSettings()
+      // Каталог нужен селекту типа на вкладке «Общее».
+      if (routeSettings && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
+      if (routeSettings && routeProjectId) void projectsActions.loadProjectInvitations(routeProjectId)
+    }
     else if (projects.projectSettingsOpen) projectsActions.closeProjectSettings()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, routeSettings, routeReleases])
@@ -1462,6 +1479,22 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }
   const inviteToken = /^#\/invite\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
   // Открытая регистрация с подтверждением email: #/signup — форма, #/verify/<token> — подтверждение из письма.
+  // Ссылка из письма-приглашения в проект работает до входа: показываем, куда
+  // зовут. Маршрут свой — `#/invite/` занят регистрацией по админскому инвайту.
+  const projectInviteToken = /^#\/project-invite\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
+  if (session.authRequired && !session.currentUser && projectInviteToken && window.session?.projectInvitationPreview) {
+    const preview = window.session.projectInvitationPreview
+    return (
+      <InviteScreen
+        token={decodeURIComponent(projectInviteToken)}
+        loadPreview={(token) => preview(token)}
+        theme={settingsState.settings.theme}
+        onLogin={() => { window.location.hash = '#/' }}
+        onSignup={() => { window.location.hash = '#/signup' }}
+        onDone={() => { window.location.hash = '#/' }}
+      />
+    )
+  }
   const verifyToken = /^#\/verify\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
   if (session.authRequired && !session.currentUser && verifyToken && window.session?.verifyEmail) {
     return <VerifyScreen token={decodeURIComponent(verifyToken)} verify={window.session.verifyEmail} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} onBack={() => { window.location.hash = '#/'; setSignupOpen(false) }} />
@@ -1655,17 +1688,57 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           setSidebarOpen(false)
           navigate(`/projects/${id}`)
         }}
-        onCreateProject={(name) => {
+        invitations={projects.myInvitations}
+        onAcceptInvitation={async (invitation) => {
+          // Токен приглашённому не отдаётся: принимаем по id, сервер сверит адресата.
+          const projectId = await projectsActions.acceptInvitation(invitation.id)
+          if (projectId) navigate(`/projects/${projectId}`)
+        }}
+        onDeclineInvitation={(invitation) => { void projectsActions.declineInvitation(invitation.id) }}
+        onCreateProject={() => {
           setSidebarOpen(false)
-          void projectsActions.createProject({ name }).then((detail) => {
-            if (detail) navigate(`/projects/${detail.id}`)
-          })
+          setNewProjectOpen(true)
+          // Каталог типов нужен окну сразу; повторное открытие обновит список.
+          void projectsActions.loadProjectTypes()
         }}
         onOpenCommandPalette={() => {
           setSidebarOpen(false)
           setPaletteOpen(true)
         }}
       />
+      {authed && projectInviteToken && window.session?.projectInvitationPreview && (
+        <InviteScreen
+          token={decodeURIComponent(projectInviteToken)}
+          loadPreview={(token) => window.session!.projectInvitationPreview!(token)}
+          theme={settingsState.settings.theme}
+          onAccept={async (token) => {
+            const projectId = await projectsActions.acceptInvitation(token)
+            if (projectId) navigate(`/projects/${projectId}`)
+            return projectId
+          }}
+          onDecline={(token) => projectsActions.declineInvitation(token)}
+          onDone={() => navigate('/projects')}
+        />
+      )}
+      {newProjectOpen && (
+        <NewProjectDialog
+          types={projects.projectTypes}
+          busy={creatingProject}
+          onClose={() => setNewProjectOpen(false)}
+          onCreate={async (name, typeId) => {
+            setCreatingProject(true)
+            try {
+              const detail = await projectsActions.createProject({ name, ...(typeId ? { typeId } : {}) })
+              if (detail) {
+                setNewProjectOpen(false)
+                navigate(`/projects/${detail.id}`)
+              }
+            } finally {
+              setCreatingProject(false)
+            }
+          }}
+        />
+      )}
       {sidebarOpen && (
         <div className="side-backdrop" aria-hidden onClick={() => closeMobileSidebar()} />
       )}
@@ -1840,7 +1913,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inProjects && !inTaskChat && routeProjectId && !projectMissing && (
         <ProjectPage
           projectName={routeProjectName}
-          section={routeSettings ? 'settings' : routeReleases ? 'releases' : 'board'}
+          features={projects.projectDetail?.typeChain.features}
+          // Недоступный раздел в адресе не оставляем: тип мог измениться, а ссылка — остаться.
+          section={routeSettings ? 'settings' : routeReleases && projectFeatures.releases ? 'releases' : 'board'}
           onSectionChange={(section) =>
             navigate(section === 'settings' ? `/projects/${routeProjectId}/settings` : section === 'releases' ? `/projects/${routeProjectId}/releases` : `/projects/${routeProjectId}`)
           }
@@ -1857,6 +1932,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             projects.projectDetail?.id === routeProjectId ? (
               <ProjectSettings
                 detail={projects.projectDetail!}
+                projectTypes={projects.projectTypes}
+                invitations={projects.projectInvitations}
+                onInvite={async (id, invitee, role) => { await projectsActions.inviteToProject(id, invitee, role) }}
+                onResendInvitation={(id, invitationId) => projectsActions.resendProjectInvitation(id, invitationId)}
+                onRevokeInvitation={(id, invitationId) => projectsActions.revokeProjectInvitation(id, invitationId)}
                 agents={operations.agents}
                 currentUsername={session.currentUser?.name}
                 llmAccess={settingsState.llmAccess}
@@ -1915,6 +1995,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 onSelect={setAssistantConversationId}
               />}
               widget={<ProjectBoard
+                projectFeatures={projectFeatures}
               initialOpenTaskId={routeTaskId}
               initialOpenTaskTab={segments[4] === 'preparation' ? 'preparation' : undefined}
               onOpenTaskRouteChange={(taskId, tab) => navigate(taskId ? `/projects/${routeProjectId}/task/${taskId}${tab ? `/${tab}` : ''}` : `/projects/${routeProjectId}`)}

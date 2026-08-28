@@ -57,3 +57,4 @@ scrins/
 # (.claude/commands/**) наоборот коммитятся: они нужны всем агентам.
 **/.claude/settings.local.json
 storybook-static/
+.mobile-shots/

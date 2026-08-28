@@ -289,6 +289,10 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       ws.reconnect()
       return { ok: true }
     },
+    projectInvitationPreview: async (token) => {
+      const r = await fetch(httpBase + REST.invitationPreview(token))
+      return r.ok ? ((await r.json()) as import('@shared/projects').ProjectInvitationPreview) : null
+    },
     inviteInfo: async (token) => {
       const r = await fetch(httpBase + REST.sessionInvite(token))
       return r.ok ? ((await r.json()) as { role: string; expiresAt: number; note: string }) : null

@@ -80,7 +80,8 @@ describe('ProjectPage — крайние случаи раздела', () => {
     render(<ProjectsEmptyPage />)
     const page = screen.getByTestId('projects-empty')
     expect(within(page).getByText('Проектов пока нет')).toBeInTheDocument()
-    expect(within(page).getByText(/\+ Проект/)).toBeInTheDocument()
+    // Подсказка обязана называть кнопку сайдбара дословно — «+ Новый проект».
+    expect(within(page).getByText(/«\+ Новый проект»/)).toBeInTheDocument()
     await expectNoViolations()
   })
 

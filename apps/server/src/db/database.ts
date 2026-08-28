@@ -1,5 +1,29 @@
 import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
 import { parseProjectCommandPolicy, parseRoleCommandPolicies } from '@voicechat/shared'
+import {
+  BUILTIN_PROJECT_TYPES,
+  DEFAULT_PROJECT_TYPE_ID,
+  MAX_PROJECT_TYPE_DEPTH,
+  canPublishProjectType,
+  isProjectTypeVisible,
+  projectTypeChainLabel,
+  resolveProjectTypeDefaults,
+  resolveProjectTypeFeatures,
+  type ProjectFeature,
+  type ProjectFeatureOverride,
+  type ProjectFeatureSet,
+  type ProjectTypeChain,
+  type ProjectTypeDefaults,
+  type ProjectTypeNode,
+  type ProjectTypeStatus
+} from '@voicechat/shared'
+import type {
+  ProjectInvitation,
+  ProjectInvitationForUser,
+  ProjectInvitationPreview,
+  ProjectInvitationStatus,
+  ProjectRole
+} from '@voicechat/shared'
 import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
@@ -432,8 +456,41 @@ export const PROD_REBUILD_TASK_TITLE = 'Пересборка прода'
 /** Первая строка описания автозадачи — дальше идёт список вмерженных задач. */
 export const PROD_REBUILD_TASK_INTRO = 'Влито в прод-ветку, но прод-контейнер в ране не пересобирался. Пересобрать прод для задач:'
 
+interface ProjectInvitationRow {
+  id: string
+  project_id: string
+  email: string | null
+  invited_username: string | null
+  role: string
+  token_hash: string
+  status: string
+  invited_by: string
+  created_at: number
+  expires_at: number
+  responded_at: number | null
+}
+
+interface ProjectTypeRow {
+  id: string
+  parent_id: string | null
+  name: string
+  description: string
+  features_json: string
+  defaults_json: string
+  builtin: number
+  owner_id: string | null
+  status: string
+  review_note: string | null
+  reviewed_by: string | null
+  reviewed_at: number | null
+  created_by: string
+  created_at: number
+  updated_at: number
+}
+
 interface ProjectRow {
   id: string
+  project_type_id: string | null
   name: string
   description: string
   git_url: string | null
@@ -983,6 +1040,23 @@ export class VoiceChatDb {
     // канонический порядок, legacy-колонки безопасно сливаются с новыми, custom
     // остаются после системы. Транзакция и стабильный выбор первой колонки делают
     // повторный запуск идемпотентным.
+    // Дерево типов проекта. Стоит ДО канонизации колонок ниже: та обязана знать тип
+    // проекта, иначе «Общему проекту» на каждом открытии базы дописывался бы весь
+    // конвейер разработки. Порядок внутри тоже важен: сначала узлы, потом колонка,
+    // потом проставление типа старым проектам — иначе FK укажет в пустоту.
+    // ALTER с REFERENCES в SQLite разрешён только при DEFAULT NULL (foreign_keys
+    // включены), поэтому колонка nullable, а не NOT NULL DEFAULT.
+    this.seedBuiltinProjectTypes()
+    const projectTypeCols = this.db.prepare(`PRAGMA table_info(projects)`).all() as Array<{ name: string }>
+    if (projectTypeCols.length && !projectTypeCols.some((c) => c.name === 'project_type_id')) {
+      this.db.exec(`ALTER TABLE projects ADD COLUMN project_type_id TEXT REFERENCES project_types(id)`)
+    }
+    // Существующие проекты — на КОРЕНЬ «Разработка ПО», а не на «Веб-приложение»:
+    // возможности у них совпадают (подтип наследует всё), поведение не меняется,
+    // и мы не объявляем задним числом чужой бэкенд веб-проектом.
+    this.db.prepare(`UPDATE projects SET project_type_id = ? WHERE project_type_id IS NULL OR project_type_id = ''`)
+      .run(DEFAULT_PROJECT_TYPE_ID)
+
     const workflowColumns: Array<[KanbanColumnSemanticType, string]> = [
       ['backlog', 'Бэклог'],
       ['preparation', 'Подготовка к разработке'],
@@ -1020,7 +1094,16 @@ export class VoiceChatDb {
         this.db.prepare(`DELETE FROM kanban_columns WHERE project_id=? AND id IN (${placeholders})`).run(projectId, ...sourceIds)
       }
 
+      const typeOf = this.db.prepare(`SELECT project_type_id FROM projects WHERE id = ?`)
       for (const { id: projectId } of projectIds) {
+        // Обязательный набор колонок задаёт ТИП проекта. Раньше конвейер разработки
+        // дописывался всем подряд, и у «Общего проекта» короткая доска не пережила
+        // бы ни одного перезапуска сервера.
+        const typeId = (typeOf.get(projectId) as { project_type_id: string | null } | undefined)?.project_type_id || DEFAULT_PROJECT_TYPE_ID
+        const typeColumns = this.projectTypeDefaults(typeId).columns
+        const requiredColumns: Array<[KanbanColumnSemanticType, string]> = typeColumns?.length
+          ? typeColumns.map((column) => [column.semanticType, column.name])
+          : workflowColumns
         let columns = loadColumns(projectId)
         // Сохранённая семантика (и тем самым id существующей системной колонки) —
         // основной признак. Только если её ещё нет, старую системную колонку можно
@@ -1033,7 +1116,7 @@ export class VoiceChatDb {
           }
         }
         let nextPosition = Math.max(0, ...columns.map(column => column.position)) + RANK_STEP
-        for (const [semantic, name] of workflowColumns) {
+        for (const [semantic, name] of requiredColumns) {
           if (columns.some(column => column.semantic_type === semantic)) continue
           this.db.prepare(
             `INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`
@@ -3302,11 +3385,439 @@ export class VoiceChatDb {
     )
   }
 
+  // ---- Приглашения в проект ---------------------------------------------------
+  //
+  // Токен живёт только в письме: в БД — sha256, в API его нет вовсе. Принять
+  // приглашение может ТОЛЬКО адресат (по логину или по совпадению users.email),
+  // иначе утёкшая ссылка пускала бы в проект кого угодно.
+
+  private mapInvitation(r: ProjectInvitationRow): ProjectInvitation {
+    return {
+      id: r.id,
+      projectId: r.project_id,
+      email: r.email,
+      invitedUsername: r.invited_username,
+      role: r.role === 'owner' ? 'owner' : 'member',
+      status: (['pending', 'accepted', 'declined', 'revoked'] as const).includes(r.status as ProjectInvitationStatus)
+        ? (r.status as ProjectInvitationStatus)
+        : 'revoked',
+      invitedBy: r.invited_by,
+      createdAt: r.created_at,
+      expiresAt: r.expires_at,
+      respondedAt: r.responded_at
+    }
+  }
+
+  private invitationTokenHash(token: string): string {
+    return createHash('sha256').update(token).digest('hex')
+  }
+
+  /**
+   * Создать приглашение. `invitee` — логин или email; если такой пользователь
+   * известен, приглашение адресуется ему поимённо (и письмо уйдёт на его адрес).
+   * Возвращает приглашение и токен — токен нужен ровно один раз, для письма.
+   */
+  createProjectInvitation(
+    userId: string,
+    projectId: string,
+    invitee: string,
+    opts: { role?: ProjectRole; ttlMs?: number } = {}
+  ): { invitation: ProjectInvitation; token: string; email: string | null } | null {
+    if (!this.isProjectOwner(userId, projectId)) return null
+    const raw = invitee.trim()
+    if (!raw) throw new Error('Укажите логин или email')
+    const looksLikeEmail = raw.includes('@')
+    const email = looksLikeEmail ? raw.toLowerCase() : null
+    if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254)) throw new Error('Некорректный email')
+
+    const user = looksLikeEmail ? this.getUserByEmail(email!) : this.getUser(raw)
+    if (!looksLikeEmail && !user) throw new Error(`Пользователь ${raw} не найден`)
+    const invitedUsername = user?.name ?? null
+    if (invitedUsername) {
+      const already = this.db.prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ?`).get(projectId, invitedUsername)
+      if (already) throw new Error('Этот пользователь уже участник проекта')
+    }
+    // Письмо уходит на явный адрес приглашения либо на подтверждённый адрес
+    // найденного пользователя; звали по логину без email — письма не будет.
+    const deliverTo = email ?? user?.email ?? null
+
+    const token = randomBytes(24).toString('base64url')
+    const id = this.newId()
+    const ts = this.now()
+    const expiresAt = ts + (opts.ttlMs ?? 7 * 24 * 60 * 60_000)
+    // Повторное приглашение того же адресата заменяет прежнее живое: два
+    // действующих токена на одного человека — лишняя поверхность.
+    this.db.transaction(() => {
+      if (invitedUsername) {
+        this.db.prepare(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE project_id=? AND invited_username=? AND status='pending'`).run(ts, projectId, invitedUsername)
+      }
+      if (email) {
+        this.db.prepare(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE project_id=? AND email=? AND status='pending'`).run(ts, projectId, email)
+      }
+      this.db.prepare(
+        `INSERT INTO project_invitations (id, project_id, email, invited_username, role, token_hash, status, invited_by, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
+      ).run(id, projectId, email, invitedUsername, opts.role === 'owner' ? 'owner' : 'member', this.invitationTokenHash(token), userId, ts, expiresAt)
+    })()
+    return { invitation: this.mapInvitation(this.invitationRow(id)!), token, email: deliverTo }
+  }
+
+  private invitationRow(id: string): ProjectInvitationRow | null {
+    return (this.db.prepare(`SELECT * FROM project_invitations WHERE id = ?`).get(id) as ProjectInvitationRow | undefined) ?? null
+  }
+
+  /** Живые приглашения проекта (для владельца). */
+  listProjectInvitations(userId: string, projectId: string): ProjectInvitation[] | null {
+    if (!this.isProjectOwner(userId, projectId)) return null
+    const rows = this.db.prepare(
+      `SELECT * FROM project_invitations WHERE project_id = ? AND status = 'pending' ORDER BY created_at DESC`
+    ).all(projectId) as ProjectInvitationRow[]
+    return rows.map((r) => this.mapInvitation(r))
+  }
+
+  revokeProjectInvitation(userId: string, projectId: string, invitationId: string): boolean {
+    if (!this.isProjectOwner(userId, projectId)) return false
+    const changed = this.db.prepare(
+      `UPDATE project_invitations SET status='revoked', responded_at=? WHERE id=? AND project_id=? AND status='pending'`
+    ).run(this.now(), invitationId, projectId)
+    return changed.changes > 0
+  }
+
+  /** Перевыпуск токена для повторной отправки письма: срок считается заново. */
+  refreshProjectInvitationToken(userId: string, projectId: string, invitationId: string, ttlMs = 7 * 24 * 60 * 60_000): { invitation: ProjectInvitation; token: string; email: string | null } | null {
+    if (!this.isProjectOwner(userId, projectId)) return null
+    const row = this.invitationRow(invitationId)
+    if (!row || row.project_id !== projectId || row.status !== 'pending') return null
+    const token = randomBytes(24).toString('base64url')
+    const ts = this.now()
+    this.db.prepare(`UPDATE project_invitations SET token_hash=?, expires_at=? WHERE id=?`).run(this.invitationTokenHash(token), ts + ttlMs, invitationId)
+    const user = row.invited_username ? this.getUser(row.invited_username) : null
+    return { invitation: this.mapInvitation(this.invitationRow(invitationId)!), token, email: row.email ?? user?.email ?? null }
+  }
+
+  /** Живые приглашения пользователя — по логину и по подтверждённому адресу. */
+  listInvitationsForUser(username: string): ProjectInvitationForUser[] {
+    const user = this.getUser(username)
+    const rows = this.db.prepare(
+      `SELECT i.*, p.name AS project_name FROM project_invitations i
+       JOIN projects p ON p.id = i.project_id
+       WHERE i.status = 'pending' AND i.expires_at > ?
+         AND (i.invited_username = ? OR (i.email IS NOT NULL AND i.email = ?))
+       ORDER BY i.created_at DESC`
+    ).all(this.now(), username, (user?.email ?? '').toLowerCase()) as Array<ProjectInvitationRow & { project_name: string }>
+    return rows.map((r) => ({ ...this.mapInvitation(r), projectName: r.project_name }))
+  }
+
+  /** Публичный превью по токену: только имя проекта, кто позвал и срок. */
+  projectInvitationPreview(token: string): ProjectInvitationPreview | null {
+    const row = this.db.prepare(
+      `SELECT i.*, p.name AS project_name FROM project_invitations i
+       JOIN projects p ON p.id = i.project_id
+       WHERE i.token_hash = ? AND i.status = 'pending' AND i.expires_at > ?`
+    ).get(this.invitationTokenHash(token), this.now()) as (ProjectInvitationRow & { project_name: string }) | undefined
+    if (!row) return null
+    return {
+      projectId: row.project_id,
+      projectName: row.project_name,
+      invitedBy: row.invited_by,
+      role: row.role === 'owner' ? 'owner' : 'member',
+      expiresAt: row.expires_at
+    }
+  }
+
+  /**
+   * Приглашение адресовано этому пользователю? Единственное место, где решается
+   * «чья это ссылка»: по логину либо по совпадению подтверждённого адреса.
+   */
+  private invitationAddressedTo(row: ProjectInvitationRow, username: string): boolean {
+    if (row.invited_username) return row.invited_username === username
+    if (!row.email) return false
+    const email = (this.getUser(username)?.email ?? '').toLowerCase()
+    return Boolean(email) && email === row.email.toLowerCase()
+  }
+
+  /**
+   * Приглашение по токену (ссылка из письма) либо по id (список в интерфейсе).
+   * Id не секрет: доступ всё равно решает проверка адресата ниже, а приглашённому
+   * по логину токен не приходит вовсе — иначе он не смог бы принять приглашение.
+   */
+  private invitationByTokenOrId(tokenOrId: string): ProjectInvitationRow | undefined {
+    const byToken = this.db.prepare(`SELECT * FROM project_invitations WHERE token_hash = ?`).get(this.invitationTokenHash(tokenOrId)) as ProjectInvitationRow | undefined
+    return byToken ?? (this.db.prepare(`SELECT * FROM project_invitations WHERE id = ?`).get(tokenOrId) as ProjectInvitationRow | undefined)
+  }
+
+  /** Принять приглашение по токену или id. Возвращает id проекта. */
+  acceptProjectInvitation(username: string, tokenOrId: string): { projectId: string } {
+    const ts = this.now()
+    return this.db.transaction(() => {
+      const row = this.invitationByTokenOrId(tokenOrId)
+      if (!row || row.status !== 'pending') throw new Error('Приглашение недействительно')
+      if (row.expires_at <= ts) throw new Error('Срок приглашения истёк — попросите отправить его заново')
+      if (!this.invitationAddressedTo(row, username)) throw new Error('Это приглашение адресовано другому пользователю')
+      const user = this.getUser(username)
+      if (!user || user.blocked) throw new Error('Учётная запись недоступна')
+
+      this.db.prepare(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, ?, ?)`)
+        .run(row.project_id, username, row.role === 'owner' ? 'owner' : 'member', ts)
+      this.auditProjectMemberRole(row.project_id, row.invited_by, username, null, row.role === 'owner' ? 'owner' : 'member', 'add', ts)
+      this.db.prepare(`UPDATE project_invitations SET status='accepted', responded_at=?, invited_username=? WHERE id=?`).run(ts, username, row.id)
+      return { projectId: row.project_id }
+    })()
+  }
+
+  declineProjectInvitation(username: string, tokenOrId: string): boolean {
+    const row = this.invitationByTokenOrId(tokenOrId)
+    if (!row || row.status !== 'pending') return false
+    if (!this.invitationAddressedTo(row, username)) throw new Error('Это приглашение адресовано другому пользователю')
+    this.db.prepare(`UPDATE project_invitations SET status='declined', responded_at=? WHERE id=?`).run(this.now(), row.id)
+    return true
+  }
+
+  /**
+   * Привязать приглашения «на адрес» к новому зарегистрированному пользователю.
+   * Автоприёма нет: человек входит, видит приглашение и принимает явно.
+   */
+  attachInvitationsToNewUser(username: string, email: string): number {
+    const changed = this.db.prepare(
+      `UPDATE project_invitations SET invited_username = ? WHERE status='pending' AND invited_username IS NULL AND email = ?`
+    ).run(username, email.toLowerCase())
+    return changed.changes
+  }
+
+  // ---- Дерево типов проекта --------------------------------------------------
+  //
+  // Возможности типа читаются на каждом защищённом запросе, поэтому разрешённые
+  // цепочки кэшируются в памяти. Сервер одноприцессный: любая запись в
+  // `project_types` сбрасывает кэш целиком — инвалидировать поддерево точечно
+  // не стоит сложности, узлов заведомо мало.
+  private projectTypeChainCache = new Map<string, ProjectTypeChain>()
+
+  private invalidateProjectTypeCache(): void {
+    this.projectTypeChainCache.clear()
+  }
+
+  /** Идемпотентный посев встроенных узлов: пользовательские строки не трогает. */
+  private seedBuiltinProjectTypes(): void {
+    const ts = this.now()
+    const upsert = this.db.prepare(`
+      INSERT INTO project_types (id, parent_id, name, description, features_json, defaults_json, builtin, owner_id, status, review_note, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, NULL, 'published', '', 'system', ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        parent_id = excluded.parent_id,
+        name = excluded.name,
+        description = excluded.description,
+        features_json = excluded.features_json,
+        defaults_json = excluded.defaults_json,
+        builtin = 1,
+        status = 'published',
+        updated_at = excluded.updated_at
+      WHERE project_types.builtin = 1
+    `)
+    this.db.transaction(() => {
+      for (const node of BUILTIN_PROJECT_TYPES) {
+        upsert.run(node.id, node.parentId, node.name, node.description, JSON.stringify(node.features), JSON.stringify(node.defaults), ts, ts)
+      }
+    })()
+    this.invalidateProjectTypeCache()
+  }
+
+  private mapProjectTypeRow(r: ProjectTypeRow): ProjectTypeNode {
+    return {
+      id: r.id,
+      parentId: r.parent_id,
+      name: r.name,
+      description: r.description,
+      features: parseJsonValue<ProjectFeatureOverride>(r.features_json, {}),
+      defaults: parseJsonValue<ProjectTypeDefaults>(r.defaults_json, {}),
+      builtin: r.builtin !== 0,
+      ownerId: r.owner_id,
+      status: (['private', 'pending', 'published', 'rejected'] as const).includes(r.status as ProjectTypeStatus)
+        ? (r.status as ProjectTypeStatus)
+        : 'private',
+      reviewNote: r.review_note ?? '',
+      createdBy: r.created_by,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    }
+  }
+
+  getProjectType(id: string): ProjectTypeNode | null {
+    const row = this.db.prepare(`SELECT * FROM project_types WHERE id = ?`).get(id) as ProjectTypeRow | undefined
+    return row ? this.mapProjectTypeRow(row) : null
+  }
+
+  /** Все узлы дерева (каталог фильтруется отдельно — см. listProjectTypes). */
+  allProjectTypes(): ProjectTypeNode[] {
+    const rows = this.db.prepare(`SELECT * FROM project_types ORDER BY builtin DESC, name`).all() as ProjectTypeRow[]
+    return rows.map((r) => this.mapProjectTypeRow(r))
+  }
+
+  /** Каталог выбора: встроенные, опубликованные и собственные узлы пользователя. */
+  listProjectTypes(userId: string): ProjectTypeNode[] {
+    return this.allProjectTypes().filter((node) => isProjectTypeVisible(node, userId))
+  }
+
+  /** Все узлы, ожидающие решения администратора. */
+  listPendingProjectTypes(): ProjectTypeNode[] {
+    return this.allProjectTypes().filter((node) => node.status === 'pending')
+  }
+
+  /** Путь от корня к узлу. Пустой массив — узла нет или цепочка разорвана. */
+  projectTypeAncestry(id: string): ProjectTypeNode[] {
+    const chain: ProjectTypeNode[] = []
+    const seen = new Set<string>()
+    let current = this.getProjectType(id)
+    while (current) {
+      // Цикл в данных не должен вешать сервер: обрываем и отдаём, что собрали.
+      if (seen.has(current.id)) break
+      seen.add(current.id)
+      chain.unshift(current)
+      current = current.parentId ? this.getProjectType(current.parentId) : null
+    }
+    return chain
+  }
+
+  /** Разрешённая цепочка типа: узлы + эффективные возможности + ярлык пути. */
+  projectTypeChain(id: string): ProjectTypeChain {
+    const cached = this.projectTypeChainCache.get(id)
+    if (cached) return cached
+    let nodes = this.projectTypeAncestry(id)
+    // Неизвестный тип (например, узел удалили в обход RESTRICT) не должен
+    // обесточивать проект: откатываемся на встроенный корень.
+    if (nodes.length === 0 && id !== DEFAULT_PROJECT_TYPE_ID) nodes = this.projectTypeAncestry(DEFAULT_PROJECT_TYPE_ID)
+    const chain: ProjectTypeChain = {
+      nodes,
+      features: resolveProjectTypeFeatures(nodes),
+      label: projectTypeChainLabel(nodes)
+    }
+    this.projectTypeChainCache.set(id, chain)
+    return chain
+  }
+
+  /** Эффективные возможности проекта — то, чем гейтятся защищённые операции. */
+  projectFeatures(projectId: string): ProjectFeatureSet {
+    const row = this.db.prepare(`SELECT project_type_id FROM projects WHERE id = ?`).get(projectId) as { project_type_id: string | null } | undefined
+    return this.projectTypeChain(row?.project_type_id || DEFAULT_PROJECT_TYPE_ID).features
+  }
+
+  /** Заготовки типа, слитые от корня к листу. */
+  projectTypeDefaults(id: string): ProjectTypeDefaults {
+    return resolveProjectTypeDefaults(this.projectTypeChain(id).nodes)
+  }
+
+  /** Есть ли у узла дети — нужно и для отказа при удалении, и для UI. */
+  projectTypeHasChildren(id: string): boolean {
+    const row = this.db.prepare(`SELECT 1 FROM project_types WHERE parent_id = ? LIMIT 1`).get(id)
+    return Boolean(row)
+  }
+
+  projectTypeUsageCount(id: string): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS n FROM projects WHERE project_type_id = ?`).get(id) as { n: number }
+    return row.n
+  }
+
+  private assertProjectTypeParent(parentId: string | null, selfId?: string): void {
+    if (!parentId) return
+    const parent = this.getProjectType(parentId)
+    if (!parent) throw new Error('Родительский тип не найден')
+    const ancestry = this.projectTypeAncestry(parentId)
+    if (selfId && ancestry.some((node) => node.id === selfId)) throw new Error('Тип не может быть потомком самого себя')
+    if (ancestry.length + 1 > MAX_PROJECT_TYPE_DEPTH) throw new Error(`Слишком глубокая вложенность типов (максимум ${MAX_PROJECT_TYPE_DEPTH})`)
+  }
+
+  createProjectType(userId: string, args: { parentId: string | null; name: string; description?: string; features?: ProjectFeatureOverride; defaults?: ProjectTypeDefaults }): ProjectTypeNode {
+    const name = args.name.trim()
+    if (!name) throw new Error('Название типа обязательно')
+    this.assertProjectTypeParent(args.parentId)
+    const id = this.newId()
+    const ts = this.now()
+    this.db.prepare(`
+      INSERT INTO project_types (id, parent_id, name, description, features_json, defaults_json, builtin, owner_id, status, review_note, created_by, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'private', '', ?, ?, ?)
+    `).run(id, args.parentId, name, args.description ?? '', JSON.stringify(args.features ?? {}), JSON.stringify(args.defaults ?? {}), userId, userId, ts, ts)
+    this.invalidateProjectTypeCache()
+    return this.getProjectType(id)!
+  }
+
+  updateProjectType(id: string, fields: { parentId?: string | null; name?: string; description?: string; features?: ProjectFeatureOverride; defaults?: ProjectTypeDefaults }): ProjectTypeNode | null {
+    const current = this.getProjectType(id)
+    if (!current) return null
+    if (current.builtin) throw new Error('Встроенный тип нельзя изменить')
+    if (fields.parentId !== undefined) this.assertProjectTypeParent(fields.parentId, id)
+    const set: string[] = []
+    const vals: unknown[] = []
+    if (fields.parentId !== undefined) { set.push('parent_id = ?'); vals.push(fields.parentId) }
+    if (fields.name !== undefined) {
+      const name = fields.name.trim()
+      if (!name) throw new Error('Название типа обязательно')
+      set.push('name = ?'); vals.push(name)
+    }
+    if (fields.description !== undefined) { set.push('description = ?'); vals.push(fields.description) }
+    if (fields.features !== undefined) { set.push('features_json = ?'); vals.push(JSON.stringify(fields.features)) }
+    if (fields.defaults !== undefined) { set.push('defaults_json = ?'); vals.push(JSON.stringify(fields.defaults)) }
+    if (!set.length) return current
+    set.push('updated_at = ?'); vals.push(this.now())
+    this.db.prepare(`UPDATE project_types SET ${set.join(', ')} WHERE id = ?`).run(...vals, id)
+    this.invalidateProjectTypeCache()
+    return this.getProjectType(id)
+  }
+
+  deleteProjectType(id: string): boolean {
+    const current = this.getProjectType(id)
+    if (!current) return false
+    if (current.builtin) throw new Error('Встроенный тип нельзя удалить')
+    // Отказ вместо каскада: иначе удаление узла тихо осиротило бы чужие проекты.
+    if (this.projectTypeHasChildren(id)) throw new Error('У типа есть подтипы — сначала удалите или перенесите их')
+    const used = this.projectTypeUsageCount(id)
+    if (used > 0) throw new Error(`Тип используют проекты (${used}) — сначала переведите их на другой тип`)
+    this.db.prepare(`DELETE FROM project_types WHERE id = ?`).run(id)
+    this.invalidateProjectTypeCache()
+    return true
+  }
+
+  /**
+   * Смена статуса публикации с записью в аудит. Проверку прав делает роут;
+   * здесь — инварианты самой модели.
+   */
+  setProjectTypeStatus(actor: string, id: string, status: ProjectTypeStatus, note = ''): ProjectTypeNode | null {
+    const current = this.getProjectType(id)
+    if (!current) return null
+    if (current.builtin) throw new Error('Встроенный тип не участвует в публикации')
+    if (status === 'pending' || status === 'published') {
+      if (!canPublishProjectType(this.projectTypeAncestry(id))) {
+        throw new Error('Сначала опубликуйте родительские типы — иначе общий тип повиснет на личном')
+      }
+    }
+    if (status === 'private' && current.status === 'published') {
+      const used = this.projectTypeUsageCount(id)
+      const foreign = this.db.prepare(
+        `SELECT COUNT(*) AS n FROM projects WHERE project_type_id = ? AND created_by <> ?`
+      ).get(id, current.ownerId ?? '') as { n: number }
+      if (foreign.n > 0) throw new Error(`Тип используют чужие проекты (${foreign.n} из ${used}) — отозвать публикацию нельзя`)
+    }
+    const ts = this.now()
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE project_types SET status = ?, review_note = ?, reviewed_by = ?, reviewed_at = ?, updated_at = ? WHERE id = ?`)
+        .run(status, note, actor, ts, ts, id)
+      this.db.prepare(`INSERT INTO project_type_review_audit (type_id, actor, old_status, new_status, note, at) VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(id, actor, current.status, status, note, ts)
+    })()
+    this.invalidateProjectTypeCache()
+    return this.getProjectType(id)
+  }
+
+  projectTypeReviewAudit(id: string): Array<{ actor: string; oldStatus: string; newStatus: string; note: string; at: number }> {
+    const rows = this.db.prepare(`SELECT actor, old_status, new_status, note, at FROM project_type_review_audit WHERE type_id = ? ORDER BY at, id`).all(id) as Array<{ actor: string; old_status: string; new_status: string; note: string; at: number }>
+    return rows.map((r) => ({ actor: r.actor, oldStatus: r.old_status, newStatus: r.new_status, note: r.note, at: r.at }))
+  }
+
   private mapProjectSummary(r: ProjectRow, myRole: string): ProjectSummary {
     return {
       id: r.id,
       name: r.name,
       description: r.description,
+      typeId: r.project_type_id || DEFAULT_PROJECT_TYPE_ID,
+      typeChain: this.projectTypeChain(r.project_type_id || DEFAULT_PROJECT_TYPE_ID),
       gitUrl: r.git_url,
       previewUrl: r.preview_url ?? null,
       testUsers: parseJsonValue<import('@voicechat/shared').ProjectTestUser[]>(r.test_users_json ?? null, []),
@@ -3346,39 +3857,54 @@ export class VoiceChatDb {
   /** Создаёт проект: владелец-участник + дефолтные колонки (в одной транзакции). */
   createProject(
     userId: string,
-    args: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
+    args: { name: string; typeId?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
   ): ProjectDetail {
 
     const id = this.newId()
     const ts = this.now()
+    // Заготовки типа — СНИМОК на момент создания: дальше проект живёт своей жизнью,
+    // и правка типа не перекраивает работающую доску. Явный аргумент всегда важнее
+    // заготовки: пользователь заполнил поле руками.
+    const typeId = args.typeId && this.getProjectType(args.typeId) ? args.typeId : DEFAULT_PROJECT_TYPE_ID
+    const seed = this.projectTypeDefaults(typeId)
     this.db.transaction(() => {
       this.db
         .prepare(
-          `INSERT INTO projects (id, name, description, git_url, technologies, skills, created_by, created_at, updated_at, commit_policy, merge_transport, agent_plan_approval_mode, default_skills_epic, default_skills_story, default_skills_task)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO projects (id, project_type_id, name, description, git_url, technologies, skills, created_by, created_at, updated_at, commit_policy, merge_transport, agent_plan_approval_mode, default_skills_epic, default_skills_story, default_skills_task, ci_base_branch, ci_branch_template, ci_reuse_strategy, test_command)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           id,
+          typeId,
           args.name,
           args.description ?? '',
           args.gitUrl ?? null,
-          JSON.stringify(args.technologies ?? []),
-          JSON.stringify(args.skills ?? []),
+          JSON.stringify(args.technologies ?? seed.technologies ?? []),
+          JSON.stringify(args.skills ?? seed.skills ?? []),
           userId,
           ts,
           ts,
-          args.commitPolicy ?? 'agent_commits',
-          args.mergeTransport ?? 'local',
-          args.agentPlanApprovalMode ?? 'manual',
-          JSON.stringify(args.defaultSkills?.epic ?? []),
-          JSON.stringify(args.defaultSkills?.story ?? []),
-          JSON.stringify(args.defaultSkills?.task ?? [])
+          args.commitPolicy ?? seed.commitPolicy ?? 'agent_commits',
+          args.mergeTransport ?? seed.mergeTransport ?? 'local',
+          args.agentPlanApprovalMode ?? seed.agentPlanApprovalMode ?? 'manual',
+          JSON.stringify(args.defaultSkills?.epic ?? seed.defaultSkills?.epic ?? []),
+          JSON.stringify(args.defaultSkills?.story ?? seed.defaultSkills?.story ?? []),
+          JSON.stringify(args.defaultSkills?.task ?? seed.defaultSkills?.task ?? []),
+          seed.ciBaseBranch ?? 'main',
+          seed.ciBranchTemplate ?? '{task_number}',
+          seed.ciReuseStrategy ?? 'fail',
+          seed.testCommand ?? ''
         )
 
       this.db
         .prepare(`INSERT INTO project_members (project_id, username, role, added_at) VALUES (?, ?, 'owner', ?)`)
         .run(id, userId, ts)
-      ;[
+      // Колонки берутся из заготовок типа; у «Разработки ПО» их нет, и остаётся
+      // системный конвейер. Для «Общего проекта» тип отдаёт короткий нейтральный
+      // набор — 13 колонок QA-конвейера там были бы бессмысленны.
+      ;(seed.columns?.length
+        ? seed.columns.map((column) => [column.name, column.semanticType] as [string, string])
+        : [
         ['Бэклог', 'backlog'],
         ['Подготовка к разработке', 'preparation'],
         ['Ready for Development', 'ready'],
@@ -3392,7 +3918,7 @@ export class VoiceChatDb {
         ['Готово', 'done'],
         ['Отменено', 'cancelled'],
         ['Требуется решение', 'decision_required']
-      ].forEach(([name, semantic], i) =>
+      ] as [string, string][]).forEach(([name, semantic], i) =>
         this.db.prepare(`INSERT INTO kanban_columns (id, project_id, name, semantic_type, position, hidden, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)`).run(this.newId(), id, name, semantic, (i + 1) * RANK_STEP, ts)
       )
       // Скелет раздела «Разработка проекта»: обзорная статья-заготовка. Без неё
@@ -3565,12 +4091,20 @@ export class VoiceChatDb {
       ciKbContextMode?: KbContextMode
       ciTestFixCycleLimit?: number
       doneRetentionDays?: number | null
+      typeId?: string
     }
   ): ProjectDetail | null {
 
     if (!this.isProjectOwner(userId, id)) return null
     const set: string[] = []
     const vals: unknown[] = []
+    if (fields.typeId !== undefined) {
+      // Меняются только ЖИВЫЕ возможности: доска, теги и CI-настройки проекта
+      // остаются как есть — они были снимком заготовок на момент создания.
+      if (!this.getProjectType(fields.typeId)) throw new Error('Тип проекта не найден')
+      set.push('project_type_id = ?')
+      vals.push(fields.typeId)
+    }
     if (fields.name !== undefined) {
       set.push('name = ?')
       vals.push(fields.name)

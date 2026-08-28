@@ -7,6 +7,7 @@ import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
 import type { Board, ProjectDetail, ProjectSummary, Task } from '@voicechat/shared'
+import { BUILTIN_PROJECT_TYPE_IDS } from '@voicechat/shared'
 
 const SECRET = 'test-secret'
 let app: FastifyInstance
@@ -83,6 +84,41 @@ describe('conversation status REST', () => {
 describe('projects REST: доступ', () => {
   it('без токена → 401', async () => {
     expect((await app.inject({ method: 'GET', url: '/api/projects' })).statusCode).toBe(401)
+  })
+
+  it('свой проект создаёт любая роль и садится в нём владельцем', async () => {
+    db.createUser('tess', '', 'tester')
+    db.createUser('olga', '', 'observer')
+    for (const [name, role] of [['bob', 'developer'], ['tess', 'tester'], ['olga', 'observer']] as const) {
+      const token = signToken({ name, role }, SECRET)
+      const created = await inj(token, { method: 'POST', url: '/api/projects', payload: { name: `Проект ${name}` } })
+      expect(created.statusCode, `${role} должен создавать свой проект`).toBe(200)
+      const detail = created.json() as ProjectDetail
+      // Создатель — владелец: иначе он не сможет ни настроить проект, ни позвать участников.
+      expect(detail.role).toBe('owner')
+      expect(db.isProjectOwner(name, detail.id)).toBe(true)
+      // И проект виден ему в списке, а чужому — нет.
+      expect(((await inj(token, { method: 'GET', url: '/api/projects' })).json() as ProjectSummary[]).map((x) => x.id)).toContain(detail.id)
+      expect(((await inj(bobTok, { method: 'GET', url: '/api/projects' })).json() as ProjectSummary[]).map((x) => x.id).includes(detail.id)).toBe(name === 'bob')
+    }
+  })
+
+  it('/api/projects/ со слешем в конце — 404 до авторизации, а не путь в обход матрицы прав', async () => {
+    // projectPermissionForRequest такой URL не классифицирует; безопасно это лишь потому,
+    // что Fastify поднят без ignoreTrailingSlash и роут не совпадает вовсе.
+    expect((await inj(bobTok, { method: 'POST', url: '/api/projects/', payload: { name: 'X' } })).statusCode).toBe(404)
+  })
+
+  it('владелец-неадмин настраивает свой проект и зовёт участников, но в чужой не лезет', async () => {
+    const carolTok = signToken({ name: 'carol', role: 'developer' }, SECRET)
+    const mine = (await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'Проект Боба' } })).json() as ProjectDetail
+    expect((await inj(bobTok, { method: 'PATCH', url: `/api/projects/${mine.id}`, payload: { description: 'моё' } })).statusCode).toBe(200)
+    expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${mine.id}/members`, payload: { username: 'carol' } })).statusCode).toBe(200)
+    // Участник (не владелец) настройки не меняет, хотя тоже developer.
+    expect((await inj(carolTok, { method: 'PATCH', url: `/api/projects/${mine.id}`, payload: { description: 'чужое' } })).statusCode).toBe(403)
+    // Админский проект бобу не подчиняется.
+    const foreign = await createProject('Админский')
+    expect((await inj(bobTok, { method: 'PATCH', url: `/api/projects/${foreign.id}`, payload: { description: 'чужое' } })).statusCode).toBe(403)
   })
 
   it('developer создаёт и редактирует задачу, но получает 403 для настроек и release/deploy', async () => {
@@ -225,6 +261,67 @@ describe('projects REST: доступ', () => {
     expect(db.getConversation('admin', conversation.id)?.projectPreviewUrl).toBe('https://example.com/app')
     expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { previewUrl: 'javascript:alert(1)' } })).statusCode).toBe(400)
     expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { previewUrl: null } })).json().previewUrl).toBeNull()
+  })
+})
+
+describe('projects REST: тип проекта и гейт возможностей', () => {
+  it('каталог типов отдаёт встроенное дерево', async () => {
+    const res = await inj(bobTok, { method: 'GET', url: '/api/project-types' })
+    expect(res.statusCode).toBe(200)
+    const types = res.json() as Array<{ id: string; name: string; builtin: boolean }>
+    expect(types.map((t) => t.id).sort()).toEqual(Object.values(BUILTIN_PROJECT_TYPE_IDS).sort())
+  })
+
+  it('проект создаётся с подтипом, тип виден в ответе', async () => {
+    const res = await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'Веб', typeId: BUILTIN_PROJECT_TYPE_IDS.web } })
+    expect(res.statusCode).toBe(200)
+    const detail = res.json() as ProjectDetail
+    expect(detail.typeId).toBe(BUILTIN_PROJECT_TYPE_IDS.web)
+    expect(detail.typeChain.label).toBe('Разработка ПО / Веб-приложение')
+  })
+
+  it('несуществующий и чужой личный тип отклоняются', async () => {
+    expect((await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'X', typeId: 'нет-такого' } })).statusCode).toBe(400)
+    // Личный узел Кэрол Бобу недоступен, хотя id известен.
+    const carolTok = signToken({ name: 'carol', role: 'developer' }, SECRET)
+    const own = (await inj(carolTok, { method: 'POST', url: '/api/project-types', payload: { name: 'Личный Кэрол' } })).json() as { id: string }
+    expect((await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'X', typeId: own.id } })).statusCode).toBe(400)
+  })
+
+  it('в «Общем проекте» выключенные подсистемы отвечают 409, а доска работает', async () => {
+    const p = (await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'Общий', typeId: BUILTIN_PROJECT_TYPE_IDS.general } })).json() as ProjectDetail
+    const blocked: Array<[('GET' | 'POST'), string]> = [
+      ['GET', `/api/projects/${p.id}/releases`],
+      ['POST', `/api/projects/${p.id}/releases/branches`],
+      ['GET', `/api/projects/${p.id}/machines/available`],
+      ['GET', `/api/projects/${p.id}/ci`]
+    ]
+    for (const [method, url] of blocked) {
+      const res = await inj(bobTok, { method, url, payload: method === 'POST' ? {} : undefined })
+      expect(res.statusCode, `${method} ${url}`).toBe(409)
+      expect(res.json()).toMatchObject({ error: 'feature_unavailable' })
+    }
+    // Доска и задачи к возможностям не привязаны и обязаны работать.
+    const board = (await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    expect(board.columns.map((c) => c.semanticType)).toEqual(['backlog', 'development', 'done', 'cancelled', 'decision_required'])
+    expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: board.columns[0].id, title: 'Задача' } })).statusCode).toBe(200)
+  })
+
+  it('в проекте «Разработка ПО» те же адреса не блокируются гейтом возможностей', async () => {
+    const p = await createProject('Полный')
+    // 409 быть не должно: важен именно код гейта, остальные ответы зависят от машин.
+    for (const url of [`/api/projects/${p.id}/releases`, `/api/projects/${p.id}/ci`, `/api/projects/${p.id}/machines/available`]) {
+      expect((await inj(adminTok, { method: 'GET', url })).statusCode, url).not.toBe(409)
+    }
+  })
+
+  it('смена типа немедленно закрывает подсистему у существующего проекта', async () => {
+    const p = await createProject('Был разработкой')
+    expect((await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases` })).statusCode).not.toBe(409)
+    const patched = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { typeId: BUILTIN_PROJECT_TYPE_IDS.general } })
+    expect(patched.statusCode).toBe(200)
+    expect((patched.json() as ProjectDetail).typeChain.features.releases).toBe(false)
+    expect((await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases` })).statusCode).toBe(409)
   })
 })
 

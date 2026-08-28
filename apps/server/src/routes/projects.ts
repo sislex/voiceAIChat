@@ -118,20 +118,29 @@ export function registerProjectRoutes(
   const taskCreateGuard = { preHandler: requireProjectPermission('task:create') }
   const taskUpdateGuard = { preHandler: requireProjectPermission('task:update') }
   const mergeGuard = { preHandler: requireProjectPermission('task:merge') }
-  const settingsGuard = { preHandler: requireProjectPermission('project:settings') }
+  // Создание проекта — не настройка чужого проекта: доступно любой роли, создатель садится
+  // владельцем. Остальные настроечные роуты гейтит глобальный hook через
+  // projectPermissionForRequest → isProjectOwner, поэтому своего preHandler им не нужно.
+  const createGuard = { preHandler: requireProjectPermission('project:create') }
 
   // --- Проекты ---------------------------------------------------------
 
   app.get(REST.projects, async (req): Promise<ProjectSummary[]> => db.listProjects(uid(req)))
 
   app.post<{
-    Body: { name?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
-  }>(REST.projects, settingsGuard, async (req, reply): Promise<ProjectDetail | FastifyReply> => {
+    Body: { name?: string; typeId?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
+  }>(REST.projects, createGuard, async (req, reply): Promise<ProjectDetail | FastifyReply> => {
     const b = req.body ?? {}
     const name = (b.name ?? '').trim()
     if (!name) return badReq(reply, 'name required')
+    // Тип берётся только из каталога, видимого этому пользователю: чужой личный
+    // узел нельзя назначить, даже зная его id.
+    if (b.typeId !== undefined && !db.listProjectTypes(uid(req)).some((t) => t.id === b.typeId)) {
+      return badReq(reply, 'unknown project type')
+    }
     return db.createProject(uid(req), {
       name,
+      typeId: b.typeId,
       description: b.description,
       gitUrl: b.gitUrl,
       technologies: b.technologies,
@@ -180,6 +189,8 @@ export function registerProjectRoutes(
       doneRetentionDays?: number | null
       /** Политика команд проекта (machines-roadmap п.10). */
       commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
+      /** Узел дерева типов; меняет живые возможности, но не трогает доску. */
+      typeId?: string
     }
   }>('/api/projects/:id', async (req, reply) => {
 
@@ -200,7 +211,15 @@ export function registerProjectRoutes(
     if (body.commandPolicy !== undefined) { const { parseProjectCommandPolicy } = await import('@voicechat/shared'); body.commandPolicy = parseProjectCommandPolicy(JSON.stringify(body.commandPolicy)) }
     if (body.ciTestFixCycleLimit !== undefined && (!Number.isInteger(body.ciTestFixCycleLimit) || body.ciTestFixCycleLimit < 0)) return badReq(reply, 'ciTestFixCycleLimit must be a non-negative integer')
     if (body.releaseTimeouts !== undefined) { try { const { validateReleaseTimeouts } = await import('@voicechat/shared'); validateReleaseTimeouts(body.releaseTimeouts) } catch(error) { return badReq(reply,errMessage(error)) } }
-    return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
+    // Тип — только из видимого пользователю каталога (см. POST выше).
+    if (body.typeId !== undefined && !db.listProjectTypes(uid(req)).some((t) => t.id === body.typeId)) {
+      return badReq(reply, 'unknown project type')
+    }
+    try {
+      return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
+    } catch (error) {
+      return badReq(reply, errMessage(error))
+    }
   })
 
   app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {

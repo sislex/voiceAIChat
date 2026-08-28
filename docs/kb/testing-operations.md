@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-08-27
-checked: bdfafa18
+updated: 2026-08-29
+checked: cbd31ead
 areas:
   - package.json
   - scripts
@@ -31,7 +31,22 @@ areas:
 
 ## Development
 
-`npm run dev:web` через `scripts/dev-web.sh` совместно запускает Fastify на `:8787`, основной Vite-клиент на `:5273` и standalone `@voicechat/web-recorder` на `:5274`. Скрипт регистрирует PID только этих трёх процессов; при штатном завершении любого из них, `EXIT`, `INT` или `TERM` он останавливает остальные. Обычно этот lifecycle принадлежит пользователю; автоматизированный агент не должен оставлять второй server на тех же портах. Для диагностического запуска использовать другой `PORT` и временный `VC_DATA_DIR`.
+`npm run dev:web` через `scripts/dev-web.sh` совместно запускает Fastify на `:8787`, основной Vite-клиент на `:5273` и standalone `@voicechat/web-recorder` на `:5274`. Скрипт регистрирует PID только этих трёх процессов; при штатном завершении любого из них, `EXIT`, `INT` или `TERM` он останавливает остальные. Обычно этот lifecycle принадлежит пользователю; автоматизированный агент не должен оставлять второй server на тех же портах. Для диагностического запуска использовать другой `PORT` и временный `VC_DATA_DIR`. Порты dev-режима вынесены в окружение (`apps/web/vite.config.ts`): `VC_WEB_PORT`, `VC_API_PORT`, `VC_RECORDER_PORT` — значения по умолчанию прежние (5273/8787/5274), поэтому обычный `dev:web` не меняется, а второй сеанс рядом с чужим поднимается без правки конфига: `PORT=8801 VC_DATA_DIR=… npm run -w @voicechat/server dev` плюс `VC_WEB_PORT=5299 VC_API_PORT=8801 npm run -w @voicechat/web dev`. Прокси Vite при этом смотрит на выбранный порт API — без переменной он остался бы на 8787 и второй клиент молча работал бы с чужим сервером.
+
+`scripts/dev-web.sh` читает `.env` из корня (`set -a; . .env; set +a`) сразу после `cd`. До этого `.env` подхватывал только docker compose, и `VC_SMTP_URL`/`VC_MAIL_FROM`/`VC_PUBLIC_URL` в dev не действовали — письма молча уходили в лог вместо SMTP. Следствие: значения с пробелами и `<` в `.env` обязаны быть в кавычках (`VC_MAIL_FROM='ChatAI <no-reply@localhost>'`), потому что файл именно исполняется шеллом, а не парсится.
+
+**Мобильная раскладка — `scripts/mobile-shots.mts`** (Playwright, вьюпорт 390×844).
+Окно браузера в автоматизации не всегда поддаётся ресайзу (полноэкранный режим
+macOS), поэтому телефонный вид проверяется headless-прогоном. Скрипт делает
+скриншоты ключевых экранов и печатает две вещи, которые глазами ловятся плохо:
+горизонтальный вылет (`scrollWidth > clientWidth`) и цели нажатия ниже 32px.
+Запуск при поднятом dev-стеке: `VC_SHOTS_USER=… VC_SHOTS_PASSWORD=…
+VC_SHOTS_PROJECT=<id> VC_SHOTS_INVITE=<token> npx tsx scripts/mobile-shots.mts`.
+Ловушка, на которой скрипт сам споткнулся: у выехавшего за экран сайдбара элементы
+остаются «видимыми» для Playwright (ненулевой размер) — судить надо по координатам
+(`getBoundingClientRect().left >= 0`), а не по `isVisible()`.
+
+**Локальная проверка почты** — Mailpit в отдельном контейнере, вне `docker-compose.yml` проекта: `docker run -d --name vc-mailpit -p 1025:1025 -p 8025:8025 axllent/mailpit`, затем `VC_SMTP_URL=smtp://localhost:1025`. Наш минимальный SMTP-клиент проходит реальный путь (EHLO → без STARTTLS → без AUTH → MAIL FROM → DATA), письмо видно на http://localhost:8025 и читается через `GET /api/v1/messages`. Это инструмент гейта: у внешнего провайдера есть лимиты, задержки и спам-фильтры. `VC_PUBLIC_URL` обязателен и указывает на origin **интерфейса** (в dev — порт Vite), потому что ссылка письма — hash-маршрут UI; с портом API она не откроется.
 
 Server запускает исходники через tsx. Основной Web dev proxy сохраняет same-origin семантику API и WebSocket и направляет весь prefix `/web-recorder/`, включая вложенные assets, на Vite recorder-а `http://127.0.0.1:5274`; поэтому recorder доступен через origin `:5273`. Агент для разработки запускается `npx tsx apps/agent/src/index.ts --server ws://host:8787/agent --token ...`.
 
