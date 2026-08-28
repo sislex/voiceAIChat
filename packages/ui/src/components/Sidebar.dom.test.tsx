@@ -197,16 +197,14 @@ describe('Sidebar — режим «Проекты»', () => {
     expect(onModeChange).toHaveBeenCalledWith('chats')
   })
 
-  it('«+ Проект» раскрывает инлайн-форму, Enter создаёт проект', async () => {
+  it('«+ Новый проект» просит открыть окно создания, а не форму в сайдбаре', async () => {
+    // Имя и тип выбираются в окне: селект типа нельзя держать в поле, которое
+    // закрывается по потере фокуса.
     const onCreateProject = vi.fn()
     setup({ projects: [], mode: 'projects', onModeChange: vi.fn(), onCreateProject })
     expect(screen.getByText('Проектов пока нет')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '+ Новый проект' }))
-    const input = screen.getByLabelText('Название нового проекта')
-    fireEvent.change(input, { target: { value: '  Новый проект  ' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-    expect(onCreateProject).toHaveBeenCalledWith('Новый проект')
-    // Форма закрылась.
+    expect(onCreateProject).toHaveBeenCalledTimes(1)
     expect(screen.queryByLabelText('Название нового проекта')).not.toBeInTheDocument()
   })
 })

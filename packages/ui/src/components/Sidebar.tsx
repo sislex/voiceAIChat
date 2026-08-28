@@ -289,7 +289,8 @@ export interface SidebarProps {
   /** Открыть доску проекта из списка. */
   onPickProject?: (id: string) => void
   /** Создать проект из инлайн-формы списка (имя уже обрезано и не пустое). */
-  onCreateProject?: (name: string) => void
+  /** Открыть окно создания проекта (имя и тип выбираются там). */
+  onCreateProject?: () => void
   /** Открыть командную палитру (кнопка «⌘K» рядом с поиском); не задан — кнопки нет. */
   onOpenCommandPalette?: () => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
@@ -363,8 +364,6 @@ export function Sidebar({
   // Открыто ли меню аккаунта (Машины/Пользователи/Настройки/Выйти).
   const [acctOpen, setAcctOpen] = useState(false)
   // Инлайн-форма создания проекта в списке проектов.
-  const [creatingProject, setCreatingProject] = useState(false)
-  const [projectDraft, setProjectDraft] = useState('')
   const [projectQuery, setProjectQuery] = useState('')
   const [controlsOpen, setControlsOpen] = useState<Record<SidebarMode, boolean>>({ chats: false, projects: false })
   const resizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
@@ -558,24 +557,9 @@ export function Sidebar({
         {mode === 'chats' ? (
           <Button fullWidth onClick={onNew}><span aria-hidden>✎</span> Новый чат</Button>
         ) : onCreateProject && (
-          creatingProject ? (
-            <input
-              className="login-input projcreate"
-              autoFocus
-              placeholder="Название проекта"
-              aria-label="Название нового проекта"
-              value={projectDraft}
-              onChange={(event) => setProjectDraft(event.target.value)}
-              onBlur={() => setCreatingProject(false)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && projectDraft.trim()) {
-                  onCreateProject(projectDraft.trim())
-                  setProjectDraft('')
-                  setCreatingProject(false)
-                } else if (event.key === 'Escape') setCreatingProject(false)
-              }}
-            />
-          ) : <Button fullWidth onClick={() => setCreatingProject(true)}>+ Новый проект</Button>
+          // Форму создания рисует App: там выбирается тип проекта, и окно с
+          // селектами нельзя закрывать по onBlur, как прежнее инлайн-поле.
+          <Button fullWidth onClick={() => onCreateProject()}>+ Новый проект</Button>
         )}
       </div>
       {onModeChange && (
@@ -728,7 +712,11 @@ export function Sidebar({
               onClick={() => onPickProject?.(p.id)}
             >
               <span className="ctitle">{p.name}</span>
-              <span className="projitem-role">{p.role === 'owner' ? 'владелец' : 'участник'}</span>
+              {/* Тип показываем листом цепочки: полный путь в узкой строке не читается. */}
+              <span className="projitem-meta">
+                {p.typeChain?.nodes.length ? <span className="projitem-type">{p.typeChain.nodes[p.typeChain.nodes.length - 1].name}</span> : null}
+                <span className="projitem-role">{p.role === 'owner' ? 'владелец' : 'участник'}</span>
+              </span>
             </button>
           ))}
         </div>

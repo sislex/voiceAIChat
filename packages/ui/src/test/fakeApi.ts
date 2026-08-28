@@ -1,5 +1,5 @@
 import { lintMakeFile } from '@shared/makeLint'
-import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@voicechat/shared'
+import { BUILTIN_PROJECT_TYPES, BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain, type ProjectTypeNode } from '@voicechat/shared'
 import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine } from '@shared/makeSearch'
 import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment, type MakeShare, type MakePresenceClient, type MakeProjectNotes } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
@@ -135,6 +135,18 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     doneRetentionDays: number | null
   }
   const projects: FProject[] = []
+  const customTypes: ProjectTypeNode[] = []
+  const builtinTypeNodes = (): ProjectTypeNode[] =>
+    BUILTIN_PROJECT_TYPES.map((node) => ({
+      ...node,
+      builtin: true,
+      ownerId: null,
+      status: 'published' as const,
+      reviewNote: '',
+      createdBy: 'system',
+      createdAt: 0,
+      updatedAt: 0
+    }))
   const columns: KanbanColumn[] = []
   const tasks: Task[] = []
   const summary = (p: FProject): ProjectSummary => ({
@@ -850,6 +862,51 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'releases:get': async () => null,
     'releases:delete': async () => ({ deleted: true as const }),
     'releases:deploy': async ({ projectId, branch }) => ({ id: 'release-1', projectId, branch, version: branch.slice('release/'.length), sha: 'a'.repeat(40), status: 'queued', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: Date.now(), releasedAt: null, steps: [] }),
+    // Каталог типов: встроенное дерево + узлы, заведённые в тесте. Данные настоящие
+    // (BUILTIN_PROJECT_TYPES), поэтому витрина и тесты не расходятся с сервером.
+    'projectTypes:list': async () => [...builtinTypeNodes(), ...customTypes],
+    'projectTypes:create': async ({ name, parentId, description, features, defaults }) => {
+      const node: ProjectTypeNode = {
+        id: `type-${customTypes.length + 1}`,
+        parentId: parentId ?? null,
+        name,
+        description: description ?? '',
+        features: features ?? {},
+        defaults: defaults ?? {},
+        builtin: false,
+        ownerId: 'admin',
+        status: 'private',
+        reviewNote: '',
+        createdBy: 'admin',
+        createdAt: tick(),
+        updatedAt: tick()
+      }
+      customTypes.push(node)
+      return node
+    },
+    'projectTypes:update': async ({ id, ...fields }) => {
+      const node = customTypes.find((t) => t.id === id)
+      if (!node) throw new Error('not found')
+      Object.assign(node, fields, { updatedAt: tick() })
+      return node
+    },
+    'projectTypes:delete': async ({ id }) => {
+      const at = customTypes.findIndex((t) => t.id === id)
+      if (at >= 0) customTypes.splice(at, 1)
+      return { ok: at >= 0 }
+    },
+    'projectTypes:publish': async ({ id }) => {
+      const node = customTypes.find((t) => t.id === id)
+      if (!node) throw new Error('not found')
+      node.status = 'pending'
+      return node
+    },
+    'projectTypes:unpublish': async ({ id }) => {
+      const node = customTypes.find((t) => t.id === id)
+      if (!node) throw new Error('not found')
+      node.status = 'private'
+      return node
+    },
     'projects:list': async () => projects.map(summary),
     'projects:create': async (b) => {
       const ts = tick()

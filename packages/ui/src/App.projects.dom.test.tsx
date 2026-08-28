@@ -429,7 +429,9 @@ describe('App — вход в раздел «Проекты»', () => {
     expect(await screen.findByTestId('projects-empty')).toBeInTheDocument()
 
     await userEvent.click(await screen.findByRole('button', { name: '+ Новый проект' }))
-    await userEvent.type(screen.getByLabelText('Название нового проекта'), 'Свежий{enter}')
+    const dialog = await screen.findByTestId('new-project-dialog')
+    await userEvent.type(within(dialog).getByLabelText('Название'), 'Свежий')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Создать' }))
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/projects\/.+/))
     const page = await screen.findByTestId('project-page')
     expect(within(page).getByRole('heading', { name: 'Свежий' })).toBeInTheDocument()

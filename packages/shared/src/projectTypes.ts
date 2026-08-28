@@ -164,6 +164,11 @@ export const BUILTIN_PROJECT_TYPES: readonly BuiltinProjectType[] = [
   }
 ]
 
+/** Все возможности включены: оптимистичный дефолт, пока тип ещё не загружен. */
+export const ALL_PROJECT_FEATURES: ProjectFeatureSet = Object.freeze({
+  git: true, machines: true, ci: true, qa: true, releases: true, preview: true
+})
+
 /** Ни одна возможность не включена — база фолда, если корень чего-то не задал. */
 export const NO_PROJECT_FEATURES: ProjectFeatureSet = Object.freeze({
   git: false, machines: false, ci: false, qa: false, releases: false, preview: false
