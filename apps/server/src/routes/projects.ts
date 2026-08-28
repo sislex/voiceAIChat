@@ -118,7 +118,10 @@ export function registerProjectRoutes(
   const taskCreateGuard = { preHandler: requireProjectPermission('task:create') }
   const taskUpdateGuard = { preHandler: requireProjectPermission('task:update') }
   const mergeGuard = { preHandler: requireProjectPermission('task:merge') }
-  const settingsGuard = { preHandler: requireProjectPermission('project:settings') }
+  // Создание проекта — не настройка чужого проекта: доступно любой роли, создатель садится
+  // владельцем. Остальные настроечные роуты гейтит глобальный hook через
+  // projectPermissionForRequest → isProjectOwner, поэтому своего preHandler им не нужно.
+  const createGuard = { preHandler: requireProjectPermission('project:create') }
 
   // --- Проекты ---------------------------------------------------------
 
@@ -126,7 +129,7 @@ export function registerProjectRoutes(
 
   app.post<{
     Body: { name?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
-  }>(REST.projects, settingsGuard, async (req, reply): Promise<ProjectDetail | FastifyReply> => {
+  }>(REST.projects, createGuard, async (req, reply): Promise<ProjectDetail | FastifyReply> => {
     const b = req.body ?? {}
     const name = (b.name ?? '').trim()
     if (!name) return badReq(reply, 'name required')

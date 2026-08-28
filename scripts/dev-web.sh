@@ -5,6 +5,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Локальные переменные окружения (почта, публичный URL) — так же, как их читает
+# docker compose. Без этого VC_SMTP_URL/VC_MAIL_FROM/VC_PUBLIC_URL до tsx не
+# доходят и письма молча уходят в лог вместо SMTP. Значения с пробелами и `<`
+# в .env обязаны быть в кавычках: здесь файл именно исполняется шеллом.
+if [ -f "$ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT/.env"
+  set +a
+fi
+
 # cmake в PATH (нужен нативным сборкам на этой машине).
 export PATH="/opt/homebrew/bin:$PATH"
 
