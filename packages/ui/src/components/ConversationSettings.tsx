@@ -331,6 +331,7 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           workdir={workdir}
           project={projects.find((project) => project.id === projectId)}
           selectedSkillNames={skillNames}
+          onOpenSettings={() => selectTab('general')}
         />}
         {webReaderDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика Web Reader">
           <div className="convsettings-sectionhead"><div><h2>Web Reader</h2><p>Проверяет cookie, proxy, загрузку, DOM-мост, события, навигацию, очередь и requestId на внутренней странице. Полный перечень и результаты появятся в чате.</p></div><Button onClick={webReaderDiagnostics.onRun} disabled={webReaderDiagnostics.running}>{webReaderDiagnostics.running ? 'Выполняется…' : 'Самодиагностика'}</Button></div>

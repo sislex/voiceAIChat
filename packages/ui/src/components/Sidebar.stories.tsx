@@ -69,7 +69,35 @@ export const MessageSearch: Story = {
 export const ScrollAndLongTitles: Story = {
   args: { conversations: Array.from({ length: 14 }, (_, index) => conversation(`long-${index}`, `Длинная беседа номер ${index + 1}: детали проверки сайдбара и доступного управления`, NOW - index * 1000)) }
 }
+export const ChatsControlsHidden: Story = {
+  args: { mode: 'chats', onModeChange: () => {}, onShowDoneTaskChatsChange: () => {}, width: 264, onWidthChange: () => {} }
+}
+export const ChatsControlsOpen: Story = {
+  ...ChatsControlsHidden,
+  play: async ({ canvasElement }) => {
+    within(canvasElement).getByRole('list', { name: 'Беседы' }).dispatchEvent(new WheelEvent('wheel', { deltaY: -40, bubbles: true }))
+  }
+}
+export const ProjectsControlsOpen: Story = {
+  args: {
+    mode: 'projects', onModeChange: () => {}, onCreateProject: () => {}, width: 264, onWidthChange: () => {},
+    projects: [{ id: 'project-1', name: 'Альфа', role: 'owner' }, { id: 'project-2', name: 'Длинный проект для проверки узкого сайдбара', role: 'member' }] as never[]
+  },
+  play: async ({ canvasElement }) => {
+    canvasElement.querySelector('.projlist')?.dispatchEvent(new WheelEvent('wheel', { deltaY: -40, bubbles: true }))
+  }
+}
+export const MinimumWidth: Story = { ...ChatsControlsHidden, decorators: [(Story) => <div style={{ width: 220, height: '100vh' }}><Story /></div>] }
+export const MaximumWidth: Story = { ...ProjectsControlsOpen, decorators: [(Story) => <div style={{ width: 420, height: '100vh' }}><Story /></div>] }
+export const ShortViewportAccountMenu: Story = {
+  args: { ...ChatsControlsHidden.args, currentUser: { name: 'Администратор', role: 'admin' }, onOpenUsers: () => {}, onOpenKnowledgeBase: () => {}, onOpenFiles: () => {}, onOpenConsole: () => {}, onLogout: () => {} },
+  decorators: [(Story) => <div style={{ width: 340, height: 500 }}><Story /></div>],
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('button', { name: /Администратор/ }))
+  }
+}
 export const Mobile: Story = { args: { open: true }, parameters: { viewport: { defaultViewport: 'mobile1' } } }
 export const DarkTheme: Story = {
+  args: { ...ChatsControlsHidden.args },
   decorators: [(Story) => <div data-theme="dark" style={{ width: 340, height: '100vh', background: 'var(--bg)' }}><Story /></div>]
 }
