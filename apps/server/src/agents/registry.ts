@@ -153,8 +153,33 @@ export class AgentRegistry {
   private readonly newId: () => string
   private readonly changeListeners = new Set<() => void>()
 
-  constructor(deps: { newId?: () => string } = {}) {
+  /** Сколько ждать возврата офлайн-машины перед отказом (0 — отказывать сразу, как раньше). */
+  readonly offlineGraceMs: number
+  private readonly onlineWaiters = new Map<string, Set<() => void>>()
+
+  constructor(deps: { newId?: () => string; offlineGraceMs?: number } = {}) {
     this.newId = deps.newId ?? (() => randomUUID())
+    this.offlineGraceMs = Math.max(0, deps.offlineGraceMs ?? 0)
+  }
+
+  /**
+   * Ждёт, пока машина выйдет в сеть (агент переподключается после рестарта за секунды).
+   * true — в сети (сразу или дождались), false — таймаут. Так команда/сохранение из чата
+   * не падает «Не удалось сохранить» на первом же обрыве соединения.
+   */
+  waitForOnline(agentId: string, timeoutMs = this.offlineGraceMs): Promise<boolean> {
+    if (this.online.has(agentId)) return Promise.resolve(true)
+    if (timeoutMs <= 0) return Promise.resolve(false)
+    return new Promise<boolean>((resolve) => {
+      const waiters = this.onlineWaiters.get(agentId) ?? new Set<() => void>()
+      this.onlineWaiters.set(agentId, waiters)
+      const timer = setTimeout(() => { waiters.delete(done); resolve(false) }, timeoutMs)
+      const done = (): void => { clearTimeout(timer); waiters.delete(done); resolve(true) }
+      waiters.add(done)
+    })
+  }
+  private offlineError(agentId: string): Error {
+    return new Error(this.offlineGraceMs > 0 ? `Машина не в сети (ждали ${Math.round(this.offlineGraceMs / 1000)} с)` : 'Машина не в сети')
   }
 
   register(
@@ -176,6 +201,7 @@ export class AgentRegistry {
       }
     }
     this.online.set(agentId, { name, socket, policy, version, imageHost })
+    for (const done of this.onlineWaiters.get(agentId) ?? []) done()
     this.emitChange()
   }
 
@@ -360,7 +386,9 @@ export class AgentRegistry {
     meta?: ExecMeta
   ): Promise<ExecResult> {
     const startedAt = Date.now()
-    const promise = this.execInner(agentId, command, timeoutMs, signal)
+    const promise = this.online.has(agentId) || this.offlineGraceMs <= 0
+      ? this.execInner(agentId, command, timeoutMs, signal)
+      : this.waitForOnline(agentId).then((ok) => (ok ? this.execInner(agentId, command, timeoutMs, signal) : Promise.reject(this.offlineError(agentId))))
     const base = { machineId: agentId, userId: meta?.userId ?? '', source: meta?.source ?? 'system', command, startedAt, conversationId: meta?.conversationId ?? null } as const
     promise.then(
       (r) => this.recordCommand({ ...base, exitCode: r.exitCode, timedOut: r.timedOut, error: null, durationMs: Date.now() - startedAt, outputExcerpt: r.output.slice(0, 500) }),
@@ -499,7 +527,10 @@ export class AgentRegistry {
 
   /** Отправляет файловую операцию агенту и ждёт fs.result/fs.error (по opId). */
   private runFs(agentId: string, make: (opId: string) => FsOp, tool = 'fs'): Promise<FsResult> {
-    if (!this.online.has(agentId)) return Promise.reject(new Error('Машина не в сети'))
+    if (!this.online.has(agentId)) {
+      if (this.offlineGraceMs <= 0) return Promise.reject(new Error('Машина не в сети'))
+      return this.waitForOnline(agentId).then((ok) => (ok ? this.runFs(agentId, make, tool) : Promise.reject(this.offlineError(agentId))))
+    }
     const ve = this.versionError(agentId, tool)
     if (ve) return Promise.reject(ve)
     const opId = this.newId()

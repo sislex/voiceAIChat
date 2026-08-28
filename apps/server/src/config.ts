@@ -22,6 +22,8 @@ export interface ServerConfig {
   piperArgsPrefix: string[]
   /** Путь к .dmg компаньон-приложения для скачивания (undefined — не собрано). */
   agentAppPath?: string
+  /** Сколько мс операции машины (exec/fs) ждут возврата офлайн-агента перед отказом; 0 — сразу отказ. */
+  agentOfflineGraceMs: number
   /** Путь к .dmg десктоп-приложения для скачивания (undefined — не собрано). */
   desktopAppPath?: string
   /**
@@ -164,6 +166,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     piperBin: pick(env.VC_PIPER_BIN, REPO.piperBin, 'piper'),
     piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : [],
     agentAppPath: env.VC_AGENT_APP ?? (AUTODISCOVER ? findDmg(REPO.agentAppDir) : undefined),
+    // В тестах — 0, чтобы офлайн-проверки отвечали мгновенно; в проде даём агенту 15 с на переподключение.
+    agentOfflineGraceMs: env.VC_AGENT_OFFLINE_GRACE_MS !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_GRACE_MS) || 0) : (AUTODISCOVER ? 15_000 : 0),
     desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined),
     webDir: env.VC_WEB_DIR,
     webRecorderDir: env.VC_WEB_RECORDER_DIR,
