@@ -51,6 +51,8 @@ export interface MachineStatusProps {
   onLoadCommands?: (id: string, filter: { q?: string; source?: MachineCommandSource; limit?: number }) => Promise<MachineCommandRecord[]>
   /** Открыть чат из записи журнала. */
   onOpenConversation?: (conversationId: string) => void
+  /** Мастер подключения: пробная команда на только что созданной машине. */
+  onExecTest?: (id: string) => Promise<{ exitCode: number | null; output: string }>
   /**
    * Удалить машину: токен отзывается, цель выполнения и машина по умолчанию
    * сбрасываются. Нет — удаления в таблице нет (режим только-просмотр).
@@ -289,6 +291,7 @@ export function MachineStatus({
   onUpdateAgent,
   onLoadCommands,
   onOpenConversation,
+  onExecTest,
   onDeleteAgent,
   defaultAgentId,
   onSetDefault,
@@ -626,6 +629,8 @@ export function MachineStatus({
             token={created.token}
             onGetConnectionString={onGetConnectionString}
             onHide={() => setCreated(null)}
+            online={agents.find((a) => a.id === created.id)?.online ?? false}
+            onTestCommand={onExecTest ? () => onExecTest(created.id) : undefined}
           />
         )}
 
