@@ -335,6 +335,15 @@ export const REST = {
   projects: '/api/projects',
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
   // Дерево типов проекта: каталог общий, решения по публикации — под /api/admin/.
+  projectInvitations: (id: string) => `/api/projects/${encodeURIComponent(id)}/invitations`,
+  projectInvitation: (id: string, invitationId: string) => `/api/projects/${encodeURIComponent(id)}/invitations/${encodeURIComponent(invitationId)}`,
+  projectInvitationResend: (id: string, invitationId: string) => `/api/projects/${encodeURIComponent(id)}/invitations/${encodeURIComponent(invitationId)}/resend`,
+  // Приём и отклонение — вне /api/projects/: адресат ещё не участник проекта.
+  myInvitations: '/api/invitations',
+  invitationAccept: (token: string) => `/api/invitations/${encodeURIComponent(token)}/accept`,
+  invitationDecline: (token: string) => `/api/invitations/${encodeURIComponent(token)}/decline`,
+  /** Публичный превью по ссылке из письма: под /api/session/ его пускает isPublic. */
+  invitationPreview: (token: string) => `/api/session/invitation/${encodeURIComponent(token)}`,
   projectTypes: '/api/project-types',
   projectType: (id: string) => `/api/project-types/${encodeURIComponent(id)}`,
   projectTypePublish: (id: string) => `/api/project-types/${encodeURIComponent(id)}/publish`,

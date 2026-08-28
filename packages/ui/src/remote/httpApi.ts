@@ -359,6 +359,13 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:checkLlmEngineHealth': ({ id }) => req(REST.adminLlmEngineHealth(id)),
     // --- Проекты + канбан ---
     'projects:list': () => req(REST.projects),
+    'projects:invitations': ({ id }) => req(REST.projectInvitations(id)),
+    'projects:invite': ({ id, ...body }) => req(REST.projectInvitations(id), { method: 'POST', body: JSON.stringify(body) }),
+    'projects:resendInvitation': ({ id, invitationId }) => req(REST.projectInvitationResend(id, invitationId), { method: 'POST', body: '{}' }),
+    'projects:revokeInvitation': ({ id, invitationId }) => req(REST.projectInvitation(id, invitationId), { method: 'DELETE' }),
+    'invitations:list': () => req(REST.myInvitations),
+    'invitations:accept': ({ token }) => req(REST.invitationAccept(token), { method: 'POST', body: '{}' }),
+    'invitations:decline': ({ token }) => req(REST.invitationDecline(token), { method: 'POST', body: '{}' }),
     'projectTypes:list': () => req(REST.projectTypes),
     'projectTypes:create': (b) => req(REST.projectTypes, { method: 'POST', body: JSON.stringify(b) }),
     'projectTypes:update': ({ id, ...fields }) => req(REST.projectType(id), { method: 'PATCH', body: JSON.stringify(fields) }),

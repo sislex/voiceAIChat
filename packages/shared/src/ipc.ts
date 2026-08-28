@@ -395,6 +395,20 @@ export interface IpcInvokeMap {
 
   'projects:get': { arg: { id: string }; result: ProjectDetail | null }
 
+  // --- Приглашения в проект ---
+  /** Живые приглашения проекта (владельцу). */
+  'projects:invitations': { arg: { id: string }; result: import('./projects').ProjectInvitation[] }
+  'projects:invite': {
+    arg: { id: string; invitee: string; role?: import('./projects').ProjectRole }
+    result: { invitation: import('./projects').ProjectInvitation; mailed: boolean }
+  }
+  'projects:resendInvitation': { arg: { id: string; invitationId: string }; result: { invitation: import('./projects').ProjectInvitation; mailed: boolean } }
+  'projects:revokeInvitation': { arg: { id: string; invitationId: string }; result: { ok: true } }
+  /** Мои приглашения: адрес вне проекта — приглашённый ещё не участник. */
+  'invitations:list': { arg: void; result: import('./projects').ProjectInvitationForUser[] }
+  'invitations:accept': { arg: { token: string }; result: { projectId: string } }
+  'invitations:decline': { arg: { token: string }; result: { ok: boolean } }
+
   // --- Дерево типов проекта ---
   /** Каталог: встроенные, опубликованные и собственные узлы пользователя. */
   'projectTypes:list': { arg: void; result: import('./projectTypes').ProjectTypeNode[] }
@@ -1135,6 +1149,13 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:list',
   'projects:create',
   'projects:get',
+  'projects:invitations',
+  'projects:invite',
+  'projects:resendInvitation',
+  'projects:revokeInvitation',
+  'invitations:list',
+  'invitations:accept',
+  'invitations:decline',
   'projectTypes:list',
   'projectTypes:create',
   'projectTypes:update',
