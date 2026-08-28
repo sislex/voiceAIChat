@@ -319,6 +319,36 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_engines_default_kind
 -- утверждение администратору (private → pending → published | rejected).
 -- ON DELETE RESTRICT: узел с детьми или с проектами удалить нельзя — вместо
 -- каскада, который тихо осиротил бы проекты, пользователь получает отказ.
+-- Приглашения в проект (как на GitHub): владелец зовёт по логину или адресу,
+-- уходит письмо со ссылкой, приглашённый подтверждает сам. Токен хранится хешем —
+-- как в email_verifications: утёкшая база не даёт вступить в чужой проект.
+-- Частичные уникальные индексы держат ровно одно живое приглашение на адресата.
+CREATE TABLE IF NOT EXISTS project_invitations (
+  id               TEXT PRIMARY KEY,
+  project_id       TEXT NOT NULL,
+  email            TEXT,
+  invited_username TEXT,
+  role             TEXT NOT NULL DEFAULT 'member',
+  token_hash       TEXT NOT NULL UNIQUE,
+  status           TEXT NOT NULL DEFAULT 'pending',
+  invited_by       TEXT NOT NULL,
+  created_at       INTEGER NOT NULL,
+  expires_at       INTEGER NOT NULL,
+  responded_at     INTEGER,
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_invitations_pending_email
+  ON project_invitations(project_id, email)
+  WHERE status = 'pending' AND email IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_invitations_pending_user
+  ON project_invitations(project_id, invited_username)
+  WHERE status = 'pending' AND invited_username IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_project_invitations_user
+  ON project_invitations(invited_username, status);
+
 CREATE TABLE IF NOT EXISTS project_types (
   id            TEXT PRIMARY KEY,
   parent_id     TEXT,

@@ -651,6 +651,46 @@ export interface ProjectMachine {
   sshUser?: string
 }
 
+/** Состояние приглашения в проект. */
+export type ProjectInvitationStatus = 'pending' | 'accepted' | 'declined' | 'revoked'
+
+/**
+ * Приглашение участника — как на GitHub: владелец зовёт по логину или адресу,
+ * уходит письмо, приглашённый подтверждает сам. Токен наружу отдаётся только в
+ * письме; в API его нет — в списках он не нужен, а утечка равна доступу.
+ */
+export interface ProjectInvitation {
+  id: string
+  projectId: string
+  /** Адрес, на который отправлено письмо (или null, если звали по логину). */
+  email: string | null
+  /** Логин приглашённого, если он известен системе. */
+  invitedUsername: string | null
+  role: ProjectRole
+  status: ProjectInvitationStatus
+  invitedBy: string
+  createdAt: number
+  expiresAt: number
+  respondedAt: number | null
+}
+
+/**
+ * Что видит неавторизованный по ссылке из письма. Намеренно только три поля:
+ * имя проекта, кто позвал и срок — этого хватает, чтобы понять, куда идёшь.
+ */
+export interface ProjectInvitationPreview {
+  projectId: string
+  projectName: string
+  invitedBy: string
+  role: ProjectRole
+  expiresAt: number
+}
+
+/** Приглашение вместе с именем проекта — для списка «мои приглашения». */
+export interface ProjectInvitationForUser extends ProjectInvitation {
+  projectName: string
+}
+
 /** Проект со всем составом (ответ get/create/update). */
 export interface ProjectDetail extends ProjectSummary {
   members: ProjectMember[]
