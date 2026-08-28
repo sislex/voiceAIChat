@@ -75,7 +75,7 @@ describe('turns: канбан-ассистент', () => {
         userId: U,
         conversationId: conv.id,
         segments: [{ speakerId: 1, text: 'Что делать?' }],
-        assistantContext: { version: 1, widget: { kind: 'kanban', instanceId: project.id, title: 'Board' }, project: { id: project.id, name: 'Board', description: '', technologies: [], skills: [] }, selection: null, recentActions: [] }
+        assistantContext: { version: 1, widget: { kind: 'kanban', instanceId: project.id, title: 'Board' }, project: { id: project.id, name: 'Board', description: '', technologies: [], skills: [], typeChain: project.typeChain }, selection: null, recentActions: [] }
       })
     })
     expect(rec.last()?.prompt).toContain('## Режим канбан-ассистента')

@@ -295,6 +295,9 @@ export interface SidebarProps {
   invitations?: ProjectInvitationForUser[]
   onAcceptInvitation?: (invitation: ProjectInvitationForUser) => void
   onDeclineInvitation?: (invitation: ProjectInvitationForUser) => void
+  /** Сбой чтения приглашений: показываем причину вместо исчезнувшего блока. */
+  invitationsError?: string | null
+  onRetryInvitations?: () => void
   /** Открыть командную палитру (кнопка «⌘K» рядом с поиском); не задан — кнопки нет. */
   onOpenCommandPalette?: () => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
@@ -358,6 +361,8 @@ export function Sidebar({
   onPickProject,
   onCreateProject,
   invitations,
+  invitationsError,
+  onRetryInvitations,
   onAcceptInvitation,
   onDeclineInvitation,
   onOpenCommandPalette,
@@ -713,6 +718,16 @@ export function Sidebar({
         <div className="convolist projlist" onWheel={onListWheel}>
           {/* Приглашения показываем над списком: приглашённого по логину письмо
               может не дойти, и это единственное место, где он их увидит. */}
+          {invitationsError && (invitations?.length ?? 0) === 0 && (
+            <div className="proj-invites-inbox">
+              <ErrorState
+                compact
+                message="Не удалось загрузить приглашения"
+                detail={invitationsError}
+                {...(onRetryInvitations ? { onRetry: onRetryInvitations } : {})}
+              />
+            </div>
+          )}
           {(invitations?.length ?? 0) > 0 && (
             <section className="proj-invites-inbox" aria-label="Приглашения в проекты">
               <p className="proj-invites-inbox__title">Приглашения ({invitations!.length})</p>

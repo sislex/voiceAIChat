@@ -747,7 +747,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     return {
       version: 1,
       widget: { kind: 'kanban', instanceId: routeProjectId ?? 'none', title: routeProjectName },
-      project: project ? { id: project.id, name: project.name, description: project.description, technologies: project.technologies, skills: project.skills } : null,
+      project: project ? { id: project.id, name: project.name, description: project.description, technologies: project.technologies, skills: project.skills, typeChain: project.typeChain } : null,
       selection: board && routeProjectId ? { board: { projectId: routeProjectId, columns: board.columns, tasks: board.tasks, revision: String(Math.max(0, ...board.tasks.map((task) => task.updatedAt)) ) }, openTask, selectedField: assistantField } : null,
       recentActions: widgetActions
     }
@@ -1708,6 +1708,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           navigate(`/projects/${id}`)
         }}
         invitations={projects.myInvitations}
+        invitationsError={projects.myInvitationsError}
+        onRetryInvitations={() => void projectsActions.loadMyInvitations()}
         onAcceptInvitation={async (invitation) => {
           // Токен приглашённому не отдаётся: принимаем по id, сервер сверит адресата.
           const projectId = await projectsActions.acceptInvitation(invitation.id)

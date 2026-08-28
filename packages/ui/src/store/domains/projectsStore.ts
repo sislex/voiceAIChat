@@ -82,6 +82,8 @@ export interface ProjectsState {
   projectInvitations: ProjectInvitation[]
   /** Приглашения, адресованные мне: показываются вне проекта. */
   myInvitations: ProjectInvitationForUser[]
+  /** Сбой чтения не должен выглядеть как «приглашений нет». */
+  myInvitationsError: string | null
   activeProjectId: string | null
   projectSettingsOpen: boolean
   board: Board | null
@@ -237,6 +239,7 @@ function initialState(): ProjectsState {
   projectTypesError: null,
     projectInvitations: [],
     myInvitations: [],
+  myInvitationsError: null,
     activeProjectId: null,
     projectSettingsOpen: false,
     board: null,
@@ -652,8 +655,11 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       },
       async loadMyInvitations() {
         try {
-          setState({ myInvitations: await client['invitations:list']() })
+          setState({ myInvitations: await client['invitations:list'](), myInvitationsError: null })
         } catch (err) {
+          // Держим ошибку в сторе: иначе блок просто исчезает, и человек не
+          // понимает, потерялось приглашение или его не было.
+          setState({ myInvitationsError: err instanceof Error ? err.message : String(err) })
           fail(err, () => void actions.loadMyInvitations())
         }
       },
