@@ -101,9 +101,20 @@ describe('VoiceBar — состояния', () => {
     const props = setup('idle', { draft: 'привет', submitPending: true })
     const submit = screen.getByLabelText('Отправить сообщение')
     expect(submit).toBeDisabled()
+    expect(submit).toHaveAttribute('aria-busy', 'true')
     expect(screen.getByTestId('request-status')).toHaveTextContent('Запрос отправляется…')
     await userEvent.click(submit)
     expect(props.onSubmitText).not.toHaveBeenCalled()
+  })
+
+  it('send и stop имеют единую sm hit-area и компактную графику', () => {
+    setup('thinking', { draft: 'следующий вопрос' })
+    const send = screen.getByLabelText('Добавить сообщение в очередь')
+    const stop = screen.getByLabelText('Остановить ответ')
+    expect(send).toHaveClass('vc-btn--sm', 'vc-btn--primary', 'composer-send')
+    expect(stop).toHaveClass('vc-btn--sm', 'vc-btn--danger', 'composer-stop')
+    expect(send.querySelector('svg')).toHaveAttribute('width', '16')
+    expect(stop.querySelector('svg')).toHaveAttribute('width', '16')
   })
 
   it('повторные realtime-события обновляют единственную строку без дублей', () => {
@@ -291,7 +302,19 @@ describe('VoiceBar — высота поля ввода', () => {
     expect(toggle.parentElement).toHaveClass('composer-input')
     expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+    const resizeIcon = toggle.querySelector('svg')
+    expect(resizeIcon).toHaveAttribute('width', '24')
+    expect(resizeIcon).toHaveAttribute('height', '24')
+    expect(resizeIcon).toHaveAttribute('viewBox', '0 0 24 24')
+    expect(resizeIcon).toHaveAttribute('fill', 'none')
+    expect(resizeIcon).toHaveAttribute('stroke', 'currentColor')
+    expect(resizeIcon).toHaveAttribute('stroke-width', '2')
+    expect(resizeIcon).toHaveAttribute('stroke-linecap', 'round')
+    expect(resizeIcon).toHaveAttribute('stroke-linejoin', 'round')
+    expect(Array.from(resizeIcon?.querySelectorAll('path') ?? []).map((path) => path.getAttribute('d'))).toEqual([
+      'M16 3 L21 3 L21 8',
+      'M8 21 L3 21 L3 16'
+    ])
 
     input.focus()
     input.setSelectionRange(2, 8)
@@ -602,7 +625,19 @@ describe('VoiceBar — адаптивный композер', () => {
     expect(toggle.parentElement).toHaveClass('composer-input')
     expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+    const resizeIcon = toggle.querySelector('svg')
+    expect(resizeIcon).toHaveAttribute('width', '24')
+    expect(resizeIcon).toHaveAttribute('height', '24')
+    expect(resizeIcon).toHaveAttribute('viewBox', '0 0 24 24')
+    expect(resizeIcon).toHaveAttribute('fill', 'none')
+    expect(resizeIcon).toHaveAttribute('stroke', 'currentColor')
+    expect(resizeIcon).toHaveAttribute('stroke-width', '2')
+    expect(resizeIcon).toHaveAttribute('stroke-linecap', 'round')
+    expect(resizeIcon).toHaveAttribute('stroke-linejoin', 'round')
+    expect(Array.from(resizeIcon?.querySelectorAll('path') ?? []).map((path) => path.getAttribute('d'))).toEqual([
+      'M16 3 L21 3 L21 8',
+      'M8 21 L3 21 L3 16'
+    ])
 
     input.focus()
     input.setSelectionRange(2, 8)
