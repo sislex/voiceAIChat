@@ -5,6 +5,7 @@
 // входить или регистрироваться. Вошедший тем же экраном принимает или отклоняет:
 // два разных экрана расходились бы текстами и состояниями ошибок.
 import { useEffect, useState } from 'react'
+import { formatDate, isoDate } from '../lib/dateFormat'
 import { Button, ErrorState } from '@voicechat/ui-kit'
 import type { ProjectInvitationPreview } from '@shared/projects'
 
@@ -58,7 +59,7 @@ export function InviteScreen({ token, loadPreview, onAccept, onDecline, onLogin,
             <p className="login-hint">
               Пригласил: <b>{preview.invitedBy}</b> · роль: {preview.role === 'owner' ? 'владелец' : 'участник'}
               {' · до '}
-              <time dateTime={new Date(preview.expiresAt).toISOString()}>{new Date(preview.expiresAt).toLocaleDateString('ru-RU')}</time>
+              <time dateTime={isoDate(preview.expiresAt)}>{formatDate(preview.expiresAt)}</time>
             </p>
             <div className="invite-actions">
               {authed ? (

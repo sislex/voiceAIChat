@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { formatDateTime } from '../lib/dateFormat'
 import type { GitAccessResult, GitAccessStatus } from '@shared/gitAccess'
 import type { RendererApi } from '@shared/ipc'
 import type { ProjectMachine } from '@shared/projects'
@@ -30,7 +31,7 @@ export function ProjectMachineGitAccess({ projectId, machine, repositoryUrl, own
   return <section className="proj-section" data-testid="project-machine-git-access">
     <p className="proj-field-label">Git-доступ · {machine.name ?? machine.agentId}</p>
     <p className="proj-hint">Используйте fine-grained GitHub PAT, ограниченный этим репозиторием, минимальными Contents permissions и коротким сроком действия.</p>
-    <p>Статус: {status?.configured ? 'настроен' : 'не настроен'}{status?.account ? ` · аккаунт ${status.account}` : ''}{status?.checkedAt ? ` · проверено ${new Date(status.checkedAt).toLocaleString()}` : ''}</p>
+    <p>Статус: {status?.configured ? 'настроен' : 'не настроен'}{status?.account ? ` · аккаунт ${status.account}` : ''}{status?.checkedAt ? ` · проверено ${formatDateTime(status.checkedAt)}` : ''}</p>
     <p>Чтение: {status?.readAccess ?? 'unknown'} · Запись (dry-run): {status?.writeAccess ?? 'unknown'}</p>
     {status?.warnings.map((warning) => <p className="proj-offline" key={warning.effectiveUrl}>{warning.message}: {warning.originalUrl} → {warning.effectiveUrl}</p>)}
     {error && <p role="alert" className="proj-offline">{error}</p>}

@@ -12,6 +12,8 @@
 // проговаривается в aria-live. Колонка = статус.
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
 import type { ProjectFeatureSet } from '@shared/projectTypes'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
@@ -240,6 +242,25 @@ export interface KanbanBoardProps {
 
 const RECENT_MS = 24 * 60 * 60 * 1000
 
+/**
+ * Оболочка блока фильтров доски. На широком экране — обычный ряд; на телефоне
+ * фильтры сворачиваются в один пункт с числом активных: развёрнутыми они
+ * занимали пол-экрана до первой карточки, особенно после увеличения целей
+ * нажатия под палец.
+ */
+function FilterShell({ mobile, count, children }: { mobile: boolean; count: number; children: ReactNode }): JSX.Element {
+  if (!mobile) return <div className="jboard-filters" data-testid="board-filters">{children}</div>
+  return (
+    <details className="jboard-filters-shell" data-testid="board-filters-shell">
+      <summary>
+        Фильтры
+        {count > 0 && <span className="jfilter-count">{count}</span>}
+      </summary>
+      <div className="jboard-filters" data-testid="board-filters">{children}</div>
+    </details>
+  )
+}
+
 /** Мультивыбор в выпадашке фильтра (details/summary — без своего позиционирования). */
 function FilterDropdown({ label, active, children }: { label: string; active: number; children: JSX.Element }): JSX.Element {
   return (
@@ -254,6 +275,8 @@ function FilterDropdown({ label, active, children }: { label: string; active: nu
 }
 
 export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
+  // Телефонная раскладка: тот же порог, что у карточки задачи (720px).
+  const compact = useMediaQuery(MOBILE_QUERY)
   const { loading, members } = props
   const confirm = useConfirm()
   const [improvementTasks, setImprovementTasks] = useState<Array<{ taskId: string; count: number; improvementId: string }>>([])
@@ -457,6 +480,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   const filtersActive =
     search.trim() !== '' || assignees.size > 0 || types.size > 0 || priorities.size > 0 ||
     labels.size > 0 || epics.size > 0 || onlyMine || flaggedOnly || recentOnly || hasColumnAssigneeFilter
+
+  /**
+   * Сколько фильтров включено. Нужен подписи свёрнутого блока на телефоне:
+   * иначе непонятно, почему на доске мало карточек.
+   */
+  const activeFilterCount =
+    (search.trim() ? 1 : 0) + assignees.size + types.size + priorities.size + labels.size + epics.size +
+    (onlyMine ? 1 : 0) + (flaggedOnly ? 1 : 0) + (recentOnly ? 1 : 0) +
+    Object.values(columnAssigneeFilters).filter((value) => value.assigneeIds.length > 0 || value.includeUnassigned).length
 
   const resetFilters = (): void => {
     setSearch('')
@@ -1321,7 +1353,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               {...(props.onRetry ? { onRetry: props.onRetry } : {})}
             />
           )}
-          <div className="jboard-filters" data-testid="board-filters">
+          <FilterShell mobile={compact} count={activeFilterCount}>
             <input
               className="login-input jsearch"
               type="search"
@@ -1445,7 +1477,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
               </button>
             )}
             {view.refreshing && <RefreshIndicator label="Обновляем доску…" />}
-          </div>
+          </FilterShell>
 
           {/* Именно «колонок нет вообще»: при снятом чекбоксе «скрытые» видимых
               колонок тоже нет, но подсказка про создание там была бы неправдой. */}

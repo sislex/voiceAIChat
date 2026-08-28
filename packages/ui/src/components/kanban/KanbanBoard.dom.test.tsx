@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { MOBILE_QUERY } from '../../lib/mediaQuery'
 import { expectLabelledIconButtons, expectNoViolations } from '../../test/a11y'
-import { act, fireEvent, screen, within, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, within, waitFor, cleanup } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
@@ -908,5 +909,49 @@ describe('KanbanBoard — доступность', () => {
   it('без нарушений axe: пустая доска и ошибка загрузки', async () => {
     renderBoard({ board: { columns: [], tasks: [] } })
     await expectNoViolations()
+  })
+})
+
+/** Ширина экрана: доска смотрит на matchMedia, дефолт тестов — десктоп. */
+function setMobileViewport(mobile: boolean): void {
+  window.matchMedia = ((query: string) => ({
+    matches: mobile && query === MOBILE_QUERY,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false
+  })) as unknown as typeof window.matchMedia
+}
+
+describe('KanbanBoard — фильтры на телефоне', () => {
+  afterEach(() => setMobileViewport(false))
+
+  it('на широком экране фильтры развёрнуты, на телефоне свёрнуты в один пункт', async () => {
+    renderBoard()
+    expect(screen.getByTestId('board-filters')).toBeInTheDocument()
+    expect(screen.queryByTestId('board-filters-shell')).not.toBeInTheDocument()
+    cleanup()
+
+    setMobileViewport(true)
+    renderBoard()
+    const shell = screen.getByTestId('board-filters-shell')
+    // Развёрнутыми фильтры занимали пол-экрана до первой карточки.
+    expect(shell).not.toHaveAttribute('open')
+    expect(within(shell).getByText('Фильтры')).toBeInTheDocument()
+  })
+
+  it('число активных фильтров видно в свёрнутом виде', async () => {
+    setMobileViewport(true)
+    renderBoard()
+    const shell = screen.getByTestId('board-filters-shell') as HTMLDetailsElement
+    // jsdom не раскрывает details по клику на summary — открываем напрямую.
+    shell.open = true
+    const [firstFilter] = within(shell).getAllByRole('checkbox')
+    await userEvent.click(firstFilter)
+    // Иначе непонятно, почему на доске мало карточек.
+    expect(within(shell.querySelector('summary')!).getByText('1')).toBeInTheDocument()
   })
 })
