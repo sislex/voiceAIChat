@@ -1,6 +1,7 @@
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
 import { join } from 'node:path'
+import { projectPromptLines } from '../projects/promptContext.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import {
   REST,
@@ -96,14 +97,9 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     'Дата рождения': p.birthYear ? `${String(p.birthDay ?? 1).padStart(2, '0')}.${String(p.birthMonth ?? 1).padStart(2, '0')}.${p.birthYear}` : '—',
     'Текст в промпте': personalizationLines.length ? personalizationLines.join('\n') : '(персонализация пуста — в промпт ничего не добавляется)'
   }
-  const projectPromptLines = project
-    ? [
-        `ID проекта: ${project.id}`,
-        project.gitUrl ? `Git-репозиторий: ${project.gitUrl}` : '',
-        project.technologies.length ? `Технологии: ${project.technologies.join(', ')}` : '',
-        project.skills.length ? `Навыки/области: ${project.skills.join(', ')}` : '',
-        project.description ? project.description : ''
-      ].filter(Boolean)
+  // Тот же билдер, что у хода модели: иначе панель показывает не то, что ушло.
+  const promptLines = project
+    ? projectPromptLines(project)
     : conversation.projectId ? [`ID проекта: ${conversation.projectId}`, 'Проект больше недоступен этому пользователю.'] : []
   const projectDetails: Record<string, string | number | boolean | string[] | null> = project
     ? {
@@ -112,7 +108,8 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
         'Технологии': project.technologies.join(', ') || '—',
         'Навыки/области': project.skills.join(', ') || '—',
         'Описание': project.description || '—',
-        'Текст в промпте': `## Контекст проекта «${project.name}»\n${projectPromptLines.join('\n')}`
+        'Тип проекта': project.typeChain?.label || '—',
+        'Текст в промпте': `## Контекст проекта «${project.name}»\n${promptLines.join('\n')}`
       }
     : { 'Проект': 'Не выбран — проектный контекст в промпт не добавляется.' }
   // Конфиг/описание каждого MCP-инструмента для drill-in.
