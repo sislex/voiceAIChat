@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@shared/projectTypes'
 import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -628,5 +629,18 @@ describe('Sidebar — чаты, связанные с задачами', () => {
   it('отменённый и пропущенный ран подсветки не дают', () => {
     setup({ taskBadges: { c1: badge() }, ciSummaries: { t1: summary({ status: 'cancelled' }) } })
     expect(row('c1').className).not.toContain('convo--ci-')
+  })
+})
+
+describe('Sidebar — поиск проектов по типу', () => {
+  it('находит проект по названию его типа, а не только по имени', async () => {
+    const typed = [
+      { id: 'p1', name: 'Лендинг', role: 'owner', typeChain: builtinProjectTypeChain(BUILTIN_PROJECT_TYPE_IDS.web) },
+      { id: 'p2', name: 'Ремонт', role: 'owner', typeChain: builtinProjectTypeChain(BUILTIN_PROJECT_TYPE_IDS.general) }
+    ] as never[]
+    setup({ projects: typed, mode: 'projects', onModeChange: vi.fn() })
+    await userEvent.type(screen.getByLabelText('Поиск по проектам'), 'веб')
+    expect(screen.getByText('Лендинг')).toBeInTheDocument()
+    expect(screen.queryByText('Ремонт')).not.toBeInTheDocument()
   })
 })

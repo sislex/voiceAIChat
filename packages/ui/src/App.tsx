@@ -252,9 +252,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const operationsActions = useOperationsActions()
   const adminActions = useAdminActions()
   const projectsActions = useProjectsActions()
-  // Возможности типа открытого проекта: пока detail не загружен, считаем всё
-  // доступным — иначе разделы мигали бы «скрыто → показано» на каждом входе.
-  const projectFeatures = projects.projectDetail?.typeChain.features ?? ALL_PROJECT_FEATURES
+  // Возможности типа открытого проекта. Пока detail грузится, берём их из
+  // summary в списке проектов: там уже есть typeChain, и вкладка «Релизы» не
+  // мигает «показана → скрыта» при каждом входе в проект без релизов.
+  const routeProjectSummary = routeProjectId ? projects.projects.find((p) => p.id === routeProjectId) : undefined
+  const projectFeatures =
+    projects.projectDetail?.typeChain.features ??
+    routeProjectSummary?.typeChain?.features ??
+    ALL_PROJECT_FEATURES
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
   const [sessionsOpen, setSessionsOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
@@ -1921,10 +1926,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inProjects && !inTaskChat && routeProjectId && !projectMissing && (
         <ProjectPage
           projectName={routeProjectName}
-          features={projects.projectDetail?.typeChain.features}
-          {...(projects.projectDetail?.typeChain.nodes.length
-            ? { typeLabel: projects.projectDetail.typeChain.nodes[projects.projectDetail.typeChain.nodes.length - 1].name }
-            : {})}
+          features={projectFeatures}
+          {...(() => {
+            const chain = projects.projectDetail?.typeChain ?? routeProjectSummary?.typeChain
+            return chain?.nodes.length ? { typeLabel: chain.nodes[chain.nodes.length - 1].name } : {}
+          })()}
           // Недоступный раздел в адресе не оставляем: тип мог измениться, а ссылка — остаться.
           section={routeSettings ? 'settings' : routeReleases && projectFeatures.releases ? 'releases' : 'board'}
           onSectionChange={(section) =>
@@ -1951,9 +1957,22 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                   if (!result) return
                   // Владелец должен понимать, ушло ли письмо: без этого он не
                   // знает, почему приглашённый молчит.
-                  toast.success(result.mailed && result.email
-                    ? `Приглашение отправлено на ${result.email}`
-                    : 'Приглашение создано. Письма не было — попросите принять его в приложении')
+                  if (result.mailed && result.email) {
+                    toast.success(`Приглашение отправлено на ${result.email}`)
+                    return
+                  }
+                  // Письма нет (приглашение по логину) — ссылку надо чем-то передать.
+                  toast.success('Приглашение создано. Письма не было — ссылку можно скопировать', {
+                    action: {
+                      label: 'Скопировать ссылку',
+                      onClick: () => {
+                        void navigator.clipboard?.writeText(result.link).then(
+                          () => toast.success('Ссылка скопирована'),
+                          () => toast.error('Не удалось скопировать — скопируйте вручную: ' + result.link)
+                        )
+                      }
+                    }
+                  })
                 }}
                 onResendInvitation={(id, invitationId) => projectsActions.resendProjectInvitation(id, invitationId)}
                 onRevokeInvitation={(id, invitationId) => projectsActions.revokeProjectInvitation(id, invitationId)}

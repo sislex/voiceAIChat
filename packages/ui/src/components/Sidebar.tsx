@@ -387,7 +387,14 @@ export function Sidebar({
   // Состояния списка бесед по общему правилу: скелетон — только пока данных нет,
   // при повторной загрузке список остаётся на месте (см. lib/loadState.ts).
   const chats = loadView(conversationsStatus, conversations.length > 0)
-  const visibleProjects = projects.filter((project) => project.name.toLocaleLowerCase().includes(projectQuery.trim().toLocaleLowerCase()))
+  // Поиск идёт и по типу: «покажи все веб-проекты» — обычный запрос, а по имени
+  // тип не найдёшь.
+  const visibleProjects = projects.filter((project) => {
+    const needle = projectQuery.trim().toLocaleLowerCase()
+    if (!needle) return true
+    const haystack = [project.name, ...(project.typeChain?.nodes.map((node) => node.name) ?? [])]
+    return haystack.some((value) => value.toLocaleLowerCase().includes(needle))
+  })
 
   const setControlsVisible = (visible: boolean): void => {
     setControlsOpen((current) => current[mode] === visible ? current : { ...current, [mode]: visible })
