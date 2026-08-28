@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
-updated: 2026-08-28
-checked: a5f48859
+updated: 2026-08-29
+checked: ded5e532
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -418,6 +418,16 @@ USD за 1M токенов, источник и дату тарифа; форм�
 (иконка `✦`) в `Sidebar`, второй таб на телефоне — «Проект». Selector-шапка `make-selector`.
 В split-режимах `ChatColumn` получает `composerLayout="docked"`: у пустого проекта обёртка
 `chat-composer--centered` (height 0) иначе уносила докнутый `VoiceBar` за край экрана.
+
+**Инварианты раскладки Make.** `app--make` переводит корень в одну колонку, а общая flex-цепочка
+`.chat-split` → `.chat-split-chat` → `.main` допускает сжатие по обеим осям и не выпускает содержимое
+за viewport. На desktop чат сохраняет минимум 360 px, тогда как `MakePane` получает заданную
+`--preview-width`, но ограничена шириной split-контейнера; её Preview, Code и History имеют нулевые
+минимумы и скрывают внешнее переполнение, оставляя прокрутку внутренним областям iframe, дерева и
+снимков. На ширине до 768 px desktop minimum снимается, split становится вертикальным, divider
+исчезает и табы «Чат»/«Проект» отдают всю область только активной панели. Контракт вместе с
+адаптивным композером и однострочным заголовком защищают
+`packages/ui/src/styles/chatMakeLayout.test.ts` и browser-сценарии в `e2e/make.e2e.test.ts`.
 
 Правая панель — `MakePane` (`packages/ui/src/components/MakePane.tsx`, сториз `Make/MakePane`,
 тест `MakePane.dom.test.tsx`). Данные — `window.api['make:*']` (REST) и `window.make.onChanged`
