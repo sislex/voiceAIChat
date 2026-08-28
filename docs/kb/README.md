@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 76 коммит(ов) в areas после сверки: 03763530 fix(chat): continue FIFO queue after turn errors … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 78 коммит(ов) в areas после сверки: 03763530 fix(chat): continue FIFO queue after turn errors … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 75 коммит(ов) в areas после сверки: 03763530 fix(chat): continue FIFO queue after turn errors … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 768 коммит(ов) в areas после сверки: a237b1c9 docs(kb): update after merge da1bd26b-11ed-4e99-8613-752acb02092e … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 769 коммит(ов) в areas после сверки: cace9792 docs(kb): update after merge bee11923-6074-4b53-9be1-c29692ff8c16 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 187 коммит(ов) в areas после сверки: da95b4b2 fix(ui): compact mobile chat and confirm queued sends … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 32 коммит(ов) в areas после сверки: da95b4b2 fix(ui): compact mobile chat and confirm queued sends … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 8 коммит(ов) в areas после сверки: 03763530 fix(chat): continue FIFO queue after turn errors … |
