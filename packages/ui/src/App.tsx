@@ -24,6 +24,7 @@ import { InviteRegister } from './components/InviteRegister'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog'
 import { SignupScreen, VerifyScreen } from './components/SignupScreen'
 import { NewProjectDialog } from './components/NewProjectDialog'
+import { InviteScreen } from './components/InviteScreen'
 import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
@@ -918,7 +919,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // оверлея настроек. Навигацию делают клики (navigate), данные грузятся тут.
   useEffect(() => {
     if (!authed) return
-    if (inProjects) { if (!projects.projectsOpen) void projectsActions.openProjects() }
+    if (inProjects) {
+      if (!projects.projectsOpen) void projectsActions.openProjects()
+      // Свои приглашения нужны бейджу в сайдбаре и списку на пустой странице.
+      void projectsActions.loadMyInvitations()
+    }
     else if (projects.projectsOpen) projectsActions.closeProjects()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed, inProjects])
@@ -953,6 +958,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       if (!projects.projectSettingsOpen) projectsActions.openProjectSettings()
       // Каталог нужен селекту типа на вкладке «Общее».
       if (routeSettings && !projects.projectTypesLoaded) void projectsActions.loadProjectTypes()
+      if (routeSettings && routeProjectId) void projectsActions.loadProjectInvitations(routeProjectId)
     }
     else if (projects.projectSettingsOpen) projectsActions.closeProjectSettings()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1473,6 +1479,22 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }
   const inviteToken = /^#\/invite\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
   // Открытая регистрация с подтверждением email: #/signup — форма, #/verify/<token> — подтверждение из письма.
+  // Ссылка из письма-приглашения в проект работает до входа: показываем, куда
+  // зовут. Маршрут свой — `#/invite/` занят регистрацией по админскому инвайту.
+  const projectInviteToken = /^#\/project-invite\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
+  if (session.authRequired && !session.currentUser && projectInviteToken && window.session?.projectInvitationPreview) {
+    const preview = window.session.projectInvitationPreview
+    return (
+      <InviteScreen
+        token={decodeURIComponent(projectInviteToken)}
+        loadPreview={(token) => preview(token)}
+        theme={settingsState.settings.theme}
+        onLogin={() => { window.location.hash = '#/' }}
+        onSignup={() => { window.location.hash = '#/signup' }}
+        onDone={() => { window.location.hash = '#/' }}
+      />
+    )
+  }
   const verifyToken = /^#\/verify\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
   if (session.authRequired && !session.currentUser && verifyToken && window.session?.verifyEmail) {
     return <VerifyScreen token={decodeURIComponent(verifyToken)} verify={window.session.verifyEmail} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} onBack={() => { window.location.hash = '#/'; setSignupOpen(false) }} />
@@ -1666,6 +1688,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           setSidebarOpen(false)
           navigate(`/projects/${id}`)
         }}
+        invitations={projects.myInvitations}
+        onAcceptInvitation={async (invitation) => {
+          // Токен приглашённому не отдаётся: принимаем по id, сервер сверит адресата.
+          const projectId = await projectsActions.acceptInvitation(invitation.id)
+          if (projectId) navigate(`/projects/${projectId}`)
+        }}
+        onDeclineInvitation={(invitation) => { void projectsActions.declineInvitation(invitation.id) }}
         onCreateProject={() => {
           setSidebarOpen(false)
           setNewProjectOpen(true)
@@ -1677,6 +1706,20 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           setPaletteOpen(true)
         }}
       />
+      {authed && projectInviteToken && window.session?.projectInvitationPreview && (
+        <InviteScreen
+          token={decodeURIComponent(projectInviteToken)}
+          loadPreview={(token) => window.session!.projectInvitationPreview!(token)}
+          theme={settingsState.settings.theme}
+          onAccept={async (token) => {
+            const projectId = await projectsActions.acceptInvitation(token)
+            if (projectId) navigate(`/projects/${projectId}`)
+            return projectId
+          }}
+          onDecline={(token) => projectsActions.declineInvitation(token)}
+          onDone={() => navigate('/projects')}
+        />
+      )}
       {newProjectOpen && (
         <NewProjectDialog
           types={projects.projectTypes}
@@ -1890,6 +1933,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               <ProjectSettings
                 detail={projects.projectDetail!}
                 projectTypes={projects.projectTypes}
+                invitations={projects.projectInvitations}
+                onInvite={async (id, invitee, role) => { await projectsActions.inviteToProject(id, invitee, role) }}
+                onResendInvitation={(id, invitationId) => projectsActions.resendProjectInvitation(id, invitationId)}
+                onRevokeInvitation={(id, invitationId) => projectsActions.revokeProjectInvitation(id, invitationId)}
                 agents={operations.agents}
                 currentUsername={session.currentUser?.name}
                 llmAccess={settingsState.llmAccess}

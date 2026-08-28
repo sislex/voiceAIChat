@@ -3536,11 +3536,21 @@ export class VoiceChatDb {
     return Boolean(email) && email === row.email.toLowerCase()
   }
 
-  /** Принять приглашение по токену. Возвращает id проекта. */
-  acceptProjectInvitation(username: string, token: string): { projectId: string } {
+  /**
+   * Приглашение по токену (ссылка из письма) либо по id (список в интерфейсе).
+   * Id не секрет: доступ всё равно решает проверка адресата ниже, а приглашённому
+   * по логину токен не приходит вовсе — иначе он не смог бы принять приглашение.
+   */
+  private invitationByTokenOrId(tokenOrId: string): ProjectInvitationRow | undefined {
+    const byToken = this.db.prepare(`SELECT * FROM project_invitations WHERE token_hash = ?`).get(this.invitationTokenHash(tokenOrId)) as ProjectInvitationRow | undefined
+    return byToken ?? (this.db.prepare(`SELECT * FROM project_invitations WHERE id = ?`).get(tokenOrId) as ProjectInvitationRow | undefined)
+  }
+
+  /** Принять приглашение по токену или id. Возвращает id проекта. */
+  acceptProjectInvitation(username: string, tokenOrId: string): { projectId: string } {
     const ts = this.now()
     return this.db.transaction(() => {
-      const row = this.db.prepare(`SELECT * FROM project_invitations WHERE token_hash = ?`).get(this.invitationTokenHash(token)) as ProjectInvitationRow | undefined
+      const row = this.invitationByTokenOrId(tokenOrId)
       if (!row || row.status !== 'pending') throw new Error('Приглашение недействительно')
       if (row.expires_at <= ts) throw new Error('Срок приглашения истёк — попросите отправить его заново')
       if (!this.invitationAddressedTo(row, username)) throw new Error('Это приглашение адресовано другому пользователю')
@@ -3555,8 +3565,8 @@ export class VoiceChatDb {
     })()
   }
 
-  declineProjectInvitation(username: string, token: string): boolean {
-    const row = this.db.prepare(`SELECT * FROM project_invitations WHERE token_hash = ?`).get(this.invitationTokenHash(token)) as ProjectInvitationRow | undefined
+  declineProjectInvitation(username: string, tokenOrId: string): boolean {
+    const row = this.invitationByTokenOrId(tokenOrId)
     if (!row || row.status !== 'pending') return false
     if (!this.invitationAddressedTo(row, username)) throw new Error('Это приглашение адресовано другому пользователю')
     this.db.prepare(`UPDATE project_invitations SET status='declined', responded_at=? WHERE id=?`).run(this.now(), row.id)
