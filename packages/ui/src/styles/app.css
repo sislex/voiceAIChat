@@ -1299,12 +1299,14 @@
 .vrow > .vc-btn { flex: none; }
 /* Контейнеры основных действий компактны и одинаковы; размер графики
    задаётся самой иконкой и не уменьшается вместе с кнопкой. */
-.composer-attach,
-.composer-send,
-.composer-stop {
+.voicebar .composer-attach.vc-btn--circle,
+.voicebar .composer-mic.vc-btn--circle,
+.voicebar .composer-send.vc-btn--circle,
+.voicebar .composer-stop.vc-btn--circle {
   width: 32px;
   height: 32px;
   min-width: 32px;
+  min-height: 32px;
   padding: 0;
   border-radius: 12px;
   display: inline-flex;
@@ -1312,6 +1314,7 @@
   justify-content: center;
 }
 .composer-attach .vc-btn__ico,
+.composer-mic .vc-btn__ico,
 .composer-send .vc-btn__ico,
 .composer-stop .vc-btn__ico {
   flex: none;
@@ -3165,9 +3168,34 @@ button.conscmd:hover {
   /* Экран ниже, чем на десктопе: шапке задачи достаётся меньше. */
   .taskchat {
     max-height: 40%;
+    gap: 4px;
+    padding: 4px 8px;
+  }
+  .taskchat-top {
+    min-width: 0;
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+  .taskchat--collapsed .taskchat-crumbs {
+    min-width: 0;
+  }
+  .taskchat--collapsed .taskchat-task {
+    min-width: 0;
+  }
+  .taskchat-open,
+  .taskchat-feed-toggle {
+    flex: none;
+    padding: 2px 6px;
   }
   .voicebar {
-    padding: 10px 12px 14px 12px;
+    padding: 5px 10px max(7px, env(safe-area-inset-bottom));
+  }
+  .voicebar .vinner {
+    gap: 5px;
+    padding-block: 4px;
+  }
+  .voicebar:not(.voicebar--expanded) .tin {
+    padding-block: 6px;
   }
   .voicebar--collapsed {
     padding-top: 8px;
@@ -4015,7 +4043,7 @@ button.conscmd:hover {
   .vrow { gap: 4px; }
   .mode-menu__trigger { max-width: 38px; padding-inline: 7px; }
   .mode-menu__label, .mode-menu__trigger > span:last-child { display: none; }
-  .composer-mic { width: 34px; height: 34px; padding: 0; }
+  .composer-mic,
   .composer-attach,
   .composer-send,
   .composer-stop { width: 32px; height: 32px; min-width: 32px; }

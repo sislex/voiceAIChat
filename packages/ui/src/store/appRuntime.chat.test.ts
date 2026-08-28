@@ -137,6 +137,42 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().preparingReply).toBe(false)
   })
 
+  it('снимает pending, когда chat.message приходит до ответа API', async () => {
+    const { store, api } = makeStore(['Чат'])
+    await store.actions.init()
+    const original = api['messages:add']
+    let persisted!: Message
+    let firstPersisted!: Message
+    let persistedReady!: () => void
+    const ready = new Promise<void>((resolve) => { persistedReady = resolve })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    vi.spyOn(api, 'messages:add').mockImplementation(async (args) => {
+      persisted = await original(args)
+      if (!firstPersisted) firstPersisted = persisted
+      persistedReady()
+      await gate
+      return persisted
+    })
+
+    store.actions.setDraft('Раннее подтверждение')
+    const sending = store.actions.submitText()
+    await ready
+    expect(store.getState().pendingSubmit?.messageId).toBeNull()
+
+    store.actions.applyChatMessage(persisted.conversationId, persisted)
+    expect(store.getState().pendingSubmit).toBeNull()
+    store.actions.setDraft('Следующая реплика')
+    const next = store.actions.submitText()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(api['messages:add']).toHaveBeenCalledTimes(2)
+
+    release()
+    await expect(sending).resolves.toBe(true)
+    await expect(next).resolves.toBe(true)
+    expect(store.getState().messages.filter((message) => message.id === firstPersisted.id)).toHaveLength(1)
+  })
+
   it('во время активного ответа синхронно показывает реплику только в оптимистичной очереди', async () => {
     const { store } = makeStore()
     await store.actions.init()
@@ -164,6 +200,48 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().pendingSubmit).toBeNull()
     expect(store.getState().messages.some((item) => item.text === 'Следующий вопрос')).toBe(false)
     expect(store.getState().queuedTurns[first.conversationId]).toEqual([confirmed])
+  })
+
+  it('снимает pending по раннему авторитетному claude.queue и сохраняет FIFO', async () => {
+    const { store, api } = makeStore(['Чат'])
+    await store.actions.init()
+    store.actions.setDraft('Первый')
+    await store.actions.submitText()
+    const first = store.getState().messages.find((item) => item.role === 'u1')!
+    store.actions.applyChatMessage(first.conversationId, first)
+    store.actions.applyClaudeToken('Ответ', first.conversationId)
+
+    const original = api['messages:add']
+    let persisted!: Message
+    let persistedReady!: () => void
+    const ready = new Promise<void>((resolve) => { persistedReady = resolve })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    vi.spyOn(api, 'messages:add').mockImplementation(async (args) => {
+      persisted = await original(args)
+      persistedReady()
+      await gate
+      return persisted
+    })
+
+    store.actions.setDraft('Второй')
+    const sending = store.actions.submitText()
+    await ready
+    const optimistic = store.getState().queuedTurns[first.conversationId]![0]!
+    const confirmed = { ...optimistic, id: 'server-q1', messageId: persisted.id }
+    store.actions.applyClaudeQueue(first.conversationId, [confirmed], false)
+
+    expect(store.getState().pendingSubmit).toBeNull()
+    expect(store.getState().queuedTurns[first.conversationId]).toEqual([confirmed])
+    store.actions.setDraft('Третий')
+    const next = store.actions.submitText()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(api['messages:add']).toHaveBeenCalledTimes(2)
+
+    release()
+    await expect(sending).resolves.toBe(true)
+    await expect(next).resolves.toBe(true)
+    expect(store.getState().queuedTurns[first.conversationId]?.map((item) => item.text)).toEqual(['Второй', 'Третий'])
   })
 
   it('после каждого подтверждения принимает следующую реплику и сохраняет FIFO', async () => {

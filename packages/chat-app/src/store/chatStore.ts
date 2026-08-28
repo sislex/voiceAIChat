@@ -144,6 +144,8 @@ export interface PendingSubmit {
   messageId: string | null
   queueOnly: boolean
   text: string
+  messageText: string
+  attachments: LocalAttachment[]
 }
 
 export interface ChatState {
@@ -963,7 +965,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
   }
 
-  async function performSubmitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
+  async function performSubmitText(operationId?: string, queueOnlyOverride?: boolean, previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
     const state = getState()
     const text = state.draft.trim()
     const atts = state.attachments
@@ -978,7 +980,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     if (!text && ready.length === 0 && !previewElement) return false
     const v = voice.state()
     // Ход уже идёт: реплика уходит в серверную очередь, второй локальный ход не стартует.
-    const queueOnly = v === 'thinking' || v === 'speaking' || v === 'transcribing'
+    const queueOnly = queueOnlyOverride ?? (v === 'thinking' || v === 'speaking' || v === 'transcribing')
     setError(null)
     const messageAttachments = ready.map((file) => ({
       uploadId: file.id,
@@ -1002,7 +1004,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       ? [...getState().messages].reverse().find((message) => message.role !== 'ai')
       : await persistMessage('u1', messageText, undefined, messageMeta, execTarget, messageAttachments)
     const pendingSubmit = getState().pendingSubmit
-    if (pendingSubmit && persisted) {
+    if (pendingSubmit && pendingSubmit.operationId === operationId && persisted) {
       const conversationId = getState().activeId
       const patch: Partial<ChatState> = {
         pendingSubmit: { ...pendingSubmit, conversationId, messageId: persisted.id },
@@ -1025,7 +1027,15 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     for (const attachment of atts) {
       if (attachment.previewUrl && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(attachment.previewUrl)
     }
-    setState({ draft: '', attachments: [] })
+    const completedState = getState()
+    const sameDraft = completedState.draft.trim() === text
+    const submittedAttachmentIds = new Set(atts.map((item) => item.localId))
+    const sameAttachments = completedState.attachments.length === atts.length &&
+      completedState.attachments.every((item) => submittedAttachmentIds.has(item.localId))
+    setState({
+      ...(sameDraft ? { draft: '' } : {}),
+      ...(sameAttachments ? { attachments: [] } : {})
+    })
     await refreshConversations()
     // Команда «открой консоль/проводник» → виджет в ответе, без обращения к LLM.
     if (!queueOnly && ready.length === 0 && !previewElement && (await maybeOpenUtility(text))) {
@@ -1053,14 +1063,15 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     await persistMessage('ai', text.slice(0, 4_000))
   }
 
-  let submitTextInFlight: Promise<boolean> | null = null
-
   function clearPendingSubmit(operationId?: string, restoreDraft = false): void {
     const state = getState()
     const pending = state.pendingSubmit
     if (!pending || (operationId && pending.operationId !== operationId)) return
     const patch: Partial<ChatState> = { pendingSubmit: null }
     if (restoreDraft && !state.draft && pending.text) patch.draft = pending.text
+    if (restoreDraft && state.attachments.length === 0 && pending.attachments.length > 0) {
+      patch.attachments = pending.attachments
+    }
     if (pending.conversationId) {
       patch.queuedTurns = {
         ...state.queuedTurns,
@@ -1072,16 +1083,24 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   function submitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
     // Два keydown/click до первого ответа API видят одну наблюдаемую операцию.
-    if (submitTextInFlight || getState().pendingSubmit) return Promise.resolve(false)
+    if (getState().pendingSubmit) return Promise.resolve(false)
     const state = getState()
     const text = state.draft.trim()
     const ready = state.attachments.filter((item) => item.status === 'ready' && item.upload)
     if ((!text && ready.length === 0 && !previewElement) || state.attachments.some((item) => item.status !== 'ready' || !item.upload)) {
-      return performSubmitText(previewElement, editorContext)
+      return performSubmitText(undefined, undefined, previewElement, editorContext)
     }
-    const queueOnly = voice.state() === 'thinking' || voice.state() === 'speaking' || voice.state() === 'transcribing'
+    const queueOnly = state.preparingReply || voice.state() === 'thinking' || voice.state() === 'speaking' || voice.state() === 'transcribing'
     const operationId = globalThis.crypto?.randomUUID?.() ?? `pending-${now()}-${Math.random()}`
-    const pendingSubmit: PendingSubmit = { operationId, conversationId: state.activeId, messageId: null, queueOnly, text }
+    const pendingSubmit: PendingSubmit = {
+      operationId,
+      conversationId: state.activeId,
+      messageId: null,
+      queueOnly,
+      text,
+      messageText: composeUserText(text, ready.flatMap((item) => item.upload ? [item.upload] : [])),
+      attachments: [...state.attachments]
+    }
     const patch: Partial<ChatState> = { pendingSubmit }
     if (queueOnly && state.activeId) {
       const items = state.queuedTurns[state.activeId] ?? []
@@ -1100,16 +1119,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       }
     }
     setState(patch)
-    const pending = performSubmitText(previewElement, editorContext)
-    submitTextInFlight = pending
-    const clearFlight = (): void => {
-      if (submitTextInFlight === pending) submitTextInFlight = null
-    }
+    const pending = performSubmitText(operationId, queueOnly, previewElement, editorContext)
     void pending.then((sent) => {
-      clearFlight()
       if (!sent && getState().pendingSubmit?.operationId === operationId) clearPendingSubmit(operationId, true)
     }, () => {
-      clearFlight()
       clearPendingSubmit(operationId, true)
     })
     return pending
@@ -1295,8 +1308,17 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       queuePaused: { ...state.queuePaused, [conversationId]: paused }
     }
     const pending = state.pendingSubmit
-    if (pending?.queueOnly && pending.conversationId === conversationId && pending.messageId) {
-      patch.pendingSubmit = null
+    if (pending?.queueOnly && pending.conversationId === conversationId) {
+      const optimistic = state.queuedTurns[conversationId]?.find((item) => item.id === pending.operationId)
+      const confirmed = pending.messageId
+        ? items.some((item) => item.messageId === pending.messageId)
+        : Boolean(optimistic && items.some((item) =>
+            item.text === optimistic.text &&
+            item.position === optimistic.position &&
+            item.attachments.length === optimistic.attachments.length &&
+            item.attachments.every((attachment, index) => attachment === optimistic.attachments[index])
+          ))
+      if (confirmed) patch.pendingSubmit = null
     }
     if (conversationId === state.activeId) {
       const removedIds = new Set(removedMessageIds)
@@ -1341,7 +1363,13 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   function applyChatMessage(conversationId: string, message: Message): void {
     const pending = getState().pendingSubmit
-    if (pending?.conversationId === conversationId && pending.messageId === message.id) clearPendingSubmit(pending.operationId)
+    const sameConversation = pending?.conversationId === null || pending?.conversationId === conversationId
+    const confirmed = pending && !pending.queueOnly && sameConversation && message.role !== 'ai' &&
+      (pending.messageId ? pending.messageId === message.id : pending.messageText === message.text)
+    if (confirmed) {
+      clearPendingSubmit(pending.operationId)
+      setState({ preparingReply: true })
+    }
     if (conversationId !== getState().activeId) {
       scheduleConversationsRefresh()
       return
