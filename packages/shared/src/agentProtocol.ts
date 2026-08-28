@@ -247,7 +247,7 @@ const NETWORK_RE = /\b(curl|wget|nc|ncat|telnet|ssh|scp|sftp|ftp|rsync)\b/i
 const WRITE_RE = /(\brm\b|\bmv\b|\brmdir\b|\btruncate\b|\bdd\b|\btee\b|\bmkdir\b|>>?)/
 
 /** Совпадение паттерна: как regex (если компилируется), иначе подстрока (без регистра). */
-function matchesPattern(pattern: string, command: string): boolean {
+export function matchesPattern(pattern: string, command: string): boolean {
   try {
     return new RegExp(pattern, 'i').test(command)
   } catch {

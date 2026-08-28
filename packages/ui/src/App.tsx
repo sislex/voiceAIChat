@@ -9,6 +9,7 @@ import type { EditorContextPayload, LlmProvider, PermissionMode, TaskLaunchPropo
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type ChatStorageView, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
 import { AGENT_VERSION } from '@shared/version'
+import type { RoleCommandPolicies } from '@shared/commandPolicy'
 import type { PreparationClarificationNotification } from '@shared/qa'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
@@ -429,6 +430,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       }
     })
   }, [toast, navigate, operationsActions])
+  // Ролевые правила команд (п.10) — читаются при открытии админки.
+  const [roleCommandPolicies, setRoleCommandPolicies] = useState<RoleCommandPolicies | null>(null)
+  useEffect(() => {
+    if (!admin.usersOpen || !window.api || session.currentUser?.role !== 'admin') return
+    window.api['admin:commandPolicy']().then((r) => setRoleCommandPolicies(r.roles)).catch(() => setRoleCommandPolicies({}))
+  }, [admin.usersOpen, session.currentUser?.role])
   // Watchdog: машина пропала дольше порога / вернулась.
   useEffect(() => {
     const realtime = window.realtime
@@ -2067,6 +2074,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           usageSummary={admin.adminUsageSummary}
           makeStats={admin.adminMakeStats}
           machineStats={admin.adminMachineStats}
+          roleCommandPolicies={roleCommandPolicies}
+          onSaveRoleCommandPolicies={async (roles) => { const r = await window.api!['admin:setCommandPolicy']({ roles }); setRoleCommandPolicies(r.roles) }}
           isAdmin={session.currentUser?.role === 'admin'}
           status={admin.adminUsersStatus}
           error={admin.adminUsersError}

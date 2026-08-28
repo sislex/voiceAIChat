@@ -311,6 +311,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:updateMachine': ({ id }) => req(REST.adminMachineUpdate(id), { method: 'POST' }),
     'admin:machineStats': () => req(REST.adminMachineStats),
     'admin:revokeMachineToken': ({ id }) => req(REST.adminMachineTokenRevoke(id), { method: 'POST' }),
+    'admin:commandPolicy': () => req(REST.adminCommandPolicy),
+    'admin:setCommandPolicy': ({ roles }) => req(REST.adminCommandPolicy, { method: 'PUT', body: JSON.stringify({ roles }) }),
     'admin:llmAccess': ({ name }) => req(REST.adminUserLlmAccess(name)),
     'admin:saveLlmAccess': ({ name, access }) => req(REST.adminUserLlmAccess(name), { method: 'PUT', body: JSON.stringify(access) }),
     'admin:createUser': (b) =>

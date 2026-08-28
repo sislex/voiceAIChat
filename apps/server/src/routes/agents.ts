@@ -29,6 +29,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { ensureDefaultStorage } from '../agents/defaultStorage.js'
+import type { CommandGate } from '../agents/commandGate.js'
 import { buildAgentScript } from '../agents/agentScript.js'
 import { buildAndroidInstallScript } from '../agents/androidInstall.js'
 import { buildWindowsInstallScript } from '../agents/windowsInstall.js'
@@ -136,7 +137,8 @@ export async function registerAgentRoutes(
   app: FastifyInstance,
   db: VoiceChatDb,
   registry: AgentRegistry,
-  artifacts: AppArtifacts = {}
+  artifacts: AppArtifacts = {},
+  commandGate?: CommandGate
 ): Promise<void> {
   const withLiveStatus = (agents: ReturnType<VoiceChatDb['listAgents']>): AgentInfo[] => {
     const online = registry.onlineIds()
@@ -642,6 +644,10 @@ export async function registerAgentRoutes(
       reply.raw.on('close', () => {
         if (!reply.raw.writableEnded) abort.abort()
       })
+      if (commandGate) {
+        const verdict = commandGate({ command: req.body?.command ?? '', userId: uid(req), projectId: req.query?.projectId ?? null, source: 'console' })
+        if (!verdict.allowed) return reply.code(403).send({ error: `Запрещено: ${verdict.reason ?? 'политика команд'}` })
+      }
       return withFs(req, reply, (id) =>
         registry.exec(id, req.body?.command ?? '', EXEC_TIMEOUT_MS, abort.signal, { source: 'console', userId: uid(req) })
       )

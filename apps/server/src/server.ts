@@ -36,6 +36,7 @@ import { BoardHub, NotificationHub } from './projects/boardHub.js'
 import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.js'
 import { ensureDefaultChatBinding, ensureDefaultStorage } from './agents/defaultStorage.js'
 import { createAgentWatchdog } from './agents/watchdog.js'
+import { createCommandGate } from './agents/commandGate.js'
 import { createMailer, type Mailer } from './users/mailer.js'
 
 /** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
@@ -363,10 +364,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
 
   // Машины-агенты: реестр онлайн-подключений + REST + MCP-мост для проброса Bash.
+  // Гейт команд (п.10): политика проекта и роли поверх политики машины; опасные команды в чате — с подтверждением.
+  const commandGate = createCommandGate({
+    projectPolicy: (projectId) => db.getProjectCommandPolicy(projectId),
+    rolePolicies: () => db.getRoleCommandPolicies(),
+    userRole: (userId) => db.getUser(userId)?.role ?? null
+  })
   await registerAgentRoutes(app, db, agentRegistry, {
     agentApp: opts.config.agentAppPath,
     desktopApp: opts.config.desktopAppPath
-  })
+  }, commandGate)
   const storageMigrations = new StorageMigrationManager(join(opts.config.dataDir, 'storage-migrations.json'), {
     list: (machineId, path) => agentRegistry.fsList(machineId, path),
     read: (machineId, path) => agentRegistry.fsRead(machineId, path),
@@ -391,7 +398,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // Машины проекта для адресации операций (query `project` дописывает
     // отправитель хода — turns.ts у чата, modelHooks.ts у CI-рана).
     (projectId) => db.listProjectMachines(projectId),
-    (token) => remoteFileBroker.get(token)
+    (token) => remoteFileBroker.get(token),
+    commandGate
   )
   registerCiCommandsMcp(app, mcpSecret)
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а

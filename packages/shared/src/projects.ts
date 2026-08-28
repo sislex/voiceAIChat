@@ -569,6 +569,8 @@ export interface ProjectSummary {
   /** Роль текущего пользователя в этом проекте. */
   role: ProjectRole
   commitPolicy: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+  /** Политика команд проекта поверх политик машин (machines-roadmap п.10); нет — дефолт (`DEFAULT_PROJECT_COMMAND_POLICY`). */
+  commandPolicy?: import('./commandPolicy').ProjectCommandPolicy
   mergeTransport: 'local' | 'github_pull_request'
   agentPlanApprovalMode: 'manual' | 'automatic'
   testCommand?: string
