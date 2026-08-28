@@ -11,6 +11,7 @@ import {
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { ProjectSummary, TaskChatBadge } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
+import type { SidebarProjectFilter } from '@voicechat/chat-app'
 import { ciCardPulse, ciSummaryForTask } from '@shared/ci'
 import { TypeIcon } from './kanban/kanbanMeta'
 import { ciStatusLabel, ciTone } from './ci/ciFormat'
@@ -241,10 +242,10 @@ export interface SidebarProps {
   onShowDoneTaskChatsChange?: (show: boolean) => void
   /** Проекты пользователя для селекта над поиском. */
   projects?: ProjectSummary[]
-  /** Выбранный в сайдбаре проект (null — «Без проекта»). */
-  selectedProjectId?: string | null
-  /** Сменить выбранный проект (фильтрует список/поиск, влияет на «Новый»). */
-  onSelectProject?: (id: string | null) => void
+  /** Область чатов: undefined — «Все», null — «Без проекта», строка — проект. */
+  selectedProjectId?: SidebarProjectFilter
+  /** Сменить область списка и поиска чатов. */
+  onSelectProject?: (id: SidebarProjectFilter) => void
   onOpenObserver: () => void
   onOpenKnowledgeBase?: () => void
   /** Открыть отдельную страницу персонализации текущего пользователя. */
@@ -326,7 +327,7 @@ export function Sidebar({
   showDoneTaskChats = false,
   onShowDoneTaskChatsChange,
   projects = [],
-  selectedProjectId = null,
+  selectedProjectId = undefined,
   onSelectProject,
   onOpenObserver,
   onOpenKnowledgeBase,
@@ -586,14 +587,20 @@ export function Sidebar({
       )}
       <div className={controlsOpen[mode] ? 'side-controls side-controls--open' : 'side-controls'} aria-hidden={!controlsOpen[mode]}>
         {mode === 'chats' ? (<>
-          {projects.length > 0 && (
-            <div className="sideproject">
-              <select className="projectselect" aria-label="Проект" value={selectedProjectId ?? ''} onChange={(event) => onSelectProject?.(event.target.value || null)}>
-                <option value="">Без проекта</option>
-                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-              </select>
-            </div>
-          )}
+          <div className="sideproject">
+            <select
+              className="projectselect"
+              aria-label="Проект"
+              value={selectedProjectId === undefined ? '__all__' : selectedProjectId ?? '__none__'}
+              onChange={(event) => onSelectProject?.(
+                event.target.value === '__all__' ? undefined : event.target.value === '__none__' ? null : event.target.value
+              )}
+            >
+              <option value="__all__">Все</option>
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              <option value="__none__">Без проекта</option>
+            </select>
+          </div>
           <div className="sidesearch">
             <div className="sidesearch-row">
               <input className="searchinput" type="search" value={searchQuery} placeholder="Поиск по разговорам…" aria-label="Поиск по разговорам" onChange={(event) => onSearch(event.target.value)} />
