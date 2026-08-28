@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@voicechat/shared'
 import { render } from '../test/uiRender'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentInfo } from '@shared/agentProtocol'
@@ -159,7 +160,7 @@ describe('ConversationSettings', () => {
 
   it('привязка к проекту сохраняет персональное наследование и projectId', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
-    const summary: ProjectSummary = { id: 'p1', name: 'Proj', description: '', gitUrl: null, technologies: [], skills: ['ts'], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 1, updatedAt: 1, role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual' }
+    const summary: ProjectSummary = { id: 'p1', name: 'Proj', description: '', typeId: BUILTIN_PROJECT_TYPE_IDS.software, typeChain: builtinProjectTypeChain(), gitUrl: null, technologies: [], skills: ['ts'], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 1, updatedAt: 1, role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual' }
 
     const detail: ProjectDetail = { ...summary, members: [], machines: [{ agentId: 'm1', path: '/srv/p', reposRoot: '/srv/repos' }], defaultAgentId: 'm1' }
     const fetchProjectDetail = vi.fn().mockResolvedValue(detail)

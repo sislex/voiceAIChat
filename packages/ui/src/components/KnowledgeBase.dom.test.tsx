@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@voicechat/shared'
 import { describe, expect, it } from 'vitest'
 import type { KbDocument } from '@shared/kb'
 import { createFakeApi } from '../test/fakeApi'
@@ -24,7 +25,7 @@ describe('KnowledgeBase', () => {
       { id: 'p1', name: 'Магазин' },
       { id: 'p2', name: 'Портал' }
     ]
-    api['projects:list'] = async () => projects.map((p) => ({ ...p, description: '', gitUrl: null, technologies: [], skills: [], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 0, updatedAt: 0, role: 'owner' as const, commitPolicy: 'agent_commits' as const, mergeTransport: 'local' as const, agentPlanApprovalMode: 'manual' as const, ciReuseStrategy: 'fail' as const, doneRetentionDays: null }))
+    api['projects:list'] = async () => projects.map((p) => ({ ...p, description: '', typeId: BUILTIN_PROJECT_TYPE_IDS.software, typeChain: builtinProjectTypeChain(), gitUrl: null, technologies: [], skills: [], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 0, updatedAt: 0, role: 'owner' as const, commitPolicy: 'agent_commits' as const, mergeTransport: 'local' as const, agentPlanApprovalMode: 'manual' as const, ciReuseStrategy: 'fail' as const, doneRetentionDays: null }))
     const asked: Array<{ scope?: string; projectId?: string | null }> = []
     api['kb:topics'] = async (arg) => {
       asked.push({ scope: arg?.scope, projectId: arg?.projectId ?? null })
@@ -48,7 +49,7 @@ describe('KnowledgeBase', () => {
 
   it('«Исследовать проект» запускает прогон и показывает его состояние', async () => {
     const api = createFakeApi()
-    api['projects:list'] = async () => [{ id: 'p1', name: 'Магазин', description: '', gitUrl: null, technologies: [], skills: [], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 0, updatedAt: 0, role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual', ciReuseStrategy: 'fail', doneRetentionDays: null }]
+    api['projects:list'] = async () => [{ id: 'p1', name: 'Магазин', description: '', typeId: BUILTIN_PROJECT_TYPE_IDS.software, typeChain: builtinProjectTypeChain(), gitUrl: null, technologies: [], skills: [], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 0, updatedAt: 0, role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual', ciReuseStrategy: 'fail', doneRetentionDays: null }]
     const started: string[] = []
     api['kb:research'] = async ({ projectId }) => {
       started.push(projectId)

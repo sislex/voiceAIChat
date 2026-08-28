@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { hasProjectPermission, projectPermissionForRequest, type ProjectPermission } from './auth'
+import { hasProjectPermission, projectFeatureForRequest, projectPermissionForRequest, type ProjectPermission } from './auth'
+import type { ProjectFeature } from '@voicechat/shared'
 
 // Матрица прав размазана по двум чистым функциям, и её легко сломать порядком правил:
 // URL `/api/projects` попадает и под создание, и под общее «настройки проекта».
@@ -47,5 +48,52 @@ describe('матрица проектных полномочий', () => {
     // не совпадает ни с одним роутом и отвечает 404 до всякой авторизации.
     // Проверка самого 404 — в routes/projects.test.ts.
     expect(projectPermissionForRequest('POST', '/api/projects/')).toBeNull()
+  })
+})
+
+// Возможности задаёт тип проекта. Карта URL — единственное место, где подсистема
+// сопоставляется адресу, поэтому её полнота проверяется таблицей.
+describe('карта URL → возможность проекта', () => {
+  it('адреса подсистем классифицируются', () => {
+    const cases: Array<[string, ProjectFeature | null]> = [
+      ['/api/projects/p1/releases', 'releases'],
+      ['/api/projects/p1/releases/deploy', 'releases'],
+      ['/api/projects/p1/production/bootstrap', 'releases'],
+      ['/api/projects/p1/machines', 'machines'],
+      ['/api/projects/p1/machines/a1/share', 'machines'],
+      ['/api/projects/p1/default-machine', 'machines'],
+      ['/api/projects/p1/tasks/t1/merge', 'git'],
+      ['/api/projects/p1/tasks/t1/merge/runs', 'git'],
+      ['/api/projects/p1/tasks/t1/qa', 'qa'],
+      ['/api/projects/p1/tasks/t1/qa/sessions', 'qa'],
+      ['/api/projects/p1/tasks/t1/preview', 'preview'],
+      ['/api/projects/p1/ci', 'ci'],
+      ['/api/projects/p1/ci/llm', 'ci'],
+      ['/api/projects/p1/improvements/tasks', 'ci'],
+      ['/api/projects/p1/tasks/t1/ci/run', 'ci'],
+      ['/api/projects/p1/tasks/t1/improvements', 'ci']
+    ]
+    for (const [url, expected] of cases) expect(projectFeatureForRequest('POST', url), url).toBe(expected)
+  })
+
+  it('доска, задачи, участники и сам проект к возможностям не привязаны', () => {
+    for (const url of [
+      '/api/projects',
+      '/api/projects/p1',
+      '/api/projects/p1/board',
+      '/api/projects/p1/tasks',
+      '/api/projects/p1/tasks/t1',
+      '/api/projects/p1/columns',
+      '/api/projects/p1/members'
+    ]) {
+      expect(projectFeatureForRequest('POST', url), url).toBeNull()
+    }
+  })
+
+  it('адреса без проекта в пути не гейтятся — projectId там взять неоткуда', () => {
+    // Их создание перекрыто выше по цепочке, поэтому пропуск безопасен.
+    for (const url of ['/api/ci/runs/r1/retry', '/api/merge/runs/r1/retry', '/api/qa/runs/r1', '/api/admin/users']) {
+      expect(projectFeatureForRequest('POST', url), url).toBeNull()
+    }
   })
 })

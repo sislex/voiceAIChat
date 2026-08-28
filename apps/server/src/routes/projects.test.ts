@@ -7,6 +7,7 @@ import { loadConfig } from '../config.js'
 import { VoiceChatDb } from '../db/database.js'
 import { signToken } from '../users/accounts.js'
 import type { Board, ProjectDetail, ProjectSummary, Task } from '@voicechat/shared'
+import { BUILTIN_PROJECT_TYPE_IDS } from '@voicechat/shared'
 
 const SECRET = 'test-secret'
 let app: FastifyInstance
@@ -260,6 +261,67 @@ describe('projects REST: доступ', () => {
     expect(db.getConversation('admin', conversation.id)?.projectPreviewUrl).toBe('https://example.com/app')
     expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { previewUrl: 'javascript:alert(1)' } })).statusCode).toBe(400)
     expect((await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { previewUrl: null } })).json().previewUrl).toBeNull()
+  })
+})
+
+describe('projects REST: тип проекта и гейт возможностей', () => {
+  it('каталог типов отдаёт встроенное дерево', async () => {
+    const res = await inj(bobTok, { method: 'GET', url: '/api/project-types' })
+    expect(res.statusCode).toBe(200)
+    const types = res.json() as Array<{ id: string; name: string; builtin: boolean }>
+    expect(types.map((t) => t.id).sort()).toEqual(Object.values(BUILTIN_PROJECT_TYPE_IDS).sort())
+  })
+
+  it('проект создаётся с подтипом, тип виден в ответе', async () => {
+    const res = await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'Веб', typeId: BUILTIN_PROJECT_TYPE_IDS.web } })
+    expect(res.statusCode).toBe(200)
+    const detail = res.json() as ProjectDetail
+    expect(detail.typeId).toBe(BUILTIN_PROJECT_TYPE_IDS.web)
+    expect(detail.typeChain.label).toBe('Разработка ПО / Веб-приложение')
+  })
+
+  it('несуществующий и чужой личный тип отклоняются', async () => {
+    expect((await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'X', typeId: 'нет-такого' } })).statusCode).toBe(400)
+    // Личный узел Кэрол Бобу недоступен, хотя id известен.
+    const carolTok = signToken({ name: 'carol', role: 'developer' }, SECRET)
+    const own = (await inj(carolTok, { method: 'POST', url: '/api/project-types', payload: { name: 'Личный Кэрол' } })).json() as { id: string }
+    expect((await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'X', typeId: own.id } })).statusCode).toBe(400)
+  })
+
+  it('в «Общем проекте» выключенные подсистемы отвечают 409, а доска работает', async () => {
+    const p = (await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'Общий', typeId: BUILTIN_PROJECT_TYPE_IDS.general } })).json() as ProjectDetail
+    const blocked: Array<[('GET' | 'POST'), string]> = [
+      ['GET', `/api/projects/${p.id}/releases`],
+      ['POST', `/api/projects/${p.id}/releases/branches`],
+      ['GET', `/api/projects/${p.id}/machines/available`],
+      ['GET', `/api/projects/${p.id}/ci`]
+    ]
+    for (const [method, url] of blocked) {
+      const res = await inj(bobTok, { method, url, payload: method === 'POST' ? {} : undefined })
+      expect(res.statusCode, `${method} ${url}`).toBe(409)
+      expect(res.json()).toMatchObject({ error: 'feature_unavailable' })
+    }
+    // Доска и задачи к возможностям не привязаны и обязаны работать.
+    const board = (await inj(bobTok, { method: 'GET', url: `/api/projects/${p.id}/board` })).json() as Board
+    expect(board.columns.map((c) => c.semanticType)).toEqual(['backlog', 'development', 'done', 'cancelled', 'decision_required'])
+    expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${p.id}/tasks`, payload: { columnId: board.columns[0].id, title: 'Задача' } })).statusCode).toBe(200)
+  })
+
+  it('в проекте «Разработка ПО» те же адреса не блокируются гейтом возможностей', async () => {
+    const p = await createProject('Полный')
+    // 409 быть не должно: важен именно код гейта, остальные ответы зависят от машин.
+    for (const url of [`/api/projects/${p.id}/releases`, `/api/projects/${p.id}/ci`, `/api/projects/${p.id}/machines/available`]) {
+      expect((await inj(adminTok, { method: 'GET', url })).statusCode, url).not.toBe(409)
+    }
+  })
+
+  it('смена типа немедленно закрывает подсистему у существующего проекта', async () => {
+    const p = await createProject('Был разработкой')
+    expect((await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases` })).statusCode).not.toBe(409)
+    const patched = await inj(adminTok, { method: 'PATCH', url: `/api/projects/${p.id}`, payload: { typeId: BUILTIN_PROJECT_TYPE_IDS.general } })
+    expect(patched.statusCode).toBe(200)
+    expect((patched.json() as ProjectDetail).typeChain.features.releases).toBe(false)
+    expect((await inj(adminTok, { method: 'GET', url: `/api/projects/${p.id}/releases` })).statusCode).toBe(409)
   })
 })
 

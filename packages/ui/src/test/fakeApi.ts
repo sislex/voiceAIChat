@@ -1,4 +1,5 @@
 import { lintMakeFile } from '@shared/makeLint'
+import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@voicechat/shared'
 import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine } from '@shared/makeSearch'
 import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnapshotDiffEntry, type MakeStoryShot, type MakeLibraryItem, type MakeComment, type MakeShare, type MakePresenceClient, type MakeProjectNotes } from '@shared/make'
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
@@ -140,6 +141,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     id: p.id,
     name: p.name,
     description: p.description,
+    typeId: BUILTIN_PROJECT_TYPE_IDS.software,
+    typeChain: builtinProjectTypeChain(),
     gitUrl: p.gitUrl,
     previewUrl: p.previewUrl,
     technologies: p.technologies,
@@ -841,7 +844,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'releases:branches': async () => [],
     'releases:createBranch': async ({ projectId, branch }) => ({ id: 'prepare-1', projectId, branch, version: branch.slice('release/'.length), sha: 'a'.repeat(40), status: 'preparing', triggeredBy: 'admin', attempt: 1, previousReleaseId: null, createdAt: Date.now(), releasedAt: null, steps: [] }),
     'releases:managedPreflight': async () => ({ ok: true, environment: 'production', paths: { root: '/storage/projects/p1/environments/production', app: '/storage/projects/p1/environments/production/app', config: '/storage/projects/p1/environments/production/config', logs: '/storage/projects/p1/environments/production/logs', artifacts: '/storage/projects/p1/environments/production/artifacts', temporary: '/storage/projects/p1/environments/production/temporary', repository: '/storage/projects/p1/environments/production/temporary/repository', manifest: '/storage/projects/p1/environments/production/environment.json' }, checks: Object.fromEntries(['marker','manifest','origin','branch','write','freeSpace','deployCommand','healthCheckCommand'].map(name => [name, { ok: true, message: 'Проверка пройдена' }])) as never, confirmationToken: 'managed-token' }),
-    'releases:managedConfirm': async ({ projectId }) => ({ id: projectId, name: 'Project', description: '', gitUrl: null, technologies: [], skills: [], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 1, updatedAt: 1, role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual', members: [], machines: [], defaultAgentId: null, productionEnvironmentMode: 'managed' }),
+    'releases:managedConfirm': async ({ projectId }) => ({ id: projectId, name: 'Project', description: '', typeId: BUILTIN_PROJECT_TYPE_IDS.software, typeChain: builtinProjectTypeChain(), gitUrl: null, technologies: [], skills: [], defaultSkills: { epic: [], story: [], task: [] }, createdBy: 'admin', createdAt: 1, updatedAt: 1, role: 'owner', commitPolicy: 'agent_commits', mergeTransport: 'local', agentPlanApprovalMode: 'manual', members: [], machines: [], defaultAgentId: null, productionEnvironmentMode: 'managed' }),
     'projects:bootstrapProduction': async () => ({ ok: true, mode: 'managed' as const, defaultMachineSet: true, preflight: { ok: true, environment: 'production' as const, paths: { root: '/s/p1/environments/production', app: '/s/p1/environments/production/app', config: '/s/p1/environments/production/config', logs: '/s/p1/environments/production/logs', artifacts: '/s/p1/environments/production/artifacts', temporary: '/s/p1/environments/production/temporary', repository: '/s/p1/environments/production/temporary/repository', manifest: '/s/p1/environments/production/environment.json' }, checks: Object.fromEntries(['marker','manifest','origin','branch','write','freeSpace','deployCommand','healthCheckCommand'].map(name => [name, { ok: true, message: 'Проверка пройдена' }])) as never }, cliLoginHint: 'Войдите в CLI на машине.' }),
     'releases:list': async () => [],
     'releases:get': async () => null,
