@@ -58,6 +58,7 @@ describe('App — командная палитра', () => {
 
   it('кнопка «⌘K» рядом с поиском открывает палитру мышью', async () => {
     await renderApp()
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
     await userEvent.click(screen.getByRole('button', { name: 'Командная палитра' }))
     expect(await screen.findByTestId('command-palette')).toBeInTheDocument()
   })

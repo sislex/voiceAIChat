@@ -24,7 +24,7 @@ import { decl, mediaBody } from './cssRules'
 describe('app.css — скролл длинной колонки доски', () => {
   it('корень приложения ограничивает обе оси доступным viewport', () => {
     expect(decl('.app', 'display')).toBe('grid')
-    expect(decl('.app', 'grid-template-columns')).toBe('264px minmax(0, 1fr)')
+    expect(decl('.app', 'grid-template-columns')).toBe('var(--sidebar-width, 264px) minmax(0, 1fr)')
     expect(decl('.app', 'grid-template-rows')).toBe('minmax(0, 1fr)')
     expect(decl('.app', 'height')).toBe('100vh')
     expect(decl('.app', 'overflow')).toBe('hidden')

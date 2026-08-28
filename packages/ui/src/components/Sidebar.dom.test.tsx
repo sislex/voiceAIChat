@@ -34,6 +34,7 @@ describe('Sidebar — фильтр «чаты завершённых задач�
   it('иконка-фильтр над списком переключает флаг и показывает нажатое состояние', async () => {
     const onShowDoneTaskChatsChange = vi.fn()
     setup({ onShowDoneTaskChatsChange })
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
     const filter = screen.getByRole('button', { name: 'Показывать чаты завершённых задач' })
     expect(filter).toHaveAttribute('aria-pressed', 'false')
     await userEvent.click(filter)
@@ -43,6 +44,7 @@ describe('Sidebar — фильтр «чаты завершённых задач�
   it('включённый фильтр гасится тем же кликом', async () => {
     const onShowDoneTaskChatsChange = vi.fn()
     setup({ showDoneTaskChats: true, onShowDoneTaskChatsChange })
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
     const filter = screen.getByRole('button', { name: 'Показывать чаты завершённых задач' })
     expect(filter).toHaveAttribute('aria-pressed', 'true')
     await userEvent.click(filter)
@@ -199,7 +201,7 @@ describe('Sidebar — режим «Проекты»', () => {
     const onCreateProject = vi.fn()
     setup({ projects: [], mode: 'projects', onModeChange: vi.fn(), onCreateProject })
     expect(screen.getByText('Проектов пока нет')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '+ Проект' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ Новый проект' }))
     const input = screen.getByLabelText('Название нового проекта')
     fireEvent.change(input, { target: { value: '  Новый проект  ' } })
     fireEvent.keyDown(input, { key: 'Enter' })
@@ -232,24 +234,17 @@ describe('Sidebar — режим поиска «Сообщения»', () => {
     ...over
   })
 
-  it('переключатель области сообщает о смене режима', () => {
-    const onSearchScopeChange = vi.fn()
-    setup({ onSearchScopeChange })
-
-    expect(screen.getByLabelText('Поиск по разговорам')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Сообщения' }))
-    expect(onSearchScopeChange).toHaveBeenCalledWith('messages')
+  it('не показывает прежний переключатель «Беседы | Сообщения»', () => {
+    setup({ onSearchScopeChange: vi.fn() })
+    expect(screen.queryByRole('group', { name: 'Область поиска' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Беседы' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Сообщения' })).not.toBeInTheDocument()
   })
 
-  it('в режиме сообщений меняется подпись поля, а список бесед уступает место результатам', () => {
-    setup({
-      onSearchScopeChange: vi.fn(),
-      searchScope: 'messages',
-      messageSearch: view({ status: 'idle', query: '' })
-    })
-
-    expect(screen.getByLabelText('Поиск по сообщениям')).toBeInTheDocument()
+  it('сохраняет внутреннее представление результатов сообщений без визуального scope-переключателя', () => {
+    setup({ searchScope: 'messages', messageSearch: view({ status: 'idle', query: '' }) })
     expect(screen.queryByText('Чат 1')).not.toBeInTheDocument()
+    expect(screen.getByText(/последнее слово ищется по началу/i)).toBeInTheDocument()
   })
 
   it('без запроса показывает подсказку про синтаксис', () => {
@@ -444,6 +439,7 @@ describe('Sidebar — кнопка командной палитры', () => {
   it('рядом с поиском есть «⌘K»/«Ctrl+K», и она открывает палитру', () => {
     const onOpenCommandPalette = vi.fn()
     setup({ onOpenCommandPalette })
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
     const button = screen.getByRole('button', { name: 'Командная палитра' })
     // Подпись — комбинация платформы: пользователь видит, что нажать.
     expect(button.textContent).toMatch(/⌘K|Ctrl\+K/)
@@ -454,6 +450,95 @@ describe('Sidebar — кнопка командной палитры', () => {
   it('без обработчика кнопки нет: в desktop-сборке палитру открывать нечем', () => {
     setup()
     expect(screen.queryByRole('button', { name: 'Командная палитра' })).toBeNull()
+  })
+})
+
+describe('Sidebar — desktop resize и панели управления', () => {
+  it('показывает только два раздела, расширяет активный и выводит одно контекстное действие над ними', () => {
+    const onNew = vi.fn()
+    const onModeChange = vi.fn()
+    const view = setup({ onNew, onModeChange, mode: 'chats', onCreateProject: vi.fn() })
+    const group = screen.getByRole('group', { name: 'Тип списка' })
+    const chats = within(group).getByRole('button', { name: 'Чаты' })
+    const projects = within(group).getByRole('button', { name: 'Проекты' })
+
+    expect(within(group).getAllByRole('button')).toHaveLength(2)
+    expect(chats).toHaveClass('on')
+    expect(chats).toHaveAttribute('aria-pressed', 'true')
+    expect(projects).not.toHaveClass('on')
+    expect(screen.getByRole('button', { name: /Новый чат/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Новый проект/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Беседы' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Сообщения' })).not.toBeInTheDocument()
+    expect(document.querySelector('.side-primary-action')?.nextElementSibling).toBe(group)
+
+    fireEvent.click(screen.getByRole('button', { name: /Новый чат/ }))
+    expect(onNew).toHaveBeenCalledTimes(1)
+    view.rerender(<Sidebar {...view} onNew={onNew} onModeChange={onModeChange} mode="projects" onCreateProject={vi.fn()} />)
+    expect(screen.getByRole('button', { name: /Новый проект/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Новый чат/ })).not.toBeInTheDocument()
+    expect(within(group).getByRole('button', { name: 'Проекты' })).toHaveClass('on')
+  })
+
+  it('граница меняет ширину pointer-жестом, clamp-ит пределы и доступна с клавиатуры', () => {
+    const onWidthChange = vi.fn()
+    setup({ width: 264, onWidthChange })
+    const handle = screen.getByRole('separator', { name: 'Изменить ширину сайдбара' })
+
+    fireEvent.pointerDown(handle, { pointerId: 7, clientX: 264 })
+    fireEvent.pointerMove(handle, { pointerId: 7, clientX: 900 })
+    expect(onWidthChange).toHaveBeenLastCalledWith(420)
+    fireEvent.pointerMove(handle, { pointerId: 7, clientX: -900 })
+    expect(onWidthChange).toHaveBeenLastCalledWith(220)
+    fireEvent.pointerUp(handle, { pointerId: 7 })
+
+    fireEvent.keyDown(handle, { key: 'ArrowRight' })
+    expect(onWidthChange).toHaveBeenLastCalledWith(272)
+    expect(handle).toHaveAttribute('aria-valuemin', '220')
+    expect(handle).toHaveAttribute('aria-valuemax', '420')
+
+    onWidthChange.mockClear()
+    fireEvent.pointerDown(handle, { pointerId: 8, clientX: 264 })
+    fireEvent.pointerCancel(handle, { pointerId: 8 })
+    fireEvent.pointerMove(handle, { pointerId: 8, clientX: 320 })
+    expect(onWidthChange).not.toHaveBeenCalled()
+  })
+
+  it('wheel раскрывает вверх у scrollTop=0 и скрывает вниз с порогом', () => {
+    setup({ onShowDoneTaskChatsChange: vi.fn() })
+    const list = document.querySelector('.convolist')!
+    const controls = document.querySelector('.side-controls')!
+    expect(controls).toHaveAttribute('aria-hidden', 'true')
+
+    fireEvent.wheel(list, { deltaY: -5 })
+    expect(controls).toHaveAttribute('aria-hidden', 'true')
+    fireEvent.wheel(list, { deltaY: -7 })
+    fireEvent.wheel(list, { deltaY: -7 })
+    expect(controls).toHaveAttribute('aria-hidden', 'false')
+    fireEvent.wheel(list, { deltaY: 8 })
+    fireEvent.wheel(list, { deltaY: -8 })
+    expect(controls).toHaveAttribute('aria-hidden', 'false')
+    fireEvent.wheel(list, { deltaY: 20 })
+    expect(controls).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('чаты и проекты сохраняют независимые запросы и раскрытие', () => {
+    const onSearch = vi.fn()
+    const common = { projects: [{ id: 'p1', name: 'Альфа', role: 'owner' }] as never[], onModeChange: vi.fn(), onSearch }
+    const view = setup({ ...common, mode: 'chats', searchQuery: 'миграция' })
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
+    expect(screen.getByLabelText('Поиск по разговорам')).toHaveValue('миграция')
+
+    view.rerender(<Sidebar {...view} {...common} mode="projects" searchQuery="миграция" />)
+    expect(document.querySelector('.side-controls')).toHaveAttribute('aria-hidden', 'true')
+    fireEvent.wheel(document.querySelector('.projlist')!, { deltaY: -40 })
+    fireEvent.change(screen.getByLabelText('Поиск по проектам'), { target: { value: 'аль' } })
+
+    view.rerender(<Sidebar {...view} {...common} mode="chats" searchQuery="миграция" />)
+    expect(document.querySelector('.side-controls')).toHaveAttribute('aria-hidden', 'false')
+    expect(screen.getByLabelText('Поиск по разговорам')).toHaveValue('миграция')
+    view.rerender(<Sidebar {...view} {...common} mode="projects" searchQuery="миграция" />)
+    expect(screen.getByLabelText('Поиск по проектам')).toHaveValue('аль')
   })
 })
 
