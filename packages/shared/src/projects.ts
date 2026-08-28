@@ -399,6 +399,7 @@ export function managedChatTemporaryPath(relativePath: string): string {
 }
 
 import type { CiRunSummary, CiReuseStrategy, CiStatus, CiRunMode } from './ci'
+import type { ProjectTypeChain } from './projectTypes'
 import type { KbContextMode } from './types'
 
 // Типы домена «Проекты» + канбан-доска. Разделяются server/web/desktop.
@@ -548,6 +549,14 @@ export interface ProjectSummary {
   id: string
   name: string
   description: string
+  /** Узел дерева типов (`project_types.id`); определяет доступные подсистемы. */
+  typeId: string
+  /**
+   * Разрешённая цепочка типа с эффективными возможностями. Отдаётся всегда, даже
+   * если сам узел — личный узел владельца: остальные участники обязаны видеть имя
+   * типа и знать, какие разделы проекта включены.
+   */
+  typeChain: ProjectTypeChain
   gitUrl: string | null
   /** Адрес веб-превью по умолчанию для чатов проекта. */
   previewUrl?: string | null

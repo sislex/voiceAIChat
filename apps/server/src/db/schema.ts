@@ -314,8 +314,49 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_engines_default_kind
   ON llm_engines(kind)
   WHERE is_default = 1;
 
+-- Дерево типов проекта. Встроенные узлы (builtin=1) сеются при открытии базы и
+-- не удаляются; личные узлы заводит любой пользователь и может отправить на
+-- утверждение администратору (private → pending → published | rejected).
+-- ON DELETE RESTRICT: узел с детьми или с проектами удалить нельзя — вместо
+-- каскада, который тихо осиротил бы проекты, пользователь получает отказ.
+CREATE TABLE IF NOT EXISTS project_types (
+  id            TEXT PRIMARY KEY,
+  parent_id     TEXT,
+  name          TEXT NOT NULL,
+  description   TEXT NOT NULL DEFAULT '',
+  features_json TEXT NOT NULL DEFAULT '{}',
+  defaults_json TEXT NOT NULL DEFAULT '{}',
+  builtin       INTEGER NOT NULL DEFAULT 0,
+  owner_id      TEXT,
+  status        TEXT NOT NULL DEFAULT 'private',
+  review_note   TEXT NOT NULL DEFAULT '',
+  reviewed_by   TEXT,
+  reviewed_at   INTEGER,
+  created_by    TEXT NOT NULL,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL,
+  FOREIGN KEY (parent_id) REFERENCES project_types(id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_types_parent ON project_types(parent_id);
+CREATE INDEX IF NOT EXISTS idx_project_types_status ON project_types(status, owner_id);
+
+-- Неизменяемая история решений по публикации типов.
+CREATE TABLE IF NOT EXISTS project_type_review_audit (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  type_id    TEXT NOT NULL,
+  actor      TEXT NOT NULL,
+  old_status TEXT NOT NULL,
+  new_status TEXT NOT NULL,
+  note       TEXT NOT NULL DEFAULT '',
+  at         INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_type_review_audit_type ON project_type_review_audit(type_id, at);
+
 CREATE TABLE IF NOT EXISTS projects (
   id           TEXT PRIMARY KEY,
+  project_type_id TEXT REFERENCES project_types(id),
   name         TEXT NOT NULL,
   description  TEXT NOT NULL DEFAULT '',
   git_url      TEXT,

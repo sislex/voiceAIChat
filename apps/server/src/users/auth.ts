@@ -15,6 +15,7 @@ import { newSessionId, signToken, verifyToken, verifyTokenName } from './account
 import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { createMailer, type Mailer } from './mailer.js'
 import { randomBytes } from 'node:crypto'
+import type { ProjectFeature } from '@voicechat/shared'
 
 const PREVIEW_SESSION_COOKIE = 'vc_preview_session'
 const PREVIEW_COOKIE_PATH = '/api/preview'
@@ -123,6 +124,29 @@ export function projectPermissionForRequest(method: string, url: string): Projec
   // Состав и роли участников проверяются проектной ролью owner в БД. Глобальный
   // admin сам по себе не получает эти права, а owner не обязан быть admin.
   if (url === '/api/projects' || /^\/api\/projects\/[^/]+$/.test(url) || /^\/api\/projects\/[^/]+\/(?:members|machines|default-machine|columns)(?:\/|$)/.test(url)) return 'project:settings'
+  return null
+}
+
+/**
+ * Классификация URL по подсистеме проекта. Возможности задаёт ТИП проекта, и
+ * скрытия в интерфейсе недостаточно: без этой карты REST по-прежнему принимал бы
+ * запуск CI-рана или создание релиза в проекте, где подсистема выключена.
+ *
+ * Гейтятся только адреса, где проект есть в пути. URL вида `/api/ci/runs/:id/retry`
+ * и `/api/qa/runs/:id` работают с уже созданным раном — их создание перекрыто выше,
+ * поэтому отдельная проверка там не нужна (и негде взять projectId без запроса).
+ * Чтение не отделяется от записи намеренно: в проекте без подсистемы её списки
+ * бессмысленны, а UI их и не показывает.
+ */
+export function projectFeatureForRequest(method: string, url: string): ProjectFeature | null {
+  if (!/^\/api\/projects\/[^/]+\//.test(url)) return null
+  if (/^\/api\/projects\/[^/]+\/(?:releases|production)(?:\/|$)/.test(url)) return 'releases'
+  if (/^\/api\/projects\/[^/]+\/(?:machines|default-machine)(?:\/|$)/.test(url)) return 'machines'
+  if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge(?:\/|$)/.test(url)) return 'git'
+  if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/qa(?:\/|$)/.test(url)) return 'qa'
+  if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/preview(?:\/|$)/.test(url)) return 'preview'
+  if (/^\/api\/projects\/[^/]+\/(?:ci|improvements)(?:\/|$)/.test(url)) return 'ci'
+  if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/(?:ci|improvements|preparation)(?:\/|$)/.test(url)) return 'ci'
   return null
 }
 
@@ -267,6 +291,16 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
         : hasProjectPermission(user.role, permission)
       if (!allowed) {
         await reply.code(403).send({ error: 'forbidden', permission })
+        return reply
+      }
+    }
+    // Возможности типа проекта: читаются живьём, поэтому правка типа немедленно
+    // закрывает подсистему и в интерфейсе, и в API.
+    const feature = projectFeatureForRequest(req.method, url)
+    if (feature) {
+      const projectId = /^\/api\/projects\/([^/]+)/.exec(url)?.[1]
+      if (projectId && !db.projectFeatures(decodeURIComponent(projectId))[feature]) {
+        await reply.code(409).send({ error: 'feature_unavailable', feature })
         return reply
       }
     }
