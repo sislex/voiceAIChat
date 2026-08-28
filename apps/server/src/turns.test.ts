@@ -1093,6 +1093,28 @@ describe('turns: управляемая персистентная очеред�
     db.close()
   })
 
+  it('ошибка активного хода ставит очередь на паузу и не продвигает следующий элемент', async () => {
+    const db = freshDb()
+    const conversation = db.createConversation(U, 'queue')
+    const active = db.addMessage(U, conversation.id, 'u1', 'Активный', '10:00')
+    const queued = db.addMessage(U, conversation.id, 'u1', 'Следующий', '10:01')
+    const llm = controlled()
+    const turns = createTurnManager({ db, claude: llm.client })
+
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: active.id, segments: [{ speakerId: 1, text: active.text }] })
+    await turns.start({ userId: U, conversationId: conversation.id, messageId: queued.id, segments: [{ speakerId: 1, text: queued.text }] })
+    llm.handlers[0]!.onError('runner failed')
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+    expect(llm.handlers).toHaveLength(1)
+    expect(db.isTurnQueuePaused(U, conversation.id)).toBe(true)
+    expect(db.listQueuedTurns(U, conversation.id)).toEqual([
+      expect.objectContaining({ messageId: queued.id, status: 'queued' }),
+      expect.objectContaining({ messageId: active.id, status: 'failed' })
+    ])
+    db.close()
+  })
+
   it('отклоняет reorder с неполным набором без потери очереди', () => {
     const db = freshDb()
     const conversation = db.createConversation(U, 'queue')

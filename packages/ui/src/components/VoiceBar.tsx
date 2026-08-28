@@ -764,8 +764,7 @@ export function VoiceBar({
                   size="sm"
                   variant="danger"
                   onClick={stopRequest}
-                  disabled={requestPhase === 'stopping'}
-                  aria-busy={requestPhase === 'stopping' || undefined}
+                  loading={requestPhase === 'stopping'}
                   title="Остановить ответ"
                   aria-label="Остановить ответ"
                 >
@@ -786,15 +785,16 @@ export function VoiceBar({
               )}
               <IconButton
                 className="vc-btn--circle composer-send"
+                size="sm"
                 variant="primary"
                 onClick={submitRequest}
                 title={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
                 aria-label={isIdle ? 'Отправить сообщение' : 'Добавить сообщение в очередь'}
                 disabled={!canSubmit}
-                aria-busy={submitPending || undefined}
+                loading={submitPending}
                 aria-describedby={blockedAttachments.length > 0 ? 'attachment-submit-error' : undefined}
               >
-                {submitPending ? <Dots /> : <SendIcon />}
+                <SendIcon />
               </IconButton>
             </>
           )}

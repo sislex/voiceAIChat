@@ -166,6 +166,37 @@ describe('voiceStore — интеграция стора с api-моком и м
     expect(store.getState().queuedTurns[first.conversationId]).toEqual([confirmed])
   })
 
+  it('после каждого подтверждения принимает следующую реплику и сохраняет FIFO', async () => {
+    const { store } = makeStore()
+    await store.actions.init()
+    store.actions.setDraft('Первый')
+    await store.actions.submitText()
+    const first = store.getState().messages.find((item) => item.role === 'u1')!
+    store.actions.applyChatMessage(first.conversationId, first)
+
+    store.actions.setDraft('Второй')
+    await expect(store.actions.submitText()).resolves.toBe(true)
+    const secondPending = store.getState().pendingSubmit!
+    const second = {
+      ...store.getState().queuedTurns[first.conversationId]![0]!,
+      id: 'server-q1',
+      messageId: secondPending.messageId!
+    }
+    store.actions.applyClaudeQueue(first.conversationId, [second], false)
+    expect(store.getState().pendingSubmit).toBeNull()
+
+    store.actions.setDraft('Третий')
+    await expect(store.actions.submitText()).resolves.toBe(true)
+    const thirdPending = store.getState().pendingSubmit!
+    const optimistic = store.getState().queuedTurns[first.conversationId]![1]!
+    const third = { ...optimistic, id: 'server-q2', messageId: thirdPending.messageId! }
+    store.actions.applyClaudeQueue(first.conversationId, [second, third], false)
+
+    expect(store.getState().pendingSubmit).toBeNull()
+    expect(store.getState().queuedTurns[first.conversationId]?.map((item) => item.text)).toEqual(['Второй', 'Третий'])
+    expect(store.getState().messages.filter((item) => item.text === 'Второй' || item.text === 'Третий')).toEqual([])
+  })
+
   it('submitText: создаёт разговор, персистит реплику и проходит thinking → speaking → idle', async () => {
     const { store, api } = makeStore()
     const spyAdd = vi.spyOn(api, 'conversations:createDraft')

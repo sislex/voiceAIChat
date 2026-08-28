@@ -44,7 +44,7 @@ export function MicIcon(): JSX.Element {
 
 export function SendIcon(): JSX.Element {
   return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path
         d="M3 10.5 16.5 4 12 17l-3-5-6-1.5Z"
         stroke="currentColor"
@@ -67,16 +67,19 @@ export function StopIcon(): JSX.Element {
 export function DiagonalResizeIcon({ expanded = false }: { expanded?: boolean } = {}): JSX.Element {
   return (
     <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
       fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       aria-hidden="true"
       data-expanded={expanded || undefined}
     >
-      <rect x="2" y="10" width="4" height="4" rx="0.75" fill="#1473E6" />
-      <rect x="6" y="6" width="4" height="4" rx="0.75" fill="#1473E6" />
-      <rect x="10" y="2" width="4" height="4" rx="0.75" fill="#1473E6" />
+      <path d="M16 3 L21 3 L21 8" />
+      <path d="M8 21 L3 21 L3 16" />
     </svg>
   )
 }
