@@ -7091,11 +7091,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .newproj-chip--muted { font-style: italic; }
 .newproj-actions { display: flex; gap: var(--space-2, 8px); justify-content: flex-end; }
 
-@media (max-width: 720px) {
-  /* На телефоне окно полноэкранное: кнопки растягиваем, чтобы попадать пальцем. */
-  .newproj-actions { flex-direction: column-reverse; }
-  .newproj-actions .vc-btn { width: 100%; }
-}
+/* Раскладку подвала на телефоне задаёт ui-kit (.vc-dialog--phone .vc-dialog-foot):
+   правило одно на все окна, здесь дублировать его не нужно. */
 
 /* Тип проекта в настройках: подпись над селектом, чипы возможностей под ним. */
 .proj-type-field { display: flex; flex-direction: column; gap: var(--space-1, 4px); margin-bottom: var(--space-2, 8px); }
@@ -7273,3 +7270,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   /* На телефоне имя проекта важнее ярлыка — прячем, тип виден в настройках. */
   .projpage-type { display: none; }
 }
+
+/* Поиск по каталогу типов: появляется, когда дерево перестаёт помещаться глазом. */
+.ptypes-search { display: block; margin-bottom: var(--space-2, 8px); }
+.ptypes-search input { width: 100%; }

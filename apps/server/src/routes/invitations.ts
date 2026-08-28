@@ -36,11 +36,15 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
   const baseUrl = (req: FastifyRequest): string =>
     (options.publicUrl ?? `${String(req.headers['x-forwarded-proto'] ?? req.protocol)}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`).replace(/\/$/, '')
 
+  /** Ссылка приглашения — тот же адрес, что уходит в письме. */
+  const inviteLink = (req: FastifyRequest, token: string): string =>
+    `${baseUrl(req)}/#/project-invite/${encodeURIComponent(token)}`
+
   /** Письмо приглашения. Без SMTP уходит в лог — так поток проверяется на стенде. */
   const sendInvitation = async (req: FastifyRequest, to: string, projectName: string, invitedBy: string, token: string): Promise<void> => {
     // Маршрут отдельный: `#/invite/<token>` уже занят регистрацией по админскому
     // инвайту (InviteRegister), и два разных смысла на одном адресе не развести.
-    const link = `${baseUrl(req)}/#/project-invite/${encodeURIComponent(token)}`
+    const link = inviteLink(req, token)
     await options.mailer.send({
       to,
       subject: `Приглашение в проект «${projectName}»`,
@@ -88,7 +92,10 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
         }
         db.logSecurityEvent({ user: uid(req), type: 'project_invited', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `${req.params.id} → ${invitee}` })
         if (created.invitation.invitedUsername) options.membershipChanged?.(req.params.id, created.invitation.invitedUsername)
-        return { invitation: created.invitation, mailed }
+        // Ссылку отдаём владельцу ровно в ответ на создание: когда письма нет
+        // (приглашение по логину), передать её иначе нечем. В списке ожидающих
+        // ссылки по-прежнему нет — она не должна лежать в общих выдачах.
+        return { invitation: created.invitation, mailed, link: inviteLink(req, created.token) }
       } catch (error) {
         return badReq(reply, errMessage(error))
       }
@@ -111,7 +118,7 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
           app.log.warn({ err: error }, 'не удалось повторно отправить приглашение')
         }
       }
-      return { invitation: refreshed.invitation, mailed }
+      return { invitation: refreshed.invitation, mailed, link: inviteLink(req, refreshed.token) }
     }
   )
 

@@ -3036,6 +3036,13 @@ export class VoiceChatDb {
       // Проекты: снять назначения, убрать членства и удалить осиротевшие проекты
       // (project_machines уйдут по CASCADE при удалении агентов выше и/или проектов).
       this.db.prepare(`UPDATE tasks SET assignee = NULL WHERE assignee = ?`).run(userId)
+      // Живые приглашения удалённого пользователя закрываем: иначе при повторной
+      // регистрации того же логина или адреса они снова к нему привяжутся.
+      const deletedEmail = (this.getUser(userId)?.email ?? '').toLowerCase()
+      this.db.prepare(
+        `UPDATE project_invitations SET status='revoked', responded_at=?
+         WHERE status='pending' AND (invited_username = ? OR (? <> '' AND email = ?))`
+      ).run(this.now(), userId, deletedEmail, deletedEmail)
       this.db.prepare(`DELETE FROM project_members WHERE username = ?`).run(userId)
       this.db
         .prepare(
