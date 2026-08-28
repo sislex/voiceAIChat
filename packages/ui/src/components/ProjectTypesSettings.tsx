@@ -90,6 +90,9 @@ export function ProjectTypesSettings({ types, currentUsername, onCreate, onDelet
                     {node.builtin
                       ? <span className="proj-muted"> · встроенный</span>
                       : <span className="proj-muted"> · {PROJECT_TYPE_STATUS_LABELS[node.status].toLowerCase()}</span>}
+                    {typeof node.usageCount === 'number' && node.usageCount > 0 && (
+                      <span className="proj-muted" title="Проектов этого типа"> · проектов: {node.usageCount}</span>
+                    )}
                   </span>
                   {mine && (
                     <span className="ptypes-actions">
@@ -100,7 +103,17 @@ export function ProjectTypesSettings({ types, currentUsername, onCreate, onDelet
                         <Button size="sm" variant="ghost" onClick={() => onUnpublish(node.id)}>Отозвать</Button>
                       )}
                       {onDelete && node.status !== 'published' && (
-                        <IconButton size="sm" className="vc-btn--danger-quiet" aria-label={`Удалить тип ${node.name}`} title="Удалить тип" onClick={() => onDelete(node.id)}>✕</IconButton>
+                        <IconButton
+                          size="sm"
+                          className="vc-btn--danger-quiet"
+                          aria-label={`Удалить тип ${node.name}`}
+                          // Отказ при удалении объясняем заранее, а не после нажатия.
+                          title={node.usageCount ? `Тип используют проекты (${node.usageCount})` : 'Удалить тип'}
+                          disabled={Boolean(node.usageCount)}
+                          onClick={() => onDelete(node.id)}
+                        >
+                          ✕
+                        </IconButton>
                       )}
                     </span>
                   )}

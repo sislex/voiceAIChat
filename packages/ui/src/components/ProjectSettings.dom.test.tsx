@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
 import type { ProjectDetail, ProjectInvitation } from '@shared/projects'
@@ -22,7 +22,7 @@ function detail(over: Partial<ProjectDetail> = {}): ProjectDetail {
 function props(over: Partial<ProjectSettingsProps> = {}): ProjectSettingsProps {
   return {
     detail: detail(), agents: [],
-    onUpdate: vi.fn(), onDelete: vi.fn(), onAddMember: vi.fn(), onUpdateMemberRole: vi.fn(), onRemoveMember: vi.fn(),
+    onUpdate: vi.fn(), onDelete: vi.fn(), onUpdateMemberRole: vi.fn(), onRemoveMember: vi.fn(),
     onLinkMachine: vi.fn(), onUnlinkMachine: vi.fn(), onSetMachinePath: vi.fn(),
     onSetReposRoot: vi.fn(), onSetMachineSsh: vi.fn(), onSetDefaultMachine: vi.fn(),
     ...over
@@ -207,11 +207,35 @@ describe('ProjectSettings — тип проекта', () => {
     reviewNote: '', createdBy: 'system', createdAt: 0, updatedAt: 0
   }))
 
-  it('владелец меняет тип, значение уходит в onUpdate', async () => {
+  it('сужение возможностей спрашивает подтверждение и перечисляет потери', async () => {
     const onUpdate = vi.fn()
     render(<ProjectSettings {...props({ projectTypes: types, onUpdate })} />)
     await userEvent.selectOptions(screen.getByLabelText('Тип проекта'), BUILTIN_PROJECT_TYPE_IDS.general)
-    expect(onUpdate).toHaveBeenCalledWith('p1', { typeId: BUILTIN_PROJECT_TYPE_IDS.general })
+    // Молчаливое переключение выглядело бы как поломка: исчезают целые разделы.
+    expect(onUpdate).not.toHaveBeenCalled()
+    expect(await screen.findByText(/Станут недоступны/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Сменить тип' }))
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('p1', { typeId: BUILTIN_PROJECT_TYPE_IDS.general }))
+  })
+
+  it('отказ в подтверждении оставляет прежний тип', async () => {
+    const onUpdate = vi.fn()
+    render(<ProjectSettings {...props({ projectTypes: types, onUpdate })} />)
+    await userEvent.selectOptions(screen.getByLabelText('Тип проекта'), BUILTIN_PROJECT_TYPE_IDS.general)
+    await userEvent.click(await screen.findByRole('button', { name: 'Отмена' }))
+    await waitFor(() => expect(onUpdate).not.toHaveBeenCalled())
+  })
+
+  it('расширение возможностей не спрашивает ничего', async () => {
+    const onUpdate = vi.fn()
+    render(<ProjectSettings {...props({
+      projectTypes: types,
+      onUpdate,
+      detail: detail({ typeId: BUILTIN_PROJECT_TYPE_IDS.general, typeChain: builtinProjectTypeChain(BUILTIN_PROJECT_TYPE_IDS.general) })
+    })} />)
+    await userEvent.selectOptions(screen.getByLabelText('Тип проекта'), BUILTIN_PROJECT_TYPE_IDS.software)
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('p1', { typeId: BUILTIN_PROJECT_TYPE_IDS.software }))
+    expect(screen.queryByText(/Станут недоступны/)).not.toBeInTheDocument()
   })
 
   it('опции подписаны путём от корня — одноимённые подтипы различимы', () => {

@@ -43,6 +43,11 @@ export interface ProjectPageProps {
    * используется и там, где типа ещё нет (заглушки, витрина).
    */
   features?: ProjectFeatureSet
+  /**
+   * Ярлык типа рядом с именем. Без него при переходе между проектами непонятно,
+   * почему у одного нет «Релизов», а у другого есть.
+   */
+  typeLabel?: string
   /** Клик по вкладке: навигация, а не локальное состояние. */
   onSectionChange: (section: ProjectSection) => void
   /** Показать/скрыть общий Sidebar. */
@@ -58,7 +63,7 @@ export interface ProjectPageProps {
   onOpenAssistantPage?: () => void
 }
 
-export function ProjectPage({ projectName, section, features, onSectionChange, onToggleSidebar, sidebarExpanded = true, onSidebarEscape, children, assistantOpen = false, onAssistantOpenChange, onOpenAssistantPage }: ProjectPageProps): JSX.Element {
+export function ProjectPage({ projectName, section, features, typeLabel, onSectionChange, onToggleSidebar, sidebarExpanded = true, onSidebarEscape, children, assistantOpen = false, onAssistantOpenChange, onOpenAssistantPage }: ProjectPageProps): JSX.Element {
   const tabsRef = useRef<HTMLDivElement>(null)
   const sections = visibleProjectSections(features)
   // Стрелки переключают вкладку сразу (automatic activation в терминах ARIA).
@@ -81,6 +86,7 @@ export function ProjectPage({ projectName, section, features, onSectionChange, o
   return (
     <ToolFrame
       title={projectName}
+      {...(typeLabel ? { titleExtra: <span className="projpage-type" title={`Тип проекта: ${typeLabel}`}>{typeLabel}</span> } : {})}
       variant="page"
       testId="project-page"
       className="projpage"
@@ -124,14 +130,19 @@ export function ProjectPage({ projectName, section, features, onSectionChange, o
  * Проектов нет вообще. Формы создания на странице нет — проект создаётся в
  * сайдбаре, поэтому подсказка ведёт туда.
  */
-export function ProjectsEmptyPage(): JSX.Element {
+export function ProjectsEmptyPage({ invitationCount = 0 }: { invitationCount?: number } = {}): JSX.Element {
+  // Если есть приглашение, «создайте первый проект» — неверный следующий шаг:
+  // человека уже позвали, ему надо принять, а не заводить своё.
+  const invited = invitationCount > 0
   return (
     <ToolFrame title="Проекты" variant="page" testId="projects-empty">
       <div className="proj-page-state">
         <EmptyState
           icon="🗂"
-          title="Проектов пока нет"
-          description="Создайте первый в сайдбаре — кнопка «+ Новый проект». Внутри проекта появятся доска, задачи и CI."
+          title={invited ? 'Вас пригласили в проект' : 'Проектов пока нет'}
+          description={invited
+            ? `Приглашений: ${invitationCount}. Примите их в списке слева — проект появится здесь. Или создайте свой кнопкой «+ Новый проект».`
+            : 'Создайте первый в сайдбаре — кнопка «+ Новый проект». Внутри проекта появятся доска, задачи и CI.'}
         />
       </div>
     </ToolFrame>
