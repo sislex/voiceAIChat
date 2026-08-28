@@ -25,6 +25,8 @@ export interface ProjectSettingsProps {
   detail: ProjectDetail
   /** Каталог типов для селекта; пусто — селект не показываем. */
   projectTypes?: ProjectTypeNode[]
+  /** «Сохранить проект как подтип»; нет обработчика — кнопки нет. */
+  onDeriveType?: (id: string, name: string) => void | Promise<void>
   agents: AgentInfo[]
   currentUsername?: string
   llmAccess?: UserLlmAccess[]
@@ -143,6 +145,15 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
   type SettingsTab = 'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [inviteRole, setInviteRole] = useState<ProjectRole>('member')
+  const [deriveOpen, setDeriveOpen] = useState(false)
+  const [deriveName, setDeriveName] = useState('')
+  const submitDerive = (): void => {
+    const name = deriveName.trim()
+    if (!name || !props.onDeriveType) return
+    void props.onDeriveType(detail.id, name)
+    setDeriveName('')
+    setDeriveOpen(false)
+  }
   // Возможности типа: вкладки выключенных подсистем не показываем — сервер такие
   // запросы всё равно отклоняет (409 feature_unavailable).
   // Пока цепочка типа не пришла (устаревший кэш, заглушки), считаем всё доступным:
@@ -263,11 +274,38 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
             <li className="newproj-chip newproj-chip--muted">только доска и задачи</li>
           )}
         </ul>
+        {isOwner && props.onDeriveType && (
+          <div className="proj-derive">
+            {deriveOpen ? (
+              <div className="proj-derive-form">
+                <label className="proj-invite-field">
+                  <span className="proj-field-label">Название нового подтипа</span>
+                  <input
+                    className="login-input"
+                    autoFocus
+                    value={deriveName}
+                    placeholder="Например, Ремонтный проект"
+                    onChange={(e) => setDeriveName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') submitDerive(); if (e.key === 'Escape') setDeriveOpen(false) }}
+                  />
+                </label>
+                <div className="proj-derive-actions">
+                  <Button onClick={submitDerive} disabled={!deriveName.trim()}>Сохранить</Button>
+                  <Button variant="ghost" onClick={() => setDeriveOpen(false)}>Отмена</Button>
+                </div>
+              </div>
+            ) : (
+              <Button variant="secondary" onClick={() => setDeriveOpen(true)}>Сохранить как подтип…</Button>
+            )}
+          </div>
+        )}
         {/* Подсказка — после поля: сначала что выбрано, потом что это значит. */}
         <p className="proj-hint">
           Тип задаёт доступные подсистемы. Смена типа сразу открывает или скрывает разделы, но
           ничего не удаляет: доска, теги и настройки CI остались с момента создания и не
-          перезаписываются.
+          перезаписываются. «Сохранить как подтип» снимает с проекта копию — колонки доски,
+          теги и настройки, — и заводит из неё новый тип под текущим; он останется личным,
+          пока вы не отправите его на утверждение.
         </p>
       </section>
       {isOwner ? (

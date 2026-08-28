@@ -10,9 +10,9 @@
 import { useMemo, useState } from 'react'
 import { Button, Dialog } from '@voicechat/ui-kit'
 import {
-  BUILTIN_PROJECT_TYPES,
   PROJECT_FEATURES,
   PROJECT_FEATURE_LABELS,
+  compareProjectTypes,
   resolveProjectTypeFeatures,
   type ProjectTypeNode
 } from '@shared/projectTypes'
@@ -43,12 +43,8 @@ export interface NewProjectDialogProps {
  * алфавиту), затем пользовательские по имени.
  */
 export function typeCascadeLevels(types: ProjectTypeNode[], selected: string[]): ProjectTypeNode[][] {
-  const builtinOrder = new Map(BUILTIN_PROJECT_TYPES.map((node, index) => [node.id, index]))
-  const rank = (node: ProjectTypeNode): number => builtinOrder.get(node.id) ?? Number.MAX_SAFE_INTEGER
   const childrenOf = (parentId: string | null): ProjectTypeNode[] =>
-    types
-      .filter((t) => t.parentId === parentId)
-      .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, 'ru'))
+    types.filter((t) => t.parentId === parentId).sort(compareProjectTypes)
   const levels: ProjectTypeNode[][] = [childrenOf(null)]
   for (const id of selected) {
     if (!id) break

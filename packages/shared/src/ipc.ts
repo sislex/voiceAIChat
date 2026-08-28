@@ -381,6 +381,9 @@ export interface IpcInvokeMap {
   'admin:saveModelPrice': { arg: import('./admin').ModelPriceInput; result: import('./admin').ModelPrice }
   'admin:deleteModelPrice': { arg: { provider: string; model: string }; result: void }
   'admin:llmEngines': { arg: void; result: AdminLlmEngine[] }
+  /** Очередь типов проекта на утверждение и решение по заявке. */
+  'admin:projectTypes': { arg: void; result: import('./projectTypes').ProjectTypeNode[] }
+  'admin:reviewProjectType': { arg: { id: string; decision: 'approve' | 'reject'; note?: string }; result: import('./projectTypes').ProjectTypeNode }
   'admin:createLlmEngine': { arg: AdminLlmEngineInput; result: AdminLlmEngine }
   'admin:updateLlmEngine': { arg: { id: string; patch: AdminLlmEngineInput }; result: AdminLlmEngine }
   'admin:deleteLlmEngine': { arg: { id: string }; result: void }
@@ -421,6 +424,8 @@ export interface IpcInvokeMap {
     result: import('./projectTypes').ProjectTypeNode
   }
   'projectTypes:delete': { arg: { id: string }; result: { ok: boolean } }
+  /** Сохранить настроенный проект как подтип его текущего типа. */
+  'projects:deriveType': { arg: { id: string; name: string }; result: import('./projectTypes').ProjectTypeNode }
   /** Отправка на утверждение администратором. */
   'projectTypes:publish': { arg: { id: string }; result: import('./projectTypes').ProjectTypeNode }
   'projectTypes:unpublish': { arg: { id: string }; result: import('./projectTypes').ProjectTypeNode }
@@ -1147,6 +1152,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:conversations',
   'admin:messages',
   'admin:llmEngines',
+  'admin:projectTypes',
+  'admin:reviewProjectType',
   'admin:createLlmEngine',
   'admin:updateLlmEngine',
   'admin:deleteLlmEngine',
@@ -1165,6 +1172,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projectTypes:create',
   'projectTypes:update',
   'projectTypes:delete',
+  'projects:deriveType',
   'projectTypes:publish',
   'projectTypes:unpublish',
   'releases:branches',

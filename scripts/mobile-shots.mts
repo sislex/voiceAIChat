@@ -108,6 +108,26 @@ try {
       await page.waitForTimeout(800)
       await shot(page, '5-settings-members')
     }
+
+    // Каталог типов в пользовательских настройках.
+    await page.goto(`${BASE}/#/projects`, { waitUntil: 'networkidle' })
+    await openSidebar(page)
+    const account = page.locator('.acct-toggle')
+    if (await account.count()) {
+      await account.first().click()
+      await page.waitForTimeout(400)
+      const settings = page.locator('button[role="menuitem"]', { hasText: 'Настройки' })
+      if (await settings.count()) {
+        await settings.first().click()
+        await page.waitForTimeout(1200)
+        const tab = page.locator('.vc-dialog button, [role="dialog"] button', { hasText: 'Типы проектов' })
+        if (await tab.count()) {
+          await tab.first().click()
+          await page.waitForTimeout(800)
+          await shot(page, '6-project-types-settings')
+        }
+      }
+    }
     await ctx.close()
   }
 } finally {
