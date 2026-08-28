@@ -441,6 +441,8 @@ export interface IpcInvokeMap {
   /** Привязать/отвязать машину-агента к проекту (только владелец). */
   'projects:linkMachine': { arg: { id: string; agentId: string; storageId?: string }; result: ProjectDetail }
   'projects:unlinkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
+  /** Уровень доступа предоставленной проекту машины (machines-roadmap п.18); только владелец машины. */
+  'projects:setMachineShareAccess': { arg: { id: string; agentId: string; access: import('./agentProtocol').MachineShareAccess }; result: ProjectDetail }
   'projects:configureMachineStorage': { arg: { id: string; agentId: string; storageId: string; directories?: ProjectMachineDirectoryAssignments }; result: ProjectDetail }
   'projects:resetMachineDirectory': { arg: { id: string; agentId: string; kind: ProjectMachineDirectoryKind }; result: ProjectDetail }
   /** Задать папку проекта на конкретной машине (только владелец). */
@@ -1131,6 +1133,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:removeMember',
   'projects:linkMachine',
   'projects:unlinkMachine',
+  'projects:setMachineShareAccess',
   'projects:configureMachineStorage',
   'projects:resetMachineDirectory',
   'projects:setMachinePath',

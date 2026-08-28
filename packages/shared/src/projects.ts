@@ -610,6 +610,8 @@ export interface ProjectSummary {
 
 /** Машина проекта: агент + рабочая папка проекта на этой машине. */
 export interface ProjectMachine {
+  /** Уровень доступа, с которым владелец предоставил машину проекту (п.18); нет — не предоставлена. */
+  shareAccess?: import('./agentProtocol').MachineShareAccess
   agentId: string
   /** Безопасные данные машины для участников проекта. */
   name?: string

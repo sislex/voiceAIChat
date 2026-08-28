@@ -306,6 +306,11 @@ export function createSession(deps: SessionDeps): WsHandlers {
             ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина не найдена' })
             break
           }
+          // Живой shell — это полный доступ: машине, предоставленной «только для чтения», терминал не открываем (п.18).
+          if (!deps.db.canWriteAgent(deps.user.name, msg.agentId, msg.projectId)) {
+            ctx.send({ t: 'pty.error', ptyId: msg.ptyId, message: 'Машина предоставлена проекту только для чтения: терминал недоступен' })
+            break
+          }
           ptyIds.add(msg.ptyId)
           deps.pty?.start(msg.agentId, msg.ptyId, msg.cols, msg.rows, msg.cwd, (e) => ctx.send(e))
           break

@@ -264,13 +264,14 @@ export function registerProjectRoutes(
 
   // --- Машины проекта ----------------------------------------------------
 
-  app.put<{ Params: { id: string; agentId: string }; Body: { shared?: boolean } }>(
+  app.put<{ Params: { id: string; agentId: string }; Body: { shared?: boolean; access?: 'full' | 'read' } }>(
     '/api/projects/:id/machines/:agentId/share',
     async (req, reply) => {
       if (!member(req, req.params.id)) return nf(reply)
       if (typeof req.body?.shared !== 'boolean') return badReq(reply, 'shared must be boolean')
+      if (req.body.access !== undefined && req.body.access !== 'full' && req.body.access !== 'read') return badReq(reply, "access must be 'full' or 'read'")
       try {
-        db.setMachineSharedWithProject(uid(req), req.params.id, req.params.agentId, req.body.shared)
+        db.setMachineSharedWithProject(uid(req), req.params.id, req.params.agentId, req.body.shared, req.body.access ?? 'full')
         return withMachineStatus(db.getProject(uid(req), req.params.id), uid(req)) ?? nf(reply)
       } catch (err) {
         return reply.code(403).send({ error: errMessage(err) })

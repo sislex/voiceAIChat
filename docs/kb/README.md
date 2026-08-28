@@ -22,14 +22,14 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 74 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 76 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 73 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 758 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 759 коммит(ов) в areas после сверки: 34f1a803 docs(kb): update after merge 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 183 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 28 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 6 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 93 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 6 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 20 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 7 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 6 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 79 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-28 | ⚠ 8 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 18 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
@@ -57,7 +57,7 @@
 
 ## Журнал сессий
 
-Всего записей: 394. Последние:
+Всего записей: 395. Последние:
 
 - [2026-08-28-macbook-air-user-task-modal-brief-validation.md](log/2026-08-28-macbook-air-user-task-modal-brief-validation.md) — task-modal-brief-validation
 - [2026-08-28-macbook-air-user-simplify-chat-header-kb-usage.md](log/2026-08-28-macbook-air-user-simplify-chat-header-kb-usage.md) — simplify-chat-header-kb-usage

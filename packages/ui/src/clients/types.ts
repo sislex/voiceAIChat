@@ -171,6 +171,7 @@ export type ProjectsClient = Pick<
   | 'projects:updateMemberRole'
   | 'projects:removeMember'
   | 'projects:linkMachine'
+  | 'projects:setMachineShareAccess'
   | 'projects:unlinkMachine'
   | 'projects:configureMachineStorage'
   | 'projects:resetMachineDirectory'

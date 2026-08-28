@@ -1874,6 +1874,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 onUpdateMemberRole={(id, username, role) => void projectsActions.updateProjectMemberRole(id, username, role)}
                 onRemoveMember={(id, username) => void projectsActions.removeProjectMember(id, username)}
                 onLinkMachine={(id, agentId) => void projectsActions.linkProjectMachine(id, agentId)}
+                onSetMachineShareAccess={(id, agentId, access) => void projectsActions.setProjectMachineShareAccess(id, agentId, access)}
                 onUnlinkMachine={(id, agentId) => void projectsActions.unlinkProjectMachine(id, agentId)}
                 onConfigureMachineStorage={(id, agentId, storageId, directories) => projectsActions.configureProjectMachineStorage(id, agentId, storageId, directories)}
                 onResetMachineDirectory={(id, agentId, kind) => projectsActions.resetProjectMachineDirectory(id, agentId, kind)}

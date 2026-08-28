@@ -295,4 +295,14 @@ describe('FileExplorer (самодостаточный)', () => {
     await screen.findByText(/a\.txt/)
     expect(screen.queryByLabelText('Копировать a.txt на другую машину')).toBeNull()
   })
+
+  it('машина, предоставленная проекту только для чтения: правка и удаление недоступны (п.18)', async () => {
+    const ops = makeOps()
+    ;(ops.read as ReturnType<typeof vi.fn>).mockResolvedValue({ root: '/r', cwd: '/r', name: 'a.txt', dataBase64: btoa('hi') })
+    render(<FileExplorer agents={[{ ...agent(), access: 'read', ownership: 'project' }]} initialAgentId="m1" ops={ops} variant="embedded" />)
+    await userEvent.click(await screen.findByText(/a\.txt/))
+    expect(await screen.findByText(/машина предоставлена проекту только для чтения/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Редактировать' })).toBeNull()
+    expect(screen.queryByLabelText('Удалить a.txt')).toBeNull()
+  })
 })

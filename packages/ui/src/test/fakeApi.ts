@@ -940,6 +940,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (!p.machines.some((m) => m.agentId === agentId)) p.machines.push({ agentId, path: '', reposRoot: '' })
       return detail(p)
     },
+    'projects:setMachineShareAccess': async ({ id }) => (await api['projects:get']({ id }))!,
     'projects:unlinkMachine': async ({ id, agentId }) => {
       const p = projects.find((x) => x.id === id)!
       p.machines = p.machines.filter((m) => m.agentId !== agentId)

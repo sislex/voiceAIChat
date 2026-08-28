@@ -1,4 +1,4 @@
-import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies } from '@voicechat/shared'
+import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
 import { parseProjectCommandPolicy, parseRoleCommandPolicies } from '@voicechat/shared'
 import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -768,6 +768,9 @@ export class VoiceChatDb {
     if (userCols.length && !userCols.some((c) => c.name === 'last_login')) this.db.exec(`ALTER TABLE users ADD COLUMN last_login INTEGER`)
     if (userCols.length && !userCols.some((c) => c.name === 'notices_seen_at')) this.db.exec(`ALTER TABLE users ADD COLUMN notices_seen_at INTEGER NOT NULL DEFAULT 0`)
     if (userCols.length && !userCols.some((c) => c.name === 'llm_limit_usd')) this.db.exec(`ALTER TABLE users ADD COLUMN llm_limit_usd REAL`)
+    // Уровень доступа предоставленной проекту машины (machines-roadmap п.18): 'full' | 'read'.
+    const shareCols = this.db.prepare(`PRAGMA table_info(machine_project_shares)`).all() as Array<{ name: string }>
+    if (shareCols.length && !shareCols.some((c) => c.name === 'access')) this.db.exec(`ALTER TABLE machine_project_shares ADD COLUMN access TEXT NOT NULL DEFAULT 'full'`)
     // Токены агентов (machines-roadmap п.11): срок, дата выпуска, IP последнего подключения и привязка.
     const agentTokenCols = this.db.prepare(`PRAGMA table_info(agents)`).all() as Array<{ name: string }>
     if (agentTokenCols.length && !agentTokenCols.some((c) => c.name === 'token_expires_at')) this.db.exec(`ALTER TABLE agents ADD COLUMN token_expires_at INTEGER`)
@@ -2435,6 +2438,30 @@ export class VoiceChatDb {
     ).get(agentId, userId))
   }
 
+  /**
+   * Права пользователя на машину (machines-roadmap п.18): 'owner' — своя машина (полный доступ),
+   * 'full'/'read' — уровень, с которым владелец предоставил её проекту, null — доступа нет.
+   */
+  machineAccess(userId: string, agentId: string, projectId?: string | null): MachineAccessLevel | null {
+    if (this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) return 'owner'
+    if (!projectId) return null
+    const row = this.db.prepare(
+      `SELECT share.access AS access FROM machine_project_shares share
+       JOIN project_members member ON member.project_id = share.project_id
+       JOIN users u ON u.name = member.username
+       WHERE share.project_id = ? AND share.agent_id = ? AND share.shared = 1
+         AND member.username = ? AND u.blocked = 0`
+    ).get(projectId, agentId, userId) as { access?: string } | undefined
+    if (!row) return null
+    return row.access === 'read' ? 'read' : 'full'
+  }
+
+  /** Может ли пользователь менять состояние машины (команды, PTY, запись файлов). */
+  canWriteAgent(userId: string, agentId: string, projectId?: string | null): boolean {
+    const access = this.machineAccess(userId, agentId, projectId)
+    return access === 'owner' || access === 'full'
+  }
+
   canUseAgent(userId: string, agentId: string, projectId?: string | null): boolean {
     if (this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) return true
     if (!projectId) return false
@@ -2469,26 +2496,30 @@ export class VoiceChatDb {
     ).run(userId, projectId, agentId, this.now())
   }
 
-  setMachineSharedWithProject(userId: string, projectId: string, agentId: string, shared: boolean): void {
+  setMachineSharedWithProject(userId: string, projectId: string, agentId: string, shared: boolean, access: MachineShareAccess = 'full'): void {
     if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) {
       throw new Error('Только владелец машины может менять предоставление')
     }
-    const previous = Boolean((this.db.prepare(
-      `SELECT shared FROM machine_project_shares WHERE project_id=? AND agent_id=?`
-    ).get(projectId, agentId) as { shared: number } | undefined)?.shared)
-    if (previous === shared) return
+    const row = this.db.prepare(
+      `SELECT shared, access FROM machine_project_shares WHERE project_id=? AND agent_id=?`
+    ).get(projectId, agentId) as { shared: number; access?: string } | undefined
+    const previous = Boolean(row?.shared)
+    // Смена только уровня доступа (без снятия/выдачи) — тоже сохраняется, но в аудит идёт лишь флаг shared.
+    if (previous === shared && (row?.access ?? 'full') === access) return
     const ts = this.now()
     this.db.transaction(() => {
       this.db.prepare(
-        `INSERT INTO machine_project_shares (project_id,agent_id,shared,created_at,updated_at,updated_by)
-         VALUES (?,?,?,?,?,?)
-         ON CONFLICT(project_id,agent_id) DO UPDATE SET shared=excluded.shared,updated_at=excluded.updated_at,updated_by=excluded.updated_by`
-      ).run(projectId, agentId, shared ? 1 : 0, ts, ts, userId)
-      this.db.prepare(
-        `INSERT INTO machine_project_share_audit (id,project_id,agent_id,actor,old_value,new_value,created_at)
-         VALUES (?,?,?,?,?,?,?)`
-      ).run(this.newId(), projectId, agentId, userId, previous ? 1 : 0, shared ? 1 : 0, ts)
+        `INSERT INTO machine_project_shares (project_id,agent_id,shared,access,created_at,updated_at,updated_by)
+         VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(project_id,agent_id) DO UPDATE SET shared=excluded.shared,access=excluded.access,updated_at=excluded.updated_at,updated_by=excluded.updated_by`
+      ).run(projectId, agentId, shared ? 1 : 0, access, ts, ts, userId)
+      if (previous !== shared) {
+        this.db.prepare(
+          `INSERT INTO machine_project_share_audit (id,project_id,agent_id,actor,old_value,new_value,created_at)
+           VALUES (?,?,?,?,?,?,?)`
+        ).run(this.newId(), projectId, agentId, userId, previous ? 1 : 0, shared ? 1 : 0, ts)
+      }
       if (!shared) {
         this.db.prepare(`DELETE FROM user_project_machine_defaults WHERE project_id=? AND agent_id=?`).run(projectId, agentId)
       }
@@ -3419,7 +3450,8 @@ export class VoiceChatDb {
                 s.root_path AS storage_root_path, s.format_version AS storage_format_version,
                 COALESCE(pm.added_at, share.created_at, a.created_at) AS added_at,
                 a.name, a.user_id,
-                CASE WHEN share.shared = 1 THEN 1 ELSE 0 END AS shared
+                CASE WHEN share.shared = 1 THEN 1 ELSE 0 END AS shared,
+                COALESCE(share.access,'full') AS share_access
          FROM agents a
          LEFT JOIN project_machines pm ON pm.agent_id=a.id AND pm.project_id=?
          LEFT JOIN machine_storages s ON s.id=pm.storage_id AND s.machine_id=a.id
@@ -3440,6 +3472,7 @@ export class VoiceChatDb {
         name: string
         user_id: string
         shared: number
+        share_access: string
       }>
     ).map((x) => {
       let directories: ProjectMachineDirectoryAssignments | undefined
@@ -3462,6 +3495,7 @@ export class VoiceChatDb {
         owner: x.user_id,
         ownership: x.user_id === userId ? 'mine' as const : 'other' as const,
         sharedWithProject: !!x.shared,
+        ...(x.shared ? { shareAccess: (x.share_access === 'read' ? 'read' : 'full') as MachineShareAccess } : {}),
         isMyDefault: this.getUserProjectDefaultMachine(userId, id) === x.agent_id,
         canUse: x.user_id === userId || !!x.shared,
         unavailableReason: null,

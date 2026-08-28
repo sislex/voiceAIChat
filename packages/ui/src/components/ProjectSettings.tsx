@@ -34,6 +34,8 @@ export interface ProjectSettingsProps {
   onRemoveMember: (id: string, username: string) => void
   onLinkMachine: (id: string, agentId: string) => void | Promise<void>
   onUnlinkMachine: (id: string, agentId: string) => void | Promise<void>
+  /** Уровень доступа предоставленной проекту машины (п.18). */
+  onSetMachineShareAccess?: (id: string, agentId: string, access: 'full' | 'read') => void | Promise<void>
   onConfigureMachineStorage?: (id: string, agentId: string, storageId: string, directories?: ProjectMachineDirectoryAssignments) => void | Promise<void>
   onResetMachineDirectory?: (id: string, agentId: string, kind: ProjectMachineDirectoryKind) => void | Promise<void>
   onSetMachinePath: (id: string, agentId: string, path: string) => void | Promise<void>
@@ -445,6 +447,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         machines={detail.machines}
         agents={agents}
         onShare={(id, agentId, shared) => shared ? props.onLinkMachine(id, agentId) : props.onUnlinkMachine(id, agentId)}
+        {...(props.onSetMachineShareAccess ? { onSetShareAccess: props.onSetMachineShareAccess } : {})}
         onSave={(id, agentId, field, value, machine) => {
           if (field === 'sshHost' || field === 'sshUser') return props.onSetMachineSsh(id, agentId, field === 'sshHost' ? value : machine.sshHost ?? '', field === 'sshUser' ? value : machine.sshUser ?? '')
           const directoryKind = field === 'path' ? 'projectWorkdir' : field
