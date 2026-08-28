@@ -882,12 +882,12 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
         respondedAt: null
       }
       invitations.push(invitation)
-      return { invitation, mailed: Boolean(invitation.email) }
+      return { invitation, mailed: Boolean(invitation.email), link: `http://localhost/#/project-invite/${invitation.id}` }
     },
     'projects:resendInvitation': async ({ invitationId }) => {
       const invitation = invitations.find((i) => i.id === invitationId)
       if (!invitation) throw new Error('not found')
-      return { invitation, mailed: Boolean(invitation.email) }
+      return { invitation, mailed: Boolean(invitation.email), link: `http://localhost/#/project-invite/${invitation.id}` }
     },
     'projects:revokeInvitation': async ({ invitationId }) => {
       const invitation = invitations.find((i) => i.id === invitationId)

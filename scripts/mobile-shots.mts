@@ -18,6 +18,8 @@ const USER = process.env.VC_SHOTS_USER ?? ''
 const PASSWORD = process.env.VC_SHOTS_PASSWORD ?? ''
 const PROJECT = process.env.VC_SHOTS_PROJECT ?? ''
 const INVITE = process.env.VC_SHOTS_INVITE ?? ''
+/** Тема: светлая по умолчанию; тёмную надо смотреть отдельно — контраст другой. */
+const THEME = process.env.VC_SHOTS_THEME ?? ''
 
 /** iPhone 14 — самый узкий из актуальных; проходит он, пройдут и шире. */
 const VIEWPORT = { width: 390, height: 844 }
@@ -33,6 +35,14 @@ interface Problem { screen: string; kind: 'overflow' | 'tap'; detail: string }
 const problems: Problem[] = []
 
 async function shot(page: Page, name: string): Promise<void> {
+  if (THEME) {
+    // Тему приложение ставит и на <html> (окна уходят порталом в body).
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme
+      document.querySelector('.app')?.setAttribute('data-theme', theme)
+    }, THEME)
+    await page.waitForTimeout(200)
+  }
   await page.screenshot({ path: `${OUT}/${name}.png` })
   const overflow = await page.evaluate(() => ({ scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth }))
   if (overflow.scrollW > overflow.clientW + 1) {

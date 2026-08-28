@@ -100,6 +100,11 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-dialog-overlay--phone { align-items:stretch;justify-content:stretch }
 .vc-dialog-body { flex:1 1 auto;min-height:0;overflow:auto;padding:14px 22px 18px }
 .vc-dialog-foot { flex:none;display:flex;justify-content:flex-end;gap:8px;padding:14px 22px;border-top:1px solid var(--border-soft) }
+/* Телефон: кнопки подвала во всю ширину и главной вниз — до этого вложенный ряд
+   сжимался по содержимому, и width:100% у кнопок считался от него. */
+.vc-dialog--phone .vc-dialog-foot { flex-direction:column-reverse;align-items:stretch }
+.vc-dialog--phone .vc-dialog-foot > * { width:100% }
+.vc-dialog--phone .vc-dialog-foot .vc-btn { width:100%;min-height:44px }
 .mdhead { padding:18px 22px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;justify-content:space-between;flex:none }
 .mdh { margin:0;font-size:15px;color:var(--text) }.util-head-btns{display:flex;align-items:center;gap:6px}
 @keyframes vc-fade { from { opacity:0 } } @keyframes vc-pop { from { opacity:0;transform:translateY(6px) scale(.99) } }

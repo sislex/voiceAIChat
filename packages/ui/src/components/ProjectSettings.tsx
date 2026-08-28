@@ -604,6 +604,9 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
                       {invitation.email ?? invitation.invitedUsername}
                       <span className="proj-muted">
                         {invitation.role === 'owner' ? ' · владелец' : ' · участник'}
+                        {/* У проекта может быть несколько владельцев — при разборе
+                            «кто позвал» это первый вопрос. */}
+                        {' · пригласил '}{invitation.invitedBy}
                         {' · до '}
                         <time dateTime={isoDate(invitation.expiresAt)}>{formatDate(invitation.expiresAt)}</time>
                       </span>

@@ -49,7 +49,27 @@ export function flattenTypeTree(types: ProjectTypeNode[]): Array<{ node: Project
 export function ProjectTypesSettings({ types, currentUsername, onCreate, onDelete, onPublish, onUnpublish }: ProjectTypesSettingsProps): JSX.Element {
   const [name, setName] = useState('')
   const [parentId, setParentId] = useState('')
-  const rows = useMemo(() => flattenTypeTree(types), [types])
+  const [query, setQuery] = useState('')
+  const allRows = useMemo(() => flattenTypeTree(types), [types])
+  // Фильтр не рвёт дерево: под совпавшим узлом остаются его потомки, иначе
+  // подтип находился бы «в воздухе», без родителя.
+  const rows = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return allRows
+    const matched = new Set(
+      types.filter((node) => node.name.toLowerCase().includes(needle) || node.description.toLowerCase().includes(needle)).map((node) => node.id)
+    )
+    const keep = new Set<string>()
+    for (const node of types) {
+      if (!matched.has(node.id)) continue
+      let current: ProjectTypeNode | undefined = node
+      while (current) {
+        keep.add(current.id)
+        current = current.parentId ? types.find((t) => t.id === current!.parentId) : undefined
+      }
+    }
+    return allRows.filter((row) => keep.has(row.node.id))
+  }, [allRows, types, query])
   const chainFeatures = (node: ProjectTypeNode): ReturnType<typeof resolveProjectTypeFeatures> => {
     const chain: ProjectTypeNode[] = []
     let current: ProjectTypeNode | undefined = node
@@ -74,8 +94,26 @@ export function ProjectTypesSettings({ types, currentUsername, onCreate, onDelet
         отправите его на утверждение — после одобрения администратором им смогут пользоваться все.
       </p>
 
+      {allRows.length > 6 && (
+        <label className="ptypes-search">
+          <span className="vc-sr-only">Поиск по типам</span>
+          <input
+            className="login-input"
+            type="search"
+            placeholder="Поиск по типам"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+      )}
+
       {rows.length === 0 ? (
-        <EmptyState compact icon="🗂" title="Типов пока нет" description="Создайте первый подтип — он появится в выборе при создании проекта." />
+        <EmptyState
+          compact
+          icon="🗂"
+          title={query.trim() ? 'Ничего не найдено' : 'Типов пока нет'}
+          description={query.trim() ? 'Измените запрос — поиск идёт по названию и описанию.' : 'Создайте первый подтип — он появится в выборе при создании проекта.'}
+        />
       ) : (
         <ul className="ptypes-list" role="list">
           {rows.map(({ node, depth }) => {
