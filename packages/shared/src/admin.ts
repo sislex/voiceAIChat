@@ -188,7 +188,7 @@ export interface SignupConfig { enabled: boolean; role: UserRole; mailConfigured
 export interface InviteInfo { token: string; role: UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string }
 
 /** Журнал безопасности (auth-roadmap п.7): входы, выходы, неудачи, блокировки, смена пароля, 2FA. */
-export type SecurityEventType = 'agent_connected' | 'agent_rejected' | 'agent_token_rotated' | 'agent_token_revoked' | 'signup_requested' | 'signup_verified' | 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
+export type SecurityEventType = 'agent_connected' | 'agent_rejected' | 'agent_token_rotated' | 'agent_token_revoked' | 'signup_requested' | 'signup_verified' | 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'project_invited' | 'project_invite_accepted' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
 export interface SecurityEvent { id: number; at: number; user: string; type: SecurityEventType; ip: string; userAgent: string; details: string }
 
 /** Метрики машины для админки и Prometheus (machines-roadmap п.5). */

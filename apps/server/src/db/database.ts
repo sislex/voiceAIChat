@@ -17,6 +17,13 @@ import {
   type ProjectTypeNode,
   type ProjectTypeStatus
 } from '@voicechat/shared'
+import type {
+  ProjectInvitation,
+  ProjectInvitationForUser,
+  ProjectInvitationPreview,
+  ProjectInvitationStatus,
+  ProjectRole
+} from '@voicechat/shared'
 import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
@@ -448,6 +455,20 @@ const RANK_EPS = 1e-6
 export const PROD_REBUILD_TASK_TITLE = 'Пересборка прода'
 /** Первая строка описания автозадачи — дальше идёт список вмерженных задач. */
 export const PROD_REBUILD_TASK_INTRO = 'Влито в прод-ветку, но прод-контейнер в ране не пересобирался. Пересобрать прод для задач:'
+
+interface ProjectInvitationRow {
+  id: string
+  project_id: string
+  email: string | null
+  invited_username: string | null
+  role: string
+  token_hash: string
+  status: string
+  invited_by: string
+  created_at: number
+  expires_at: number
+  responded_at: number | null
+}
 
 interface ProjectTypeRow {
   id: string
@@ -3362,6 +3383,195 @@ export class VoiceChatDb {
         .prepare(`SELECT 1 FROM kanban_columns WHERE id = ? AND project_id = ?`)
         .get(columnId, projectId) !== undefined
     )
+  }
+
+  // ---- Приглашения в проект ---------------------------------------------------
+  //
+  // Токен живёт только в письме: в БД — sha256, в API его нет вовсе. Принять
+  // приглашение может ТОЛЬКО адресат (по логину или по совпадению users.email),
+  // иначе утёкшая ссылка пускала бы в проект кого угодно.
+
+  private mapInvitation(r: ProjectInvitationRow): ProjectInvitation {
+    return {
+      id: r.id,
+      projectId: r.project_id,
+      email: r.email,
+      invitedUsername: r.invited_username,
+      role: r.role === 'owner' ? 'owner' : 'member',
+      status: (['pending', 'accepted', 'declined', 'revoked'] as const).includes(r.status as ProjectInvitationStatus)
+        ? (r.status as ProjectInvitationStatus)
+        : 'revoked',
+      invitedBy: r.invited_by,
+      createdAt: r.created_at,
+      expiresAt: r.expires_at,
+      respondedAt: r.responded_at
+    }
+  }
+
+  private invitationTokenHash(token: string): string {
+    return createHash('sha256').update(token).digest('hex')
+  }
+
+  /**
+   * Создать приглашение. `invitee` — логин или email; если такой пользователь
+   * известен, приглашение адресуется ему поимённо (и письмо уйдёт на его адрес).
+   * Возвращает приглашение и токен — токен нужен ровно один раз, для письма.
+   */
+  createProjectInvitation(
+    userId: string,
+    projectId: string,
+    invitee: string,
+    opts: { role?: ProjectRole; ttlMs?: number } = {}
+  ): { invitation: ProjectInvitation; token: string; email: string | null } | null {
+    if (!this.isProjectOwner(userId, projectId)) return null
+    const raw = invitee.trim()
+    if (!raw) throw new Error('Укажите логин или email')
+    const looksLikeEmail = raw.includes('@')
+    const email = looksLikeEmail ? raw.toLowerCase() : null
+    if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254)) throw new Error('Некорректный email')
+
+    const user = looksLikeEmail ? this.getUserByEmail(email!) : this.getUser(raw)
+    if (!looksLikeEmail && !user) throw new Error(`Пользователь ${raw} не найден`)
+    const invitedUsername = user?.name ?? null
+    if (invitedUsername) {
+      const already = this.db.prepare(`SELECT 1 FROM project_members WHERE project_id = ? AND username = ?`).get(projectId, invitedUsername)
+      if (already) throw new Error('Этот пользователь уже участник проекта')
+    }
+    // Письмо уходит на явный адрес приглашения либо на подтверждённый адрес
+    // найденного пользователя; звали по логину без email — письма не будет.
+    const deliverTo = email ?? user?.email ?? null
+
+    const token = randomBytes(24).toString('base64url')
+    const id = this.newId()
+    const ts = this.now()
+    const expiresAt = ts + (opts.ttlMs ?? 7 * 24 * 60 * 60_000)
+    // Повторное приглашение того же адресата заменяет прежнее живое: два
+    // действующих токена на одного человека — лишняя поверхность.
+    this.db.transaction(() => {
+      if (invitedUsername) {
+        this.db.prepare(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE project_id=? AND invited_username=? AND status='pending'`).run(ts, projectId, invitedUsername)
+      }
+      if (email) {
+        this.db.prepare(`UPDATE project_invitations SET status='revoked', responded_at=? WHERE project_id=? AND email=? AND status='pending'`).run(ts, projectId, email)
+      }
+      this.db.prepare(
+        `INSERT INTO project_invitations (id, project_id, email, invited_username, role, token_hash, status, invited_by, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
+      ).run(id, projectId, email, invitedUsername, opts.role === 'owner' ? 'owner' : 'member', this.invitationTokenHash(token), userId, ts, expiresAt)
+    })()
+    return { invitation: this.mapInvitation(this.invitationRow(id)!), token, email: deliverTo }
+  }
+
+  private invitationRow(id: string): ProjectInvitationRow | null {
+    return (this.db.prepare(`SELECT * FROM project_invitations WHERE id = ?`).get(id) as ProjectInvitationRow | undefined) ?? null
+  }
+
+  /** Живые приглашения проекта (для владельца). */
+  listProjectInvitations(userId: string, projectId: string): ProjectInvitation[] | null {
+    if (!this.isProjectOwner(userId, projectId)) return null
+    const rows = this.db.prepare(
+      `SELECT * FROM project_invitations WHERE project_id = ? AND status = 'pending' ORDER BY created_at DESC`
+    ).all(projectId) as ProjectInvitationRow[]
+    return rows.map((r) => this.mapInvitation(r))
+  }
+
+  revokeProjectInvitation(userId: string, projectId: string, invitationId: string): boolean {
+    if (!this.isProjectOwner(userId, projectId)) return false
+    const changed = this.db.prepare(
+      `UPDATE project_invitations SET status='revoked', responded_at=? WHERE id=? AND project_id=? AND status='pending'`
+    ).run(this.now(), invitationId, projectId)
+    return changed.changes > 0
+  }
+
+  /** Перевыпуск токена для повторной отправки письма: срок считается заново. */
+  refreshProjectInvitationToken(userId: string, projectId: string, invitationId: string, ttlMs = 7 * 24 * 60 * 60_000): { invitation: ProjectInvitation; token: string; email: string | null } | null {
+    if (!this.isProjectOwner(userId, projectId)) return null
+    const row = this.invitationRow(invitationId)
+    if (!row || row.project_id !== projectId || row.status !== 'pending') return null
+    const token = randomBytes(24).toString('base64url')
+    const ts = this.now()
+    this.db.prepare(`UPDATE project_invitations SET token_hash=?, expires_at=? WHERE id=?`).run(this.invitationTokenHash(token), ts + ttlMs, invitationId)
+    const user = row.invited_username ? this.getUser(row.invited_username) : null
+    return { invitation: this.mapInvitation(this.invitationRow(invitationId)!), token, email: row.email ?? user?.email ?? null }
+  }
+
+  /** Живые приглашения пользователя — по логину и по подтверждённому адресу. */
+  listInvitationsForUser(username: string): ProjectInvitationForUser[] {
+    const user = this.getUser(username)
+    const rows = this.db.prepare(
+      `SELECT i.*, p.name AS project_name FROM project_invitations i
+       JOIN projects p ON p.id = i.project_id
+       WHERE i.status = 'pending' AND i.expires_at > ?
+         AND (i.invited_username = ? OR (i.email IS NOT NULL AND i.email = ?))
+       ORDER BY i.created_at DESC`
+    ).all(this.now(), username, (user?.email ?? '').toLowerCase()) as Array<ProjectInvitationRow & { project_name: string }>
+    return rows.map((r) => ({ ...this.mapInvitation(r), projectName: r.project_name }))
+  }
+
+  /** Публичный превью по токену: только имя проекта, кто позвал и срок. */
+  projectInvitationPreview(token: string): ProjectInvitationPreview | null {
+    const row = this.db.prepare(
+      `SELECT i.*, p.name AS project_name FROM project_invitations i
+       JOIN projects p ON p.id = i.project_id
+       WHERE i.token_hash = ? AND i.status = 'pending' AND i.expires_at > ?`
+    ).get(this.invitationTokenHash(token), this.now()) as (ProjectInvitationRow & { project_name: string }) | undefined
+    if (!row) return null
+    return {
+      projectId: row.project_id,
+      projectName: row.project_name,
+      invitedBy: row.invited_by,
+      role: row.role === 'owner' ? 'owner' : 'member',
+      expiresAt: row.expires_at
+    }
+  }
+
+  /**
+   * Приглашение адресовано этому пользователю? Единственное место, где решается
+   * «чья это ссылка»: по логину либо по совпадению подтверждённого адреса.
+   */
+  private invitationAddressedTo(row: ProjectInvitationRow, username: string): boolean {
+    if (row.invited_username) return row.invited_username === username
+    if (!row.email) return false
+    const email = (this.getUser(username)?.email ?? '').toLowerCase()
+    return Boolean(email) && email === row.email.toLowerCase()
+  }
+
+  /** Принять приглашение по токену. Возвращает id проекта. */
+  acceptProjectInvitation(username: string, token: string): { projectId: string } {
+    const ts = this.now()
+    return this.db.transaction(() => {
+      const row = this.db.prepare(`SELECT * FROM project_invitations WHERE token_hash = ?`).get(this.invitationTokenHash(token)) as ProjectInvitationRow | undefined
+      if (!row || row.status !== 'pending') throw new Error('Приглашение недействительно')
+      if (row.expires_at <= ts) throw new Error('Срок приглашения истёк — попросите отправить его заново')
+      if (!this.invitationAddressedTo(row, username)) throw new Error('Это приглашение адресовано другому пользователю')
+      const user = this.getUser(username)
+      if (!user || user.blocked) throw new Error('Учётная запись недоступна')
+
+      this.db.prepare(`INSERT OR IGNORE INTO project_members (project_id, username, role, added_at) VALUES (?, ?, ?, ?)`)
+        .run(row.project_id, username, row.role === 'owner' ? 'owner' : 'member', ts)
+      this.auditProjectMemberRole(row.project_id, row.invited_by, username, null, row.role === 'owner' ? 'owner' : 'member', 'add', ts)
+      this.db.prepare(`UPDATE project_invitations SET status='accepted', responded_at=?, invited_username=? WHERE id=?`).run(ts, username, row.id)
+      return { projectId: row.project_id }
+    })()
+  }
+
+  declineProjectInvitation(username: string, token: string): boolean {
+    const row = this.db.prepare(`SELECT * FROM project_invitations WHERE token_hash = ?`).get(this.invitationTokenHash(token)) as ProjectInvitationRow | undefined
+    if (!row || row.status !== 'pending') return false
+    if (!this.invitationAddressedTo(row, username)) throw new Error('Это приглашение адресовано другому пользователю')
+    this.db.prepare(`UPDATE project_invitations SET status='declined', responded_at=? WHERE id=?`).run(this.now(), row.id)
+    return true
+  }
+
+  /**
+   * Привязать приглашения «на адрес» к новому зарегистрированному пользователю.
+   * Автоприёма нет: человек входит, видит приглашение и принимает явно.
+   */
+  attachInvitationsToNewUser(username: string, email: string): number {
+    const changed = this.db.prepare(
+      `UPDATE project_invitations SET invited_username = ? WHERE status='pending' AND invited_username IS NULL AND email = ?`
+    ).run(username, email.toLowerCase())
+    return changed.changes
   }
 
   // ---- Дерево типов проекта --------------------------------------------------

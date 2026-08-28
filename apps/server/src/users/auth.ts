@@ -123,7 +123,7 @@ export function projectPermissionForRequest(method: string, url: string): Projec
   if (method === 'PATCH' && /^\/api\/projects\/[^/]+\/tasks\/[^/]+$/.test(url)) return 'task:update'
   // Состав и роли участников проверяются проектной ролью owner в БД. Глобальный
   // admin сам по себе не получает эти права, а owner не обязан быть admin.
-  if (url === '/api/projects' || /^\/api\/projects\/[^/]+$/.test(url) || /^\/api\/projects\/[^/]+\/(?:members|machines|default-machine|columns)(?:\/|$)/.test(url)) return 'project:settings'
+  if (url === '/api/projects' || /^\/api\/projects\/[^/]+$/.test(url) || /^\/api\/projects\/[^/]+\/(?:members|invitations|machines|default-machine|columns)(?:\/|$)/.test(url)) return 'project:settings'
   return null
 }
 
@@ -576,6 +576,9 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const u = token ? db.redeemEmailVerification(String(token), cfg.role) : null
     if (!u) return reply.code(400).send({ error: 'Ссылка недействительна или истекла — зарегистрируйтесь ещё раз' })
     db.logSecurityEvent({ user: u.name, type: 'signup_verified', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: u.email ?? '' })
+    // Приглашения, отправленные на этот адрес до регистрации, теперь адресованы
+    // конкретному пользователю. Автоприёма нет: вступление он подтверждает сам.
+    if (u.email) db.attachInvitationsToNewUser(u.name, u.email)
     return issueSession(req, reply, u.name, u.role)
   })
 
