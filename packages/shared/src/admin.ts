@@ -191,6 +191,33 @@ export interface InviteInfo { token: string; role: UserRole; createdBy: string; 
 export type SecurityEventType = 'signup_requested' | 'signup_verified' | 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
 export interface SecurityEvent { id: number; at: number; user: string; type: SecurityEventType; ip: string; userAgent: string; details: string }
 
+/** Метрики машины для админки и Prometheus (machines-roadmap п.5). */
+export interface AdminMachineStat {
+  id: string
+  name: string
+  owner: string
+  online: boolean
+  version?: string
+  /** Команд всего / за 24 ч, ошибок (ненулевой код, таймаут, отказ) за 24 ч, средняя длительность за 24 ч. */
+  commandsTotal: number
+  commands24h: number
+  errors24h: number
+  avgDurationMs24h: number
+  lastCommandAt: number | null
+  /** Тревог watchdog «не в сети» за 30 дней и суммарный простой по ним (мс). */
+  offlineEvents30d: number
+  offlineMs30d: number
+  /** Байт передано файлами за 24 ч (upload/copy — по журналу команд не видно; считаем write/read из fs — пока 0, поле для Prometheus). */
+  cpuLoadPct?: number
+  memUsedRatio?: number
+  diskFreeBytes?: number
+}
+export interface AdminMachineStats {
+  generatedAt: number
+  machines: AdminMachineStat[]
+  totals: { machines: number; online: number; commands24h: number; errors24h: number }
+}
+
 /** Диск с данными (roadmap-4 п.40): `alert` — свободно меньше `MAKE_DISK_ALERT_BYTES`. */
 export interface AdminDiskStats { totalBytes: number; freeBytes: number; alert: boolean }
 export const MAKE_DISK_ALERT_BYTES = 10 * 1024 ** 3

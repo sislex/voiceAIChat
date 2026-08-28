@@ -2069,6 +2069,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onUpdateMachine={async (id) => { try { await window.api!['admin:updateMachine']({ id }); return null } catch (err) { return err instanceof Error ? err.message : String(err) } }}
           usageSummary={admin.adminUsageSummary}
           makeStats={admin.adminMakeStats}
+          machineStats={admin.adminMachineStats}
           isAdmin={session.currentUser?.role === 'admin'}
           status={admin.adminUsersStatus}
           error={admin.adminUsersError}

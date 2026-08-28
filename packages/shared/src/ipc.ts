@@ -349,6 +349,8 @@ export interface IpcInvokeMap {
   'admin:makeStats': { arg: void; result: import('./admin').AdminMakeStats }
   /** Обновить агента на машине любого пользователя (machines-roadmap п.16). */
   'admin:updateMachine': { arg: { id: string }; result: { ok: true; os: string } }
+  /** Метрики машин для дашборда админа (п.5). */
+  'admin:machineStats': { arg: void; result: import('./admin').AdminMachineStats }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole; mustChangePassword?: boolean }; result: AdminUserInfo }
@@ -1079,6 +1081,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:setSignupConfig',
   'admin:makeStats',
   'admin:updateMachine',
+  'admin:machineStats',
   'admin:llmAccess',
   'admin:saveLlmAccess',
   'admin:createUser',

@@ -1488,6 +1488,21 @@ describe('REST: журнал команд машины', () => {
   })
 })
 
+describe('REST: метрики машин для админки', () => {
+  it('stats и Prometheus-метрики агрегируют журнал команд и статус реестра', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const socket = { close: vi.fn(), send(data: string) { const m = JSON.parse(data) as { t: string; execId?: string }; if (m.t === 'exec.start') agentRegistry.handleMessage(created.id, { t: 'exec.done', execId: m.execId!, exitCode: 1 }) } }
+    agentRegistry.register(created.id, 'M', socket, db.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
+    await inj({ method: 'POST', url: `/api/agents/${created.id}/exec`, payload: { command: 'false' } })
+    const stats = (await inj({ method: 'GET', url: '/api/admin/machines/stats' })).json()
+    expect(stats.totals).toEqual({ machines: 1, online: 1, commands24h: 1, errors24h: 1 })
+    expect(stats.machines[0]).toMatchObject({ id: created.id, owner: U, online: true, version: '0.15.0', commandsTotal: 1, errors24h: 1 })
+    const metrics = await inj({ method: 'GET', url: '/api/admin/machines/metrics' })
+    expect(metrics.headers['content-type']).toContain('text/plain')
+    expect(metrics.body).toContain(`voicechat_machine_command_errors_24h{machine="M",machine_id="${created.id}",owner="${U}"} 1`)
+  })
+})
+
 describe('REST: утилиты машины (exec/fs)', () => {
   it('exec: 404 на чужую машину; 400 на офлайн-машину владельца', async () => {
     // Своя офлайн-машина: exec → 400 (не в сети).

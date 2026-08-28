@@ -91,6 +91,7 @@ export function createAdminClient(api: RendererApi): AdminClient {
       createInvite: (input) => api['admin:inviteCreate'](input),
       deleteInvite: ({ token }) => api['admin:inviteDelete']({ token }).then(() => undefined),
       makeStats: () => api['admin:makeStats'](),
+      machineStats: () => api['admin:machineStats'](),
       createUser: (input) => api['admin:createUser'](input),
       updateUserRole: (input) => api['admin:updateUserRole'](input),
       setUserBlocked: (input) => api['admin:setBlocked'](input),

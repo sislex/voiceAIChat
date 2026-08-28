@@ -307,6 +307,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'admin:makeStats': () => req(REST.adminMakeStats),
     'admin:updateMachine': ({ id }) => req(REST.adminMachineUpdate(id), { method: 'POST' }),
+    'admin:machineStats': () => req(REST.adminMachineStats),
     'admin:llmAccess': ({ name }) => req(REST.adminUserLlmAccess(name)),
     'admin:saveLlmAccess': ({ name, access }) => req(REST.adminUserLlmAccess(name), { method: 'PUT', body: JSON.stringify(access) }),
     'admin:createUser': (b) =>

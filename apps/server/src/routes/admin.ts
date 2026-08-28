@@ -6,8 +6,9 @@ import { randomBytes } from 'node:crypto'
 import { readSignupConfig } from '../users/auth.js'
 import { checkPasswordPolicy } from '@voicechat/shared'
 import { hibpEnabled, pwnedCount } from '../users/pwned.js'
-import type { AdminMakeStats } from '@voicechat/shared'
+import type { AdminMakeStats, AdminMachineStats, AdminMachineStat } from '@voicechat/shared'
 import { formatMakeMetrics } from '../make/metrics.js'
+import { formatMachineMetrics } from '../agents/metrics.js'
 import type { FastifyInstance } from 'fastify'
 import {
   LLM_RUNNER,
@@ -277,6 +278,29 @@ export function registerAdminRoutes(
   app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> =>
     db.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u))
   )
+
+  // Метрики машин (п.5): агрегаты БД + живые online/версия/телеметрия реестра.
+  const machineStats = (): AdminMachineStats => {
+    const now = Date.now()
+    const rows = new Map(db.machineStatsRows(now).map((r) => [r.machineId, r]))
+    const owners = new Map(db.listUsers().map((u) => [u.name, u]))
+    const machines: AdminMachineStat[] = db.listAllAgents().filter((a) => a.userId && owners.has(a.userId)).map((a) => {
+      const r = rows.get(a.id)
+      const t = registry.telemetryOf(a.id)
+      const disk = t?.disk.work ?? t?.disk.root
+      const online = registry.isOnline(a.id)
+      return {
+        id: a.id, name: a.name, owner: a.userId!, online, ...(online && registry.versionOf(a.id) ? { version: registry.versionOf(a.id) } : {}),
+        commandsTotal: r?.commandsTotal ?? 0, commands24h: r?.commands24h ?? 0, errors24h: r?.errors24h ?? 0, avgDurationMs24h: r?.avgDurationMs24h ?? 0,
+        lastCommandAt: r?.lastCommandAt ?? null, offlineEvents30d: r?.offlineEvents30d ?? 0, offlineMs30d: r?.offlineMs30d ?? 0,
+        ...(t ? { cpuLoadPct: t.cpu.loadPct, memUsedRatio: t.mem.totalBytes > 0 ? t.mem.usedBytes / t.mem.totalBytes : 0 } : {}),
+        ...(disk ? { diskFreeBytes: disk.freeBytes } : {})
+      }
+    })
+    return { generatedAt: now, machines, totals: { machines: machines.length, online: machines.filter((m) => m.online).length, commands24h: machines.reduce((s, m) => s + m.commands24h, 0), errors24h: machines.reduce((s, m) => s + m.errors24h, 0) } }
+  }
+  app.get(REST.adminMachineStats, guard, async () => machineStats())
+  app.get(REST.adminMachineMetrics, guard, async (_req, reply) => reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8').send(formatMachineMetrics(machineStats())))
 
   // Обновление агента на любой машине (machines-roadmap п.16): владение не требуется — админ.
   app.post<{ Params: { id: string } }>(REST.adminMachineUpdate(':id').replace('%3Aid', ':id'), guard, async (req, reply) => {
