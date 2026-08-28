@@ -147,3 +147,23 @@ describe('публикация типа', () => {
     expect((await inj(adminTok, { method: 'POST', url: `/api/admin/project-types/${own.id}/review`, payload: { decision: 'может быть' } })).statusCode).toBe(400)
   })
 })
+
+describe('сохранить проект как подтип', () => {
+  it('владелец получает узел под текущим типом проекта', async () => {
+    const project = (await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'Настроенный', typeId: BUILTIN_PROJECT_TYPE_IDS.general } })).json() as { id: string }
+    const res = await inj(bobTok, { method: 'POST', url: `/api/projects/${project.id}/derive-type`, payload: { name: 'Мой шаблон' } })
+    expect(res.statusCode).toBe(200)
+    const node = res.json() as ProjectTypeNode
+    expect(node.parentId).toBe(BUILTIN_PROJECT_TYPE_IDS.general)
+    expect(node.ownerId).toBe('bob')
+    // Узел сразу виден в каталоге автора и не виден остальным.
+    expect((await inj(bobTok, { method: 'GET', url: '/api/project-types' })).json().map((t: ProjectTypeNode) => t.id)).toContain(node.id)
+    expect((await inj(carolTok, { method: 'GET', url: '/api/project-types' })).json().map((t: ProjectTypeNode) => t.id)).not.toContain(node.id)
+  })
+
+  it('без имени — 400, не владелец — 404', async () => {
+    const project = (await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'P' } })).json() as { id: string }
+    expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${project.id}/derive-type`, payload: { name: '  ' } })).statusCode).toBe(400)
+    expect((await inj(carolTok, { method: 'POST', url: `/api/projects/${project.id}/derive-type`, payload: { name: 'Чужое' } })).statusCode).toBe(404)
+  })
+})

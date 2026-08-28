@@ -101,6 +101,8 @@ export function createAdminClient(api: RendererApi): AdminClient {
       userUsage: (input) => api['admin:usage'](input),
       userConversations: (input) => api['admin:conversations'](input),
       userMessages: (input) => api['admin:messages'](input),
+      pendingProjectTypes: () => api['admin:projectTypes'](),
+      reviewProjectType: (input) => api['admin:reviewProjectType'](input),
       listLlmEngines: () => api['admin:llmEngines'](),
       createLlmEngine: (input) => api['admin:createLlmEngine'](input),
       updateLlmEngine: (input) => api['admin:updateLlmEngine'](input),

@@ -252,6 +252,20 @@ export function builtinProjectTypeChain(id: string = DEFAULT_PROJECT_TYPE_ID): P
   return { nodes, features: resolveProjectTypeFeatures(nodes), label: projectTypeChainLabel(nodes) }
 }
 
+/**
+ * Порядок узлов в списке: встроенные впереди и в порядке объявления (основной
+ * тип «Разработка ПО» должен стоять первым, а не как выйдет по алфавиту), затем
+ * пользовательские по имени. Правило одно на все списки — иначе выбор при
+ * создании проекта и каталог в настройках показывали бы разный порядок.
+ */
+export function compareProjectTypes(a: Pick<ProjectTypeNode, 'id' | 'name'>, b: Pick<ProjectTypeNode, 'id' | 'name'>): number {
+  const order = (node: Pick<ProjectTypeNode, 'id'>): number => {
+    const at = BUILTIN_PROJECT_TYPES.findIndex((builtin) => builtin.id === node.id)
+    return at >= 0 ? at : Number.MAX_SAFE_INTEGER
+  }
+  return order(a) - order(b) || a.name.localeCompare(b.name, 'ru')
+}
+
 export function parseProjectFeature(value: unknown): ProjectFeature | null {
   return typeof value === 'string' && (PROJECT_FEATURES as readonly string[]).includes(value) ? (value as ProjectFeature) : null
 }

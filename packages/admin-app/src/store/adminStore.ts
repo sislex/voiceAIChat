@@ -3,6 +3,7 @@
 // Домен активируется только при открытии админки: обычный bootstrap его не
 // грузит. При logout или потере роли данные полностью очищаются.
 
+import type { ProjectTypeNode } from '@shared/projectTypes'
 import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
@@ -45,6 +46,8 @@ export interface AdminState {
   adminMessages: Message[]
   adminConversationId: string | null
   adminLlmEngines: AdminLlmEngine[]
+  /** Типы проекта, ожидающие утверждения администратором. */
+  pendingProjectTypes: ProjectTypeNode[]
   adminLlmEnginesStatus: LoadStatus
   adminLlmEnginesError: string | null
   adminLlmEngineHealth: Record<string, AdminLlmEngineHealth | undefined>
@@ -75,6 +78,8 @@ export interface AdminActions {
   revokeAdminSession(sid: string): Promise<void>
   openAdminConversation(conversationId: string): Promise<void>
   refreshAdminLlmEngines(): Promise<void>
+  refreshPendingProjectTypes(): Promise<void>
+  reviewProjectType(input: { id: string; decision: 'approve' | 'reject'; note?: string }): Promise<void>
   refreshAdminModelPrices(): Promise<void>
   saveAdminModelPrice(input: ModelPriceInput): Promise<void>
   deleteAdminModelPrice(provider: string, model: string): Promise<void>
@@ -115,6 +120,7 @@ function initialState(): AdminState {
     adminMessages: [],
     adminConversationId: null,
     adminLlmEngines: [],
+  pendingProjectTypes: [],
     adminLlmEnginesStatus: 'loading',
     adminLlmEnginesError: null,
     adminLlmEngineHealth: {},
@@ -164,6 +170,23 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       })
       throw err
     }
+  }
+
+  /** Очередь типов на утверждение; у старого клиента метода нет — очередь пустая. */
+  async function refreshPendingProjectTypes(): Promise<void> {
+    if (!client.pendingProjectTypes) return
+    try {
+      setState({ pendingProjectTypes: await client.pendingProjectTypes() })
+    } catch {
+      // Очередь — вспомогательная секция: её сбой не должен ронять всю админку.
+      setState({ pendingProjectTypes: [] })
+    }
+  }
+
+  async function reviewProjectType(input: { id: string; decision: 'approve' | 'reject'; note?: string }): Promise<void> {
+    if (!client.reviewProjectType) return
+    await client.reviewProjectType(input)
+    await refreshPendingProjectTypes()
   }
 
   async function refreshAdminModelPrices(): Promise<void> {
@@ -390,6 +413,8 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       revokeAdminSession,
       openAdminConversation,
       refreshAdminLlmEngines,
+      refreshPendingProjectTypes,
+      reviewProjectType,
       refreshAdminModelPrices,
       async saveAdminModelPrice(input) {
         try {

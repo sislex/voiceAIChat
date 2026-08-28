@@ -2,6 +2,7 @@ import type {
   AdminLlmEngine, AdminLlmEngineHealth, AdminLlmEngineInput, AdminUserInfo,
   ModelPrice, ModelPriceInput, UsageReport, UsageUnit, UserUsageSummary, AdminMakeStats, AdminMachineStats, SecurityEvent, InviteInfo, SignupConfig } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
+import type { ProjectTypeNode } from '@shared/projectTypes'
 import type { Conversation, Message, SessionInfo, SessionUser, UserRole } from '@shared/types'
 
 export interface AdminClient {
@@ -36,6 +37,9 @@ export interface AdminClient {
   userUsage(input: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }): Promise<UsageReport>
   userConversations(input: { name: string }): Promise<Conversation[]>
   userMessages(input: { name: string; conversationId: string }): Promise<Message[]>
+  /** Очередь типов проекта на утверждение и решение по ним. */
+  pendingProjectTypes?(): Promise<ProjectTypeNode[]>
+  reviewProjectType?(input: { id: string; decision: 'approve' | 'reject'; note?: string }): Promise<ProjectTypeNode>
   listLlmEngines(): Promise<AdminLlmEngine[]>
   createLlmEngine(input: AdminLlmEngineInput): Promise<AdminLlmEngine>
   updateLlmEngine(input: { id: string; patch: AdminLlmEngineInput }): Promise<AdminLlmEngine>

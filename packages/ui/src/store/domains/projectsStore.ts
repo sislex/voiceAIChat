@@ -116,6 +116,8 @@ export interface ProjectsActions {
   acceptInvitation(token: string): Promise<string | null>
   declineInvitation(token: string): Promise<void>
   createProjectType(input: Parameters<ProjectsClient['projectTypes:create']>[0]): Promise<ProjectTypeNode | null>
+  /** Сохранить настроенный проект как подтип его текущего типа. */
+  deriveProjectType(id: string, name: string): Promise<ProjectTypeNode | null>
   updateProjectType(id: string, fields: Omit<Parameters<ProjectsClient['projectTypes:update']>[0], 'id'>): Promise<void>
   deleteProjectType(id: string): Promise<void>
   publishProjectType(id: string): Promise<void>
@@ -668,6 +670,16 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       async createProjectType(input) {
         try {
           const node = await client['projectTypes:create'](input)
+          await actions.loadProjectTypes()
+          return node
+        } catch (err) {
+          fail(err)
+          return null
+        }
+      },
+      async deriveProjectType(id, name) {
+        try {
+          const node = await client['projects:deriveType']({ id, name })
           await actions.loadProjectTypes()
           return node
         } catch (err) {
