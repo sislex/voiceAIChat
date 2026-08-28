@@ -320,9 +320,12 @@ export function ChatColumn({
   }
 
   const copyMessage = (m: Message): void => {
-    void copyText(m.text).then(() => {
+    void copyText(m.text).then((copied) => {
+      if (!copied) return
       setCopiedId(m.id)
       setTimeout(() => setCopiedId((id) => (id === m.id ? null : id)), 1500)
+    }).catch(() => {
+      // Clipboard permissions and browser support are outside the chat's control.
     })
   }
 
@@ -751,8 +754,8 @@ export function ChatColumn({
                     {/* Копировать ответ — той же иконкой и в том же углу, что копия кода. */}
                     <button
                       className="copymsg"
-                      aria-label="Копировать ответ"
-                      title="Копировать ответ"
+                      aria-label="Копировать сообщение"
+                      title="Копировать сообщение"
                       onClick={() => copyMessage(m)}
                     >
                       {copiedId === m.id ? '✓' : '⧉'}
@@ -823,6 +826,14 @@ export function ChatColumn({
                   </div>
                 ) : (
                   <div className="bub">
+                    <button
+                      className="copymsg"
+                      aria-label="Копировать сообщение"
+                      title="Копировать сообщение"
+                      onClick={() => copyMessage(m)}
+                    >
+                      {copiedId === m.id ? '✓' : '⧉'}
+                    </button>
                     <p>{m.text}</p>
                     {m.meta?.previewElement && (
                       <details className="message-preview-context" data-testid="message-preview-context">
