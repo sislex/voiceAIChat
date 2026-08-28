@@ -7108,3 +7108,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .consskill:disabled { opacity: 0.5; cursor: default; }
 .chat-skills { flex-shrink: 0; margin-left: 8px; font-size: 12px; max-width: 140px; }
 @media (max-width: 720px) { .chat-skills { display: none; } }
+
+/* Политика PTY в карточке машины */
+.ac-num { display: grid; gap: 4px; font-size: 12px; flex: 1 1 200px; }
+.ac-num input { max-width: 120px; }
+.ac-check { display: flex; gap: 8px; align-items: center; font-size: 13px; margin-top: 6px; }

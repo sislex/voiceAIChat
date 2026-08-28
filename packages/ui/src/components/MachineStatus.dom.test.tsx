@@ -244,6 +244,16 @@ describe('MachineStatus — удаление машины', () => {
 })
 
 describe('MachineStatus — редактор политики строки (AgentCard)', () => {
+  it('секция «Терминал (PTY)»: чекбокс sudo и лимиты уходят в onSetPolicy', async () => {
+    const onSetPolicy = vi.fn()
+    render(<MachineStatus agents={[agent()]} onSetPolicy={onSetPolicy} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Политика машины «Мак»'))
+    fireEvent.click(screen.getByLabelText('Подтверждать sudo в терминале'))
+    expect(onSetPolicy).toHaveBeenLastCalledWith('a1', expect.objectContaining({ ptyConfirmSudo: true }))
+    fireEvent.change(screen.getByLabelText('Лимит одновременных терминалов'), { target: { value: '2' } })
+    expect(onSetPolicy).toHaveBeenLastCalledWith('a1', expect.objectContaining({ ptyMaxSessions: 2 }))
+  })
+
   it('стрелка раскрывает каталоги, паттерны и навыки машины', () => {
     render(<MachineStatus agents={[agent({ policy: policy() })]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
     expect(screen.queryByTestId('machine-policy-a1')).toBeNull()

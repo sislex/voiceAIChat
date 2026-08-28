@@ -167,6 +167,53 @@ describe('AgentRegistry', () => {
       await expect(pending).rejects.toThrow('файловую операцию за 30 с')
     })
 
+    it('pty: лимит одновременных сеансов из политики', () => {
+      const reg = makeRegistry()
+      const sock = fakeSocket()
+      reg.register('a1', 'Мак', sock, { ...DEFAULT_AGENT_POLICY, ptyMaxSessions: 1 }, '0.15.0')
+      const events: string[] = []
+      reg.ptyStart('a1', 'p1', 80, 24, undefined, () => {})
+      reg.ptyStart('a1', 'p2', 80, 24, undefined, (e) => events.push(e.t === 'pty.error' ? e.message : e.t))
+      expect(events[0]).toContain('Лимит одновременных терминалов')
+      expect(sock.sent.filter((m) => m.t === 'pty.start')).toHaveLength(1)
+      reg.ptyKill('p1')
+      reg.ptyStart('a1', 'p2', 80, 24, undefined, () => {})
+      expect(sock.sent.filter((m) => m.t === 'pty.start')).toHaveLength(2)
+    })
+
+    it('pty: sudo задерживается до подтверждения y/N; обычные команды идут как есть', () => {
+      const reg = makeRegistry()
+      const sock = fakeSocket()
+      reg.register('a1', 'Мак', sock, { ...DEFAULT_AGENT_POLICY, ptyConfirmSudo: true }, '0.15.0')
+      const out: string[] = []
+      reg.ptyStart('a1', 'p1', 80, 24, undefined, (e) => { if (e.t === 'pty.output') out.push(e.data) })
+      const inputs = () => sock.sent.filter((m): m is Extract<ServerToAgent, { t: 'pty.input' }> => m.t === 'pty.input').map((m) => m.data).join('')
+      for (const ch of 'ls\r') reg.ptyInput('p1', ch)
+      expect(inputs()).toBe('ls\r')
+      for (const ch of 'sudo rm x') reg.ptyInput('p1', ch)
+      reg.ptyInput('p1', '\r')
+      expect(inputs()).toBe('ls\rsudo rm x') // Enter не ушёл
+      expect(out.join('')).toContain('sudo — выполнить?')
+      reg.ptyInput('p1', 'n')
+      expect(inputs()).toBe('ls\rsudo rm x\x15') // отказ — строка стёрта Ctrl-U
+      for (const ch of 'sudo id\r') reg.ptyInput('p1', ch)
+      reg.ptyInput('p1', 'y')
+      expect(inputs().endsWith('sudo id\r')).toBe(true)
+    })
+
+    it('pty: политика ptyIdleMinutes убивает сеанс без ввода, ввод сбрасывает таймер', () => {
+      const reg = makeRegistry()
+      const sock = fakeSocket()
+      reg.register('a1', 'Мак', sock, { ...DEFAULT_AGENT_POLICY, ptyIdleMinutes: 1 }, '0.15.0')
+      reg.ptyStart('a1', 'p1', 80, 24, undefined, () => {})
+      vi.advanceTimersByTime(50_000)
+      reg.ptyInput('p1', 'x')
+      vi.advanceTimersByTime(50_000)
+      expect(sock.sent.some((m) => m.t === 'pty.kill')).toBe(false)
+      vi.advanceTimersByTime(11_000)
+      expect(sock.sent).toContainEqual({ t: 'pty.kill', ptyId: 'p1' })
+    })
+
     it('pty: отписанный сеанс живёт полчаса, а потом убивается по простою', () => {
       const reg = makeRegistry()
       const sock = fakeSocket()
