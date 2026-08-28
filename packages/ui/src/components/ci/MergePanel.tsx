@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { formatDateTime } from '../../lib/dateFormat'
 import type { MergeMachineReadiness, MergeRun, TaskRepository } from '@shared/merge'
 import type { CiTaskMachine } from '@shared/ci'
 import { Button, EmptyState, ErrorState, RefreshIndicator, Skeleton } from '@voicechat/ui-kit'
@@ -184,7 +185,7 @@ export function MergePanel(props: {
               <li key={run.id}>
                 <button type="button" className={`merge-history-item${run.id === activeRunId ? ' merge-history-item--active' : ''}`} onClick={() => setSelectedRunId(run.id)}>
                   <span className={`merge-badge merge-badge--${mergeStatusTone(run.status)}`}>{MERGE_STATUS_LABEL[run.status] ?? run.status}</span>
-                  <span>{new Date(run.createdAt).toLocaleString()}</span>
+                  <span>{formatDateTime(run.createdAt)}</span>
                   <span title={run.agentId}>{run.machineName ?? run.agentId}</span>
                 </button>
               </li>

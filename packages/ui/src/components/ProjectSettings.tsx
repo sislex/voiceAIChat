@@ -1,6 +1,7 @@
 // Раздел «Настройки» страницы проекта (шапку и переключатель разделов рисует
 // ProjectPage, здесь — только содержимое).
 import { CiProjectDefaults } from './ci/CiProjectDefaults'
+import { formatDate, isoDate } from '../lib/dateFormat'
 // Описание, git, технологии/навыки, workflow фич, участники, машины, удаление.
 // Управляющие контролы (правка, участники, машины, удаление) — только владельцу.
 
@@ -481,8 +482,8 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
                   {m.username}{current && <span className="proj-muted"> · вы</span>}
                   {m.username === detail.createdBy && <span className="proj-muted"> · создатель</span>}
                   {m.addedAt > 0 && (
-                    <time className="proj-muted" dateTime={new Date(m.addedAt).toISOString()}>
-                      {' · с ' + new Date(m.addedAt).toLocaleDateString()}
+                    <time className="proj-muted" dateTime={isoDate(m.addedAt)}>
+                      {' · с ' + formatDate(m.addedAt)}
                     </time>
                   )}
                 </span>
@@ -569,7 +570,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
                       <span className="proj-muted">
                         {invitation.role === 'owner' ? ' · владелец' : ' · участник'}
                         {' · до '}
-                        <time dateTime={new Date(invitation.expiresAt).toISOString()}>{new Date(invitation.expiresAt).toLocaleDateString('ru-RU')}</time>
+                        <time dateTime={isoDate(invitation.expiresAt)}>{formatDate(invitation.expiresAt)}</time>
                       </span>
                     </span>
                     <span className="proj-invite-actions">

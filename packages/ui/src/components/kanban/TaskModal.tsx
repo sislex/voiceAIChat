@@ -12,6 +12,7 @@
 // разная, поэтому ширина проверяется через useMediaQuery, а не только в CSS.
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { formatDateTime, formatDate } from '../../lib/dateFormat'
 import { ALL_PROJECT_FEATURES, type ProjectFeatureSet } from '@shared/projectTypes'
 import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
 import { normalizeAcceptanceCriteria, TASK_PRIORITIES } from '@shared/projects'
@@ -957,8 +958,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               {props.detailsExtra}
               {!props.draft && <p className="jmodal-dates">
                 Статус: {column?.name ?? '—'}
-                <br />Создано: {new Date(task.createdAt).toLocaleDateString('ru')}
-                <br />Обновлено: {new Date(task.updatedAt).toLocaleDateString('ru')}
+                <br />Создано: {formatDate(task.createdAt)}
+                <br />Обновлено: {formatDate(task.updatedAt)}
               </p>}
             </div>
           )}
@@ -1082,8 +1083,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                     <dt>Provider</dt><dd>{reportRun.provider || '—'}</dd>
                     <dt>Модель</dt><dd>{reportRun.model || '—'}</dd>
                     <dt>Результат</dt><dd>{ciStatusLabel(reportRun.status)}</dd>
-                    <dt>Начало</dt><dd>{reportRun.startedAt ? new Date(reportRun.startedAt).toLocaleString('ru') : '—'}</dd>
-                    <dt>Завершение</dt><dd>{reportRun.finishedAt ? new Date(reportRun.finishedAt).toLocaleString('ru') : '—'}</dd>
+                    <dt>Начало</dt><dd>{reportRun.startedAt ? formatDateTime(reportRun.startedAt) : '—'}</dd>
+                    <dt>Завершение</dt><dd>{reportRun.finishedAt ? formatDateTime(reportRun.finishedAt) : '—'}</dd>
                     <dt>Итоговая продолжительность</dt><dd>{reportRun.durationMs != null ? fmtDuration(reportRun.durationMs) : '—'}</dd>
                   </dl>}
                 </> : <p className="task-tab-empty">Подробности работы модели пока не поступили.</p>}
