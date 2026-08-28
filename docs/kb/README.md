@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 76 коммит(ов) в areas после сверки: 03763530 fix(chat): continue FIFO queue after turn errors … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 78 коммит(ов) в areas после сверки: 03763530 fix(chat): continue FIFO queue after turn errors … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 75 коммит(ов) в areas после сверки: 03763530 fix(chat): continue FIFO queue after turn errors … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 769 коммит(ов) в areas после сверки: cace9792 docs(kb): update after merge bee11923-6074-4b53-9be1-c29692ff8c16 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 770 коммит(ов) в areas после сверки: 3174876b docs(kb): update after merge 6c99c484-3283-49ee-8c5a-2e0285c0effa … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 188 коммит(ов) в areas после сверки: 6a45c9db fix(ui): restore chat and Make split layout … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 33 коммит(ов) в areas после сверки: 6a45c9db fix(ui): restore chat and Make split layout … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 8 коммит(ов) в areas после сверки: 03763530 fix(chat): continue FIFO queue after turn errors … |
