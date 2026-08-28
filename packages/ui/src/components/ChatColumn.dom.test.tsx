@@ -869,4 +869,12 @@ describe('ChatColumn — кнопка «Использование БЗ»', () =
     render(<ChatColumn title="Тест" state="idle" messages={[msg]} liveSegments={[]} diarization={false} voiceBar={null} />)
     expect(screen.queryByRole('button', { name: 'Откатить правки' })).toBeNull()
   })
+
+  it('шапка: селект «Навыки» для машины хода запускает навык через onRunSkill', async () => {
+    const onRunSkill = vi.fn()
+    const machine = { id: 'm1', name: 'Мак', online: true, createdAt: 1, lastSeen: null, policy: { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [{ name: 'логи', command: 'docker logs app' }] } }
+    renderCol({ agents: [machine], execTarget: 'm1', onRunSkill })
+    await userEvent.selectOptions(screen.getByLabelText('Навыки машины'), 'логи')
+    expect(onRunSkill).toHaveBeenCalledWith('m1', 'docker logs app')
+  })
 })

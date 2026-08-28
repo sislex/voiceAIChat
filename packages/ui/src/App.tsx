@@ -1651,6 +1651,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         permissionMode={activePermissionMode}
         workspace={activeConversation?.workspace}
         storage={activeStorage}
+        onRunSkill={(agentId, command) => operationsActions.runSkill(agentId, command)}
         onExecutePlan={(answerId) => void chatActions.executePlan(answerId)}
         onMakeRestore={inMake ? (snapshotId) => void restoreMakeTurn(snapshotId) : undefined}
         canExecutePlan={!forcedPlan}
@@ -2197,7 +2198,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             kind: operations.utility.kind,
             ...(operations.utility.agentId ? { agentId: operations.utility.agentId } : {}),
             ...(operations.utility.path ? { path: operations.utility.path } : {}),
-            ...(operations.utility.dir ? { dir: true } : {})
+            ...(operations.utility.dir ? { dir: true } : {}),
+            ...(operations.utility.command ? { command: operations.utility.command } : {})
           }}
           agents={operations.agents}
           ops={machineOps}

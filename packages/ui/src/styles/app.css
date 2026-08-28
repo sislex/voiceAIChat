@@ -7101,3 +7101,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .mcmdlog-cmd code { word-break: break-all; }
 .mcmdlog-out { margin: 4px 0 0; padding: 6px; max-height: 160px; overflow: auto; font-size: 11px; white-space: pre-wrap; background: rgba(0,0,0,0.06); border-radius: 4px; }
 .mcmdlog-link { margin-left: 6px; border: 0; background: none; color: var(--accent, #4c6ef5); cursor: pointer; font-size: 12px; padding: 0; }
+
+/* Навыки машины: чипы в консоли и селект в шапке чата (machines-roadmap п.14) */
+.consskills { display: flex; gap: 6px; flex-wrap: wrap; padding: 4px 8px; }
+.consskill { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border, #3a3a3a); background: transparent; color: inherit; cursor: pointer; }
+.consskill:disabled { opacity: 0.5; cursor: default; }
+.chat-skills { flex-shrink: 0; margin-left: 8px; font-size: 12px; max-width: 140px; }
+@media (max-width: 720px) { .chat-skills { display: none; } }

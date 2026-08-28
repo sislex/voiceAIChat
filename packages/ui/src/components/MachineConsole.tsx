@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import type { AgentExecResult, AgentInfo } from '@shared/agentProtocol'
 import type { ConsoleHistoryStore, SwitchUtility, UtilityVariant } from './machine'
 import { MachineUtilityHeader } from './MachineUtilityHeader'
@@ -28,6 +28,8 @@ export interface MachineConsoleProps {
    * затем, чтобы переход в проводник открылся там, откуда пришли.
    */
   initialCwd?: string
+  /** Команда, выполняемая сразу после открытия (навык из шапки чата). */
+  initialCommand?: string
   variant?: UtilityVariant
   onClose?: () => void
   /** Переключиться на проводник этой машины (шапка утилиты). */
@@ -71,6 +73,7 @@ export function MachineConsole({
   initialAgentId,
   exec,
   historyStore,
+  initialCommand,
   initialCwd,
   variant = 'modal',
   onClose,
@@ -136,6 +139,17 @@ export function MachineConsole({
       setRunning(null)
     }
   }
+
+  // Навык из шапки чата: консоль открыли ради одной команды — выполняем её один раз, как только машина в сети.
+  const autoRan = useRef(false)
+  useEffect(() => {
+    if (!initialCommand || autoRan.current || !agentId || !agentOnline) return
+    autoRan.current = true
+    void runCommand(initialCommand)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCommand, agentId, agentOnline])
+
+  const skills = selectedAgent?.policy.skills ?? []
 
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
@@ -304,6 +318,20 @@ export function MachineConsole({
         )}
       </div>
 
+      {skills.length > 0 && (
+        <div className="consskills" data-testid="console-skills" aria-label="Сохранённые команды машины">
+          {skills.map((skill) => (
+            <button
+              key={skill.name}
+              type="button"
+              className="consskill"
+              title={skill.description ? `${skill.description}\n${skill.command}` : skill.command}
+              disabled={!agentOnline || running !== null}
+              onClick={() => void runCommand(skill.command)}
+            >⚡ {skill.name}</button>
+          ))}
+        </div>
+      )}
       <form className="consbar" onSubmit={submit}>
         <span className="consprompt">$</span>
         <input

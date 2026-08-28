@@ -29,6 +29,8 @@ export interface UtilityTarget {
   path?: string
   dir?: boolean
   projectId?: string
+  /** Команда для немедленного выполнения в консоли (навык машины из шапки чата). */
+  command?: string
 }
 
 export interface OperationsState {
@@ -79,6 +81,8 @@ export interface OperationsActions {
   // --- Утилиты машины ---
   openUtility(kind: 'console' | 'explorer', agentId?: string | null, path?: string, dir?: boolean): void
   openUtilityForActiveChat(kind: 'console' | 'explorer'): void
+  /** Открыть консоль машины и сразу выполнить команду навыка. */
+  runSkill(agentId: string, command: string): void
   closeUtility(): void
   fsList(agentId: string, path: string): Promise<FsResult>
   fsRead(agentId: string, path: string): Promise<FsResult>
@@ -311,6 +315,9 @@ export function createOperationsStore(deps: OperationsDeps): OperationsStore {
             ...(path && dir ? { dir: true } : {})
           }
         })
+      },
+      runSkill(agentId, command) {
+        setState({ utility: { kind: 'console', agentId, command } })
       },
       openUtilityForActiveChat(kind) {
         const { execTarget, workdir, projectId: pid } = deps.activeChat()

@@ -27,6 +27,8 @@ export interface MachineTerminalProps {
   onOpenMachines?: () => void
   /** Стор открытых сеансов (вкладок). По умолчанию — общий стор приложения. */
   sessions?: PtySessionStore
+  /** Команда навыка: выполняется в сеансе запрошенной машины сразу после приглашения shell. */
+  initialCommand?: string
 }
 
 /** Подпись вкладки: машина, номер сеанса (если их несколько) и каталог. */
@@ -40,7 +42,7 @@ function tabLabel(tab: PtySessionTab, tabs: PtySessionTab[], agents: AgentInfo[]
 
 /** Представление одного присоединённого PTY-сеанса. Экспортируется для панели
  *  «Консоль с ассистентом», где ptyId детерминирован по разговору. */
-export function TerminalView({ agentId, cwd, projectId, pty, ptyId }: { agentId: string; cwd?: string; projectId?: string; pty: RendererPtyBridge; ptyId: string }): JSX.Element {
+export function TerminalView({ agentId, cwd, projectId, pty, ptyId, initialCommand }: { agentId: string; cwd?: string; projectId?: string; pty: RendererPtyBridge; ptyId: string ; initialCommand?: string}): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<'live' | 'exited' | 'error'>('live')
   const [statusMsg, setStatusMsg] = useState('')
@@ -69,8 +71,16 @@ export function TerminalView({ agentId, cwd, projectId, pty, ptyId }: { agentId:
     doFit()
     const attach = (): void => pty.start({ agentId, ptyId, cols: term.cols, rows: term.rows, ...(cwd ? { cwd } : {}), ...(projectId ? { projectId } : {}) })
     const onData = term.onData((data) => pty.input({ ptyId, data }))
+    // Навык из шапки чата: команду отправляем один раз, когда shell показал приглашение (первый вывод PTY).
+    let pendingCommand = initialCommand
     const offOut = pty.onOutput((m) => {
-      if (m.ptyId === ptyId) term.write(m.data)
+      if (m.ptyId !== ptyId) return
+      term.write(m.data)
+      if (pendingCommand) {
+        const command = pendingCommand
+        pendingCommand = undefined
+        setTimeout(() => pty.input({ ptyId, data: `${command}\r` }), 50)
+      }
     })
     const offExit = pty.onExit((m) => {
       if (m.ptyId !== ptyId) return
@@ -125,7 +135,8 @@ export function MachineTerminal({
   onClose,
   onSwitchUtility,
   onOpenMachines,
-  sessions = ptySessionStore
+  sessions = ptySessionStore,
+  initialCommand
 }: MachineTerminalProps): JSX.Element {
   const { tabs, activeId } = useSyncExternalStore(sessions.subscribe, sessions.snapshot, sessions.snapshot)
   // Машина, которую просили открыть: её вкладка либо находится, либо заводится.
@@ -220,6 +231,7 @@ export function MachineTerminal({
           {...(projectId ? { projectId } : {})}
           pty={pty}
           ptyId={active.ptyId}
+          initialCommand={active.agentId === wantedAgentId ? initialCommand : undefined}
         />
       ) : agents.length > 0 ? (
         <EmptyState
