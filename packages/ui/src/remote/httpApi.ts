@@ -396,6 +396,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectMember(id, username), { method: 'DELETE' }),
     'projects:linkMachine': ({ id, agentId, storageId }) =>
       req(REST.projectMachines(id), { method: 'POST', body: JSON.stringify({ agentId, storageId }) }),
+    'projects:setMachineShareAccess': ({ id, agentId, access }) =>
+      req(REST.projectMachineShare(id, agentId), { method: 'PUT', body: JSON.stringify({ shared: true, access }) }),
     'projects:unlinkMachine': ({ id, agentId }) =>
       req(REST.projectMachine(id, agentId), { method: 'DELETE' }),
     'projects:configureMachineStorage': ({ id, agentId, storageId, directories }) =>

@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ProjectMachine } from '@shared/projects'
 import { render } from '../test/uiRender'
@@ -127,4 +127,18 @@ it('показывает все назначения, меняет storage и с
   expect(configure).toHaveBeenCalledWith('p1', 'a1', 's2', directories)
   await userEvent.click(screen.getByRole('button', { name: 'Сбросить' }))
   expect(reset).toHaveBeenCalledWith('p1', 'a1', 'mergeClones')
+})
+
+it('владелец выбирает уровень доступа предоставленной машины, участник видит пометку «только чтение» (п.18)', async () => {
+  const onSetShareAccess = vi.fn()
+  const mineMachine: ProjectMachine = { ...own, agentId: 'm1', name: 'Мак', sharedWithProject: true, shareAccess: 'full' }
+  const sharedMachine: ProjectMachine = { ...other, agentId: 'm2', name: 'Чужая', sharedWithProject: true, shareAccess: 'read' }
+  render(<ProjectMachinesSettings projectId="p1" machines={[mineMachine, sharedMachine]} agents={[makeAgent({ id: 'm1', name: 'Мак' })]} onShare={vi.fn()} onSetShareAccess={onSetShareAccess} onSave={vi.fn()} onSetDefault={vi.fn()} onConfigureStorage={vi.fn()} onResetDirectory={vi.fn()} />)
+  const select = screen.getByLabelText('Доступ участников к машине Мак')
+  expect(select).toHaveValue('full')
+  fireEvent.change(select, { target: { value: 'read' } })
+  expect(onSetShareAccess).toHaveBeenCalledWith('p1', 'm1', 'read')
+  // у чужой машины участник видит пометку с пояснением, а не переключатель
+  expect(screen.getByTitle(/Владелец разрешил только чтение/)).toBeInTheDocument()
+  expect(screen.queryByLabelText('Доступ участников к машине Чужая')).toBeNull()
 })

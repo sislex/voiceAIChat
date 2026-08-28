@@ -73,6 +73,11 @@ export interface MachineCommandEvent {
   logPath?: string
 }
 
+/** Уровень доступа, с которым машина предоставлена проекту (machines-roadmap п.18). */
+export type MachineShareAccess = 'full' | 'read'
+/** Права пользователя на машину: владелец, полный доступ участника проекта, только чтение. */
+export type MachineAccessLevel = 'owner' | 'full' | 'read'
+
 /** Результат команды на одной машине в групповом запуске (machines-roadmap п.15). */
 export interface BatchExecItem {
   machineId: string
@@ -364,6 +369,10 @@ export interface AgentInfo {
   effectiveSource?: 'personal_default' | 'fallback'
   /** Версия подключённого агента (только когда online; иначе не задана). */
   version?: string
+  /** Личная машина пользователя или машина, предоставленная проектом (machines-roadmap п.18). */
+  ownership?: 'personal' | 'project'
+  /** Права текущего пользователя на машину; `read` — команды, PTY и запись файлов запрещены. */
+  access?: MachineAccessLevel
   /** Срок токена (UNIX мс); нет — бессрочный (machines-roadmap п.11). */
   tokenExpiresAt?: number | null
   /** IP последнего подключения агента и флаг привязки: при включённой привязке другой IP отвергается. */

@@ -144,10 +144,12 @@ export async function registerAgentRoutes(
   artifacts: AppArtifacts = {},
   commandGate?: CommandGate
 ): Promise<void> {
-  const withLiveStatus = (agents: ReturnType<VoiceChatDb['listAgents']>): AgentInfo[] => {
+  const withLiveStatus = (agents: ReturnType<VoiceChatDb['listAgents']>, userId?: string, projectId?: string | null): AgentInfo[] => {
     const online = registry.onlineIds()
     return agents.map((a) => ({
       ...a,
+      // Личная машина или предоставленная проектом, и права на неё (п.18).
+      ...(userId ? { ownership: (a.userId === userId ? 'personal' : 'project') as 'personal' | 'project', access: db.machineAccess(userId, a.id, projectId) ?? undefined } : {}),
       online: online.has(a.id),
       version: registry.versionOf(a.id),
       telemetry: registry.telemetryOf(a.id),
@@ -156,7 +158,7 @@ export async function registerAgentRoutes(
   }
 
   app.get(REST.agents, async (req): Promise<AgentInfo[]> =>
-    withLiveStatus(db.listAgents(uid(req)))
+    withLiveStatus(db.listAgents(uid(req)), uid(req))
   )
 
   const storagePath = (rootPath: string, platform: string, name: string): string => {
@@ -378,7 +380,7 @@ export async function registerAgentRoutes(
       const conversation = db.getConversation(userId, req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       const projectId = req.query.projectId ?? conversation.projectId
-      const machines = withLiveStatus(db.listUsableAgents(userId, projectId))
+      const machines = withLiveStatus(db.listUsableAgents(userId, projectId), userId, projectId)
       const personalDefault = projectId
         ? db.getUserProjectDefaultMachine(userId, projectId)
         : db.getSettings(userId).defaultAgentId
@@ -557,13 +559,17 @@ export async function registerAgentRoutes(
 
   // --- Файловый проводник по машине (все под проверкой владения) ---
   /** Проверка владения + читаемый ответ на ошибки агента (офлайн/политика). */
+  /** Только чтение (машина предоставлена проекту в режиме `read`) — мутации запрещены (п.18). */
+  const READ_ONLY_ERROR = 'Машина предоставлена проекту только для чтения: команды, терминал и запись файлов запрещены'
   const withFs = async (
     req: { params: { id: string }; query?: { projectId?: string } },
     reply: FastifyReply,
-    run: (id: string) => Promise<unknown>
+    run: (id: string) => Promise<unknown>,
+    mutates = false
   ): Promise<unknown> => {
     const u = uid(req as never)
     if (!canUseAgent(u, req.params.id, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
+    if (mutates && !db.canWriteAgent(u, req.params.id, req.query?.projectId)) return reply.code(403).send({ error: READ_ONLY_ERROR })
     try {
       return await run(req.params.id)
     } catch (err) {
@@ -583,20 +589,20 @@ export async function registerAgentRoutes(
     '/api/agents/:id/fs/file',
     { bodyLimit: 48 * 1024 * 1024 }, // ~32 МБ файла + запас base64
     async (req, reply) =>
-      withFs(req, reply, (id) => registry.fsWrite(id, req.body?.path ?? '', req.body?.dataBase64 ?? ''))
+      withFs(req, reply, (id) => registry.fsWrite(id, req.body?.path ?? '', req.body?.dataBase64 ?? ''), true)
   )
   app.delete<{ Params: { id: string }; Querystring: { path?: string; projectId?: string } }>(
     '/api/agents/:id/fs',
-    async (req, reply) => withFs(req, reply, (id) => registry.fsDelete(id, req.query.path ?? ''))
+    async (req, reply) => withFs(req, reply, (id) => registry.fsDelete(id, req.query.path ?? ''), true)
   )
   app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { from?: string; to?: string } }>(
     '/api/agents/:id/fs/rename',
     async (req, reply) =>
-      withFs(req, reply, (id) => registry.fsRename(id, req.body?.from ?? '', req.body?.to ?? ''))
+      withFs(req, reply, (id) => registry.fsRename(id, req.body?.from ?? '', req.body?.to ?? ''), true)
   )
   app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string } }>(
     '/api/agents/:id/fs/trash',
-    async (req, reply) => withFs(req, reply, (id) => registry.fsTrash(id, req.body?.path ?? ''))
+    async (req, reply) => withFs(req, reply, (id) => registry.fsTrash(id, req.body?.path ?? ''), true)
   )
   // Копирование между машинами: сервер — посредник (fs.read на источнике → fs.mkdir/fs.write на цели),
   // прямого канала между агентами нет. Без targetDir файл ложится в `<ChatAI цели>/incoming`.
@@ -607,6 +613,7 @@ export async function registerAgentRoutes(
       const { path, targetAgentId, targetDir } = req.body ?? {}
       if (!path || !targetAgentId) return reply.code(400).send({ error: 'нужны path и targetAgentId' })
       if (!canUseAgent(u, req.params.id, req.query?.projectId) || !canUseAgent(u, targetAgentId, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
+      if (!db.canWriteAgent(u, targetAgentId, req.query?.projectId)) return reply.code(403).send({ error: READ_ONLY_ERROR })
       if (targetAgentId === req.params.id) return reply.code(400).send({ error: 'Источник и цель — одна машина' })
       if (!registry.isOnline(targetAgentId)) return reply.code(409).send({ error: 'Целевая машина не в сети' })
       if (registry.policyOf(targetAgentId)?.allowWrite === false) return reply.code(403).send({ error: 'Запись на целевую машину запрещена политикой' })
@@ -632,7 +639,7 @@ export async function registerAgentRoutes(
   )
   app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string } }>(
     '/api/agents/:id/fs/mkdir',
-    async (req, reply) => withFs(req, reply, (id) => registry.fsMkdir(id, req.body?.path ?? ''))
+    async (req, reply) => withFs(req, reply, (id) => registry.fsMkdir(id, req.body?.path ?? ''), true)
   )
 
   // Утилита «Консоль»: выполнить команду на своей машине (проверка политики — в registry.exec).
@@ -654,7 +661,7 @@ export async function registerAgentRoutes(
       }
       return withFs(req, reply, (id) =>
         registry.exec(id, req.body?.command ?? '', EXEC_TIMEOUT_MS, abort.signal, { source: 'console', userId: uid(req) })
-      )
+      , true)
     }
   )
 
@@ -675,6 +682,7 @@ export async function registerAgentRoutes(
         const machineName = registry.nameOf(machineId) ?? db.listAgents(u).find((a) => a.id === machineId)?.name ?? machineId
         const base = { machineId, machineName, exitCode: null, timedOut: false, output: '', durationMs: 0 }
         if (!canUseAgent(u, machineId, req.query?.projectId)) return { ...base, ran: false, error: 'Машина недоступна' }
+        if (!db.canWriteAgent(u, machineId, req.query?.projectId)) return { ...base, ran: false, error: 'Только чтение: команды запрещены' }
         const at = Date.now()
         try {
           const res = await registry.exec(machineId, command, EXEC_TIMEOUT_MS, undefined, { source: 'console', userId: u })

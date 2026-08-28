@@ -172,4 +172,13 @@ describe('MachineConsole', () => {
     await userEvent.click(chip)
     await waitFor(() => expect(exec).toHaveBeenCalledWith('m1', 'docker logs app', expect.anything()))
   })
+
+  it('машина только для чтения: ввод команды заблокирован (п.18)', async () => {
+    const exec = vi.fn()
+    render(<MachineConsole agents={[{ ...agent, access: 'read', ownership: 'project' }]} initialAgentId="m1" exec={exec} variant="embedded" />)
+    const input = screen.getByLabelText('Команда')
+    expect(input).toBeDisabled()
+    expect(input).toHaveAttribute('placeholder', expect.stringContaining('только для чтения'))
+    expect(exec).not.toHaveBeenCalled()
+  })
 })

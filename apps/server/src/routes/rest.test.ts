@@ -1488,6 +1488,52 @@ describe('REST: журнал команд машины', () => {
   })
 })
 
+describe('REST: доступ участников к машине проекта (п.18)', () => {
+  it('доступ «только чтение»: fs-чтение работает, запись/команды/группа — 403; полный доступ возвращает права', async () => {
+    const machine = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Общая' } })).json()
+    const socket = { close: vi.fn(), send(data: string) {
+      const m = JSON.parse(data) as { t: string; opId?: string; execId?: string; path?: string }
+      if (m.t === 'exec.start') agentRegistry.handleMessage(machine.id, { t: 'exec.done', execId: m.execId!, exitCode: 0 })
+      else if (m.opId) agentRegistry.handleMessage(machine.id, { t: 'fs.result', opId: m.opId, result: { root: '/', cwd: m.path ?? '/', entries: [] } })
+    } }
+    agentRegistry.register(machine.id, 'Общая', socket, db.listAgents(U).find((a) => a.id === machine.id)!.policy, '0.15.0')
+    const project = db.createProject(U, { name: 'Shared' })
+    db.createUser('dev2', '', 'developer')
+    db.addMember(U, project.id, 'dev2')
+    const devToken = signToken({ name: 'dev2', role: 'developer' }, SECRET)
+    const asDev = (opts: InjOpts) => app.inject({ ...opts, headers: { authorization: `Bearer ${devToken}`, ...(opts.headers ?? {}) } })
+
+    // владелец делится машиной в режиме «только чтение»
+    const shared = await inj({ method: 'PUT', url: `/api/projects/${project.id}/machines/${machine.id}/share`, payload: { shared: true, access: 'read' } })
+    expect(shared.statusCode).toBe(200)
+    expect(shared.json().machines.find((m: { agentId: string }) => m.agentId === machine.id).shareAccess).toBe('read')
+
+    const q = `?projectId=${project.id}`
+    expect((await asDev({ method: 'GET', url: `/api/agents/${machine.id}/fs${q}&path=/srv` })).statusCode).toBe(200)
+    const write = await asDev({ method: 'POST', url: `/api/agents/${machine.id}/fs/file${q}`, payload: { path: '/srv/x', dataBase64: '' } })
+    expect(write.statusCode).toBe(403)
+    expect(write.json().error).toContain('только для чтения')
+    expect((await asDev({ method: 'POST', url: `/api/agents/${machine.id}/fs/mkdir${q}`, payload: { path: '/srv/y' } })).statusCode).toBe(403)
+    expect((await asDev({ method: 'POST', url: `/api/agents/${machine.id}/exec${q}`, payload: { command: 'ls' } })).statusCode).toBe(403)
+    const batch = await asDev({ method: 'POST', url: `/api/agents/exec-batch${q}`, payload: { machineIds: [machine.id], command: 'ls' } })
+    expect(batch.json().totals).toMatchObject({ ok: 0, skipped: 1 })
+    expect(batch.json().items[0].error).toContain('Только чтение')
+    // машины в контексте чата помечены ownership/access
+    const conv = db.createConversation('dev2', 'C')
+    db.setConversationProject('dev2', conv.id, project.id)
+    const listed = (await asDev({ method: 'GET', url: `/api/conversations/${conv.id}/machines${q}` })).json()
+    expect(listed.find((m: { id: string }) => m.id === machine.id)).toMatchObject({ ownership: 'project', access: 'read' })
+
+    // владелец поднимает доступ до полного — команды снова разрешены
+    expect((await inj({ method: 'PUT', url: `/api/projects/${project.id}/machines/${machine.id}/share`, payload: { shared: true, access: 'full' } })).statusCode).toBe(200)
+    expect((await asDev({ method: 'POST', url: `/api/agents/${machine.id}/exec${q}`, payload: { command: 'ls' } })).statusCode).toBe(200)
+    // владельцу его собственная машина всегда доступна полностью
+    expect((await inj({ method: 'GET', url: '/api/agents' })).json().find((m: { id: string }) => m.id === machine.id)).toMatchObject({ ownership: 'personal', access: 'owner' })
+    // некорректный уровень отклоняется
+    expect((await inj({ method: 'PUT', url: `/api/projects/${project.id}/machines/${machine.id}/share`, payload: { shared: true, access: 'bogus' } })).statusCode).toBe(400)
+  })
+})
+
 describe('REST: групповая команда (п.15)', () => {
   it('выполняет команду на нескольких машинах, сводка различает ok/failed/skipped; политика отклоняет весь запуск', async () => {
     const one = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M1' } })).json()

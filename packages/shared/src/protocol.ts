@@ -337,6 +337,7 @@ export const REST = {
   projectMembers: (id: string) => `/api/projects/${encodeURIComponent(id)}/members`,
   projectMember: (id: string, username: string) =>
     `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(username)}`,
+  projectMachineShare: (id: string, agentId: string) => `/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/share`,
   projectMachines: (id: string) => `/api/projects/${encodeURIComponent(id)}/machines`,
   projectMachine: (id: string, agentId: string) =>
     `/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}`,

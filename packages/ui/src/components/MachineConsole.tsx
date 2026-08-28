@@ -98,6 +98,8 @@ export function MachineConsole({
   const input = useRef<HTMLInputElement>(null)
   const selectedAgent = agents.find((agent) => agent.id === agentId)
   const agentOnline = selectedAgent?.online ?? false
+  // «Только чтение» (машина предоставлена проектом, п.18): команды запрещены сервером — не даём и вводить.
+  const readOnlyShare = selectedAgent?.access === 'read'
   const commands = agentId ? historyStore?.get(agentId) ?? localCommands[agentId] ?? [] : []
 
   /** Строка снова «своя», а не взятая из истории. */
@@ -108,7 +110,7 @@ export function MachineConsole({
 
   /** Выполнить команду и дописать результат в историю (та же дорога у «Повторить»). */
   const runCommand = async (command: string): Promise<void> => {
-    if (!command || !agentId || !agentOnline || running !== null) return
+    if (!command || !agentId || !agentOnline || readOnlyShare || running !== null) return
     if (historyStore) historyStore.push(agentId, command)
     else setLocalCommands((m) => ({ ...m, [agentId]: remember(m[agentId] ?? [], command) }))
     const ctrl = new AbortController()
@@ -338,11 +340,11 @@ export function MachineConsole({
           ref={input}
           className="consinput"
           aria-label="Команда"
-          placeholder="команда…"
+          placeholder={readOnlyShare ? "машина предоставлена только для чтения" : "команда…"}
           value={cmd}
           // Пока команда идёт, ввод НЕ блокируем: следующую набирают заранее, а
           // текущую при желании обрывают «Стопом».
-          disabled={!agentOnline}
+          disabled={!agentOnline || readOnlyShare}
           onChange={(e) => {
             setCmd(e.target.value)
             resetNav()

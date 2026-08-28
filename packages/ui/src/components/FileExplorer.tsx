@@ -158,7 +158,9 @@ export function FileExplorer({
 
   const selectedAgent = agents.find((agent) => agent.id === agentId)
   const agentOnline = selectedAgent?.online ?? false
-  const writable = agentOnline && (selectedAgent?.policy.allowWrite ?? false)
+  // Машина, предоставленная проекту «только для чтения» (п.18), не даёт писать даже при allowWrite политики.
+  const readOnlyShare = selectedAgent?.access === 'read'
+  const writable = agentOnline && !readOnlyShare && (selectedAgent?.policy.allowWrite ?? false)
   // Корзина — только если мост её умеет и агент достаточно новый; иначе прежнее безвозвратное удаление.
   const canTrash = typeof ops.trash === 'function' && isToolAllowed(selectedAgent?.version ?? '0.0.0', 'fs-trash')
   const copyTargets = agents.filter((a) => a.id !== agentId && a.online && a.policy.allowWrite)
@@ -498,7 +500,7 @@ export function FileExplorer({
                     confirmSave ? <><Button size="sm" disabled={saving} onClick={() => void savePreview()}>{saving ? 'Сохраняем…' : 'Подтвердить сохранение'}</Button><Button size="sm" disabled={saving} onClick={() => setConfirmSave(false)}>Отмена</Button></> : <Button size="sm" onClick={() => setConfirmSave(true)}>Сохранить</Button>
                   ) : <Button size="sm" onClick={() => setEditing(true)}>Редактировать</Button>}
                 </div>
-              ) : <p className="fsnote">Правка недоступна: изменять файлы на этой машине запрещено политикой.</p>}
+              ) : <p className="fsnote">{readOnlyShare ? 'Правка недоступна: машина предоставлена проекту только для чтения.' : 'Правка недоступна: изменять файлы на этой машине запрещено политикой.'}</p>}
             </>
           )}
         </section>
