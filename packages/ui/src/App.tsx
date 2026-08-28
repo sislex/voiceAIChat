@@ -2454,6 +2454,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {shell.settingsOpen && (
         <SettingsModal
           projectTypes={projects.projectTypes}
+          projectTypesStatus={projects.projectTypesStatus}
+          projectTypesError={projects.projectTypesError}
+          onRetryProjectTypes={() => void projectsActions.loadProjectTypes()}
           {...(session.currentUser?.name ? { currentUsername: session.currentUser.name } : {})}
           onCreateProjectType={async (input) => { await projectsActions.createProjectType(input) }}
           onDeleteProjectType={(id) => projectsActions.deleteProjectType(id)}
