@@ -5,7 +5,9 @@ import type { Settings } from './types'
 export interface WidgetAssistantContext<TSelection = unknown> {
   version: 1
   widget: { kind: string; instanceId: string; title: string }
-  project: Pick<ProjectSummary, 'id' | 'name' | 'description' | 'technologies' | 'skills'> | null
+  /** Тип нужен ассистенту по той же причине, что и модели хода: без него он
+   *  предлагает действия выключенных подсистем. */
+  project: Pick<ProjectSummary, 'id' | 'name' | 'description' | 'technologies' | 'skills' | 'typeChain'> | null
   selection: TSelection | null
   /** Результат read-only шлюза для текущей реплики; не сохраняется в истории. */
   toolResults?: { query?: WidgetToolQueryResult }

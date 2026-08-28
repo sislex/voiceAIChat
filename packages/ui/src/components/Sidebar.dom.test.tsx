@@ -644,3 +644,28 @@ describe('Sidebar — поиск проектов по типу', () => {
     expect(screen.queryByText('Ремонт')).not.toBeInTheDocument()
   })
 })
+
+describe('Sidebar — приглашения при сбое чтения', () => {
+  it('ошибка показывается вместо исчезнувшего блока и даёт «Повторить»', async () => {
+    const onRetryInvitations = vi.fn()
+    setup({
+      projects: [], mode: 'projects', onModeChange: vi.fn(),
+      invitations: [], invitationsError: 'Сеть недоступна', onRetryInvitations
+    })
+    // Без этого человек не понимает: приглашение потерялось или его не было.
+    expect(screen.getByText('Не удалось загрузить приглашения')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(onRetryInvitations).toHaveBeenCalled()
+  })
+
+  it('при непустом списке ошибка не подменяет приглашения', () => {
+    const invitation = {
+      id: 'i1', projectId: 'p1', projectName: 'Ремонт', email: null, invitedUsername: 'bob',
+      role: 'member' as const, status: 'pending' as const, invitedBy: 'alice',
+      createdAt: 1, expiresAt: 2, respondedAt: null
+    }
+    setup({ projects: [], mode: 'projects', onModeChange: vi.fn(), invitations: [invitation], invitationsError: 'Сеть недоступна' })
+    expect(screen.getByText('Ремонт')).toBeInTheDocument()
+    expect(screen.queryByText('Не удалось загрузить приглашения')).not.toBeInTheDocument()
+  })
+})
