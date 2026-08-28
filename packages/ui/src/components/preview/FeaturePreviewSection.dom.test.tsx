@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import type { PreviewEnvironment, PreviewState } from '@shared/preview'
@@ -16,7 +16,14 @@ function environment(state: PreviewState): PreviewEnvironment {
     lastError: state === 'failed' ? { type: 'build_failed', message: 'boom' } : null
   }
 }
-afterEach(() => { delete window.featurePreview })
+function setProject(machines: Array<{ agentId: string; name?: string }>, defaultAgentId: string | null): void {
+  ;(window as unknown as { api: unknown }).api = {
+    'projects:get': vi.fn().mockResolvedValue({ machines, defaultAgentId })
+  }
+}
+
+beforeEach(() => setProject([{ agentId: 'a1', name: 'Основной Mac' }], 'a1'))
+afterEach(() => { delete window.featurePreview; delete (window as unknown as { api?: unknown }).api })
 
 describe('FeaturePreviewSection', () => {
   it.each([
@@ -71,7 +78,8 @@ describe('FeaturePreviewSection', () => {
     render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
     fireEvent.click(await screen.findByRole('button', { name: 'Запустить тестовый контейнер' }))
     await waitFor(() => expect(operate).toHaveBeenCalledWith('p1', 't1', 'start', {
-      idempotencyKey: '07070707-0707-4707-8707-070707070707'
+      idempotencyKey: '07070707-0707-4707-8707-070707070707',
+      agentId: 'a1'
     }))
     vi.stubGlobal('crypto', original)
   })
@@ -124,6 +132,67 @@ describe('FeaturePreviewSection', () => {
     await waitFor(() => expect(browserOpen).toHaveBeenCalledWith('http://127.0.0.1:18123', '_blank', 'noopener,noreferrer'))
     expect(screen.queryByRole('button', { name: 'Копировать команду' })).not.toBeInTheDocument()
     expect(screen.queryByText(/SSH/)).not.toBeInTheDocument()
+  })
+
+  it('uses trimmed machine names as labels and keeps agentId as the option value', async () => {
+    setProject([
+      { agentId: 'agent-1', name: '  Мой Mac  ' },
+      { agentId: 'agent-2' },
+      { agentId: 'agent-3', name: '   ' }
+    ], 'agent-1')
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate: vi.fn(), cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+
+    const select = await screen.findByRole('combobox', { name: 'Машина для тестового окружения' })
+    await waitFor(() => expect(select).toHaveValue('agent-1'))
+    expect(screen.getByRole('option', { name: 'Мой Mac' })).toHaveValue('agent-1')
+    expect(screen.getByRole('option', { name: 'agent-2' })).toHaveValue('agent-2')
+    expect(screen.getByRole('option', { name: 'agent-3' })).toHaveValue('agent-3')
+  })
+
+  it('uses a valid project default without falling back to the first machine', async () => {
+    setProject([{ agentId: 'agent-1' }, { agentId: 'agent-2' }], 'agent-2')
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate: vi.fn(), cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Машина для тестового окружения' })).toHaveValue('agent-2'))
+  })
+
+  it('preserves a manual selection across rerenders and sends its agentId', async () => {
+    const operate = vi.fn().mockResolvedValue(environment('building'))
+    setProject([{ agentId: 'agent-1' }, { agentId: 'agent-2', name: 'QA Mac' }], 'agent-1')
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate, cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
+    const view = render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    const select = await screen.findByRole('combobox', { name: 'Машина для тестового окружения' })
+    await waitFor(() => expect(select).toHaveValue('agent-1'))
+    fireEvent.change(select, { target: { value: 'agent-2' } })
+    view.rerender(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+    expect(select).toHaveValue('agent-2')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить тестовый контейнер' }))
+    await waitFor(() => expect(operate).toHaveBeenCalledWith('p1', 't1', 'start', expect.objectContaining({ agentId: 'agent-2' })))
+  })
+
+  it('shows the environment machine as the source of truth, including a removed machine', async () => {
+    setProject([{ agentId: 'agent-1', name: 'Default Mac' }], 'agent-1')
+    const actual = { ...environment('stopped'), agentId: 'legacy-agent' }
+    window.featurePreview = { get: vi.fn().mockResolvedValue(actual), operate: vi.fn(), cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Машина для тестового окружения' })).toHaveValue('legacy-agent'))
+    expect(screen.getByRole('option', { name: 'legacy-agent' })).toBeInTheDocument()
+    expect(screen.getAllByText('legacy-agent')).toHaveLength(2)
+  })
+
+  it.each([null, 'missing'])('blocks a new launch without a valid default (%s)', async (defaultAgentId) => {
+    const operate = vi.fn()
+    setProject([{ agentId: 'agent-1' }], defaultAgentId)
+    window.featurePreview = { get: vi.fn().mockResolvedValue(null), operate, cancel: vi.fn(), open: vi.fn(), closeTunnel: vi.fn() }
+    render(<FeaturePreviewSection projectId="p1" taskId="t1" />)
+
+    const select = await screen.findByRole('combobox', { name: 'Машина для тестового окружения' })
+    await waitFor(() => expect(select).toHaveValue(''))
+    expect(screen.getByRole('button', { name: 'Запустить тестовый контейнер' })).toBeDisabled()
+    expect(operate).not.toHaveBeenCalled()
   })
 
   it('explains missing explicit SSH settings without constructing a command', async () => {
