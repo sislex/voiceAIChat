@@ -432,7 +432,14 @@
   justify-content: space-between;
   background: var(--bg);
 }
+/* В split-режиме колонка чата может быть узкой даже на desktop. */
+.chat-split .mhead { padding-inline: 14px; }
 .mtitle {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 14px;
   font-weight: 800;
   margin: 0;
@@ -1221,9 +1228,11 @@
 .chat-composer--centered { height: 0; }
 .voicebar {
   flex: none;
+  min-width: 0;
   border-top: 0;
   background: var(--bg);
   padding: 14px 28px 20px;
+  container: composer / inline-size;
 }
 .voicebar .vinner {
   padding: 10px 12px;
@@ -4050,6 +4059,18 @@ button.conscmd:hover {
   .mode-menu__list { right: -84px; max-width: calc(100vw - 24px); }
 }
 
+/* Узкий split-композер адаптируется по ширине колонки, а не viewport. */
+@container composer (max-width: 560px) {
+  .voicebar { padding-inline: 10px; }
+  .voicebar .vinner { padding-inline: 8px; }
+  .vrow { gap: 4px; }
+  .mode-menu__trigger { max-width: 40px; padding-inline: 7px; }
+  .mode-menu__label, .mode-menu__trigger > span:last-child { display: none; }
+  .composer-attach, .composer-mic, .composer-wand { width: 34px; height: 34px; padding: 0; }
+  .composer-send { width: 38px; height: 38px; }
+  .mode-menu__list { right: 0; max-width: calc(100cqw - 24px); }
+}
+
 /* ===== Проекты + канбан-доска ===== */
 .cc-main { flex: 1; overflow: auto; padding: 12px 16px; }
 
@@ -6027,8 +6048,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* Отдельная страница Web Reader: на обычном чате браузерной панели нет. */
 .chat-page { grid-column: 2; min-width: 0; min-height: 0; height: 100%; }
-.app--web-reader, .app--playwright-reader { grid-template-columns: minmax(0, 1fr); height: 100%; }
-.app--playwright-reader > .chat-split { grid-column: 1; }
+.app--web-reader, .app--playwright-reader, .app--make { grid-template-columns: minmax(0, 1fr); height: 100%; }
+.app--playwright-reader > .chat-split, .app--make > .chat-split { grid-column: 1; }
 .playwright-reader-selector > strong { white-space: nowrap; }
 .playwright-browser-pane { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
 .playwright-reader-header { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
@@ -6038,7 +6059,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .playwright-browser-input { display: flex; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--border); }
 .playwright-browser-input input[type='text'] { flex: 1 1 auto; min-width: 0; }
 @media (max-width: 768px) {
-  .chat-split-chat, .playwright-browser-pane { flex: 1 1 auto; width: 100%; min-height: 0; }
+  .chat-split-chat, .playwright-browser-pane { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
   .chat-split--chat .playwright-browser-pane, .chat-split--preview .chat-split-chat { display: none; }
 }
 .chat-page > .chat-split-chat, .chat-page > .chat-split-chat > .main { height: 100%; }
@@ -6046,10 +6067,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .web-recorder-selector label { flex: 1; min-width: 0; }
 .web-recorder-selector select { box-sizing: border-box; width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 /* Сплит чата и браузерного превью. Процент хранится в localStorage. */
-.chat-split { grid-column: 2; display: flex; min-width: 0; min-height: 0; height: 100%; overflow: hidden; }
+.chat-split { grid-column: 2; display: flex; min-width: 0; min-height: 0; height: 100%; overflow: hidden; overflow: clip; }
 .app--web-reader > .chat-split { grid-column: 1; }
-.chat-split-chat { flex: 1 1 auto; min-width: 0; min-height: 0; }
-.chat-split-chat > .main { height: 100%; }
+.chat-split-chat { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 360px; min-height: 0; }
+.chat-split-chat > .web-recorder-selector, .chat-split-chat > .make-selector { flex: none; }
+.chat-split-chat > .main { flex: 1 1 auto; min-height: 0; height: auto; }
 .chat-split-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
 .chat-split-divider:hover, .chat-split-divider:focus { background: var(--accent); }
 .webpreview { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
@@ -6081,7 +6103,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .chat-split-tabs button { padding: 7px; border: 0; border-radius: 7px; background: transparent; color: var(--text-dim); font: inherit; }
   .chat-split-tabs button[aria-selected='true'] { background: var(--surface-selected); color: var(--text); font-weight: 700; }
   .chat-split-divider { display: none; }
-  .chat-split-chat, .webpreview { flex: 1 1 auto; width: 100%; min-height: 0; }
+  .chat-split-chat, .webpreview { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
   .chat-split--chat .webpreview, .chat-split--preview .chat-split-chat { display: none; }
 }
 
@@ -6401,7 +6423,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @media(prefers-reduced-motion:reduce){.clarification-notification{scroll-behavior:auto}}
 
 /* ---- Make: панель проекта (превью / код / история) ------------------------ */
-.make-pane { flex: 0 1 var(--preview-width); min-width: 320px; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
+.make-pane { flex: 0 1 var(--preview-width); width: var(--preview-width); max-width: 100%; min-width: 320px; min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; background: var(--panel); }
 .make-pane--fs { position: fixed; inset: 0; z-index: 60; min-width: 0; width: auto; }
 @media (max-width: 768px) {
   .make-pane { flex: 1 1 auto; width: 100%; min-width: 0; }
@@ -6418,7 +6440,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-device.on { border-color: var(--border); background: var(--surface); }
 .make-inspect.on { background: var(--accent); color: var(--accent-fg) !important; }
 .make-error { margin: 0; padding: 8px 12px; color: #b3261e; background: #fdecea; font-size: 13px; }
-.make-preview { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; background: #e9ecf1; }
+.make-preview { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #e9ecf1; }
 .make-selected { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 12px; }
 .make-selected-sel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
 .make-selected-text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
@@ -6427,7 +6449,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-frame-host--tablet, .make-frame-host--mobile { padding: 16px; }
 .make-frame { border: 0; width: 100%; height: 100%; background: #fff; flex: 0 0 auto; }
 .make-frame-host--tablet .make-frame, .make-frame-host--mobile .make-frame { border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.18); height: calc(100% - 0px); }
-.make-code { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(150px, 220px) 1fr; }
+.make-code { flex: 1 1 auto; min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); overflow: hidden; }
 .make-tree { border-right: 1px solid var(--border); overflow: auto; padding: 6px 4px; font-size: 13px; }
 .make-tree-dir { margin: 6px 6px 2px; font-size: 11px; color: var(--text-dim); text-transform: none; }
 .make-tree-item { display: flex; align-items: center; border-radius: 6px; }
@@ -6453,7 +6475,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-textarea:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 .make-code--drop .make-tree { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--surface-hover); }
 .make-drop-hint { margin: 6px; padding: 8px; border-radius: 8px; background: var(--accent); color: var(--accent-fg); font-size: 12px; text-align: center; }
-.make-history { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.make-history { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .make-snapshots { list-style: none; margin: 0; padding: 6px 10px; overflow: auto; flex: 1 1 auto; display: flex; flex-direction: column; gap: 6px; }
 .make-snapshot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
 .make-snapshot-meta { display: grid; gap: 2px; min-width: 0; }
