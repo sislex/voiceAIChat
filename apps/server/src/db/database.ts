@@ -3806,6 +3806,44 @@ export class VoiceChatDb {
     return this.getProjectType(id)
   }
 
+  /**
+   * Узел из текущего состояния проекта: «сохранить настроенный проект как подтип».
+   *
+   * Возможности снимаются ЭФФЕКТИВНЫЕ и записываются явными переопределениями —
+   * иначе новый узел зависел бы от того, что потом сделают с родителем. Заготовки
+   * берутся из самого проекта: видимые колонки доски, теги, навыки по типам
+   * элементов и git/CI-настройки. Родитель — текущий тип проекта, поэтому узел
+   * встаёт ровно на следующий уровень дерева.
+   */
+  deriveProjectType(userId: string, projectId: string, name: string): ProjectTypeNode | null {
+    if (!this.isProjectOwner(userId, projectId)) return null
+    const project = this.getProject(userId, projectId)
+    if (!project) return null
+    const trimmed = name.trim()
+    if (!trimmed) throw new Error('Название типа обязательно')
+
+    const features: ProjectFeatureOverride = { ...this.projectTypeChain(project.typeId).features }
+    const columns = this.db.prepare(
+      `SELECT name, semantic_type FROM kanban_columns WHERE project_id = ? AND hidden = 0 ORDER BY position, created_at, id`
+    ).all(projectId) as Array<{ name: string; semantic_type: string }>
+
+    const defaults: ProjectTypeDefaults = {
+      columns: columns.map((column) => ({ name: column.name, semanticType: column.semantic_type as ProjectTypeDefaults['columns'] extends Array<infer T> ? T extends { semanticType: infer S } ? S : never : never })),
+      technologies: project.technologies,
+      skills: project.skills,
+      defaultSkills: project.defaultSkills,
+      commitPolicy: project.commitPolicy,
+      mergeTransport: project.mergeTransport,
+      agentPlanApprovalMode: project.agentPlanApprovalMode,
+      ...(project.ciBaseBranch ? { ciBaseBranch: project.ciBaseBranch } : {}),
+      ...(project.ciBranchTemplate ? { ciBranchTemplate: project.ciBranchTemplate } : {}),
+      ...(project.ciReuseStrategy ? { ciReuseStrategy: project.ciReuseStrategy } : {}),
+      ...(project.testCommand ? { testCommand: project.testCommand } : {}),
+      ...(project.doneRetentionDays !== undefined ? { doneRetentionDays: project.doneRetentionDays } : {})
+    }
+    return this.createProjectType(userId, { parentId: project.typeId, name: trimmed, description: `Из проекта «${project.name}»`, features, defaults })
+  }
+
   projectTypeReviewAudit(id: string): Array<{ actor: string; oldStatus: string; newStatus: string; note: string; at: number }> {
     const rows = this.db.prepare(`SELECT actor, old_status, new_status, note, at FROM project_type_review_audit WHERE type_id = ? ORDER BY at, id`).all(id) as Array<{ actor: string; old_status: string; new_status: string; note: string; at: number }>
     return rows.map((r) => ({ actor: r.actor, oldStatus: r.old_status, newStatus: r.new_status, note: r.note, at: r.at }))

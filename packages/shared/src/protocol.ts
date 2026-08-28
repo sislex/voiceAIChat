@@ -344,6 +344,7 @@ export const REST = {
   invitationDecline: (token: string) => `/api/invitations/${encodeURIComponent(token)}/decline`,
   /** Публичный превью по ссылке из письма: под /api/session/ его пускает isPublic. */
   invitationPreview: (token: string) => `/api/session/invitation/${encodeURIComponent(token)}`,
+  projectDeriveType: (id: string) => `/api/projects/${encodeURIComponent(id)}/derive-type`,
   projectTypes: '/api/project-types',
   projectType: (id: string) => `/api/project-types/${encodeURIComponent(id)}`,
   projectTypePublish: (id: string) => `/api/project-types/${encodeURIComponent(id)}/publish`,

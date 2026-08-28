@@ -7159,3 +7159,30 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .proj-invite-actions .vc-btn--icon { min-width: 40px; }
   .invite-card .make-link { display: inline-flex; align-items: center; min-height: 44px; }
 }
+
+/* «Сохранить проект как подтип» на вкладке «Общее». */
+.proj-derive { margin: var(--space-2, 8px) 0; }
+.proj-derive-form { display: flex; flex-direction: column; gap: var(--space-2, 8px); }
+.proj-derive-actions { display: flex; gap: var(--space-2, 8px); }
+
+@media (max-width: 720px) {
+  .proj-derive-actions { flex-direction: column; }
+  .proj-derive-actions .vc-btn { width: 100%; }
+  .proj-derive > .vc-btn { width: 100%; }
+}
+
+/* Каталог типов проекта в пользовательских настройках. */
+.ptypes-list { list-style: none; margin: var(--space-3, 10px) 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3, 10px); }
+.ptypes-row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2, 8px); flex-wrap: wrap; }
+.ptypes-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.ptypes-actions { display: flex; align-items: center; gap: var(--space-1, 4px); }
+.ptypes-desc { margin: var(--space-1, 4px) 0; color: var(--text-dim); font-size: 12px; }
+.ptypes-note { margin: var(--space-1, 4px) 0 0; font-size: 12px; color: var(--danger); }
+.ptypes-create { display: flex; flex-direction: column; gap: var(--space-2, 8px); margin-top: var(--space-4, 12px);
+  border-top: 1px solid var(--border-soft, var(--border)); padding-top: var(--space-3, 10px); }
+
+@media (max-width: 720px) {
+  .ptypes-actions { width: 100%; }
+  .ptypes-actions .vc-btn { flex: 1 1 auto; min-height: 40px; }
+  .ptypes-create .vc-btn { width: 100%; min-height: 40px; }
+}

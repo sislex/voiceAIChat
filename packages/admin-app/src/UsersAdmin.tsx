@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { ProjectTypesAdmin } from './ProjectTypesAdmin'
+import type { ProjectTypeNode } from '@shared/projectTypes'
 import type {
   AdminLlmEngine,
   AdminLlmEngineHealth,
@@ -82,6 +84,9 @@ export interface UsersAdminProps {
   onLoadSignup?: () => void
   onSetSignup?: (input: { enabled?: boolean; role?: import('@shared/types').UserRole }) => void
   onOpenConversation: (id: string) => void
+  /** Типы проекта, ожидающие утверждения; нет обработчика — секции нет. */
+  pendingProjectTypes?: ProjectTypeNode[]
+  onReviewProjectType?: (input: { id: string; decision: 'approve' | 'reject'; note?: string }) => void | Promise<void>
   engines: AdminLlmEngine[]
   enginesStatus?: LoadStatus
   enginesError?: string | null
@@ -178,6 +183,8 @@ export function UsersAdmin({
   onLoadSignup,
   onSetSignup,
   onOpenConversation,
+  pendingProjectTypes = [],
+  onReviewProjectType,
   engines,
   enginesStatus = 'ready',
   enginesError = null,
@@ -560,6 +567,13 @@ export function UsersAdmin({
                 )}
               </section>}
             </>
+          )}
+
+          {isAdmin && onReviewProjectType && (
+            <section className="uadmin-sec" data-testid="project-types-queue-section">
+              <h3 className="uadmin-h">Типы проектов</h3>
+              <ProjectTypesAdmin pending={pendingProjectTypes} onReview={onReviewProjectType} />
+            </section>
           )}
 
           {isAdmin && <section className="uadmin-sec" data-testid="llm-engines-section">

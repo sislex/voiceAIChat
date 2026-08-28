@@ -11,3 +11,16 @@
 .uusage-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem}.uusage-stats>div{padding:.65rem;border:1px solid var(--line);border-radius:.5rem}.uusage-stats span,.uusage-stats strong{display:block}
 .uusage-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.login-input,.sel,.uusage-filters select{max-width:100%;padding:.5rem;border:1px solid var(--line);border-radius:.4rem;background:var(--surface);color:inherit}
 @media(max-width:720px){.ccobs-body{grid-template-columns:1fr}.cc-projects{border-right:0;border-bottom:1px solid var(--line);max-height:42vh}.uusage-grid{grid-template-columns:1fr}.uusage-stats{grid-template-columns:1fr 1fr}.admin-head{position:sticky;top:0;z-index:1;background:var(--bg);padding:.75rem}}
+
+/* Очередь типов проекта на утверждение. */
+.ptypes-queue { list-style: none; margin: 16px 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.ptypes-queue li { border: 1px solid var(--border-soft, var(--border)); border-radius: var(--radius-medium, 8px); padding: 12px; }
+.ptypes-review { display: flex; align-items: flex-end; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.ptypes-review-field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 240px; min-width: 0; }
+.ptypes-review-actions { display: flex; gap: 8px; }
+
+@media (max-width: 720px) {
+  .ptypes-review { flex-direction: column; align-items: stretch; }
+  .ptypes-review-field { flex: 0 0 auto; }
+  .ptypes-review-actions .vc-btn { flex: 1 1 auto; min-height: 40px; }
+}

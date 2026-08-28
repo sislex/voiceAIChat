@@ -165,6 +165,48 @@ describe('проект и его тип', () => {
   })
 })
 
+describe('сохранить проект как подтип', () => {
+  it('узел встаёт под текущим типом и повторяет доску, теги и настройки проекта', () => {
+    const p = db.createProject('alice', { name: 'Настроенный', typeId: BUILTIN_PROJECT_TYPE_IDS.general, technologies: ['ремонт'], skills: ['смета'] })
+    db.renameColumn('alice', p.id, db.getBoard('alice', p.id)!.columns[0].id, 'Идеи')
+    const board = db.getBoard('alice', p.id)!
+    expect(board.columns[0].name).toBe('Идеи')
+
+    const derived = db.deriveProjectType('alice', p.id, '  Ремонтный проект  ')!
+    expect(derived.name).toBe('Ремонтный проект')
+    expect(derived.parentId).toBe(BUILTIN_PROJECT_TYPE_IDS.general)
+    expect(derived.status).toBe('private')
+    expect(derived.ownerId).toBe('alice')
+    expect(derived.defaults.technologies).toEqual(['ремонт'])
+    expect(derived.defaults.columns?.map((c) => c.semanticType)).toEqual(board.columns.map((c) => c.semanticType))
+    // Переименованная колонка переносится в заготовку вместе с именем.
+    expect(derived.defaults.columns?.[0]?.name).toBe('Идеи')
+
+    // Новый проект от этого узла воспроизводит исходную доску и теги.
+    const clone = db.createProject('alice', { name: 'Клон', typeId: derived.id })
+    expect(clone.technologies).toEqual(['ремонт'])
+    expect(db.getBoard('alice', clone.id)!.columns.map((c) => c.name)).toEqual(board.columns.map((c) => c.name))
+  })
+
+  it('возможности снимаются эффективные и не зависят от последующей правки родителя', () => {
+    const parent = db.createProjectType('alice', { parentId: BUILTIN_PROJECT_TYPE_IDS.software, name: 'Без релизов', features: { releases: false } })
+    const p = db.createProject('alice', { name: 'P', typeId: parent.id })
+    const derived = db.deriveProjectType('alice', p.id, 'Слепок')!
+    expect(derived.features.releases).toBe(false)
+    expect(derived.features.ci).toBe(true)
+
+    // Родителю вернули релизы — слепок остаётся при своём.
+    db.updateProjectType(parent.id, { features: { releases: true } })
+    expect(db.projectTypeChain(derived.id).features.releases).toBe(false)
+  })
+
+  it('не владелец и пустое имя отклоняются', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    expect(db.deriveProjectType('bob', p.id, 'X')).toBeNull()
+    expect(() => db.deriveProjectType('alice', p.id, '   ')).toThrow(/Название/i)
+  })
+})
+
 describe('миграция существующей базы', () => {
   it('старый проект получает корневой тип, повторное открытие не плодит узлы', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-'))

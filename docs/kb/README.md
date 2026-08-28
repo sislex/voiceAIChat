@@ -9,37 +9,37 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 117 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 125 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 118 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 126 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 13 коммит(ов) в areas после сверки: 66d2bf16 fix(ci): устанавливать зависимости desktop перед сборкой … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-28 | ⚠ 4 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-28 | ⚠ 5 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-28 | ⚠ 14 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 136 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 3 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 15 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 137 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 4 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 16 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 80 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 79 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 82 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 78 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 764 коммит(ов) в areas после сверки: 6794e0bf feat(projects): выбор типа проекта в интерфейсе и скрытие выключенных подсистем … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 187 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 34 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 11 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 98 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 80 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 83 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 79 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 765 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 188 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 35 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 12 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 99 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 6 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 23 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 12 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 81 коммит(ов) в areas после сверки: 6794e0bf feat(projects): выбор типа проекта в интерфейсе и скрытие выключенных подсистем … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 24 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 13 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 82 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 24 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 24 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 20 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 25 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 25 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 21 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 73 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 1 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-29 | ✓ |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-29 | ⚠ 1 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 26 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-28 | ⚠ 8 коммит(ов) в areas после сверки: cbd31ead feat(projects): контракт мостов для приглашений … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-28 | ⚠ 9 коммит(ов) в areas после сверки: e7737098 feat(projects): интерфейс приглашений и мобильная проверка Playwright … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-29, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 

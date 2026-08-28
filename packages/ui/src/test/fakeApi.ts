@@ -908,6 +908,34 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       if (invitation) invitation.status = 'declined'
       return { ok: Boolean(invitation) }
     },
+    'admin:projectTypes': async () => customTypes.filter((t) => t.status === 'pending'),
+    'admin:reviewProjectType': async ({ id, decision, note }) => {
+      const node = customTypes.find((t) => t.id === id)
+      if (!node) throw new Error('not found')
+      node.status = decision === 'approve' ? 'published' : 'rejected'
+      node.reviewNote = note ?? ''
+      return node
+    },
+    'projects:deriveType': async ({ id, name }) => {
+      const project = projects.find((p) => p.id === id)
+      const node: ProjectTypeNode = {
+        id: `type-derived-${customTypes.length + 1}`,
+        parentId: BUILTIN_PROJECT_TYPE_IDS.software,
+        name,
+        description: `Из проекта «${project?.name ?? id}»`,
+        features: {},
+        defaults: {},
+        builtin: false,
+        ownerId: 'admin',
+        status: 'private',
+        reviewNote: '',
+        createdBy: 'admin',
+        createdAt: tick(),
+        updatedAt: tick()
+      }
+      customTypes.push(node)
+      return node
+    },
     'projectTypes:list': async () => [...builtinTypeNodes(), ...customTypes],
     'projectTypes:create': async ({ name, parentId, description, features, defaults }) => {
       const node: ProjectTypeNode = {
