@@ -261,6 +261,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'agents:revokeToken': ({ id }) => req(REST.agentToken(id), { method: 'DELETE' }),
     'agents:setPinIp': ({ id, pin }) => req(REST.agentPinIp(id), { method: 'POST', body: JSON.stringify({ pin }) }),
     'agents:update': ({ id }) => req(REST.agentUpdate(id), { method: 'POST' }),
+    'agents:execBatch': ({ machineIds, command, projectId }) => req(`${REST.agentsExecBatch}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`, { method: 'POST', body: JSON.stringify({ machineIds, command }) }),
     'agents:commands': ({ id, limit, q, source }) => {
       const params = new URLSearchParams()
       if (limit) params.set('limit', String(limit))

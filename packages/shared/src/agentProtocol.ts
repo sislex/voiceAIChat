@@ -73,6 +73,34 @@ export interface MachineCommandEvent {
   logPath?: string
 }
 
+/** Результат команды на одной машине в групповом запуске (machines-roadmap п.15). */
+export interface BatchExecItem {
+  machineId: string
+  machineName: string
+  /** true — команда выполнена (даже с ненулевым кодом); false — не запускалась (офлайн, политика, недоступна). */
+  ran: boolean
+  exitCode: number | null
+  timedOut: boolean
+  /** Вывод, обрезанный сервером до BATCH_OUTPUT_LIMIT символов. */
+  output: string
+  /** Причина, по которой команда не выполнилась. */
+  error: string | null
+  durationMs: number
+}
+
+/** Сводка группового запуска: сколько машин ответило успешно/с ошибкой/не запускало. */
+export interface BatchExecResult {
+  command: string
+  startedAt: number
+  items: BatchExecItem[]
+  totals: { requested: number; ok: number; failed: number; skipped: number }
+}
+
+/** Сколько символов вывода одной машины возвращает групповой запуск. */
+export const BATCH_OUTPUT_LIMIT = 4000
+/** Максимум машин в одном групповом запуске. */
+export const BATCH_MAX_MACHINES = 50
+
 /** Watchdog агента (machines-roadmap п.1): машина пропала дольше порога или вернулась после тревоги. */
 export interface MachineStatusEvent {
   machineId: string

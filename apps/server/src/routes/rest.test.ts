@@ -1488,6 +1488,40 @@ describe('REST: журнал команд машины', () => {
   })
 })
 
+describe('REST: групповая команда (п.15)', () => {
+  it('выполняет команду на нескольких машинах, сводка различает ok/failed/skipped; политика отклоняет весь запуск', async () => {
+    const one = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M1' } })).json()
+    const two = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M2' } })).json()
+    const offline = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Спит' } })).json()
+    const connect = (id: string, exitCode: number) => {
+      const socket = { close: vi.fn(), send(data: string) { const m = JSON.parse(data) as { t: string; execId?: string }; if (m.t === 'exec.start') { agentRegistry.handleMessage(id, { t: 'exec.chunk', execId: m.execId!, stream: 'stdout', data: `из ${id}` }); agentRegistry.handleMessage(id, { t: 'exec.done', execId: m.execId!, exitCode }) } } }
+      agentRegistry.register(id, 'M', socket, db.listAgents(U).find((a) => a.id === id)!.policy, '0.15.0')
+    }
+    connect(one.id, 0)
+    connect(two.id, 3)
+    db.createUser('user4', '', 'developer')
+    const foreign = db.createAgent('user4', 'Чужая')
+    const res = await inj({ method: 'POST', url: '/api/agents/exec-batch', payload: { machineIds: [one.id, two.id, offline.id, foreign.id, one.id], command: 'uptime' } })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.totals).toEqual({ requested: 4, ok: 1, failed: 1, skipped: 2 })
+    const byId = Object.fromEntries(body.items.map((i: { machineId: string }) => [i.machineId, i]))
+    expect(byId[one.id]).toMatchObject({ ran: true, exitCode: 0, output: `из ${one.id}` })
+    expect(byId[two.id]).toMatchObject({ ran: true, exitCode: 3 })
+    expect(byId[offline.id]).toMatchObject({ ran: false })
+    expect(byId[offline.id].error).toContain('не в сети')
+    expect(byId[foreign.id]).toMatchObject({ ran: false, error: 'Машина недоступна' })
+    // журнал команд получил обе выполненные команды
+    expect(db.listMachineCommands(one.id).map((r) => r.command)).toEqual(['uptime'])
+    // пустое тело и политика
+    expect((await inj({ method: 'POST', url: '/api/agents/exec-batch', payload: { machineIds: [], command: 'ls' } })).statusCode).toBe(400)
+    const project = db.createProject(U, { name: 'PB' })
+    await inj({ method: 'PATCH', url: `/api/projects/${project.id}`, payload: { commandPolicy: { denyPatterns: ['uptime'], allowPatterns: [], confirmDangerous: true } } })
+    const denied = await inj({ method: 'POST', url: `/api/agents/exec-batch?projectId=${project.id}`, payload: { machineIds: [one.id], command: 'uptime' } })
+    expect(denied.statusCode).toBe(403)
+  })
+})
+
 describe('REST: политика команд проекта и роли (п.10)', () => {
   it('deny проекта отклоняет команду консоли с 403 до exec; PATCH проекта и PUT ролей сохраняют правила', async () => {
     const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()

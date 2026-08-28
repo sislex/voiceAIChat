@@ -23,7 +23,11 @@ import {
   installCommand,
   installScriptUrl,
   type AgentInfo,
-  type AgentPolicy
+  type AgentPolicy,
+  BATCH_MAX_MACHINES,
+  BATCH_OUTPUT_LIMIT,
+  type BatchExecItem,
+  type BatchExecResult,
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
@@ -651,6 +655,44 @@ export async function registerAgentRoutes(
       return withFs(req, reply, (id) =>
         registry.exec(id, req.body?.command ?? '', EXEC_TIMEOUT_MS, abort.signal, { source: 'console', userId: uid(req) })
       )
+    }
+  )
+
+  // Групповая команда (п.15): одна команда на несколько машин пользователя, сводка по каждой.
+  app.post<{ Querystring: { projectId?: string }; Body: { machineIds?: string[]; command?: string } }>(
+    REST.agentsExecBatch,
+    async (req, reply) => {
+      const u = uid(req)
+      const command = (req.body?.command ?? '').trim()
+      const ids = [...new Set(req.body?.machineIds ?? [])].slice(0, BATCH_MAX_MACHINES)
+      if (!command || ids.length === 0) return reply.code(400).send({ error: 'нужны machineIds и command' })
+      if (commandGate) {
+        const verdict = commandGate({ command, userId: u, projectId: req.query?.projectId ?? null, source: 'console' })
+        if (!verdict.allowed) return reply.code(403).send({ error: `Запрещено: ${verdict.reason ?? 'политика команд'}` })
+      }
+      const startedAt = Date.now()
+      const items: BatchExecItem[] = await Promise.all(ids.map(async (machineId) => {
+        const machineName = registry.nameOf(machineId) ?? db.listAgents(u).find((a) => a.id === machineId)?.name ?? machineId
+        const base = { machineId, machineName, exitCode: null, timedOut: false, output: '', durationMs: 0 }
+        if (!canUseAgent(u, machineId, req.query?.projectId)) return { ...base, ran: false, error: 'Машина недоступна' }
+        const at = Date.now()
+        try {
+          const res = await registry.exec(machineId, command, EXEC_TIMEOUT_MS, undefined, { source: 'console', userId: u })
+          return { machineId, machineName, ran: true, exitCode: res.exitCode, timedOut: res.timedOut, output: res.output.slice(0, BATCH_OUTPUT_LIMIT), error: null, durationMs: Date.now() - at }
+        } catch (err) {
+          return { ...base, ran: false, error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - at }
+        }
+      }))
+      const result: BatchExecResult = {
+        command, startedAt, items,
+        totals: {
+          requested: ids.length,
+          ok: items.filter((i) => i.ran && i.exitCode === 0 && !i.timedOut).length,
+          failed: items.filter((i) => i.ran && (i.exitCode !== 0 || i.timedOut)).length,
+          skipped: items.filter((i) => !i.ran).length
+        }
+      }
+      return result
     }
   )
 
