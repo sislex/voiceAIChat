@@ -51,6 +51,15 @@ export interface MakePublication {
   views?: number
   /** История публикаций (roadmap-2 п.11): что и когда было опубликовано; последняя запись — текущая. */
   history?: MakePublishEntry[]
+  /** Аналитика просмотров (roadmap-3 п.3): по дням (последние 90) и по хостам-рефererам (топ-20). */
+  stats?: MakePublishStats
+  /** Зрители могут оставлять комментарии (roadmap-4 п.34): виджет на странице публикации, модерация владельцем. */
+  allowComments?: boolean
+}
+
+export interface MakePublishStats {
+  days: Array<{ day: string; views: number }>
+  referers: Array<{ host: string; views: number }>
 }
 
 export interface MakePublishEntry {
@@ -64,8 +73,12 @@ export interface MakePublishEntry {
 export interface MakeCheckIssue {
   /** Файл, где найдено. */
   path: string
-  kind: 'missing-file' | 'no-index' | 'external-script' | 'empty-file' | 'compile-error'
+  kind: 'missing-file' | 'no-index' | 'external-script' | 'empty-file' | 'compile-error' | 'lint'
   message: string
+  /** `warning` — замечание линтера (roadmap-4 п.12): не блокирует транзакцию `make_apply_changes`; по умолчанию — ошибка. */
+  severity?: 'error' | 'warning'
+  /** Идентификатор правила линтера (`no-console`, `color-hex`…). */
+  rule?: string
   /** Строка (с 1) — у ошибок компиляции; редактор ставит по ней маркер. */
   line?: number
   column?: number
@@ -124,6 +137,15 @@ export const isMakeStoriesPath = (path: string): boolean => /\.stories\.(jsx|tsx
 export const MAKE_STORIES_PAGE = '__stories__'
 /** Галерея всех стори проекта (на превью и на публикации). */
 export const MAKE_GALLERY_PAGE = '__gallery__'
+/** Комментарии зрителей публикации (roadmap-4 п.34): `/p/<token>/__comments__` GET/POST. */
+export const MAKE_PUBLIC_COMMENTS_PAGE = '__comments__'
+/** Превью файлов снимка (roadmap-4 п.37): `/api/preview/make/<id>/__snapshot__/<snapshotId>/<файл>`. */
+export const MAKE_SNAPSHOT_PREVIEW = '__snapshot__'
+/** Раннер тестов компонентов (roadmap-4 п.3): `?file=<*.test.tsx>` — выполняет все test() файла, шлёт vc-make.test. */
+export const MAKE_TESTS_PAGE = '__tests__'
+export const isMakeTestPath = (path: string): boolean => /\.test\.(jsx|tsx|js|ts)$/i.test(path)
+/** Тест-файл компонента: имена тестов вытаскиваются регуляркой по `test('…'`. */
+export interface MakeTestFile { path: string; names: string[]; component: string | null }
 
 /** Import map по умолчанию для React-проектов: React из esm.sh, версии закреплены. */
 export const MAKE_REACT_IMPORT_MAP: Record<string, string> = {
@@ -149,13 +171,22 @@ export interface MakeShare {
   createdAt: number
   /** Hash-маршрут приложения: `#/make-shared/<token>`. */
   url: string
+  /** Именные доступы участников ChatAI (roadmap-3 п.6): редактор правит файлы, зритель только смотрит. */
+  grants?: MakeShareGrant[]
 }
+
+export type MakeShareRole = 'editor' | 'viewer'
+export interface MakeShareGrant { user: string; role: MakeShareRole }
 
 /** Что видит получатель read-only ссылки. */
 export interface MakeSharedState {
   token: string
   owner: string
   title: string
+  /** Роль текущего пользователя по именному доступу; null — только по ссылке (чтение). */
+  role: MakeShareRole | null
+  /** Id разговора — для записи файлов редактором через обычные `/api/make/:id/*`. */
+  conversationId: string
   files: MakeFileInfo[]
   snapshots: MakeSnapshot[]
   rev: number
@@ -185,7 +216,9 @@ export const MAKE_LIMITS = {
   /** Максимальная глубина вложенности каталогов. */
   maxDepth: 8,
   /** Квота проекта целиком: файлы + снимки + PNG-снимки стори (байты). */
-  maxProjectBytes: 64 * 1024 * 1024
+  maxProjectBytes: 64 * 1024 * 1024,
+  /** Квота на пользователя — сумма по всем его проектам Make (roadmap-2 п.15). */
+  maxUserBytes: 512 * 1024 * 1024
 } as const
 
 /** Занятое место проекта (п.30) по составляющим — для полосы квоты и диалога очистки. */
@@ -212,10 +245,37 @@ export interface MakeComment {
   author: string
   createdAt: number
   resolved: boolean
+  /** Комментарии зрителей публикации (roadmap-4 п.34): `pending` до одобрения владельцем; свои — `approved` (по умолчанию). */
+  status?: 'pending' | 'approved'
+  /** Имя, которое назвал анонимный зритель. */
+  guestName?: string
 }
+
+/** Комментарий, отдаваемый зрителям публикации: без селектора-внутренностей и автора-логина. */
+export interface MakePublicComment { id: string; elementLabel: string; text: string; createdAt: number; guestName?: string }
 
 /** Псевдопуть в `make.changed`, по которому вкладки узнают об изменении комментариев (roadmap-2 п.7); rev не меняется. */
 export const MAKE_COMMENTS_SYNC_PATH = '.comments.json'
+
+/** Одна вкладка/окно с открытым проектом (roadmap-2 п.14). */
+export interface MakePresenceClient {
+  clientId: string
+  user: string
+  /** Открытый в редакторе файл; null — режим превью/истории. */
+  path: string | null
+  /** Есть несохранённые правки — файл считается занятым этой вкладкой. */
+  editing: boolean
+  at: number
+}
+
+/** Настройки проекта Make для ассистента (roadmap-4 пп.6–7): заметки-память и режим работы. Хранятся в `.make/`. */
+export type MakeAssistantMode = 'balanced' | 'designer' | 'developer'
+export interface MakeProjectNotes { notes: string; mode: MakeAssistantMode }
+export const MAKE_MODE_HINTS: Record<MakeAssistantMode, string> = {
+  balanced: '',
+  designer: 'Режим «Дизайнер»: приоритет — визуальная система (токены, типографика, отступы, состояния, адаптив, доступность). Логику и данные не переписывай без просьбы; предлагай варианты оформления и объясняй выбор коротко.',
+  developer: 'Режим «Разработчик»: приоритет — структура кода, состояние, обработка ошибок, тесты компонентов (*.test.tsx), производительность. Визуал меняй минимально и только через существующие токены.'
+}
 
 export interface MakeCleanupOptions {
   /** Оставить N последних снимков (остальные удалить); undefined — не трогать. */
@@ -309,7 +369,7 @@ h1 { margin: 0 0 12px; font-size: 32px; }
 p { margin: 0; line-height: 1.5; color: #5b6170; }
 `,
   'app.js': `// Точка входа проекта. Ассистент дописывает поведение сюда или в новые файлы.
-console.log('Make: проект загружен');
+document.documentElement.dataset.makeReady = 'true';
 `
 }
 

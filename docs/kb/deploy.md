@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-08-25
-checked: 0985f857
+updated: 2026-08-28
+checked: 43b33d8b
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -164,7 +164,7 @@ localhost, где сервера нет, и инструменты `mcp__remote_
 Результат — `accepted`/`running`; отказ и недоступность host API возвращаются
 структурированной ошибкой без запуска команды.
 
-Для ручного обслуживания: `ssh root@45.135.182.251`, каталог `/root/voiceAIChat`. Чтобы **обновить
+Для ручного обслуживания: ssh на прод-хост (сейчас 89.125.68.35), каталог прода — `target.path` из настроек проекта в Release Center (сейчас `/root/ChatAI`; ниже обозначен как `$PROD`). Чтобы **обновить
 контейнер** на production, обновить прод целиком или пересобрать прод-контейнеры,
 всегда выполняй **только `voicechat-deploy`**: нельзя заменять его прямым
 `docker compose up`, `docker compose up --build` или ручным перезапуском.
@@ -175,7 +175,7 @@ localhost, где сервера нет, и инструменты `mcp__remote_
 дерево чистое и установлен штатный скрипт:
 
 ```bash
-cd /root/voiceAIChat
+cd $PROD
 git branch --show-current       # ожидается main
 git status --short              # ожидается пустой вывод
 command -v voicechat-deploy     # ожидается /usr/local/bin/voicechat-deploy
@@ -225,7 +225,7 @@ fail-closed остановится на неполном постоянном т
 `/run/voicechat/deploy-api.sock`. Сервис принимает только фиксированный
 `POST /deploy`, не принимает команду или аргументы из запроса и запускает только
 `/usr/local/bin/voicechat-deploy`. Сокет примонтирован в контейнер `voicechat`,
-поэтому контейнеру не выдаются Docker socket, каталог `/root/voiceAIChat` или
+поэтому контейнеру не выдаются Docker socket, каталог `$PROD` или
 root-доступ. Успешный запуск возвращает `202 accepted`, занятый deploy-lock —
 `409 running`, другой путь — JSON `404`, недоступный host API — `503`. Обработчик
 логирует запросы как Unix-клиентов напрямую: `BaseHTTPRequestHandler.address_string()`
@@ -270,10 +270,10 @@ supplementary groups процесса, поэтому одной настрой�
   `voicechat-watchdog.timer` раз в минуту — поднимает контейнер, если тот в
   `created` или отсутствует. Из `exited`/`paused` **не** поднимает: это результат
   намеренного `docker compose stop`. Глушится файлом
-  `/root/voiceAIChat/.deploy-paused`. Берёт тот же lock, что деплой, — во время
+  `$PROD/.deploy-paused`. Берёт тот же lock, что деплой, — во время
   деплоя не вмешивается. Лог: `/var/log/voicechat-watchdog.log`.
 
-Установка/переустановка (идемпотентна): `cd /root/voiceAIChat && bash scripts/prod/install.sh`.
+Установка/переустановка (идемпотентна): `cd $PROD && bash scripts/prod/install.sh`.
 Установщик включает и перезапускает `voicechat-deploy-api.service`, чтобы новая
 копия обработчика сразу вступила в силу; его журнал читается
 через `journalctl -u voicechat-deploy-api.service`, а сам deploy продолжает писать
@@ -300,13 +300,13 @@ version, source, commit и task.
 
 ## Прод-каталог заодно рабочая копия — коммит там пушится сразу
 
-`/root/voiceAIChat` — не только прод-чекаут, из которого `docker compose` собирает
+`$PROD` — не только прод-чекаут, из которого `docker compose` собирает
 образ, но и общая рабочая копия чат-сессий на этой машине. Второй писатель в `main`
 — CI-раннер: шаг «Влить ветку задачи в прод-ветку» пушит мерж в `origin/main` из
 клона в `repos_root`, а шаг «Обновить прод-контейнер» поднимает прод
 **только `git pull --ff-only`** (см. [features/ci-runner.md](features/ci-runner.md)).
 
-Отсюда правило: **закоммитил в `/root/voiceAIChat` — сразу `git push origin main`.**
+Отсюда правило: **закоммитил в `$PROD` — сразу `git push origin main`.**
 Незапушенный локальный коммит проходит проверку на локальные изменения (дерево-то
 чистое) и разводит ветки в момент, когда CI пушит свой мерж; `pull --ff-only`
 падает с `fatal: Not possible to fast-forward` (код `128`), и ран встаёт на шаге
@@ -353,8 +353,8 @@ CHAT-115 (он уже влил работу в `main`, но получил `fail
 укладывается даже `build`.
 
 ```bash
-cd /root/voiceAIChat && git pull --ff-only origin main
-setsid nohup sh -c 'cd /root/voiceAIChat && ./scripts/prod/rebuild-when-idle.sh; echo EXIT=$?' \
+cd $PROD && git pull --ff-only origin main
+setsid nohup sh -c 'cd $PROD && ./scripts/prod/rebuild-when-idle.sh; echo EXIT=$?' \
   > /tmp/voicechat-prod-rebuild-<N>.log 2>&1 < /dev/null &
 # ждать повторными дешёвыми вызовами: tail /tmp/voicechat-prod-rebuild-<N>.log
 # (sleep внутри команды моста не помогает — таймаут убивает её вместе со sleep)
@@ -459,7 +459,7 @@ docker exec voiceaichat-voicechat-1 grep -c keepActiveListed /app/apps/web/dist/
 
 Полное сравнение `sha256sum` нужно именно при подозрении на грязное дерево. В
 обычном случае отставание считают лестницей от дешёвого к дорогому: `git status` и
-`git rev-list --count HEAD..origin/main` в `/root/voiceAIChat` (сколько коммитов не
+`git rev-list --count HEAD..origin/main` в `$PROD` (сколько коммитов не
 доехало и нет ли встречных), затем сверка времени создания образов с временем
 коммита `HEAD` — если образы моложе коммита на минуты, они собраны именно с этой
 вершины, — и только потом один файл-маркер из ожидаемого коммита (`docker exec …
@@ -473,3 +473,7 @@ ls /app/scripts/ci-usage-report.mjs`). Лестницы хватает и на �
 `pull --ff-only → docker compose build → up -d` с секундной паузой. Задержку угадывать
 не нужно, и пачка ранов не рвётся на середине; цена — результат виден только в логе
 сеанса, в ленте рана его нет.
+
+**Кастомный домен публикаций Make (roadmap-4 п.33, ⏸).** Публикации живут на `/p/<token>/` и `/s/<slug>/` того же хоста. Свой домен на проект требует wildcard-DNS (`*.make.<домен>` → прод) и TLS-сертификата на wildcard в Caddy (`tls` с DNS-челленджем) плюс маршрут, который по `Host` подставляет slug; ни DNS-зоны, ни DNS-провайдера в окружении нет, поэтому пункт отложен. Когда появятся — точка входа: `servePublic` в `apps/server/src/routes/make.ts` (разрешение slug → token через `.published/slug-<slug>.json`).
+
+**Почта для регистрации.** `docker-compose.yml` пробрасывает их из `.env` рядом с compose в каталоге прода — это `target.path` из настроек Release Center проекта (`$PROD`, сейчас `/root/ChatAI`). Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='ChatAI <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).

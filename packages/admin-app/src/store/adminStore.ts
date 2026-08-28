@@ -12,11 +12,11 @@ import type {
   ModelPriceInput,
   UsageReport,
   UsageUnit,
-  UserUsageSummary, AdminMakeStats } from '@shared/admin'
+  UserUsageSummary, AdminMakeStats, AdminMachineStats, SecurityEvent, InviteInfo, SignupConfig } from '@shared/admin'
 import type { UserLlmAccess } from '@shared/llmAccess'
 
 export const EMPTY_LLM_ACCESS: readonly UserLlmAccess[] = Object.freeze([])
-import type { Conversation, Message, UserRole } from '@shared/types'
+import type { Conversation, Message, UserRole, SessionInfo } from '@shared/types'
 import type { AdminClient, SessionPort } from '../contracts'
 
 export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -28,10 +28,19 @@ export interface AdminState {
   adminUsers: AdminUserInfo[]
   adminUsageSummary: UserUsageSummary[]
   adminMakeStats: AdminMakeStats | null
+  adminMachineStats: AdminMachineStats | null
   adminUsersStatus: LoadStatus
   adminUsersError: string | null
   adminSelected: string | null
   adminUsage: UsageReport | null
+  /** Сессии выбранного пользователя (auth-roadmap п.4); null — не загружены. */
+  adminSessions: SessionInfo[] | null
+  /** Журнал безопасности выбранного пользователя (auth-roadmap п.7). */
+  adminSecurity: SecurityEvent[] | null
+  /** Инвайты (auth-roadmap п.8). */
+  adminInvites: InviteInfo[] | null
+  /** Открытая регистрация. */
+  adminSignup: SignupConfig | null
   adminConversations: Conversation[]
   adminMessages: Message[]
   adminConversationId: string | null
@@ -47,12 +56,23 @@ export interface AdminState {
 export interface AdminActions {
   openUsers(): Promise<void>
   closeUsers(): void
-  createUserAccount(name: string, password: string, role: UserRole): Promise<void>
+  createUserAccount(name: string, password: string, role: UserRole, mustChangePassword?: boolean): Promise<void>
+  /** Код сброса пароля (auth-roadmap п.10); null — клиент не умеет. */
+  issueResetCode(name: string): Promise<{ code: string; expiresAt: number } | null>
+  setUserLlmLimit(name: string, llmLimitUsd: number | null): Promise<void>
   updateUserRole(name: string, role: UserRole): Promise<void>
   setUserBlocked(name: string, blocked: boolean): Promise<void>
   deleteUserAccount(name: string): Promise<void>
   selectAdminUser(name: string): Promise<void>
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<void>
+  loadAdminSessions(): Promise<void>
+  loadAdminSecurity(): Promise<void>
+  loadAdminInvites(): Promise<void>
+  loadAdminSignup(): Promise<void>
+  setAdminSignup(input: { enabled?: boolean; role?: UserRole }): Promise<void>
+  createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }): Promise<InviteInfo | null>
+  deleteAdminInvite(token: string): Promise<void>
+  revokeAdminSession(sid: string): Promise<void>
   openAdminConversation(conversationId: string): Promise<void>
   refreshAdminLlmEngines(): Promise<void>
   refreshAdminModelPrices(): Promise<void>
@@ -82,10 +102,15 @@ function initialState(): AdminState {
     adminUsers: [],
     adminUsageSummary: [],
     adminMakeStats: null,
+    adminMachineStats: null,
     adminUsersStatus: 'loading',
     adminUsersError: null,
     adminSelected: null,
     adminUsage: null,
+    adminSessions: null,
+    adminSecurity: null,
+    adminInvites: null,
+    adminSignup: null,
     adminConversations: [],
     adminMessages: [],
     adminConversationId: null,
@@ -107,13 +132,14 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
   async function refreshAdminUsers(): Promise<void> {
     setState({ adminUsersStatus: 'loading', adminUsersError: null })
     try {
-      const [adminUsers, adminUsageSummary, adminMakeStats] = await Promise.all([
+      const [adminUsers, adminUsageSummary, adminMakeStats, adminMachineStats] = await Promise.all([
         client.listUsers(),
         client.usageSummary(),
-        // Метрики Make — необязательная часть дашборда: их отказ не должен ронять список пользователей.
-        client.makeStats ? client.makeStats().catch(() => null) : Promise.resolve(null)
+        // Метрики Make и машин — необязательная часть дашборда: их отказ не должен ронять список пользователей.
+        client.makeStats ? client.makeStats().catch(() => null) : Promise.resolve(null),
+        client.machineStats ? client.machineStats().catch(() => null) : Promise.resolve(null)
       ])
-      setState({ adminUsers, adminUsageSummary, adminMakeStats, adminUsersStatus: 'ready', adminUsersError: null })
+      setState({ adminUsers, adminUsageSummary, adminMakeStats, adminMachineStats, adminUsersStatus: 'ready', adminUsersError: null })
     } catch (err) {
       setState({
         adminUsersStatus: 'error',
@@ -153,6 +179,10 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       usersOpen: false,
       adminSelected: null,
       adminUsage: null,
+    adminSessions: null,
+    adminSecurity: null,
+    adminInvites: null,
+    adminSignup: null,
       adminConversations: [],
       adminMessages: [],
       adminConversationId: null,
@@ -167,6 +197,10 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     setState({
       adminSelected: name,
       adminUsage: null,
+    adminSessions: null,
+    adminSecurity: null,
+    adminInvites: null,
+    adminSignup: null,
       adminConversations: [],
       adminMessages: [],
       adminConversationId: null,
@@ -218,6 +252,45 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     }
   }
 
+  async function loadAdminSessions(): Promise<void> {
+    const name = getState().adminSelected
+    if (!name || !client.userSessions) return
+    try { setState({ adminSessions: await client.userSessions({ name }) }) } catch (err) { fail(err, () => void loadAdminSessions()) }
+  }
+
+  async function loadAdminSecurity(): Promise<void> {
+    const name = getState().adminSelected
+    if (!name || !client.securityEvents) return
+    try { setState({ adminSecurity: await client.securityEvents({ user: name, limit: 200 }) }) } catch (err) { fail(err, () => void loadAdminSecurity()) }
+  }
+
+  async function loadAdminSignup(): Promise<void> {
+    if (!client.signupConfig) return
+    try { setState({ adminSignup: await client.signupConfig() }) } catch (err) { fail(err, () => void loadAdminSignup()) }
+  }
+  async function setAdminSignup(input: { enabled?: boolean; role?: UserRole }): Promise<void> {
+    if (!client.setSignupConfig) return
+    try { setState({ adminSignup: await client.setSignupConfig(input) }) } catch (err) { fail(err, () => void setAdminSignup(input)) }
+  }
+
+  async function loadAdminInvites(): Promise<void> {
+    if (!client.listInvites) return
+    try { setState({ adminInvites: await client.listInvites() }) } catch (err) { fail(err, () => void loadAdminInvites()) }
+  }
+  async function createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }): Promise<InviteInfo | null> {
+    if (!client.createInvite) return null
+    try { const inv = await client.createInvite(input); await loadAdminInvites(); return inv } catch (err) { fail(err, () => void createAdminInvite(input)); return null }
+  }
+  async function deleteAdminInvite(token: string): Promise<void> {
+    if (!client.deleteInvite) return
+    try { await client.deleteInvite({ token }); await loadAdminInvites() } catch (err) { fail(err, () => void deleteAdminInvite(token)) }
+  }
+
+  async function revokeAdminSession(sid: string): Promise<void> {
+    if (!client.revokeSession) return
+    try { await client.revokeSession({ sid }); await loadAdminSessions() } catch (err) { fail(err, () => void revokeAdminSession(sid)) }
+  }
+
   async function openAdminConversation(conversationId: string): Promise<void> {
     const name = getState().adminSelected
     if (!name) return
@@ -265,13 +338,21 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     actions: {
       openUsers,
       closeUsers,
-      async createUserAccount(name, password, role) {
+      async createUserAccount(name, password, role, mustChangePassword) {
         try {
-          await client.createUser({ name, password, role })
+          await client.createUser({ name, password, role, ...(mustChangePassword ? { mustChangePassword: true } : {}) })
           await refreshAdminUsers()
         } catch (err) {
           fail(err)
         }
+      },
+      async setUserLlmLimit(name, llmLimitUsd) {
+        if (!client.setUserLlmLimit) return
+        try { const u = await client.setUserLlmLimit({ name, llmLimitUsd }); setState({ adminUsers: getState().adminUsers.map((x) => (x.name === u.name ? u : x)) }) } catch (err) { fail(err, () => undefined) }
+      },
+      async issueResetCode(name) {
+        if (!client.resetCode) return null
+        try { return await client.resetCode({ name }) } catch (err) { fail(err, () => undefined); return null }
       },
       async updateUserRole(name, role) {
         try {
@@ -299,6 +380,14 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       },
       selectAdminUser,
       loadAdminUsage,
+      loadAdminSessions,
+    loadAdminSecurity,
+    loadAdminInvites,
+    loadAdminSignup,
+    setAdminSignup,
+    createAdminInvite,
+    deleteAdminInvite,
+      revokeAdminSession,
       openAdminConversation,
       refreshAdminLlmEngines,
       refreshAdminModelPrices,

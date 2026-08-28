@@ -9,38 +9,38 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 76 коммит(ов) в areas после сверки: fc097896 feat(make): скриншоты «до/после» хода ассистента над превью (roadmap-2 п.8) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 90 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 113 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 120 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: a8c141af fix(desktop): зелёный typecheck — фикстура Settings через DEFAULT_SETTINGS, типы ?worker (roadmap-2 п.6) |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 12 коммит(ов) в areas после сверки: b088d0c5 test(make): E2E в headless Chromium — превью React, компоненты, Monaco, публикация (п.37) … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-18 | ⚠ 63 коммит(ов) в areas после сверки: 3323c479 feat(make): «Откатить правки» у ответа — снимок хода в meta (roadmap-2 п.2); авто-план игнорирует служебный контекст … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-25 | ⚠ 10 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 72 коммит(ов) в areas после сверки: 3602d00b feat(make): история публикаций с откатом на прежний снимок (roadmap-2 п.11) … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ⚠ 23 коммит(ов) в areas после сверки: 472310fb feat(make): инструмент Make — веб-проект с ассистентом (превью, код, история) … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 123 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 59 коммит(ов) в areas после сверки: a3ca0ed8 feat(make): persist-коллекции мок-API — CRUD с записью в mock/*.json (roadmap-2 п.12) … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 44 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 42 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 36 коммит(ов) в areas после сверки: fc097896 feat(make): скриншоты «до/после» хода ассистента над превью (roadmap-2 п.8) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 687 коммит(ов) в areas после сверки: a3ca0ed8 feat(make): persist-коллекции мок-API — CRUD с записью в mock/*.json (roadmap-2 п.12) … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 134 коммит(ов) в areas после сверки: 3602d00b feat(make): история публикаций с откатом на прежний снимок (roadmap-2 п.11) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-25 | ⚠ 64 коммит(ов) в areas после сверки: 3602d00b feat(make): история публикаций с откатом на прежний снимок (roadmap-2 п.11) … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 38 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 62 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями … |
-| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 5 коммит(ов) в areas после сверки: 2198e7a9 fix: auto-resolve merge conflicts with model step … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-26 | ⚠ 28 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями … |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 52 коммит(ов) в areas после сверки: fc097896 feat(make): скриншоты «до/после» хода ассистента над превью (roadmap-2 п.8) … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 63 коммит(ов) в areas после сверки: 3602d00b feat(make): история публикаций с откатом на прежний снимок (roadmap-2 п.11) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: a3ca0ed8 feat(make): persist-коллекции мок-API — CRUD с записью в mock/*.json (roadmap-2 п.12) |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 18 коммит(ов) в areas после сверки: a3ca0ed8 feat(make): persist-коллекции мок-API — CRUD с записью в mock/*.json (roadmap-2 п.12) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 29 коммит(ов) в areas после сверки: a3ca0ed8 feat(make): persist-коллекции мок-API — CRUD с записью в mock/*.json (roadmap-2 п.12) … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 53 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 13 коммит(ов) в areas после сверки: 66d2bf16 fix(ci): устанавливать зависимости desktop перед сборкой … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-28 | ⚠ 9 коммит(ов) в areas после сверки: 2e54858c feat(machines): политика команд проекта и роли поверх политики машины, подтверждение опасных команд в чате (roadmap п.10) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-28 | ⚠ 12 коммит(ов) в areas после сверки: 2e54858c feat(machines): политика команд проекта и роли поверх политики машины, подтверждение опасных команд в чате (roadmap п.10) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 130 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ⚠ 42 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 11 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 78 коммит(ов) в areas после сверки: 2e54858c feat(machines): политика команд проекта и роли поверх политики машины, подтверждение опасных команд в чате (roadmap п.10) … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 74 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 76 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 73 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 759 коммит(ов) в areas после сверки: 34f1a803 docs(kb): update after merge 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 183 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 28 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 6 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 93 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
+| [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 6 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 20 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 6 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 79 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-28 | ⚠ 8 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 18 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 19 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 15 коммит(ов) в areas после сверки: b8a4d25a feat(machines): групповая команда на несколько машин со сводной таблицей (roadmap п.15) … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 70 коммит(ов) в areas после сверки: 2e54858c feat(machines): политика команд проекта и роли поверх политики машины, подтверждение опасных команд в чате (roadmap п.10) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ✓ |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: b088d0c5 test(make): E2E в headless Chromium — превью React, компоненты, Monaco, публикация (п.37) |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 6 коммит(ов) в areas после сверки: 3c1304e6 feat(make): токены и открытые комментарии в промпте хода (roadmap-2 п.9); скриншоты превью со стилями … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ✓ |
-| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-27, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-27 | ⚠ 3 коммит(ов) в areas после сверки: ae9164b3 Merge task 0ce47a42-fabd-47a4-8b92-b1eee7a30308 … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 23 коммит(ов) в areas после сверки: 2e54858c feat(machines): политика команд проекта и роли поверх политики машины, подтверждение опасных команд в чате (roadmap п.10) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-28 | ✓ |
+| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-28, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
 ## Инструкции по пакетам
@@ -57,18 +57,18 @@
 
 ## Журнал сессий
 
-Всего записей: 371. Последние:
+Всего записей: 395. Последние:
 
-- [2026-08-27-alexeys-macbook-air-2-make-roadmap-2.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-2.md) — make-roadmap-2
-- [2026-08-27-alexeys-macbook-air-2-make-roadmap-19-24.md](log/2026-08-27-alexeys-macbook-air-2-make-roadmap-19-24.md) — make-roadmap-19-24
-- [2026-08-27-alexeys-macbook-air-2-make-react-storybook-search.md](log/2026-08-27-alexeys-macbook-air-2-make-react-storybook-search.md) — make-react-storybook-search
-- [2026-08-27-alexeys-macbook-air-2-make-monaco-editor.md](log/2026-08-27-alexeys-macbook-air-2-make-monaco-editor.md) — make-monaco-editor
-- [2026-08-27-alexeys-macbook-air-2-make-dnd-highlight.md](log/2026-08-27-alexeys-macbook-air-2-make-dnd-highlight.md) — make-dnd-highlight
-- [2026-08-27-alexeys-macbook-air-2-make-console-assets-import.md](log/2026-08-27-alexeys-macbook-air-2-make-console-assets-import.md) — make-console-assets-import
-- [2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics.md](log/2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics.md) — 2026-08-26-alexeys-macbook-air-2-reader-layout-and-diagnostics
-- [2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign.md](log/2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign.md) — 2026-08-26-alexeys-macbook-air-2-msg-head-footer-redesign
-- [2026-08-26-alexeys-macbook-air-2-make-publish-check-templates.md](log/2026-08-26-alexeys-macbook-air-2-make-publish-check-templates.md) — make-publish-check-templates
-- [2026-08-26-alexeys-macbook-air-2-console-with-assistant.md](log/2026-08-26-alexeys-macbook-air-2-console-with-assistant.md) — 2026-08-26-alexeys-macbook-air-2-console-with-assistant
+- [2026-08-28-macbook-air-user-task-modal-brief-validation.md](log/2026-08-28-macbook-air-user-task-modal-brief-validation.md) — task-modal-brief-validation
+- [2026-08-28-macbook-air-user-simplify-chat-header-kb-usage.md](log/2026-08-28-macbook-air-user-simplify-chat-header-kb-usage.md) — simplify-chat-header-kb-usage
+- [2026-08-28-macbook-air-user-desktop-sidebar.md](log/2026-08-28-macbook-air-user-desktop-sidebar.md) — desktop-sidebar
+- [2026-08-28-alexeys-macbook-air-2-machines-roadmap-9.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-9.md) — machines-roadmap-9
+- [2026-08-28-alexeys-macbook-air-2-machines-roadmap-8.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-8.md) — machines-roadmap-8
+- [2026-08-28-alexeys-macbook-air-2-machines-roadmap-7.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-7.md) — machines-roadmap-7
+- [2026-08-28-alexeys-macbook-air-2-machines-roadmap-5.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-5.md) — machines-roadmap-5
+- [2026-08-28-alexeys-macbook-air-2-machines-roadmap-4.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-4.md) — machines-roadmap-4
+- [2026-08-28-alexeys-macbook-air-2-machines-roadmap-3.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-3.md) — machines-roadmap-3
+- [2026-08-28-alexeys-macbook-air-2-machines-roadmap-2.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-2.md) — machines-roadmap-2
 
 ## Исторические планы
 

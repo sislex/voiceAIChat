@@ -10,6 +10,17 @@ export interface AdminUserInfo {
   role: UserRole
   blocked: boolean
   createdAt: number
+  /** Временный пароль: пользователь обязан сменить его при входе (auth-roadmap п.11). */
+  mustChangePassword?: boolean
+  /** Подтверждённый email саморегистрации. */
+  email?: string | null
+  /** Последний вход (п.18) и месячный лимит расхода LLM (п.17). */
+  lastLogin?: number | null
+  llmLimitUsd?: number | null
+  /** Авто-блокировка после неудачных входов (auth-roadmap п.3). */
+  failedLogins?: number
+  lockedUntil?: number | null
+  lockReason?: string | null
   conversationCount: number
   /** Машины-агенты пользователя с онлайн-статусом. */
   agents: AgentInfo[]
@@ -170,7 +181,50 @@ export interface AdminMakeUserStat {
   views: number
 }
 
+/** Настройка открытой регистрации: включена ли и какую роль получают новые пользователи. */
+export interface SignupConfig { enabled: boolean; role: UserRole; mailConfigured: boolean }
+
+/** Инвайт на саморегистрацию (auth-roadmap п.8): роль, срок, лимит использований. */
+export interface InviteInfo { token: string; role: UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string }
+
+/** Журнал безопасности (auth-roadmap п.7): входы, выходы, неудачи, блокировки, смена пароля, 2FA. */
+export type SecurityEventType = 'agent_connected' | 'agent_rejected' | 'agent_token_rotated' | 'agent_token_revoked' | 'signup_requested' | 'signup_verified' | 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'
+export interface SecurityEvent { id: number; at: number; user: string; type: SecurityEventType; ip: string; userAgent: string; details: string }
+
+/** Метрики машины для админки и Prometheus (machines-roadmap п.5). */
+export interface AdminMachineStat {
+  id: string
+  name: string
+  owner: string
+  online: boolean
+  version?: string
+  /** Команд всего / за 24 ч, ошибок (ненулевой код, таймаут, отказ) за 24 ч, средняя длительность за 24 ч. */
+  commandsTotal: number
+  commands24h: number
+  errors24h: number
+  avgDurationMs24h: number
+  lastCommandAt: number | null
+  /** Тревог watchdog «не в сети» за 30 дней и суммарный простой по ним (мс). */
+  offlineEvents30d: number
+  offlineMs30d: number
+  /** Байт передано файлами за 24 ч (upload/copy — по журналу команд не видно; считаем write/read из fs — пока 0, поле для Prometheus). */
+  cpuLoadPct?: number
+  memUsedRatio?: number
+  diskFreeBytes?: number
+}
+export interface AdminMachineStats {
+  generatedAt: number
+  machines: AdminMachineStat[]
+  totals: { machines: number; online: number; commands24h: number; errors24h: number }
+}
+
+/** Диск с данными (roadmap-4 п.40): `alert` — свободно меньше `MAKE_DISK_ALERT_BYTES`. */
+export interface AdminDiskStats { totalBytes: number; freeBytes: number; alert: boolean }
+export const MAKE_DISK_ALERT_BYTES = 10 * 1024 ** 3
+
 export interface AdminMakeStats {
+  /** Свободное место на разделе с данными Make; null — узнать не удалось. */
+  disk?: AdminDiskStats | null
   projects: number
   bytes: number
   filesBytes: number
@@ -180,6 +234,8 @@ export interface AdminMakeStats {
   shared: number
   views: number
   limitBytes: number
+  /** Квота на пользователя (сумма его проектов); в byUser предупреждение при ≥ 80 %. */
+  userLimitBytes: number
   byUser: AdminMakeUserStat[]
   /** Самые тяжёлые проекты (до 10). */
   top: AdminMakeProjectStat[]

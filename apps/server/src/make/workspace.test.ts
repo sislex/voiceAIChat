@@ -1,9 +1,9 @@
-import { mkdtemp, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MAKE_SCAFFOLD } from '@voicechat/shared'
-import { MakeError, MakeWorkspaces } from './workspace'
+import { MakeError, MakeWorkspaces, refererHost } from './workspace'
 
 const CONV = 'conv-1'
 
@@ -80,6 +80,13 @@ describe('MakeWorkspaces', () => {
     expect(zip.readUInt32LE(0)).toBe(0x04034b50)
     expect(zip.toString('latin1')).toContain('index.html')
     expect(zip.readUInt32LE(zip.length - 22)).toBe(0x06054b50)
+    // Хостинг (roadmap-4 п.36): конфиг и DEPLOY.md попадают в архив.
+    expect((await ws.exportZip(CONV, { deploy: 'netlify' })).toString('latin1')).toContain('netlify.toml')
+    expect((await ws.exportZip(CONV, { deploy: 'vercel', vite: true })).toString('latin1')).toContain('vercel.json')
+    // Превью снимка (п.37): файлы снимка читаются буфером, чужой путь — null.
+    const snap = (await ws.snapshot(CONV, 'v1')).snapshots[0]!
+    expect((await ws.snapshotBuffer(CONV, snap.id, 'index.html'))?.data.toString('utf8')).toContain('<!doctype html>')
+    expect(await ws.snapshotBuffer(CONV, snap.id, 'nope.html')).toBeNull()
   })
 
   it('публикация: токен, индекс токен→разговор, снятие; файл публикации переживает reset', async () => {
@@ -151,6 +158,35 @@ describe('MakeWorkspaces', () => {
     const none = await ws.replaceAll(CONV, 'nothing-here', 'x')
     expect(none.files).toBe(0)
     expect(await ws.snapshots(CONV)).toHaveLength(1)
+  })
+
+  it('search/replaceAll с regex: $1-подстановки, dryRun даёт предпросмотр без записи, невалидный regex — MakeError (roadmap-4 п.11)', async () => {
+    const ws = await fresh()
+    await ws.write(CONV, 'styles.css', ':root { --bg: #fff; --fg: #000; }')
+    const found = await ws.search(CONV, '--(bg|fg)', 200, { regex: true })
+    expect(found).toHaveLength(1)
+    const dry = await ws.replaceAll(CONV, '--(\\w+): #fff', '--$1: white', { regex: true, dryRun: true })
+    expect(dry.replacements).toBe(1)
+    expect(dry.preview).toEqual([{ path: 'styles.css', line: 1, before: ':root { --bg: #fff; --fg: #000; }', after: ':root { --bg: white; --fg: #000; }' }])
+    expect((await ws.read(CONV, 'styles.css')).content).toContain('#fff')
+    expect(await ws.snapshots(CONV)).toHaveLength(0)
+    const real = await ws.replaceAll(CONV, '--(\\w+): #fff', '--$1: white', { regex: true })
+    expect(real.files).toBe(1)
+    expect((await ws.read(CONV, 'styles.css')).content).toBe(':root { --bg: white; --fg: #000; }')
+    // Без regex `$1` — обычный текст.
+    await ws.replaceAll(CONV, 'white', '$1')
+    expect((await ws.read(CONV, 'styles.css')).content).toContain('--bg: $1;')
+    await expect(ws.replaceAll(CONV, '(', 'x', { regex: true })).rejects.toThrow(/Неверное выражение/)
+  })
+
+  it('check: замечания линтера идут как warning и не откатывают applyChanges (roadmap-4 п.12)', async () => {
+    const ws = await fresh()
+    await ws.write(CONV, 'index.html', '<!doctype html><script type="module" src="app.tsx"></script>')
+    const r = await ws.applyChanges(CONV, [{ path: 'app.tsx', content: "console.log('hi')\nexport const a = 1\n" }, { path: 'styles.css', content: '.a { color: red !important; }' }])
+    expect(r.rolledBack).toBe(false)
+    const lint = r.issues.filter((i) => i.kind === 'lint')
+    expect(lint.map((i) => `${i.path}:${i.line}:${i.rule}`)).toEqual(['app.tsx:1:no-console', 'styles.css:1:no-important'])
+    expect(lint.every((i) => i.severity === 'warning')).toBe(true)
   })
 
   it('snapshotDiff/restoreFile: статусы файлов и возврат одного файла', async () => {
@@ -251,6 +287,14 @@ describe('MakeWorkspaces', () => {
     expect(await ws.resolveMock(CONV, 'api/users', 'GET')).toMatchObject({ status: 200, body: [{ id: 1 }] })
     expect(await ws.resolveMock(CONV, 'api/users', 'POST')).toMatchObject({ status: 201, body: { id: 2 } })
     expect((await ws.resolveMock(CONV, 'api/broken', 'GET'))?.status).toBe(500)
+    // Auth-мок (roadmap-4 п.32): логин → cookie, защищённый ресурс — только с ней.
+    await ws.write(CONV, 'mock/api/login.POST.json', JSON.stringify({ $auth: { users: [{ username: 'anna', password: '1', name: 'Анна' }] } }))
+    await ws.write(CONV, 'mock/api/me.json', JSON.stringify({ $auth: { require: true }, $body: { role: 'admin' } }))
+    const login = await ws.resolveMock(CONV, 'api/login', 'POST', false, { username: 'anna', password: '1' })
+    expect(login).toMatchObject({ status: 200, body: { user: { username: 'anna', name: 'Анна' } } })
+    expect(login?.headers['set-cookie']).toContain('vc_mock_session=anna')
+    expect((await ws.resolveMock(CONV, 'api/me', 'GET'))?.status).toBe(401)
+    expect(await ws.resolveMock(CONV, 'api/me', 'GET', false, undefined, 'vc_mock_session=anna')).toMatchObject({ status: 200, body: { role: 'admin', user: { username: 'anna' } } })
     expect(await ws.resolveMock(CONV, 'api/none', 'GET')).toBeNull()
     expect(await ws.resolveMock(CONV, 'mock/api/users.json', 'GET')).toBeNull()
     const snap = (await ws.snapshot(CONV, 'v1')).snapshots[0]!
@@ -333,6 +377,9 @@ describe('MakeWorkspaces', () => {
     await ws.publish(CONV)
     await ws.countView(CONV)
     const stats = await ws.adminStats((id) => (id === CONV ? 'alice' : 'bob'))
+    // Диск (roadmap-4 п.40): statfs корня данных даёт положительные числа и флаг тревоги по порогу 10 ГБ.
+    expect(stats.disk!.totalBytes).toBeGreaterThan(0)
+    expect(stats.disk!.alert).toBe(stats.disk!.freeBytes < 10 * 1024 ** 3)
     expect(stats.projects).toBe(2)
     expect(stats.published).toBe(1)
     expect(stats.views).toBe(1)
@@ -398,5 +445,120 @@ describe('MakeWorkspaces', () => {
     expect(css).toContain('--accent: #f00')
     expect(css).toContain('--radius: 8px')
     expect(css).toContain('body { margin: 0 }')
+  })
+
+  it('insertLibraryFiles: компоненты кита автоимпортируются в src/App.tsx, сториз и повторы — нет (roadmap-4 п.13)', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'src/App.tsx', "import { Button } from './components/Button'\nexport function App() { return <Button /> }")
+    await ws.write(CONV, 'src/components/Button.tsx', 'export const Button = () => null')
+    const r = await ws.insertLibraryFiles(CONV, [
+      { path: 'src/components/Card.tsx', data: Buffer.from('export const Card = () => null\nexport const CardTitle = () => null') },
+      { path: 'src/components/Hero.tsx', data: Buffer.from('export default function Hero() { return null }') },
+      { path: 'src/components/Card.stories.tsx', data: Buffer.from('export const Basic = () => null') },
+      { path: 'src/components/Button.tsx', data: Buffer.from('export const Button = () => null') }
+    ])
+    expect(r.autoImported).toEqual(['Card', 'CardTitle', 'Hero'])
+    const app = (await ws.read(CONV, 'src/App.tsx')).content.split('\n')
+    expect(app.slice(0, 3)).toEqual(["import { Button } from './components/Button'", "import { Card, CardTitle } from './components/Card'", "import Hero from './components/Hero'"])
+  })
+
+  it('квота на пользователя: сумма по проектам владельца, превышение — MakeError quota', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'vc-make-'))
+    const ws = new MakeWorkspaces(dir, { maxUserBytes: 3000 })
+    ws.setProjectsOfOwner(() => [CONV, 'conv-2'])
+    await ws.ensure(CONV); await ws.ensure('conv-2')
+    const used = (await ws.usage(CONV)).totalBytes + (await ws.usage('conv-2')).totalBytes
+    expect(used).toBeLessThan(3000)
+    await expect(ws.write(CONV, 'big.txt', 'x'.repeat(3000 - used + 1))).rejects.toMatchObject({ code: 'quota' })
+    await ws.write(CONV, 'ok.txt', 'y')
+    expect((await ws.adminStats(() => 'u')).userLimitBytes).toBe(3000)
+  })
+
+  it('sweep: удаляет снимки старше 30 дней, кроме закреплённого и самого свежего; чистит старые PNG стори', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const day = 86_400_000
+    const now = Date.now()
+    const old1 = (await ws.snapshot(CONV, 'old1')).snapshots[0]!
+    const old2 = (await ws.snapshot(CONV, 'old2')).snapshots[0]!
+    const fresh1 = (await ws.snapshot(CONV, 'fresh')).snapshots[0]!
+    const dir = join((ws as unknown as { rootDir: string }).rootDir, 'make', CONV, '.snapshots')
+    for (const [snap, age] of [[old1, 40], [old2, 35], [fresh1, 1]] as const) {
+      const metaPath = join(dir, snap.id, 'meta.json')
+      const meta = JSON.parse(await readFile(metaPath, 'utf8')) as { createdAt: number }
+      meta.createdAt = now - age * day
+      await writeFile(metaPath, JSON.stringify(meta), 'utf8')
+    }
+    await ws.publish(CONV, { snapshotId: old2.id })
+    const r = await ws.sweep(30 * day, now)
+    expect(r).toEqual({ projects: 1, snapshots: 1, shots: 0 })
+    expect((await ws.snapshots(CONV)).map((s) => s.label).sort()).toEqual(['fresh', 'old2'])
+  })
+
+  it('аналитика публикации: просмотры по дням и хостам реферера, прямые заходы без реферера', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.publish(CONV)
+    const d1 = Date.UTC(2026, 7, 26, 12), d2 = Date.UTC(2026, 7, 27, 12)
+    await ws.countView(CONV, 'https://news.ycombinator.com/item?id=1', d1)
+    await ws.countView(CONV, null, d1)
+    await ws.countView(CONV, 'not a url', d2)
+    await ws.countView(CONV, 'https://t.co/x', d2)
+    const pub = (await ws.state(CONV)).published!
+    expect(pub.views).toBe(4)
+    expect(pub.stats?.days).toEqual([{ day: '2026-08-26', views: 2 }, { day: '2026-08-27', views: 2 }])
+    expect(pub.stats?.referers).toEqual([{ host: 'news.ycombinator.com', views: 1 }, { host: 't.co', views: 1 }])
+    expect(refererHost('http://localhost:8787/x')).toBeNull()
+  })
+
+  it('именной доступ: setShareGrant создаёт ссылку, роли читаются, null убирает', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.setShareGrant(CONV, 'bob', 'editor')
+    expect((await ws.state(CONV)).shared?.grants).toEqual([{ user: 'bob', role: 'editor' }])
+    expect(await ws.shareRole(CONV, 'bob')).toBe('editor')
+    await ws.setShareGrant(CONV, 'bob', 'viewer')
+    expect(await ws.shareRole(CONV, 'bob')).toBe('viewer')
+    await ws.setShareGrant(CONV, 'bob', null)
+    expect(await ws.shareRole(CONV, 'bob')).toBeNull()
+    await expect(ws.setShareGrant(CONV, 'bad name!', 'viewer')).rejects.toMatchObject({ code: 'invalid_path' })
+  })
+
+  it('applyChanges: откат всех файлов при ошибке компиляции, иначе запись; editFile — уникальный фрагмент', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    await ws.write(CONV, 'a.txt', 'old-a')
+    const bad = await ws.applyChanges(CONV, [{ path: 'a.txt', content: 'new-a' }, { path: 'src/x.tsx', content: 'export const X = () => <div>' }])
+    expect(bad.rolledBack).toBe(true)
+    expect((await ws.read(CONV, 'a.txt')).content).toBe('old-a')
+    expect(await ws.readBuffer(CONV, 'src/x.tsx')).toBeNull()
+    const ok = await ws.applyChanges(CONV, [{ path: 'a.txt', content: 'new-a' }], ['styles.css'])
+    expect(ok.rolledBack).toBe(false)
+    expect((await ws.read(CONV, 'a.txt')).content).toBe('new-a')
+    expect(await ws.readBuffer(CONV, 'styles.css')).toBeNull()
+    await ws.write(CONV, 'b.txt', 'x y x')
+    await expect(ws.editFile(CONV, 'b.txt', 'x', 'z')).rejects.toMatchObject({ code: 'exists' })
+    await expect(ws.editFile(CONV, 'b.txt', 'nope', 'z')).rejects.toMatchObject({ code: 'not_found' })
+    expect((await ws.editFile(CONV, 'b.txt', 'x', 'z', true)).replaced).toBe(2)
+    expect((await ws.read(CONV, 'b.txt')).content).toBe('z y z')
+    expect((await ws.editFile(CONV, 'b.txt', 'y', 'w')).replaced).toBe(1)
+  })
+
+  it('заметки и режим: setNotes/appendNote, попадают в promptContext, не мешают list/reset', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    expect(await ws.notes(CONV)).toEqual({ notes: '', mode: 'balanced' })
+    await ws.setNotes(CONV, { mode: 'designer' })
+    await ws.appendNote(CONV, 'акцент — синий')
+    const n = await ws.notes(CONV)
+    expect(n.mode).toBe('designer')
+    expect(n.notes).toMatch(/^- \d{4}-\d{2}-\d{2}: акцент — синий\n$/)
+    const ctx = await ws.promptContext(CONV)
+    expect(ctx).toContain('Режим «Дизайнер»')
+    expect(ctx).toContain('акцент — синий')
+    expect((await ws.list(CONV)).some((f) => f.path.startsWith('.make'))).toBe(false)
+    await ws.reset(CONV)
+    expect((await ws.notes(CONV)).mode).toBe('designer')
   })
 })

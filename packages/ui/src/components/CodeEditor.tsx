@@ -20,11 +20,13 @@ export interface CodeEditorProps {
   onInlineCommand?: () => void
   /** Только чтение (read-only шаринг, п.33): правки и сохранение отключены. */
   readOnly?: boolean
+  /** Строки, изменённые последней правкой ассистента (roadmap-4 п.9) — подсвечиваются в Monaco. */
+  changedLines?: number[]
 }
 
 export interface EditorSelection { startLine: number; endLine: number; text: string }
 
-export interface EditorMarker { line: number; column?: number; message: string }
+export interface EditorMarker { line: number; column?: number; message: string; severity?: 'error' | 'warning' }
 
 import { useMediaQuery } from '../lib/mediaQuery'
 

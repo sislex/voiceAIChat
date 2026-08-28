@@ -69,7 +69,7 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
     render(<App api={api} delays={SLOW} />)
     await screen.findByText('Погода в июле?')
 
-    await userEvent.click(screen.getByRole('button', { name: '+ Новый' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
     expect(await screen.findByRole('heading', { name: 'Файлы чата' })).toBeInTheDocument()
     expect(screen.getByText(/\.voicechat_uploads/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Создать разговор' }))

@@ -10,6 +10,10 @@ export interface ServerConfig {
   host: string
   /** Каталог данных (БД, модели). */
   dataDir: string
+  /** Регистрация с подтверждением email: SMTP (smtp://user:pass@host:587 | smtps://…:465), отправитель и публичный URL для ссылок. */
+  smtpUrl: string | null
+  mailFrom: string | null
+  publicUrl: string | null
   /** Каталог голосов Piper. */
   piperVoicesDir: string
   /** Путь к исполняемому piper (или python для `python -m piper`). */
@@ -18,6 +22,12 @@ export interface ServerConfig {
   piperArgsPrefix: string[]
   /** Путь к .dmg компаньон-приложения для скачивания (undefined — не собрано). */
   agentAppPath?: string
+  /** Сколько мс операции машины (exec/fs) ждут возврата офлайн-агента перед отказом; 0 — сразу отказ. */
+  agentOfflineGraceMs: number
+  /** Команда машины длиннее этого (мс) считается долгой: владелец получает уведомление, для чата сохраняется лог. */
+  longCommandMs: number
+  /** Watchdog: машина без агента дольше этого (мс) — тревога владельцу; 0 — выключено. */
+  agentOfflineAlertMs: number
   /** Путь к .dmg десктоп-приложения для скачивания (undefined — не собрано). */
   desktopAppPath?: string
   /**
@@ -153,10 +163,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: Number(env.PORT ?? 8787),
     host: env.HOST ?? '127.0.0.1',
     dataDir,
+    smtpUrl: env.VC_SMTP_URL ?? null,
+    mailFrom: env.VC_MAIL_FROM ?? null,
+    publicUrl: env.VC_PUBLIC_URL ?? null,
     piperVoicesDir: pick(env.VC_PIPER_VOICES_DIR, REPO.piperVoicesDir, join(dataDir, 'models', 'piper')),
     piperBin: pick(env.VC_PIPER_BIN, REPO.piperBin, 'piper'),
     piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : [],
     agentAppPath: env.VC_AGENT_APP ?? (AUTODISCOVER ? findDmg(REPO.agentAppDir) : undefined),
+    // В тестах — 0, чтобы офлайн-проверки отвечали мгновенно; в проде даём агенту 15 с на переподключение.
+    agentOfflineAlertMs: env.VC_AGENT_OFFLINE_ALERT_MIN !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_ALERT_MIN) || 0) * 60_000 : 10 * 60_000,
+    longCommandMs: env.VC_LONG_COMMAND_MS !== undefined ? Math.max(0, Number(env.VC_LONG_COMMAND_MS) || 0) : 10_000,
+    agentOfflineGraceMs: env.VC_AGENT_OFFLINE_GRACE_MS !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_GRACE_MS) || 0) : (AUTODISCOVER ? 15_000 : 0),
     desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined),
     webDir: env.VC_WEB_DIR,
     webRecorderDir: env.VC_WEB_RECORDER_DIR,

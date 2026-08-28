@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import test from 'node:test'
 import { checkArchitecture, redact, runStatic } from './frontend-quality.mjs'
+
+test('frontend build gate installs standalone Desktop dependencies before build', () => {
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.match(pkg.scripts['frontend:build-gates'], /npm ci --prefix apps\/desktop && npm --prefix apps\/desktop run build/)
+})
 
 test('current frontend satisfies static quality gates', () => {
   const result = runStatic()

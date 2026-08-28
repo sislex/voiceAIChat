@@ -24,6 +24,10 @@ export interface AgentCommandsProps {
   onGetConnectionString: (token: string) => Promise<string | null>
   /** Скрыть блок. */
   onHide?: () => void
+  /** Шаг «проверка связи»: машина уже вышла в сеть (живой список машин). */
+  online?: boolean
+  /** Шаг «пробная команда»: выполнить на машине безопасную команду и вернуть результат. */
+  onTestCommand?: () => Promise<{ exitCode: number | null; output: string }>
 }
 
 /** Что скопировали последним — для галочки на кнопке. */
@@ -33,9 +37,17 @@ export function AgentCommands({
   name,
   token,
   onGetConnectionString,
-  onHide
+  onHide,
+  online,
+  onTestCommand
 }: AgentCommandsProps): JSX.Element {
   const [copied, setCopied] = useState<Copied>(null)
+  const [test, setTest] = useState<{ running: boolean; result?: { exitCode: number | null; output: string }; error?: string }>({ running: false })
+  const runTest = async (): Promise<void> => {
+    if (!onTestCommand) return
+    setTest({ running: true })
+    try { setTest({ running: false, result: await onTestCommand() }) } catch (err) { setTest({ running: false, error: err instanceof Error ? err.message : String(err) }) }
+  }
   const [error, setError] = useState<string | null>(null)
   const [qr, setQr] = useState<string | null>(null)
 
@@ -85,8 +97,8 @@ export function AgentCommands({
   return (
     <div className="agcmd" data-testid="agent-commands">
       <p className="agcmd-head">
-        Машина «{name}» готова. Скопируйте команду для нужной ОС и вставьте в терминал —
-        она проверит Node.js 22+ (при необходимости поставит), скачает агента и запустит его.
+        <b>Шаг 1.</b> Машина «{name}» создана. Скопируйте команду для нужной ОС и вставьте в терминал —
+        она проверит Node.js 22+ (при необходимости поставит), скачает агента и запустит его. Для Android — QR-код.
       </p>
       <div className="agcmd-os">
         {AGENT_OS_LIST.map((os) => (
@@ -130,6 +142,23 @@ export function AgentCommands({
         <p className="agcmd-err" role="alert">
           {error}
         </p>
+      )}
+      {online !== undefined && (
+        <div className="agcmd-steps" data-testid="agent-wizard-steps">
+          <p className={online ? 'agcmd-step agcmd-step--ok' : 'agcmd-step'} role="status">
+            <b>Шаг 2.</b> Связь: {online ? '✓ машина в сети — агент подключился.' : '⏳ ждём подключения агента… (обновится само, как только команда отработает)'}
+          </p>
+          {onTestCommand && (
+            <div className="agcmd-step">
+              <b>Шаг 3.</b> Пробная команда:{' '}
+              <Button size="sm" variant="primary" disabled={!online || test.running} onClick={() => void runTest()}>
+                {test.running ? 'Выполняем…' : 'Выполнить uname -a'}
+              </Button>
+              {test.result && <pre className="agcmd-out" data-testid="agent-test-output">{test.result.output.trim() || '(пусто)'}{'\n'}# код выхода {test.result.exitCode ?? '—'}</pre>}
+              {test.error && <p className="agcmd-err" role="alert">{test.error}</p>}
+            </div>
+          )}
+        </div>
       )}
       <p className="agcmd-note">
         Команда содержит токен машины — не публикуйте её. Токен показывается один раз;

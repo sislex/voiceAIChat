@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAKE_MOCK_EXAMPLE, applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope } from './makeMock'
+import { MAKE_MOCK_EXAMPLE, applyAuthMock, applyCollectionRequest, collectionCandidates, isAuthMock, isMockCollection, mockCandidates, unwrapMockEnvelope } from './makeMock'
 
 describe('мок-API Make', () => {
   it('кандидаты: метод → общий → index; путь внутри mock/ и «..» не мокируются', () => {
@@ -41,5 +41,41 @@ describe('persist-коллекции мок-API (roadmap-2 п.12)', () => {
     expect(del.response.status).toBe(204)
     expect((del.file as { $body: unknown[] }).$body).toHaveLength(1)
     expect(applyCollectionRequest(col, 'POST', '1', {}, () => 'x').response.status).toBe(405)
+  })
+})
+
+describe('коллекция с $schema (roadmap-4 п.31)', () => {
+  const col = { $collection: true as const, $schema: { type: 'object', required: ['name'], properties: { name: { type: 'string', minLength: 2 } } }, $body: [{ id: 1, name: 'Анна' }] }
+  it('POST с невалидным телом → 422 с issues, файл не меняется; валидное → 201', () => {
+    const bad = applyCollectionRequest(col, 'POST', null, { name: 'A' }, () => 'x')
+    expect(bad.response.status).toBe(422)
+    expect(bad.changed).toBe(false)
+    expect((bad.response.body as { issues: Array<{ path: string }> }).issues[0]!.path).toBe('name')
+    expect(applyCollectionRequest(col, 'POST', null, { name: 'Борис' }, () => 'x').response.status).toBe(201)
+  })
+  it('PATCH проверяет только присланные поля (required не требуется)', () => {
+    expect(applyCollectionRequest(col, 'PATCH', '1', { extra: 1 }, () => 'x').response.status).toBe(200)
+    expect(applyCollectionRequest(col, 'PATCH', '1', { name: '' }, () => 'x').response.status).toBe(422)
+  })
+})
+
+describe('auth-мок (roadmap-4 п.32)', () => {
+  const login = { $auth: { users: [{ username: 'anna', password: '1234', name: 'Анна' }] }, $body: { ok: true } }
+  it('POST с верными данными — 200, user без пароля, Set-Cookie; неверные — 401; не POST — 405', () => {
+    const ok = applyAuthMock(login, 'POST', { username: 'anna', password: '1234' }, undefined)
+    expect(ok.status).toBe(200)
+    expect(ok.body).toEqual({ ok: true, user: { username: 'anna', name: 'Анна' } })
+    expect(ok.headers['set-cookie']).toBe('vc_mock_session=anna; Path=/; SameSite=Lax')
+    expect(applyAuthMock(login, 'POST', { username: 'anna', password: 'x' }, undefined).status).toBe(401)
+    expect(applyAuthMock(login, 'GET', undefined, undefined).status).toBe(405)
+  })
+  it('require: без cookie 401, с cookie — тело с user; logout гасит cookie', () => {
+    const me = { $auth: { require: true }, $body: { role: 'admin' } }
+    expect(applyAuthMock(me, 'GET', undefined, undefined).status).toBe(401)
+    expect(applyAuthMock(me, 'GET', undefined, 'x=1; vc_mock_session=anna').body).toEqual({ role: 'admin', user: { username: 'anna' } })
+    const out = applyAuthMock({ $auth: { logout: true } }, 'POST', undefined, undefined)
+    expect(out.status).toBe(204)
+    expect(out.headers['set-cookie']).toContain('Max-Age=0')
+    expect(isAuthMock(me)).toBe(true); expect(isAuthMock({ $body: 1 })).toBe(false)
   })
 })

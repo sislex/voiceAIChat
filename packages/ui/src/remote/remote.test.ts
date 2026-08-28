@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { WsClient } from './wsClient'
 import { createHttpApi } from './httpApi'
 import { base64ToArrayBuffer } from './decode'
-import { makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeRealtimeBridge, makeSessionBridge, migrateDesktopLegacy } from './index'
+import { makeBoardBridge, makeClaudeBridge, makePreviewBridge, makeRealtimeBridge, makeSessionBridge, migrateDesktopLegacy, makeFsBridge } from './index'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -335,5 +335,22 @@ describe('desktop legacy migration', () => {
     await migrateDesktopLegacy('http://srv:8787', 'secret')
     expect(fetchMock).toHaveBeenCalledWith('http://srv:8787/api/migrations/desktop', expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ authorization: 'Bearer secret' }) }))
     expect(markLegacyMigrated).toHaveBeenCalledOnce()
+  })
+})
+
+describe('makeFsBridge', () => {
+  it('мутации проводника несут x-vc-csrf при cookie-сессии (иначе сервер отвечает 403)', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    ;(globalThis as unknown as { fetch: unknown }).fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init })
+      return { ok: true, status: 200, json: async () => ({ root: '/', cwd: '/' }), text: async () => '' } as unknown as Response
+    })
+    document.cookie = 'vc_csrf=tok123'
+    const fs = makeFsBridge('')
+    await fs.rename('m1', '/a', '/b')
+    await fs.trash!('m1', '/b')
+    for (const call of calls) expect((call.init?.headers as Record<string, string>)['x-vc-csrf']).toBe('tok123')
+    expect(calls[1].url).toBe('/api/agents/m1/fs/trash')
+    document.cookie = 'vc_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
   })
 })

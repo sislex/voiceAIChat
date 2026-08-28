@@ -1,16 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { totpCode } from '../users/totp'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
-import { VoiceChatDb } from '../db/database.js'
+import { VoiceChatDb, hashAgentToken } from '../db/database.js'
 import { AgentRegistry } from '../agents/registry.js'
 import { signToken } from '../users/accounts.js'
 import { isPublicAddress, previewInspectorScript, rewritePreviewBody, upstreamRequestHeaders } from './previewProxy.js'
 
 let app: FastifyInstance
+/** Письма фейкового мейлера — регистрация с подтверждением email. */
+const sentMails: Array<{ to: string; subject: string; text: string; html?: string }> = []
 let db: VoiceChatDb
 let token: string
 let dataDir: string
@@ -45,7 +48,9 @@ beforeEach(async () => {
   triggerDeploy.mockReset()
   agentRegistry = new AgentRegistry()
   triggerDeploy.mockResolvedValue({ status: 'accepted', message: 'deployment started' })
+  sentMails.length = 0
   app = await buildServer({
+    mailer: { configured: true, send: async (m) => { sentMails.push(m) } },
     config: loadConfig({
       PORT: '0',
       VC_DATA_DIR: dataDir,
@@ -64,6 +69,9 @@ afterEach(async () => {
   await app.close()
   db.close()
 })
+
+// Лимитеры входа живут в процессе: между тестами сбрасываем, чтобы порядок тестов не давал 429.
+beforeEach(() => { (app as unknown as { resetLoginLimiters?: () => void }).resetLoginLimiters?.() })
 
 describe('REST: хранилище машины', () => {
   function connectFs(machineId: string, failMkdir = false, failWrite = false) {
@@ -171,6 +179,46 @@ describe('REST: хранилище машины', () => {
     // Обычные маркеры хранилища при этом на месте.
     expect(written.some((p) => p.endsWith('/project.json'))).toBe(true)
   })
+
+  it('copy-to копирует файл на другую машину: в указанный каталог или в ChatAI/incoming цели', async () => {
+    const source = db.createAgent(U, 'Мак')
+    const target = db.createAgent(U, 'Прод')
+    const sourceFs = connectFs(source.id)
+    const targetFs = connectFs(target.id)
+    sourceFs.files.set('/Users/me/report.txt', Buffer.from('hello').toString('base64'))
+    const explicit = await inj({ method: 'POST', url: `/api/agents/${source.id}/fs/copy-to`, payload: { path: '/Users/me/report.txt', targetAgentId: target.id, targetDir: '/srv/inbox/' } })
+    expect(explicit.statusCode).toBe(200)
+    expect(explicit.json()).toEqual({ path: '/srv/inbox/report.txt', targetAgentId: target.id, size: 5 })
+    expect(targetFs.files.get('/srv/inbox/report.txt')).toBe(Buffer.from('hello').toString('base64'))
+    expect(targetFs.directories.has('/srv/inbox/')).toBe(true)
+    // без targetDir — в incoming хранилища цели
+    const storage = (await inj({ method: 'POST', url: `/api/agents/${target.id}/storages`, payload: { rootPath: '/root/ChatAI' } })).json()
+    expect(storage.rootPath).toBe('/root/ChatAI')
+    const auto = await inj({ method: 'POST', url: `/api/agents/${source.id}/fs/copy-to`, payload: { path: '/Users/me/report.txt', targetAgentId: target.id } })
+    expect(auto.statusCode).toBe(200)
+    expect(auto.json().path).toBe('/root/ChatAI/incoming/report.txt')
+    // та же машина и офлайн-цель отклоняются
+    expect((await inj({ method: 'POST', url: `/api/agents/${source.id}/fs/copy-to`, payload: { path: '/Users/me/report.txt', targetAgentId: source.id } })).statusCode).toBe(400)
+    const offline = db.createAgent(U, 'Спит')
+    expect((await inj({ method: 'POST', url: `/api/agents/${source.id}/fs/copy-to`, payload: { path: '/Users/me/report.txt', targetAgentId: offline.id } })).statusCode).toBe(409)
+  })
+
+  it('GET storage отдаёт карточке чата абсолютные каталоги и статус хранилища', async () => {
+    const machine = db.createAgent(U, 'Мак')
+    connectFs(machine.id)
+    const storage = (await inj({ method: 'POST', url: `/api/agents/${machine.id}/storages`, payload: { rootPath: '/Users/me/ChatAI' } })).json()
+    const conv = db.createConversation(U, 'C')
+    expect((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/storage` })).statusCode).toBe(404)
+    await inj({ method: 'PUT', url: `/api/conversations/${conv.id}/storage`, payload: { machineId: machine.id, storageId: storage.id } })
+    const view = (await inj({ method: 'GET', url: `/api/conversations/${conv.id}/storage` })).json()
+    expect(view).toMatchObject({ machineId: machine.id, storageId: storage.id, rootPath: '/Users/me/ChatAI', status: 'ready' })
+    expect(view.directories).toEqual({
+      chatRoot: `/Users/me/ChatAI/chats/${conv.id}`,
+      attachments: `/Users/me/ChatAI/chats/${conv.id}/attachments`,
+      artifacts: `/Users/me/ChatAI/chats/${conv.id}/artifacts`,
+      generated: `/Users/me/ChatAI/chats/${conv.id}/.generated`
+    })
+  })
 })
 
 describe('REST: аутентификация', () => {
@@ -187,16 +235,250 @@ describe('REST: аутентификация', () => {
     expect(ok.statusCode).toBe(200)
     expect(ok.json().user).toEqual({ name: 'user', role: 'developer' })
     expect(typeof ok.json().token).toBe('string')
-    expect(ok.headers['set-cookie']).toContain('vc_preview_session=')
-    expect(ok.headers['set-cookie']).toContain('Path=/api/preview')
-    expect(ok.headers['set-cookie']).toContain('HttpOnly')
-    expect(ok.headers['set-cookie']).toContain('SameSite=Strict')
+    expect(String(ok.headers['set-cookie'])).toContain('vc_preview_session=')
+    expect(String(ok.headers['set-cookie'])).toContain('Path=/api/preview')
+    expect(String(ok.headers['set-cookie'])).toContain('HttpOnly')
+    expect(String(ok.headers['set-cookie'])).toContain('SameSite=Strict')
     const bad = await app.inject({
       method: 'POST',
       url: '/api/session/login',
       payload: { name: 'user', password: 'x' }
     })
     expect(bad.statusCode).toBe(401)
+  })
+
+  it('rate-limit входа: 11-я попытка за окно → 429 с Retry-After, по имени и по IP (auth-roadmap п.1)', async () => {
+    db.createUser('victim', 'secret-pass', 'developer')
+    let last = 0
+    for (let i = 0; i < 10; i++) last = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'victim', password: 'wrong' } })).statusCode
+    expect([401, 423]).toContain(last) // с 5-й неудачи срабатывает замок аккаунта (п.3), но лимит по имени считает и его
+    const blocked = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'victim', password: 'secret-pass' } })
+    expect(blocked.statusCode).toBe(429)
+    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
+    // Лимит по IP шире (30): другие имена с того же адреса проходят, пока окно не заполнится, затем — 429.
+    for (let i = 0; i < 19; i++) await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: `other${i}`, password: '' } })
+    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'other-last', password: '' } })).statusCode).toBe(429)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('блокировка после неудач: 5 неверных → 423 даже с верным паролем, 10 → blocked с причиной auto; успех сбрасывает счётчик (auth-roadmap п.3)', async () => {
+    db.createUser('locky', 'right-pass-2026', 'developer')
+    for (let i = 0; i < 4; i++) expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'nope' } })).statusCode).toBe(401)
+    // 4 неудачи — ещё можно войти, и счётчик обнуляется.
+    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'right-pass-2026' } })).statusCode).toBe(200)
+    expect(db.getUser('locky')!.failedLogins).toBe(0)
+    for (let i = 0; i < 5; i++) await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'nope' } })
+    const locked = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'locky', password: 'right-pass-2026' } })
+    expect(locked.statusCode).toBe(423)
+    expect(Number(locked.headers['retry-after'])).toBeGreaterThan(0)
+    // Ручная разблокировка админом снимает замок.
+    db.setUserBlocked('locky', false)
+    expect(db.getUser('locky')!.lockedUntil).toBeNull()
+    // 10 подряд — постоянная блокировка с причиной auto (замок между попытками снимаем напрямую, чтобы не ждать 15 минут).
+    for (let i = 0; i < 10; i++) { db.recordLoginFailure('locky') }
+    const u = db.getUser('locky')!
+    expect(u.blocked).toBe(true)
+    expect(u.lockReason).toBe('auto')
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('сессии: список с текущей, «выйти везде» отзывает остальные, отзыв одной, админ видит и отзывает (auth-roadmap п.4)', async () => {
+    db.createUser('sess', 'sess-pass-2026-ok', 'developer')
+    const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'sess', password: 'sess-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
+    const t1 = await login('Phone/1.0'), t2 = await login('Laptop/2.0')
+    const list = (await app.inject({ method: 'GET', url: '/api/session/list', headers: { authorization: `Bearer ${t1}` } })).json() as { sessions: Array<{ current?: boolean; userAgent: string }> }
+    expect(list.sessions).toHaveLength(2)
+    expect(list.sessions.find((s) => s.current)!.userAgent).toBe('Phone/1.0')
+    // Отзыв одной чужой (своей же) сессии по sid.
+    const other = list.sessions.find((s) => !s.current)! as unknown as { sid: string }
+    expect((await app.inject({ method: 'DELETE', url: `/api/session/${other.sid}`, headers: { authorization: `Bearer ${t1}` } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${t2}` } })).statusCode).toBe(401)
+    // «Выйти везде» с t1 при третьем входе: t3 отозван, t1 жив.
+    const t3 = await login('Tablet/3.0')
+    const all = (await app.inject({ method: 'POST', url: '/api/session/logout-all', headers: { authorization: `Bearer ${t1}` } })).json() as { revoked: number }
+    expect(all.revoked).toBe(1)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${t3}` } })).statusCode).toBe(401)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${t1}` } })).statusCode).toBe(200)
+    // Админ: список и отзыв.
+    const adminList = (await inj({ method: 'GET', url: '/api/admin/users/sess/sessions' })).json() as { sessions: Array<{ sid: string }> }
+    expect(adminList.sessions).toHaveLength(1)
+    expect((await inj({ method: 'DELETE', url: `/api/admin/sessions/${adminList.sessions[0]!.sid}` })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${t1}` } })).statusCode).toBe(401)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('cookie-сессия: login ставит HttpOnly vc_session + vc_csrf; GET по cookie проходит, мутация без CSRF → 403, с заголовком → ок; logout гасит cookie (auth-roadmap п.5)', async () => {
+    db.createUser('cook', 'cookie-pass-2026', 'developer')
+    const login = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'cook', password: 'cookie-pass-2026' } })
+    const setCookies = ([] as string[]).concat(login.headers['set-cookie'] as string[])
+    const session = setCookies.find((c) => c.startsWith('vc_session='))!
+    const csrfCookie = setCookies.find((c) => c.startsWith('vc_csrf='))!
+    expect(session).toContain('HttpOnly'); expect(session).toContain('Path=/;')
+    expect(csrfCookie).not.toContain('HttpOnly')
+    expect(login.json().csrf).toBe(csrfCookie.split(';')[0]!.split('=')[1])
+    const cookie = `${session.split(';')[0]}; ${csrfCookie.split(';')[0]}`
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { cookie } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: { cookie }, payload: { title: 'x' } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: { cookie, 'x-vc-csrf': login.json().csrf }, payload: { title: 'x' } })).statusCode).not.toBe(403)
+    // Перенос Bearer → cookie.
+    const mig = await app.inject({ method: 'POST', url: '/api/session/cookie', headers: { authorization: `Bearer ${login.json().token}` } })
+    expect(mig.statusCode).toBe(200)
+    expect(String(mig.headers['set-cookie'])).toContain('vc_session=')
+    // Logout по cookie без CSRF-заголовка не проходит и cookie не гасит (защита от «выхода» чужой вкладкой/сайтом).
+    expect((await app.inject({ method: 'POST', url: '/api/session/logout', headers: { cookie } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { cookie } })).statusCode).toBe(200)
+    const out = await app.inject({ method: 'POST', url: '/api/session/logout', headers: { cookie, 'x-vc-csrf': login.json().csrf } })
+    expect(out.statusCode).toBe(200)
+    expect(String(out.headers['set-cookie'])).toContain('vc_session=; Path=/')
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { cookie } })).statusCode).toBe(401)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('2FA TOTP: setup → enable по коду → логин отдаёт тикет → код даёт сессию; disable по коду (auth-roadmap п.6)', async () => {
+    db.createUser('two', 'two-factor-pass-2026', 'developer')
+    const first = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'two', password: 'two-factor-pass-2026' } })
+    const tok = first.json().token as string
+    const setup = (await app.inject({ method: 'POST', url: '/api/session/2fa/setup', headers: { authorization: `Bearer ${tok}` } })).json() as { secret: string; otpauth: string; enabled: boolean }
+    expect(setup.enabled).toBe(false)
+    expect(setup.otpauth).toContain('otpauth://totp/ChatAI:two')
+    expect((await app.inject({ method: 'POST', url: '/api/session/2fa/enable', headers: { authorization: `Bearer ${tok}` }, payload: { code: '000000' } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'POST', url: '/api/session/2fa/enable', headers: { authorization: `Bearer ${tok}` }, payload: { code: totpCode(setup.secret) } })).statusCode).toBe(200)
+    // Теперь логин по паролю даёт только тикет.
+    const challenge = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'two', password: 'two-factor-pass-2026' } })
+    expect(challenge.json()).toMatchObject({ requires2fa: true })
+    expect(challenge.json().token).toBeUndefined()
+    const ticket = challenge.json().ticket as string
+    expect((await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: '123456' } })).statusCode).toBe(401)
+    const done = await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: totpCode(setup.secret) } })
+    expect(done.statusCode).toBe(200)
+    expect(done.json().user).toEqual({ name: 'two', role: 'developer' })
+    // Тикет одноразовый.
+    expect((await app.inject({ method: 'POST', url: '/api/session/2fa', payload: { ticket, code: totpCode(setup.secret) } })).statusCode).toBe(401)
+    expect((await app.inject({ method: 'POST', url: '/api/session/2fa/disable', headers: { authorization: `Bearer ${done.json().token}` }, payload: { code: totpCode(setup.secret) } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'two', password: 'two-factor-pass-2026' } })).json().token).toBeTypeOf('string')
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('журнал безопасности: неудачный вход, вход и выход попадают в /api/admin/security с IP (auth-roadmap п.7)', async () => {
+    db.createUser('audit', 'audit-pass-2026-ok', 'developer')
+    await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'audit', password: 'nope' } })
+    const ok = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'audit', password: 'audit-pass-2026-ok' }, headers: { 'user-agent': 'Audit/1.0' } })
+    await app.inject({ method: 'POST', url: '/api/session/logout', headers: { authorization: `Bearer ${ok.json().token}` } })
+    const events = (await inj({ method: 'GET', url: '/api/admin/security?user=audit' })).json() as { events: Array<{ type: string; userAgent: string; ip: string }> }
+    expect(events.events.map((e) => e.type)).toEqual(['logout', 'login', 'login_failed'])
+    expect(events.events[1]!.userAgent).toBe('Audit/1.0')
+    expect(events.events[1]!.ip).toBeTruthy()
+    expect((await app.inject({ method: 'GET', url: '/api/admin/security' })).statusCode).toBe(401)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('инвайты: админ создаёт ссылку с ролью/лимитом, гость регистрируется с политикой пароля и получает сессию, лимит исчерпывается (auth-roadmap п.8)', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/admin/invites', payload: { role: 'tester', maxUses: 1, ttlHours: 1, note: 'QA' } })).json() as { token: string; role: string; uses: number }
+    expect(created.role).toBe('tester')
+    expect((await app.inject({ method: 'GET', url: `/api/session/invite/${created.token}` })).json()).toMatchObject({ role: 'tester', note: 'QA' })
+    expect((await app.inject({ method: 'GET', url: '/api/session/invite/nope' })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'newbie', password: 'short' } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'bad name!', password: 'good-long-password-1' } })).statusCode).toBe(400)
+    const reg = await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'newbie', password: 'good-long-password-1' } })
+    expect(reg.statusCode).toBe(200)
+    expect(reg.json().user).toEqual({ name: 'newbie', role: 'tester' })
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${reg.json().token}` } })).statusCode).toBe(200)
+    // Лимит 1 использование — второй раз ссылка мертва; список показывает uses=1; удаление.
+    expect((await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'second', password: 'good-long-password-2' } })).statusCode).toBe(404)
+    const list = (await inj({ method: 'GET', url: '/api/admin/invites' })).json() as { invites: Array<{ token: string; uses: number }> }
+    expect(list.invites.find((i) => i.token === created.token)!.uses).toBe(1)
+    expect((await inj({ method: 'DELETE', url: `/api/admin/invites/${created.token}` })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/admin/invites', payload: { role: 'tester' } })).statusCode).toBe(401)
+  })
+
+  it('сброс кодом админа и смена своего пароля; временный пароль блокирует мутации до смены (auth-roadmap пп.10–12)', async () => {
+    // Временный пароль при создании.
+    await inj({ method: 'POST', url: '/api/admin/users', payload: { name: 'temp', password: 'initial-secret-2026-x', role: 'developer', mustChangePassword: true } })
+    const t = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'temp', password: 'initial-secret-2026-x' } })
+    expect(t.json().user).toEqual({ name: 'temp', role: 'developer', mustChangePassword: true })
+    const auth = { authorization: `Bearer ${t.json().token}` }
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: auth, payload: { title: 'x' } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: auth })).statusCode).toBe(200)
+    // Смена пароля: неверный текущий → 400, слабый → 400, ок → флаг снят.
+    expect((await app.inject({ method: 'POST', url: '/api/session/password', headers: auth, payload: { current: 'wrong', next: 'brand-new-password-1' } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'POST', url: '/api/session/password', headers: auth, payload: { current: 'initial-secret-2026-x', next: 'short' } })).statusCode).toBe(400)
+    expect((await app.inject({ method: 'POST', url: '/api/session/password', headers: auth, payload: { current: 'initial-secret-2026-x', next: 'brand-new-password-1' } })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/session/me', headers: auth })).json().user.mustChangePassword).toBeUndefined()
+    expect((await app.inject({ method: 'POST', url: '/api/conversations', headers: auth, payload: { title: 'x' } })).statusCode).not.toBe(403)
+    // Код сброса от админа: неверный → 401, верный → сессия и новый пароль, повтор кода мёртв.
+    const issued = (await inj({ method: 'POST', url: '/api/admin/users/temp/reset-code' })).json() as { code: string }
+    expect(issued.code).toMatch(/^[A-Z0-9]{8}$/)
+    expect((await app.inject({ method: 'POST', url: '/api/session/reset', payload: { name: 'temp', code: 'NOPE1234', password: 'after-reset-password-1' } })).statusCode).toBe(401)
+    const reset = await app.inject({ method: 'POST', url: '/api/session/reset', payload: { name: 'temp', code: issued.code, password: 'after-reset-password-1' } })
+    expect(reset.statusCode).toBe(200)
+    expect((await app.inject({ method: 'POST', url: '/api/session/reset', payload: { name: 'temp', code: issued.code, password: 'after-reset-password-2' } })).statusCode).toBe(401)
+    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'temp', password: 'after-reset-password-1' } })).statusCode).toBe(200)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('«запомнить меня»: без флага cookie сессионная (без Max-Age) и TTL 12 ч, с флагом — Max-Age 30 дней (auth-roadmap п.15)', async () => {
+    db.createUser('rem', 'remember-pass-2026', 'developer')
+    const short = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'rem', password: 'remember-pass-2026', remember: false } })
+    const shortCookie = ([] as string[]).concat(short.headers['set-cookie'] as string[]).find((c) => c.startsWith('vc_session='))!
+    expect(shortCookie).not.toContain('Max-Age')
+    const list = (await app.inject({ method: 'GET', url: '/api/session/list', headers: { authorization: `Bearer ${short.json().token}` } })).json() as { sessions: Array<{ current?: boolean; expiresAt: number; createdAt: number }> }
+    const cur = list.sessions.find((s) => s.current)!
+    expect(cur.expiresAt - cur.createdAt).toBeLessThanOrEqual(12 * 60 * 60_000 + 5000)
+    const long = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'rem', password: 'remember-pass-2026', remember: true } })
+    expect(([] as string[]).concat(long.headers['set-cookie'] as string[]).find((c) => c.startsWith('vc_session='))).toContain(`Max-Age=${30 * 24 * 60 * 60}`)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('новое устройство: второй вход с другим UA/IP даёт login_new_device и уведомление в /me, «seen» его гасит (auth-roadmap п.16)', async () => {
+    db.createUser('dev', 'device-pass-2026-x', 'developer')
+    const a = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Phone/1' } })
+    const b = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Laptop/2' } })
+    const me = (await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${a.json().token}` } })).json() as { notices: Array<{ type: string; userAgent: string }> }
+    expect(me.notices.map((n) => n.userAgent)).toEqual(['Laptop/2'])
+    await app.inject({ method: 'POST', url: '/api/session/notices/seen', headers: { authorization: `Bearer ${a.json().token}` } })
+    expect(((await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${b.json().token}` } })).json() as { notices: unknown[] }).notices).toEqual([])
+    expect(db.getUser('dev')!.lastLogin).toBeGreaterThan(0)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('лимит LLM в месяц ставится PATCH-ом без роли и виден в списке (auth-roadmap п.17)', async () => {
+    db.createUser('limited', 'limited-pass-2026', 'developer')
+    const r = await inj({ method: 'PATCH', url: '/api/admin/users/limited', payload: { llmLimitUsd: 5 } })
+    expect(r.json()).toMatchObject({ name: 'limited', role: 'developer', llmLimitUsd: 5 })
+    expect(db.getUser('limited')!.llmLimitUsd).toBe(5)
+    expect((await inj({ method: 'PATCH', url: '/api/admin/users/limited', payload: { llmLimitUsd: null } })).json().llmLimitUsd).toBeNull()
+  })
+
+  it('открытая регистрация: выключена → 404; админ включает; заявка шлёт письмо со ссылкой; verify создаёт учётку с email и сессию; повтор токена мёртв', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/session/signup' })).json()).toEqual({ enabled: false })
+    expect((await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'nina', email: 'nina@example.com', password: 'first-strong-pass-1' } })).statusCode).toBe(404)
+    const cfg = (await inj({ method: 'PUT', url: '/api/admin/signup', payload: { enabled: true, role: 'tester' } })).json()
+    expect(cfg).toMatchObject({ enabled: true, role: 'tester', mailConfigured: true })
+    expect((await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'nina', email: 'bad', password: 'first-strong-pass-1' } })).statusCode).toBe(400)
+    const req = await app.inject({ method: 'POST', url: '/api/session/signup', headers: { host: 'chat.example.com' }, payload: { name: 'nina', email: 'Nina@Example.com', password: 'first-strong-pass-1' } })
+    expect(req.json()).toEqual({ ok: true, mailSent: true })
+    expect(sentMails).toHaveLength(1)
+    expect(sentMails[0]!.to).toBe('nina@example.com')
+    const link = /https?:\/\/[^\s]+#\/verify\/([^\s"<]+)/.exec(sentMails[0]!.text)!
+    expect(link[0]).toContain('chat.example.com')
+    // Пользователя ещё нет; вход невозможен.
+    expect(db.getUser('nina')).toBeNull()
+    const ver = await app.inject({ method: 'POST', url: '/api/session/verify', payload: { token: decodeURIComponent(link[1]!) } })
+    expect(ver.statusCode).toBe(200)
+    expect(ver.json().user).toEqual({ name: 'nina', role: 'tester' })
+    expect(db.getUser('nina')!.email).toBe('nina@example.com')
+    expect((await app.inject({ method: 'POST', url: '/api/session/verify', payload: { token: decodeURIComponent(link[1]!) } })).statusCode).toBe(400)
+    // Тот же email снова: ответ одинаковый, письма нет; занятый логин — 409.
+    expect((await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'nina2', email: 'nina@example.com', password: 'second-strong-pass-1' } })).json()).toEqual({ ok: true, mailSent: true })
+    expect(sentMails).toHaveLength(1)
+    expect((await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'nina', email: 'other@example.com', password: 'third-strong-pass-2' } })).statusCode).toBe(409)
+    // Повторное письмо для ожидающей заявки.
+    await app.inject({ method: 'POST', url: '/api/session/signup', payload: { name: 'oleg', email: 'oleg@example.com', password: 'fourth-strong-pass-1' } })
+    await app.inject({ method: 'POST', url: '/api/session/signup/resend', payload: { email: 'oleg@example.com' } })
+    expect(sentMails.filter((m) => m.to === 'oleg@example.com')).toHaveLength(2)
+    const link2 = /#\/verify\/([^\s"<]+)/.exec(sentMails[sentMails.length - 1]!.text)!
+    expect((await app.inject({ method: 'POST', url: '/api/session/verify', payload: { token: decodeURIComponent(link2[1]!) } })).statusCode).toBe(200)
+    await inj({ method: 'PUT', url: '/api/admin/signup', payload: { enabled: false } })
   })
 
   it('same-origin cookie авторизует только iframe-превью и удаляется при logout', async () => {
@@ -224,8 +506,8 @@ describe('REST: аутентификация', () => {
       headers: { authorization: `Bearer ${token}` }
     })
     expect(logout.statusCode).toBe(200)
-    expect(logout.headers['set-cookie']).toContain('vc_preview_session=;')
-    expect(logout.headers['set-cookie']).toContain('Max-Age=0')
+    expect(String(logout.headers['set-cookie'])).toContain('vc_preview_session=;')
+    expect(String(logout.headers['set-cookie'])).toContain('Max-Age=0')
     expect((await app.inject({
       method: 'GET',
       url: '/api/conversations',
@@ -348,9 +630,12 @@ describe('REST: админ-роуты (только admin)', () => {
     const created = await inj({
       method: 'POST',
       url: '/api/admin/users',
-      payload: { name: 'bob', password: 'pw', role: 'developer' }
+      payload: { name: 'bob', password: 'strong-pass-2026-xyz', role: 'developer' }
     })
     expect(created.statusCode).toBe(200)
+    // Политика пароля (auth-roadmap п.2): короткий/пустой → 400 с текстом причины.
+    expect((await inj({ method: 'POST', url: '/api/admin/users', payload: { name: 'weak', password: 'pw', role: 'developer' } })).json()).toEqual({ error: 'Пароль короче 10 символов' })
+    expect((await inj({ method: 'POST', url: '/api/admin/users', payload: { name: 'weak', password: '', role: 'developer' } })).statusCode).toBe(400)
     expect(created.json()).toMatchObject({ name: 'bob', role: 'developer', blocked: false })
 
     await inj({ method: 'POST', url: '/api/admin/users/bob/block', payload: { blocked: true } })
@@ -589,10 +874,36 @@ describe('REST: conversations/messages/settings', () => {
     expect(runner.body).toContain('importmap')
     expect(runner.body).toContain('"Small"')
     // Галерея и сториз: в превью (cookie/Bearer) и на публикации без входа.
+    // Auth-мок (roadmap-4 п.32): логин ставит cookie, защищённый мок читает её из запроса.
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'mock/api/login.POST.json', content: JSON.stringify({ $auth: { users: [{ username: 'anna', password: '1' }] } }) } })
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'mock/api/me.json', content: JSON.stringify({ $auth: { require: true }, $body: { role: 'admin' } }) } })
+    const login = await inj({ method: 'POST', url: `/api/preview/make/${conv.id}/api/login`, payload: { username: 'anna', password: '1' } })
+    expect(login.statusCode).toBe(200)
+    expect(String(login.headers['set-cookie'])).toContain('vc_mock_session=anna')
+    expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/api/me` })).statusCode).toBe(401)
+    expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/api/me`, headers: { cookie: 'vc_mock_session=anna' } })).json()).toMatchObject({ role: 'admin', user: { username: 'anna' } })
+    // Превью снимка (roadmap-4 п.37): index.html версии с <base>, чужой снимок — 404.
+    const snapState = (await inj({ method: 'POST', url: `/api/make/${conv.id}/snapshots`, payload: { label: 'v1' } })).json() as { snapshots: Array<{ id: string }> }
+    const snapPage = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__snapshot__/${snapState.snapshots[0]!.id}/index.html` })
+    expect(snapPage.statusCode).toBe(200)
+    expect(snapPage.body).toContain(`<base href="/api/preview/make/${conv.id}/__snapshot__/${snapState.snapshots[0]!.id}/">`)
+    expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__snapshot__/nope/index.html` })).statusCode).toBe(404)
     const gallery = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__gallery__` })
     expect(gallery.statusCode).toBe(200)
     expect(gallery.body).toContain('Button.stories.jsx')
     const pub2 = (await inj({ method: 'POST', url: `/api/make/${conv.id}/publish` })).json() as { published: { url: string } }
+    // Комментарии зрителей (roadmap-4 п.34): выключены → 404; включены → виджет в HTML, POST → pending, GET отдаёт только одобренные.
+    expect((await app.inject({ method: 'GET', url: `${pub2.published.url}__comments__` })).statusCode).toBe(404)
+    await inj({ method: 'POST', url: `/api/make/${conv.id}/publish`, payload: { allowComments: true } })
+    expect((await app.inject({ method: 'GET', url: `${pub2.published.url}index.html` })).body).toContain('data-vc-guest-comments')
+    const guest = await app.inject({ method: 'POST', url: `${pub2.published.url}__comments__`, payload: { name: 'Зритель', text: 'Кнопка мелкая' } })
+    expect(guest.statusCode).toBe(201)
+    expect((await app.inject({ method: 'GET', url: `${pub2.published.url}__comments__` })).json()).toEqual({ comments: [] })
+    const mine = (await inj({ method: 'GET', url: `/api/make/${conv.id}/comments` })).json() as { comments: Array<{ id: string; status?: string; guestName?: string; author: string }> }
+    const pending = mine.comments.find((c) => c.status === 'pending')!
+    expect(pending).toMatchObject({ author: 'guest', guestName: 'Зритель' })
+    await inj({ method: 'PATCH', url: `/api/make/${conv.id}/comments/${pending.id}`, payload: { status: 'approved' } })
+    expect(((await app.inject({ method: 'GET', url: `${pub2.published.url}__comments__` })).json() as { comments: unknown[] }).comments).toHaveLength(1)
     const pubGallery = await app.inject({ method: 'GET', url: `${pub2.published.url}__gallery__` })
     expect(pubGallery.statusCode).toBe(200)
     expect(pubGallery.body).toContain(`${pub2.published.url}__stories__?file=`)
@@ -605,8 +916,8 @@ describe('REST: conversations/messages/settings', () => {
     expect(exp.item.slug).toBe('button')
     expect(((await inj({ method: 'GET', url: '/api/make/library' })).json() as { items: unknown[] }).items).toHaveLength(1)
     const other = db.createConversation(U, 'Другой', 'make')
-    const inserted = (await inj({ method: 'POST', url: `/api/make/${other.id}/library/button/insert` })).json() as { files: Array<{ path: string }> }
-    expect(inserted.files.map((f) => f.path)).toContain('src/components/Button.stories.jsx')
+    const inserted = (await inj({ method: 'POST', url: `/api/make/${other.id}/library/button/insert` })).json() as { state: { files: Array<{ path: string }> } }
+    expect(inserted.state.files.map((f) => f.path)).toContain('src/components/Button.stories.jsx')
     expect(((await inj({ method: 'DELETE', url: '/api/make/library/button' })).json() as { items: unknown[] }).items).toHaveLength(0)
     const search = (await inj({ method: 'GET', url: `/api/make/${conv.id}/search?q=btn--secondary` })).json() as { matches: Array<{ path: string; line: number }> }
     expect(search.matches.map((m) => m.path)).toContain('styles.css')
@@ -1144,6 +1455,174 @@ describe('REST: conversations/messages/settings', () => {
   })
 })
 
+describe('REST: журнал команд машины', () => {
+  it('exec через REST попадает в журнал; фильтр по подстроке и CSV-экспорт', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const socket = {
+      close: vi.fn(),
+      send(data: string) {
+        const message = JSON.parse(data) as { t: string; execId?: string; command?: string }
+        if (message.t === 'exec.start') {
+          agentRegistry.handleMessage(created.id, { t: 'exec.chunk', execId: message.execId!, stream: 'stdout', data: `ran ${message.command}` })
+          agentRegistry.handleMessage(created.id, { t: 'exec.done', execId: message.execId!, exitCode: message.command === 'false' ? 1 : 0 })
+        }
+      }
+    }
+    agentRegistry.register(created.id, 'M', socket, db.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
+    expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/exec`, payload: { command: 'uptime' } })).statusCode).toBe(200)
+    expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/exec`, payload: { command: 'false' } })).statusCode).toBe(200)
+    const all = (await inj({ method: 'GET', url: `/api/agents/${created.id}/commands` })).json()
+    expect(all.map((r: { command: string }) => r.command)).toEqual(['false', 'uptime'])
+    expect(all[1]).toMatchObject({ source: 'console', userId: U, exitCode: 0, outputExcerpt: 'ran uptime', conversationId: null })
+    expect(all[0].exitCode).toBe(1)
+    const filtered = (await inj({ method: 'GET', url: `/api/agents/${created.id}/commands?q=upt&source=console` })).json()
+    expect(filtered).toHaveLength(1)
+    const csv = await inj({ method: 'GET', url: `/api/agents/${created.id}/commands?format=csv` })
+    expect(csv.headers['content-type']).toContain('text/csv')
+    expect(csv.body.split('\n')[0]).toBe('startedAt,user,source,command,exitCode,timedOut,durationMs,conversationId,error')
+    expect(csv.body).toContain('"uptime","0"')
+    // чужая машина — 404
+    db.createUser('user2', '', 'developer')
+    const other = db.createAgent('user2', 'X')
+    expect((await inj({ method: 'GET', url: `/api/agents/${other.id}/commands` })).statusCode).toBe(404)
+  })
+})
+
+describe('REST: доступ участников к машине проекта (п.18)', () => {
+  it('доступ «только чтение»: fs-чтение работает, запись/команды/группа — 403; полный доступ возвращает права', async () => {
+    const machine = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Общая' } })).json()
+    const socket = { close: vi.fn(), send(data: string) {
+      const m = JSON.parse(data) as { t: string; opId?: string; execId?: string; path?: string }
+      if (m.t === 'exec.start') agentRegistry.handleMessage(machine.id, { t: 'exec.done', execId: m.execId!, exitCode: 0 })
+      else if (m.opId) agentRegistry.handleMessage(machine.id, { t: 'fs.result', opId: m.opId, result: { root: '/', cwd: m.path ?? '/', entries: [] } })
+    } }
+    agentRegistry.register(machine.id, 'Общая', socket, db.listAgents(U).find((a) => a.id === machine.id)!.policy, '0.15.0')
+    const project = db.createProject(U, { name: 'Shared' })
+    db.createUser('dev2', '', 'developer')
+    db.addMember(U, project.id, 'dev2')
+    const devToken = signToken({ name: 'dev2', role: 'developer' }, SECRET)
+    const asDev = (opts: InjOpts) => app.inject({ ...opts, headers: { authorization: `Bearer ${devToken}`, ...(opts.headers ?? {}) } })
+
+    // владелец делится машиной в режиме «только чтение»
+    const shared = await inj({ method: 'PUT', url: `/api/projects/${project.id}/machines/${machine.id}/share`, payload: { shared: true, access: 'read' } })
+    expect(shared.statusCode).toBe(200)
+    expect(shared.json().machines.find((m: { agentId: string }) => m.agentId === machine.id).shareAccess).toBe('read')
+
+    const q = `?projectId=${project.id}`
+    expect((await asDev({ method: 'GET', url: `/api/agents/${machine.id}/fs${q}&path=/srv` })).statusCode).toBe(200)
+    const write = await asDev({ method: 'POST', url: `/api/agents/${machine.id}/fs/file${q}`, payload: { path: '/srv/x', dataBase64: '' } })
+    expect(write.statusCode).toBe(403)
+    expect(write.json().error).toContain('только для чтения')
+    expect((await asDev({ method: 'POST', url: `/api/agents/${machine.id}/fs/mkdir${q}`, payload: { path: '/srv/y' } })).statusCode).toBe(403)
+    expect((await asDev({ method: 'POST', url: `/api/agents/${machine.id}/exec${q}`, payload: { command: 'ls' } })).statusCode).toBe(403)
+    const batch = await asDev({ method: 'POST', url: `/api/agents/exec-batch${q}`, payload: { machineIds: [machine.id], command: 'ls' } })
+    expect(batch.json().totals).toMatchObject({ ok: 0, skipped: 1 })
+    expect(batch.json().items[0].error).toContain('Только чтение')
+    // машины в контексте чата помечены ownership/access
+    const conv = db.createConversation('dev2', 'C')
+    db.setConversationProject('dev2', conv.id, project.id)
+    const listed = (await asDev({ method: 'GET', url: `/api/conversations/${conv.id}/machines${q}` })).json()
+    expect(listed.find((m: { id: string }) => m.id === machine.id)).toMatchObject({ ownership: 'project', access: 'read' })
+
+    // владелец поднимает доступ до полного — команды снова разрешены
+    expect((await inj({ method: 'PUT', url: `/api/projects/${project.id}/machines/${machine.id}/share`, payload: { shared: true, access: 'full' } })).statusCode).toBe(200)
+    expect((await asDev({ method: 'POST', url: `/api/agents/${machine.id}/exec${q}`, payload: { command: 'ls' } })).statusCode).toBe(200)
+    // владельцу его собственная машина всегда доступна полностью
+    expect((await inj({ method: 'GET', url: '/api/agents' })).json().find((m: { id: string }) => m.id === machine.id)).toMatchObject({ ownership: 'personal', access: 'owner' })
+    // некорректный уровень отклоняется
+    expect((await inj({ method: 'PUT', url: `/api/projects/${project.id}/machines/${machine.id}/share`, payload: { shared: true, access: 'bogus' } })).statusCode).toBe(400)
+  })
+})
+
+describe('REST: групповая команда (п.15)', () => {
+  it('выполняет команду на нескольких машинах, сводка различает ok/failed/skipped; политика отклоняет весь запуск', async () => {
+    const one = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M1' } })).json()
+    const two = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M2' } })).json()
+    const offline = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Спит' } })).json()
+    const connect = (id: string, exitCode: number) => {
+      const socket = { close: vi.fn(), send(data: string) { const m = JSON.parse(data) as { t: string; execId?: string }; if (m.t === 'exec.start') { agentRegistry.handleMessage(id, { t: 'exec.chunk', execId: m.execId!, stream: 'stdout', data: `из ${id}` }); agentRegistry.handleMessage(id, { t: 'exec.done', execId: m.execId!, exitCode }) } } }
+      agentRegistry.register(id, 'M', socket, db.listAgents(U).find((a) => a.id === id)!.policy, '0.15.0')
+    }
+    connect(one.id, 0)
+    connect(two.id, 3)
+    db.createUser('user4', '', 'developer')
+    const foreign = db.createAgent('user4', 'Чужая')
+    const res = await inj({ method: 'POST', url: '/api/agents/exec-batch', payload: { machineIds: [one.id, two.id, offline.id, foreign.id, one.id], command: 'uptime' } })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.totals).toEqual({ requested: 4, ok: 1, failed: 1, skipped: 2 })
+    const byId = Object.fromEntries(body.items.map((i: { machineId: string }) => [i.machineId, i]))
+    expect(byId[one.id]).toMatchObject({ ran: true, exitCode: 0, output: `из ${one.id}` })
+    expect(byId[two.id]).toMatchObject({ ran: true, exitCode: 3 })
+    expect(byId[offline.id]).toMatchObject({ ran: false })
+    expect(byId[offline.id].error).toContain('не в сети')
+    expect(byId[foreign.id]).toMatchObject({ ran: false, error: 'Машина недоступна' })
+    // журнал команд получил обе выполненные команды
+    expect(db.listMachineCommands(one.id).map((r) => r.command)).toEqual(['uptime'])
+    // пустое тело и политика
+    expect((await inj({ method: 'POST', url: '/api/agents/exec-batch', payload: { machineIds: [], command: 'ls' } })).statusCode).toBe(400)
+    const project = db.createProject(U, { name: 'PB' })
+    await inj({ method: 'PATCH', url: `/api/projects/${project.id}`, payload: { commandPolicy: { denyPatterns: ['uptime'], allowPatterns: [], confirmDangerous: true } } })
+    const denied = await inj({ method: 'POST', url: `/api/agents/exec-batch?projectId=${project.id}`, payload: { machineIds: [one.id], command: 'uptime' } })
+    expect(denied.statusCode).toBe(403)
+  })
+})
+
+describe('REST: политика команд проекта и роли (п.10)', () => {
+  it('deny проекта отклоняет команду консоли с 403 до exec; PATCH проекта и PUT ролей сохраняют правила', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const socket = { close: vi.fn(), send(data: string) { const m = JSON.parse(data) as { t: string; execId?: string }; if (m.t === 'exec.start') agentRegistry.handleMessage(created.id, { t: 'exec.done', execId: m.execId!, exitCode: 0 }) } }
+    agentRegistry.register(created.id, 'M', socket, db.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
+    const project = db.createProject(U, { name: 'P' })
+    const patched = await inj({ method: 'PATCH', url: `/api/projects/${project.id}`, payload: { commandPolicy: { denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true } } })
+    expect(patched.statusCode).toBe(200)
+    expect(patched.json().commandPolicy).toEqual({ denyPatterns: ['docker'], allowPatterns: [], confirmDangerous: true })
+    const denied = await inj({ method: 'POST', url: `/api/agents/${created.id}/exec?projectId=${project.id}`, payload: { command: 'docker ps' } })
+    expect(denied.statusCode).toBe(403)
+    expect(denied.json().error).toContain('политикой проекта')
+    expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/exec?projectId=${project.id}`, payload: { command: 'ls' } })).statusCode).toBe(200)
+    const put = await inj({ method: 'PUT', url: '/api/admin/command-policy', payload: { roles: { tester: { denyPatterns: ['git push'], allowPatterns: [] }, junk: { denyPatterns: ['x'] } } } })
+    expect(put.json()).toEqual({ roles: { tester: { denyPatterns: ['git push'], allowPatterns: [] } } })
+    expect((await inj({ method: 'GET', url: '/api/admin/command-policy' })).json().roles.tester.denyPatterns).toEqual(['git push'])
+  })
+})
+
+describe('REST: токены агентов (срок, отзыв, привязка к IP)', () => {
+  it('перевыпуск с ttlDays задаёт срок, отзыв закрывает вход, события попадают в журнал безопасности', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const rotated = (await inj({ method: 'POST', url: `/api/agents/${created.id}/token`, payload: { ttlDays: 30 } })).json()
+    expect(rotated.expiresAt).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60_000)
+    const listed = (await inj({ method: 'GET', url: '/api/agents' })).json()
+    expect(listed[0].tokenExpiresAt).toBe(rotated.expiresAt)
+    expect(db.findAgentByTokenHash(hashAgentToken(rotated.token))?.id).toBe(created.id)
+    expect((await inj({ method: 'DELETE', url: `/api/agents/${created.id}/token` })).json()).toEqual({ ok: true })
+    expect(db.findAgentByTokenHash(hashAgentToken(rotated.token))).toBeNull()
+    expect((await inj({ method: 'POST', url: `/api/agents/${created.id}/pin-ip`, payload: { pin: true } })).statusCode).toBe(200)
+    expect((await inj({ method: 'GET', url: '/api/agents' })).json()[0].pinIp).toBe(true)
+    const events = (await inj({ method: 'GET', url: '/api/admin/security' })).json().events.map((e: { type: string }) => e.type)
+    expect(events).toEqual(expect.arrayContaining(['agent_token_rotated', 'agent_token_revoked']))
+    db.createUser('user3', '', 'developer')
+    const other = db.createAgent('user3', 'X')
+    expect((await inj({ method: 'DELETE', url: `/api/agents/${other.id}/token` })).statusCode).toBe(404)
+    expect((await inj({ method: 'POST', url: `/api/admin/machines/${other.id}/token/revoke` })).json()).toEqual({ ok: true })
+  })
+})
+
+describe('REST: метрики машин для админки', () => {
+  it('stats и Prometheus-метрики агрегируют журнал команд и статус реестра', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })).json()
+    const socket = { close: vi.fn(), send(data: string) { const m = JSON.parse(data) as { t: string; execId?: string }; if (m.t === 'exec.start') agentRegistry.handleMessage(created.id, { t: 'exec.done', execId: m.execId!, exitCode: 1 }) } }
+    agentRegistry.register(created.id, 'M', socket, db.listAgents(U).find((a) => a.id === created.id)!.policy, '0.15.0')
+    await inj({ method: 'POST', url: `/api/agents/${created.id}/exec`, payload: { command: 'false' } })
+    const stats = (await inj({ method: 'GET', url: '/api/admin/machines/stats' })).json()
+    expect(stats.totals).toEqual({ machines: 1, online: 1, commands24h: 1, errors24h: 1 })
+    expect(stats.machines[0]).toMatchObject({ id: created.id, owner: U, online: true, version: '0.15.0', commandsTotal: 1, errors24h: 1 })
+    const metrics = await inj({ method: 'GET', url: '/api/admin/machines/metrics' })
+    expect(metrics.headers['content-type']).toContain('text/plain')
+    expect(metrics.body).toContain(`voicechat_machine_command_errors_24h{machine="M",machine_id="${created.id}",owner="${U}"} 1`)
+  })
+})
+
 describe('REST: утилиты машины (exec/fs)', () => {
   it('exec: 404 на чужую машину; 400 на офлайн-машину владельца', async () => {
     // Своя офлайн-машина: exec → 400 (не в сети).
@@ -1176,7 +1655,7 @@ describe('REST: утилиты машины (exec/fs)', () => {
   it('GET /api/agents/version публичен и отдаёт версию', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/agents/version' }) // без токена
     expect(res.statusCode).toBe(200)
-    expect(res.json()).toEqual({ version: '0.14.0' })
+    expect(res.json()).toEqual({ version: '0.15.0' })
   })
 })
 

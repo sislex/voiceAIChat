@@ -3,7 +3,7 @@
 // только в браузере пользователя. Страница-раннер собирается сервером: import map и
 // стили берём из index.html проекта, чтобы компонент выглядел как в приложении.
 
-import { MAKE_REACT_IMPORT_MAP, MAKE_STORIES_PAGE, type MakeStoryFile } from '@voicechat/shared'
+import { MAKE_REACT_IMPORT_MAP, MAKE_STORIES_PAGE, type MakeStoryFile, type MakeTestFile } from '@voicechat/shared'
 
 export function parseStoryFile(path: string, source: string): MakeStoryFile {
   const names: string[] = []
@@ -105,11 +105,53 @@ export function renderStoriesPage(file: string, story: string, indexHtml: string
 
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
-/** Галерея всех стори проекта: сетка iframe-ов на раннер, каждая с подписью и ссылкой «открыть». */
-export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 'Компоненты'): string {
+/** Простые пары `key: 'строка' | число | true/false` из текста объекта args — без вложенных структур. */
+function simpleArgs(text: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!text) return out
+  for (const m of text.matchAll(/(\w+)\s*:\s*(?:'([^']*)'|"([^"]*)"|(-?\d+(?:\.\d+)?)|(true|false))/g)) {
+    const key = m[1]!
+    if (m[2] !== undefined || m[3] !== undefined) out[key] = `"${m[2] ?? m[3]}"`
+    else out[key] = `{${m[4] ?? m[5]}}`
+  }
+  return out
+}
+
+function attrsOf(args: Record<string, string>, component: string): string {
+  const children = args.children
+  const attrs = Object.entries(args).filter(([k]) => k !== 'children').map(([k, v]) => `${k}=${v}`).join(' ')
+  const open = `<${component}${attrs ? ' ' + attrs : ''}`
+  return children ? `${open}>${children.replace(/^"|"$/g, '')}</${component}>` : `${open} />`
+}
+
+/**
+ * Код использования для витрины (roadmap-4 п.28): для стрелочных стори берём JSX после стрелки, для объектных
+ * (CSF3 `{ args }`) собираем `<X prop="…">` из args default-экспорта и стори; плюс import компонента от корня проекта.
+ */
+export function storyUsageSnippets(path: string, source: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  const importPath = './' + path.replace(/\.stories\.(jsx|tsx)$/i, '')
+  const component = /component\s*:\s*([A-Z][A-Za-z0-9_]*)/.exec(source)?.[1] ?? /import\s*\{\s*([A-Z][A-Za-z0-9_]*)/.exec(source)?.[1] ?? null
+  const importLine = component ? `import { ${component} } from '${importPath}'` : null
+  const defaultArgs = simpleArgs(/export\s+default\s*\{[\s\S]*?\bargs\s*:\s*\{([^}]*)\}/.exec(source)?.[1])
+  for (const m of source.matchAll(/export\s+const\s+([A-Z]\w*)\s*=\s*(?:\([^)]*\)|\w+)?\s*=>\s*\(?\s*(<[\s\S]*?>)\s*\)?\s*(?=\n|$)/g)) {
+    out[m[1]!] = [importLine, m[2]!.trim()].filter(Boolean).join('\n\n')
+  }
+  for (const m of source.matchAll(/export\s+const\s+([A-Z]\w*)\s*=\s*\{([\s\S]*?)\}\s*(?=\n|$)/g)) {
+    if (out[m[1]!] || !component) continue
+    const storyArgs = simpleArgs(/\bargs\s*:\s*\{([^}]*)\}/.exec(m[2]!)?.[1])
+    out[m[1]!] = `${importLine}\n\n${attrsOf({ ...defaultArgs, ...storyArgs }, component)}`
+  }
+  return out
+}
+
+/** Галерея всех стори проекта: сетка iframe-ов на раннер, поиск по названиям и код использования (п.28). */
+export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 'Компоненты', usage: Record<string, Record<string, string>> = {}): string {
   const cards = files.flatMap((f) => f.stories.map((name) => {
     const href = `${base}${MAKE_STORIES_PAGE}?file=${encodeURIComponent(f.path)}&story=${encodeURIComponent(name)}`
-    return `<figure class="card"><iframe loading="lazy" title="${escapeHtml(f.title)} / ${escapeHtml(name)}" src="${href}"></iframe><figcaption><b>${escapeHtml(f.title)}</b> · ${escapeHtml(name)} <a href="${href}" target="_blank" rel="noreferrer">открыть</a></figcaption></figure>`
+    const code = usage[f.path]?.[name]
+    const codeBlock = code ? `<details class="code"><summary>Код</summary><pre>${escapeHtml(code)}</pre><button type="button" class="copy" data-code="${escapeHtml(code)}">Скопировать</button></details>` : ''
+    return `<figure class="card" data-search="${escapeHtml(`${f.title} ${name} ${f.path}`.toLowerCase())}"><iframe loading="lazy" title="${escapeHtml(f.title)} / ${escapeHtml(name)}" src="${href}"></iframe><figcaption><b>${escapeHtml(f.title)}</b> · ${escapeHtml(name)} <a href="${href}" target="_blank" rel="noreferrer">открыть</a></figcaption>${codeBlock}</figure>`
   }))
   return `<!doctype html>
 <html lang="ru">
@@ -126,11 +168,99 @@ export function renderGalleryPage(files: MakeStoryFile[], base: string, title = 
     figcaption { padding: 8px 12px; font-size: 13px; display: flex; gap: 6px; align-items: baseline; }
     figcaption a { margin-left: auto; color: #4f7cff; }
     .empty { color: #666; }
+    .head { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+    .search { flex: 1 1 320px; max-width: 420px; padding: 8px 12px; border: 1px solid #d5d8e0; border-radius: 8px; font: inherit; }
+    .code { border-top: 1px solid #eef0f4; padding: 6px 12px 10px; font-size: 12px; }
+    .code summary { cursor: pointer; color: #4f7cff; }
+    .code pre { margin: 8px 0; padding: 8px; background: #f6f7fb; border-radius: 6px; overflow: auto; font: 12px/1.45 ui-monospace, Menlo, monospace; }
+    .copy { font: inherit; padding: 4px 10px; border: 1px solid #d5d8e0; border-radius: 6px; background: #fff; cursor: pointer; }
+    .card[hidden] { display: none; }
   </style>
 </head>
 <body>
-  <h1>${escapeHtml(title)}</h1>
+  <div class="head"><h1 style="margin:0">${escapeHtml(title)}</h1>${cards.length ? '<input class="search" type="search" placeholder="Поиск компонента или стори…" aria-label="Поиск по витрине">' : ''}<span class="count"></span></div>
   ${cards.length ? `<div class="grid">${cards.join('')}</div>` : '<p class="empty">В проекте пока нет сториз (*.stories.jsx/tsx).</p>'}
+  <script>
+    (function(){
+      var q = document.querySelector('.search'), cards = Array.prototype.slice.call(document.querySelectorAll('.card')), count = document.querySelector('.count');
+      function apply(){ var v = (q && q.value || '').trim().toLowerCase(); var shown = 0; cards.forEach(function(c){ var hit = !v || (c.getAttribute('data-search') || '').indexOf(v) >= 0; c.hidden = !hit; if (hit) shown++; }); if (count) count.textContent = v ? shown + ' из ' + cards.length : ''; }
+      if (q) { q.addEventListener('input', apply); var initial = new URLSearchParams(location.search).get('q'); if (initial) { q.value = initial; apply(); } }
+      document.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('.copy'); if (!b) return; var code = b.getAttribute('data-code') || ''; (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(function(){ b.textContent = 'Скопировано'; setTimeout(function(){ b.textContent = 'Скопировать'; }, 1500); }, function(){ b.textContent = 'Выделите и скопируйте'; }); });
+    })();
+  </script>
+</body>
+</html>`
+}
+
+/** Имена тестов из `test('имя', …)` и компонент рядом (`Button.test.tsx` → `Button.tsx`, если есть). */
+export function parseTestFile(path: string, source: string, projectPaths: ReadonlySet<string>): MakeTestFile {
+  const names: string[] = []
+  for (const m of source.matchAll(/\btest\(\s*(['"`])((?:\\.|(?!\1).)+)\1/g)) names.push(m[2]!)
+  const base = path.replace(/\.test\.(jsx|tsx|js|ts)$/i, '')
+  const component = ['tsx', 'jsx', 'ts', 'js'].map((e) => `${base}.${e}`).find((p) => projectPaths.has(p)) ?? null
+  return { path, names, component }
+}
+
+/**
+ * Раннер тестов компонента (roadmap-4 п.3): даёт глобальные `test(name, fn)` и `expect`, хелперы
+ * `render/click/type/find`; каждый результат уходит родителю кадром `vc-make.test`, итог — `vc-make.tests-done`.
+ */
+export function renderTestsPage(file: string, indexHtml: string | null): string {
+  const { importMap, links } = extractHeadAssets(indexHtml)
+  const modulePath = './' + file.split('/').map(encodeURIComponent).join('/')
+  return `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Tests · ${escapeAttr(file)}</title>
+  ${links}
+  <style>body{margin:0;padding:16px;font:13px/1.5 ui-monospace,monospace;background:var(--bg,#fff)} #root{min-height:40px} .vc-t{padding:2px 0} .vc-t.ok{color:#067647} .vc-t.fail{color:#b42318;white-space:pre-wrap}</style>
+  <script type="importmap">${importMap}</script>
+</head>
+<body>
+  <div id="log"></div><div id="root"></div>
+  <script type="module">
+    const file = ${JSON.stringify(modulePath)};
+    const log = (cls, text) => { const el = document.createElement('div'); el.className = 'vc-t ' + cls; el.textContent = text; document.getElementById('log').appendChild(el); };
+    const post = (m) => window.parent.postMessage({ ...m, file: ${JSON.stringify(file)} }, '*');
+    const tests = [];
+    window.test = (name, fn) => { tests.push({ name, fn }); };
+    const fmt = (v) => { try { return typeof v === 'string' ? JSON.stringify(v) : JSON.stringify(v) ?? String(v); } catch (e) { return String(v); } };
+    const textOf = (el) => (el && el.textContent != null ? el.textContent : String(el));
+    window.expect = (actual) => ({
+      toBe: (e) => { if (actual !== e) throw new Error('expected ' + fmt(actual) + ' toBe ' + fmt(e)); },
+      toEqual: (e) => { if (JSON.stringify(actual) !== JSON.stringify(e)) throw new Error('expected ' + fmt(actual) + ' toEqual ' + fmt(e)); },
+      toBeTruthy: () => { if (!actual) throw new Error('expected ' + fmt(actual) + ' toBeTruthy'); },
+      toBeFalsy: () => { if (actual) throw new Error('expected ' + fmt(actual) + ' toBeFalsy'); },
+      toBeNull: () => { if (actual !== null) throw new Error('expected ' + fmt(actual) + ' toBeNull'); },
+      toContain: (e) => { const s = typeof actual === 'string' ? actual : textOf(actual); if (!(Array.isArray(actual) ? actual.includes(e) : s.includes(e))) throw new Error('expected ' + fmt(s) + ' toContain ' + fmt(e)); },
+      toHaveTextContent: (e) => { const s = textOf(actual); if (!s.includes(e)) throw new Error('expected text ' + fmt(s) + ' to contain ' + fmt(e)); },
+      toHaveClass: (c) => { if (!actual || !actual.classList || !actual.classList.contains(c)) throw new Error('expected element to have class ' + c); },
+      toBeGreaterThan: (e) => { if (!(actual > e)) throw new Error('expected ' + fmt(actual) + ' > ' + fmt(e)); }
+    });
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    try {
+      const [React, { createRoot }] = await Promise.all([import('react'), import('react-dom/client')]);
+      let root = null;
+      const t = {
+        React,
+        render: async (element) => { const host = document.getElementById('root'); if (root) root.unmount(); host.replaceChildren(); root = createRoot(host); root.render(element); await sleep(30); return host; },
+        find: (selectorOrText) => { const host = document.getElementById('root'); return host.querySelector(selectorOrText) || [...host.querySelectorAll('*')].find((el) => el.children.length === 0 && (el.textContent || '').trim() === selectorOrText) || null; },
+        click: async (el) => { if (!el) throw new Error('click: элемент не найден'); el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); await sleep(20); },
+        type: async (el, text) => { if (!el) throw new Error('type: элемент не найден'); el.focus(); const setter = Object.getOwnPropertyDescriptor(el.__proto__, 'value')?.set; if (setter) setter.call(el, text); else el.value = text; el.dispatchEvent(new Event('input', { bubbles: true })); await sleep(20); },
+        sleep
+      };
+      await import(file);
+      if (tests.length === 0) throw new Error('В файле нет вызовов test(name, fn)');
+      let passed = 0, failed = 0;
+      for (const { name, fn } of tests) {
+        const started = performance.now();
+        try { await fn(t); passed++; log('ok', '✓ ' + name); post({ type: 'vc-make.test', name, status: 'passed', ms: Math.round(performance.now() - started) }); }
+        catch (error) { failed++; const msg = String(error && error.message || error).slice(0, 500); log('fail', '✗ ' + name + ' — ' + msg); post({ type: 'vc-make.test', name, status: 'failed', ms: Math.round(performance.now() - started), error: msg }); }
+      }
+      post({ type: 'vc-make.tests-done', passed, failed });
+    } catch (error) { const msg = String(error && error.message || error); log('fail', msg); post({ type: 'vc-make.tests-done', passed: 0, failed: 1, error: msg }); }
+  </script>
 </body>
 </html>`
 }

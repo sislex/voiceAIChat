@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import {
   activeStatusLabel,
   chatModeLabel,
@@ -181,6 +181,10 @@ function MessageResults({ search, now, onPick, onRetry, onLoadMore }: MessageRes
 
 export type SidebarMode = 'chats' | 'projects'
 
+export const SIDEBAR_MIN_WIDTH = 220
+export const SIDEBAR_MAX_WIDTH = 420
+const SIDEBAR_WHEEL_THRESHOLD = 18
+
 /** Область поиска в сайдбаре: названия бесед или текст сообщений. */
 export type SearchScope = 'chats' | 'messages'
 
@@ -268,6 +272,14 @@ export interface SidebarProps {
   currentUser?: SessionUser | null
   /** Выйти из сессии (web). */
   onLogout?: () => void
+  /** Сессии и устройства (auth-roadmap п.4); нет в desktop. */
+  onOpenSessions?: () => void
+  /** Двухфакторная защита (auth-roadmap п.6); нет в desktop. */
+  onOpenTwoFactor?: () => void
+  /** Смена своего пароля (auth-roadmap п.12). */
+  onOpenChangePassword?: () => void
+  /** Аватар пользователя (эмодзи/буквы) из персонализации; null — 👤. */
+  avatar?: string | null
   /** Режим списка: чаты или проекты. По умолчанию 'chats'. */
   mode?: SidebarMode
   /** Сегмент «Чаты | Проекты»; не задан — переключатель скрыт (desktop/local). */
@@ -284,6 +296,9 @@ export interface SidebarProps {
   open?: boolean
   /** Свернуть сайдбар на десктопе (шеврон в шапке); undefined — кнопку не показываем. */
   onToggleCollapse?: () => void
+  /** Текущая ширина desktop-колонки и её обновление при перетаскивании границы. */
+  width?: number
+  onWidthChange?: (width: number) => void
 }
 
 export function Sidebar({
@@ -304,7 +319,6 @@ export function Sidebar({
   searchQuery,
   onSearch,
   searchScope = 'chats',
-  onSearchScopeChange,
   messageSearch = EMPTY_SEARCH_VIEW,
   onPickMessage,
   onRetryMessageSearch,
@@ -329,6 +343,10 @@ export function Sidebar({
   onOpenCi,
   currentUser,
   onLogout,
+  onOpenSessions,
+  onOpenTwoFactor,
+  onOpenChangePassword,
+  avatar = null,
   mode = 'chats',
   onModeChange,
   activeProjectId = null,
@@ -336,7 +354,9 @@ export function Sidebar({
   onCreateProject,
   onOpenCommandPalette,
   open = false,
-  onToggleCollapse
+  onToggleCollapse,
+  width = 264,
+  onWidthChange
 }: SidebarProps): JSX.Element {
   // id разговора, для которого показываем инлайн-подтверждение удаления.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
@@ -345,6 +365,10 @@ export function Sidebar({
   // Инлайн-форма создания проекта в списке проектов.
   const [creatingProject, setCreatingProject] = useState(false)
   const [projectDraft, setProjectDraft] = useState('')
+  const [projectQuery, setProjectQuery] = useState('')
+  const [controlsOpen, setControlsOpen] = useState<Record<SidebarMode, boolean>>({ chats: false, projects: false })
+  const resizeRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
+  const wheelDeltaRef = useRef(0)
   // Состояние намеренно локальное: remount снова сворачивает старую секцию.
   const [olderOpen, setOlderOpen] = useState(false)
   const acctRef = useRef<HTMLDivElement | null>(null)
@@ -357,6 +381,37 @@ export function Sidebar({
   // Состояния списка бесед по общему правилу: скелетон — только пока данных нет,
   // при повторной загрузке список остаётся на месте (см. lib/loadState.ts).
   const chats = loadView(conversationsStatus, conversations.length > 0)
+  const visibleProjects = projects.filter((project) => project.name.toLocaleLowerCase().includes(projectQuery.trim().toLocaleLowerCase()))
+
+  const setControlsVisible = (visible: boolean): void => {
+    setControlsOpen((current) => current[mode] === visible ? current : { ...current, [mode]: visible })
+  }
+  const onListWheel = (event: ReactWheelEvent<HTMLElement>): void => {
+    const previous = wheelDeltaRef.current
+    const changedDirection = previous !== 0 && Math.sign(previous) !== Math.sign(event.deltaY)
+    const accumulated = (changedDirection ? 0 : previous) + event.deltaY
+    wheelDeltaRef.current = accumulated
+    if (Math.abs(accumulated) < SIDEBAR_WHEEL_THRESHOLD) return
+    setControlsVisible(accumulated < 0)
+    wheelDeltaRef.current = 0
+  }
+  const clampWidth = (next: number): number => Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, next))
+  const finishResize = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    if (resizeRef.current?.pointerId !== event.pointerId) return
+    resizeRef.current = null
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+  const resizeByKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    const step = event.shiftKey ? 32 : 8
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault()
+      onWidthChange?.(clampWidth(width + (event.key === 'ArrowRight' ? step : -step)))
+    } else if (event.key === 'Home') {
+      event.preventDefault(); onWidthChange?.(SIDEBAR_MIN_WIDTH)
+    } else if (event.key === 'End') {
+      event.preventDefault(); onWidthChange?.(SIDEBAR_MAX_WIDTH)
+    }
+  }
 
   // Меню аккаунта закрывается по клику вне и по Esc.
   useEffect(() => {
@@ -495,106 +550,74 @@ export function Sidebar({
           <span className="logodot" style={{ background: ACCENT }} />
           Голос·Чат
         </span>
-        <div className="sidehead-actions">
-          <Button size="sm" onClick={onNew}>
-            + Новый
-          </Button>
-          {onToggleCollapse && (
-            <button
-              className="side-collapse"
-              onClick={onToggleCollapse}
-              title="Свернуть панель"
-              aria-label="Свернуть панель"
-            >
-              «
-            </button>
-          )}
-        </div>
+        {onToggleCollapse && (
+          <button className="side-collapse" onClick={onToggleCollapse} title="Свернуть панель" aria-label="Свернуть панель">«</button>
+        )}
+      </div>
+      <div className="side-primary-action">
+        {mode === 'chats' ? (
+          <Button fullWidth onClick={onNew}><span aria-hidden>✎</span> Новый чат</Button>
+        ) : onCreateProject && (
+          creatingProject ? (
+            <input
+              className="login-input projcreate"
+              autoFocus
+              placeholder="Название проекта"
+              aria-label="Название нового проекта"
+              value={projectDraft}
+              onChange={(event) => setProjectDraft(event.target.value)}
+              onBlur={() => setCreatingProject(false)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && projectDraft.trim()) {
+                  onCreateProject(projectDraft.trim())
+                  setProjectDraft('')
+                  setCreatingProject(false)
+                } else if (event.key === 'Escape') setCreatingProject(false)
+              }}
+            />
+          ) : <Button fullWidth onClick={() => setCreatingProject(true)}>+ Новый проект</Button>
+        )}
       </div>
       {onModeChange && (
         <div className="sideswitch" role="group" aria-label="Тип списка">
-          <button className={mode === 'chats' ? 'on' : ''} aria-pressed={mode === 'chats'} onClick={() => onModeChange('chats')}>
-            Чаты
-          </button>
-          <button className={mode === 'projects' ? 'on' : ''} aria-pressed={mode === 'projects'} onClick={() => onModeChange('projects')}>
-            Проекты
-          </button>
+          <button className={mode === 'chats' ? 'on' : ''} aria-pressed={mode === 'chats'} onClick={() => onModeChange('chats')}>Чаты</button>
+          <button className={mode === 'projects' ? 'on' : ''} aria-pressed={mode === 'projects'} onClick={() => onModeChange('projects')}>Проекты</button>
         </div>
       )}
-      {mode === 'chats' && projects.length > 0 && (
-        <div className="sideproject">
-          <select
-            className="projectselect"
-            aria-label="Проект"
-            value={selectedProjectId ?? ''}
-            onChange={(e) => onSelectProject?.(e.target.value || null)}
-          >
-            <option value="">Без проекта</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      {mode === 'chats' && (<>
-      <div className="sidesearch">
-        {onSearchScopeChange && (
-          <div className="searchscope" role="group" aria-label="Область поиска">
-            <button
-              className={searchScope === 'chats' ? 'on' : ''}
-              aria-pressed={searchScope === 'chats'}
-              onClick={() => onSearchScopeChange('chats')}
-            >
-              Беседы
-            </button>
-            <button
-              className={searchScope === 'messages' ? 'on' : ''}
-              aria-pressed={searchScope === 'messages'}
-              onClick={() => onSearchScopeChange('messages')}
-            >
-              Сообщения
-            </button>
+      <div className={controlsOpen[mode] ? 'side-controls side-controls--open' : 'side-controls'} aria-hidden={!controlsOpen[mode]}>
+        {mode === 'chats' ? (<>
+          {projects.length > 0 && (
+            <div className="sideproject">
+              <select className="projectselect" aria-label="Проект" value={selectedProjectId ?? ''} onChange={(event) => onSelectProject?.(event.target.value || null)}>
+                <option value="">Без проекта</option>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="sidesearch">
+            <div className="sidesearch-row">
+              <input className="searchinput" type="search" value={searchQuery} placeholder="Поиск по разговорам…" aria-label="Поиск по разговорам" onChange={(event) => onSearch(event.target.value)} />
+              {onShowDoneTaskChatsChange && (
+                <IconButton className={showDoneTaskChats ? 'convo-filter on' : 'convo-filter'} aria-label="Показывать чаты завершённых задач" aria-pressed={showDoneTaskChats} title="Показывать чаты завершённых задач" onClick={() => onShowDoneTaskChatsChange(!showDoneTaskChats)}>
+                  <FilterIcon />
+                </IconButton>
+              )}
+              {onOpenCommandPalette && (
+                <IconButton className="cmdk-open" aria-label="Командная палитра" title={`Командная палитра (${formatCombo('mod+k')})`} onClick={onOpenCommandPalette}>
+                  {formatCombo('mod+k')}
+                </IconButton>
+              )}
+            </div>
+          </div>
+        </>) : (
+          <div className="sidesearch">
+            <div className="sidesearch-row">
+              <input className="searchinput" type="search" value={projectQuery} placeholder="Поиск по проектам…" aria-label="Поиск по проектам" onChange={(event) => setProjectQuery(event.target.value)} />
+            </div>
           </div>
         )}
-        <div className="sidesearch-row">
-          <input
-            className="searchinput"
-            type="search"
-            value={searchQuery}
-            placeholder={inMessages ? 'Поиск по сообщениям…' : 'Поиск по разговорам…'}
-            aria-label={inMessages ? 'Поиск по сообщениям' : 'Поиск по разговорам'}
-            onChange={(e) => onSearch(e.target.value)}
-          />
-          {/* Фильтр списка: чаты завершённых задач по умолчанию скрыты, и без
-              видимой кнопки о них бы просто забыли. Нажатое состояние — тот же
-              флаг, что и галка в шапке доски. */}
-          {onShowDoneTaskChatsChange && (
-            <IconButton
-              className={showDoneTaskChats ? 'convo-filter on' : 'convo-filter'}
-              aria-label="Показывать чаты завершённых задач"
-              aria-pressed={showDoneTaskChats}
-              title="Показывать чаты завершённых задач"
-              onClick={() => onShowDoneTaskChatsChange(!showDoneTaskChats)}
-            >
-              <FilterIcon />
-            </IconButton>
-          )}
-          {/* Точка входа мышью: без неё про палитру узнают только те, кто угадал
-              сочетание. Подпись — та же, что в шпаргалке (⌘ на macOS, Ctrl на остальных). */}
-          {onOpenCommandPalette && (
-            <IconButton
-              className="cmdk-open"
-              aria-label="Командная палитра"
-              title={`Командная палитра (${formatCombo('mod+k')})`}
-              onClick={onOpenCommandPalette}
-            >
-              {formatCombo('mod+k')}
-            </IconButton>
-          )}
-        </div>
       </div>
+      {mode === 'chats' && (<>
       {inMessages ? (
         <MessageResults
           search={messageSearch}
@@ -604,7 +627,7 @@ export function Sidebar({
           {...(onLoadMoreMessages ? { onLoadMore: onLoadMoreMessages } : {})}
         />
       ) : (
-      <div className="convolist">
+      <div className="convolist" onWheel={onListWheel}>
         {chats.state === 'skeleton' && (
           <div className="convolist-skel" aria-busy="true">
             {/* Высота косточки — высота .convo с названием, метой и статусом. */}
@@ -689,31 +712,8 @@ export function Sidebar({
       )}
       </>)}
       {mode === 'projects' && (
-        <div className="convolist projlist">
-          {onCreateProject &&
-            (creatingProject ? (
-              <input
-                className="login-input projcreate"
-                autoFocus
-                placeholder="Название проекта"
-                aria-label="Название нового проекта"
-                value={projectDraft}
-                onChange={(e) => setProjectDraft(e.target.value)}
-                onBlur={() => setCreatingProject(false)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && projectDraft.trim()) {
-                    onCreateProject(projectDraft.trim())
-                    setProjectDraft('')
-                    setCreatingProject(false)
-                  } else if (e.key === 'Escape') setCreatingProject(false)
-                }}
-              />
-            ) : (
-              <button className="projadd" onClick={() => setCreatingProject(true)}>
-                + Проект
-              </button>
-            ))}
-          {projects.length === 0 && (
+        <div className="convolist projlist" onWheel={onListWheel}>
+          {visibleProjects.length === 0 && (
             <EmptyState
               compact
               icon="🗂"
@@ -721,7 +721,7 @@ export function Sidebar({
               description="Создайте первый — доска, задачи и CI появятся внутри него."
             />
           )}
-          {projects.map((p) => (
+          {visibleProjects.map((p) => (
             <button
               key={p.id}
               className={p.id === activeProjectId ? 'convo projitem on' : 'convo projitem'}
@@ -749,7 +749,7 @@ export function Sidebar({
               aria-expanded={acctOpen}
               title={`Роль: ${currentUser.role}`}
             >
-              <span className="footico">👤</span>
+              <span className={avatar ? 'footico footico--avatar' : 'footico'} data-testid="account-avatar">{avatar ?? '👤'}</span>
               <span className="username">{currentUser.name}</span>
               <span className="acct-caret" aria-hidden>▾</span>
             </Button>
@@ -825,6 +825,24 @@ export function Sidebar({
                   <GearIcon />
                   Настройки
                 </Button>
+                {onOpenSessions && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenSessions)}>
+                    <span className="footico">📱</span>
+                    Сессии и устройства
+                  </Button>
+                )}
+                {onOpenChangePassword && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenChangePassword)}>
+                    <span className="footico">🔑</span>
+                    Сменить пароль
+                  </Button>
+                )}
+                {onOpenTwoFactor && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenTwoFactor)}>
+                    <span className="footico">🔐</span>
+                    Двухфакторная защита
+                  </Button>
+                )}
                 {onLogout && (
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onLogout)}>
                     <span className="footico">🚪</span>
@@ -875,6 +893,30 @@ export function Sidebar({
           </>
         )}
       </div>
+      {onWidthChange && (
+        <div
+          className="side-resize"
+          role="separator"
+          aria-label="Изменить ширину сайдбара"
+          aria-orientation="vertical"
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuenow={Math.round(width)}
+          tabIndex={0}
+          onKeyDown={resizeByKeyboard}
+          onPointerDown={(event) => {
+            resizeRef.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width }
+            event.currentTarget.setPointerCapture?.(event.pointerId)
+          }}
+          onPointerMove={(event) => {
+            const drag = resizeRef.current
+            if (drag?.pointerId === event.pointerId) onWidthChange(clampWidth(drag.startWidth + event.clientX - drag.startX))
+          }}
+          onPointerUp={finishResize}
+          onPointerCancel={finishResize}
+          onLostPointerCapture={() => { resizeRef.current = null }}
+        />
+      )}
     </aside>
   )
 }

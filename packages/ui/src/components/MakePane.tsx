@@ -4,6 +4,18 @@ import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import type { EditorContextPayload } from '@shared/types'
 import { formatUsd, type ConversationUsage } from '@shared/usageSummary'
 import { pickTokensFile } from '@shared/makeTokens'
+import { makeNextSteps } from '@shared/makeNextSteps'
+import { changedLines as diffLines } from '@shared/lineDiff'
+import type { MakeReplacePreviewLine } from '@shared/makeSearch'
+import { escapeMarkupText, replaceUniqueText } from '@shared/makeTextEdit'
+import { reorderMarkup } from '@shared/makeReorder'
+import { componentsWithoutStories, generateStoriesSource } from '@shared/makeStoriesGen'
+import { loadImageData, pixelDiff } from '../lib/pixelDiff'
+import { MakeMockTable, mockTableFor } from './MakeMockTable'
+import { makeMockPrompt } from '@shared/makeMockPrompt'
+import { MAKE_DEPLOY_TARGETS, type MakeDeployTarget } from '@shared/makeDeploy'
+import { MAKE_SNAPSHOT_PREVIEW } from '@shared/make'
+import { EMPTY_MAKE_SELECTION, pruneMakeSelection, toggleMakeSelection, type MakeSelectionState } from '@shared/makeSelection'
 import { kilo } from '../lib/view'
 import { REST } from '@shared/protocol'
 import { CodeEditor, PHONE_EDITOR_QUERY, type EditorSelection } from './CodeEditor'
@@ -12,6 +24,7 @@ import { CodeDiff } from './CodeDiff'
 import { MakeTokensDialog } from './MakeTokensDialog'
 import { MakeUsageDialog } from './MakeUsageDialog'
 import { MakeCommentsPanel } from './MakeCommentsPanel'
+import { MakeNotesDialog } from './MakeNotesDialog'
 import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { MakeControlField, type ArgType } from './MakeControls'
 import { captureIframeScreenshot } from '../lib/makeScreenshot'
@@ -21,7 +34,7 @@ import { pointInRect, usePointerDrag } from '../lib/dnd'
 import { dirOfPath, moveTargetPath } from '../lib/makeTree'
 import { pushHistory, readHistory, type FileVersion } from '../lib/fileHistory'
 import { copyText } from '../lib/clipboard'
-import { MAKE_COMMENTS_SYNC_PATH, MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment } from '@shared/make'
+import { MAKE_COMMENTS_SYNC_PATH, MAKE_STARTER_GROUPS, MAKE_STARTER_PROMPTS, MAKE_SCAFFOLD, MAKE_TEMPLATES, isMakeTextPath, normalizeMakePath, type MakeCheckIssue, type MakeFileInfo, type MakeProjectState, type MakeSearchMatch, type MakeStoryFile, type MakeConsoleLine, type MakeNetworkEntry, type MakeStoryShot, type MakeLibraryItem, type MakeSnapshotDiff, type MakeImportMode, type MakeComment, type MakePresenceClient, type MakeTestFile } from '@shared/make'
 
 // Правая панель инструмента Make (аналог Figma Make): проект разговора — статический
 // сайт в рабочей папке сервера. Три режима: «Превью» (same-origin iframe поверх
@@ -42,7 +55,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests' | 'make:notes' | 'make:setNotes'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -56,6 +69,11 @@ export interface MakePaneProps {
   usage?: ConversationUsage | null
   /** Идёт ход ассистента: на старте снимаем «до», по окончании (после правок) — «после» (roadmap-2 п.8). */
   turnActive?: boolean
+  /** Текст последнего запроса пользователя — для самопроверки «Сверить с запросом» (roadmap-4 п.5). */
+  lastRequest?: string | null
+  /** Режим вопроса (roadmap-4 п.4): следующий ход пойдёт в «План» — только ответ, без правок. */
+  askOnly?: boolean
+  onAskOnlyChange?: (on: boolean) => void
   /** База превью; по умолчанию — REST.makePreview (тест подменяет). */
   previewBase?: string
   /**
@@ -69,9 +87,11 @@ export interface MakePaneProps {
 
 type Mode = 'preview' | 'code' | 'stories' | 'history'
 const MODE_LABEL: Record<Mode, string> = { preview: 'Превью', code: 'Код', stories: 'Компоненты', history: 'История' }
-type Device = 'desktop' | 'tablet' | 'mobile'
-const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, mobile: 390 }
-const DEVICE_LABEL: Record<Device, string> = { desktop: 'Десктоп', tablet: 'Планшет', mobile: 'Телефон' }
+type Device = 'desktop' | 'tablet' | 'mobile' | 'all'
+const DEVICE_WIDTH: Record<Device, number | null> = { desktop: null, tablet: 820, mobile: 390, all: null }
+const DEVICE_LABEL: Record<Device, string> = { desktop: 'Десктоп', tablet: 'Планшет', mobile: 'Телефон', all: 'Три ширины рядом' }
+/** Три ширины рядом (roadmap-4 п.21): дополнительные кадры к основному; скролл синхронизируется через vc-make.state → vc-make.restore. */
+const SYNC_WIDTHS = [820, 390]
 
 function formatSize(bytes: number): string {
   return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} КБ` : `${bytes} Б`
@@ -92,7 +112,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, askOnly = false, onAskOnlyChange, lastRequest = null, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -104,12 +124,21 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [selected, setSelected] = useState<MakeSelectedElement | null>(null)
   // Последнее известное состояние страницы превью (скролл/hash) — восстанавливается после перезагрузки (п.11).
   const pageStateRef = useRef<{ x: number; y: number; hash: string } | null>(null)
+  const syncFramesRef = useRef<Array<HTMLIFrameElement | null>>([])
+  const syncMuteUntil = useRef(0)
   // Тема/язык превью (п.12): пересылаются в iframe и повторяются после каждой перезагрузки.
   const [previewScheme, setPreviewScheme] = useState<'auto' | 'light' | 'dark'>('auto')
   const [previewLang, setPreviewLang] = useState('')
-  const envRef = useRef({ scheme: 'auto', lang: '' })
-  envRef.current = { scheme: previewScheme, lang: previewLang }
-  const sendEnv = (scheme = previewScheme, lang = previewLang): void => { frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', scheme, lang }, '*') }
+  const envRef = useRef<{ scheme: 'auto' | 'light' | 'dark'; lang: string; state: 'hover' | 'focus' | 'active' | null; reducedMotion: boolean; slowMs: number }>({ scheme: 'auto', lang: '', state: null, reducedMotion: false, slowMs: 0 })
+  /** Эмуляция окружения превью (roadmap-4 п.20): принудительное состояние выбранного элемента, reduced-motion, задержка моков. */
+  const [forcedState, setForcedState] = useState<'hover' | 'focus' | 'active' | null>(null)
+  const [reducedMotion, setReducedMotion] = useState(false)
+  const [slowMs, setSlowMs] = useState(0)
+  envRef.current = { scheme: previewScheme, lang: previewLang, state: forcedState, reducedMotion, slowMs }
+  const sendEnv = (scheme = previewScheme, lang = previewLang, extra: { state?: 'hover' | 'focus' | 'active' | null; reducedMotion?: boolean; slowMs?: number } = {}): void => { frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', scheme, lang, state: forcedState, reducedMotion, slowMs, ...extra }, '*') }
+  const cycleForcedState = (): void => { const order: Array<'hover' | 'focus' | 'active' | null> = [null, 'hover', 'focus', 'active']; const next = order[(order.indexOf(forcedState) + 1) % order.length] ?? null; setForcedState(next); sendEnv(previewScheme, previewLang, { state: next }) }
+  const toggleReducedMotion = (): void => { const next = !reducedMotion; setReducedMotion(next); sendEnv(previewScheme, previewLang, { reducedMotion: next }) }
+  const cycleSlowMs = (): void => { const next = slowMs === 0 ? 1500 : slowMs === 1500 ? 4000 : 0; setSlowMs(next); sendEnv(previewScheme, previewLang, { slowMs: next }) }
   const cycleScheme = (): void => { const next = previewScheme === 'auto' ? 'dark' : previewScheme === 'dark' ? 'light' : 'auto'; setPreviewScheme(next); sendEnv(next, previewLang) }
   // Опрос same-origin iframe: события scroll из родителя ненадёжны, а прямое чтение — всегда работает.
   useEffect(() => {
@@ -197,6 +226,86 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
+  const [notesOpen, setNotesOpen] = useState(false)
+  /** Строки открытого файла, изменённые последней записью ассистента (roadmap-4 п.9). */
+  const [changedLines, setChangedLines] = useState<number[]>([])
+  /** Таблица коллекции моков (roadmap-4 п.29): для mock/*.json с массивом объектов — вид «Таблица» по умолчанию. */
+  const [mockView, setMockView] = useState<'table' | 'json'>('table')
+  const mockTable = useMemo(() => (selectedPath ? mockTableFor(selectedPath, content) : null), [selectedPath, content])
+  /** Сплит «код | превью» и zen-режим (roadmap-4 п.16): доля редактора хранится между сессиями. */
+  const [split, setSplit] = useState<boolean>(() => { try { return localStorage.getItem('vc.make.split') === 'on' } catch { return false } })
+  const [splitPct, setSplitPct] = useState<number>(() => { try { const v = Number(localStorage.getItem('vc.make.splitPct')); return v >= 25 && v <= 80 ? v : 55 } catch { return 55 } })
+  const [zen, setZen] = useState(false)
+  const toggleSplit = (): void => setSplit((v) => { const next = !v; try { localStorage.setItem('vc.make.split', next ? 'on' : 'off') } catch { /* приватный режим */ } return next })
+  const splitDrag = usePointerDrag()
+  const codeRef = useRef<HTMLDivElement | null>(null)
+  const beginSplitDrag = (e: React.PointerEvent<HTMLElement>): void => {
+    const box = codeRef.current?.getBoundingClientRect()
+    if (!box) return
+    const tree = codeRef.current?.querySelector<HTMLElement>('.make-tree')?.getBoundingClientRect().width ?? 0
+    let last = splitPct
+    splitDrag.begin(e, {
+      lift: null,
+      immediate: true,
+      onStart: () => undefined,
+      onMove: (pt) => {
+        const usable = box.width - tree
+        last = Math.min(80, Math.max(25, Math.round(((pt.x - box.left - tree) / Math.max(1, usable)) * 100)))
+        setSplitPct(last)
+      },
+      onDrop: () => { try { localStorage.setItem('vc.make.splitPct', String(last)) } catch { /* приватный режим */ } },
+      onCancel: () => undefined
+    })
+  }
+  useEffect(() => {
+    if (!zen) return
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') setZen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [zen])
+  /** Мультивыбор файлов в дереве (roadmap-4 п.10): Ctrl/Cmd-клик — переключить, Shift-клик — диапазон. */
+  const [picked, setPicked] = useState<MakeSelectionState>(EMPTY_MAKE_SELECTION)
+  /** Содержимое открытого файла на старте хода — база для diff: за ход ассистент может записать файл несколько раз. */
+  const turnBaseRef = useRef<{ path: string | null; content: string }>({ path: null, content: '' })
+  // Чипы «следующий шаг» (roadmap-4 п.8): показываем после завершения хода ассистента, пока пользователь не отправил следующий.
+  const [nextStepsOpen, setNextStepsOpen] = useState(false)
+  const prevTurnRef = useRef(false)
+  useEffect(() => { if (prevTurnRef.current && !turnActive) setNextStepsOpen(true); if (turnActive) setNextStepsOpen(false); prevTurnRef.current = turnActive }, [turnActive])
+  // Тесты компонентов (roadmap-4 п.3): *.test.tsx выполняются в скрытом iframe-раннере __tests__,
+  // результаты приходят кадрами vc-make.test / vc-make.tests-done.
+  const [testFiles, setTestFiles] = useState<MakeTestFile[]>([])
+  const [runningTests, setRunningTests] = useState<string | null>(null)
+  const [testResults, setTestResults] = useState<Record<string, Array<{ name: string; status: 'passed' | 'failed' | 'pending'; ms: number; error?: string }>>>({})
+  const [testsOpen, setTestsOpen] = useState(false)
+  const testQueueRef = useRef<string[]>([])
+  const loadTests = useCallback(async (): Promise<void> => {
+    try { setTestFiles((await api['make:tests']({ conversationId })).files) } catch { setTestFiles([]) }
+  }, [api, conversationId])
+  const runTests = (paths: string[]): void => {
+    if (paths.length === 0) return
+    setTestsOpen(true)
+    setTestResults((prev) => { const next = { ...prev }; for (const p of paths) delete next[p]; return next })
+    testQueueRef.current = paths.slice(1)
+    setRunningTests(paths[0]!)
+  }
+  useEffect(() => {
+    const onMessage = (e: MessageEvent): void => {
+      const d = e.data as { type?: string; file?: string; name?: string; status?: 'passed' | 'failed'; ms?: number; error?: string } | null
+      if (!d || typeof d !== 'object' || !runningTests) return
+      if (d.type === 'vc-make.test' && d.name && d.status) {
+        setTestResults((prev) => ({ ...prev, [runningTests]: [...(prev[runningTests] ?? []), { name: d.name!, status: d.status!, ms: d.ms ?? 0, error: d.error }] }))
+      } else if (d.type === 'vc-make.tests-done') {
+        if (d.error) setTestResults((prev) => ({ ...prev, [runningTests]: [...(prev[runningTests] ?? []), { name: 'загрузка файла', status: 'failed', ms: 0, error: d.error }] }))
+        const next = testQueueRef.current.shift() ?? null
+        setRunningTests(next)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [runningTests])
+  const failedTests = Object.entries(testResults).flatMap(([file, list]) => list.filter((r) => r.status === 'failed').map((r) => ({ file, ...r })))
+  const testsPrompt = (): string => `Упали тесты компонентов:\n${failedTests.map((f) => `- ${f.file} › ${f.name}: ${f.error ?? ''}`).join('\n')}\nПрочитай тест и компонент (make_read_file), найди причину — в компоненте или в тесте — и исправь. `
+
   /** Файл, только что записанный ассистентом — вкладка коротко подсвечивается (roadmap-2 п.10). */
   const [flashPath, setFlashPath] = useState<string | null>(null)
   // Визуальный diff хода (roadmap-2 п.8): «до» снимаем при старте хода, «после» — когда ход кончился и
@@ -213,6 +322,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const st = turnShotRef.current
     if (turnActive && !st.active) {
       st.active = true; st.changed = false; st.before = null
+      turnBaseRef.current = { path: selectedPath, content: savedContent }
       void snapPreview().then((url) => { st.before = url })
     } else if (!turnActive && st.active) {
       st.active = false
@@ -225,6 +335,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turnActive])
   const dismissDiff = (): void => { setTurnDiff((prev) => { if (prev) { URL.revokeObjectURL(prev.before); URL.revokeObjectURL(prev.after) } return null }); setDiffOpen(false) }
+  // Самопроверка (roadmap-4 п.5): скриншот «после» + исходный запрос уходят ассистенту — он сверяет результат с заданием.
+  const verifyResult = async (): Promise<void> => {
+    if (!turnDiff || !onAttachImage) return
+    const blob = await (await fetch(turnDiff.after)).blob()
+    onAttachImage(new File([blob], 'after.png', { type: 'image/png' }))
+    const ask = onAskAssistant ?? onInsertToChat
+    ask?.(`Самопроверка: на скриншоте — превью после твоих правок. Исходный запрос: «${(lastRequest ?? '').slice(0, 300)}». Сверь результат с запросом: что сделано, что нет или сделано иначе; если что-то не так — исправь файлы и кратко перечисли правки. `)
+  }
   const diffToChat = async (): Promise<void> => {
     if (!turnDiff || !onAttachImage) return
     for (const [key, name] of [['before', 'before.png'], ['after', 'after.png']] as const) {
@@ -236,7 +354,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
   // PWA в экспорте (п.35): манифест + service worker + иконка, ссылки инъектируются в копию index.html.
   const [exportPwa, setExportPwa] = useState(false)
-  const exportUrl = (vite: boolean): string => `${REST.makeExport(conversationId)}?${vite ? 'vite=1&' : ''}${exportPwa ? 'pwa=1' : ''}`.replace(/[?&]$/, '')
+  /** Хостинг для экспорта (roadmap-4 п.36): netlify.toml / vercel.json добавляются в архив. */
+  const [exportDeploy, setExportDeploy] = useState<MakeDeployTarget | ''>('')
+  const exportUrl = (vite: boolean): string => `${REST.makeExport(conversationId)}?${vite ? 'vite=1&' : ''}${exportPwa ? 'pwa=1&' : ''}${exportDeploy ? `deploy=${exportDeploy}` : ''}`.replace(/[?&]$/, '')
   // Телефон (п.34): дерево файлов заменяет выпадающий список, редактор — лёгкий (см. CodeEditor).
   const isPhone = useMediaQuery(PHONE_EDITOR_QUERY)
   // Комментарии к элементам (п.32): список грузим один раз при открытии панели, метки шлём в превью на каждый ready.
@@ -247,7 +367,13 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const open = list.filter((c) => !c.resolved)
     frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.pins', items: list.map((c) => ({ selector: c.selector, n: open.indexOf(c) + 1, text: c.text, resolved: c.resolved })) }, '*')
   }
-  const applyComments = (list: MakeComment[]): void => { commentsRef.current = list; setComments(list); sendPins(list) }
+  const applyComments = (list: MakeComment[]): void => {
+    // Уведомление владельцу (roadmap-4 п.35): новые комментарии зрителей приходят по make.changed — показываем тост.
+    const prevPending = new Set((commentsRef.current ?? []).filter((c) => c.status === 'pending').map((c) => c.id))
+    const fresh = commentsRef.current ? list.filter((c) => c.status === 'pending' && !prevPending.has(c.id)) : []
+    if (fresh.length) toast.info(fresh.length === 1 ? `Новый комментарий зрителя${fresh[0]!.guestName ? ` (${fresh[0]!.guestName})` : ''}: «${fresh[0]!.text.slice(0, 80)}» — на модерации` : `Новых комментариев зрителей: ${fresh.length} — на модерации`)
+    commentsRef.current = list; setComments(list); sendPins(list)
+  }
   useEffect(() => {
     let alive = true
     api['make:comments']({ conversationId }).then((r) => { if (alive) applyComments(r.comments) }).catch(() => { if (alive) applyComments([]) })
@@ -256,6 +382,44 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }, [conversationId])
   const commentAction = async (run: () => Promise<{ comments: MakeComment[] }>): Promise<void> => {
     try { applyComments((await run()).comments) } catch (e) { toast.error(describeError(e)) }
+  }
+  /** Текст, отредактированный в превью (п.17): ищем старый текст как уникальную подстроку одного файла и записываем новый. */
+  const applyPreviewTextEdit = async (before: string, after: string): Promise<void> => {
+    try {
+      const found = (await api['make:search']({ conversationId, query: before.trim().split(/\s+/)[0] ?? before })).matches
+      const candidates = Array.from(new Set(found.map((m) => m.path))).filter(isMakeTextPath)
+      const hits: Array<{ path: string; next: string }> = []
+      for (const path of candidates) {
+        const { content } = await api['make:read']({ conversationId, path })
+        const next = replaceUniqueText(content, before, escapeMarkupText(after))
+        if (next) hits.push({ path, next })
+      }
+      if (hits.length !== 1) { toast.error(hits.length === 0 ? 'Не нашёл этот текст в исходнике ровно один раз — правка в превью не записана' : `Текст встречается в нескольких файлах (${hits.map((h) => h.path).join(', ')}) — поправьте в коде`); setPreviewRev((r) => r + 1); return }
+      const hit = hits[0]!
+      const next = await api['make:write']({ conversationId, path: hit.path, content: hit.next })
+      setState(next)
+      if (selectedPath === hit.path) { setContent(hit.next); setSavedContent(hit.next) }
+      toast.success(`Текст записан в ${hit.path}`)
+    } catch (e) { toast.error(describeError(e)) }
+  }
+  /** Перестановка секции из превью (п.18): оба фрагмента должны найтись в одном файле ровно по разу. */
+  const applyPreviewReorder = async (moved: string, target: string, position: 'before' | 'after'): Promise<void> => {
+    try {
+      // Обработчик живёт в замыкании эффекта — состояние берём свежее, а не из пропсов рендера.
+      const files = (await api['make:state']({ conversationId })).files.map((f) => f.path).filter((p) => /\.(html?|tsx|jsx)$/i.test(p))
+      const hits: Array<{ path: string; next: string }> = []
+      for (const path of files) {
+        const { content } = await api['make:read']({ conversationId, path })
+        const next = reorderMarkup(content, moved, target, position)
+        if (next) hits.push({ path, next })
+      }
+      if (hits.length !== 1) { toast.error('Не удалось однозначно найти эти блоки в исходнике — порядок в файле не изменён'); setPreviewRev((r) => r + 1); return }
+      const hit = hits[0]!
+      const next = await api['make:write']({ conversationId, path: hit.path, content: hit.next })
+      setState(next)
+      if (selectedPath === hit.path) { setContent(hit.next); setSavedContent(hit.next) }
+      toast.success(`Порядок записан в ${hit.path}`)
+    } catch (e) { toast.error(describeError(e)) }
   }
   const highlightInPreview = (selector: string): void => { setMode('preview'); frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.highlight', selector }, '*') }
   const [exportOpen, setExportOpen] = useState(false)
@@ -326,6 +490,23 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     void uploadFiles(e.dataTransfer.files)
   }
   const dirty = content !== savedContent
+  // Presence (roadmap-2 п.14): heartbeat раз в 15 с и при смене файла/грязности; список приходит WS-кадром
+  // make.presence (или ответом heartbeat). Другая вкладка с несохранёнными правками того же файла — мягкая
+  // блокировка: редактор read-only, чтобы две вкладки не затирали друг друга автосохранением.
+  const clientIdRef = useRef(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
+  const [presence, setPresence] = useState<MakePresenceClient[]>([])
+  const others = presence.filter((c) => c.clientId !== clientIdRef.current)
+  const lockedBy = selectedPath ? others.find((c) => c.editing && c.path === selectedPath) ?? null : null
+  useEffect(() => {
+    if (!api['make:presence']) return
+    let alive = true
+    const beat = (): void => { void api['make:presence']({ conversationId, clientId: clientIdRef.current, path: mode === 'code' ? selectedPath : null, editing: mode === 'code' && dirty }).then((r) => { if (alive) setPresence(r.clients) }).catch(() => undefined) }
+    beat()
+    const t = window.setInterval(beat, 15_000)
+    return () => { alive = false; window.clearInterval(t) }
+  }, [api, conversationId, mode, selectedPath, dirty])
+  useEffect(() => () => { void api['make:presence']?.({ conversationId, clientId: clientIdRef.current, path: null, editing: false, leave: true }).catch(() => undefined) }, [api, conversationId])
+  useEffect(() => make?.onPresence?.((m) => { if (m.conversationId === conversationId) setPresence(m.clients) }), [make, conversationId])
   const base = previewBase ?? REST.makePreview(conversationId)
 
   const describeError = (e: unknown): string => (e instanceof Error ? e.message : String(e))
@@ -345,6 +526,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const openFile = useCallback(async (path: string): Promise<void> => {
     // Бинарник (картинка, шрифт) редактировать нельзя — показываем его просмотр вместо текста.
     setTabs((list) => (list.includes(path) ? list : [...list, path]))
+    setChangedLines([])
     if (!isMakeTextPath(path)) { setSelectedPath(path); setContent(''); setSavedContent(''); return }
     try {
       const file = await api['make:read']({ conversationId, path })
@@ -354,7 +536,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     } catch (e) {
       toast.error(describeError(e))
     }
-  }, [api, conversationId, toast])
+  }, [api, conversationId, toast, loadTests])
 
   // Cookie-гейт превью — один раз на монтирование панели.
   useEffect(() => {
@@ -386,7 +568,15 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       if (turnShotRef.current.active) turnShotRef.current.changed = true
       setPreviewRev(m.rev)
       void refresh()
-      if (selectedPath && m.paths.includes(selectedPath) && !dirty) void openFile(selectedPath)
+      if (selectedPath && m.paths.includes(selectedPath) && !dirty) {
+        // Inline-diff (roadmap-4 п.9): сравниваем прежнее содержимое с тем, что записал ассистент.
+        const base = turnBaseRef.current
+        const before = base.path === selectedPath ? base.content : savedContent
+        void api['make:read']({ conversationId, path: selectedPath }).then((file) => {
+          setContent(file.content); setSavedContent(file.content)
+          setChangedLines(turnShotRef.current.active ? diffLines(before, file.content) : [])
+        }).catch(() => void openFile(selectedPath))
+      }
       // Правки ассистента «на глазах» (roadmap-2 п.10): в режиме «Код» без несохранённых правок открываем
       // файл, который он только что записал, и подсвечиваем вкладку. MCP пишет файл целиком, поэтому
       // побайтовый стриминг невозможен — показываем результат каждой записи сразу.
@@ -397,14 +587,26 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         window.setTimeout(() => setFlashPath((cur) => (cur === written ? null : cur)), 1800)
       }
     })
-  }, [make, conversationId, refresh, openFile, selectedPath, dirty, mode])
+  }, [make, conversationId, refresh, openFile, selectedPath, dirty, mode, savedContent, api])
 
   // Сообщения из превью: выбранный элемент (режим «Выбрать элемент»).
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
-      if (event.source !== frameRef.current?.contentWindow) return
-      const data = event.data as { type?: string; selector?: string; tag?: string; text?: string; html?: string; id?: string; className?: string; styles?: StyleValues } | null
+      const fromSync = syncFramesRef.current.some((f) => f?.contentWindow === event.source)
+      if (event.source !== frameRef.current?.contentWindow && !fromSync) return
+      const data = event.data as { type?: string; before?: string; after?: string; moved?: string; target?: string; position?: string; selector?: string; tag?: string; text?: string; html?: string; id?: string; className?: string; styles?: StyleValues } | null
       if (!data || typeof data !== 'object') return
+      // Три ширины рядом (п.21): скролл любого кадра повторяют остальные; эхо гасим окном в 300 мс.
+      if (data.type === 'vc-make.state' && typeof (data as { y?: unknown }).y === 'number') {
+        const all = [frameRef.current?.contentWindow, ...syncFramesRef.current.map((f) => f?.contentWindow)].filter(Boolean) as Window[]
+        const from = all.find((w) => w === event.source)
+        if (from && all.length > 1 && Date.now() > syncMuteUntil.current) {
+          syncMuteUntil.current = Date.now() + 300
+          for (const w of all) if (w !== from) w.postMessage({ type: 'vc-make.restore', x: 0, y: (data as { y: number }).y }, '*')
+        }
+      }
+      // Дополнительные кадры дают только скролл; выбор элемента, текст и прочее — от основного.
+      if (fromSync) { if (data.type === 'vc-make.ready' && event.source) (event.source as Window).postMessage({ type: 'vc-make.env', ...envRef.current, state: null }, '*'); return }
       if (data.type === 'vc-make.state' && event.source === frameRef.current?.contentWindow) {
         const s = data as unknown as { x: number; y: number; hash: string }
         pageStateRef.current = { x: s.x, y: s.y, hash: s.hash }
@@ -414,10 +616,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         if (commentsRef.current.length) sendPins()
         // Превью перезагрузилось (правка ассистента/своя) — вернуть скролл и якорь, чтобы не прыгать наверх.
         if (pageStateRef.current) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.restore', ...pageStateRef.current }, '*')
-        if (envRef.current.scheme !== 'auto' || envRef.current.lang) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', ...envRef.current }, '*')
+        if (envRef.current.scheme !== 'auto' || envRef.current.lang || envRef.current.reducedMotion || envRef.current.slowMs) frameRef.current?.contentWindow?.postMessage({ type: 'vc-make.env', ...envRef.current, state: null }, '*')
       } else if (data.type === 'vc-make.selected' && data.selector) {
         setSelected({ selector: data.selector, tag: data.tag ?? '', text: data.text ?? '', html: data.html ?? '', id: data.id, className: data.className, styles: data.styles })
         setStyleOpen(false)
+      } else if (data.type === 'vc-make.text' && typeof data.before === 'string' && typeof data.after === 'string' && event.source === frameRef.current?.contentWindow) {
+        void applyPreviewTextEdit(data.before, data.after)
+      } else if (data.type === 'vc-make.reorder' && typeof data.moved === 'string' && typeof data.target === 'string' && event.source === frameRef.current?.contentWindow) {
+        void applyPreviewReorder(data.moved, data.target, data.position === 'before' ? 'before' : 'after')
       }
     }
     window.addEventListener('message', onMessage)
@@ -512,7 +718,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       else { setSelectedPath(null); setContent(''); setSavedContent('') }
     }
   }
-  const markers = useMemo(() => (issues ?? []).filter((i) => i.path === selectedPath && i.line).map((i) => ({ line: i.line!, column: i.column, message: i.message })), [issues, selectedPath])
+  const markers = useMemo(() => (issues ?? []).filter((i) => i.path === selectedPath && i.line).map((i) => ({ line: i.line!, column: i.column, message: i.message, severity: i.severity })), [issues, selectedPath])
 
   // Ctrl/Cmd+S в редакторе — сохранить; Tab — отступ, а не переход фокуса.
   const createFile = (): void => openAsk('Новый файл', 'Путь файла (например, about.html или css/theme.css)', '', 'Создать', (raw) => void createFileAt(raw))
@@ -655,11 +861,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   // Адрес и пароль публикации (п.25): slug пустой → снять адрес; пароль пустой → не менять, «Снять пароль» → null.
   const [publishSlug, setPublishSlug] = useState<string | null>(null)
   const [publishPassword, setPublishPassword] = useState('')
-  const publish = async (snapshotId: string | null = null, extra: { slug?: string | null; password?: string | null } = {}): Promise<void> => {
+  const publish = async (snapshotId: string | null = null, extra: { slug?: string | null; password?: string | null; allowComments?: boolean } = {}): Promise<void> => {
     try {
       setState(await api['make:publish']({ conversationId, snapshotId, ...extra }))
       setPublishPassword('')
-      toast.success(extra.password === null ? 'Пароль снят' : snapshotId ? 'Публикация закреплена за снимком' : state?.published ? 'Публикация обновлена' : 'Проект опубликован')
+      toast.success(extra.allowComments !== undefined ? (extra.allowComments ? 'Комментарии зрителей включены' : 'Комментарии зрителей выключены') : extra.password === null ? 'Пароль снят' : snapshotId ? 'Публикация закреплена за снимком' : state?.published ? 'Публикация обновлена' : 'Проект опубликован')
     } catch (e) { toast.error(describeError(e)) }
   }
   const publishOptions = (): { slug?: string | null; password?: string | null } => ({
@@ -667,10 +873,36 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     ...(publishPassword ? { password: publishPassword } : {})
   })
   const [publishPick, setPublishPick] = useState<string>('')
+  /** Сравнение версий публикации (roadmap-4 п.37): снимок из истории рядом с текущим состоянием + карта различий. */
+  const [versionCompare, setVersionCompare] = useState<string | null>(null)
+  const [versionDiff, setVersionDiff] = useState<{ url: string; mismatch: number } | null>(null)
+  const versionFrames = useRef<{ a: HTMLIFrameElement | null; b: HTMLIFrameElement | null }>({ a: null, b: null })
+  const computeVersionDiff = async (): Promise<void> => {
+    const a = versionFrames.current.a?.contentDocument, b = versionFrames.current.b?.contentDocument
+    if (!a || !b) return
+    try {
+      const [pa, pb] = await Promise.all([captureIframeScreenshot({ doc: a, width: 720 }, 'a.png'), captureIframeScreenshot({ doc: b, width: 720 }, 'b.png')])
+      const ua = URL.createObjectURL(pa), ub = URL.createObjectURL(pb)
+      try {
+        const r = pixelDiff(await loadImageData(ua), await loadImageData(ub))
+        const canvas = document.createElement('canvas'); canvas.width = r.width; canvas.height = r.height
+        const ctx = canvas.getContext('2d'); if (!ctx) return
+        const image = ctx.createImageData(r.width, r.height); image.data.set(r.diff); ctx.putImageData(image, 0, 0)
+        setVersionDiff({ url: canvas.toDataURL('image/png'), mismatch: r.mismatch })
+      } finally { URL.revokeObjectURL(ua); URL.revokeObjectURL(ub) }
+    } catch (e) { toast.error(describeError(e)) }
+  }
   const unpublish = async (): Promise<void> => {
     const ok = await confirm({ title: 'Снять проект с публикации?', message: 'Ссылка перестанет открываться.', variant: 'danger', confirmLabel: 'Снять' })
     if (!ok) return
     try { setState(await api['make:unpublish']({ conversationId })); toast.success('Публикация снята') } catch (e) { toast.error(describeError(e)) }
+  }
+  // Именной доступ (roadmap-3 п.6).
+  const [grantUser, setGrantUser] = useState('')
+  const [grantRole, setGrantRole] = useState<'editor' | 'viewer'>('viewer')
+  const grant = async (user: string, role: 'editor' | 'viewer' | null): Promise<void> => {
+    if (!user.trim()) return
+    try { setState(await api['make:shareGrant']({ conversationId, user: user.trim(), role })); toast.success(role ? `Доступ для ${user.trim()}: ${role === 'editor' ? 'редактор' : 'зритель'}` : `Доступ ${user.trim()} убран`) } catch (e) { toast.error(describeError(e)) }
   }
   const copyShareLink = async (text: string): Promise<void> => { toast[(await copyText(text)) ? 'success' : 'error']('Ссылка скопирована') }
   // Read-only ссылка внутри ChatAI (п.33): создать/отозвать.
@@ -704,6 +936,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [replacement, setReplacement] = useState('')
   const [replacing, setReplacing] = useState(false)
+  /** Regex-режим и учёт регистра поиска/замены (roadmap-4 п.11); предпросмотр — строки «до → после» без записи. */
+  const [searchRegex, setSearchRegex] = useState(false)
+  const [matchCase, setMatchCase] = useState(false)
+  const [replacePreview, setReplacePreview] = useState<MakeReplacePreviewLine[] | null>(null)
   const runReplace = async (): Promise<void> => {
     const q = query.trim()
     if (!q) return
@@ -711,7 +947,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     if (!ok) return
     setReplacing(true)
     try {
-      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase: false })
+      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase, regex: searchRegex })
+      setReplacePreview(null)
       setState(result.state); setPreviewRev(result.state.rev)
       if (selectedPath && isMakeTextPath(selectedPath)) await openFile(selectedPath)
       toast.success(result.replacements === 0 ? 'Совпадений нет' : `Заменено: ${result.replacements} в ${result.files} файлах`)
@@ -722,12 +959,36 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const q = query.trim()
     if (!q) { setMatches(null); return }
     setSearching(true)
-    try { setMatches((await api['make:search']({ conversationId, query: q })).matches) } catch (e) { toast.error(describeError(e)) } finally { setSearching(false) }
+    try { setMatches((await api['make:search']({ conversationId, query: q, regex: searchRegex, matchCase })).matches) } catch (e) { toast.error(describeError(e)) } finally { setSearching(false) }
+  }
+  const previewReplace = async (): Promise<void> => {
+    const q = query.trim()
+    if (!q) return
+    setReplacing(true)
+    try {
+      const result = await api['make:replace']({ conversationId, query: q, replacement, matchCase, regex: searchRegex, dryRun: true })
+      setReplacePreview(result.preview ?? [])
+    } catch (e) { toast.error(describeError(e)) } finally { setReplacing(false) }
+  }
+  /** Автогенерация сториз (roadmap-4 п.23): компоненты без `*.stories.*` и создание файла по пропсам. */
+  const orphanComponents = useMemo(() => componentsWithoutStories((state?.files ?? []).map((f) => f.path)), [state])
+  const generateStories = async (path: string): Promise<void> => {
+    try {
+      const { content } = await api['make:read']({ conversationId, path })
+      const gen = generateStoriesSource(path, content)
+      if (!gen) { toast.error('В файле не нашёлся экспортируемый компонент (PascalCase)'); return }
+      const next = await api['make:write']({ conversationId, path: gen.path, content: gen.content })
+      setState(next); setPreviewRev(next.rev)
+      toast.success(`Создан ${gen.path}`)
+      await loadStories()
+      setStory({ file: gen.path, name: 'Default' })
+    } catch (e) { toast.error(describeError(e)) }
   }
   const loadStories = useCallback(async (): Promise<void> => {
     try {
       const { files } = await api['make:stories']({ conversationId })
       setStoryFiles(files)
+      void loadTests()
       setStory((current) => {
         if (current && files.some((f) => f.path === current.file && f.stories.includes(current.name))) return current
         const first = files.find((f) => f.stories.length > 0)
@@ -741,6 +1002,28 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [shotsOpen, setShotsOpen] = useState(false)
   const [shooting2, setShooting2] = useState(false)
   const [compare, setCompare] = useState<[string, string] | null>(null)
+  /** Визуальная регрессия (roadmap-4 п.24): карта различий выбранной пары снимков, считается в браузере. */
+  const [shotDiff, setShotDiff] = useState<{ url: string; mismatch: number } | null>(null)
+  useEffect(() => {
+    setShotDiff(null)
+    if (!compare || compare[0] === compare[1]) return
+    let alive = true
+    void (async () => {
+      try {
+        const [a, b] = await Promise.all([loadImageData(REST.makeShotImage(conversationId, compare[0])), loadImageData(REST.makeShotImage(conversationId, compare[1]))])
+        const r = pixelDiff(a, b)
+        const canvas = document.createElement('canvas')
+        canvas.width = r.width; canvas.height = r.height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        const image = ctx.createImageData(r.width, r.height)
+        image.data.set(r.diff)
+        ctx.putImageData(image, 0, 0)
+        if (alive) setShotDiff({ url: canvas.toDataURL('image/png'), mismatch: r.mismatch })
+      } catch { /* нет canvas (jsdom) или снимок не загрузился — без карты различий */ }
+    })()
+    return () => { alive = false }
+  }, [compare, conversationId])
   const loadShots = useCallback(async (): Promise<void> => { try { setShots((await api['make:shots']({ conversationId })).shots) } catch { /* нет снимков */ } }, [api, conversationId])
   useEffect(() => { if (mode === 'stories') void loadShots() }, [mode, loadShots])
   const takeStoryShot = async (): Promise<void> => {
@@ -793,9 +1076,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
     const clash = item.files.filter((p) => state?.files.some((f) => f.path === p))
     if (clash.length > 0 && !(await confirm({ title: `Вставить «${item.name}»?`, message: `Файлы будут перезаписаны: ${clash.join(', ')}. Перед вставкой сохранится снимок.`, confirmLabel: 'Вставить' }))) return
     try {
-      const next = await api['make:libraryInsert']({ conversationId, slug: item.slug })
+      const { state: next, autoImported } = await api['make:libraryInsert']({ conversationId, slug: item.slug })
       setState(next); setPreviewRev(next.rev); setLibraryOpen(false)
-      toast.success(`«${item.name}» добавлен в проект`)
+      toast.success(autoImported.length ? `«${item.name}» добавлен; импорт в точку входа: ${autoImported.join(', ')}` : `«${item.name}» добавлен в проект`)
+      if (selectedPath && isMakeTextPath(selectedPath)) void openFile(selectedPath)
       void loadStories()
     } catch (e) { toast.error(describeError(e)) }
   }
@@ -824,6 +1108,29 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   }
 
   const groups = useMemo(() => groupFiles(state?.files ?? []), [state])
+  const treeOrder = useMemo(() => groups.flatMap((g) => g.files.map((f) => f.path)), [groups])
+  useEffect(() => { setPicked((sel) => (sel.paths.length ? pruneMakeSelection(sel, treeOrder) : sel)) }, [treeOrder])
+  const bulkDelete = async (): Promise<void> => {
+    const paths = picked.paths
+    const ok = await confirm({ title: `Удалить ${paths.length} файлов?`, message: paths.join(', '), variant: 'danger', confirmLabel: 'Удалить' })
+    if (!ok) return
+    try {
+      let next: MakeProjectState | null = null
+      for (const path of paths) next = await api['make:delete']({ conversationId, path })
+      if (next) { setState(next); setPreviewRev(next.rev) }
+      if (selectedPath && paths.includes(selectedPath)) { setSelectedPath(null); setContent(''); setSavedContent('') }
+      setTabs((list) => list.filter((t) => !paths.includes(t)))
+      setPicked(EMPTY_MAKE_SELECTION)
+      toast.success(`Удалено файлов: ${paths.length}`)
+    } catch (e) { toast.error(describeError(e)) }
+  }
+  const bulkMove = (): void => openAsk('Перенести файлы в папку', 'Папка (пусто — корень)', dirOfPath(picked.paths[0] ?? ''), 'Перенести', (raw) => {
+    const dir = raw.trim().replace(/^\/+|\/+$/g, '')
+    void (async () => {
+      for (const path of picked.paths) if (dirOfPath(path) !== dir) await renameFileTo(path, moveTargetPath(path, dir))
+      setPicked(EMPTY_MAKE_SELECTION)
+    })()
+  })
   // «Свежий» проект — только файлы заготовки без правок: показываем стартовые идеи, как главная Figma Make.
   const isFresh = useMemo(() => {
     const files = state?.files
@@ -954,9 +1261,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {mode === 'preview' && (
         <>
           <div className="make-devices" role="group" aria-label="Ширина превью">
-            {(['desktop', 'tablet', 'mobile'] as Device[]).map((d) => (
+            {(['desktop', 'tablet', 'mobile', ...(isPhone ? [] : ['all' as Device])] as Device[]).map((d) => (
               <button key={d} type="button" aria-pressed={device === d} className={device === d ? 'make-device on' : 'make-device'} title={DEVICE_LABEL[d]} aria-label={DEVICE_LABEL[d]} onClick={() => setDevice(d)}>
-                {d === 'desktop' ? 'ПК' : d === 'tablet' ? 'Планшет' : 'Телефон'}
+                {d === 'desktop' ? 'ПК' : d === 'tablet' ? 'Планшет' : d === 'mobile' ? 'Телефон' : '⫼'}
               </button>
             ))}
           </div>
@@ -967,6 +1274,8 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
       {mode === 'code' && (
         <>
+          {!isPhone && <IconButton size="sm" aria-label="Превью рядом" title={split ? 'Скрыть превью рядом с кодом' : 'Показать превью рядом с кодом (границу можно перетаскивать)'} aria-pressed={split} onClick={toggleSplit}>◫</IconButton>}
+          {!isPhone && <IconButton size="sm" aria-label="Zen-режим" title="Zen: только редактор, Esc — выйти" aria-pressed={zen} onClick={() => setZen(true)}>⛶</IconButton>}
           <Button size="sm" variant="ghost" onClick={() => void runCheck()} loading={checking}>Проверить</Button>
           <Button size="sm" variant="secondary" onClick={createFile}>+ Файл</Button>
           <Button size="sm" variant="primary" disabled={!dirty || saving} onClick={() => void save()} title="Сохранить (Ctrl/Cmd+S)">{saving ? 'Сохраняю…' : 'Сохранить'}</Button>
@@ -978,7 +1287,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       {mode === 'stories' && story && onInsertToChat && <Button size="sm" variant="primary" onClick={sendStoryToChat}>Работать над компонентом</Button>}
       {mode === 'stories' && story && <Button size="sm" variant="ghost" loading={shooting2} onClick={() => void takeStoryShot()} title="Сохранить PNG текущей стори, чтобы потом сравнить «до/после»">📸 Снимок</Button>}
       {mode === 'stories' && storyShots.length > 0 && <Button size="sm" variant="ghost" aria-expanded={shotsOpen} onClick={() => setShotsOpen((v) => !v)}>Снимки ({storyShots.length})</Button>}
+      {mode === 'stories' && testFiles.length > 0 && <Button size="sm" variant={failedTests.length ? 'danger' : 'ghost'} loading={Boolean(runningTests)} onClick={() => runTests(testFiles.map((f) => f.path))} title="Запустить все *.test.tsx в раннере">Тесты ({testFiles.reduce((n, f) => n + f.names.length, 0)}){failedTests.length ? ` · ✗ ${failedTests.length}` : ''}</Button>}
+      {others.length > 0 && <span className="make-presence" data-testid="make-presence" title={`Проект открыт ещё в ${others.length} ${others.length === 1 ? 'вкладке' : 'вкладках'}: ${others.map((c) => `${c.user}${c.path ? ` · ${c.path}${c.editing ? ' (правит)' : ''}` : ''}`).join('; ')}`}>👥 {others.length + 1}</span>}
       {usage && <span className="make-cost" data-testid="make-cost" title={`Расход на проект: ${usage.turns} ${usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'} · ↓ ${kilo(usage.inputTokens)} · ↑ ${kilo(usage.outputTokens)}${usage.estimated ? ' · часть суммы — расчёт по тарифам' : ''}${usage.unpriced ? ` · без цены: ${usage.unpriced}` : ''}`}>{formatUsd(usage.costUsd, usage.estimated)}<small>{usage.turns} {usage.turns === 1 ? 'ход' : usage.turns < 5 ? 'хода' : 'ходов'}</small></span>}
+      {onAskOnlyChange && <IconButton size="sm" aria-label="Только спросить" title={askOnly ? 'Режим вопроса: следующий ответ без правок файлов (нажмите, чтобы выключить)' : 'Только спросить: следующий ход ответит без правок файлов — дешевле и безопаснее'} aria-pressed={askOnly} className={askOnly ? 'make-inspect on' : undefined} onClick={() => onAskOnlyChange(!askOnly)}>❓</IconButton>}
       <Button size="sm" variant={state?.published ? 'secondary' : 'ghost'} onClick={() => setPublishOpen(true)} >{state?.published ? 'Опубликован' : 'Опубликовать'}</Button>
       <div className="make-more" ref={moreRef}>
         <IconButton size="sm" aria-label="Ещё" title="Ещё действия" aria-haspopup="true" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)}>⋯</IconButton>
@@ -986,6 +1298,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           <div className="jcard-menu make-more-menu" role="group" aria-label="Ещё действия" data-testid="make-more-menu">
             {mode === 'preview' && <>
               {item(`Тема: ${previewScheme === 'auto' ? 'как в системе' : previewScheme === 'dark' ? 'тёмная' : 'светлая'}`, () => cycleScheme(), { ariaLabel: 'Тема превью', title: 'Переключить тему превью' })}
+              {item(`Состояние элемента: ${forcedState ?? 'обычное'}`, () => cycleForcedState(), { ariaLabel: 'Состояние элемента', title: 'Показать выбранный элемент в :hover / :focus / :active — правила клонируются под принудительный класс', disabled: !selected })}
+              {item(`Reduced motion: ${reducedMotion ? 'вкл' : 'выкл'}`, () => toggleReducedMotion(), { ariaLabel: 'Reduced motion', title: 'Эмулировать prefers-reduced-motion: анимации и переходы без длительности' })}
+              {item(`Медленная сеть: ${slowMs === 0 ? 'выкл' : `${slowMs / 1000} с`}`, () => cycleSlowMs(), { ariaLabel: 'Медленная сеть', title: 'Задержка ответов fetch в превью (моки и данные), чтобы увидеть состояния загрузки' })}
               <label className="make-more-row"><span>Язык превью</span>
                 <select className="make-lang" aria-label="Язык превью" value={previewLang} onChange={(e) => { setPreviewLang(e.target.value); sendEnv(previewScheme, e.target.value) }} title="Атрибут lang документа превью">
                   <option value="">авто</option>
@@ -1002,6 +1317,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               {item(`Ассеты${assets.length > 0 ? ` (${assets.length})` : ''}`, () => setAssetsOpen(true))}
               {item('Токены дизайна', () => setTokensOpen(true), { ariaLabel: 'Токены', title: 'Дизайн-токены: CSS-переменные :root — цвета, отступы, шрифты' })}
               {item('Библиотека компонентов', () => openLibrary(), { ariaLabel: 'Библиотека' })}
+              {(onAskAssistant || onInsertToChat) && item('✦ Мок из описания', () => openAsk('Мок-данные из описания', 'Что за данные: например, «товары: название, цена, категория, 10 штук»', '', 'Сгенерировать', (desc) => { const n = /(\d{1,3})\s*(шт|запис|штук|элемент|строк)/i.exec(desc)?.[1]; const { prompt } = makeMockPrompt(desc, n ? { count: Number(n) } : {}); (onAskAssistant ?? onInsertToChat)!(prompt) }), { ariaLabel: 'Мок из описания', title: 'Ассистент создаст коллекцию mock/api/<имя>.json с правдоподобными записями' })}
               <hr />
             </>}
             {mode === 'stories' && <>
@@ -1011,6 +1327,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               {story && item('Ссылка на стори', () => void shareStory(), { ariaLabel: 'Поделиться',  title: state?.published ? 'Скопировать публичную ссылку на эту стори' : 'Сначала опубликуйте проект — ссылка будет без входа' })}
               <hr />
             </>}
+            {item('🧠 Память проекта', () => setNotesOpen(true), { ariaLabel: 'Память проекта', title: 'Заметки для ассистента и режим «дизайнер / разработчик»' })}
             {onInsertToChat && item('✦ Идеи для старта', () => setIdeasOpen(true), { ariaLabel: 'Идеи для старта' })}
             {item('▤ Шаблоны проекта', () => setTemplatesOpen(true), { ariaLabel: 'Шаблоны проекта' })}
             {item('⇪ Импорт проекта', () => setImportOpen(true), { ariaLabel: 'Импорт проекта', title: 'Импорт: ZIP, страница по URL или репозиторий GitHub' })}
@@ -1023,7 +1340,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   )
 
   return (
-    <section className={fullscreen ? 'make-pane make-pane--fs' : 'make-pane'} aria-label="Проект Make" data-testid="make-pane">
+    <section className={`make-pane${fullscreen ? ' make-pane--fs' : ''}${zen && mode === 'code' ? ' make-pane--zen' : ''}`} aria-label="Проект Make" data-testid="make-pane">
       {header}
       {error && <p className="make-error" role="alert">{error}</p>}
 
@@ -1037,8 +1354,18 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 <span><img src={turnDiff.after} alt="Превью после правок" /><small>после</small></span>
               </button>
               <span className="make-head-spacer" />
+              {onAttachImage && lastRequest && (onAskAssistant || onInsertToChat) && <Button size="sm" variant="secondary" onClick={() => void verifyResult()} title="Отправить ассистенту скриншот «после» и исходный запрос — пусть сверит и исправит">Сверить с запросом</Button>}
               {onAttachImage && <Button size="sm" variant="ghost" onClick={() => void diffToChat()}>В чат</Button>}
               <IconButton size="sm" aria-label="Скрыть сравнение" title="Скрыть" onClick={dismissDiff}>✕</IconButton>
+            </div>
+          )}
+          {nextStepsOpen && (onAskAssistant || onInsertToChat) && (
+            <div className="make-next" data-testid="make-next">
+              <span className="make-next-label">Что дальше:</span>
+              {makeNextSteps({ hasTokens: Boolean(pickTokensFile((state?.files ?? []).map((f) => f.path))) && (state?.files ?? []).some((f) => f.path === 'tokens.css' || f.path === 'styles.css'), hasTests: testFiles.length > 0, hasStories: (storyFiles?.length ?? 0) > 0, published: Boolean(state?.published), openComments: (comments ?? []).filter((c) => !c.resolved).length, a11yIssues: a11y ? a11y.length : null, files: state?.files.length ?? 0 }).map((s) => (
+                <button key={s.id} type="button" className="make-next-chip" onClick={() => { setNextStepsOpen(false); (onAskAssistant ?? onInsertToChat)!(s.prompt) }}>{s.title}</button>
+              ))}
+              <IconButton size="sm" aria-label="Скрыть подсказки" title="Скрыть" onClick={() => setNextStepsOpen(false)}>✕</IconButton>
             </div>
           )}
           {selected && (
@@ -1081,8 +1408,11 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               src={previewSrc}
               onLoad={restorePageState}
               sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin"
-              style={frameWidth ? { width: `${frameWidth}px` } : undefined}
+              style={frameWidth ? { width: `${frameWidth}px` } : device === 'all' ? { width: '1200px' } : undefined}
             />}
+            {device === 'all' && previewReady && SYNC_WIDTHS.map((w, i) => (
+              <iframe key={`${previewRev}-${w}`} ref={(el) => { syncFramesRef.current[i] = el }} className="make-frame make-frame--sync" title={`Превью ${w}px`} src={previewSrc} sandbox="allow-scripts allow-forms allow-modals allow-popups allow-same-origin" style={{ width: `${w}px` }} />
+            ))}
           </div>
           {commentsOpen && (
             <MakeCommentsPanel
@@ -1090,6 +1420,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               selected={selected ? { selector: selected.selector, tag: selected.tag, text: selected.text } : null}
               onAdd={(text) => commentAction(() => api['make:commentAdd']({ conversationId, selector: selected!.selector, elementLabel: `<${selected!.tag}> ${selected!.text.slice(0, 60)}`.trim(), text }))}
               onResolve={(id, resolved) => void commentAction(() => api['make:commentUpdate']({ conversationId, commentId: id, resolved }))}
+              onApprove={(id) => void commentAction(() => api['make:commentUpdate']({ conversationId, commentId: id, status: 'approved' }))}
               onRemove={(id) => void commentAction(() => api['make:commentRemove']({ conversationId, commentId: id }))}
               onHighlight={highlightInPreview}
               onAskAssistant={onAskAssistant ?? onInsertToChat}
@@ -1173,7 +1504,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       )}
 
       {mode === 'code' && (
-        <div className={`${dropActive ? 'make-code make-code--drop' : 'make-code'}${isPhone ? ' make-code--phone' : ''}`} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code">
+        <div ref={codeRef} className={`${dropActive ? 'make-code make-code--drop' : 'make-code'}${isPhone ? ' make-code--phone' : ''}${split && !isPhone ? ' make-code--split' : ''}${zen ? ' make-code--zen' : ''}`} style={split && !isPhone && !zen ? { gridTemplateColumns: `minmax(150px, 220px) ${splitPct}fr 6px ${100 - splitPct}fr` } : split && zen ? { gridTemplateColumns: `${splitPct}fr 6px ${100 - splitPct}fr` } : undefined} onDragOver={onDragOver} onDragLeave={() => setDropActive(false)} onDrop={onDrop} data-testid="make-code">
           <nav className={dragPath ? 'make-tree make-tree--dragging' : 'make-tree'} aria-label="Файлы проекта" ref={treeRef}>
             <span className="vc-sr-only" role="status" aria-live="polite" data-testid="make-tree-live">{treeLive}</span>
             <div className="make-search">
@@ -1187,12 +1518,27 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runSearch() } if (e.key === 'Escape') { setQuery(''); setMatches(null) } }}
               />
               {searching && <span className="make-search-state">ищу…</span>}
+              <IconButton size="sm" aria-label="Регулярное выражение" title="Искать регулярным выражением" aria-pressed={searchRegex} onClick={() => setSearchRegex((v) => !v)}>.*</IconButton>
+              <IconButton size="sm" aria-label="Учитывать регистр" title="Учитывать регистр" aria-pressed={matchCase} onClick={() => setMatchCase((v) => !v)}>Aa</IconButton>
               <IconButton size="sm" aria-label="Заменить по проекту" title="Поиск и замена во всех файлах" aria-pressed={replaceOpen} onClick={() => setReplaceOpen((v) => !v)}>⇄</IconButton>
             </div>
             {replaceOpen && (
               <div className="make-replace" data-testid="make-replace">
                 <input type="text" className="make-search-input" aria-label="Заменить на" placeholder="Заменить на…" value={replacement} onChange={(e) => setReplacement(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void runReplace() } }} />
+                <Button size="sm" variant="ghost" disabled={!query.trim()} loading={replacing} onClick={() => void previewReplace()}>Предпросмотр</Button>
                 <Button size="sm" variant="secondary" disabled={!query.trim()} loading={replacing} onClick={() => void runReplace()}>Заменить все</Button>
+              </div>
+            )}
+            {replaceOpen && replacePreview !== null && (
+              <div className="make-matches make-replace-preview" role="region" aria-label="Предпросмотр замены" data-testid="make-replace-preview">
+                <p className="make-tree-dir">{replacePreview.length === 0 ? 'Совпадений нет' : `Изменится строк: ${replacePreview.length}`}</p>
+                {replacePreview.map((row, i) => (
+                  <button key={`${row.path}:${row.line}:${i}`} type="button" className="make-match" onClick={() => void openFile(row.path)} title={`${row.path}:${row.line}`}>
+                    <span className="make-match-path">{row.path}<span className="make-match-line">:{row.line}</span></span>
+                    <code className="make-match-text make-match-text--before">{row.before}</code>
+                    <code className="make-match-text make-match-text--after">{row.after}</code>
+                  </button>
+                ))}
               </div>
             )}
             {matches !== null && (
@@ -1206,14 +1552,22 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 ))}
               </div>
             )}
+            {picked.paths.length > 0 && (
+              <div className="make-bulk" role="toolbar" aria-label="Действия с выбранными файлами" data-testid="make-bulk">
+                <span className="make-bulk-count">Выбрано: {picked.paths.length}</span>
+                <Button size="sm" variant="secondary" onClick={bulkMove}>В папку…</Button>
+                <Button size="sm" variant="danger" onClick={() => void bulkDelete()}>Удалить</Button>
+                <Button size="sm" variant="ghost" onClick={() => setPicked(EMPTY_MAKE_SELECTION)}>Снять</Button>
+              </div>
+            )}
             {dropActive && <p className="make-drop-hint" role="status">Отпустите, чтобы загрузить файлы в проект</p>}
             {groups.length === 0 && <EmptyState title="Файлов пока нет" description="Создайте файл, перетащите его сюда или попросите ассистента." />}
             {groups.map((group) => ({ ...group, files: group.files.filter((f) => !query.trim() || f.path.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) })).filter((g) => g.files.length > 0).map((group) => (
               <div className={dropDir === group.dir && dragPath ? 'make-tree-group make-tree-group--drop' : 'make-tree-group'} key={group.dir || '/'} data-dir={group.dir}>
                 {group.dir && <p className="make-tree-dir">📁 {group.dir}</p>}
                 {group.files.map((file) => (
-                  <div key={file.path} className={`make-tree-item${file.path === selectedPath ? ' on' : ''}${dragPath === file.path ? ' make-tree-item--drag' : ''}`} onPointerDown={(e) => beginFileDrag(e, file.path)}>
-                    <button type="button" className="make-tree-file" onClick={() => void openFile(file.path)} title={`${file.path} · ${formatSize(file.size)}`}>
+                  <div key={file.path} className={`make-tree-item${file.path === selectedPath ? ' on' : ''}${picked.paths.includes(file.path) ? ' make-tree-item--picked' : ''}${dragPath === file.path ? ' make-tree-item--drag' : ''}`} onPointerDown={(e) => beginFileDrag(e, file.path)}>
+                    <button type="button" className="make-tree-file" aria-selected={picked.paths.includes(file.path) || undefined} onClick={(e) => { if (e.shiftKey || e.metaKey || e.ctrlKey) { e.preventDefault(); setPicked((sel) => toggleMakeSelection(sel, file.path, treeOrder, e.shiftKey ? 'range' : 'toggle')); return } void openFile(file.path) }} title={`${file.path} · ${formatSize(file.size)} · Ctrl/Shift-клик — выбрать несколько`}>
                       {group.dir ? file.path.slice(group.dir.length + 1) : file.path}
                     </button>
                     <span className="make-tree-actions">
@@ -1226,6 +1580,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
             ))}
           </nav>
           <div className="make-editor">
+            {lockedBy && (
+              <div className="make-lock" role="status" data-testid="make-lock">🔒 Файл сейчас правится в другой вкладке ({lockedBy.user}) — здесь он только для чтения, чтобы автосохранение не затёрло правки.</div>
+            )}
+            {changedLines.length > 0 && <div className="make-changed-note" role="status">Подсвечены строки, изменённые ассистентом ({changedLines.length}) <button type="button" className="make-link" onClick={() => setChangedLines([])}>скрыть</button></div>}
             {isPhone && state && (
               <div className="make-file-picker">
                 <select aria-label="Файл проекта" value={selectedPath ?? ''} onChange={(e) => { if (e.target.value) void openFile(e.target.value) }}>
@@ -1236,9 +1594,12 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               </div>
             )}
             {issues !== null && (
-              <div className={issues.length ? 'make-issues make-issues--bad' : 'make-issues'} role="status" data-testid="make-issues">
+              <div className={issues.some((i) => i.severity !== 'warning') ? 'make-issues make-issues--bad' : issues.length ? 'make-issues make-issues--warn' : 'make-issues'} role="status" data-testid="make-issues">
                 {issues.length === 0 ? <span>✓ Проверка пройдена: index.html есть, ссылки на файлы проекта разрешаются.</span> : (
-                  <ul>{issues.map((issue, i) => <li key={i}><button type="button" className="make-issue-path" onClick={() => void openFile(issue.path)}>{issue.path}</button> — {issue.message}</li>)}</ul>
+                  <>
+                    {issues.every((i) => i.severity === 'warning') && <span>✓ Ошибок нет; замечания линтера ({issues.length}):</span>}
+                    <ul>{issues.map((issue, i) => <li key={i} className={issue.severity === 'warning' ? 'make-issue--warn' : undefined}>{issue.severity === 'warning' ? '⚠ ' : ''}<button type="button" className="make-issue-path" onClick={() => void openFile(issue.path)}>{issue.path}{issue.line ? `:${issue.line}` : ''}</button> — {issue.message}{issue.rule ? <span className="make-issue-rule"> {issue.rule}</span> : null}</li>)}</ul>
+                  </>
                 )}
                 <IconButton size="sm" aria-label="Скрыть результат проверки" title="Скрыть" onClick={() => setIssues(null)}>✕</IconButton>
               </div>
@@ -1274,6 +1635,12 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   <code>{selectedPath}</code>
                   <span className="make-editor-tools">
                     <label className="make-autosave"><input type="checkbox" checked={autosave} onChange={toggleAutosave} /> автосохранение</label>
+                    {mockTable && (
+                      <span className="make-mock-view" role="group" aria-label="Вид мока">
+                        <button type="button" className={mockView === 'table' ? 'make-tab on' : 'make-tab'} aria-pressed={mockView === 'table'} onClick={() => setMockView('table')}>Таблица</button>
+                        <button type="button" className={mockView === 'json' ? 'make-tab on' : 'make-tab'} aria-pressed={mockView === 'json'} onClick={() => setMockView('json')}>JSON</button>
+                      </span>
+                    )}
                     <label className="make-autosave" title="Prettier перед сохранением по Cmd/Ctrl+S"><input type="checkbox" checked={formatOnSave} onChange={toggleFormatOnSave} /> формат при сохранении</label>
                     <Button size="sm" variant="ghost" loading={formatting} onClick={() => void formatNow()} title="Prettier (Shift+Alt+F в редакторе)">Форматировать</Button>
                     <Button size="sm" variant="ghost" aria-expanded={historyOpen} onClick={() => setHistoryOpen((v) => !v)} title="Последние сохранённые версии этого файла в браузере">Версии</Button>
@@ -1300,12 +1667,24 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                     <IconButton size="sm" aria-label="Закрыть правку ИИ" title="Закрыть" onClick={() => setInlineOpen(false)}>✕</IconButton>
                   </div>
                 )}
-                <CodeEditor path={selectedPath} value={content} onChange={setContent} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} projectFiles={projectFiles} onSelectionChange={setSelection} onInlineCommand={openInline} />
+                {mockTable && mockView === 'table' ? (
+                  <MakeMockTable path={selectedPath} value={content} onChange={(v) => setContent(v)} readOnly={Boolean(lockedBy)} />
+                ) : (
+                <CodeEditor path={selectedPath} value={content} onChange={(v) => { setContent(v); if (changedLines.length) setChangedLines([]) }} onSave={() => void save()} ariaLabel={`Содержимое ${selectedPath}`} markers={markers} projectFiles={projectFiles} onSelectionChange={setSelection} onInlineCommand={openInline} readOnly={Boolean(lockedBy)} changedLines={changedLines} />
+                )}
               </>
             ) : (
               <EmptyState title="Выберите файл" description="Слева — файлы проекта. Правки сохраняются кнопкой или Ctrl/Cmd+S и сразу видны в превью." />
             )}
           </div>
+          {split && !isPhone && (
+            <>
+              <div className="make-split-handle" role="separator" aria-label="Граница код/превью" aria-orientation="vertical" aria-valuenow={splitPct} onPointerDown={beginSplitDrag} />
+              <div className="make-split-preview" data-testid="make-split-preview">
+                <iframe key={previewRev} className="make-frame" title="Превью рядом" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups" src={previewSrc} />
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1340,8 +1719,45 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 </div>
               </div>
             ))}
+            {storyFiles !== null && orphanComponents.length > 0 && (
+              <div className="make-tree-group" data-testid="make-orphans">
+                <p className="make-tree-dir" title="Компоненты, у которых ещё нет файла сториз">▢ Без сториз</p>
+                {orphanComponents.map((path) => (
+                  <div className="make-tree-item" key={path}>
+                    <button type="button" className="make-tree-file make-tree-file--dim" onClick={() => void generateStories(path)} title={`Создать ${path.replace(/\.(tsx|jsx)$/i, '.stories.tsx')} по пропсам компонента`}>+ сториз для {path.slice(path.lastIndexOf('/') + 1)}</button>
+                  </div>
+                ))}
+              </div>
+            )}
           </nav>
           <div className="make-story-host">
+            {runningTests && previewReady && <iframe key={runningTests} className="make-tests-frame" title={`Тесты ${runningTests}`} sandbox="allow-scripts allow-same-origin" src={`${base}__tests__?file=${encodeURIComponent(runningTests)}&rev=${previewRev}`} aria-hidden="true" />}
+            {testsOpen && (
+              <section className="make-tests" aria-label="Результаты тестов" data-testid="make-tests">
+                <div className="make-tests-head">
+                  <strong>Тесты компонентов</strong>
+                  {runningTests && <small>выполняется {runningTests}…</small>}
+                  <span className="make-head-spacer" />
+                  {failedTests.length > 0 && (onAskAssistant || onInsertToChat) && <Button size="sm" variant="primary" onClick={() => (onAskAssistant ?? onInsertToChat)!(testsPrompt())}>Исправить</Button>}
+                  <IconButton size="sm" aria-label="Закрыть результаты тестов" title="Закрыть" onClick={() => setTestsOpen(false)}>✕</IconButton>
+                </div>
+                <ul role="list">
+                  {testFiles.map((f) => (
+                    <li key={f.path} className="make-tests-file">
+                      <div className="make-tests-file-head"><code>{f.path}</code><Button size="sm" variant="ghost" onClick={() => runTests([f.path])} disabled={Boolean(runningTests)}>Запустить</Button></div>
+                      <ul role="list">
+                        {(testResults[f.path] ?? f.names.map((n) => ({ name: n, status: 'pending' as const, ms: 0, error: undefined as string | undefined }))).map((r, i) => (
+                          <li key={`${r.name}-${i}`} className={`make-test make-test--${r.status}`}>
+                            <span>{r.status === 'passed' ? '✓' : r.status === 'failed' ? '✗' : '·'} {r.name}</span>{r.status !== 'pending' && <small>{r.ms} мс</small>}
+                            {r.error && <pre>{r.error}</pre>}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
             {story && previewReady ? (
               <iframe
                 ref={storyFrameRef}
@@ -1378,6 +1794,9 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   <div className="make-shots-compare" data-testid="make-shots-compare">
                     <figure><img src={REST.makeShotImage(conversationId, compare[0])} alt="До" /><figcaption>до</figcaption></figure>
                     <figure><img src={REST.makeShotImage(conversationId, compare[1])} alt="После" /><figcaption>после</figcaption></figure>
+                    {shotDiff && (
+                      <figure data-testid="make-shots-diff"><img src={shotDiff.url} alt="Карта различий" /><figcaption className={shotDiff.mismatch > 0.005 ? 'make-shots-diff--bad' : 'make-shots-diff--ok'}>{shotDiff.mismatch === 0 ? 'различий нет' : `отличается ${(shotDiff.mismatch * 100).toFixed(2)}% пикселей`}</figcaption></figure>
+                    )}
                   </div>
                 )}
               </section>
@@ -1480,6 +1899,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           )}
         </Dialog>
       )}
+      {notesOpen && <MakeNotesDialog conversationId={conversationId} api={api} onClose={() => setNotesOpen(false)} />}
       {usageOpen && <MakeUsageDialog conversationId={conversationId} api={api} onClose={() => setUsageOpen(false)} onChanged={(next) => { setState(next); setPreviewRev(next.rev) }} />}
       {diffOpen && turnDiff && (
         <Dialog className="make-dialog" padded title="До и после" ariaLabel="До и после" size="lg" onClose={() => setDiffOpen(false)} testId="make-turn-diff-dialog">
@@ -1517,6 +1937,16 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
           )}
         </Dialog>
       )}
+      {versionCompare && (
+        <Dialog className="make-dialog make-version-dialog" padded title="Сравнение версий публикации" ariaLabel="Сравнение версий публикации" size="lg" onClose={() => { setVersionCompare(null); setVersionDiff(null) }} testId="make-version-compare"
+          footer={<><Button size="sm" variant="secondary" onClick={() => void computeVersionDiff()}>Карта различий</Button>{versionDiff && <span className={versionDiff.mismatch > 0.005 ? 'make-shots-diff--bad' : 'make-shots-diff--ok'}>{versionDiff.mismatch === 0 ? 'различий нет' : `отличается ${(versionDiff.mismatch * 100).toFixed(2)}% пикселей`}</span>}</>}>
+          <div className="make-version-grid">
+            <figure><figcaption>Снимок «{state?.snapshots.find((s) => s.id === versionCompare)?.label ?? versionCompare}»</figcaption><iframe ref={(el) => { versionFrames.current.a = el }} title="Версия из истории" sandbox="allow-scripts allow-same-origin" src={`${base}${MAKE_SNAPSHOT_PREVIEW}/${encodeURIComponent(versionCompare)}/index.html`} /></figure>
+            <figure><figcaption>Текущее состояние</figcaption><iframe ref={(el) => { versionFrames.current.b = el }} title="Текущая версия" sandbox="allow-scripts allow-same-origin" src={previewSrc} /></figure>
+            {versionDiff && <figure data-testid="make-version-diff"><figcaption>Карта различий</figcaption><img src={versionDiff.url} alt="Карта различий версий" /></figure>}
+          </div>
+        </Dialog>
+      )}
       {exportOpen && (
         <Dialog className="make-dialog" padded title="Скачать проект" ariaLabel="Скачать проект" size="sm" onClose={() => setExportOpen(false)} testId="make-export">
           <div className="make-export-options">
@@ -1529,6 +1959,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               <span>Плюс package.json, vite.config и README: распаковать, <code>npm install</code>, <code>npm run dev</code> — и продолжать в своём редакторе.</span>
             </button>
           </div>
+          <label className="make-export-pwa">Хостинг: <select aria-label="Хостинг для экспорта" value={exportDeploy} onChange={(e) => setExportDeploy(e.target.value as MakeDeployTarget | '')}><option value="">без конфига</option>{MAKE_DEPLOY_TARGETS.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select> <small>— в архив добавятся конфиг и DEPLOY.md</small></label>
           <label className="make-export-pwa"><input type="checkbox" checked={exportPwa} onChange={(e) => setExportPwa(e.target.checked)} /> Добавить PWA: манифест, service worker и иконку — сайт можно «установить» на телефон и открывать офлайн</label>
         </Dialog>
       )}
@@ -1596,6 +2027,14 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                 <label className="make-ask-field"><span>Адрес <small>/s/…/ — латиница, цифры, дефис</small></span><input className="tin" aria-label="Адрес публикации" placeholder="my-site" value={publishSlug ?? state.published.slug ?? ''} onChange={(e) => setPublishSlug(e.target.value.toLowerCase())} /></label>
                 <label className="make-ask-field"><span>Пароль {state.published.passwordProtected ? <small>установлен</small> : <small>нет — открыто по ссылке</small>}</span><input className="tin" type="password" aria-label="Пароль публикации" placeholder={state.published.passwordProtected ? 'новый пароль' : 'без пароля'} value={publishPassword} onChange={(e) => setPublishPassword(e.target.value)} autoComplete="new-password" /></label>
                 <p className="fsub make-publish-views">Просмотров: <strong data-testid="make-public-views">{state.published.views ?? 0}</strong></p>
+                {(state.published.stats?.days.length ?? 0) > 0 && (
+                  <div className="make-publish-stats" data-testid="make-publish-stats">
+                    <div className="make-publish-bars" role="img" aria-label={`Просмотры за последние ${Math.min(14, state.published.stats!.days.length)} дней`}>
+                      {state.published.stats!.days.slice(-14).map((d) => { const max = Math.max(...state.published!.stats!.days.slice(-14).map((x) => x.views), 1); return <span key={d.day} className="make-publish-bar" style={{ height: `${Math.max(8, Math.round((d.views / max) * 100))}%` }} title={`${d.day}: ${d.views}`} /> })}
+                    </div>
+                    {state.published.stats!.referers.length > 0 && <p className="fsub">Откуда приходят: {state.published.stats!.referers.slice(0, 5).map((r) => `${r.host} (${r.views})`).join(', ')}</p>}
+                  </div>
+                )}
               </div>
               {(state.published.history?.length ?? 0) > 1 && (
                 <details className="make-publish-history" data-testid="make-publish-history">
@@ -1605,7 +2044,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                       <li key={`${e.at}-${i}`}>
                         <span>{formatTime(e.at)} · {e.snapshotId ? `снимок «${e.snapshotLabel}»` : 'текущее состояние'}</span>
                         {i === 0 ? <small>сейчас</small> : (e.snapshotId === null || state.snapshots.some((s) => s.id === e.snapshotId))
-                          ? <Button size="sm" variant="ghost" onClick={() => void publish(e.snapshotId, publishOptions())}>Вернуть</Button>
+                          ? <><Button size="sm" variant="ghost" onClick={() => void publish(e.snapshotId, publishOptions())}>Вернуть</Button>{e.snapshotId && <Button size="sm" variant="ghost" onClick={() => setVersionCompare(e.snapshotId!)} title="Открыть эту версию и текущую рядом, с картой различий">Сравнить</Button>}</>
                           : <small>снимок удалён</small>}
                       </li>
                     ))}
@@ -1615,6 +2054,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               <div className="make-ask-actions">
                 <Button size="sm" variant="secondary" onClick={() => void publish((publishPick || state.published?.snapshotId) || null, publishOptions())}>Обновить публикацию</Button>
                 {state.published.passwordProtected && <Button size="sm" variant="ghost" onClick={() => void publish((publishPick || state.published?.snapshotId) || null, { password: null })}>Снять пароль</Button>}
+                <label className="make-autosave" title="На странице публикации появится кнопка «Комментарий»; сообщения зрителей попадают в модерацию в панели комментариев"><input type="checkbox" aria-label="Комментарии зрителей" checked={Boolean(state.published.allowComments)} onChange={(e) => void publish((publishPick || state.published?.snapshotId) || null, { allowComments: e.target.checked })} /> комментарии зрителей</label>
               </div>
               <div className="make-ask-actions"><Button size="sm" variant="danger" onClick={() => void unpublish()}>Снять с публикации</Button></div>
             </div>
@@ -1633,6 +2073,22 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
                   <code data-testid="make-share-url">{typeof window !== 'undefined' ? `${window.location.origin}/${state.shared.url}` : state.shared.url}</code>
                   <Button size="sm" variant="secondary" onClick={() => void copyShareLink(typeof window !== 'undefined' ? `${window.location.origin}/${state.shared!.url}` : state.shared!.url)}>Копировать</Button>
                   <Button size="sm" variant="ghost" onClick={() => void toggleShare()}>Отозвать</Button>
+                </div>
+                <div className="make-grants" data-testid="make-grants">
+                  <p className="fsub">Именной доступ: редактор правит файлы и снимки на странице проекта, зритель — только смотрит. Публикация и шаринг остаются за вами.</p>
+                  {(state.shared.grants ?? []).length > 0 && (
+                    <ul role="list">
+                      {state.shared.grants!.map((g) => (
+                        <li key={g.user}><code>{g.user}</code><span>{g.role === 'editor' ? 'редактор' : 'зритель'}</span>
+                          <IconButton size="sm" aria-label={`Убрать доступ ${g.user}`} title="Убрать доступ" onClick={() => void grant(g.user, null)}>✕</IconButton></li>
+                      ))}
+                    </ul>
+                  )}
+                  <form className="make-grant-add" onSubmit={(e) => { e.preventDefault(); void grant(grantUser, grantRole); setGrantUser('') }}>
+                    <input className="tin" aria-label="Имя пользователя" placeholder="логин" value={grantUser} onChange={(e) => setGrantUser(e.target.value)} />
+                    <select aria-label="Роль" value={grantRole} onChange={(e) => setGrantRole(e.target.value as 'editor' | 'viewer')}><option value="viewer">зритель</option><option value="editor">редактор</option></select>
+                    <Button size="sm" variant="secondary" type="submit" disabled={!grantUser.trim()}>Дать доступ</Button>
+                  </form>
                 </div>
               </>
             ) : <div className="make-ask-actions"><Button size="sm" variant="secondary" onClick={() => void toggleShare()}>Создать ссылку для чтения</Button></div>}

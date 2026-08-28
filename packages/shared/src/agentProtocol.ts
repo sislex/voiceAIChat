@@ -31,6 +31,99 @@ export interface FsResult {
   dataBase64?: string
   /** Имя файла (для fs.read — для сохранения). */
   name?: string
+  /** Куда перемещён элемент (для fs.trash) — по этому пути его можно вернуть fs.rename. */
+  trashedPath?: string
+}
+
+/** Откуда пришла команда машины: консоль пользователя, инструмент модели в чате или сам сервер (обновление, релиз). */
+export type MachineCommandSource = 'console' | 'chat' | 'system'
+
+/** Запись журнала команд машины (machines-roadmap п.4). */
+export interface MachineCommandRecord {
+  id: number
+  machineId: string
+  /** Кто выполнял; для системных команд — владелец машины. */
+  userId: string
+  source: MachineCommandSource
+  command: string
+  exitCode: number | null
+  timedOut: boolean
+  /** Команда отклонена/упала до запуска (политика, офлайн) — текст ошибки. */
+  error: string | null
+  durationMs: number
+  startedAt: number
+  /** Чат, из которого модель выполнила команду (source = chat). */
+  conversationId: string | null
+  /** Первые ~500 символов вывода — чтобы понять, что произошло, без полного лога. */
+  outputExcerpt: string
+}
+
+/** Событие «долгая команда завершилась»: то же, что запись журнала, плюс имя машины и путь сохранённого лога. */
+export interface MachineCommandEvent {
+  machineId: string
+  machineName: string
+  source: MachineCommandSource
+  command: string
+  exitCode: number | null
+  timedOut: boolean
+  error: string | null
+  durationMs: number
+  conversationId: string | null
+  /** Полный вывод сохранён на машине (команды из чата) — открыть в проводнике. */
+  logPath?: string
+}
+
+/** Уровень доступа, с которым машина предоставлена проекту (machines-roadmap п.18). */
+export type MachineShareAccess = 'full' | 'read'
+/** Права пользователя на машину: владелец, полный доступ участника проекта, только чтение. */
+export type MachineAccessLevel = 'owner' | 'full' | 'read'
+
+/** Результат команды на одной машине в групповом запуске (machines-roadmap п.15). */
+export interface BatchExecItem {
+  machineId: string
+  machineName: string
+  /** true — команда выполнена (даже с ненулевым кодом); false — не запускалась (офлайн, политика, недоступна). */
+  ran: boolean
+  exitCode: number | null
+  timedOut: boolean
+  /** Вывод, обрезанный сервером до BATCH_OUTPUT_LIMIT символов. */
+  output: string
+  /** Причина, по которой команда не выполнилась. */
+  error: string | null
+  durationMs: number
+}
+
+/** Сводка группового запуска: сколько машин ответило успешно/с ошибкой/не запускало. */
+export interface BatchExecResult {
+  command: string
+  startedAt: number
+  items: BatchExecItem[]
+  totals: { requested: number; ok: number; failed: number; skipped: number }
+}
+
+/** Сколько символов вывода одной машины возвращает групповой запуск. */
+export const BATCH_OUTPUT_LIMIT = 4000
+/** Максимум машин в одном групповом запуске. */
+export const BATCH_MAX_MACHINES = 50
+
+/** Watchdog агента (machines-roadmap п.1): машина пропала дольше порога или вернулась после тревоги. */
+export interface MachineStatusEvent {
+  machineId: string
+  machineName: string
+  state: 'offline' | 'online'
+  /** Момент события (UNIX мс). */
+  at: number
+  /** Сколько машина была/уже не в сети, мс. */
+  offlineForMs: number
+}
+
+/** Результат копирования файла между машинами (`POST /api/agents/:id/fs/copy-to`): сервер читает с одной и пишет на другую. */
+export interface FsCopyResult {
+  /** Абсолютный путь файла на целевой машине. */
+  path: string
+  targetAgentId: string
+  /** Размер скопированных байт. */
+  size: number
 }
 
 /** Использование дискового раздела (байты). */
@@ -157,7 +250,16 @@ export interface AgentPolicy {
   allowPatterns: string[]
   /** Навыки — именованные разрешённые скрипты. */
   skills: AgentSkill[]
+  /** PTY: убить сеанс без ввода дольше N минут (0/нет — не ограничивать). */
+  ptyIdleMinutes?: number
+  /** PTY: не больше N одновременных сеансов на машину (0/нет — без лимита). */
+  ptyMaxSessions?: number
+  /** PTY: строка, начинающаяся с sudo, выполняется только после подтверждения y/N в терминале. */
+  ptyConfirmSudo?: boolean
 }
+
+/** Срок жизни токена агента при перевыпуске из UI, дней (п.11). */
+export const AGENT_TOKEN_DEFAULT_TTL_DAYS = 90
 
 export const DEFAULT_AGENT_POLICY: AgentPolicy = {
   allowedDirs: [],
@@ -178,7 +280,7 @@ const NETWORK_RE = /\b(curl|wget|nc|ncat|telnet|ssh|scp|sftp|ftp|rsync)\b/i
 const WRITE_RE = /(\brm\b|\bmv\b|\brmdir\b|\btruncate\b|\bdd\b|\btee\b|\bmkdir\b|>>?)/
 
 /** Совпадение паттерна: как regex (если компилируется), иначе подстрока (без регистра). */
-function matchesPattern(pattern: string, command: string): boolean {
+export function matchesPattern(pattern: string, command: string): boolean {
   try {
     return new RegExp(pattern, 'i').test(command)
   } catch {
@@ -226,6 +328,8 @@ export type FsOp =
   | { t: 'fs.write'; opId: string; path: string; dataBase64: string }
   | { t: 'fs.delete'; opId: string; path: string }
   | { t: 'fs.delete-file-safe'; opId: string; path: string }
+  /** Переместить файл/каталог в корзину машины (`<корень>/.voicechat_trash`), откат — fs.rename обратно. */
+  | { t: 'fs.trash'; opId: string; path: string }
   | { t: 'fs.rename'; opId: string; from: string; to: string }
   | { t: 'fs.mkdir'; opId: string; path: string }
 
@@ -265,6 +369,15 @@ export interface AgentInfo {
   effectiveSource?: 'personal_default' | 'fallback'
   /** Версия подключённого агента (только когда online; иначе не задана). */
   version?: string
+  /** Личная машина пользователя или машина, предоставленная проектом (machines-roadmap п.18). */
+  ownership?: 'personal' | 'project'
+  /** Права текущего пользователя на машину; `read` — команды, PTY и запись файлов запрещены. */
+  access?: MachineAccessLevel
+  /** Срок токена (UNIX мс); нет — бессрочный (machines-roadmap п.11). */
+  tokenExpiresAt?: number | null
+  /** IP последнего подключения агента и флаг привязки: при включённой привязке другой IP отвергается. */
+  lastIp?: string | null
+  pinIp?: boolean
   /** Последняя телеметрия машины (только когда online; иначе не задана). */
   telemetry?: AgentTelemetry
   /** Раздача картинок машиной (только когда online и агент это умеет). */

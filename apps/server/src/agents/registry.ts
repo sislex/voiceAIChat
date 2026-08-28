@@ -18,8 +18,7 @@ import {
   type FsResult,
   type GitAccessRequest,
   type GitAccessResult,
-  type ServerToAgent
-} from '@voicechat/shared'
+  type ServerToAgent, type MachineCommandRecord, type MachineCommandSource } from '@voicechat/shared'
 
 /** Минимальный интерфейс сокета агента (реальный ws.WebSocket ему соответствует). */
 export interface AgentSocket {
@@ -49,6 +48,12 @@ interface PtySession {
   idleTimer: NodeJS.Timeout | null
   /** Последний живой контекст сессии (cwd/foreground/altScreen) — для консоли с ассистентом. */
   context: import('@voicechat/shared').PtyContext | null
+  /** Таймер простоя по вводу (политика ptyIdleMinutes) — тикает и при подписанном браузере. */
+  inputIdleTimer: NodeJS.Timeout | null
+  /** Набираемая строка (по нажатиям) — чтобы поймать `sudo …` перед Enter. */
+  line: string
+  /** Команда с sudo ждёт подтверждения y/N; Enter к shell ещё не ушёл. */
+  pendingSudo: string | null
 }
 
 /** Кап кольцевого буфера PTY: достаточно для восстановления экрана, но без роста памяти. */
@@ -139,6 +144,9 @@ interface TunnelSession {
 const TUNNEL_START_TIMEOUT_MS = 10_000
 const TUNNEL_IDLE_TTL_MS = 30 * 60_000
 
+/** Кто и откуда запустил команду — попадает в журнал команд машины. */
+export interface ExecMeta { source: MachineCommandSource; userId?: string; conversationId?: string | null }
+
 export class AgentRegistry {
   private readonly online = new Map<string, OnlineAgent>()
   private readonly pending = new Map<string, PendingExec>()
@@ -151,8 +159,33 @@ export class AgentRegistry {
   private readonly newId: () => string
   private readonly changeListeners = new Set<() => void>()
 
-  constructor(deps: { newId?: () => string } = {}) {
+  /** Сколько ждать возврата офлайн-машины перед отказом (0 — отказывать сразу, как раньше). */
+  readonly offlineGraceMs: number
+  private readonly onlineWaiters = new Map<string, Set<() => void>>()
+
+  constructor(deps: { newId?: () => string; offlineGraceMs?: number } = {}) {
     this.newId = deps.newId ?? (() => randomUUID())
+    this.offlineGraceMs = Math.max(0, deps.offlineGraceMs ?? 0)
+  }
+
+  /**
+   * Ждёт, пока машина выйдет в сеть (агент переподключается после рестарта за секунды).
+   * true — в сети (сразу или дождались), false — таймаут. Так команда/сохранение из чата
+   * не падает «Не удалось сохранить» на первом же обрыве соединения.
+   */
+  waitForOnline(agentId: string, timeoutMs = this.offlineGraceMs): Promise<boolean> {
+    if (this.online.has(agentId)) return Promise.resolve(true)
+    if (timeoutMs <= 0) return Promise.resolve(false)
+    return new Promise<boolean>((resolve) => {
+      const waiters = this.onlineWaiters.get(agentId) ?? new Set<() => void>()
+      this.onlineWaiters.set(agentId, waiters)
+      const timer = setTimeout(() => { waiters.delete(done); resolve(false) }, timeoutMs)
+      const done = (): void => { clearTimeout(timer); waiters.delete(done); resolve(true) }
+      waiters.add(done)
+    })
+  }
+  private offlineError(agentId: string): Error {
+    return new Error(this.offlineGraceMs > 0 ? `Машина не в сети (ждали ${Math.round(this.offlineGraceMs / 1000)} с)` : 'Машина не в сети')
   }
 
   register(
@@ -174,6 +207,7 @@ export class AgentRegistry {
       }
     }
     this.online.set(agentId, { name, socket, policy, version, imageHost })
+    for (const done of this.onlineWaiters.get(agentId) ?? []) done()
     this.emitChange()
   }
 
@@ -213,8 +247,18 @@ export class AgentRegistry {
   /** Сохраняет свежую телеметрию агента и уведомляет подписчиков (пуш веб-клиенту). */
   private setTelemetry(agentId: string, t: AgentTelemetry): void {
     if (!this.online.has(agentId)) return
+    const first = !this.telemetry.has(agentId)
     this.telemetry.set(agentId, t)
     this.emitChange()
+    // Первая телеметрия после подключения — момент, когда известен homePath: сервер заводит каталог ChatAI по умолчанию.
+    if (first) for (const cb of this.onlineListeners) { try { cb(agentId) } catch { /* слушатель не должен ронять реестр */ } }
+  }
+
+  private readonly onlineListeners = new Set<(agentId: string) => void>()
+  /** Подписка «машина подключилась и прислала телеметрию». */
+  onAgentReady(cb: (agentId: string) => void): () => void {
+    this.onlineListeners.add(cb)
+    return () => { this.onlineListeners.delete(cb) }
   }
 
   /**
@@ -330,7 +374,37 @@ export class AgentRegistry {
    * резолвится по exec.done/exec.error, дисконнекту или страховочному таймауту.
    * `signal` отменяет только эту команду (напр., оборвался HTTP-запрос claude).
    */
+  /** Кто и откуда запустил команду — для журнала команд машины. */
+  private readonly commandListeners = new Set<(rec: Omit<MachineCommandRecord, 'id'> & { output: string }) => void>()
+  /** Подписка на завершённые команды; `output` — полный вывод (в журнал идёт только выдержка). */
+  onCommand(cb: (rec: Omit<MachineCommandRecord, 'id'> & { output: string }) => void): () => void {
+    this.commandListeners.add(cb)
+    return () => { this.commandListeners.delete(cb) }
+  }
+  private recordCommand(rec: Omit<MachineCommandRecord, 'id'> & { output: string }): void {
+    for (const cb of this.commandListeners) { try { cb(rec) } catch { /* журнал не должен ронять exec */ } }
+  }
+
   exec(
+    agentId: string,
+    command: string,
+    timeoutMs: number,
+    signal?: AbortSignal,
+    meta?: ExecMeta
+  ): Promise<ExecResult> {
+    const startedAt = Date.now()
+    const promise = this.online.has(agentId) || this.offlineGraceMs <= 0
+      ? this.execInner(agentId, command, timeoutMs, signal)
+      : this.waitForOnline(agentId).then((ok) => (ok ? this.execInner(agentId, command, timeoutMs, signal) : Promise.reject(this.offlineError(agentId))))
+    const base = { machineId: agentId, userId: meta?.userId ?? '', source: meta?.source ?? 'system', command, startedAt, conversationId: meta?.conversationId ?? null } as const
+    promise.then(
+      (r) => this.recordCommand({ ...base, exitCode: r.exitCode, timedOut: r.timedOut, error: null, durationMs: Date.now() - startedAt, outputExcerpt: r.output.slice(0, 500), output: r.output }),
+      (err: unknown) => this.recordCommand({ ...base, exitCode: null, timedOut: false, error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - startedAt, outputExcerpt: '', output: '' })
+    )
+    return promise
+  }
+
+  private execInner(
     agentId: string,
     command: string,
     timeoutMs: number,
@@ -460,7 +534,10 @@ export class AgentRegistry {
 
   /** Отправляет файловую операцию агенту и ждёт fs.result/fs.error (по opId). */
   private runFs(agentId: string, make: (opId: string) => FsOp, tool = 'fs'): Promise<FsResult> {
-    if (!this.online.has(agentId)) return Promise.reject(new Error('Машина не в сети'))
+    if (!this.online.has(agentId)) {
+      if (this.offlineGraceMs <= 0) return Promise.reject(new Error('Машина не в сети'))
+      return this.waitForOnline(agentId).then((ok) => (ok ? this.runFs(agentId, make, tool) : Promise.reject(this.offlineError(agentId))))
+    }
     const ve = this.versionError(agentId, tool)
     if (ve) return Promise.reject(ve)
     const opId = this.newId()
@@ -486,6 +563,9 @@ export class AgentRegistry {
   }
   fsWrite(agentId: string, path: string, dataBase64: string): Promise<FsResult> {
     return this.runFs(agentId, (opId) => ({ t: 'fs.write', opId, path, dataBase64 }))
+  }
+  fsTrash(agentId: string, path: string): Promise<FsResult> {
+    return this.runFs(agentId, (opId) => ({ t: 'fs.trash', opId, path }), 'fs-trash')
   }
   fsDelete(agentId: string, path: string): Promise<FsResult> {
     return this.runFs(agentId, (opId) => ({ t: 'fs.delete', opId, path }))
@@ -552,14 +632,73 @@ export class AgentRegistry {
       emit({ t: 'pty.error', ptyId, message: ve.message })
       return
     }
-    this.ptys.set(ptyId, { agentId, emit, output: [], outputBytes: 0, idleTimer: null, context: null })
+    const policy = this.online.get(agentId)?.policy
+    const max = policy?.ptyMaxSessions ?? 0
+    if (max > 0) {
+      const count = [...this.ptys.values()].filter((s) => s.agentId === agentId).length
+      if (count >= max) {
+        emit({ t: 'pty.error', ptyId, message: `Лимит одновременных терминалов на машине — ${max}. Закройте другой сеанс или поднимите лимит в политике.` })
+        return
+      }
+    }
+    this.ptys.set(ptyId, { agentId, emit, output: [], outputBytes: 0, idleTimer: null, context: null, inputIdleTimer: null, line: '', pendingSudo: null })
     this.send(agentId, { t: 'pty.start', ptyId, cols, rows, ...(cwd ? { cwd } : {}) })
+    this.armPtyInputIdle(ptyId)
+  }
+
+  /** Политика ptyIdleMinutes: сеанс без ввода дольше N минут убивается, даже если вкладка открыта. */
+  private armPtyInputIdle(ptyId: string): void {
+    const sess = this.ptys.get(ptyId)
+    if (!sess) return
+    if (sess.inputIdleTimer) clearTimeout(sess.inputIdleTimer)
+    sess.inputIdleTimer = null
+    const minutes = this.online.get(sess.agentId)?.policy.ptyIdleMinutes ?? 0
+    if (minutes <= 0) return
+    sess.inputIdleTimer = setTimeout(() => {
+      sess.emit?.({ t: 'pty.output', ptyId, data: `\r\n\x1b[33m[Голос·Чат] Сеанс закрыт: нет ввода ${minutes} мин (политика машины).\x1b[0m\r\n` })
+      this.ptyKill(ptyId)
+    }, minutes * 60_000)
+    sess.inputIdleTimer.unref?.()
   }
 
   /** Ввод пользователя (нажатия клавиш) в PTY. */
   ptyInput(ptyId: string, data: string): void {
     const sess = this.ptys.get(ptyId)
-    if (sess) this.send(sess.agentId, { t: 'pty.input', ptyId, data })
+    if (!sess) return
+    this.armPtyInputIdle(ptyId)
+    const confirmSudo = this.online.get(sess.agentId)?.policy.ptyConfirmSudo === true
+    if (!confirmSudo) {
+      this.send(sess.agentId, { t: 'pty.input', ptyId, data })
+      return
+    }
+    // Ответ на вопрос «выполнить sudo?»: y — отправляем задержанный Enter, иначе стираем строку (Ctrl-U).
+    if (sess.pendingSudo !== null) {
+      const yes = /^[yYдД]$/.test(data)
+      sess.pendingSudo = null
+      sess.line = ''
+      sess.emit?.({ t: 'pty.output', ptyId, data: yes ? 'y\r\n' : 'n\r\n' })
+      this.send(sess.agentId, { t: 'pty.input', ptyId, data: yes ? '\r' : '\x15' })
+      return
+    }
+    // Ведём набираемую строку по нажатиям; Enter с `sudo …` в начале строки задерживаем до подтверждения.
+    let forward = ''
+    for (let i = 0; i < data.length; i++) {
+      const ch = data[i]!
+      if (ch === '\r' || ch === '\n') {
+        if (/^\s*sudo\b/.test(sess.line)) {
+          sess.pendingSudo = sess.line
+          if (forward) this.send(sess.agentId, { t: 'pty.input', ptyId, data: forward })
+          sess.emit?.({ t: 'pty.output', ptyId, data: '\r\n\x1b[33m[Голос·Чат] Команда с sudo — выполнить? (y/N) \x1b[0m' })
+          return
+        }
+        sess.line = ''
+      } else if (ch === '\x7f' || ch === '\b') sess.line = sess.line.slice(0, -1)
+      else if (ch === '\x15' || ch === '\x03') sess.line = ''
+      else if (ch === '\x1b') { const m = /^\x1b\[[0-9;]*[A-Za-z~]/.exec(data.slice(i)); if (m) { forward += m[0]; i += m[0].length - 1; continue } }
+      else if (ch >= ' ') sess.line += ch
+      forward += ch
+    }
+    if (forward) this.send(sess.agentId, { t: 'pty.input', ptyId, data: forward })
   }
 
   /** Изменение размеров терминала. */
@@ -597,6 +736,7 @@ export class AgentRegistry {
     if (!sess) return
     this.ptys.delete(ptyId)
     if (sess.idleTimer) clearTimeout(sess.idleTimer)
+    if (sess.inputIdleTimer) clearTimeout(sess.inputIdleTimer)
     this.send(sess.agentId, { t: 'pty.kill', ptyId })
   }
 

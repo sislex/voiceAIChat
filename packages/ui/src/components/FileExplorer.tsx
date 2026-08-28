@@ -9,6 +9,9 @@ import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '../lib/loadState'
 import { ToolFrame } from './ToolFrame'
+import { CodeEditor } from './CodeEditor'
+import { CodeDiff } from './CodeDiff'
+import { isToolAllowed } from '@shared/version'
 
 export interface FileExplorerProps {
   agents: AgentInfo[]
@@ -136,6 +139,18 @@ export function FileExplorer({
   const [previewErrorKind, setPreviewErrorKind] = useState<'read' | 'save'>('read')
   const [previewLoading, setPreviewLoading] = useState(false)
   const [editing, setEditing] = useState(false)
+  // Текст файла на момент открытия — база для diff «что я поменял» перед сохранением.
+  const [previewOriginal, setPreviewOriginal] = useState('')
+  const [showDiff, setShowDiff] = useState(false)
+  // Последний элемент, отправленный в корзину машины: полоса «Вернуть» под списком.
+  const [trashed, setTrashed] = useState<{ name: string; from: string; to: string } | null>(null)
+  // Копирование файла на другую машину: инлайн-панель под списком (цель + каталог), результат — ссылка «Открыть».
+  const [copyFor, setCopyFor] = useState<{ path: string; name: string } | null>(null)
+  const [copyTarget, setCopyTarget] = useState('')
+  const [copyDir, setCopyDir] = useState('')
+  const [copying, setCopying] = useState(false)
+  const [copied, setCopied] = useState<{ path: string; targetAgentId: string } | null>(null)
+  const [copyError, setCopyError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmSave, setConfirmSave] = useState(false)
   const selectedRow = useRef<HTMLDivElement>(null)
@@ -143,7 +158,34 @@ export function FileExplorer({
 
   const selectedAgent = agents.find((agent) => agent.id === agentId)
   const agentOnline = selectedAgent?.online ?? false
-  const writable = agentOnline && (selectedAgent?.policy.allowWrite ?? false)
+  // Машина, предоставленная проекту «только для чтения» (п.18), не даёт писать даже при allowWrite политики.
+  const readOnlyShare = selectedAgent?.access === 'read'
+  const writable = agentOnline && !readOnlyShare && (selectedAgent?.policy.allowWrite ?? false)
+  // Корзина — только если мост её умеет и агент достаточно новый; иначе прежнее безвозвратное удаление.
+  const canTrash = typeof ops.trash === 'function' && isToolAllowed(selectedAgent?.version ?? '0.0.0', 'fs-trash')
+  const copyTargets = agents.filter((a) => a.id !== agentId && a.online && a.policy.allowWrite)
+  const canCopy = typeof ops.copyTo === 'function' && copyTargets.length > 0
+  const startCopy = (entry: FsEntry, abs: string): void => {
+    setCopyFor({ path: abs, name: entry.name })
+    setCopyTarget(copyTargets[0]?.id ?? '')
+    setCopyDir('')
+    setCopied(null)
+    setCopyError(null)
+  }
+  const runCopy = async (): Promise<void> => {
+    if (!agentId || !copyFor || !copyTarget || !ops.copyTo) return
+    setCopying(true)
+    setCopyError(null)
+    try {
+      const result = await ops.copyTo(agentId, copyFor.path, copyTarget, copyDir.trim() || undefined)
+      setCopied({ path: result.path, targetAgentId: result.targetAgentId })
+      setCopyFor(null)
+    } catch (err) {
+      setCopyError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setCopying(false)
+    }
+  }
   const view = loadView(status, entries.length > 0)
   const visibleEntries = useMemo(
     () => sortEntries(entries.filter((entry) => entry.name.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase())), sortBy, sortDirection),
@@ -258,6 +300,8 @@ export function FileExplorer({
         else {
           setPreview({ path, name: entry.name, size: entry.size, kind: 'text' })
           setPreviewText(text)
+          setPreviewOriginal(text)
+          setShowDiff(false)
         }
       }
     } catch (err) {
@@ -277,6 +321,8 @@ export function FileExplorer({
     try {
       await ops.write(agentId, preview.path, encodeUtf8(previewText))
       await load(cwd)
+      setPreviewOriginal(previewText)
+      setShowDiff(false)
       setEditing(false)
       setConfirmSave(false)
     } catch (err) {
@@ -442,17 +488,48 @@ export function FileExplorer({
           )}
           {!previewLoading && !previewError && preview?.kind === 'text' && (
             <>
-              {editing ? <textarea className="fspreview-text fspreview-editor" aria-label="Содержимое файла" value={previewText} onChange={(event) => setPreviewText(event.target.value)} /> : <pre className="fspreview-text">{previewText}</pre>}
+              {editing
+                ? (showDiff
+                  ? <div className="fspreview-editor" data-testid="fs-diff"><CodeDiff path={preview.path} original={previewOriginal} modified={previewText} /></div>
+                  : <div className="fspreview-editor"><CodeEditor path={preview.path} value={previewText} onChange={setPreviewText} ariaLabel="Содержимое файла" onSave={() => setConfirmSave(true)} /></div>)
+                : <pre className="fspreview-text">{previewText}</pre>}
               {writable ? (
                 <div className="fspreview-actions">
+                  {editing && previewText !== previewOriginal && <Button size="sm" onClick={() => setShowDiff((v) => !v)}>{showDiff ? 'Скрыть изменения' : 'Показать изменения'}</Button>}
                   {editing ? (
                     confirmSave ? <><Button size="sm" disabled={saving} onClick={() => void savePreview()}>{saving ? 'Сохраняем…' : 'Подтвердить сохранение'}</Button><Button size="sm" disabled={saving} onClick={() => setConfirmSave(false)}>Отмена</Button></> : <Button size="sm" onClick={() => setConfirmSave(true)}>Сохранить</Button>
                   ) : <Button size="sm" onClick={() => setEditing(true)}>Редактировать</Button>}
                 </div>
-              ) : <p className="fsnote">Правка недоступна: изменять файлы на этой машине запрещено политикой.</p>}
+              ) : <p className="fsnote">{readOnlyShare ? 'Правка недоступна: машина предоставлена проекту только для чтения.' : 'Правка недоступна: изменять файлы на этой машине запрещено политикой.'}</p>}
             </>
           )}
         </section>
+      )}
+      {copyFor && (
+        <form className="fscopy" data-testid="fs-copy" onSubmit={(event) => { event.preventDefault(); void runCopy() }}>
+          <span>Копировать «{copyFor.name}» на</span>
+          <select aria-label="Целевая машина" value={copyTarget} onChange={(event) => setCopyTarget(event.target.value)}>
+            {copyTargets.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <input aria-label="Каталог на целевой машине" value={copyDir} placeholder="ChatAI/incoming целевой машины" onChange={(event) => setCopyDir(event.target.value)} />
+          <Button size="sm" type="submit" disabled={copying || !copyTarget}>{copying ? 'Копируем…' : 'Копировать'}</Button>
+          <Button size="sm" type="button" disabled={copying} onClick={() => setCopyFor(null)}>Отмена</Button>
+          {copyError && <span role="alert" className="fscopy-error">{copyError}</span>}
+        </form>
+      )}
+      {copied && (
+        <p className="fstrashed" role="status" data-testid="fs-copied">
+          Скопировано на «{agents.find((a) => a.id === copied.targetAgentId)?.name ?? copied.targetAgentId}»: <code>{copied.path}</code>
+          {onSwitchUtility && <Button size="sm" onClick={() => onSwitchUtility('explorer', copied.targetAgentId, parentOf(copied.path))}>Открыть</Button>}
+          <IconButton size="sm" title="Скрыть" aria-label="Скрыть уведомление о копировании" onClick={() => setCopied(null)}>×</IconButton>
+        </p>
+      )}
+      {trashed && (
+        <p className="fstrashed" role="status" data-testid="fs-trashed">
+          «{trashed.name}» перемещён в корзину машины ({nameOf(parentOf(trashed.to))}).
+          <Button size="sm" onClick={() => { const t = trashed; setTrashed(null); if (agentId) void run(ops.rename(agentId, t.to, t.from)) }}>Вернуть</Button>
+          <IconButton size="sm" title="Скрыть" aria-label="Скрыть уведомление о корзине" onClick={() => setTrashed(null)}>×</IconButton>
+        </p>
       )}
       <div
         className={uploading.length > 0 ? 'fslist fslist--uploading' : 'fslist'}
@@ -566,6 +643,11 @@ export function FileExplorer({
                     ⬇
                   </IconButton>
                 )}
+                {entry.kind === 'file' && canCopy && (
+                  <IconButton size="sm" title="Копировать на машину" aria-label={`Копировать ${entry.name} на другую машину`} onClick={() => startCopy(entry, abs)}>
+                    ⇄
+                  </IconButton>
+                )}
                 {writable && (
                   <IconButton size="sm" title="Переименовать" aria-label={`Переименовать ${entry.name}`} onClick={() => doRename(entry)}>
                     ✎
@@ -579,10 +661,15 @@ export function FileExplorer({
                         size="sm"
                         onClick={() => {
                           setConfirmDel(null)
-                          if (agentId) void run(ops.remove(agentId, abs))
+                          if (!agentId) return
+                          if (canTrash) {
+                            void run(ops.trash!(agentId, abs).then((result) => {
+                              if (result.trashedPath) setTrashed({ name: entry.name, from: abs, to: result.trashedPath })
+                            }))
+                          } else void run(ops.remove(agentId, abs))
                         }}
                       >
-                        Удалить
+                        {canTrash ? 'В корзину' : 'Удалить'}
                       </Button>
                       <Button size="sm" onClick={() => setConfirmDel(null)}>
                         Отмена

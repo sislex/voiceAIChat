@@ -85,6 +85,31 @@ export interface ChatStorageBinding {
   relativePath: string
 }
 
+/** Каталоги чата внутри корня MachineStorage (разделитель — как в корне: Windows-корень даёт `\`). */
+export interface ChatStorageDirectories {
+  chatRoot: string
+  attachments: string
+  artifacts: string
+  generated: string
+}
+
+/** Привязка чата к хранилищу вместе с абсолютными путями — то, что видит пользователь в карточке чата. */
+export interface ChatStorageView extends ChatStorageBinding {
+  /** Корень хранилища; отсутствует, если хранилище удалено с машины/из БД. */
+  rootPath?: string
+  status?: MachineStorageStatus
+  directories?: ChatStorageDirectories
+}
+
+export function chatStorageDirectories(rootPath: string, relativePath: string): ChatStorageDirectories {
+  const root = rootPath.trim().replace(/[/\\]+$/, '')
+  if (!root) throw new Error('Корень MachineStorage не задан')
+  const separator = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+  // Базовый путь проверяется один раз; служебные подкаталоги (`.generated`) вне правил validateStorageRelativePath.
+  const chatRoot = `${root}${separator}${validateStorageRelativePath(relativePath).replace(/\//g, separator)}`
+  return { chatRoot, attachments: `${chatRoot}${separator}attachments`, artifacts: `${chatRoot}${separator}artifacts`, generated: `${chatRoot}${separator}.generated` }
+}
+
 export type StorageContext =
   | { kind: 'chat'; conversationId: string }
   | { kind: 'project'; projectId: string; conversationId: string }
@@ -544,6 +569,8 @@ export interface ProjectSummary {
   /** Роль текущего пользователя в этом проекте. */
   role: ProjectRole
   commitPolicy: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'
+  /** Политика команд проекта поверх политик машин (machines-roadmap п.10); нет — дефолт (`DEFAULT_PROJECT_COMMAND_POLICY`). */
+  commandPolicy?: import('./commandPolicy').ProjectCommandPolicy
   mergeTransport: 'local' | 'github_pull_request'
   agentPlanApprovalMode: 'manual' | 'automatic'
   testCommand?: string
@@ -583,6 +610,8 @@ export interface ProjectSummary {
 
 /** Машина проекта: агент + рабочая папка проекта на этой машине. */
 export interface ProjectMachine {
+  /** Уровень доступа, с которым владелец предоставил машину проекту (п.18); нет — не предоставлена. */
+  shareAccess?: import('./agentProtocol').MachineShareAccess
   agentId: string
   /** Безопасные данные машины для участников проекта. */
   name?: string

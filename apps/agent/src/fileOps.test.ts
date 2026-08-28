@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join, win32 } from 'node:path'
 import { DEFAULT_AGENT_POLICY, type AgentPolicy } from '@voicechat/shared'
-import { fsList, fsRead, fsWrite, fsDelete, fsDeleteFileSafe, fsRename, fsMkdir, toNativePath } from './fileOps'
+import { fsList, fsRead, fsWrite, fsDelete, fsDeleteFileSafe, fsRename, fsMkdir, fsTrash, TRASH_DIR, toNativePath } from './fileOps'
 
 const OPEN: AgentPolicy = { ...DEFAULT_AGENT_POLICY }
 
@@ -55,6 +55,21 @@ describe('fileOps', () => {
     fsDeleteFileSafe(root, OPEN, join(root, 'a.txt'))
     expect(existsSync(join(root, 'a.txt'))).toBe(false)
     rmSync(outside, { force: true })
+  })
+
+  it('корзина: элемент переезжает в .voicechat_trash с меткой времени, откат — rename по trashedPath', () => {
+    const result = fsTrash(root, OPEN, join(root, 'a.txt'), new Date('2026-08-28T10:11:12.345Z'))
+    expect(result.trashedPath).toBe(join(root, TRASH_DIR, '20260828-101112__a.txt'))
+    expect(existsSync(join(root, 'a.txt'))).toBe(false)
+    expect(existsSync(result.trashedPath!)).toBe(true)
+    // листинг возвращается для каталога, откуда удалили; сама корзина в нём видна как каталог
+    expect(result.entries!.some((e) => e.name === TRASH_DIR && e.kind === 'dir')).toBe(true)
+    fsRename(root, OPEN, result.trashedPath!, join(root, 'a.txt'))
+    expect(existsSync(join(root, 'a.txt'))).toBe(true)
+    // повторно в корзину из корзины и сам корень — нельзя
+    const again = fsTrash(root, OPEN, join(root, 'a.txt'), new Date('2026-08-28T10:11:13Z'))
+    expect(() => fsTrash(root, OPEN, again.trashedPath!)).toThrow(/уже в корзине/)
+    expect(() => fsTrash(root, OPEN, root)).toThrow(/корень/)
   })
 
   it('mkdir возвращает листинг РОДИТЕЛЯ с новой папкой (видна в текущем каталоге)', () => {

@@ -7,7 +7,9 @@ import { summarizeConversationUsage } from '@shared/usageSummary'
 import { MakeSharedView } from './components/MakeSharedView'
 import type { EditorContextPayload, LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
+import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type ChatStorageView, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
+import { AGENT_VERSION } from '@shared/version'
+import type { RoleCommandPolicies } from '@shared/commandPolicy'
 import type { PreparationClarificationNotification } from '@shared/qa'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
@@ -16,6 +18,11 @@ import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration,
 import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { MakePane } from './components/MakePane'
+import { SessionsDialog, describeUserAgent } from './components/SessionsDialog'
+import { TwoFactorDialog } from './components/TwoFactorDialog'
+import { InviteRegister } from './components/InviteRegister'
+import { ChangePasswordDialog } from './components/ChangePasswordDialog'
+import { SignupScreen, VerifyScreen } from './components/SignupScreen'
 import { Sidebar } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
@@ -51,7 +58,6 @@ import { useConfirm } from '@voicechat/ui-kit'
 import { KnowledgeBase } from './components/KnowledgeBase'
 import { NotificationContainer } from './components/ClarificationNotification'
 import { KbUsagePanel } from './components/kb/KbUsagePanel'
-import { hasPendingKbUsage } from './lib/kbUsage'
 import { CommandPalette } from './components/CommandPalette'
 import { HotkeysCheatSheet } from './components/HotkeysCheatSheet'
 import {
@@ -243,6 +249,31 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const operationsActions = useOperationsActions()
   const adminActions = useAdminActions()
   const projectsActions = useProjectsActions()
+  /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
+  const [sessionsOpen, setSessionsOpen] = useState(false)
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  // Открытая регистрация: спрашиваем сервер один раз, пока пользователь не вошёл.
+  const [signupOpen, setSignupOpen] = useState(() => window.location.hash === '#/signup')
+  const [signupEnabled, setSignupEnabled] = useState(false)
+  useEffect(() => {
+    if (!session.authRequired || session.currentUser || !window.session?.signupEnabled) return
+    let alive = true
+    void window.session.signupEnabled().then((v) => { if (alive) setSignupEnabled(v) })
+    return () => { alive = false }
+  }, [session.authRequired, session.currentUser])
+  // Уведомление о входе с нового устройства (auth-roadmap п.16): после входа/восстановления сессии показываем и отмечаем просмотренными.
+  useEffect(() => {
+    const name = session.currentUser?.name
+    if (!name || !window.session?.securityNotices) return
+    let alive = true
+    void window.session.securityNotices().then((list) => {
+      if (!alive || list.length === 0) return
+      for (const n of list.slice(-3)) toast.info(`Вход в ваш аккаунт с нового устройства: ${describeUserAgent(n.userAgent)} · ${n.ip || 'адрес неизвестен'} · ${new Date(n.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}. Не вы — завершите сессии в меню аккаунта.`)
+      void window.session?.securityNoticesSeen?.()
+    }).catch(() => undefined)
+    return () => { alive = false }
+  }, [session.currentUser?.name]) // eslint-disable-line react-hooks/exhaustive-deps
   const [release, setRelease] = useState<HealthResponse | null>(null)
   const [chatView, setChatView] = useState<'chat' | 'preview'>('chat')
   const [previewElement, setPreviewElement] = useState<PreviewElementPayload | null>(null)
@@ -254,6 +285,17 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (!(await confirm({ title: 'Откатить правки этого ответа?', message: 'Файлы проекта вернутся к состоянию до правок; текущее состояние сохранится снимком «Перед восстановлением».', confirmLabel: 'Откатить' }))) return
     try { await window.api['make:restore']({ conversationId: chat.activeId, snapshotId }); toast.success('Правки откачены') } catch (e) { toast.error(e instanceof Error ? e.message : String(e)) }
   }
+  const [makeAskOnly, setMakeAskOnly] = useState(false)
+  const askRestoreRef = useRef<PermissionMode | null>(null)
+  useEffect(() => {
+    if (voice.voice !== 'idle' || !askRestoreRef.current) return
+    const prev = askRestoreRef.current; askRestoreRef.current = null
+    setMakeAskOnly(false)
+    // Возврат режима без диалога подтверждения: пользователь его не менял, это откат нашего временного «Плана».
+    if (activeConversation) void chatActions.setConversationExecTarget(activeConversation.id, activeConversation.execTarget ?? null, undefined, undefined, undefined, undefined, prev)
+    else void settingsActions.updateSettings({ permissionMode: prev })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voice.voice])
   const makeUsage = useMemo(() => (inMake ? summarizeConversationUsage(chat.messages) : null), [inMake, chat.messages])
   const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
   const [assistantOpen, setAssistantOpen] = useState(() => globalThis.localStorage?.getItem('voicechat.kanbanAssistantOpen') === '1')
@@ -370,6 +412,41 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     return () => { active = false }
   }, [api])
   const toast = useToast()
+  // Долгая команда машины завершилась: тост с переходом к логу/журналу; во вкладке в фоне — системное уведомление, если разрешено.
+  useEffect(() => {
+    const realtime = window.realtime
+    if (!realtime?.onMachineCommand) return
+    return realtime.onMachineCommand((event) => {
+      const seconds = Math.round(event.durationMs / 1000)
+      const outcome = event.error ? `ошибка: ${event.error}` : event.timedOut ? 'таймаут' : `код ${event.exitCode ?? '—'}`
+      const text = `«${event.machineName}»: команда завершилась (${outcome}, ${seconds} с) — ${event.command.slice(0, 60)}`
+      const action = event.logPath
+        ? { label: 'Открыть лог', onClick: () => operationsActions.openUtility('explorer', event.machineId, event.logPath) }
+        : { label: 'Журнал', onClick: () => navigate('/machines') }
+      if (event.error || (event.exitCode !== null && event.exitCode !== 0)) toast.error(text, { action, duration: 0 })
+      else toast.success(text, { action, duration: 8000 })
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+        try { new Notification('Команда на машине завершилась', { body: text }) } catch { /* без системных уведомлений */ }
+      }
+    })
+  }, [toast, navigate, operationsActions])
+  // Ролевые правила команд (п.10) — читаются при открытии админки.
+  const [roleCommandPolicies, setRoleCommandPolicies] = useState<RoleCommandPolicies | null>(null)
+  useEffect(() => {
+    if (!admin.usersOpen || !window.api || session.currentUser?.role !== 'admin') return
+    window.api['admin:commandPolicy']().then((r) => setRoleCommandPolicies(r.roles)).catch(() => setRoleCommandPolicies({}))
+  }, [admin.usersOpen, session.currentUser?.role])
+  // Watchdog: машина пропала дольше порога / вернулась.
+  useEffect(() => {
+    const realtime = window.realtime
+    if (!realtime?.onMachineStatus) return
+    return realtime.onMachineStatus((event) => {
+      const minutes = Math.max(1, Math.round(event.offlineForMs / 60_000))
+      const action = { label: 'Машины', onClick: () => navigate('/machines') }
+      if (event.state === 'offline') toast.error(`Машина «${event.machineName}» не в сети уже ${minutes} мин — проверьте агент на ней.`, { action, duration: 0 })
+      else toast.success(`Машина «${event.machineName}» снова в сети (не было ${minutes} мин).`, { action })
+    })
+  }, [toast, navigate])
   const confirm = useConfirm()
   // Снимок области из Reader: PNG уходит вложением композера, координаты — в черновик.
   const attachAreaScreenshot = useCallback((shot: WebRecorderAreaScreenshot) => {
@@ -573,6 +650,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Режим списка сайдбара: маршрут ведёт его автоматически, ручной выбор
   // (переключатель) живёт до следующей смены маршрута.
   const [sidebarMode, setSidebarMode] = useState<'chats' | 'projects'>('chats')
+  const [sidebarWidth, setSidebarWidth] = useState(264)
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
   useVoiceCues(voice.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
@@ -938,6 +1016,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const makeRouteReady = !inMake || (routeMakeChatId !== null && chat.activeId === routeMakeChatId && makeActiveListed)
   const readerSurfaceReady = readerRouteReady && playwrightReaderRouteReady && consoleReaderRouteReady && makeRouteReady
   const activeConversation = chat.conversations.find((c) => c.id === chat.activeId)
+  // Каталог результатов активного чата — для чипа в шапке; обновляется при смене чата, закрытии настроек и после хода.
+  const [activeStorage, setActiveStorage] = useState<ChatStorageView | null>(null)
+  useEffect(() => {
+    const id = chat.activeId
+    if (!id || !window.api) { setActiveStorage(null); return }
+    let cancelled = false
+    window.api['conversations:getStorage']({ id }).then((view) => { if (!cancelled) setActiveStorage(view) }).catch(() => { if (!cancelled) setActiveStorage(null) })
+    return () => { cancelled = true }
+  }, [chat.activeId, conversationSettingsOpen, voice.voice])
   const startWebReaderDiagnostics = useCallback((): void => {
     const conversationId = chat.activeId
     if (!inReader || !conversationId || !activeConversation || !isReaderConversation(activeConversation)) {
@@ -1339,6 +1426,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         read: operationsActions.fsRead,
         write: operationsActions.fsWrite,
         remove: operationsActions.fsRemove,
+        trash: operationsActions.fsTrash,
+        copyTo: operationsActions.fsCopyTo,
         rename: operationsActions.fsRename,
         mkdir: operationsActions.fsMkdir,
         download: operationsActions.downloadFsFile,
@@ -1371,12 +1460,29 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       </div>
     )
   }
+  const inviteToken = /^#\/invite\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
+  // Открытая регистрация с подтверждением email: #/signup — форма, #/verify/<token> — подтверждение из письма.
+  const verifyToken = /^#\/verify\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
+  if (session.authRequired && !session.currentUser && verifyToken && window.session?.verifyEmail) {
+    return <VerifyScreen token={decodeURIComponent(verifyToken)} verify={window.session.verifyEmail} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} onBack={() => { window.location.hash = '#/'; setSignupOpen(false) }} />
+  }
+  if (session.authRequired && !session.currentUser && signupOpen && window.session?.signup && window.session.signupResend) {
+    return <SignupScreen api={{ signup: window.session.signup, resend: window.session.signupResend }} theme={settingsState.settings.theme} onBack={() => setSignupOpen(false)} />
+  }
+  if (session.authRequired && !session.currentUser && inviteToken && window.session?.inviteInfo && window.session.register) {
+    return <InviteRegister token={decodeURIComponent(inviteToken)} api={{ inviteInfo: window.session.inviteInfo, register: window.session.register }} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} />
+  }
   if (session.authRequired && !session.currentUser) {
     return (
       <LoginScreen
-        onLogin={(name, password) => void runtime.login(name, password)}
+        onLogin={(name, password, remember) => void runtime.login(name, password, remember)}
         error={session.authError}
         theme={settingsState.settings.theme}
+        twoFactor={Boolean(session.twoFactorTicket)}
+        onCode={(code) => void runtime.loginCode(code)}
+        onCancelTwoFactor={() => runtime.cancelTwoFactor()}
+        onReset={window.session?.resetPassword ? (name, code, password) => void runtime.resetPassword(name, code, password) : undefined}
+        onSignup={signupEnabled ? () => setSignupOpen(true) : undefined}
       />
     )
   }
@@ -1393,6 +1499,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         inMake && 'app--make'
       ].filter(Boolean).join(' ')}
       data-theme={settingsState.settings.theme}
+      style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
     >
       {release?.version && (() => {
         const details = [
@@ -1447,6 +1554,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       />
       <Sidebar
         open={sidebarOpen}
+        width={sidebarWidth}
+        onWidthChange={compactChat ? undefined : setSidebarWidth}
         onToggleCollapse={() => shellActions.setSidebarCollapsed(true)}
         conversations={chat.conversations.filter((conversation) => conversation.assistantKind !== 'web-recorder' && !conversation.previewUrl)}
         conversationsStatus={chat.conversationsStatus}
@@ -1508,6 +1617,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenMachines={session.authRequired ? menu(() => navigate('/machines')) : undefined}
         onOpenCi={session.authRequired ? menu(() => navigate('/ci')) : undefined}
         currentUser={session.currentUser}
+        onOpenSessions={session.authRequired && window.session?.sessions ? () => setSessionsOpen(true) : undefined}
+        onOpenTwoFactor={session.authRequired && window.session?.twoFactor ? () => setTwoFactorOpen(true) : undefined}
+        onOpenChangePassword={session.authRequired && window.session?.changePassword ? () => setChangePasswordOpen(true) : undefined}
+        avatar={settingsState.settings.personalization.avatar ?? null}
         onLogout={session.authRequired ? async () => {
           const accepted = await confirm({
             title: 'Выйти из ChatAI?',
@@ -1577,6 +1690,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onOpenConversationSettings={() => { setConversationSettingsOpen(true); void projectsActions.refreshProjects() }}
         permissionMode={activePermissionMode}
         workspace={activeConversation?.workspace}
+        storage={activeStorage}
+        onRunSkill={(agentId, command) => operationsActions.runSkill(agentId, command)}
         onExecutePlan={(answerId) => void chatActions.executePlan(answerId)}
         onMakeRestore={inMake ? (snapshotId) => void restoreMakeTurn(snapshotId) : undefined}
         canExecutePlan={!forcedPlan}
@@ -1644,10 +1759,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         downloadPercent={settingsState.downloadPercent}
         onDownloadModel={settingsActions.downloadModel}
         onExport={chatActions.exportConversation}
-        onOpenKbUsage={chat.activeId ? runtime.openKbUsage : undefined}
-        kbUsageCount={activeKbUsage?.report?.unreadCount ?? 0}
-        kbUsageActive={hasPendingKbUsage(activeKbUsage?.report ?? null)}
-        kbContextMode={activeConversation?.kbContextMode ?? 'auto'}
         turnMeta={chat.lastTurnMeta}
         agents={operations.agents}
         execTarget={activeExecTarget}
@@ -1682,7 +1793,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               if (inConsoleReader && isConsoleReaderDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startConsoleReaderDiagnostics(); return }
               if (inMake && isMakeDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startMakeDiagnostics(); return }
               if (isChatDiagnosticsCommand(chat.draft)) { chatActions.setDraft(''); startChatDiagnostics(); return }
-              void chatActions.submitText(previewElement ?? undefined, inMake ? makeEditorContext ?? undefined : undefined).then((sent) => { if (sent) setPreviewElement(null) })
+              void (async () => {
+                // Режим вопроса Make (roadmap-4 п.4): один ход в «Плане», прежний режим вернётся по завершении хода.
+                if (inMake && makeAskOnly && activePermissionMode !== 'plan') { askRestoreRef.current = activePermissionMode; await changeConversationMode('plan') }
+                const sent = await chatActions.submitText(previewElement ?? undefined, inMake ? makeEditorContext ?? undefined : undefined)
+                if (sent) setPreviewElement(null)
+              })()
             }}
             onStartVoice={voiceActions.startVoice}
             onStopVoice={voiceActions.stopVoice}
@@ -1706,7 +1822,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
       {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} />}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
-      {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} usage={makeUsage} turnActive={voice.voice === 'thinking'} />}
+      {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
+      {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
+      {sessionsOpen && window.session?.sessions && window.session.logoutAll && window.session.revokeSession && <SessionsDialog load={window.session.sessions} revoke={window.session.revokeSession} logoutAll={window.session.logoutAll} onClose={() => setSessionsOpen(false)} />}
+      {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} />}
       {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
       </div>
       )}
@@ -1755,6 +1874,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 onUpdateMemberRole={(id, username, role) => void projectsActions.updateProjectMemberRole(id, username, role)}
                 onRemoveMember={(id, username) => void projectsActions.removeProjectMember(id, username)}
                 onLinkMachine={(id, agentId) => void projectsActions.linkProjectMachine(id, agentId)}
+                onSetMachineShareAccess={(id, agentId, access) => void projectsActions.setProjectMachineShareAccess(id, agentId, access)}
                 onUnlinkMachine={(id, agentId) => void projectsActions.unlinkProjectMachine(id, agentId)}
                 onConfigureMachineStorage={(id, agentId, storageId, directories) => projectsActions.configureProjectMachineStorage(id, agentId, storageId, directories)}
                 onResetMachineDirectory={(id, agentId, kind) => projectsActions.resetProjectMachineDirectory(id, agentId, kind)}
@@ -1933,8 +2053,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onRegisterStorage={operationsActions.registerMachineStorage}
           onCreateAgent={operationsActions.createAgent}
           onRegenerateToken={operationsActions.regenerateAgentToken}
+          onRevokeToken={(id) => void operationsActions.revokeAgentToken(id)}
+          onSetPinIp={(id, pin) => void operationsActions.setAgentPinIp(id, pin)}
           onGetConnectionString={operationsActions.getAgentConnectionString}
           onUpdateAgent={operationsActions.updateAgent}
+          onLoadCommands={(id, filter) => (window.api ? window.api['agents:commands']({ id, ...filter }) : Promise.resolve([]))}
+          onExecTest={(id) => operationsActions.agentExec(id, 'uname -a 2>/dev/null || ver')}
+          onExecBatch={(machineIds, command) => window.api!['agents:execBatch']({ machineIds, command })}
+          onOpenConversation={(conversationId) => navigate(`/chat/${conversationId}`)}
           onDeleteAgent={(id) => void operationsActions.deleteAgent(id)}
           defaultAgentId={settingsState.settings.defaultAgentId}
           onSetDefault={(id) => void settingsActions.updateSettings({ defaultAgentId: id })}
@@ -1949,8 +2075,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <Suspense fallback={<div role="status">Загрузка Administration…</div>}><UsersAdmin
           variant="page"
           users={admin.adminUsers}
+          latestAgentVersion={AGENT_VERSION}
+          onUpdateMachine={async (id) => { try { await window.api!['admin:updateMachine']({ id }); return null } catch (err) { return err instanceof Error ? err.message : String(err) } }}
           usageSummary={admin.adminUsageSummary}
           makeStats={admin.adminMakeStats}
+          machineStats={admin.adminMachineStats}
+          roleCommandPolicies={roleCommandPolicies}
+          onSaveRoleCommandPolicies={async (roles) => { const r = await window.api!['admin:setCommandPolicy']({ roles }); setRoleCommandPolicies(r.roles) }}
           isAdmin={session.currentUser?.role === 'admin'}
           status={admin.adminUsersStatus}
           error={admin.adminUsersError}
@@ -1962,11 +2093,26 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           conversationId={admin.adminConversationId}
           currentUserName={session.currentUser?.name ?? ''}
           onSelect={(name) => { navigate(`/users/${encodeURIComponent(name)}`); void adminActions.selectAdminUser(name) }}
-          onCreate={(name, password, role) => void adminActions.createUserAccount(name, password, role)}
+          onCreate={(name, password, role, mustChangePassword) => void adminActions.createUserAccount(name, password, role, mustChangePassword)}
+          onResetCode={(name) => adminActions.issueResetCode(name)}
+          onSetLlmLimit={(name, usd) => void adminActions.setUserLlmLimit(name, usd)}
           onUpdateRole={(name, role) => void adminActions.updateUserRole(name, role)}
           onSetBlocked={(name, blocked) => void adminActions.setUserBlocked(name, blocked)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
+          sessions={admin.adminSessions}
+          onLoadSessions={() => void adminActions.loadAdminSessions()}
+          onRevokeSession={(sid) => void adminActions.revokeAdminSession(sid)}
+          security={admin.adminSecurity}
+          onLoadSecurity={() => void adminActions.loadAdminSecurity()}
+          invites={admin.adminInvites}
+          onLoadInvites={() => void adminActions.loadAdminInvites()}
+          onCreateInvite={(input) => void adminActions.createAdminInvite(input)}
+          onDeleteInvite={(token) => void adminActions.deleteAdminInvite(token)}
+          inviteBaseUrl={`${window.location.origin}${window.location.pathname}`}
+          signup={admin.adminSignup}
+          onLoadSignup={() => void adminActions.loadAdminSignup()}
+          onSetSignup={(input) => void adminActions.setAdminSignup(input)}
           onOpenConversation={(id) => void adminActions.openAdminConversation(id)}
           llmAccess={admin.adminUserLlmAccess}
           onSaveLlmAccess={(access) => void adminActions.saveAdminUserLlmAccess(access)}
@@ -2065,6 +2211,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           chatDiagnostics={!inSplit ? { running: diagnosticsControllerRef.current !== null, onRun: startChatDiagnostics } : undefined}
           fetchProjectDetail={projectsActions.fetchProjectDetail}
           fetchMachines={chatActions.fetchConversationMachines}
+          onOpenExplorer={(agentId, path) => { setConversationSettingsOpen(false); operationsActions.openUtility('explorer', agentId, path) }}
           onSave={async ({ title, execTarget, workdir, skillNames, llmEngineId, llmProvider, llmModel, permissionMode, kbContextMode, projectId }) => {
             await chatActions.renameConversation(activeConversation.id, title)
             await chatActions.setConversationProject(activeConversation.id, projectId)
@@ -2074,6 +2221,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             const agent = operations.agents.find((item) => item.id === agentId)
             if (!agent) return
             await operationsActions.setAgentPolicy(agentId, { ...agent.policy, skills: [...agent.policy.skills, skill] })
+          }}
+          onOpenKbUsage={() => {
+            setConversationSettingsOpen(false)
+            runtime.openKbUsage()
           }}
           onClose={() => {
             setConversationSettingsOpen(false)
@@ -2097,7 +2248,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             kind: operations.utility.kind,
             ...(operations.utility.agentId ? { agentId: operations.utility.agentId } : {}),
             ...(operations.utility.path ? { path: operations.utility.path } : {}),
-            ...(operations.utility.dir ? { dir: true } : {})
+            ...(operations.utility.dir ? { dir: true } : {}),
+            ...(operations.utility.command ? { command: operations.utility.command } : {})
           }}
           agents={operations.agents}
           ops={machineOps}

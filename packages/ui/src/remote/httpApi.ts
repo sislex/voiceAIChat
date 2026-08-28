@@ -32,7 +32,7 @@ import type {
 import { encodeAgentConnection } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
 import type { MessageSearchResult } from '@shared/types'
-import { getToken } from './session'
+import { authHeaders } from './session'
 
 export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi {
   /**
@@ -45,10 +45,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
     // Content-Type ставим только при наличии тела: иначе Fastify пытается распарсить
     // пустое JSON-тело у DELETE и отвечает 400. Токен сессии — в Authorization.
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { ...authHeaders() }
     if (init?.body != null) headers['content-type'] = 'application/json'
-    const token = getToken()
-    if (token) headers['authorization'] = `Bearer ${token}`
     const res = await fetch(httpBase + path, { ...init, headers })
     const text = await res.text()
     if (!res.ok) {
@@ -102,27 +100,32 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'make:snapshot': ({ conversationId, label }) => req(REST.makeSnapshots(conversationId), { method: 'POST', body: JSON.stringify({ label }) }),
     'make:restore': ({ conversationId, snapshotId }) => req(REST.makeRestore(conversationId, snapshotId), { method: 'POST' }),
     'make:reset': ({ conversationId }) => req(REST.makeReset(conversationId), { method: 'POST' }),
-    'make:publish': ({ conversationId, snapshotId, slug, password }) => req(REST.makePublish(conversationId), { method: 'POST', body: JSON.stringify({ snapshotId: snapshotId ?? null, ...(slug !== undefined ? { slug } : {}), ...(password !== undefined ? { password } : {}) }) }),
+    'make:publish': ({ conversationId, snapshotId, slug, password, allowComments }) => req(REST.makePublish(conversationId), { method: 'POST', body: JSON.stringify({ snapshotId: snapshotId ?? null, ...(slug !== undefined ? { slug } : {}), ...(allowComments !== undefined ? { allowComments } : {}), ...(password !== undefined ? { password } : {}) }) }),
     'make:unpublish': ({ conversationId }) => req(REST.makePublish(conversationId), { method: 'DELETE' }),
     'make:check': ({ conversationId }) => req(REST.makeCheck(conversationId)),
     'make:template': ({ conversationId, templateId }) => req(REST.makeTemplate(conversationId), { method: 'POST', body: JSON.stringify({ templateId }) }),
     'make:upload': ({ conversationId, path, dataBase64 }) => req(REST.makeUpload(conversationId), { method: 'POST', body: JSON.stringify({ path, dataBase64 }) }),
-    'make:search': ({ conversationId, query }) => req(`${REST.makeSearch(conversationId)}?q=${encodeURIComponent(query)}`),
+    'make:search': ({ conversationId, query, regex, matchCase }) => req(`${REST.makeSearch(conversationId)}?q=${encodeURIComponent(query)}${regex ? '&regex=1' : ''}${matchCase ? '&matchCase=1' : ''}`),
     'make:stories': ({ conversationId }) => req(REST.makeStories(conversationId)),
-    'make:replace': ({ conversationId, query, replacement, matchCase }) => req(REST.makeReplace(conversationId), { method: 'POST', body: JSON.stringify({ query, replacement, matchCase }) }),
+    'make:replace': ({ conversationId, query, replacement, matchCase, regex, dryRun }) => req(REST.makeReplace(conversationId), { method: 'POST', body: JSON.stringify({ query, replacement, matchCase, regex, dryRun }) }),
     'make:snapshotDiff': ({ conversationId, snapshotId }) => req(REST.makeSnapshotDiff(conversationId, snapshotId)),
     'make:library': () => req(REST.makeLibrary),
     'make:libraryExport': ({ conversationId, name, paths }) => req(REST.makeLibraryExport(conversationId), { method: 'POST', body: JSON.stringify({ name, paths }) }),
     'make:libraryInsert': ({ conversationId, slug }) => req(REST.makeLibraryInsert(conversationId, slug), { method: 'POST' }),
     'make:libraryRemove': ({ slug }) => req(REST.makeLibraryItem(slug), { method: 'DELETE' }),
     'make:shots': ({ conversationId }) => req(REST.makeShots(conversationId)),
+    'make:tests': ({ conversationId }) => req(REST.makeTests(conversationId)),
+    'make:notes': ({ conversationId }) => req(REST.makeNotes(conversationId)),
+    'make:setNotes': ({ conversationId, ...body }) => req(REST.makeNotes(conversationId), { method: 'PUT', body: JSON.stringify(body) }),
     'make:usage': ({ conversationId }) => req(REST.makeUsage(conversationId)),
     'make:share': ({ conversationId }) => req(REST.makeShare(conversationId), { method: 'POST' }),
     'make:unshare': ({ conversationId }) => req(REST.makeShare(conversationId), { method: 'DELETE' }),
+    'make:shareGrant': ({ conversationId, user, role }) => req(REST.makeShareGrants(conversationId), { method: 'POST', body: JSON.stringify({ user, role }) }),
     'make:shared': ({ token }) => req(REST.makeShared(token)),
     'make:sharedFile': ({ token, path }) => req(REST.makeSharedFile(token, path)),
     'make:sharedStories': ({ token }) => req(REST.makeSharedStories(token)),
     'make:comments': ({ conversationId }) => req(REST.makeComments(conversationId)),
+    'make:presence': ({ conversationId, ...body }) => req(REST.makePresence(conversationId), { method: 'POST', body: JSON.stringify(body) }),
     'make:commentAdd': ({ conversationId, ...body }) => req(REST.makeComments(conversationId), { method: 'POST', body: JSON.stringify(body) }),
     'make:commentUpdate': ({ conversationId, commentId, ...body }) => req(REST.makeComment(conversationId, commentId), { method: 'PATCH', body: JSON.stringify(body) }),
     'make:commentRemove': ({ conversationId, commentId }) => req(REST.makeComment(conversationId, commentId), { method: 'DELETE' }),
@@ -140,9 +143,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'widget:get': (body) => req('/api/widget-tools/get', { method: 'POST', body: JSON.stringify(body) }),
     'widget:action': (body) => req('/api/widget-tools/action', { method: 'POST', body: JSON.stringify(body) }),
     'conversations:get': async ({ id }) => {
-      const token = getToken()
       const res = await fetch(httpBase + REST.conversation(id), {
-        headers: token ? { authorization: `Bearer ${token}` } : undefined
+        headers: authHeaders()
       })
       if (res.status === 404) return null
       if (!res.ok) throw new Error(`GET ${REST.conversation(id)} → ${res.status}`)
@@ -255,8 +257,19 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'agents:setPolicy': async ({ id, policy }) => {
       await req(REST.agentPolicy(id), { method: 'POST', body: JSON.stringify({ policy }) })
     },
-    'agents:regenerateToken': ({ id }) => req(REST.agentToken(id), { method: 'POST' }),
+    'agents:regenerateToken': ({ id, ttlDays }) => req(REST.agentToken(id), { method: 'POST', body: JSON.stringify(ttlDays ? { ttlDays } : {}) }),
+    'agents:revokeToken': ({ id }) => req(REST.agentToken(id), { method: 'DELETE' }),
+    'agents:setPinIp': ({ id, pin }) => req(REST.agentPinIp(id), { method: 'POST', body: JSON.stringify({ pin }) }),
     'agents:update': ({ id }) => req(REST.agentUpdate(id), { method: 'POST' }),
+    'agents:execBatch': ({ machineIds, command, projectId }) => req(`${REST.agentsExecBatch}${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`, { method: 'POST', body: JSON.stringify({ machineIds, command }) }),
+    'agents:commands': ({ id, limit, q, source }) => {
+      const params = new URLSearchParams()
+      if (limit) params.set('limit', String(limit))
+      if (q) params.set('q', q)
+      if (source) params.set('source', source)
+      const query = params.toString()
+      return req(`${REST.agentCommands(id)}${query ? `?${query}` : ''}`)
+    },
     'downloads:url': async ({ kind }) => {
       const path =
         kind === 'desktop'
@@ -279,6 +292,16 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`${REST.cxTranscript}?id=${encodeURIComponent(id)}${limit ? `&limit=${limit}` : ''}`),
     'cx:resume': ({ id }) => req(REST.cxResume, { method: 'POST', body: JSON.stringify({ id }) }),
     'admin:users': () => req(REST.adminUsers),
+    'admin:userSessions': ({ name }) => req(REST.adminSessions(name)),
+    'admin:revokeSession': ({ sid }) => req(REST.adminSessionRevoke(sid), { method: 'DELETE' }),
+    'admin:invites': () => req(REST.adminInvites),
+    'admin:resetCode': ({ name }) => req(REST.adminUserResetCode(name), { method: 'POST' }),
+    'admin:signupConfig': () => req(REST.adminSignup),
+    'admin:setSignupConfig': (body) => req(REST.adminSignup, { method: 'PUT', body: JSON.stringify(body) }),
+    'admin:setUserLlmLimit': ({ name, llmLimitUsd }) => req(REST.adminUser(name), { method: 'PATCH', body: JSON.stringify({ llmLimitUsd }) }),
+    'admin:inviteCreate': (body) => req(REST.adminInvites, { method: 'POST', body: JSON.stringify(body) }),
+    'admin:inviteDelete': ({ token }) => req(REST.adminInvite(token), { method: 'DELETE' }),
+    'admin:securityEvents': ({ user, limit }) => req(`${REST.adminSecurity}?${user ? `user=${encodeURIComponent(user)}&` : ''}${limit ? `limit=${limit}` : ''}`.replace(/[?&]$/, '')),
     'admin:usageSummary': (arg) => {
       const q = new URLSearchParams()
       if (arg?.from) q.set('from', String(arg.from))
@@ -286,6 +309,11 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       return req(`${REST.adminUsersUsageSummary}${q.size ? `?${q.toString()}` : ''}`)
     },
     'admin:makeStats': () => req(REST.adminMakeStats),
+    'admin:updateMachine': ({ id }) => req(REST.adminMachineUpdate(id), { method: 'POST' }),
+    'admin:machineStats': () => req(REST.adminMachineStats),
+    'admin:revokeMachineToken': ({ id }) => req(REST.adminMachineTokenRevoke(id), { method: 'POST' }),
+    'admin:commandPolicy': () => req(REST.adminCommandPolicy),
+    'admin:setCommandPolicy': ({ roles }) => req(REST.adminCommandPolicy, { method: 'PUT', body: JSON.stringify({ roles }) }),
     'admin:llmAccess': ({ name }) => req(REST.adminUserLlmAccess(name)),
     'admin:saveLlmAccess': ({ name, access }) => req(REST.adminUserLlmAccess(name), { method: 'PUT', body: JSON.stringify(access) }),
     'admin:createUser': (b) =>
@@ -333,9 +361,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'projects:list': () => req(REST.projects),
     'projects:create': (b) => req(REST.projects, { method: 'POST', body: JSON.stringify(b) }),
     'projects:get': async ({ id }) => {
-      const token = getToken()
       const res = await fetch(httpBase + REST.project(id), {
-        headers: token ? { authorization: `Bearer ${token}` } : undefined
+        headers: authHeaders()
       })
       if (res.status === 404) return null
       if (!res.ok) throw new Error(`GET ${REST.project(id)} → ${res.status}`)
@@ -369,6 +396,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectMember(id, username), { method: 'DELETE' }),
     'projects:linkMachine': ({ id, agentId, storageId }) =>
       req(REST.projectMachines(id), { method: 'POST', body: JSON.stringify({ agentId, storageId }) }),
+    'projects:setMachineShareAccess': ({ id, agentId, access }) =>
+      req(REST.projectMachineShare(id, agentId), { method: 'PUT', body: JSON.stringify({ shared: true, access }) }),
     'projects:unlinkMachine': ({ id, agentId }) =>
       req(REST.projectMachine(id, agentId), { method: 'DELETE' }),
     'projects:configureMachineStorage': ({ id, agentId, storageId, directories }) =>
@@ -437,9 +466,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'tasks:dismissPreparationNotification': ({ questionId }) =>
       req(`/api/task-preparation/notifications/${encodeURIComponent(questionId)}/dismiss`, { method: 'POST' }),
     'tasks:exportPreparationRun': async ({ runId, format }) => {
-      const token = getToken()
       const response = await fetch(httpBase + `/api/task-preparation/runs/${encodeURIComponent(runId)}/export/${format}`, {
-        headers: token ? { authorization: `Bearer ${token}` } : {}
+        headers: authHeaders()
       })
       if (!response.ok) throw new Error(`Экспорт подготовки → ${response.status}`)
       const disposition = response.headers.get('content-disposition') ?? ''
@@ -467,8 +495,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
 /** REST телеметрии БЗ: снапшоты по чату и по проекту (инкременты идут по WS). */
 export function createKbUsageRest(httpBase: string): RendererKbRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
-    const token = getToken()
-    const headers: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {}
+    const headers: Record<string, string> = { ...authHeaders() }
     if (init?.body != null) headers['content-type'] = 'application/json'
     const res = await fetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
@@ -483,10 +510,8 @@ export function createKbUsageRest(httpBase: string): RendererKbRest {
 
 export function createCiRest(httpBase: string): RendererCiRest {
   async function req<T>(path: string, init?: RequestInit): Promise<T> {
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { ...authHeaders() }
     if (init?.body != null) headers['content-type'] = 'application/json'
-    const token = getToken()
-    if (token) headers['authorization'] = `Bearer ${token}`
     const res = await fetch(httpBase + path, { ...init, headers })
     if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} → ${res.status}`)
     const text = await res.text()

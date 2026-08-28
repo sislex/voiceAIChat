@@ -113,4 +113,18 @@ describe('makeMcp', () => {
     const bad = resultText((await rpc(call('make_write_file', { path: 'src/App.tsx', content: 'export const A = () => <div>' }))).json())
     expect(bad.text).toContain('Ошибка компиляции')
   })
+
+  it('make_apply_changes откатывает транзакцию при ошибке компиляции; make_edit_file правит фрагмент', async () => {
+    await app.close()
+    await setup()
+    await rpc(INIT)
+    const bad = resultText((await rpc(call('make_apply_changes', { files: [{ path: 'index.html', content: '<h1>tx</h1>' }, { path: 'src/App.tsx', content: 'export const A = () => <div>' }] }))).json())
+    expect(bad.text).toContain('откачены')
+    expect((await workspaces.read(CONV, 'index.html')).content).not.toBe('<h1>tx</h1>')
+    const ok = resultText((await rpc(call('make_apply_changes', { files: [{ path: 'index.html', content: '<h1>tx</h1>' }] }))).json())
+    expect(ok.text).toContain('Записано файлов: 1')
+    const edited = resultText((await rpc(call('make_edit_file', { path: 'index.html', find: 'tx', replace: 'edited' }))).json())
+    expect(edited.text).toContain('Заменено вхождений: 1')
+    expect((await workspaces.read(CONV, 'index.html')).content).toBe('<h1>edited</h1>')
+  })
 })

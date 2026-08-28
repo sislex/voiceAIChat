@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import type { ClaudeLogEntry, KbContextMode, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
-import type { WorkspaceView } from '@shared/projects'
+import type { ClaudeLogEntry, Message, PermissionMode, TurnMeta, TurnUsage, VoiceState } from '@shared/types'
+import type { ChatStorageView, WorkspaceView } from '@shared/projects'
+import { ChatStorageCard } from './ChatStorageCard'
+import { MachineHealthBadge, MachineHealthWarnings } from './MachineHealthBadge'
 import { parseQuestions } from '@shared/questions'
 import { parseToolBlock } from '@shared/tools'
 import { parseImages, isImagePath } from '@shared/images'
@@ -17,7 +19,6 @@ import {
   dateTimeTooltip,
   formatElapsed,
   speakerName,
-  statusBadge,
   type LiveSegment
 } from '../lib/view'
 import { Dots } from './animations'
@@ -66,16 +67,6 @@ function writeSavedScroll(conversationId: string, value: SavedScroll): void {
 
 const EDIT_MIN_ROWS = 2
 const EDIT_MAX_ROWS = 4
-
-/** Доступное имя кнопки сообщает именно непросмотренные обращения. */
-function kbUsageLabel(count: number, active: boolean, mode: KbContextMode): string {
-  const head = count > 0
-    ? `Использование базы знаний — ${count} новых обращени${count === 1 ? 'е' : count >= 2 && count <= 4 ? 'я' : 'й'}`
-    : 'Использование базы знаний — новых обращений нет'
-  if (active) return `${head}; идёт обращение`
-  if (mode === 'off') return `${head}; база знаний выключена для этого чата`
-  return head
-}
 
 function modeLabel(mode?: string): string {
   if (mode === 'plan') return 'Планирование'
@@ -127,8 +118,14 @@ export interface ChatColumnProps {
   permissionMode?: PermissionMode
   /** Фактический managed workspace, вычисленный сервером. */
   workspace?: WorkspaceView | null
+  /** Каталог результатов чата (привязка к хранилищу машины) — чип в шапке. */
+  storage?: ChatStorageView | null
+  /** Выполнить сохранённую команду (навык) машины хода: открывает консоль и запускает её. */
+  onRunSkill?: (agentId: string, command: string) => void
   /** Выполнить исходный запрос планового ответа в режиме разработки. */
   onExecutePlan?: (answerId: string) => void
+  /** Make: откатить правки этого ответа к снимку «До правок» (meta.makeSnapshotId). */
+  onMakeRestore?: (snapshotId: string) => void
   /** Разрешено ли эскалировать план (user без машины — нет). */
   canExecutePlan?: boolean
   state: VoiceState
@@ -186,14 +183,6 @@ export interface ChatColumnProps {
   onDownloadModel?: () => void
   /** Экспортировать текущий разговор (Markdown/JSON). */
   onExport?: (format: 'md' | 'json') => void
-  /** Открыть панель «Использование БЗ» этого чата. */
-  onOpenKbUsage?: () => void
-  /** Сколько обращений к базе знаний было в чате (надстрочный счётчик кнопки). */
-  kbUsageCount?: number
-  /** Идёт обращение к БЗ прямо сейчас — вместо счётчика показываем «думает». */
-  kbUsageActive?: boolean
-  /** Режим БЗ разговора — для подписи кнопки (при 'off' она объясняет, почему пусто). */
-  kbContextMode?: KbContextMode
   /** Мета последнего хода (длительность/токены/стоимость); null — не показывать. */
   turnMeta?: TurnMeta | null
   /** Голосовая панель, рендерится внизу колонки (как в прототипе). */
@@ -243,7 +232,10 @@ export function ChatColumn({
   onOpenConversationSettings,
   permissionMode = 'plan',
   workspace = null,
+  storage = null,
+  onRunSkill,
   onExecutePlan,
+  onMakeRestore,
   canExecutePlan = true,
   state,
   messages,
@@ -268,10 +260,6 @@ export function ChatColumn({
   downloadPercent = 0,
   onDownloadModel,
   onExport,
-  onOpenKbUsage,
-  kbUsageCount = 0,
-  kbUsageActive = false,
-  kbContextMode = 'auto',
   turnMeta,
   voiceBar,
   agents = [],
@@ -558,9 +546,26 @@ export function ChatColumn({
             {title}
           </h1>
         )}
-        <span className="mtitle-machine" data-testid="head-machine" title="Машина этого разговора">
-          {execTarget === 'none' ? 'Без машины' : execTarget ? (agents.find((a) => a.id === execTarget)?.name ?? execTarget) : 'Сервер'}
-        </span>
+        {execTarget && execTarget !== 'none'
+          ? <MachineHealthBadge agent={agents.find((a) => a.id === execTarget)} onClick={onOpenMachines} />
+          : <span className="mtitle-machine" data-testid="head-machine" title="Машина этого разговора">{execTarget === 'none' ? 'Без машины' : 'Сервер'}</span>}
+        <ChatStorageCard compact storage={storage} onOpenExplorer={onOpenImageInExplorer} />
+        {onRunSkill && execTarget && execTarget !== 'none' && (() => {
+          const machine = agents.find((a) => a.id === execTarget)
+          if (!machine || !machine.online || machine.policy.skills.length === 0) return null
+          return (
+            <select
+              className="chat-skills"
+              aria-label="Навыки машины"
+              title="Сохранённые команды машины: выбор открывает консоль и выполняет команду"
+              value=""
+              onChange={(e) => { const skill = machine.policy.skills.find((s) => s.name === e.target.value); if (skill) onRunSkill(machine.id, skill.command) }}
+            >
+              <option value="">⚡ Навыки</option>
+              {machine.policy.skills.map((s) => <option key={s.name} value={s.name} title={s.command}>{s.name}</option>)}
+            </select>
+          )
+        })()}
         {workspace && (
           <span
             className={`mode-badge workspace-badge workspace-badge--${workspace.state}`}
@@ -595,28 +600,6 @@ export function ChatColumn({
           </label>
         )}
         <span className="mhead-right">
-          {onOpenKbUsage && (
-            <span className="kbusewrap">
-              <IconButton
-                size="sm"
-                variant="secondary"
-                data-testid="kb-usage-open"
-                aria-label={kbUsageLabel(kbUsageCount, kbUsageActive, kbContextMode)}
-                title={kbUsageLabel(kbUsageCount, kbUsageActive, kbContextMode)}
-                onClick={onOpenKbUsage}
-              >
-                📚
-              </IconButton>
-              {/* Счётчик — украшение: число уже есть в aria-label кнопки,
-                  поэтому от скринридера он скрыт (иначе имя читается дважды). */}
-              {kbUsageActive ? (
-                <span className="kbusebadge kbusebadge--live" aria-hidden data-testid="kb-usage-live"><Dots /></span>
-              ) : kbUsageCount > 0 ? (
-                <span className="kbusebadge" aria-hidden data-testid="kb-usage-count">{kbUsageCount > 99 ? '99+' : kbUsageCount}</span>
-              ) : null}
-            </span>
-          )}
-          <span className="badge">{statusBadge(state, aiLabel)}</span>
           {onExport && messages.length > 0 && (
             <span className="exportwrap" ref={exportMenuRef}>
               <IconButton
@@ -858,6 +841,11 @@ export function ChatColumn({
                     {isLast && m.meta?.request?.permissionMode === 'plan' && onExecutePlan && canExecutePlan && state === 'idle' && (
                       <button type="button" className="execute-plan-link" onClick={() => onExecutePlan(m.id)}>Выполнить план</button>
                     )}
+                    {m.meta?.makeSnapshotId && onMakeRestore && (
+                      <Button size="sm" variant="ghost" className="make-restore-turn" title="Вернуть файлы проекта к состоянию до правок этого ответа" onClick={() => onMakeRestore(m.meta!.makeSnapshotId!)}>
+                        Откатить правки
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <div className="bub">
@@ -1091,6 +1079,7 @@ export function ChatColumn({
         </div>
       )}
 
+      {execTarget && execTarget !== 'none' && <MachineHealthWarnings agent={agents.find((a) => a.id === execTarget)} />}
       <div className={(composerLayout ?? (messages.length === 0 ? 'centered' : 'docked')) === 'centered' ? 'chat-composer chat-composer--centered' : 'chat-composer chat-composer--docked'}>
         {voiceBar}
       </div>
