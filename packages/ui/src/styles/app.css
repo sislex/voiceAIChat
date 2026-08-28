@@ -4694,6 +4694,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .projitem { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; border: none; background: none; color: inherit; cursor: pointer; }
 .projitem .ctitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .projitem-role { font-size: 11px; opacity: 0.6; flex: 0 0 auto; }
+/* Тип и роль в строке проекта: одна колонка справа, тип сверху. */
+.projitem-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex: 0 0 auto; min-width: 0; }
+.projitem-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-dim);
+  max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .projadd { display: block; width: calc(100% - 24px); margin: 0 12px 8px; border: 1px dashed rgba(128, 128, 128, 0.5); background: none; color: inherit; font-size: 13px; padding: 6px 8px; border-radius: 6px; cursor: pointer; opacity: 0.85; }
 .projadd:hover { opacity: 1; background: rgba(128, 128, 128, 0.1); }
 .projcreate { display: block; width: calc(100% - 24px); margin: 0 12px 8px; box-sizing: border-box; }
@@ -7064,3 +7068,94 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .mbatch-row--bad td:nth-child(2) { color: var(--danger, #e5484d); font-weight: 600; }
 .mbatch-out { margin: 4px 0 0; padding: 6px; max-height: 200px; overflow: auto; font-size: 11px; white-space: pre-wrap; background: rgba(0,0,0,0.06); border-radius: 4px; }
 .mbatch-link { border: 0; background: none; padding: 0; color: var(--accent, #4c6ef5); cursor: pointer; font-size: 12px; }
+
+/* Окно создания проекта: имя + каскад типов. Геометрия на токенах, чтобы
+   плотность совпадала с остальными формами настроек. */
+.newproj { display: flex; flex-direction: column; gap: var(--space-4, 12px); }
+.newproj-field { display: flex; flex-direction: column; gap: var(--space-1, 4px); }
+.newproj-label { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.newproj-field select.login-input { appearance: auto; }
+.newproj-summary {
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: var(--radius-medium, 8px);
+  padding: var(--space-3, 10px) var(--space-4, 12px);
+  background: var(--surface-hover);
+}
+.newproj-desc { margin: 0 0 var(--space-2, 6px); }
+.newproj-features { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: var(--space-2, 6px); }
+.newproj-chip {
+  font-size: 11px; line-height: 1.6; padding: 0 var(--space-2, 8px);
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 999px; color: var(--text-dim); background: var(--bg);
+}
+.newproj-chip--muted { font-style: italic; }
+.newproj-actions { display: flex; gap: var(--space-2, 8px); justify-content: flex-end; }
+
+@media (max-width: 720px) {
+  /* На телефоне окно полноэкранное: кнопки растягиваем, чтобы попадать пальцем. */
+  .newproj-actions { flex-direction: column-reverse; }
+  .newproj-actions .vc-btn { width: 100%; }
+}
+
+/* Тип проекта в настройках: подпись над селектом, чипы возможностей под ним. */
+.proj-type-field { display: flex; flex-direction: column; gap: var(--space-1, 4px); margin-bottom: var(--space-2, 8px); }
+.proj-type-current { margin: 0 0 var(--space-2, 8px); display: flex; flex-direction: column; gap: var(--space-1, 4px); }
+
+
+/* Приглашения в проект: форма и список ожидающих ответа. */
+.proj-invite-form { display: flex; gap: var(--space-2, 8px); align-items: flex-end; flex-wrap: wrap; }
+.proj-invite-field { display: flex; flex-direction: column; gap: var(--space-1, 4px); flex: 1 1 220px; min-width: 0; }
+.proj-invite-field--role { flex: 0 0 160px; }
+.proj-invite-list { list-style: none; margin: var(--space-2, 8px) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1, 4px); }
+.proj-invite-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2, 8px);
+  padding: var(--space-2, 6px) var(--space-3, 10px);
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: var(--radius-medium, 8px);
+}
+.proj-invite-who { min-width: 0; overflow-wrap: anywhere; }
+.proj-invite-actions { display: flex; align-items: center; gap: var(--space-1, 4px); flex: 0 0 auto; }
+
+@media (max-width: 720px) {
+  /* На телефоне поля и кнопка идут колонкой, строки списка — в два ряда.
+     flex-basis у полей обязательно сбрасывается: в колоночном контейнере
+     `flex: 1 1 220px` растягивает поля по высоте и рвёт форму пустотой. */
+  .proj-invite-form { flex-direction: column; align-items: stretch; }
+  .proj-invite-field, .proj-invite-field--role { flex: 0 0 auto; }
+  .proj-invite-form .vc-btn { width: 100%; }
+  .proj-invite-list li { flex-direction: column; align-items: flex-start; }
+  .proj-invite-actions { width: 100%; justify-content: flex-end; }
+
+  /* Строка участника: имя со сроком и управление разъезжались по двум строкам
+     так, что крестик оказывался под селектом роли. */
+  .proj-members li { flex-wrap: wrap; row-gap: var(--space-1, 4px); }
+  .proj-members li > span:last-child { margin-left: auto; display: flex; align-items: center; gap: var(--space-1, 4px); }
+}
+
+/* Экран приглашения по ссылке из письма. */
+.invite-card { text-align: center; }
+.invite-project { font-size: 18px; font-weight: 600; margin: var(--space-2, 8px) 0 var(--space-1, 4px); overflow-wrap: anywhere; }
+.invite-actions { display: flex; flex-direction: column; gap: var(--space-2, 8px); margin-top: var(--space-4, 12px); }
+
+/* Приглашения в проекты над списком проектов в сайдбаре. */
+.proj-invites-inbox { padding: var(--space-2, 8px); border-bottom: 1px solid var(--border-soft, var(--border)); }
+.proj-invites-inbox__title { margin: 0 0 var(--space-2, 6px); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-dim); }
+.proj-invites-inbox ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2, 6px); }
+.proj-invites-inbox li { display: flex; flex-direction: column; gap: var(--space-1, 4px); }
+.proj-invites-inbox__actions { display: flex; gap: var(--space-1, 4px); }
+.proj-invites-inbox__actions .vc-btn { flex: 1 1 0; }
+
+@media (max-width: 720px) {
+  /* Переключатель боковой панели — главный навигационный элемент на телефоне,
+     а по умолчанию он 29×31: мимо такой цели легко промахнуться пальцем. */
+  .sidebar-toggle { min-width: 44px; min-height: 44px; }
+}
+
+@media (max-width: 720px) {
+  /* Управление приглашениями и ссылка на экране приглашения: на телефоне это
+     цели для пальца, а не для курсора — 22–25px мало. */
+  .proj-invite-actions .vc-btn { min-height: 40px; }
+  .proj-invite-actions .vc-btn--icon { min-width: 40px; }
+  .invite-card .make-link { display: inline-flex; align-items: center; min-height: 44px; }
+}

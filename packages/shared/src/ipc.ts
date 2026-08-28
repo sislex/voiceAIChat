@@ -389,11 +389,41 @@ export interface IpcInvokeMap {
   /** Проекты, где текущий пользователь — участник. */
   'projects:list': { arg: void; result: ProjectSummary[] }
   'projects:create': {
-    arg: { name: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
+    arg: { name: string; typeId?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
     result: ProjectDetail
   }
 
   'projects:get': { arg: { id: string }; result: ProjectDetail | null }
+
+  // --- Приглашения в проект ---
+  /** Живые приглашения проекта (владельцу). */
+  'projects:invitations': { arg: { id: string }; result: import('./projects').ProjectInvitation[] }
+  'projects:invite': {
+    arg: { id: string; invitee: string; role?: import('./projects').ProjectRole }
+    result: { invitation: import('./projects').ProjectInvitation; mailed: boolean }
+  }
+  'projects:resendInvitation': { arg: { id: string; invitationId: string }; result: { invitation: import('./projects').ProjectInvitation; mailed: boolean } }
+  'projects:revokeInvitation': { arg: { id: string; invitationId: string }; result: { ok: true } }
+  /** Мои приглашения: адрес вне проекта — приглашённый ещё не участник. */
+  'invitations:list': { arg: void; result: import('./projects').ProjectInvitationForUser[] }
+  'invitations:accept': { arg: { token: string }; result: { projectId: string } }
+  'invitations:decline': { arg: { token: string }; result: { ok: boolean } }
+
+  // --- Дерево типов проекта ---
+  /** Каталог: встроенные, опубликованные и собственные узлы пользователя. */
+  'projectTypes:list': { arg: void; result: import('./projectTypes').ProjectTypeNode[] }
+  'projectTypes:create': {
+    arg: { name: string; parentId?: string | null; description?: string; features?: import('./projectTypes').ProjectFeatureOverride; defaults?: import('./projectTypes').ProjectTypeDefaults }
+    result: import('./projectTypes').ProjectTypeNode
+  }
+  'projectTypes:update': {
+    arg: { id: string; name?: string; parentId?: string | null; description?: string; features?: import('./projectTypes').ProjectFeatureOverride; defaults?: import('./projectTypes').ProjectTypeDefaults }
+    result: import('./projectTypes').ProjectTypeNode
+  }
+  'projectTypes:delete': { arg: { id: string }; result: { ok: boolean } }
+  /** Отправка на утверждение администратором. */
+  'projectTypes:publish': { arg: { id: string }; result: import('./projectTypes').ProjectTypeNode }
+  'projectTypes:unpublish': { arg: { id: string }; result: import('./projectTypes').ProjectTypeNode }
   'releases:branches': { arg: { projectId: string }; result: import('./release').ReleaseBranch[] }
   'releases:createBranch': { arg: { projectId: string; branch: string; baseBranch?: string }; result: import('./release').ProjectRelease }
   'releases:list': { arg: { projectId: string }; result: import('./release').ProjectReleaseSummary[] }
@@ -406,6 +436,8 @@ export interface IpcInvokeMap {
   'projects:update': {
     arg: {
       id: string
+      /** Узел дерева типов: меняет живые возможности, доску не трогает. */
+      typeId?: string
       name?: string
       description?: string
       gitUrl?: string | null
@@ -832,6 +864,11 @@ export interface RendererSessionBridge {
   signup?(input: { name: string; email: string; password: string }): Promise<{ ok: true; mailSent: boolean } | { error: string }>
   signupResend?(email: string): Promise<void>
   verifyEmail?(token: string): Promise<{ ok: true } | { error: string }>
+  /**
+   * Публичный превью приглашения в проект по ссылке из письма. Доступен до входа:
+   * человек должен понимать, куда его зовут, ещё на экране входа.
+   */
+  projectInvitationPreview?(token: string): Promise<import('./projects').ProjectInvitationPreview | null>
   /** Саморегистрация по инвайту (auth-roadmap п.8, web). */
   inviteInfo?(token: string): Promise<{ role: string; expiresAt: number; note: string } | null>
   register?(input: { token: string; name: string; password: string }): Promise<{ ok: true } | { error: string }>
@@ -1117,6 +1154,19 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:list',
   'projects:create',
   'projects:get',
+  'projects:invitations',
+  'projects:invite',
+  'projects:resendInvitation',
+  'projects:revokeInvitation',
+  'invitations:list',
+  'invitations:accept',
+  'invitations:decline',
+  'projectTypes:list',
+  'projectTypes:create',
+  'projectTypes:update',
+  'projectTypes:delete',
+  'projectTypes:publish',
+  'projectTypes:unpublish',
   'releases:branches',
   'releases:createBranch',
   'releases:list',

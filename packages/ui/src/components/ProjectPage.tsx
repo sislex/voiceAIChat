@@ -11,23 +11,38 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { ErrorState } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
+import type { ProjectFeature, ProjectFeatureSet } from '@shared/projectTypes'
 import { ToolFrame } from './ToolFrame'
 import { SidebarToggle } from './ui/IconButton'
 
 /** Раздел страницы проекта — он же вкладка в шапке. */
 export type ProjectSection = 'board' | 'releases' | 'settings'
 
-const SECTIONS: readonly { id: ProjectSection; label: string }[] = [
+/**
+ * Раздел может требовать возможности типа проекта. «Релизы» бессмысленны там, где
+ * тип их выключил, и сервер такие запросы всё равно отклоняет (409).
+ */
+const SECTIONS: readonly { id: ProjectSection; label: string; feature?: ProjectFeature }[] = [
   { id: 'board', label: 'Канбан' },
-  { id: 'releases', label: 'Релизы' },
+  { id: 'releases', label: 'Релизы', feature: 'releases' },
   { id: 'settings', label: 'Настройки' }
 ]
+
+/** Разделы, доступные при данном наборе возможностей. */
+export function visibleProjectSections(features?: ProjectFeatureSet): readonly { id: ProjectSection; label: string }[] {
+  return SECTIONS.filter((section) => !section.feature || !features || features[section.feature])
+}
 
 export interface ProjectPageProps {
   /** Имя проекта — заголовок шапки. */
   projectName: string
   /** Активный раздел (из маршрута). */
   section: ProjectSection
+  /**
+   * Эффективные возможности типа проекта. Не передан — показываем всё: страница
+   * используется и там, где типа ещё нет (заглушки, витрина).
+   */
+  features?: ProjectFeatureSet
   /** Клик по вкладке: навигация, а не локальное состояние. */
   onSectionChange: (section: ProjectSection) => void
   /** Показать/скрыть общий Sidebar. */
@@ -43,8 +58,9 @@ export interface ProjectPageProps {
   onOpenAssistantPage?: () => void
 }
 
-export function ProjectPage({ projectName, section, onSectionChange, onToggleSidebar, sidebarExpanded = true, onSidebarEscape, children, assistantOpen = false, onAssistantOpenChange, onOpenAssistantPage }: ProjectPageProps): JSX.Element {
+export function ProjectPage({ projectName, section, features, onSectionChange, onToggleSidebar, sidebarExpanded = true, onSidebarEscape, children, assistantOpen = false, onAssistantOpenChange, onOpenAssistantPage }: ProjectPageProps): JSX.Element {
   const tabsRef = useRef<HTMLDivElement>(null)
+  const sections = visibleProjectSections(features)
   // Стрелки переключают вкладку сразу (automatic activation в терминах ARIA).
   // Фокус переносим руками: активная вкладка единственная в tab-порядке
   // (roving tabindex), иначе после стрелки фокус остался бы на невыбранной.
@@ -57,8 +73,8 @@ export function ProjectPage({ projectName, section, onSectionChange, onToggleSid
     const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
     if (step === 0) return
     event.preventDefault()
-    const at = SECTIONS.findIndex((s) => s.id === section)
-    const next = SECTIONS[(at + step + SECTIONS.length) % SECTIONS.length]
+    const at = sections.findIndex((s) => s.id === section)
+    const next = sections[(at + step + sections.length) % sections.length]
     if (next && next.id !== section) onSectionChange(next.id)
   }
 
@@ -81,7 +97,7 @@ export function ProjectPage({ projectName, section, onSectionChange, onToggleSid
           ref={tabsRef}
           onKeyDown={onTabsKeyDown}
         >
-          {SECTIONS.map((s) => (
+          {sections.map((s) => (
             <button
               key={s.id}
               role="tab"
@@ -115,7 +131,7 @@ export function ProjectsEmptyPage(): JSX.Element {
         <EmptyState
           icon="🗂"
           title="Проектов пока нет"
-          description="Создайте первый в сайдбаре — кнопка «+ Проект». Внутри проекта появятся доска, задачи и CI."
+          description="Создайте первый в сайдбаре — кнопка «+ Новый проект». Внутри проекта появятся доска, задачи и CI."
         />
       </div>
     </ToolFrame>

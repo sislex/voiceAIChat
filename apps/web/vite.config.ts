@@ -5,6 +5,18 @@ import { fileURLToPath } from 'node:url'
 
 const abs = (p: string) => fileURLToPath(new URL(p, import.meta.url))
 
+// Порты dev-режима вынесены в окружение, чтобы рядом с чужим уже запущенным
+// dev-сеансом можно было поднять второй (проверка фичи, отладка) без правки
+// конфига и без EADDRINUSE. Значения по умолчанию — прежние, поэтому обычный
+// `npm run dev:web` ведёт себя как раньше.
+const num = (value: string | undefined, fallback: number): number => {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 && parsed < 65536 ? parsed : fallback
+}
+const WEB_PORT = num(process.env.VC_WEB_PORT, 5273)
+const API_PORT = num(process.env.VC_API_PORT, 8787)
+const RECORDER_PORT = num(process.env.VC_RECORDER_PORT, 5274)
+
 // Веб-клиент: тонкая оболочка вокруг общего UI (@voicechat/ui) + мосты REST+WS.
 export default defineConfig({
   plugins: [react()],
@@ -48,17 +60,17 @@ export default defineConfig({
   },
   server: {
     host: '127.0.0.1',
-    port: 5273,
+    port: WEB_PORT,
     proxy: {
       // ws: true — HMR-сокет Reader тоже идёт через same-origin путь /web-recorder/.
-      '/web-recorder/': { target: 'http://127.0.0.1:5274', changeOrigin: true, ws: true },
+      '/web-recorder/': { target: `http://127.0.0.1:${RECORDER_PORT}`, changeOrigin: true, ws: true },
       // Host не переписываем: previewProxy сверяет host диагностической страницы
       // с Host запроса — с changeOrigin=true самодиагностика в dev получала SSRF-отказ.
-      '/api': { target: 'http://127.0.0.1:8787' },
-      '/ws': { target: 'ws://127.0.0.1:8787', ws: true },
+      '/api': { target: `http://127.0.0.1:${API_PORT}` },
+      '/ws': { target: `ws://127.0.0.1:${API_PORT}`, ws: true },
       // Компаньон-агент подключается по /agent — в dev проксируем на бэкенд,
       // иначе строка подключения указывает на порт Vite, где такого маршрута нет.
-      '/agent': { target: 'ws://127.0.0.1:8787', ws: true }
+      '/agent': { target: `ws://127.0.0.1:${API_PORT}`, ws: true }
     }
   },
   test: {

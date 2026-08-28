@@ -399,6 +399,7 @@ export function managedChatTemporaryPath(relativePath: string): string {
 }
 
 import type { CiRunSummary, CiReuseStrategy, CiStatus, CiRunMode } from './ci'
+import type { ProjectTypeChain } from './projectTypes'
 import type { KbContextMode } from './types'
 
 // Типы домена «Проекты» + канбан-доска. Разделяются server/web/desktop.
@@ -548,6 +549,14 @@ export interface ProjectSummary {
   id: string
   name: string
   description: string
+  /** Узел дерева типов (`project_types.id`); определяет доступные подсистемы. */
+  typeId: string
+  /**
+   * Разрешённая цепочка типа с эффективными возможностями. Отдаётся всегда, даже
+   * если сам узел — личный узел владельца: остальные участники обязаны видеть имя
+   * типа и знать, какие разделы проекта включены.
+   */
+  typeChain: ProjectTypeChain
   gitUrl: string | null
   /** Адрес веб-превью по умолчанию для чатов проекта. */
   previewUrl?: string | null
@@ -640,6 +649,46 @@ export interface ProjectMachine {
   sshHost?: string
   /** Явно настроенный SSH-пользователь для ручного preview-туннеля. */
   sshUser?: string
+}
+
+/** Состояние приглашения в проект. */
+export type ProjectInvitationStatus = 'pending' | 'accepted' | 'declined' | 'revoked'
+
+/**
+ * Приглашение участника — как на GitHub: владелец зовёт по логину или адресу,
+ * уходит письмо, приглашённый подтверждает сам. Токен наружу отдаётся только в
+ * письме; в API его нет — в списках он не нужен, а утечка равна доступу.
+ */
+export interface ProjectInvitation {
+  id: string
+  projectId: string
+  /** Адрес, на который отправлено письмо (или null, если звали по логину). */
+  email: string | null
+  /** Логин приглашённого, если он известен системе. */
+  invitedUsername: string | null
+  role: ProjectRole
+  status: ProjectInvitationStatus
+  invitedBy: string
+  createdAt: number
+  expiresAt: number
+  respondedAt: number | null
+}
+
+/**
+ * Что видит неавторизованный по ссылке из письма. Намеренно только три поля:
+ * имя проекта, кто позвал и срок — этого хватает, чтобы понять, куда идёшь.
+ */
+export interface ProjectInvitationPreview {
+  projectId: string
+  projectName: string
+  invitedBy: string
+  role: ProjectRole
+  expiresAt: number
+}
+
+/** Приглашение вместе с именем проекта — для списка «мои приглашения». */
+export interface ProjectInvitationForUser extends ProjectInvitation {
+  projectName: string
 }
 
 /** Проект со всем составом (ответ get/create/update). */

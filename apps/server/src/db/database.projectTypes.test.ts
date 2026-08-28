@@ -1,0 +1,242 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import Database from 'better-sqlite3'
+import { VoiceChatDb } from './database.js'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { BUILTIN_PROJECT_TYPE_IDS, PROJECT_FEATURES } from '@voicechat/shared'
+
+let db: VoiceChatDb
+
+beforeEach(() => {
+  let id = 0
+  let clock = 1000
+  db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
+  db.createUser('alice', '', 'developer')
+  db.createUser('bob', '', 'developer')
+})
+afterEach(() => db.close())
+
+describe('дерево типов: посев и каталог', () => {
+  it('встроенные узлы засеяны, помечены builtin и опубликованы', () => {
+    const all = db.allProjectTypes()
+    const ids = all.map((t) => t.id).sort()
+    expect(ids).toEqual(Object.values(BUILTIN_PROJECT_TYPE_IDS).sort())
+    for (const node of all) {
+      expect(node.builtin).toBe(true)
+      expect(node.status).toBe('published')
+      expect(node.ownerId).toBeNull()
+    }
+  })
+
+  it('каталог показывает встроенные, свои и опубликованные, но не чужие личные', () => {
+    const mine = db.createProjectType('alice', { parentId: BUILTIN_PROJECT_TYPE_IDS.software, name: 'Мой подтип' })
+    expect(db.listProjectTypes('alice').map((t) => t.id)).toContain(mine.id)
+    expect(db.listProjectTypes('bob').map((t) => t.id)).not.toContain(mine.id)
+
+    db.setProjectTypeStatus('alice', mine.id, 'pending')
+    // Отправленный на утверждение ещё не общий.
+    expect(db.listProjectTypes('bob').map((t) => t.id)).not.toContain(mine.id)
+    db.setProjectTypeStatus('admin', mine.id, 'published')
+    expect(db.listProjectTypes('bob').map((t) => t.id)).toContain(mine.id)
+  })
+
+  it('встроенный узел нельзя изменить или удалить', () => {
+    expect(() => db.updateProjectType(BUILTIN_PROJECT_TYPE_IDS.general, { name: 'Другое' })).toThrow(/встроенн/i)
+    expect(() => db.deleteProjectType(BUILTIN_PROJECT_TYPE_IDS.general)).toThrow(/встроенн/i)
+  })
+})
+
+describe('дерево типов: инварианты структуры', () => {
+  it('цикл при смене родителя запрещён', () => {
+    const parent = db.createProjectType('alice', { parentId: BUILTIN_PROJECT_TYPE_IDS.software, name: 'Родитель' })
+    const child = db.createProjectType('alice', { parentId: parent.id, name: 'Ребёнок' })
+    expect(() => db.updateProjectType(parent.id, { parentId: child.id })).toThrow(/потомком самого себя/i)
+    expect(() => db.updateProjectType(parent.id, { parentId: parent.id })).toThrow(/потомком самого себя/i)
+  })
+
+  it('глубина ограничена', () => {
+    let parentId: string = BUILTIN_PROJECT_TYPE_IDS.software
+    // Корень уже занимает первый уровень, поэтому пятый узел ещё проходит, шестой — нет.
+    for (let i = 2; i <= 5; i++) parentId = db.createProjectType('alice', { parentId, name: `Уровень ${i}` }).id
+    expect(() => db.createProjectType('alice', { parentId, name: 'Уровень 6' })).toThrow(/вложенност/i)
+  })
+
+  it('несуществующий родитель отклоняется, пустое имя тоже', () => {
+    expect(() => db.createProjectType('alice', { parentId: 'нет-такого', name: 'X' })).toThrow(/не найден/i)
+    expect(() => db.createProjectType('alice', { parentId: null, name: '   ' })).toThrow(/Название/i)
+  })
+
+  it('удаление запрещено при детях и при используемых проектах', () => {
+    const parent = db.createProjectType('alice', { parentId: null, name: 'Родитель' })
+    const child = db.createProjectType('alice', { parentId: parent.id, name: 'Ребёнок' })
+    expect(() => db.deleteProjectType(parent.id)).toThrow(/подтип/i)
+
+    db.createProject('alice', { name: 'P', typeId: child.id })
+    expect(() => db.deleteProjectType(child.id)).toThrow(/используют проекты/i)
+  })
+})
+
+describe('дерево типов: публикация', () => {
+  it('нельзя опубликовать узел с приватным предком', () => {
+    const parent = db.createProjectType('alice', { parentId: null, name: 'Личный родитель' })
+    const child = db.createProjectType('alice', { parentId: parent.id, name: 'Ребёнок' })
+    expect(() => db.setProjectTypeStatus('alice', child.id, 'pending')).toThrow(/родительск/i)
+
+    db.setProjectTypeStatus('admin', parent.id, 'published')
+    expect(db.setProjectTypeStatus('alice', child.id, 'pending')?.status).toBe('pending')
+  })
+
+  it('решения администратора пишутся в аудит', () => {
+    const node = db.createProjectType('alice', { parentId: null, name: 'На ревью' })
+    db.setProjectTypeStatus('alice', node.id, 'pending')
+    const rejected = db.setProjectTypeStatus('admin', node.id, 'rejected', 'слишком узкий')
+    expect(rejected?.status).toBe('rejected')
+    expect(rejected?.reviewNote).toBe('слишком узкий')
+
+    const audit = db.projectTypeReviewAudit(node.id)
+    expect(audit.map((a) => [a.oldStatus, a.newStatus])).toEqual([['private', 'pending'], ['pending', 'rejected']])
+    expect(audit[1].actor).toBe('admin')
+    expect(audit[1].note).toBe('слишком узкий')
+  })
+
+  it('публикацию нельзя отозвать, пока тип используют чужие проекты', () => {
+    const node = db.createProjectType('alice', { parentId: null, name: 'Общий' })
+    db.setProjectTypeStatus('admin', node.id, 'published')
+    db.createProject('bob', { name: 'Чужой проект', typeId: node.id })
+    expect(() => db.setProjectTypeStatus('alice', node.id, 'private')).toThrow(/чужие проекты/i)
+  })
+})
+
+describe('проект и его тип', () => {
+  it('без указания типа проект получает встроенный корень', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    expect(p.typeId).toBe(BUILTIN_PROJECT_TYPE_IDS.software)
+    expect(p.typeChain.label).toBe('Разработка ПО')
+    for (const feature of PROJECT_FEATURES) expect(p.typeChain.features[feature], feature).toBe(true)
+  })
+
+  it('«Общий проект» отдаёт выключенные возможности и короткую доску', () => {
+    const p = db.createProject('alice', { name: 'Общий', typeId: BUILTIN_PROJECT_TYPE_IDS.general })
+    for (const feature of PROJECT_FEATURES) expect(p.typeChain.features[feature], feature).toBe(false)
+    expect(db.projectFeatures(p.id).ci).toBe(false)
+
+    const semantics = db.getBoard('alice', p.id)!.columns.map((c) => c.semanticType)
+    expect(semantics).toEqual(['backlog', 'development', 'done', 'cancelled', 'decision_required'])
+  })
+
+  it('подтип наследует возможности и приносит свои заготовки', () => {
+    const p = db.createProject('alice', { name: 'Веб', typeId: BUILTIN_PROJECT_TYPE_IDS.web })
+    expect(p.typeChain.label).toBe('Разработка ПО / Веб-приложение')
+    expect(p.typeChain.features.preview).toBe(true)
+    expect(p.technologies).toEqual(['web'])
+    // У «Разработки ПО» своих колонок нет — остаётся системный конвейер.
+    expect(db.getBoard('alice', p.id)!.columns.length).toBe(13)
+  })
+
+  it('явный аргумент важнее заготовки типа', () => {
+    const p = db.createProject('alice', { name: 'Веб', typeId: BUILTIN_PROJECT_TYPE_IDS.web, technologies: ['go'] })
+    expect(p.technologies).toEqual(['go'])
+  })
+
+  it('неизвестный тип при создании откатывается на встроенный корень', () => {
+    const p = db.createProject('alice', { name: 'P', typeId: 'нет-такого' })
+    expect(p.typeId).toBe(BUILTIN_PROJECT_TYPE_IDS.software)
+  })
+
+  it('смена типа меняет возможности, но не трогает уже созданную доску', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const before = db.getBoard('alice', p.id)!.columns.map((c) => c.id)
+    const updated = db.updateProject('alice', p.id, { typeId: BUILTIN_PROJECT_TYPE_IDS.general })!
+    expect(updated.typeChain.features.releases).toBe(false)
+    expect(db.projectFeatures(p.id).releases).toBe(false)
+    // Заготовки — снимок: колонки остаются теми же самыми.
+    expect(db.getBoard('alice', p.id)!.columns.map((c) => c.id)).toEqual(before)
+    expect(() => db.updateProject('alice', p.id, { typeId: 'нет-такого' })).toThrow(/не найден/i)
+  })
+
+  it('правка возможностей типа действует на существующие проекты живьём', () => {
+    const own = db.createProjectType('alice', { parentId: BUILTIN_PROJECT_TYPE_IDS.software, name: 'Без релизов', features: { releases: false } })
+    const p = db.createProject('alice', { name: 'P', typeId: own.id })
+    expect(db.projectFeatures(p.id).releases).toBe(false)
+    db.updateProjectType(own.id, { features: { releases: true } })
+    // Кэш цепочек обязан сброситься, иначе гейт останется на старом значении.
+    expect(db.projectFeatures(p.id).releases).toBe(true)
+  })
+})
+
+describe('миграция существующей базы', () => {
+  it('старый проект получает корневой тип, повторное открытие не плодит узлы', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-'))
+    const file = join(dir, 'db.sqlite')
+    try {
+      const first = new VoiceChatDb(file)
+      first.createUser('alice', '', 'developer')
+      const p = first.createProject('alice', { name: 'Старый' })
+      first.close()
+      // Имитируем базу до появления типов: зануляем колонку в обход слоя.
+      const raw = new Database(file)
+      raw.prepare(`UPDATE projects SET project_type_id = NULL WHERE id = ?`).run(p.id)
+      raw.close()
+
+      const second = new VoiceChatDb(file)
+      const migrated = second.getProject('alice', p.id)!
+      expect(migrated.typeId).toBe(BUILTIN_PROJECT_TYPE_IDS.software)
+      expect(migrated.typeChain.features.ci).toBe(true)
+      expect(second.allProjectTypes().length).toBe(3)
+      second.close()
+
+      const third = new VoiceChatDb(file)
+      expect(third.allProjectTypes().length).toBe(3)
+      third.close()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('перезапуск не дописывает «Общему проекту» конвейер разработки', () => {
+    // Канонизация workflow-колонок гарантирует конвейер dev-проектам; для типа,
+    // который его выключил, она обязана молчать — иначе короткая доска не
+    // переживает ни одного перезапуска сервера.
+    const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-cols-'))
+    const file = join(dir, 'db.sqlite')
+    try {
+      const first = new VoiceChatDb(file)
+      first.createUser('alice', '', 'developer')
+      const general = first.createProject('alice', { name: 'Общий', typeId: BUILTIN_PROJECT_TYPE_IDS.general })
+      const software = first.createProject('alice', { name: 'Разработка' })
+      expect(first.getBoard('alice', general.id)!.columns.length).toBe(5)
+      first.close()
+
+      const second = new VoiceChatDb(file)
+      const semantics = second.getBoard('alice', general.id)!.columns.map((c) => c.semanticType)
+      expect(semantics).toEqual(['backlog', 'development', 'done', 'cancelled', 'decision_required'])
+      // А dev-проекту канонизация по-прежнему гарантирует полный конвейер.
+      expect(second.getBoard('alice', software.id)!.columns.length).toBe(13)
+      second.close()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('посев не затирает пользовательские узлы', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-user-'))
+    const file = join(dir, 'db.sqlite')
+    try {
+      const first = new VoiceChatDb(file)
+      first.createUser('alice', '', 'developer')
+      const own = first.createProjectType('alice', { parentId: null, name: 'Мой', description: 'моё описание' })
+      first.close()
+
+      const second = new VoiceChatDb(file)
+      const same = second.getProjectType(own.id)!
+      expect(same.name).toBe('Мой')
+      expect(same.description).toBe('моё описание')
+      expect(same.builtin).toBe(false)
+      expect(same.status).toBe('private')
+      second.close()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
