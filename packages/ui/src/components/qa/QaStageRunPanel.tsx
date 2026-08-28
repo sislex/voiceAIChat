@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { formatDateTime } from '../../lib/dateFormat'
 import type { AnyQaStageRun, QaRunStage } from '@shared/qa'
 import { Button } from '@voicechat/ui-kit'
 
@@ -75,7 +76,7 @@ function GenericQaStageRunPanel(props: { projectId: string; taskId: string; stag
       <section><h4>Потоковая лента</h4><div className="ci-log">{run.log.map((line) => <div key={line.seq}>{line.text}</div>)}</div></section>
       {run.status === 'awaiting_input' && props.stage === 'integration_tests' && window.qa?.answerStageRun && <form onSubmit={(event) => { event.preventDefault(); void act(async () => { await window.qa!.answerStageRun!(run.id, answer); setAnswer('') }) }}><label>Ответ модели<textarea value={answer} onChange={(event) => setAnswer(event.target.value)} /></label><Button size="sm" type="submit" disabled={busy || !answer.trim()}>Отправить</Button></form>}
     </>}
-    {runs.length > 0 && <section><h4>История попыток</h4><ol>{runs.map((item) => <li key={item.id}>#{item.attempt} · {item.status} · {new Date(item.createdAt).toLocaleString()}</li>)}</ol></section>}
+    {runs.length > 0 && <section><h4>История попыток</h4><ol>{runs.map((item) => <li key={item.id}>#{item.attempt} · {item.status} · {formatDateTime(item.createdAt)}</li>)}</ol></section>}
   </div>
 }
 export function QaStageRunPanel(props:{projectId:string;taskId:string;stage:QaRunStage}):JSX.Element {

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { formatDateTime } from '../../lib/dateFormat'
 import type { MergeRun } from '@shared/merge'
 import type { CiTaskMachine } from '@shared/ci'
 import { Button } from '@voicechat/ui-kit'
@@ -162,7 +163,7 @@ export function MergeRunFeed({ runId, initialRun, machines = [], onRunChanged }:
       <dl className="merge-feed-details">
         <dt>Инициатор</dt><dd>{run.triggeredBy}</dd>
         <dt>LLM БЗ</dt><dd>{run.llmProvider} · {run.llmModel || 'по умолчанию'}</dd>
-        <dt>Создан</dt><dd>{new Date(run.createdAt).toLocaleString()}</dd>
+        <dt>Создан</dt><dd>{formatDateTime(run.createdAt)}</dd>
       </dl>
     </section>
   )
