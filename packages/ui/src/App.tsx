@@ -2046,6 +2046,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onRegisterStorage={operationsActions.registerMachineStorage}
           onCreateAgent={operationsActions.createAgent}
           onRegenerateToken={operationsActions.regenerateAgentToken}
+          onRevokeToken={(id) => void operationsActions.revokeAgentToken(id)}
+          onSetPinIp={(id, pin) => void operationsActions.setAgentPinIp(id, pin)}
           onGetConnectionString={operationsActions.getAgentConnectionString}
           onUpdateAgent={operationsActions.updateAgent}
           onLoadCommands={(id, filter) => (window.api ? window.api['agents:commands']({ id, ...filter }) : Promise.resolve([]))}

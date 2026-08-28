@@ -9,37 +9,37 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 103 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 113 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 104 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 114 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: a8c141af fix(desktop): зелёный typecheck — фикстура Settings через DEFAULT_SETTINGS, типы ?worker (roadmap-2 п.6) |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 12 коммит(ов) в areas после сверки: b088d0c5 test(make): E2E в headless Chromium — превью React, компоненты, Monaco, публикация (п.37) … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-28 | ⚠ 6 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-28 | ⚠ 6 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 115 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ⚠ 38 коммит(ов) в areas после сверки: 9bb1eea0 feat(machines): watchdog агента — тревога владельцу, если машина не в сети дольше порога, и событие возврата (roadmap п.1) … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 140 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-28 | ⚠ 7 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-28 | ⚠ 7 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 116 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-23 | ⚠ 39 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-16 | ⚠ 141 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 73 коммит(ов) в areas после сверки: 9bb1eea0 feat(machines): watchdog агента — тревога владельцу, если машина не в сети дольше порога, и событие возврата (roadmap п.1) … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 67 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 69 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 63 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 742 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 170 коммит(ов) в areas после сверки: 78503ee0 feat(machines): мастер подключения — проверка связи и пробная команда после установки (roadmap п.13) … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 13 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 68 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 86 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 68 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 70 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 64 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 743 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 171 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 14 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-25 | ⚠ 69 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 87 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 6 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 16 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 17 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ✓ |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 69 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 103 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 14 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 12 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 11 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 70 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-25 | ⚠ 104 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-27 | ⚠ 15 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 13 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 12 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 65 коммит(ов) в areas после сверки: 9bb1eea0 feat(machines): watchdog агента — тревога владельцу, если машина не в сети дольше порога, и событие возврата (roadmap п.1) … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ✓ |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-27 | ⚠ 1 коммит(ов) в areas после сверки: 43f3b3c7 chore(compose): проброс VC_SMTP_URL/VC_MAIL_FROM/VC_PUBLIC_URL в server для регистрации по email |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 18 коммит(ов) в areas после сверки: 9bb1eea0 feat(machines): watchdog агента — тревога владельцу, если машина не в сети дольше порога, и событие возврата (roadmap п.1) … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ⚠ 15 коммит(ов) в areas после сверки: 17f149cf feat(machines): обновление агентов из админки — канареечно на одну машину, затем остальные (roadmap п.16) … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-27 | ⚠ 16 коммит(ов) в areas после сверки: 220c26f8 feat(machines): метрики машин в админке и Prometheus-экспорт (roadmap п.5) … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-28, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -57,7 +57,7 @@
 
 ## Журнал сессий
 
-Всего записей: 388. Последние:
+Всего записей: 389. Последние:
 
 - [2026-08-28-alexeys-macbook-air-2-machines-roadmap-9.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-9.md) — machines-roadmap-9
 - [2026-08-28-alexeys-macbook-air-2-machines-roadmap-8.md](log/2026-08-28-alexeys-macbook-air-2-machines-roadmap-8.md) — machines-roadmap-8

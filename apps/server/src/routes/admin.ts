@@ -302,6 +302,17 @@ export function registerAdminRoutes(
   app.get(REST.adminMachineStats, guard, async () => machineStats())
   app.get(REST.adminMachineMetrics, guard, async (_req, reply) => reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8').send(formatMachineMetrics(machineStats())))
 
+  // Отзыв токена любой машины из админки (п.11).
+  app.post<{ Params: { id: string } }>(REST.adminMachineTokenRevoke(':id').replace('%3Aid', ':id'), guard, async (req, reply) => {
+    const owner = db.agentOwnerId(req.params.id)
+    if (!owner) return reply.code(404).send({ error: 'not found' })
+    const name = db.listAgents(owner).find((a) => a.id === req.params.id)?.name ?? req.params.id
+    db.revokeAgentToken(req.params.id)
+    registry.disconnect(req.params.id)
+    db.logSecurityEvent({ user: owner, type: 'agent_token_revoked', details: `${name} (админ ${uid(req)})` })
+    return { ok: true }
+  })
+
   // Обновление агента на любой машине (machines-roadmap п.16): владение не требуется — админ.
   app.post<{ Params: { id: string } }>(REST.adminMachineUpdate(':id').replace('%3Aid', ':id'), guard, async (req, reply) => {
     if (!db.agentOwnerId(req.params.id)) return reply.code(404).send({ error: 'not found' })

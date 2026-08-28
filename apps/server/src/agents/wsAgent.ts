@@ -9,7 +9,12 @@ import type { AgentRegistry } from './registry.js'
 
 const PING_INTERVAL_MS = 30_000
 
-export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: AgentRegistry): void {
+export interface AgentWsMeta {
+  /** IP подключения (x-forwarded-for / remoteAddress) — для привязки токена и журнала безопасности. */
+  ip?: string
+}
+
+export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: AgentRegistry, meta: AgentWsMeta = {}): void {
   let agentId: string | null = null
   let owner: string | null = null
   let pingTimer: NodeJS.Timeout | null = null
@@ -35,13 +40,20 @@ export function attachAgentWs(socket: WebSocket, db: VoiceChatDb, registry: Agen
         return
       }
       const rec = db.findAgentByTokenHash(hashAgentToken(msg.token))
-      if (!rec) {
-        send({ t: 'agent.denied', reason: 'Неверный токен' })
+      const ip = meta.ip ?? ''
+      const deny = (reason: string): void => {
+        if (rec?.userId) db.logSecurityEvent({ user: rec.userId, type: 'agent_rejected', ip, details: `${rec.name}: ${reason}` })
+        send({ t: 'agent.denied', reason })
         socket.close()
-        return
       }
+      if (!rec) return deny('Неверный токен')
+      // Срок токена и привязка к IP (machines-roadmap п.11).
+      if (rec.tokenExpiresAt !== null && rec.tokenExpiresAt <= Date.now()) return deny('Токен истёк — перевыпустите его в списке машин')
+      if (rec.pinIp && rec.lastIp && ip && rec.lastIp !== ip) return deny(`Токен привязан к IP ${rec.lastIp}, подключение с ${ip} отклонено`)
       agentId = rec.id
       owner = rec.userId
+      if (ip) db.recordAgentIp(rec.id, ip)
+      if (rec.userId) db.logSecurityEvent({ user: rec.userId, type: 'agent_connected', ip, details: `${rec.name} v${msg.version ?? '0.1.0'}` })
       // Версия из рапорта агента; отсутствует (старый агент) → legacy '0.1.0'.
       registry.register(rec.id, rec.name, socket, rec.policy, msg.version ?? '0.1.0', msg.imageHost)
       db.touchAgent(rec.id)

@@ -43,6 +43,10 @@ export interface MachineStatusProps {
   onCreateAgent?: (name: string) => Promise<AgentCreated | null>
   /** Перевыпустить токен машины (старый перестаёт работать). */
   onRegenerateToken?: (id: string) => Promise<string | null>
+  /** Отозвать токен (п.11): агент отключится до перевыпуска. */
+  onRevokeToken?: (id: string) => void
+  /** Привязать токен к IP последнего подключения. */
+  onSetPinIp?: (id: string, pin: boolean) => void
   /** Строка подключения по токену — из неё собираются команды установки. */
   onGetConnectionString?: (token: string) => Promise<string | null>
   /** Обновить агента на машине (сервер выполнит на ней команду установки). */
@@ -209,8 +213,7 @@ function AgentActions({
   onRegenerate,
   onAskDelete,
   busy,
-  copied
-}: {
+  copied, onRevoke, onPin }: {
   agent: AgentInfo
   onUpdate?: () => void
   onCopyCommand?: () => void
@@ -218,8 +221,7 @@ function AgentActions({
   /** Первый шаг удаления: подтверждение раскрывается строкой под машиной. */
   onAskDelete?: () => void
   busy: boolean
-  copied: boolean
-}): JSX.Element {
+  copied: boolean; onRevoke?: () => void; onPin?: (pin: boolean) => void }): JSX.Element {
   const outdated = isOutdated(agent)
   return (
     <td className="mst-agent">
@@ -260,6 +262,22 @@ function AgentActions({
             ↻ токен
           </Button>
         )}
+        {agent.tokenExpiresAt !== undefined && agent.tokenExpiresAt !== null && (
+          <span className={agent.tokenExpiresAt <= Date.now() ? 'mst-token mst-token--expired' : 'mst-token'} data-testid="token-expiry" title={new Date(agent.tokenExpiresAt).toISOString()}>
+            {agent.tokenExpiresAt <= Date.now() ? 'токен истёк' : `токен до ${new Date(agent.tokenExpiresAt).toLocaleDateString('ru-RU')}`}
+          </span>
+        )}
+        {onRevoke && (
+          <Button size="sm" variant="danger" title="Отозвать токен: агент отключится и не подключится до перевыпуска" aria-label={`Отозвать токен ${agent.name}`} onClick={onRevoke}>
+            ✕ токен
+          </Button>
+        )}
+        {onPin && agent.lastIp && (
+          <label className="mst-pin" title={`Пускать агента только с IP ${agent.lastIp}`}>
+            <input type="checkbox" aria-label={`Привязать токен ${agent.name} к IP`} checked={agent.pinIp === true} onChange={(e) => onPin(e.target.checked)} />
+            IP {agent.lastIp}
+          </label>
+        )}
         {onAskDelete && (
           <IconButton
             variant="danger"
@@ -287,6 +305,8 @@ export function MachineStatus({
   onRegisterStorage,
   onCreateAgent,
   onRegenerateToken,
+  onRevokeToken,
+  onSetPinIp,
   onGetConnectionString,
   onUpdateAgent,
   onLoadCommands,
@@ -525,6 +545,8 @@ export function MachineStatus({
                       onUpdate={onUpdateAgent ? () => void update(a) : undefined}
                       onCopyCommand={() => void copyUpdateCommand(a)}
                       onRegenerate={onRegenerateToken ? () => void regenerate(a) : undefined}
+                      onRevoke={onRevokeToken ? () => onRevokeToken(a.id) : undefined}
+                      onPin={onSetPinIp ? (pin) => onSetPinIp(a.id, pin) : undefined}
                       onAskDelete={
                         onDeleteAgent && confirmDelId !== a.id ? () => setConfirmDelId(a.id) : undefined
                       }

@@ -275,6 +275,10 @@ interface AgentRow {
   last_seen: number | null
   policy: string | null
   user_id: string | null
+  token_expires_at?: number | null
+  token_issued_at?: number | null
+  last_ip?: string | null
+  pin_ip?: number | null
 }
 
 /** Запись пользователя приложения (без хеша пароля наружу). */
@@ -343,6 +347,11 @@ export interface AgentRecord {
   policy: AgentPolicy
   /** Владелец машины (пользователь, создавший её). */
   userId: string | null
+  /** Токен (п.11): срок, дата выпуска, IP последнего подключения и привязка к нему. */
+  tokenExpiresAt: number | null
+  tokenIssuedAt: number | null
+  lastIp: string | null
+  pinIp: boolean
 }
 
 /** Парсит JSON-политику из БД с откатом к дефолту (терпит старые/битые строки). */
@@ -757,6 +766,12 @@ export class VoiceChatDb {
     if (userCols.length && !userCols.some((c) => c.name === 'last_login')) this.db.exec(`ALTER TABLE users ADD COLUMN last_login INTEGER`)
     if (userCols.length && !userCols.some((c) => c.name === 'notices_seen_at')) this.db.exec(`ALTER TABLE users ADD COLUMN notices_seen_at INTEGER NOT NULL DEFAULT 0`)
     if (userCols.length && !userCols.some((c) => c.name === 'llm_limit_usd')) this.db.exec(`ALTER TABLE users ADD COLUMN llm_limit_usd REAL`)
+    // Токены агентов (machines-roadmap п.11): срок, дата выпуска, IP последнего подключения и привязка.
+    const agentTokenCols = this.db.prepare(`PRAGMA table_info(agents)`).all() as Array<{ name: string }>
+    if (agentTokenCols.length && !agentTokenCols.some((c) => c.name === 'token_expires_at')) this.db.exec(`ALTER TABLE agents ADD COLUMN token_expires_at INTEGER`)
+    if (agentTokenCols.length && !agentTokenCols.some((c) => c.name === 'token_issued_at')) this.db.exec(`ALTER TABLE agents ADD COLUMN token_issued_at INTEGER`)
+    if (agentTokenCols.length && !agentTokenCols.some((c) => c.name === 'last_ip')) this.db.exec(`ALTER TABLE agents ADD COLUMN last_ip TEXT`)
+    if (agentTokenCols.length && !agentTokenCols.some((c) => c.name === 'pin_ip')) this.db.exec(`ALTER TABLE agents ADD COLUMN pin_ip INTEGER NOT NULL DEFAULT 0`)
     // Email пользователя (регистрация с подтверждением); уникальность — через индекс.
     if (userCols.length && !userCols.some((c) => c.name === 'email')) this.db.exec(`ALTER TABLE users ADD COLUMN email TEXT`)
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL`)
@@ -2328,7 +2343,11 @@ export class VoiceChatDb {
       createdAt: r.created_at,
       lastSeen: r.last_seen,
       policy: parsePolicy(r.policy),
-      userId: r.user_id
+      userId: r.user_id,
+      tokenExpiresAt: r.token_expires_at ?? null,
+      tokenIssuedAt: r.token_issued_at ?? null,
+      lastIp: r.last_ip ?? null,
+      pinIp: r.pin_ip === 1
     }
   }
 
@@ -2502,13 +2521,29 @@ export class VoiceChatDb {
       .run(JSON.stringify(policy), id, userId)
   }
 
-  /** Перевыпускает токен машины (старый перестаёт работать). Возвращает новый токен. */
-  regenerateAgentToken(userId: string, id: string): { token: string } {
+  /** Перевыпускает токен машины (старый перестаёт работать). Возвращает новый токен; ttlMs — срок (нет — бессрочный). */
+  regenerateAgentToken(userId: string, id: string, ttlMs?: number): { token: string; expiresAt: number | null } {
     const token = randomBytes(24).toString('hex')
+    const now = Date.now()
+    const expiresAt = ttlMs && ttlMs > 0 ? now + ttlMs : null
     this.db
-      .prepare(`UPDATE agents SET token_hash = ? WHERE id = ? AND user_id = ?`)
-      .run(hashAgentToken(token), id, userId)
-    return { token }
+      .prepare(`UPDATE agents SET token_hash = ?, token_issued_at = ?, token_expires_at = ? WHERE id = ? AND user_id = ?`)
+      .run(hashAgentToken(token), now, expiresAt, id, userId)
+    return { token, expiresAt }
+  }
+
+  /** Отзыв токена (п.11): хэш заменяется случайным, срок — «уже истёк»; подключиться можно только после перевыпуска. */
+  revokeAgentToken(id: string): void {
+    this.db.prepare(`UPDATE agents SET token_hash = ?, token_expires_at = ? WHERE id = ?`).run(hashAgentToken(randomBytes(24).toString('hex')), Date.now() - 1, id)
+  }
+
+  setAgentPinIp(userId: string, id: string, pin: boolean): void {
+    this.db.prepare(`UPDATE agents SET pin_ip = ? WHERE id = ? AND user_id = ?`).run(pin ? 1 : 0, id, userId)
+  }
+
+  /** IP успешного подключения агента — для привязки и журнала. */
+  recordAgentIp(id: string, ip: string): void {
+    this.db.prepare(`UPDATE agents SET last_ip = ? WHERE id = ?`).run(ip.slice(0, 64), id)
   }
 
   /**

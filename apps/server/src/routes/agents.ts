@@ -521,12 +521,32 @@ export async function registerAgentRoutes(
   })
 
   // Перевыпуск токена: старый перестаёт работать, текущее соединение рвём.
-  app.post<{ Params: { id: string } }>('/api/agents/:id/token', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { ttlDays?: number } | undefined }>('/api/agents/:id/token', async (req, reply) => {
     const u = uid(req)
     if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
-    const { token } = db.regenerateAgentToken(u, req.params.id)
+    const ttlDays = typeof req.body?.ttlDays === 'number' && Number.isFinite(req.body.ttlDays) ? Math.max(0, Math.min(3650, req.body.ttlDays)) : undefined
+    const { token, expiresAt } = db.regenerateAgentToken(u, req.params.id, ttlDays ? ttlDays * 24 * 60 * 60_000 : undefined)
     registry.disconnect(req.params.id)
-    return { token }
+    db.logSecurityEvent({ user: u, type: 'agent_token_rotated', details: `${registry.nameOf(req.params.id) ?? req.params.id}${expiresAt ? ` до ${new Date(expiresAt).toISOString()}` : ' (бессрочный)'}` })
+    return { token, expiresAt }
+  })
+
+  // Отзыв токена (п.11): агент отключается и больше не подключится, пока токен не перевыпустят.
+  app.delete<{ Params: { id: string } }>('/api/agents/:id/token', async (req, reply) => {
+    const u = uid(req)
+    if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
+    const name = db.listAgents(u).find((a) => a.id === req.params.id)?.name ?? req.params.id
+    db.revokeAgentToken(req.params.id)
+    registry.disconnect(req.params.id)
+    db.logSecurityEvent({ user: u, type: 'agent_token_revoked', details: name })
+    return { ok: true }
+  })
+
+  app.post<{ Params: { id: string }; Body: { pin?: boolean } | undefined }>(REST.agentPinIp(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const u = uid(req)
+    if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
+    db.setAgentPinIp(u, req.params.id, req.body?.pin === true)
+    return { ok: true }
   })
 
   // --- Файловый проводник по машине (все под проверкой владения) ---

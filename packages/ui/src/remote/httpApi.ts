@@ -257,7 +257,9 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'agents:setPolicy': async ({ id, policy }) => {
       await req(REST.agentPolicy(id), { method: 'POST', body: JSON.stringify({ policy }) })
     },
-    'agents:regenerateToken': ({ id }) => req(REST.agentToken(id), { method: 'POST' }),
+    'agents:regenerateToken': ({ id, ttlDays }) => req(REST.agentToken(id), { method: 'POST', body: JSON.stringify(ttlDays ? { ttlDays } : {}) }),
+    'agents:revokeToken': ({ id }) => req(REST.agentToken(id), { method: 'DELETE' }),
+    'agents:setPinIp': ({ id, pin }) => req(REST.agentPinIp(id), { method: 'POST', body: JSON.stringify({ pin }) }),
     'agents:update': ({ id }) => req(REST.agentUpdate(id), { method: 'POST' }),
     'agents:commands': ({ id, limit, q, source }) => {
       const params = new URLSearchParams()
@@ -308,6 +310,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:makeStats': () => req(REST.adminMakeStats),
     'admin:updateMachine': ({ id }) => req(REST.adminMachineUpdate(id), { method: 'POST' }),
     'admin:machineStats': () => req(REST.adminMachineStats),
+    'admin:revokeMachineToken': ({ id }) => req(REST.adminMachineTokenRevoke(id), { method: 'POST' }),
     'admin:llmAccess': ({ name }) => req(REST.adminUserLlmAccess(name)),
     'admin:saveLlmAccess': ({ name, access }) => req(REST.adminUserLlmAccess(name), { method: 'PUT', body: JSON.stringify(access) }),
     'admin:createUser': (b) =>
