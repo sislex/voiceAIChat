@@ -57,7 +57,6 @@ import { useConfirm } from '@voicechat/ui-kit'
 import { KnowledgeBase } from './components/KnowledgeBase'
 import { NotificationContainer } from './components/ClarificationNotification'
 import { KbUsagePanel } from './components/kb/KbUsagePanel'
-import { hasPendingKbUsage } from './lib/kbUsage'
 import { CommandPalette } from './components/CommandPalette'
 import { HotkeysCheatSheet } from './components/HotkeysCheatSheet'
 import {
@@ -1749,10 +1748,6 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         downloadPercent={settingsState.downloadPercent}
         onDownloadModel={settingsActions.downloadModel}
         onExport={chatActions.exportConversation}
-        onOpenKbUsage={chat.activeId ? runtime.openKbUsage : undefined}
-        kbUsageCount={activeKbUsage?.report?.unreadCount ?? 0}
-        kbUsageActive={hasPendingKbUsage(activeKbUsage?.report ?? null)}
-        kbContextMode={activeConversation?.kbContextMode ?? 'auto'}
         turnMeta={chat.lastTurnMeta}
         agents={operations.agents}
         execTarget={activeExecTarget}
@@ -2211,6 +2206,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             const agent = operations.agents.find((item) => item.id === agentId)
             if (!agent) return
             await operationsActions.setAgentPolicy(agentId, { ...agent.policy, skills: [...agent.policy.skills, skill] })
+          }}
+          onOpenKbUsage={() => {
+            setConversationSettingsOpen(false)
+            runtime.openKbUsage()
           }}
           onClose={() => {
             setConversationSettingsOpen(false)
