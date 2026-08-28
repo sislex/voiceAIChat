@@ -26,6 +26,8 @@ export interface ServerConfig {
   agentOfflineGraceMs: number
   /** Команда машины длиннее этого (мс) считается долгой: владелец получает уведомление, для чата сохраняется лог. */
   longCommandMs: number
+  /** Watchdog: машина без агента дольше этого (мс) — тревога владельцу; 0 — выключено. */
+  agentOfflineAlertMs: number
   /** Путь к .dmg десктоп-приложения для скачивания (undefined — не собрано). */
   desktopAppPath?: string
   /**
@@ -169,6 +171,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     piperArgsPrefix: env.VC_PIPER_ARGS ? env.VC_PIPER_ARGS.split(' ') : [],
     agentAppPath: env.VC_AGENT_APP ?? (AUTODISCOVER ? findDmg(REPO.agentAppDir) : undefined),
     // В тестах — 0, чтобы офлайн-проверки отвечали мгновенно; в проде даём агенту 15 с на переподключение.
+    agentOfflineAlertMs: env.VC_AGENT_OFFLINE_ALERT_MIN !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_ALERT_MIN) || 0) * 60_000 : 10 * 60_000,
     longCommandMs: env.VC_LONG_COMMAND_MS !== undefined ? Math.max(0, Number(env.VC_LONG_COMMAND_MS) || 0) : 10_000,
     agentOfflineGraceMs: env.VC_AGENT_OFFLINE_GRACE_MS !== undefined ? Math.max(0, Number(env.VC_AGENT_OFFLINE_GRACE_MS) || 0) : (AUTODISCOVER ? 15_000 : 0),
     desktopAppPath: env.VC_DESKTOP_APP ?? (AUTODISCOVER ? findDmg(REPO.desktopAppDir) : undefined),

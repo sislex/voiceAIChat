@@ -42,7 +42,7 @@ import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
-import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource, MachineCommandEvent } from './agentProtocol'
+import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource, MachineCommandEvent, MachineStatusEvent } from './agentProtocol'
 import type {
   Board,
   KanbanColumn,
@@ -733,6 +733,8 @@ export interface RendererRealtimeBridge {
   onTaskPreparationNotificationsInvalidated(cb: (m: { projectId: string }) => void): () => void
   /** Долгая команда машины завершилась — тост/уведомление (machines-roadmap п.17). */
   onMachineCommand?(cb: (event: MachineCommandEvent) => void): () => void
+  /** Watchdog: машина пропала/вернулась (machines-roadmap п.1). */
+  onMachineStatus?(cb: (event: MachineStatusEvent) => void): () => void
 }
 
 export interface RendererBoardBridge {

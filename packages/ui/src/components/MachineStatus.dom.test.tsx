@@ -26,7 +26,7 @@ describe('MachineStatus', () => {
         onClose={vi.fn()}
       />
     )
-    expect(screen.getByText('не запущен')).toBeInTheDocument()
+    expect(screen.getByText(/^не запущен/)).toBeInTheDocument()
     expect(screen.getByLabelText('Сеть')).toBeDisabled()
   })
 

@@ -35,6 +35,7 @@ import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { BoardHub, NotificationHub } from './projects/boardHub.js'
 import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.js'
 import { ensureDefaultChatBinding, ensureDefaultStorage } from './agents/defaultStorage.js'
+import { createAgentWatchdog } from './agents/watchdog.js'
 import { createMailer, type Mailer } from './users/mailer.js'
 
 /** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
@@ -1521,6 +1522,11 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   })
   registerReleaseRoutes(app, db, releaseManager, managedEnvironments, agentRegistry)
   publishToUser = (message, userId) => ciRunManager.publish(message, userId)
+  // Watchdog агентов (п.1): раз в минуту ищем машины, пропавшие дольше порога.
+  const agentWatchdog = createAgentWatchdog({ db, registry: agentRegistry, publish: (m, uid) => ciRunManager.publish(m, uid), thresholdMs: opts.config.agentOfflineAlertMs })
+  const watchdogTimer = opts.config.agentOfflineAlertMs > 0 ? setInterval(() => { try { agentWatchdog.tick() } catch (error) { app.log.warn({ error }, 'agent watchdog tick failed') } }, 60_000) : null
+  watchdogTimer?.unref?.()
+  app.addHook('onClose', async () => { if (watchdogTimer) clearInterval(watchdogTimer); agentWatchdog.stop() })
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId))
   mergeRunManager.reconcile()

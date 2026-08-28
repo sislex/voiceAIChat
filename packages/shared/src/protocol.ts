@@ -16,7 +16,7 @@ import type {
 } from './types'
 import type { CcItem } from './cc'
 import type { CxItem } from './codexSessions'
-import type { AgentInfo, MachineCommandEvent } from './agentProtocol'
+import type { AgentInfo, MachineCommandEvent, MachineStatusEvent } from './agentProtocol'
 import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
 import type { KbUsageQuery } from './kb'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
@@ -596,6 +596,8 @@ export type ServerMessage =
   | { t: 'board.changed'; projectId: string }
   /** Долгая команда машины завершилась (см. VC_LONG_COMMAND_MS) — тост/уведомление владельцу. */
   | { t: 'machine.command'; event: MachineCommandEvent }
+  /** Watchdog: машина не в сети дольше порога / вернулась. */
+  | { t: 'machine.status'; event: MachineStatusEvent }
   | { t: 'preparation.run.updated'; projectId: string; taskId: string; runId: string }
   | { t: 'task.repositories.updated'; projectId: string; taskId: string }
   /** Снимок уведомлений подготовки изменился; содержимое читается только по HTTP. */
@@ -695,6 +697,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'pty.error',
   'board.changed',
   'machine.command',
+  'machine.status',
   'preparation.run.updated',
   'task.repositories.updated',
   'task-preparation.notifications.invalidate',

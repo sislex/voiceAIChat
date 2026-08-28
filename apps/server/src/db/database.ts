@@ -2332,6 +2332,22 @@ export class VoiceChatDb {
     }
   }
 
+  /** Все машины всех пользователей — для серверного watchdog. */
+  listAllAgents(): AgentRecord[] {
+    const rows = this.db.prepare(`SELECT * FROM agents ORDER BY created_at ASC`).all() as AgentRow[]
+    return rows.map((r) => this.mapAgent(r))
+  }
+
+  /** Watchdog: тревога «не в сети» / «вернулась» (machines-roadmap п.1). */
+  logMachineEvent(e: { machineId: string; userId: string; state: 'offline' | 'online'; at: number; offlineForMs: number }): void {
+    this.db.prepare(`INSERT INTO machine_events (machine_id, user_id, state, at, offline_for_ms) VALUES (?, ?, ?, ?, ?)`).run(e.machineId, e.userId, e.state, e.at, e.offlineForMs)
+  }
+
+  listMachineEvents(machineId: string, limit = 50): Array<{ id: number; machineId: string; userId: string; state: 'offline' | 'online'; at: number; offlineForMs: number }> {
+    const rows = this.db.prepare(`SELECT * FROM machine_events WHERE machine_id = ? ORDER BY id DESC LIMIT ?`).all(machineId, Math.min(Math.max(limit, 1), 500)) as Array<{ id: number; machine_id: string; user_id: string; state: 'offline' | 'online'; at: number; offline_for_ms: number }>
+    return rows.map((r) => ({ id: r.id, machineId: r.machine_id, userId: r.user_id, state: r.state, at: r.at, offlineForMs: r.offline_for_ms }))
+  }
+
   listAgents(userId: string): AgentRecord[] {
     const rows = this.db
       .prepare(`SELECT * FROM agents WHERE user_id = ? ORDER BY created_at ASC`)

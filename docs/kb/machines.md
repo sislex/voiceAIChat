@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-28
-checked: c62a8dde
+checked: cfaee2db
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -577,6 +577,17 @@ fallback-textarea), что и в Make; путь машины абсолютны�
 Потребитель моста — `/api/preview` (Web Reader): виртуальный host `<agentId>.machine.internal:<port>` доставляется агентом, а не сетью; доступ проверяет `VoiceChatDb.canUseAgentForPreview` (владелец машины либо share машины в любом проекте, где пользователь — активный участник). Внутренние редиректы окружения на `127.0.0.1`/`localhost` возвращаются на мост той же машины; редирект наружу не следуется. Ответ проходит общий rewrite и cookie-контейнер превью, поэтому логин в окружение и относительные ссылки работают как на публичных сайтах. Детали Reader-стороны — [ui.md](ui.md), раздел «Тестовые окружения проекта в Web Reader».
 
 ChatAI можно открыть в его же Web Reader (проверено живьём): вложенный клиент требует отдельного входа — шимованный `localStorage` изолирован по контексту превью, токен верхней сессии внутрь не протекает, поэтому первое, что видно, — экран «Вход», и это норма, а не «не открылось». После входа работают REST-страницы (в том числе `#/machines` с живой телеметрией: WS вложенный клиент открывает мимо шима на реальный origin ChatAI, а это тот же сервер, и токен вложенной сессии валиден). Deep-link вида `…machine.internal:5273/#/machines` доезжает благодаря восстановлению hash context-шимом — см. [server-internals.md](server-internals.md).
+
+## Watchdog агента
+
+`apps/server/src/agents/watchdog.ts` (`createAgentWatchdog`): раз в минуту (`server.ts`, таймер `unref`)
+проходит `db.listAllAgents()` и по машинам, у которых агент когда-то был (`lastSeen` не null), но сейчас
+офлайн дольше `config.agentOfflineAlertMs` (`VC_AGENT_OFFLINE_ALERT_MIN`, по умолчанию 10 мин, 0 — выключить),
+один раз пишет `machine_events(state='offline')` и публикует владельцу WS `machine.status` (`MachineStatusEvent`)
+через `ciRunManager.publish`. Тревога держится в памяти до возврата машины: `registry.onChange` → событие
+`online` с `offlineForMs` и снятием тревоги. App показывает красный тост «не в сети уже N мин» (до закрытия)
+и зелёный «снова в сети». Автоперезапуск процесса агента — дело установщика (`unixInstall.ts`: launchd
+`KeepAlive`, systemd `Restart=always`); watchdog замечает, когда это не помогло. Тесты — `watchdog.test.ts`.
 
 ## Здоровье машины в шапке чата
 
