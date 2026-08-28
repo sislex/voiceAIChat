@@ -115,7 +115,7 @@ export function ProjectsEmptyPage(): JSX.Element {
         <EmptyState
           icon="🗂"
           title="Проектов пока нет"
-          description="Создайте первый в сайдбаре — кнопка «+ Проект». Внутри проекта появятся доска, задачи и CI."
+          description="Создайте первый в сайдбаре — кнопка «+ Новый проект». Внутри проекта появятся доска, задачи и CI."
         />
       </div>
     </ToolFrame>

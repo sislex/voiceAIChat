@@ -85,6 +85,41 @@ describe('projects REST: доступ', () => {
     expect((await app.inject({ method: 'GET', url: '/api/projects' })).statusCode).toBe(401)
   })
 
+  it('свой проект создаёт любая роль и садится в нём владельцем', async () => {
+    db.createUser('tess', '', 'tester')
+    db.createUser('olga', '', 'observer')
+    for (const [name, role] of [['bob', 'developer'], ['tess', 'tester'], ['olga', 'observer']] as const) {
+      const token = signToken({ name, role }, SECRET)
+      const created = await inj(token, { method: 'POST', url: '/api/projects', payload: { name: `Проект ${name}` } })
+      expect(created.statusCode, `${role} должен создавать свой проект`).toBe(200)
+      const detail = created.json() as ProjectDetail
+      // Создатель — владелец: иначе он не сможет ни настроить проект, ни позвать участников.
+      expect(detail.role).toBe('owner')
+      expect(db.isProjectOwner(name, detail.id)).toBe(true)
+      // И проект виден ему в списке, а чужому — нет.
+      expect(((await inj(token, { method: 'GET', url: '/api/projects' })).json() as ProjectSummary[]).map((x) => x.id)).toContain(detail.id)
+      expect(((await inj(bobTok, { method: 'GET', url: '/api/projects' })).json() as ProjectSummary[]).map((x) => x.id).includes(detail.id)).toBe(name === 'bob')
+    }
+  })
+
+  it('/api/projects/ со слешем в конце — 404 до авторизации, а не путь в обход матрицы прав', async () => {
+    // projectPermissionForRequest такой URL не классифицирует; безопасно это лишь потому,
+    // что Fastify поднят без ignoreTrailingSlash и роут не совпадает вовсе.
+    expect((await inj(bobTok, { method: 'POST', url: '/api/projects/', payload: { name: 'X' } })).statusCode).toBe(404)
+  })
+
+  it('владелец-неадмин настраивает свой проект и зовёт участников, но в чужой не лезет', async () => {
+    const carolTok = signToken({ name: 'carol', role: 'developer' }, SECRET)
+    const mine = (await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'Проект Боба' } })).json() as ProjectDetail
+    expect((await inj(bobTok, { method: 'PATCH', url: `/api/projects/${mine.id}`, payload: { description: 'моё' } })).statusCode).toBe(200)
+    expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${mine.id}/members`, payload: { username: 'carol' } })).statusCode).toBe(200)
+    // Участник (не владелец) настройки не меняет, хотя тоже developer.
+    expect((await inj(carolTok, { method: 'PATCH', url: `/api/projects/${mine.id}`, payload: { description: 'чужое' } })).statusCode).toBe(403)
+    // Админский проект бобу не подчиняется.
+    const foreign = await createProject('Админский')
+    expect((await inj(bobTok, { method: 'PATCH', url: `/api/projects/${foreign.id}`, payload: { description: 'чужое' } })).statusCode).toBe(403)
+  })
+
   it('developer создаёт и редактирует задачу, но получает 403 для настроек и release/deploy', async () => {
     const p = await createProject('RBAC')
     await inj(adminTok, { method: 'POST', url: `/api/projects/${p.id}/members`, payload: { username: 'bob' } })

@@ -72,13 +72,24 @@ export type ProjectPermission =
   | 'production:deploy'
   | 'users:manage'
   | 'project:settings'
+  | 'project:create'
 
 const DEVELOPER_PERMISSIONS = new Set<ProjectPermission>([
   'project:view', 'task:create', 'task:update', 'workflow:start', 'task:merge'
 ])
 
+/**
+ * Полномочия, доступные любой роли. Свой проект может завести кто угодно: создатель
+ * становится его владельцем (`project_members.role='owner'`), а что он вправе делать
+ * внутри — по-прежнему решают DEVELOPER_PERMISSIONS и проектное владение. Раньше
+ * создание попадало под `project:settings`, то есть было доступно только глобальному
+ * admin, и «свой проект» получить было нельзя.
+ */
+const ANY_ROLE_PERMISSIONS = new Set<ProjectPermission>(['project:create'])
+
 /** Централизованная матрица проектных полномочий; admin разрешены и будущие действия. */
 export function hasProjectPermission(role: SessionUser['role'], permission: ProjectPermission): boolean {
+  if (ANY_ROLE_PERMISSIONS.has(permission)) return true
   return role === 'admin' || (role === 'developer' && DEVELOPER_PERMISSIONS.has(permission))
 }
 
@@ -99,6 +110,10 @@ export function projectPermissionForRequest(method: string, url: string): Projec
   if (url.startsWith('/api/admin/')) return 'users:manage'
   if (/^\/api\/projects\/[^/]+\/machines\/available$/.test(url)) return 'project:settings'
   if (method === 'GET') return null
+  // Создание своего проекта доступно любой роли и обязано проверяться раньше общего
+  // правила про `/api/projects` ниже: то возвращает `project:settings`, и создание
+  // снова стало бы админской операцией.
+  if (method === 'POST' && url === '/api/projects') return 'project:create'
   if (/^\/api\/projects\/[^/]+\/releases\/deploy$/.test(url)) return 'production:deploy'
   if (/^\/api\/projects\/[^/]+\/releases(?:\/|$)/.test(url)) return 'release:prepare'
   if (/^\/api\/projects\/[^/]+\/tasks\/[^/]+\/merge$/.test(url) || /^\/api\/merge\/runs\/[^/]+\/retry$/.test(url)) return 'task:merge'
