@@ -249,6 +249,16 @@ CREATE TABLE IF NOT EXISTS machine_commands (
 );
 CREATE INDEX IF NOT EXISTS idx_machine_commands_machine ON machine_commands(machine_id, id DESC);
 
+CREATE TABLE IF NOT EXISTS machine_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  machine_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  state TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  offline_for_ms INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_machine_events_machine ON machine_events(machine_id, id DESC);
+
 CREATE TABLE IF NOT EXISTS security_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   at INTEGER NOT NULL,

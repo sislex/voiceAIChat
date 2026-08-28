@@ -464,7 +464,7 @@ export function MachineStatus({
                     <td>
                       <span className={a.online ? 'mst-status on' : 'mst-status off'}>
                         <span className="mst-dot" aria-hidden />
-                        {a.online ? 'агент запущен' : 'не запущен'}
+                        {a.online ? 'агент запущен' : a.lastSeen ? `не запущен · с ${new Date(a.lastSeen).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : 'не запущен'}
                       </span>
                     </td>
                     <TelemetryCells t={a.online ? a.telemetry : undefined} />

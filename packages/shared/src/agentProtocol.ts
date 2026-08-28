@@ -73,6 +73,17 @@ export interface MachineCommandEvent {
   logPath?: string
 }
 
+/** Watchdog агента (machines-roadmap п.1): машина пропала дольше порога или вернулась после тревоги. */
+export interface MachineStatusEvent {
+  machineId: string
+  machineName: string
+  state: 'offline' | 'online'
+  /** Момент события (UNIX мс). */
+  at: number
+  /** Сколько машина была/уже не в сети, мс. */
+  offlineForMs: number
+}
+
 /** Результат копирования файла между машинами (`POST /api/agents/:id/fs/copy-to`): сервер читает с одной и пишет на другую. */
 export interface FsCopyResult {
   /** Абсолютный путь файла на целевой машине. */

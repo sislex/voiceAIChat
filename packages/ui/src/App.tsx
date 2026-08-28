@@ -429,6 +429,17 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       }
     })
   }, [toast, navigate, operationsActions])
+  // Watchdog: машина пропала дольше порога / вернулась.
+  useEffect(() => {
+    const realtime = window.realtime
+    if (!realtime?.onMachineStatus) return
+    return realtime.onMachineStatus((event) => {
+      const minutes = Math.max(1, Math.round(event.offlineForMs / 60_000))
+      const action = { label: 'Машины', onClick: () => navigate('/machines') }
+      if (event.state === 'offline') toast.error(`Машина «${event.machineName}» не в сети уже ${minutes} мин — проверьте агент на ней.`, { action, duration: 0 })
+      else toast.success(`Машина «${event.machineName}» снова в сети (не было ${minutes} мин).`, { action })
+    })
+  }, [toast, navigate])
   const confirm = useConfirm()
   // Снимок области из Reader: PNG уходит вложением композера, координаты — в черновик.
   const attachAreaScreenshot = useCallback((shot: WebRecorderAreaScreenshot) => {
