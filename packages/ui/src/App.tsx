@@ -411,6 +411,24 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     return () => { active = false }
   }, [api])
   const toast = useToast()
+  // Долгая команда машины завершилась: тост с переходом к логу/журналу; во вкладке в фоне — системное уведомление, если разрешено.
+  useEffect(() => {
+    const realtime = window.realtime
+    if (!realtime?.onMachineCommand) return
+    return realtime.onMachineCommand((event) => {
+      const seconds = Math.round(event.durationMs / 1000)
+      const outcome = event.error ? `ошибка: ${event.error}` : event.timedOut ? 'таймаут' : `код ${event.exitCode ?? '—'}`
+      const text = `«${event.machineName}»: команда завершилась (${outcome}, ${seconds} с) — ${event.command.slice(0, 60)}`
+      const action = event.logPath
+        ? { label: 'Открыть лог', onClick: () => operationsActions.openUtility('explorer', event.machineId, event.logPath) }
+        : { label: 'Журнал', onClick: () => navigate('/machines') }
+      if (event.error || (event.exitCode !== null && event.exitCode !== 0)) toast.error(text, { action, duration: 0 })
+      else toast.success(text, { action, duration: 8000 })
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+        try { new Notification('Команда на машине завершилась', { body: text }) } catch { /* без системных уведомлений */ }
+      }
+    })
+  }, [toast, navigate, operationsActions])
   const confirm = useConfirm()
   // Снимок области из Reader: PNG уходит вложением композера, координаты — в черновик.
   const attachAreaScreenshot = useCallback((shot: WebRecorderAreaScreenshot) => {

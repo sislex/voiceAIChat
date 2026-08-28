@@ -158,7 +158,8 @@ export function makeRealtimeBridge(ws: WsClient): RendererRealtimeBridge {
     onConnected: (cb) => ws.onConnected(cb),
     connected: () => ws.isConnected(),
     onTaskPreparationNotificationsInvalidated: (cb) =>
-      ws.on('task-preparation.notifications.invalidate', (m) => cb({ projectId: m.projectId }))
+      ws.on('task-preparation.notifications.invalidate', (m) => cb({ projectId: m.projectId })),
+    onMachineCommand: (cb) => ws.on('machine.command', (m) => cb(m.event))
   }
 }
 

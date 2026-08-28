@@ -48,7 +48,7 @@ describe('AgentRegistry', () => {
     reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: 'a.txt' })
     reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
     await p
-    expect(records[0]).toMatchObject({ machineId: 'a1', userId: 'bob', source: 'console', command: 'ls', exitCode: 0, timedOut: false, error: null, outputExcerpt: 'a.txt', conversationId: null })
+    expect(records[0]).toMatchObject({ machineId: 'a1', userId: 'bob', source: 'console', command: 'ls', exitCode: 0, timedOut: false, error: null, outputExcerpt: 'a.txt', output: 'a.txt', conversationId: null })
     reg.updatePolicy('a1', { allowedDirs: [], allowNetwork: true, allowWrite: false, denyPatterns: [], allowPatterns: [], skills: [] })
     await expect(reg.exec('a1', 'rm -rf x', 1000, undefined, { source: 'chat', conversationId: 'c1' })).rejects.toThrow()
     expect(records[1]).toMatchObject({ source: 'chat', conversationId: 'c1', exitCode: null })

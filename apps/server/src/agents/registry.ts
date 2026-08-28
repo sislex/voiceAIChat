@@ -369,12 +369,13 @@ export class AgentRegistry {
    * `signal` отменяет только эту команду (напр., оборвался HTTP-запрос claude).
    */
   /** Кто и откуда запустил команду — для журнала команд машины. */
-  private readonly commandListeners = new Set<(rec: Omit<MachineCommandRecord, 'id'>) => void>()
-  onCommand(cb: (rec: Omit<MachineCommandRecord, 'id'>) => void): () => void {
+  private readonly commandListeners = new Set<(rec: Omit<MachineCommandRecord, 'id'> & { output: string }) => void>()
+  /** Подписка на завершённые команды; `output` — полный вывод (в журнал идёт только выдержка). */
+  onCommand(cb: (rec: Omit<MachineCommandRecord, 'id'> & { output: string }) => void): () => void {
     this.commandListeners.add(cb)
     return () => { this.commandListeners.delete(cb) }
   }
-  private recordCommand(rec: Omit<MachineCommandRecord, 'id'>): void {
+  private recordCommand(rec: Omit<MachineCommandRecord, 'id'> & { output: string }): void {
     for (const cb of this.commandListeners) { try { cb(rec) } catch { /* журнал не должен ронять exec */ } }
   }
 
@@ -391,8 +392,8 @@ export class AgentRegistry {
       : this.waitForOnline(agentId).then((ok) => (ok ? this.execInner(agentId, command, timeoutMs, signal) : Promise.reject(this.offlineError(agentId))))
     const base = { machineId: agentId, userId: meta?.userId ?? '', source: meta?.source ?? 'system', command, startedAt, conversationId: meta?.conversationId ?? null } as const
     promise.then(
-      (r) => this.recordCommand({ ...base, exitCode: r.exitCode, timedOut: r.timedOut, error: null, durationMs: Date.now() - startedAt, outputExcerpt: r.output.slice(0, 500) }),
-      (err: unknown) => this.recordCommand({ ...base, exitCode: null, timedOut: false, error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - startedAt, outputExcerpt: '' })
+      (r) => this.recordCommand({ ...base, exitCode: r.exitCode, timedOut: r.timedOut, error: null, durationMs: Date.now() - startedAt, outputExcerpt: r.output.slice(0, 500), output: r.output }),
+      (err: unknown) => this.recordCommand({ ...base, exitCode: null, timedOut: false, error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - startedAt, outputExcerpt: '', output: '' })
     )
     return promise
   }

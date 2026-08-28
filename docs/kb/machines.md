@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
 updated: 2026-08-28
-checked: c1f36f5e
+checked: 4a1b9916
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -242,6 +242,15 @@ PTY и preview-туннели не ждут — там обрыв виден п�
 владельца машины, если `userId` не передан. Консоль (`POST /api/agents/:id/exec`) даёт `source: console`,
 MCP-инструменты `remoteBashMcp.ts` — `chat` с `conversationId` из `&conv=` в MCP-URL (`turns.ts`), остальные
 вызовы (обновление агента, релиз KB, health превью) — `system`. Стриминговый `execStream` PTY в журнал не пишет.
+
+**Долгие команды** (`config.longCommandMs` ← `VC_LONG_COMMAND_MS`, по умолчанию 10 с): тот же `onCommand`-подписчик
+в `server.ts` для команд `console`/`chat` дольше порога публикует владельцу WS-сообщение `machine.command`
+(`MachineCommandEvent`) через `ciRunManager.publish` — сессии форвардят его как и `ci.*`. Для команды из чата
+полный вывод (`output` в payload `onCommand`, в БД — только выдержка) пишется на машину чата в
+`<chatRoot>/artifacts/commands/<ГГГГММДД-ЧЧММСС>__<slug>.log` с шапкой `$ команда / # exit …`, и событие несёт
+`logPath`. UI (`App.tsx`, `realtime.onMachineCommand`): тост — успех на 8 с с действием «Журнал» (страница машин)
+или «Открыть лог» (проводник на файле), ошибка/ненулевой код — до закрытия; во вкладке в фоне дополнительно
+`new Notification(...)`, если разрешение уже выдано (само оно не запрашивается). Тест — `commandNotify.test.ts`.
 
 Чтение: `GET /api/agents/:id/commands?limit&q&source[&format=csv]` (`canUseAgent`), мост `agents:commands`.
 UI — кнопка «Журнал» в строке машины на странице «Машины» (`MachineCommandLog.tsx`): поиск по подстроке,

@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel, type MachineCommandEvent, type ServerMessage } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -576,8 +576,41 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Каталог ChatAI по умолчанию: при подключении машины и перед первой записью файлов чата.
   const defaultStorageDeps = { db, registry: agentRegistry, log: (m: string, extra?: Record<string, unknown>) => app.log.info(extra ?? {}, m) }
   // Журнал команд машины: пишем всё, что прошло через registry.exec (консоль, чат, системные вызовы).
+  // Публикация в WS владельцу (ciRunManager создаётся ниже — привязываем лениво).
+  let publishToUser: ((message: ServerMessage, userId: string) => void) | null = null
   agentRegistry.onCommand((rec) => {
-    try { db.addMachineCommand({ ...rec, userId: rec.userId || (db.agentOwnerId(rec.machineId) ?? '') }) } catch (error) { app.log.warn({ error }, 'machine command log failed') }
+    const { output, ...record } = rec
+    const userId = record.userId || (db.agentOwnerId(record.machineId) ?? '')
+    try { db.addMachineCommand({ ...record, userId }) } catch (error) { app.log.warn({ error }, 'machine command log failed') }
+    // Долгая команда (п.17): тост владельцу; для команды из чата — полный лог в artifacts/commands чата.
+    if (!userId || record.source === 'system' || record.durationMs < opts.config.longCommandMs) return
+    void (async () => {
+      let logPath: string | undefined
+      if (record.source === 'chat' && record.conversationId) {
+        try {
+          const managed = await managedChatStorage(userId, record.conversationId)
+          if (managed) {
+            const separator = managed.artifacts.includes('\\') && !managed.artifacts.includes('/') ? '\\' : '/'
+            const dir = `${managed.artifacts}${separator}commands`
+            await agentRegistry.fsMkdir(managed.binding.machineId, dir)
+            const stamp = new Date(record.startedAt).toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
+            const slug = record.command.replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'command'
+            logPath = `${dir}${separator}${stamp}__${slug}.log`
+            const header = `$ ${record.command}\n# exit ${record.exitCode ?? 'null'} · ${record.durationMs} ms · ${new Date(record.startedAt).toISOString()}\n\n`
+            await agentRegistry.fsWrite(managed.binding.machineId, logPath, Buffer.from(header + output).toString('base64'))
+          }
+        } catch (error) {
+          app.log.warn({ error }, 'command log save failed')
+          logPath = undefined
+        }
+      }
+      const event: MachineCommandEvent = {
+        machineId: record.machineId, machineName: agentRegistry.nameOf(record.machineId) ?? db.listAgents(userId).find((a) => a.id === record.machineId)?.name ?? record.machineId,
+        source: record.source, command: record.command, exitCode: record.exitCode, timedOut: record.timedOut, error: record.error,
+        durationMs: record.durationMs, conversationId: record.conversationId, ...(logPath ? { logPath } : {})
+      }
+      publishToUser?.({ t: 'machine.command', event }, userId)
+    })()
   })
   agentRegistry.onAgentReady((agentId) => {
     const owner = db.agentOwnerId(agentId)
@@ -1487,6 +1520,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl, mode:'legacy' }
   })
   registerReleaseRoutes(app, db, releaseManager, managedEnvironments, agentRegistry)
+  publishToUser = (message, userId) => ciRunManager.publish(message, userId)
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId))
   mergeRunManager.reconcile()
