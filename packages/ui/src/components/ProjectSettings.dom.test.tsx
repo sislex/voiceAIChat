@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { render } from '../test/uiRender'
-import type { ProjectDetail } from '@shared/projects'
+import type { ProjectDetail, ProjectInvitation } from '@shared/projects'
 import { BUILTIN_PROJECT_TYPES, BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@shared/projectTypes'
 import { ProjectSettings, type ProjectSettingsProps } from './ProjectSettings'
 import { createFakeCi } from '../test/fakeApi'
@@ -246,5 +246,62 @@ describe('ProjectSettings — тип проекта', () => {
       .toEqual(['Общее', 'LLM', 'Доска', 'Workflow и CI', 'Участники', 'Машины'])
     expect(screen.getByLabelText('Git-репозиторий')).toBeInTheDocument()
     expect(screen.getByLabelText('URL веб-превью')).toBeInTheDocument()
+  })
+})
+
+describe('ProjectSettings — приглашения участников', () => {
+  const invitation = (over: Partial<ProjectInvitation> = {}): ProjectInvitation => ({
+    id: 'inv1', projectId: 'p1', email: 'bob@example.com', invitedUsername: null,
+    role: 'member', status: 'pending', invitedBy: 'admin',
+    createdAt: 1, expiresAt: Date.parse('2026-09-04T00:00:00Z'), respondedAt: null, ...over
+  })
+
+  const open = async (over: Partial<ProjectSettingsProps> = {}) => {
+    const result = render(<ProjectSettings {...props({ onInvite: vi.fn(), ...over })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Участники' }))
+    return result
+  }
+
+  it('владелец приглашает по логину или email с выбранной ролью', async () => {
+    const onInvite = vi.fn()
+    await open({ onInvite })
+    await userEvent.type(screen.getByLabelText('Логин или email'), '  bob@example.com  ')
+    await userEvent.selectOptions(screen.getByLabelText('Роль'), 'owner')
+    await userEvent.click(screen.getByRole('button', { name: 'Пригласить' }))
+    // Адрес обрезан, роль передана.
+    expect(onInvite).toHaveBeenCalledWith('p1', 'bob@example.com', 'owner')
+    // Поле очищено — иначе повторное нажатие шлёт дубль.
+    expect(screen.getByLabelText('Логин или email')).toHaveValue('')
+  })
+
+  it('пустой ввод не отправляется', async () => {
+    const onInvite = vi.fn()
+    await open({ onInvite })
+    expect(screen.getByRole('button', { name: 'Пригласить' })).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('Логин или email'), '   ')
+    expect(onInvite).not.toHaveBeenCalled()
+  })
+
+  it('ожидающие показаны со сроком, отзыв и повторная отправка работают', async () => {
+    const onRevokeInvitation = vi.fn()
+    const onResendInvitation = vi.fn()
+    await open({ invitations: [invitation()], onRevokeInvitation, onResendInvitation })
+    expect(screen.getByText('bob@example.com')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить снова' }))
+    expect(onResendInvitation).toHaveBeenCalledWith('p1', 'inv1')
+    await userEvent.click(screen.getByRole('button', { name: /Отозвать приглашение/ }))
+    expect(onRevokeInvitation).toHaveBeenCalledWith('p1', 'inv1')
+  })
+
+  it('приглашённому по логину «отправить снова» не показываем — письма нет', async () => {
+    await open({ invitations: [invitation({ email: null, invitedUsername: 'bob' })], onResendInvitation: vi.fn() })
+    expect(screen.getByText('bob')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Отправить снова' })).not.toBeInTheDocument()
+  })
+
+  it('участник формы приглашения не видит', async () => {
+    render(<ProjectSettings {...props({ onInvite: vi.fn(), detail: detail({ role: 'member' }) })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Участники' }))
+    expect(screen.queryByLabelText('Логин или email')).not.toBeInTheDocument()
   })
 })

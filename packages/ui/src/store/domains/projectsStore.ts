@@ -8,6 +8,7 @@
 
 import type { Board, ProjectDetail, ProjectSummary, Task, TaskChatBadge, WorkItemType, TaskPriority, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
 import type { ProjectTypeNode } from '@shared/projectTypes'
+import type { ProjectInvitation, ProjectInvitationForUser } from '@shared/projects'
 import type {
   CiCommand,
   CiCommandInput,
@@ -74,6 +75,10 @@ export interface ProjectsState {
   /** Каталог типов, видимый пользователю: встроенные, опубликованные и свои. */
   projectTypes: ProjectTypeNode[]
   projectTypesLoaded: boolean
+  /** Живые приглашения открытого проекта (владельцу). */
+  projectInvitations: ProjectInvitation[]
+  /** Приглашения, адресованные мне: показываются вне проекта. */
+  myInvitations: ProjectInvitationForUser[]
   activeProjectId: string | null
   projectSettingsOpen: boolean
   board: Board | null
@@ -103,6 +108,13 @@ export interface ProjectsActions {
   createProject(input: Parameters<ProjectsClient['projects:create']>[0]): Promise<ProjectDetail | null>
   /** Загрузить каталог типов (идемпотентно; повторный вызов обновляет список). */
   loadProjectTypes(): Promise<ProjectTypeNode[]>
+  loadProjectInvitations(id: string): Promise<void>
+  inviteToProject(id: string, invitee: string, role: 'owner' | 'member'): Promise<boolean>
+  resendProjectInvitation(id: string, invitationId: string): Promise<void>
+  revokeProjectInvitation(id: string, invitationId: string): Promise<void>
+  loadMyInvitations(): Promise<void>
+  acceptInvitation(token: string): Promise<string | null>
+  declineInvitation(token: string): Promise<void>
   createProjectType(input: Parameters<ProjectsClient['projectTypes:create']>[0]): Promise<ProjectTypeNode | null>
   updateProjectType(id: string, fields: Omit<Parameters<ProjectsClient['projectTypes:update']>[0], 'id'>): Promise<void>
   deleteProjectType(id: string): Promise<void>
@@ -215,6 +227,8 @@ function initialState(): ProjectsState {
     projectDetail: null,
     projectTypes: [],
     projectTypesLoaded: false,
+    projectInvitations: [],
+    myInvitations: [],
     activeProjectId: null,
     projectSettingsOpen: false,
     board: null,
@@ -589,6 +603,66 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           // Чтение — идемпотентно, поэтому даём «Повторить».
           fail(err, () => void actions.loadProjectTypes())
           return []
+        }
+      },
+      async loadProjectInvitations(id) {
+        try {
+          setState({ projectInvitations: await client['projects:invitations']({ id }) })
+        } catch (err) {
+          fail(err, () => void actions.loadProjectInvitations(id))
+        }
+      },
+      async inviteToProject(id, invitee, role) {
+        try {
+          await client['projects:invite']({ id, invitee, role })
+          await actions.loadProjectInvitations(id)
+          return true
+        } catch (err) {
+          // Создание не идемпотентно — «Повторить» не предлагаем.
+          fail(err)
+          return false
+        }
+      },
+      async resendProjectInvitation(id, invitationId) {
+        try {
+          await client['projects:resendInvitation']({ id, invitationId })
+          await actions.loadProjectInvitations(id)
+        } catch (err) {
+          fail(err)
+        }
+      },
+      async revokeProjectInvitation(id, invitationId) {
+        try {
+          await client['projects:revokeInvitation']({ id, invitationId })
+          await actions.loadProjectInvitations(id)
+        } catch (err) {
+          fail(err)
+        }
+      },
+      async loadMyInvitations() {
+        try {
+          setState({ myInvitations: await client['invitations:list']() })
+        } catch (err) {
+          fail(err, () => void actions.loadMyInvitations())
+        }
+      },
+      async acceptInvitation(token) {
+        try {
+          const { projectId } = await client['invitations:accept']({ token })
+          await actions.loadMyInvitations()
+          await refreshProjects()
+          return projectId
+        } catch (err) {
+          fail(err)
+          return null
+        }
+      },
+      async declineInvitation(token) {
+        try {
+          await client['invitations:decline']({ token })
+          await actions.loadMyInvitations()
+        } catch (err) {
+          fail(err)
         }
       },
       async createProjectType(input) {

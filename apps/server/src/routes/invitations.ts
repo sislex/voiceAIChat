@@ -38,7 +38,9 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
 
   /** Письмо приглашения. Без SMTP уходит в лог — так поток проверяется на стенде. */
   const sendInvitation = async (req: FastifyRequest, to: string, projectName: string, invitedBy: string, token: string): Promise<void> => {
-    const link = `${baseUrl(req)}/#/invite/${encodeURIComponent(token)}`
+    // Маршрут отдельный: `#/invite/<token>` уже занят регистрацией по админскому
+    // инвайту (InviteRegister), и два разных смысла на одном адресе не развести.
+    const link = `${baseUrl(req)}/#/project-invite/${encodeURIComponent(token)}`
     await options.mailer.send({
       to,
       subject: `Приглашение в проект «${projectName}»`,
@@ -125,6 +127,8 @@ export function registerInvitationRoutes(app: FastifyInstance, db: VoiceChatDb, 
 
   app.get('/api/invitations', async (req) => db.listInvitationsForUser(uid(req)))
 
+  // Параметр — токен из письма ЛИБО id приглашения из списка в интерфейсе:
+  // приглашённому по логину письма нет, и id — его единственный способ ответить.
   app.post<{ Params: { token: string } }>('/api/invitations/:token/accept', async (req, reply) => {
     try {
       const { projectId } = db.acceptProjectInvitation(uid(req), decodeURIComponent(req.params.token))

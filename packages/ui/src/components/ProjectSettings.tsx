@@ -5,7 +5,7 @@ import { CiProjectDefaults } from './ci/CiProjectDefaults'
 // Управляющие контролы (правка, участники, машины, удаление) — только владельцу.
 
 import { useEffect, useState } from 'react'
-import type { ProjectDetail, ProjectSummary, ProjectTestUser, WorkItemDefaultSkills, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
+import type { ProjectDetail, ProjectInvitation, ProjectRole, ProjectSummary, ProjectTestUser, WorkItemDefaultSkills, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
 import type { KbContextMode } from '@shared/types'
 import type { ManagedPreflightConfirmation } from '@shared/release'
 import type { UserLlmAccess } from '@shared/llmAccess'
@@ -33,6 +33,12 @@ export interface ProjectSettingsProps {
 
   onDelete: (id: string) => void
   onAddMember: (id: string, username: string) => void
+  /** Живые приглашения проекта (владельцу). */
+  invitations?: ProjectInvitation[]
+  /** Пригласить по логину или email; нет обработчика — блок не показываем. */
+  onInvite?: (id: string, invitee: string, role: ProjectRole) => void | Promise<void>
+  onResendInvitation?: (id: string, invitationId: string) => void | Promise<void>
+  onRevokeInvitation?: (id: string, invitationId: string) => void | Promise<void>
   onUpdateMemberRole: (id: string, username: string, role: 'owner' | 'member') => void
   onRemoveMember: (id: string, username: string) => void
   onLinkMachine: (id: string, agentId: string) => void | Promise<void>
@@ -127,9 +133,16 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
     setTestUsers((all) => all.map((user, i) => (i === index ? { ...user, ...patch } : user)))
   }
   const [newMember, setNewMember] = useState('')
+  const submitInvite = (): void => {
+    const invitee = newMember.trim()
+    if (!invitee || !props.onInvite) return
+    void props.onInvite(detail.id, invitee, inviteRole)
+    setNewMember('')
+  }
   const [confirmDel, setConfirmDel] = useState(false)
   type SettingsTab = 'general' | 'llm' | 'board' | 'workflow' | 'members' | 'machines'
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  const [inviteRole, setInviteRole] = useState<ProjectRole>('member')
   // Возможности типа: вкладки выключенных подсистем не показываем — сервер такие
   // запросы всё равно отклоняет (409 feature_unavailable).
   // Пока цепочка типа не пришла (устаревший кэш, заглушки), считаем всё доступным:
@@ -480,22 +493,68 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         {isOwner && ownerCount === 1 && (
           <p className="proj-muted">Последнего владельца нельзя понизить, удалить или вывести из проекта. Сначала назначьте другого владельца.</p>
         )}
-        {isOwner && (
-          <div className="proj-add-member">
-            <input
-              className="login-input"
-              placeholder="Логин участника"
-              aria-label="Добавить участника"
-              value={newMember}
-              onChange={(e) => setNewMember(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && newMember.trim()) {
-                  props.onAddMember(detail.id, newMember.trim())
-                  setNewMember('')
-                }
-              }}
-            />
-          </div>
+        {isOwner && props.onInvite && (
+          <section className="proj-section proj-invites" aria-label="Приглашения">
+            <p className="proj-field-label">Пригласить в проект</p>
+            <p className="proj-hint">
+              Укажите логин или email. Человек получит письмо со ссылкой и сам подтвердит вступление —
+              молча в проект никого не добавляем.
+            </p>
+            <div className="proj-invite-form">
+              <label className="proj-invite-field">
+                <span className="proj-field-label">Логин или email</span>
+                <input
+                  className="login-input"
+                  placeholder="bob или bob@example.com"
+                  value={newMember}
+                  onChange={(e) => setNewMember(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') submitInvite() }}
+                />
+              </label>
+              <label className="proj-invite-field proj-invite-field--role">
+                <span className="proj-field-label">Роль</span>
+                <select className="login-input" value={inviteRole} onChange={(e) => setInviteRole(e.target.value === 'owner' ? 'owner' : 'member')}>
+                  <option value="member">Участник</option>
+                  <option value="owner">Владелец</option>
+                </select>
+              </label>
+              <Button onClick={submitInvite} disabled={!newMember.trim()}>Пригласить</Button>
+            </div>
+
+            {(props.invitations?.length ?? 0) > 0 && <>
+              <p className="proj-field-label">Ожидают ответа</p>
+              <ul className="proj-invite-list" role="list">
+                {(props.invitations ?? []).map((invitation) => (
+                  <li key={invitation.id}>
+                    <span className="proj-invite-who">
+                      {invitation.email ?? invitation.invitedUsername}
+                      <span className="proj-muted">
+                        {invitation.role === 'owner' ? ' · владелец' : ' · участник'}
+                        {' · до '}
+                        <time dateTime={new Date(invitation.expiresAt).toISOString()}>{new Date(invitation.expiresAt).toLocaleDateString('ru-RU')}</time>
+                      </span>
+                    </span>
+                    <span className="proj-invite-actions">
+                      {props.onResendInvitation && invitation.email && (
+                        <Button size="sm" variant="secondary" onClick={() => props.onResendInvitation?.(detail.id, invitation.id)}>Отправить снова</Button>
+                      )}
+                      {props.onRevokeInvitation && (
+                        <IconButton
+                          size="sm"
+                          className="vc-btn--danger-quiet"
+                          aria-label={`Отозвать приглашение ${invitation.email ?? invitation.invitedUsername}`}
+                          title="Отозвать приглашение"
+                          onClick={() => props.onRevokeInvitation?.(detail.id, invitation.id)}
+                        >
+                          ✕
+                        </IconButton>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>}
+          </section>
         )}
       </div>}
 

@@ -155,3 +155,30 @@ describe('приглашения: список, отзыв и перевыпус
     expect(db.listInvitationsForUser('bob')).toEqual([])
   })
 })
+
+describe('приглашения: ответ из интерфейса по id', () => {
+  it('приглашённый по логину принимает по id — токена у него нет', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const invite = db.createProjectInvitation('alice', p.id, 'bob')!
+    const mine = db.listInvitationsForUser('bob')
+    expect(mine.length).toBe(1)
+    // В списке токена нет — только id.
+    expect(JSON.stringify(mine)).not.toContain(invite.token)
+    expect(db.acceptProjectInvitation('bob', mine[0].id).projectId).toBe(p.id)
+    expect(db.getProject('bob', p.id)).not.toBeNull()
+  })
+
+  it('чужой id так же отклоняется, как чужой токен', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const invite = db.createProjectInvitation('alice', p.id, 'bob')!
+    expect(() => db.acceptProjectInvitation('carol', invite.invitation.id)).toThrow(/адресовано другому/i)
+    expect(db.getProject('carol', p.id)).toBeNull()
+  })
+
+  it('отклонить из списка тоже можно по id', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const invite = db.createProjectInvitation('alice', p.id, 'bob')!
+    expect(db.declineProjectInvitation('bob', invite.invitation.id)).toBe(true)
+    expect(db.listInvitationsForUser('bob')).toEqual([])
+  })
+})

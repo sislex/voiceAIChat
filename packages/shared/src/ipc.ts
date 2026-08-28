@@ -864,6 +864,11 @@ export interface RendererSessionBridge {
   signup?(input: { name: string; email: string; password: string }): Promise<{ ok: true; mailSent: boolean } | { error: string }>
   signupResend?(email: string): Promise<void>
   verifyEmail?(token: string): Promise<{ ok: true } | { error: string }>
+  /**
+   * Публичный превью приглашения в проект по ссылке из письма. Доступен до входа:
+   * человек должен понимать, куда его зовут, ещё на экране входа.
+   */
+  projectInvitationPreview?(token: string): Promise<import('./projects').ProjectInvitationPreview | null>
   /** Саморегистрация по инвайту (auth-roadmap п.8, web). */
   inviteInfo?(token: string): Promise<{ role: string; expiresAt: number; note: string } | null>
   register?(input: { token: string; name: string; password: string }): Promise<{ ok: true } | { error: string }>

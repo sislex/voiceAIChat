@@ -49,7 +49,7 @@ const project = async (name = 'P'): Promise<ProjectDetail> =>
 
 /** Токен виден только в письме — как и у настоящего получателя. */
 const tokenFromMail = (): string => {
-  const link = /#\/invite\/([\w-]+)/.exec(sent[sent.length - 1]?.text ?? '')
+  const link = /#\/project-invite\/([\w-]+)/.exec(sent[sent.length - 1]?.text ?? '')
   expect(link, 'в письме должна быть ссылка с токеном').toBeTruthy()
   return link![1]
 }
@@ -64,7 +64,7 @@ describe('приглашения: сторона проекта', () => {
     const mail = sent[0]
     expect(mail.to).toBe('new@example.com')
     expect(mail.subject).toContain('Редизайн')
-    expect(mail.text).toContain('https://app.example/#/invite/')
+    expect(mail.text).toContain('https://app.example/#/project-invite/')
     // Список у владельца показывает живое приглашение, но без токена.
     const list = (await inj(aliceTok, { method: 'GET', url: `/api/projects/${p.id}/invitations` })).json() as ProjectInvitation[]
     expect(list.length).toBe(1)

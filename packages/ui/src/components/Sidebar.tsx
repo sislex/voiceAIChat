@@ -9,7 +9,7 @@ import {
   type SessionUser
 } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
-import type { ProjectSummary, TaskChatBadge } from '@shared/projects'
+import type { ProjectInvitationForUser, ProjectSummary, TaskChatBadge } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import { ciCardPulse, ciSummaryForTask } from '@shared/ci'
 import { TypeIcon } from './kanban/kanbanMeta'
@@ -291,6 +291,10 @@ export interface SidebarProps {
   /** Создать проект из инлайн-формы списка (имя уже обрезано и не пустое). */
   /** Открыть окно создания проекта (имя и тип выбираются там). */
   onCreateProject?: () => void
+  /** Приглашения, адресованные текущему пользователю. */
+  invitations?: ProjectInvitationForUser[]
+  onAcceptInvitation?: (invitation: ProjectInvitationForUser) => void
+  onDeclineInvitation?: (invitation: ProjectInvitationForUser) => void
   /** Открыть командную палитру (кнопка «⌘K» рядом с поиском); не задан — кнопки нет. */
   onOpenCommandPalette?: () => void
   /** Мобильный режим: сайдбар выдвинут поверх контента. */
@@ -353,6 +357,9 @@ export function Sidebar({
   activeProjectId = null,
   onPickProject,
   onCreateProject,
+  invitations,
+  onAcceptInvitation,
+  onDeclineInvitation,
   onOpenCommandPalette,
   open = false,
   onToggleCollapse,
@@ -697,6 +704,24 @@ export function Sidebar({
       </>)}
       {mode === 'projects' && (
         <div className="convolist projlist" onWheel={onListWheel}>
+          {/* Приглашения показываем над списком: приглашённого по логину письмо
+              может не дойти, и это единственное место, где он их увидит. */}
+          {(invitations?.length ?? 0) > 0 && (
+            <section className="proj-invites-inbox" aria-label="Приглашения в проекты">
+              <p className="proj-invites-inbox__title">Приглашения ({invitations!.length})</p>
+              <ul role="list">
+                {invitations!.map((invitation) => (
+                  <li key={invitation.id}>
+                    <span className="ctitle">{invitation.projectName}</span>
+                    <span className="proj-invites-inbox__actions">
+                      <Button size="sm" onClick={() => onAcceptInvitation?.(invitation)}>Принять</Button>
+                      <Button size="sm" variant="ghost" onClick={() => onDeclineInvitation?.(invitation)}>Отклонить</Button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {visibleProjects.length === 0 && (
             <EmptyState
               compact
