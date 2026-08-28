@@ -6,13 +6,16 @@
 // Данные приходят живым пушем (state.agents).
 
 import { Fragment, useState } from 'react'
-import type { AgentCreated, AgentInfo, AgentPolicy, AgentTelemetry, DiskUsage } from '@shared/agentProtocol'
+import type { AgentCreated, AgentInfo, AgentPolicy, AgentTelemetry, DiskUsage, BatchExecResult } from '@shared/agentProtocol'
 import { AGENT_VERSION, compareVersions } from '@shared/version'
 import { agentOsFromPlatform, installCommand, UPDATE_HINT } from '@shared/agentInstall'
 import { recommendedMachineStoragePath, type MachineStorage } from '@shared/projects'
 import { copyText } from '../lib/clipboard'
 import { AgentCard } from './AgentCard'
 import { AgentCommands } from './AgentCommands'
+import { MachineCommandLog } from './MachineCommandLog'
+import { MachineBatchCommand } from './MachineBatchCommand'
+import type { MachineCommandRecord, MachineCommandSource } from '@shared/agentProtocol'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { ToolFrame } from './ToolFrame'
@@ -41,10 +44,22 @@ export interface MachineStatusProps {
   onCreateAgent?: (name: string) => Promise<AgentCreated | null>
   /** Перевыпустить токен машины (старый перестаёт работать). */
   onRegenerateToken?: (id: string) => Promise<string | null>
+  /** Отозвать токен (п.11): агент отключится до перевыпуска. */
+  onRevokeToken?: (id: string) => void
+  /** Привязать токен к IP последнего подключения. */
+  onSetPinIp?: (id: string, pin: boolean) => void
   /** Строка подключения по токену — из неё собираются команды установки. */
   onGetConnectionString?: (token: string) => Promise<string | null>
   /** Обновить агента на машине (сервер выполнит на ней команду установки). */
   onUpdateAgent?: (id: string) => Promise<string | null>
+  /** Журнал команд машины (п.4); нет — кнопка «Журнал» скрыта. */
+  onLoadCommands?: (id: string, filter: { q?: string; source?: MachineCommandSource; limit?: number }) => Promise<MachineCommandRecord[]>
+  /** Открыть чат из записи журнала. */
+  onOpenConversation?: (conversationId: string) => void
+  /** Мастер подключения: пробная команда на только что созданной машине. */
+  onExecTest?: (id: string) => Promise<{ exitCode: number | null; output: string }>
+  /** Групповая команда (п.15): одна команда на несколько машин. */
+  onExecBatch?: (machineIds: string[], command: string) => Promise<BatchExecResult>
   /**
    * Удалить машину: токен отзывается, цель выполнения и машина по умолчанию
    * сбрасываются. Нет — удаления в таблице нет (режим только-просмотр).
@@ -201,8 +216,7 @@ function AgentActions({
   onRegenerate,
   onAskDelete,
   busy,
-  copied
-}: {
+  copied, onRevoke, onPin }: {
   agent: AgentInfo
   onUpdate?: () => void
   onCopyCommand?: () => void
@@ -210,8 +224,7 @@ function AgentActions({
   /** Первый шаг удаления: подтверждение раскрывается строкой под машиной. */
   onAskDelete?: () => void
   busy: boolean
-  copied: boolean
-}): JSX.Element {
+  copied: boolean; onRevoke?: () => void; onPin?: (pin: boolean) => void }): JSX.Element {
   const outdated = isOutdated(agent)
   return (
     <td className="mst-agent">
@@ -252,6 +265,22 @@ function AgentActions({
             ↻ токен
           </Button>
         )}
+        {agent.tokenExpiresAt !== undefined && agent.tokenExpiresAt !== null && (
+          <span className={agent.tokenExpiresAt <= Date.now() ? 'mst-token mst-token--expired' : 'mst-token'} data-testid="token-expiry" title={new Date(agent.tokenExpiresAt).toISOString()}>
+            {agent.tokenExpiresAt <= Date.now() ? 'токен истёк' : `токен до ${new Date(agent.tokenExpiresAt).toLocaleDateString('ru-RU')}`}
+          </span>
+        )}
+        {onRevoke && (
+          <Button size="sm" variant="danger" title="Отозвать токен: агент отключится и не подключится до перевыпуска" aria-label={`Отозвать токен ${agent.name}`} onClick={onRevoke}>
+            ✕ токен
+          </Button>
+        )}
+        {onPin && agent.lastIp && (
+          <label className="mst-pin" title={`Пускать агента только с IP ${agent.lastIp}`}>
+            <input type="checkbox" aria-label={`Привязать токен ${agent.name} к IP`} checked={agent.pinIp === true} onChange={(e) => onPin(e.target.checked)} />
+            IP {agent.lastIp}
+          </label>
+        )}
         {onAskDelete && (
           <IconButton
             variant="danger"
@@ -279,8 +308,14 @@ export function MachineStatus({
   onRegisterStorage,
   onCreateAgent,
   onRegenerateToken,
+  onRevokeToken,
+  onSetPinIp,
   onGetConnectionString,
   onUpdateAgent,
+  onLoadCommands,
+  onOpenConversation,
+  onExecTest,
+  onExecBatch,
   onDeleteAgent,
   defaultAgentId,
   onSetDefault,
@@ -296,6 +331,7 @@ export function MachineStatus({
   const [confirmDelId, setConfirmDelId] = useState<string | null>(null)
   /** Машина с раскрытым редактором политики (одна на таблицу). */
   const [policyId, setPolicyId] = useState<string | null>(null)
+  const [logId, setLogId] = useState<string | null>(null)
   const [storageId, setStorageId] = useState<string | null>(null)
   const [storageDraft, setStorageDraft] = useState<Record<string, string>>({})
   const [storageBusy, setStorageBusy] = useState<string | null>(null)
@@ -445,12 +481,17 @@ export function MachineStatus({
                           {policyId === a.id ? '▾' : '▸'}
                         </IconButton>
                         {a.name}
+                        {onLoadCommands && (
+                          <Button size="sm" aria-expanded={logId === a.id} aria-label={`Журнал команд ${a.name}`} title="Журнал команд машины: кто, когда и что выполнял" onClick={() => setLogId((cur) => (cur === a.id ? null : a.id))}>
+                            {logId === a.id ? 'Журнал ▾' : 'Журнал'}
+                          </Button>
+                        )}
                       </span>
                     </td>
                     <td>
                       <span className={a.online ? 'mst-status on' : 'mst-status off'}>
                         <span className="mst-dot" aria-hidden />
-                        {a.online ? 'агент запущен' : 'не запущен'}
+                        {a.online ? 'агент запущен' : a.lastSeen ? `не запущен · с ${new Date(a.lastSeen).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}` : 'не запущен'}
                       </span>
                     </td>
                     <TelemetryCells t={a.online ? a.telemetry : undefined} />
@@ -508,6 +549,8 @@ export function MachineStatus({
                       onUpdate={onUpdateAgent ? () => void update(a) : undefined}
                       onCopyCommand={() => void copyUpdateCommand(a)}
                       onRegenerate={onRegenerateToken ? () => void regenerate(a) : undefined}
+                      onRevoke={onRevokeToken ? () => onRevokeToken(a.id) : undefined}
+                      onPin={onSetPinIp ? (pin) => onSetPinIp(a.id, pin) : undefined}
                       onAskDelete={
                         onDeleteAgent && confirmDelId !== a.id ? () => setConfirmDelId(a.id) : undefined
                       }
@@ -588,6 +631,13 @@ export function MachineStatus({
                       </td>
                     </tr>
                   )}
+                  {logId === a.id && onLoadCommands && (
+                    <tr className="mst-policyrow" data-testid={`machine-log-${a.id}`}>
+                      <td colSpan={cols}>
+                        <MachineCommandLog machineId={a.id} machineName={a.name} load={(filter) => onLoadCommands(a.id, filter)} onOpenConversation={onOpenConversation} />
+                      </td>
+                    </tr>
+                  )}
                 </Fragment>
               ))}
             </tbody>
@@ -599,12 +649,16 @@ export function MachineStatus({
           </p>
         )}
 
+        {onExecBatch && agents.length > 1 && <MachineBatchCommand agents={agents} onRun={onExecBatch} />}
+
         {created && onGetConnectionString && (
           <AgentCommands
             name={created.name}
             token={created.token}
             onGetConnectionString={onGetConnectionString}
             onHide={() => setCreated(null)}
+            online={agents.find((a) => a.id === created.id)?.online ?? false}
+            onTestCommand={onExecTest ? () => onExecTest(created.id) : undefined}
           />
         )}
 

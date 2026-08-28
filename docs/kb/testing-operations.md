@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
 updated: 2026-08-27
-checked: bde76bdd
+checked: bdfafa18
 areas:
   - package.json
   - scripts
@@ -186,7 +186,7 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 
 ## Единый frontend quality gate
 
-Каноническая команда `npm run verify:frontend` последовательно запускает статический gate, typecheck и Vitest всех frontend-пакетов, Web build, bundle check, Storybook build и build Desktop renderer. Она использует только локальные fake clients/JSDOM fixtures и не требует backend, CLI, production credentials, SQLite, микрофона, машин или сети.
+Каноническая команда `npm run verify:frontend` последовательно запускает статический gate, typecheck и Vitest всех frontend-пакетов, Web build, bundle check, Storybook build и build Desktop renderer. Она использует только локальные fake clients/JSDOM fixtures и не требует backend, CLI, production credentials, SQLite, микрофона, машин или сети. Desktop намеренно не входит в корневые npm workspaces, поэтому `frontend:build-gates` перед его сборкой выполняет `npm ci --prefix apps/desktop`; свежий CI-checkout не должен зависеть от ранее созданного `apps/desktop/node_modules`.
 
 `scripts/frontend-quality.mjs` проверяет workspace dependency graph и циклы, запрет deep imports и product/host/platform/transport leaks, существование root/styles package exports, обязательную Storybook-матрицу пяти модулей, CSS imports/keyframes/unscoped selectors и dynamic imports всех product modules с role-gated Admin. Негативные fixtures и redaction отчёта покрыты `scripts/frontend-quality.test.mjs`. Безопасный машинный отчёт сохраняется в `artifacts/frontend-quality/report.json`; token, Bearer credentials и credential-bearing URLs редактируются.
 
@@ -203,3 +203,5 @@ React из esm.sh — нужен интернет), «Компоненты» + c
 Ловушка: `page.goto` на URL, отличающийся только хэшем, не перезагружает документ — токен из localStorage
 подхватится только после `page.reload()`. В `npm test`/CI не входит: требует собранный `apps/web/dist`,
 браузер и сеть; `describe.skipIf(!existsSync(dist))`.
+
+**Мониторинг диска (roadmap-4 п.40).** `MakeWorkspaces.diskStats()` через `statfs` корня данных даёт `AdminMakeStats.disk { totalBytes, freeBytes, alert }`, порог тревоги — `MAKE_DISK_ALERT_BYTES` (10 ГБ, столько же с запасом требует проверка места перед релизом `RELEASE_MIN_FREE_KB`). В админке (`UsersAdmin`, блок Make) строка «Диск с данными…» краснеет и получает `role=alert`; в `/api/admin/make/metrics` — гауджи `make_disk_free_bytes`, `make_disk_total_bytes`, `make_disk_alert`. fail2ban и SSH-харденинг прод-хоста (btmp показывал брутфорс) не делались: это системная правка сервера вне репозитория — выполнять только по явному подтверждению.

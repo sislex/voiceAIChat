@@ -7,15 +7,18 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile, statfs } from 'node:fs/promises'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
-  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, detectPwaMeta, injectPwaIntoHtml, pwaFiles, isMakeTextPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
+  MAKE_LIMITS, MAKE_SCAFFOLD, MAKE_TEMPLATES, detectPwaMeta, injectPwaIntoHtml, pwaFiles, isMakeTextPath, isMakeTestPath, isValidMakeSlug, makePublicUrl, makeSlugUrl, makeSharedUrl, normalizeMakePath,
   type MakeCheckIssue, type MakeFileContent, type MakeFileInfo, type MakeProjectState, type MakePublication, type MakeSnapshot, isMakeStoriesPath, isMakeTranspiledPath } from '@voicechat/shared'
-import { parseStoryFile } from './stories.js'
+import { parseStoryFile, parseTestFile } from './stories.js'
 import { compileDiagnostics } from './transpile.js'
-import type { MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakePublishEntry, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
-import { applyCollectionRequest, collectionCandidates, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
+import type { AdminDiskStats, MakePublicComment, MakeSearchMatch, MakeStoryFile, MakeStoryShot, MakeSnapshotDiff, MakeSnapshotDiffEntry, MakeImportMode, MockResponse, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeShare, MakeShareGrant, MakeShareRole, MakePublishEntry, MakeTestFile, MakeProjectNotes, MakeAssistantMode, AdminMakeStats, AdminMakeProjectStat, AdminMakeUserStat } from '@voicechat/shared'
+import { lintMakeFile, addComponentImports, componentExports, pickEntryFile, type AutoImportSpec } from '@voicechat/shared'
+import { MAKE_DISK_ALERT_BYTES, deployConfigFiles, type MakeDeployTarget } from '@voicechat/shared'
+import { buildMakeSearchRegex, previewMakeReplace, type MakeReplacePreviewLine, type MakeSearchOptions } from '@voicechat/shared'
+import { MAKE_MODE_HINTS, applyAuthMock, applyCollectionRequest, collectionCandidates, isAuthMock, isMockCollection, mockCandidates, unwrapMockEnvelope, parseCssTokens, pickTokensFile, setCssToken } from '@voicechat/shared'
 import { buildStoredZip } from './zip.js'
 
 export type MakeErrorCode = 'invalid_id' | 'invalid_path' | 'not_found' | 'too_large' | 'too_many_files' | 'not_text' | 'exists' | 'quota'
@@ -31,9 +34,16 @@ const SNAPSHOTS_DIR = '.snapshots'
 /** Файл публикации проекта (в его корне) и индекс токен → разговор (общий каталог). */
 const PUBLISH_FILE = '.publish.json'
 const COMMENTS_FILE = '.comments.json'
+
+/** Хост реферера для аналитики публикаций; пустой/невалидный/прямой заход → null. */
+export function refererHost(referer?: string | null): string | null {
+  if (!referer) return null
+  try { const h = new URL(referer).hostname.toLowerCase(); return h && h !== 'localhost' ? h : null } catch { return null }
+}
 const SHARE_FILE = '.share.json'
+const NOTES_DIR = '.make'
 /** Содержимое `.publish.json`; passwordHash = `<соль>:<sha256(соль:пароль)>`. */
-interface PublishRaw { token: string; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number; history?: MakePublishEntry[] }
+interface PublishRaw { token: string; allowComments?: boolean; publishedAt?: number; snapshotId?: string | null; snapshotLabel?: string | null; slug?: string | null; passwordHash?: string | null; views?: number; history?: MakePublishEntry[]; days?: Record<string, number>; referers?: Record<string, number> }
 const SHOTS_DIR = '.shots'
 const SHOTS_PER_STORY = 10
 const PUBLISHED_INDEX_DIR = '.published'
@@ -61,7 +71,35 @@ function resolveRelativeRef(dir: string, value: string): string | null | undefin
 export class MakeWorkspaces {
   private readonly revs = new Map<string, number>()
 
-  constructor(private readonly rootDir: string) {}
+  constructor(private readonly rootDir: string, private readonly limits: { maxUserBytes: number } = { maxUserBytes: MAKE_LIMITS.maxUserBytes }) {}
+
+  /** Все проекты владельца данного разговора (для квоты на пользователя); null — владелец неизвестен. */
+  private projectsOfOwner: ((conversationId: string) => string[] | null) | null = null
+  private readonly userBytesCache = new Map<string, { bytes: number; at: number }>()
+
+  setProjectsOfOwner(fn: (conversationId: string) => string[] | null): void { this.projectsOfOwner = fn }
+
+  /** Сумма байт всех проектов владельца; кэш 60 с — обход каталогов на каждую запись слишком дорог. */
+  async ownerBytes(conversationId: string): Promise<{ bytes: number; projects: number } | null> {
+    const ids = this.projectsOfOwner?.(conversationId)
+    if (!ids) return null
+    const key = [...ids].sort().join(',')
+    const hit = this.userBytesCache.get(key)
+    if (hit && Date.now() - hit.at < 60_000) return { bytes: hit.bytes, projects: ids.length }
+    let bytes = 0
+    for (const id of ids) { try { bytes += (await this.usage(id)).totalBytes } catch { /* пропущенный проект не считаем */ } }
+    this.userBytesCache.set(key, { bytes, at: Date.now() })
+    return { bytes, projects: ids.length }
+  }
+
+  private async assertUserQuota(conversationId: string, deltaBytes: number): Promise<void> {
+    if (deltaBytes <= 0) return
+    const owner = await this.ownerBytes(conversationId)
+    if (owner && owner.bytes + deltaBytes > this.limits.maxUserBytes) {
+      throw new MakeError('quota', `Все ваши проекты Make заняли ${Math.round(owner.bytes / 1048576)} МБ из ${Math.round(this.limits.maxUserBytes / 1048576)} — очистите снимки или удалите старые проекты`)
+    }
+    this.userBytesCache.clear()
+  }
 
   /** Корень проекта разговора; id проверяется, чтобы имя каталога нельзя было подделать. */
   dirOf(conversationId: string): string {
@@ -173,6 +211,7 @@ export class MakeWorkspaces {
     if (usage.totalBytes - prev + content.byteLength > MAKE_LIMITS.maxProjectBytes) {
       throw new MakeError('quota', `Проект занял ${Math.round(usage.totalBytes / 1048576)} МБ из ${Math.round(MAKE_LIMITS.maxProjectBytes / 1048576)} — очистите снимки в «Место»`)
     }
+    await this.assertUserQuota(conversationId, content.byteLength - prev)
     await mkdir(dirname(abs), { recursive: true })
     await writeFile(abs, content)
     this.bump(conversationId)
@@ -232,13 +271,96 @@ export class MakeWorkspaces {
     return out.sort((a, b) => b.createdAt - a.createdAt)
   }
 
+  // ---- Память проекта и режим ассистента (roadmap-4 пп.6–7): .make/notes.md + .make/settings.json ----
+
+  async notes(conversationId: string): Promise<MakeProjectNotes> {
+    const dir = join(this.dirOf(conversationId), NOTES_DIR)
+    const notes = await readFile(join(dir, 'notes.md'), 'utf8').catch(() => '')
+    let mode: MakeAssistantMode = 'balanced'
+    try { const s = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')) as { mode?: string }; if (s.mode === 'designer' || s.mode === 'developer') mode = s.mode } catch { /* дефолт */ }
+    return { notes, mode }
+  }
+
+  async setNotes(conversationId: string, patch: Partial<MakeProjectNotes>): Promise<MakeProjectNotes> {
+    const dir = join(this.dirOf(conversationId), NOTES_DIR)
+    await mkdir(dir, { recursive: true })
+    const cur = await this.notes(conversationId)
+    const next: MakeProjectNotes = { notes: (patch.notes ?? cur.notes).slice(0, 20_000), mode: patch.mode ?? cur.mode }
+    await writeFile(join(dir, 'notes.md'), next.notes, 'utf8')
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ mode: next.mode }), 'utf8')
+    return next
+  }
+
+  /** Дописать строку в заметки (инструмент make_remember): дата + текст. */
+  async appendNote(conversationId: string, line: string): Promise<MakeProjectNotes> {
+    const cur = await this.notes(conversationId)
+    const stamp = new Date().toISOString().slice(0, 10)
+    return this.setNotes(conversationId, { notes: `${cur.notes.trimEnd()}${cur.notes.trim() ? '\n' : ''}- ${stamp}: ${line.trim().slice(0, 500)}\n` })
+  }
+
+  // ---- Тесты компонентов (roadmap-4 п.3) --------------------------------------
+
+  async tests(conversationId: string): Promise<MakeTestFile[]> {
+    const files = await this.list(conversationId)
+    const paths = new Set(files.map((f) => f.path))
+    const out: MakeTestFile[] = []
+    for (const f of files) {
+      if (!isMakeTestPath(f.path) || f.size > 256 * 1024) continue
+      const buf = await this.readBuffer(conversationId, f.path).catch(() => null)
+      if (buf) out.push(parseTestFile(f.path, buf.data.toString('utf8'), paths))
+    }
+    return out.sort((a, b) => a.path.localeCompare(b.path))
+  }
+
+  // ---- Транзакционные правки и патчи (roadmap-4 пп.1–2) -------------------------
+
+  /**
+   * Несколько файлов одной операцией: если после записи проверка находит ошибку компиляции в любом из них,
+   * все записанные файлы возвращаются к прежнему содержимому (удалённые — восстанавливаются), и наружу
+   * уходит список ошибок. Так модель не оставляет проект в полусобранном состоянии.
+   */
+  async applyChanges(conversationId: string, files: Array<{ path: string; content: string }>, deletes: string[] = []): Promise<{ state: MakeProjectState; issues: MakeCheckIssue[]; rolledBack: boolean }> {
+    const previous = new Map<string, string | null>()
+    const remember = async (path: string): Promise<void> => {
+      if (previous.has(path)) return
+      const cur = await this.readBuffer(conversationId, path).catch(() => null)
+      previous.set(path, cur ? cur.data.toString('utf8') : null)
+    }
+    for (const f of files) await remember(f.path)
+    for (const d of deletes) await remember(d)
+    for (const f of files) await this.write(conversationId, f.path, f.content)
+    for (const d of deletes) { try { await this.delete(conversationId, d) } catch { /* уже нет */ } }
+    const touched = new Set(files.map((f) => f.path))
+    const issues = (await this.check(conversationId).catch(() => [] as MakeCheckIssue[])).filter((i) => touched.has(i.path))
+    const fatal = issues.some((i) => i.kind === 'compile-error')
+    if (fatal) {
+      for (const [path, content] of previous) {
+        if (content === null) { try { await this.delete(conversationId, path) } catch { /* не было */ } } else await this.write(conversationId, path, content)
+      }
+    }
+    return { state: await this.state(conversationId), issues, rolledBack: fatal }
+  }
+
+  /** Точечная правка: заменить фрагмент `find` на `replace`; без `all` фрагмент должен встречаться ровно один раз. */
+  async editFile(conversationId: string, path: string, find: string, replace: string, all = false): Promise<{ state: MakeProjectState; replaced: number }> {
+    if (!find) throw new MakeError('invalid_path', 'Пустой фрагмент для поиска')
+    const cur = await this.readBuffer(conversationId, path)
+    if (!cur) throw new MakeError('not_found', `Файл ${path} не найден`)
+    const text = cur.data.toString('utf8')
+    const count = text.split(find).length - 1
+    if (count === 0) throw new MakeError('not_found', `Фрагмент не найден в ${path}. Перечитай файл make_read_file и передай точный текст.`)
+    if (count > 1 && !all) throw new MakeError('exists', `Фрагмент встречается ${count} раз в ${path}: расширь его до уникального или передай all=true`)
+    const next = all ? text.split(find).join(replace) : text.replace(find, () => replace)
+    return { state: await this.write(conversationId, path, next), replaced: all ? count : 1 }
+  }
+
   // ---- Вставка из библиотеки / дизайн-кита (roadmap-2 п.13) -----------------
 
   /**
    * Файлы компонентов копируются как при merge-импорте; файл токенов (`tokens.css`/`styles.css`) не затирает
    * проектный — в его `:root` добавляются только отсутствующие переменные, чтобы кит не сломал текущую палитру.
    */
-  async insertLibraryFiles(conversationId: string, files: Array<{ path: string; data: Buffer }>): Promise<{ state: MakeProjectState; mergedTokens: number }> {
+  async insertLibraryFiles(conversationId: string, files: Array<{ path: string; data: Buffer }>): Promise<{ state: MakeProjectState; mergedTokens: number; autoImported: string[] }> {
     const existing = new Set((await this.list(conversationId)).map((f) => f.path))
     const isTokens = (p: string): boolean => p === 'tokens.css' || p === 'styles.css'
     const plain = files.filter((f) => !(isTokens(f.path) && existing.has(f.path)))
@@ -254,7 +376,27 @@ export class MakeWorkspaces {
       for (const t of incoming) if (!have.has(t.name)) { css = setCssToken(css, t.name, t.value); mergedTokens += 1 }
       if (mergedTokens) state = await this.write(conversationId, tf.path, css)
     }
-    return { state, mergedTokens }
+    // Автоимпорт (roadmap-4 п.13): компоненты кита подключаем в точку входа, иначе они лежат «мёртвым» файлом.
+    const autoImported: string[] = []
+    const entry = pickEntryFile(state.files.map((f) => f.path))
+    if (entry) {
+      const specs: AutoImportSpec[] = []
+      for (const f of plain) {
+        if (!/\.(tsx|jsx)$/i.test(f.path) || isMakeStoriesPath(f.path) || /\.test\.(tsx|jsx)$/i.test(f.path) || f.path === entry) continue
+        const exp = componentExports(f.path, f.data.toString('utf8'))
+        const base = f.path.slice(f.path.lastIndexOf('/') + 1).replace(/\.(tsx|jsx)$/i, '')
+        const defaultName = exp.hasDefault && !exp.names.includes(base) ? base : undefined
+        if (exp.names.length || defaultName) specs.push({ path: f.path, names: exp.names, defaultName })
+      }
+      if (specs.length) {
+        const cur = await this.readBuffer(conversationId, entry)
+        if (cur) {
+          const r = addComponentImports(entry, cur.data.toString('utf8'), specs)
+          if (r.added.length) { state = await this.write(conversationId, entry, r.source); autoImported.push(...r.added) }
+        }
+      }
+    }
+    return { state, mergedTokens, autoImported }
   }
 
   // ---- Контекст для промпта (roadmap-2 п.9) ----------------------------------
@@ -269,14 +411,60 @@ export class MakeWorkspaces {
       const tokens = css ? parseCssTokens(css.data.toString('utf8')) : []
       if (tokens.length) parts.push(`Дизайн-токены проекта (${tokensPath}, используй var(--имя), новые добавляй туда же): ${tokens.slice(0, 40).map((t) => `${t.name}: ${t.value}`).join('; ')}${tokens.length > 40 ? '; …' : ''}`)
     }
+    const memo = await this.notes(conversationId).catch(() => ({ notes: '', mode: 'balanced' as MakeAssistantMode }))
+    if (MAKE_MODE_HINTS[memo.mode]) parts.push(MAKE_MODE_HINTS[memo.mode])
+    if (memo.notes.trim()) parts.push(`Заметки проекта (решения, которых нужно придерживаться; дополняй через make_remember):\n${memo.notes.trim().slice(0, 4000)}`)
     const open = (await this.comments(conversationId).catch(() => [] as MakeComment[])).filter((c) => !c.resolved)
     if (open.length) parts.push(`Открытые замечания пользователя к превью (учитывай при правках, если запрос их касается):\n${open.slice(0, 20).map((c, i) => `${i + 1}. ${c.elementLabel || c.selector} (селектор \`${c.selector}\`): ${c.text}`).join('\n')}`)
     return parts.length ? `## Контекст проекта Make\n${parts.join('\n')}` : ''
   }
 
+  // ---- Фоновая очистка (roadmap-2 п.16) ----------------------------------------
+
+  /**
+   * Снимки старше `maxAgeMs` и PNG-снимки стори того же возраста удаляются по всем проектам;
+   * закреплённый в публикации снимок и самый свежий снимок проекта не трогаем никогда.
+   */
+  async sweep(maxAgeMs = 30 * 86_400_000, now = Date.now()): Promise<{ projects: number; snapshots: number; shots: number }> {
+    const root = join(this.rootDir, 'make')
+    let ids: string[] = []
+    try { ids = (await readdir(root, { withFileTypes: true })).filter((e) => e.isDirectory() && !e.name.startsWith('.')).map((e) => e.name) } catch { ids = [] }
+    const out = { projects: 0, snapshots: 0, shots: 0 }
+    for (const id of ids) {
+      if (!ID_RE.test(id)) continue
+      out.projects += 1
+      try {
+        const [snaps, pub] = await Promise.all([this.snapshots(id), this.publication(id)])
+        const newest = snaps[0]?.id
+        for (const s of snaps) {
+          if (s.id === newest || s.id === pub?.snapshotId || now - s.createdAt < maxAgeMs) continue
+          await rm(join(root, id, SNAPSHOTS_DIR, s.id), { recursive: true, force: true })
+          out.snapshots += 1
+        }
+        const shots = await this.shots(id)
+        const keep = shots.filter((s) => now - s.at < maxAgeMs)
+        if (keep.length !== shots.length) {
+          for (const s of shots) if (!keep.includes(s)) { await rm(join(root, id, SHOTS_DIR, `${s.id}.png`), { force: true }); out.shots += 1 }
+          await writeFile(join(root, id, SHOTS_DIR, 'meta.json'), JSON.stringify(keep), 'utf8').catch(() => undefined)
+        }
+      } catch { /* битый проект пропускаем */ }
+    }
+    this.userBytesCache.clear()
+    return out
+  }
+
   // ---- Метрики для админки (п.38) -----------------------------------------
 
   /** Обход всех проектов на диске; владелец — из БД через колбэк (каталог знает только id разговора). */
+  /** Свободное место на разделе с данными (roadmap-4 п.40): statfs корня данных, порог тревоги — 10 ГБ. */
+  async diskStats(): Promise<AdminDiskStats | null> {
+    try {
+      const st = await statfs(this.rootDir)
+      const total = Number(st.blocks) * Number(st.bsize), free = Number(st.bavail) * Number(st.bsize)
+      return { totalBytes: total, freeBytes: free, alert: free < MAKE_DISK_ALERT_BYTES }
+    } catch { return null }
+  }
+
   async adminStats(ownerOf: (conversationId: string) => string | null): Promise<AdminMakeStats> {
     const root = join(this.rootDir, 'make')
     let ids: string[] = []
@@ -304,7 +492,8 @@ export class MakeWorkspaces {
       byUserMap.set(key, cur)
     }
     return {
-      projects: projects.length, bytes: totals.filesBytes + totals.snapshotsBytes + totals.shotsBytes, ...totals, limitBytes: MAKE_LIMITS.maxProjectBytes,
+      disk: await this.diskStats(),
+      projects: projects.length, bytes: totals.filesBytes + totals.snapshotsBytes + totals.shotsBytes, ...totals, limitBytes: MAKE_LIMITS.maxProjectBytes, userLimitBytes: this.limits.maxUserBytes,
       byUser: [...byUserMap.values()].sort((a, b) => b.bytes - a.bytes),
       top: [...projects].sort((a, b) => b.bytes - a.bytes).slice(0, 10)
     }
@@ -314,9 +503,9 @@ export class MakeWorkspaces {
 
   async share(conversationId: string): Promise<MakeShare | null> {
     try {
-      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), SHARE_FILE), 'utf8')) as { token?: string; createdAt?: number }
+      const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), SHARE_FILE), 'utf8')) as { token?: string; createdAt?: number; grants?: MakeShareGrant[] }
       if (!raw.token || !ID_RE.test(raw.token)) return null
-      return { token: raw.token, createdAt: raw.createdAt ?? 0, url: makeSharedUrl(raw.token) }
+      return { token: raw.token, createdAt: raw.createdAt ?? 0, url: makeSharedUrl(raw.token), grants: raw.grants ?? [] }
     } catch { return null }
   }
 
@@ -330,6 +519,24 @@ export class MakeWorkspaces {
       await writeFile(join(this.dirOf(conversationId), SHARE_FILE), JSON.stringify({ token, createdAt: Date.now() }), 'utf8')
     }
     return this.state(conversationId)
+  }
+
+  /** Именной доступ (roadmap-3 п.6): role null — убрать; ссылка создаётся, если её ещё нет. */
+  async setShareGrant(conversationId: string, user: string, role: MakeShareRole | null): Promise<MakeProjectState> {
+    const name = user.trim()
+    if (!/^[\w.@-]{1,64}$/.test(name)) throw new MakeError('invalid_path', 'Некорректное имя пользователя')
+    if (!(await this.share(conversationId))) await this.createShare(conversationId)
+    const cur = (await this.share(conversationId))!
+    const grants = (cur.grants ?? []).filter((g) => g.user !== name)
+    if (role) grants.push({ user: name, role })
+    await writeFile(join(this.dirOf(conversationId), SHARE_FILE), JSON.stringify({ token: cur.token, createdAt: cur.createdAt, grants }), 'utf8')
+    return this.state(conversationId)
+  }
+
+  /** Роль пользователя по именному доступу; null — доступа нет. */
+  async shareRole(conversationId: string, user: string): Promise<MakeShareRole | null> {
+    const cur = await this.share(conversationId)
+    return cur?.grants?.find((g) => g.user === user)?.role ?? null
   }
 
   async revokeShare(conversationId: string): Promise<MakeProjectState> {
@@ -366,23 +573,37 @@ export class MakeWorkspaces {
     return list
   }
 
-  async addComment(conversationId: string, input: { selector: string; elementLabel: string; text: string; author: string }): Promise<MakeComment[]> {
+  async addComment(conversationId: string, input: { selector: string; elementLabel: string; text: string; author: string; status?: 'pending' | 'approved'; guestName?: string }): Promise<MakeComment[]> {
     const text = input.text.trim().slice(0, 2000)
     const selector = input.selector.trim().slice(0, 500)
     if (!text || !selector) throw new MakeError('invalid_path', 'Нужны селектор и текст комментария')
     const list = await this.comments(conversationId)
     if (list.length >= 500) throw new MakeError('too_many_files', 'Слишком много комментариев — удалите решённые')
-    const item: MakeComment = { id: `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`, selector, elementLabel: input.elementLabel.slice(0, 160), text, author: input.author, createdAt: Date.now(), resolved: false }
+    const item: MakeComment = { id: `${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`, selector, elementLabel: input.elementLabel.slice(0, 160), text, author: input.author, createdAt: Date.now(), resolved: false, ...(input.status ? { status: input.status } : {}), ...(input.guestName ? { guestName: input.guestName.trim().slice(0, 60) } : {}) }
     return this.saveComments(conversationId, [item, ...list])
   }
 
-  async updateComment(conversationId: string, commentId: string, patch: { resolved?: boolean; text?: string }): Promise<MakeComment[]> {
+  async updateComment(conversationId: string, commentId: string, patch: { resolved?: boolean; text?: string; status?: 'pending' | 'approved' }): Promise<MakeComment[]> {
     const list = await this.comments(conversationId)
     const idx = list.findIndex((c) => c.id === commentId)
     if (idx < 0) throw new MakeError('not_found', 'Комментарий не найден')
     const cur = list[idx]!
-    list[idx] = { ...cur, resolved: patch.resolved ?? cur.resolved, text: patch.text?.trim() ? patch.text.trim().slice(0, 2000) : cur.text }
+    list[idx] = { ...cur, resolved: patch.resolved ?? cur.resolved, text: patch.text?.trim() ? patch.text.trim().slice(0, 2000) : cur.text, ...(patch.status ? { status: patch.status } : {}) }
     return this.saveComments(conversationId, list)
+  }
+
+  /** Комментарии для зрителей публикации (roadmap-4 п.34): только одобренные, без селекторов и логинов. */
+  async publicComments(conversationId: string): Promise<MakePublicComment[]> {
+    return (await this.comments(conversationId)).filter((c) => c.status !== 'pending' && !c.resolved)
+      .map((c) => ({ id: c.id, elementLabel: c.elementLabel, text: c.text, createdAt: c.createdAt, ...(c.guestName ? { guestName: c.guestName } : {}) }))
+  }
+
+  /** Комментарий зрителя: попадает в модерацию (`pending`), автор — `guest`; публикация должна разрешать комментарии. */
+  async addGuestComment(conversationId: string, input: { selector: string; elementLabel: string; text: string; guestName: string }): Promise<MakeComment> {
+    const raw = await this.publishRaw(conversationId)
+    if (!raw?.allowComments) throw new MakeError('invalid_path', 'Комментарии зрителей выключены')
+    const list = await this.addComment(conversationId, { selector: input.selector || 'body', elementLabel: input.elementLabel, text: input.text, author: 'guest', status: 'pending', guestName: input.guestName || 'Гость' })
+    return list[0]!
   }
 
   async removeComment(conversationId: string, commentId: string): Promise<MakeComment[]> {
@@ -532,6 +753,16 @@ export class MakeWorkspaces {
     return { path, size: data.byteLength, updatedAt: (await stat(src)).mtimeMs, content: data.toString('utf8') }
   }
 
+  /** Любой файл снимка как буфер (roadmap-4 п.37: превью версии публикации) — `null`, если нет. */
+  async snapshotBuffer(conversationId: string, snapshotId: string, rawPath: string): Promise<{ path: string; data: Buffer } | null> {
+    if (!ID_RE.test(snapshotId)) return null
+    const path = normalizeMakePath(rawPath)
+    if (!path) return null
+    const src = join(this.dirOf(conversationId), SNAPSHOTS_DIR, snapshotId, 'files', ...path.split('/'))
+    if (!existsSync(src)) return null
+    return { path, data: await readFile(src) }
+  }
+
   /** Вернуть один файл из снимка, остальное не трогая. */
   async restoreFile(conversationId: string, snapshotId: string, rawPath: string): Promise<MakeProjectState> {
     if (!ID_RE.test(snapshotId)) throw new MakeError('not_found', 'Снимок не найден')
@@ -546,6 +777,8 @@ export class MakeWorkspaces {
 
   /** Импорт набора файлов (ZIP или страница по URL); перед этим — снимок. */
   async importFiles(conversationId: string, files: Array<{ path: string; data: Buffer }>, mode: MakeImportMode): Promise<MakeProjectState> {
+    // Квота пользователя (roadmap-2 п.15): импорт может принести сотни файлов — считаем сумму до записи.
+    await this.assertUserQuota(conversationId, files.reduce((n, f) => n + f.data.byteLength, 0))
     await this.ensure(conversationId)
     const accepted: Array<{ path: string; data: Buffer }> = []
     for (const file of files) {
@@ -581,22 +814,23 @@ export class MakeWorkspaces {
   private async clearFiles(conversationId: string): Promise<void> {
     const root = this.dirOf(conversationId)
     for (const entry of await readdir(root)) {
-      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE || entry === SHARE_FILE) continue
+      if (entry === SNAPSHOTS_DIR || entry === PUBLISH_FILE || entry === SHOTS_DIR || entry === COMMENTS_FILE || entry === SHARE_FILE || entry === NOTES_DIR) continue
       await rm(join(root, entry), { recursive: true, force: true })
     }
   }
 
   /** Поиск по содержимому текстовых файлов: без регистра, до `limit` совпадений, строки обрезаны. */
-  async search(conversationId: string, query: string, limit = 200): Promise<MakeSearchMatch[]> {
-    const needle = query.trim().toLocaleLowerCase()
-    if (!needle) return []
+  async search(conversationId: string, query: string, limit = 200, options: MakeSearchOptions = {}): Promise<MakeSearchMatch[]> {
+    if (!query.trim()) return []
+    const re = this.searchRegex(query, options)
     const matches: MakeSearchMatch[] = []
     for (const file of await this.list(conversationId)) {
       if (!isMakeTextPath(file.path)) continue
       const { content } = await this.read(conversationId, file.path)
       const lines = content.split('\n')
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i]!.toLocaleLowerCase().includes(needle)) {
+        re.lastIndex = 0
+        if (re.test(lines[i]!)) {
           matches.push({ path: file.path, line: i + 1, text: lines[i]!.trim().slice(0, 200) })
           if (matches.length >= limit) return matches
         }
@@ -605,21 +839,32 @@ export class MakeWorkspaces {
     return matches
   }
 
-  /** Замена подстроки во всех текстовых файлах (без регулярных выражений); перед правкой — снимок. */
-  async replaceAll(conversationId: string, query: string, replacement: string, options: { matchCase?: boolean } = {}): Promise<{ files: number; replacements: number; state: MakeProjectState }> {
+  /** Невалидный regex пользователя — ошибка запроса, а не 500. */
+  private searchRegex(query: string, options: MakeSearchOptions): RegExp {
+    try { return buildMakeSearchRegex(query, options) } catch (e) { throw new MakeError('invalid_path', `Неверное выражение: ${(e as Error).message}`) }
+  }
+
+  /** Замена во всех текстовых файлах: подстрока или regex (`$1`-подстановки); перед правкой — снимок. `dryRun` — только предпросмотр. */
+  async replaceAll(conversationId: string, query: string, replacement: string, options: MakeSearchOptions & { dryRun?: boolean } = {}): Promise<{ files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[] }> {
     if (!query) throw new MakeError('invalid_path', 'Пустая строка поиска')
-    const flags = options.matchCase ? 'g' : 'gi'
-    const re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), flags)
+    const re = this.searchRegex(query, options)
+    // Без regex подстановки `$1` в замене — обычный текст, поэтому подставляем через функцию.
+    const substitute = options.regex ? replacement : (): string => replacement
     let files = 0, replacements = 0
     const touched: Array<{ path: string; next: string }> = []
+    const preview: MakeReplacePreviewLine[] = []
     for (const file of await this.list(conversationId)) {
       if (!isMakeTextPath(file.path)) continue
       const { content } = await this.read(conversationId, file.path)
+      re.lastIndex = 0
       const count = (content.match(re) ?? []).length
       if (count === 0) continue
       files += 1; replacements += count
-      touched.push({ path: file.path, next: content.replace(re, () => replacement) })
+      if (options.dryRun) { if (preview.length < 500) preview.push(...previewMakeReplace(file.path, content, re, substitute)); continue }
+      re.lastIndex = 0
+      touched.push({ path: file.path, next: content.replace(re, substitute as string) })
     }
+    if (options.dryRun) return { files, replacements, state: await this.state(conversationId), preview }
     if (touched.length > 0) {
       await this.snapshot(conversationId, `Перед заменой «${query.slice(0, 30)}» → «${replacement.slice(0, 30)}»`)
       for (const t of touched) await writeFile(join(this.dirOf(conversationId), ...t.path.split('/')), t.next, 'utf8')
@@ -699,7 +944,11 @@ export class MakeWorkspaces {
       token: raw.token, publishedAt: raw.publishedAt ?? 0, url: makePublicUrl(raw.token),
       snapshotId: raw.snapshotId ?? null, snapshotLabel: raw.snapshotLabel ?? null,
       slug: raw.slug ?? null, slugUrl: raw.slug ? makeSlugUrl(raw.slug) : null,
-      passwordProtected: Boolean(raw.passwordHash), views: raw.views ?? 0, history: raw.history ?? []
+      passwordProtected: Boolean(raw.passwordHash), views: raw.views ?? 0, history: raw.history ?? [], allowComments: Boolean(raw.allowComments),
+      stats: {
+        days: Object.entries(raw.days ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([day, views]) => ({ day, views })),
+        referers: Object.entries(raw.referers ?? {}).sort(([, a], [, b]) => b - a).map(([host, views]) => ({ host, views }))
+      }
     }
   }
 
@@ -708,7 +957,7 @@ export class MakeWorkspaces {
    * Опубликовать: токен создаётся один раз и не меняется; `snapshotId` закрепляет публикацию за снимком
    * (ссылка отдаёт его файлы, пока публикацию не обновят), null — «живая» публикация текущих файлов.
    */
-  async publish(conversationId: string, options: { snapshotId?: string | null; slug?: string | null; password?: string | null } = {}): Promise<MakeProjectState> {
+  async publish(conversationId: string, options: { snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean } = {}): Promise<MakeProjectState> {
     const existing = await this.publishRaw(conversationId)
     const token = existing?.token ?? randomUUID().replace(/-/g, '')
     if (!existing) {
@@ -754,7 +1003,7 @@ export class MakeWorkspaces {
     const history = [...(existing?.history ?? [])]
     const last = history[history.length - 1]
     if (!existing || !last || last.snapshotId !== snapshotId) history.push({ at: Date.now(), snapshotId, snapshotLabel })
-    const raw: PublishRaw = { token, publishedAt: Date.now(), snapshotId, snapshotLabel, slug, passwordHash, views: existing?.views ?? 0, history: history.slice(-30) }
+    const raw: PublishRaw = { token, publishedAt: Date.now(), snapshotId, snapshotLabel, slug, passwordHash, views: existing?.views ?? 0, history: history.slice(-30), days: existing?.days, referers: existing?.referers, allowComments: options.allowComments ?? existing?.allowComments ?? false }
     await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8')
     return this.state(conversationId)
   }
@@ -792,10 +1041,21 @@ export class MakeWorkspaces {
   }
 
   /** Счётчик просмотров: +1 на открытие index.html публикации. Гонки терпимы — это статистика, не биллинг. */
-  async countView(conversationId: string): Promise<void> {
+  async countView(conversationId: string, referer?: string | null, now = Date.now()): Promise<void> {
     const raw = await this.publishRaw(conversationId)
     if (!raw) return
     raw.views = (raw.views ?? 0) + 1
+    // Аналитика (roadmap-3 п.3): день в UTC и хост реферера; свои же адреса публикации не считаем.
+    const day = new Date(now).toISOString().slice(0, 10)
+    const days = raw.days ?? {}
+    days[day] = (days[day] ?? 0) + 1
+    raw.days = Object.fromEntries(Object.entries(days).sort(([a], [b]) => a.localeCompare(b)).slice(-90))
+    const host = refererHost(referer)
+    if (host) {
+      const refs = raw.referers ?? {}
+      refs[host] = (refs[host] ?? 0) + 1
+      raw.referers = Object.fromEntries(Object.entries(refs).sort(([, a], [, b]) => b - a).slice(0, 20))
+    }
     await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8').catch(() => undefined)
   }
 
@@ -803,7 +1063,7 @@ export class MakeWorkspaces {
    * Мок-API (п.29): для отсутствующего файла ищет `mock/<путь>[.<METHOD>].json`; `publicMode` — файлы с публикации
    * (закреплённый снимок), иначе текущие. Возвращает разобранный ответ или null, если мока нет / JSON битый.
    */
-  async resolveMock(conversationId: string, rawPath: string, method: string, publicMode = false, body: unknown = undefined): Promise<MockResponse | null> {
+  async resolveMock(conversationId: string, rawPath: string, method: string, publicMode = false, body: unknown = undefined, cookieHeader: string | undefined = undefined): Promise<MockResponse | null> {
     // Persist-коллекция (roadmap-2 п.12): `mock/<база>.json` с `$collection` — CRUD по id с записью в файл.
     // На публикации коллекция только читается: анонимные посетители не должны менять файлы проекта.
     for (const { file: colPath, id } of collectionCandidates(rawPath)) {
@@ -822,7 +1082,10 @@ export class MakeWorkspaces {
       let file: { data: Buffer } | null = null
       try { file = publicMode ? await this.publicFile(conversationId, candidate) : await this.readBuffer(conversationId, candidate) } catch { file = null }
       if (!file) continue
-      try { return unwrapMockEnvelope(JSON.parse(file.data.toString('utf8'))) } catch { return { status: 500, body: { error: `Мок ${candidate}: невалидный JSON` }, headers: {}, delayMs: 0 } }
+      let json: unknown
+      try { json = JSON.parse(file.data.toString('utf8')) } catch { return { status: 500, body: { error: `Мок ${candidate}: невалидный JSON` }, headers: {}, delayMs: 0 } }
+      // Auth-мок (roadmap-4 п.32): логин ставит cookie сессии, защищённые ресурсы требуют её.
+      return isAuthMock(json) ? applyAuthMock(json, method, body, cookieHeader) : unwrapMockEnvelope(json)
     }
     return null
   }
@@ -887,6 +1150,11 @@ export class MakeWorkspaces {
         for (const d of await compileDiagnostics(file.path, source)) {
           issues.push({ path: file.path, kind: 'compile-error', message: `Ошибка компиляции (строка ${d.line}): ${d.message}`, line: d.line, column: d.column })
         }
+        for (const w of lintMakeFile(file.path, source)) issues.push({ path: file.path, kind: 'lint', severity: 'warning', rule: w.rule, message: w.message, line: w.line, column: w.column })
+      }
+      if (/\.css$/i.test(file.path) && file.size > 0 && file.size <= 512 * 1024) {
+        const source = await readFile(join(this.dirOf(conversationId), ...file.path.split('/')), 'utf8')
+        for (const w of lintMakeFile(file.path, source)) issues.push({ path: file.path, kind: 'lint', severity: 'warning', rule: w.rule, message: w.message, line: w.line, column: w.column })
       }
       if (!/\.(html?|css)$/i.test(file.path)) continue
       const text = (await readFile(join(this.dirOf(conversationId), ...file.path.split('/')), 'utf8')).slice(0, 512 * 1024)
@@ -927,12 +1195,18 @@ export class MakeWorkspaces {
   }
 
   /** ZIP всех файлов проекта (без снимков) — «Скачать код». */
-  async exportZip(conversationId: string, options: { vite?: boolean; pwa?: boolean } = {}): Promise<Buffer> {
+  async exportZip(conversationId: string, options: { vite?: boolean; pwa?: boolean; deploy?: MakeDeployTarget | null } = {}): Promise<Buffer> {
     const files = await this.list(conversationId)
     const entries: Array<{ path: string; data: Buffer; mtime?: Date }> = []
     for (const file of files) {
       const data = await readFile(join(this.dirOf(conversationId), ...file.path.split('/')))
       entries.push({ path: file.path, data, mtime: new Date(file.updatedAt) })
+    }
+    // Хостинг (roadmap-4 п.36): конфиг Netlify/Vercel рядом с файлами — статика как есть или сборка Vite.
+    if (options.deploy) {
+      for (const [path, text] of Object.entries(deployConfigFiles(options.deploy, { vite: Boolean(options.vite), hasMocks: files.some((f) => f.path.startsWith('mock/')) }))) {
+        if (!files.some((f) => f.path === path)) entries.push({ path, data: Buffer.from(text, 'utf8') })
+      }
     }
     if (options.pwa) {
       // PWA (п.35): манифест + SW + иконка, ссылки — в копию index.html внутри архива (проект не трогаем).

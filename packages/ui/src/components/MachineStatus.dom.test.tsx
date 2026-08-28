@@ -26,7 +26,7 @@ describe('MachineStatus', () => {
         onClose={vi.fn()}
       />
     )
-    expect(screen.getByText('не запущен')).toBeInTheDocument()
+    expect(screen.getByText(/^не запущен/)).toBeInTheDocument()
     expect(screen.getByLabelText('Сеть')).toBeDisabled()
   })
 
@@ -126,7 +126,7 @@ describe('MachineStatus — устаревший агент и обновлен�
     render(
       <MachineStatus agents={[agent({ version: '0.11.1' })]} onSetPolicy={vi.fn()} onUpdateAgent={vi.fn()} onClose={vi.fn()} />
     )
-    expect(screen.getByText('устарел, есть v0.14.0')).toBeInTheDocument()
+    expect(screen.getByText('устарел, есть v0.15.0')).toBeInTheDocument()
     expect(screen.getByLabelText('Обновить агента на Мак')).toBeInTheDocument()
     expect(screen.getByLabelText('Скопировать команду обновления для Мак')).toBeInTheDocument()
   })
@@ -244,6 +244,16 @@ describe('MachineStatus — удаление машины', () => {
 })
 
 describe('MachineStatus — редактор политики строки (AgentCard)', () => {
+  it('секция «Терминал (PTY)»: чекбокс sudo и лимиты уходят в onSetPolicy', async () => {
+    const onSetPolicy = vi.fn()
+    render(<MachineStatus agents={[agent()]} onSetPolicy={onSetPolicy} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByLabelText('Политика машины «Мак»'))
+    fireEvent.click(screen.getByLabelText('Подтверждать sudo в терминале'))
+    expect(onSetPolicy).toHaveBeenLastCalledWith('a1', expect.objectContaining({ ptyConfirmSudo: true }))
+    fireEvent.change(screen.getByLabelText('Лимит одновременных терминалов'), { target: { value: '2' } })
+    expect(onSetPolicy).toHaveBeenLastCalledWith('a1', expect.objectContaining({ ptyMaxSessions: 2 }))
+  })
+
   it('стрелка раскрывает каталоги, паттерны и навыки машины', () => {
     render(<MachineStatus agents={[agent({ policy: policy() })]} onSetPolicy={vi.fn()} onClose={vi.fn()} />)
     expect(screen.queryByTestId('machine-policy-a1')).toBeNull()

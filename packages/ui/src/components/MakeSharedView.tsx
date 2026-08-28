@@ -11,7 +11,7 @@ import { CodeEditor } from './CodeEditor'
 
 interface Props {
   token: string
-  api: Pick<RendererApi, 'make:shared' | 'make:sharedFile'>
+  api: Pick<RendererApi, 'make:shared' | 'make:sharedFile' | 'make:write'>
   ensurePreview?: () => Promise<boolean>
   onBack: () => void
 }
@@ -59,6 +59,9 @@ export function MakeSharedView({ token, api, ensurePreview, onBack }: Props): JS
   const [previewReady, setPreviewReady] = useState(!ensurePreview)
   const [path, setPath] = useState<string | null>(null)
   const [content, setContent] = useState('')
+  const [saved, setSaved] = useState('')
+  const [saving, setSaving] = useState(false)
+  const canEdit = state?.role === 'editor'
 
   const load = useCallback(async (): Promise<void> => {
     setError(null)
@@ -70,17 +73,23 @@ export function MakeSharedView({ token, api, ensurePreview, onBack }: Props): JS
 
   const open = async (p: string): Promise<void> => {
     setPath(p)
-    try { setContent((await api['make:sharedFile']({ token, path: p })).content) } catch (e) { setContent(`// ${e instanceof Error ? e.message : String(e)}`) }
+    try { const c = (await api['make:sharedFile']({ token, path: p })).content; setContent(c); setSaved(c) } catch (e) { setContent(`// ${e instanceof Error ? e.message : String(e)}`) }
   }
   useEffect(() => { if (tab === 'code' && !path && state?.files.some((f) => f.path === 'index.html')) void open('index.html') }, [tab, path, state]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Редактор (roadmap-3 п.6) пишет через обычный /api/make/:id/file — сервер пускает по именному гранту.
+  const save = async (): Promise<void> => {
+    if (!state || !path || !canEdit || content === saved) return
+    setSaving(true)
+    try { await api['make:write']({ conversationId: state.conversationId, path, content }); setSaved(content); await load() } catch (e) { setError(e instanceof Error ? e.message : String(e)) } finally { setSaving(false) }
+  }
   const previewBase = REST.makeSharedPreview(token)
   return (
     <div className="make-shared" data-testid="make-shared">
       <header className="make-head make-shared-head" role="toolbar" aria-label="Проект (только чтение)">
         <Button size="sm" variant="ghost" onClick={onBack}>← Назад</Button>
         <strong className="make-shared-title">{state?.title ?? 'Проект'}</strong>
-        <span className="make-shared-badge" title="Ссылка только для чтения: правки недоступны">только чтение{state?.owner ? ` · ${state.owner}` : ''}</span>
+        <span className="make-shared-badge" title={canEdit ? 'Вы редактор: можно править файлы' : 'Ссылка только для чтения: правки недоступны'}>{canEdit ? 'редактор' : 'только чтение'}{state?.owner ? ` · ${state.owner}` : ''}</span>
         <span className="make-head-spacer" />
         <div className="make-tabs" role="tablist" aria-label="Режим просмотра">
           {(['preview', 'code', 'history'] as Tab[]).map((t) => (
@@ -100,7 +109,8 @@ export function MakeSharedView({ token, api, ensurePreview, onBack }: Props): JS
             <div className="make-code make-shared-code">
               <nav className="make-files" aria-label="Файлы проекта"><TreeList nodes={tree} selected={path} onOpen={(p) => void open(p)} /></nav>
               <div className="make-editor">
-                {path ? <CodeEditor path={path} value={content} onChange={() => undefined} ariaLabel={`Содержимое ${path}`} readOnly /> : <p className="fsub">Выберите файл слева.</p>}
+                {path && canEdit && <div className="make-editor-head"><code>{path}</code><span className="make-head-spacer" /><Button size="sm" variant="primary" disabled={content === saved || saving} loading={saving} onClick={() => void save()}>Сохранить</Button></div>}
+                {path ? <CodeEditor path={path} value={content} onChange={canEdit ? setContent : () => undefined} onSave={() => void save()} ariaLabel={`Содержимое ${path}`} readOnly={!canEdit} /> : <p className="fsub">Выберите файл слева.</p>}
               </div>
             </div>
           )}

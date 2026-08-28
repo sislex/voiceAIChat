@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
-updated: 2026-08-25
-checked: 002a4e5d
+updated: 2026-08-28
+checked: 59646f64
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -249,7 +249,12 @@ tooltip рендерится portal-ом в `document.body`, поэтому го
 отдаёт `GET /api/projects/:id/tasks/:taskId` (`db.getTaskDetail`, мост `tasks:get`)
 — его при открытии карточки грузит `KanbanBoard` и накладывает `description`/
 `acceptanceCriteria` поверх живой карточки доски (`KanbanBoard.tsx`, состояние
-`fullTask`). Живые обновления доски остаются change-driven: WS `board.changed`
+`fullTask`). `TaskModal` принимает это обновление при прежнем `task.id` и
+синхронизирует локальные `description` и `acceptanceCriteria` независимо:
+позднее серверное значение применяется только пока пользователь не изменил
+соответствующее поле. Черновик одного редактора не блокирует гидратацию другого,
+а смена `task.id` полностью сбрасывает оба черновика и режимы редактирования.
+Живые обновления доски остаются change-driven: WS `board.changed`
 (инвалидация, не снапшот) → дебаунс-рефетч теперь уже лёгкого board.
 
 Подготовка задачи: `preparation/runs` (весь список ранов, тяжёлый) грузится

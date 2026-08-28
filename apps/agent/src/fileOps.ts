@@ -134,6 +134,21 @@ export function fsDeleteFileSafe(root: string, policy: AgentPolicy, path: string
   return listResult(root, dirname(abs))
 }
 
+/** Корзина: перемещает элемент в `<корень>/.voicechat_trash/<метка времени>__<имя>`; вернуть — fs.rename по trashedPath. */
+export const TRASH_DIR = '.voicechat_trash'
+export function fsTrash(root: string, policy: AgentPolicy, path: string, now: Date = new Date()): FsResult {
+  const abs = absPath(root, path)
+  assertAllowed(policy, abs, true)
+  const trashDir = resolve(toNativePath(root), TRASH_DIR)
+  if (abs === trashDir || abs.startsWith(trashDir + sep)) throw new Error('элемент уже в корзине')
+  if (abs === toNativePath(root)) throw new Error('нельзя переместить в корзину корень проводника')
+  mkdirSync(trashDir, { recursive: true })
+  const stamp = now.toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
+  const trashedPath = resolve(trashDir, `${stamp}__${basename(abs)}`)
+  renameSync(abs, trashedPath)
+  return { ...listResult(root, dirname(abs)), trashedPath }
+}
+
 export function fsRename(root: string, policy: AgentPolicy, from: string, to: string): FsResult {
   const absFrom = absPath(root, from)
   const absTo = absPath(root, to)

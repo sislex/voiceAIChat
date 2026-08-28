@@ -10,6 +10,11 @@ export class SlidingWindowLimiter {
   constructor(private readonly limit: number, private readonly windowMs: number, private readonly now: () => number = Date.now) {}
 
   /** Учитывает попытку и говорит, можно ли; при отказе — через сколько секунд освободится слот. */
+  /** Сброс всех окон — для тестов, где один процесс и один IP обслуживают много сценариев. */
+  reset(): void { this.hits.clear() }
+  /** Забыть один ключ — после успешного входа окно по имени начинается заново. */
+  forget(key: string): void { this.hits.delete(key) }
+
   hit(key: string): RateLimitVerdict {
     const t = this.now()
     const list = (this.hits.get(key) ?? []).filter((x) => t - x < this.windowMs)

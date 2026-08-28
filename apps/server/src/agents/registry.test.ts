@@ -38,6 +38,42 @@ describe('AgentRegistry', () => {
     await expect(p).resolves.toEqual({ exitCode: 0, output: 'диск warn', timedOut: false })
   })
 
+  it('exec: onCommand получает запись журнала с источником, кодом выхода и длительностью; отказ политики — тоже', async () => {
+    const reg = makeRegistry()
+    const sock = fakeSocket()
+    reg.register('a1', 'Мак', sock)
+    const records: Array<Parameters<Parameters<AgentRegistry['onCommand']>[0]>[0]> = []
+    reg.onCommand((rec) => records.push(rec))
+    const p = reg.exec('a1', 'ls', 1000, undefined, { source: 'console', userId: 'bob' })
+    reg.handleMessage('a1', { t: 'exec.chunk', execId: 'exec-1', stream: 'stdout', data: 'a.txt' })
+    reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
+    await p
+    expect(records[0]).toMatchObject({ machineId: 'a1', userId: 'bob', source: 'console', command: 'ls', exitCode: 0, timedOut: false, error: null, outputExcerpt: 'a.txt', output: 'a.txt', conversationId: null })
+    reg.updatePolicy('a1', { allowedDirs: [], allowNetwork: true, allowWrite: false, denyPatterns: [], allowPatterns: [], skills: [] })
+    await expect(reg.exec('a1', 'rm -rf x', 1000, undefined, { source: 'chat', conversationId: 'c1' })).rejects.toThrow()
+    expect(records[1]).toMatchObject({ source: 'chat', conversationId: 'c1', exitCode: null })
+    expect(records[1]!.error).toContain('политикой')
+  })
+
+  it('offlineGraceMs: exec и fs ждут возврата машины и продолжают после register; по таймауту — «не в сети»', async () => {
+    let n = 0
+    const reg = new AgentRegistry({ newId: () => `exec-${++n}`, offlineGraceMs: 200 })
+    const sock = fakeSocket()
+    // машина офлайн: команда не падает, а ждёт
+    const p = reg.exec('a1', 'uptime', 1000)
+    const fsP = reg.fsList('a1', '/')
+    expect(sock.sent).toHaveLength(0)
+    reg.register('a1', 'Мак', sock, undefined, '0.15.0')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(sock.sent.map((m) => m.t)).toEqual(['exec.start', 'fs.list'])
+    reg.handleMessage('a1', { t: 'exec.done', execId: 'exec-1', exitCode: 0 })
+    reg.handleMessage('a1', { t: 'fs.result', opId: 'exec-2', result: { root: '/', cwd: '/', entries: [] } })
+    await expect(p).resolves.toMatchObject({ exitCode: 0 })
+    await expect(fsP).resolves.toMatchObject({ root: '/' })
+    // никто не подключился — отказ с указанием, сколько ждали
+    await expect(reg.exec('a2', 'uptime', 1000)).rejects.toThrow('не в сети')
+  })
+
   it('exec: офлайн-агент → reject сразу', async () => {
     const reg = makeRegistry()
     await expect(reg.exec('нет', 'ls', 1000)).rejects.toThrow('не в сети')
@@ -129,6 +165,53 @@ describe('AgentRegistry', () => {
       const pending = reg.fsRead('a1', '/large.jpg')
       vi.advanceTimersByTime(30_000 + 1)
       await expect(pending).rejects.toThrow('файловую операцию за 30 с')
+    })
+
+    it('pty: лимит одновременных сеансов из политики', () => {
+      const reg = makeRegistry()
+      const sock = fakeSocket()
+      reg.register('a1', 'Мак', sock, { ...DEFAULT_AGENT_POLICY, ptyMaxSessions: 1 }, '0.15.0')
+      const events: string[] = []
+      reg.ptyStart('a1', 'p1', 80, 24, undefined, () => {})
+      reg.ptyStart('a1', 'p2', 80, 24, undefined, (e) => events.push(e.t === 'pty.error' ? e.message : e.t))
+      expect(events[0]).toContain('Лимит одновременных терминалов')
+      expect(sock.sent.filter((m) => m.t === 'pty.start')).toHaveLength(1)
+      reg.ptyKill('p1')
+      reg.ptyStart('a1', 'p2', 80, 24, undefined, () => {})
+      expect(sock.sent.filter((m) => m.t === 'pty.start')).toHaveLength(2)
+    })
+
+    it('pty: sudo задерживается до подтверждения y/N; обычные команды идут как есть', () => {
+      const reg = makeRegistry()
+      const sock = fakeSocket()
+      reg.register('a1', 'Мак', sock, { ...DEFAULT_AGENT_POLICY, ptyConfirmSudo: true }, '0.15.0')
+      const out: string[] = []
+      reg.ptyStart('a1', 'p1', 80, 24, undefined, (e) => { if (e.t === 'pty.output') out.push(e.data) })
+      const inputs = () => sock.sent.filter((m): m is Extract<ServerToAgent, { t: 'pty.input' }> => m.t === 'pty.input').map((m) => m.data).join('')
+      for (const ch of 'ls\r') reg.ptyInput('p1', ch)
+      expect(inputs()).toBe('ls\r')
+      for (const ch of 'sudo rm x') reg.ptyInput('p1', ch)
+      reg.ptyInput('p1', '\r')
+      expect(inputs()).toBe('ls\rsudo rm x') // Enter не ушёл
+      expect(out.join('')).toContain('sudo — выполнить?')
+      reg.ptyInput('p1', 'n')
+      expect(inputs()).toBe('ls\rsudo rm x\x15') // отказ — строка стёрта Ctrl-U
+      for (const ch of 'sudo id\r') reg.ptyInput('p1', ch)
+      reg.ptyInput('p1', 'y')
+      expect(inputs().endsWith('sudo id\r')).toBe(true)
+    })
+
+    it('pty: политика ptyIdleMinutes убивает сеанс без ввода, ввод сбрасывает таймер', () => {
+      const reg = makeRegistry()
+      const sock = fakeSocket()
+      reg.register('a1', 'Мак', sock, { ...DEFAULT_AGENT_POLICY, ptyIdleMinutes: 1 }, '0.15.0')
+      reg.ptyStart('a1', 'p1', 80, 24, undefined, () => {})
+      vi.advanceTimersByTime(50_000)
+      reg.ptyInput('p1', 'x')
+      vi.advanceTimersByTime(50_000)
+      expect(sock.sent.some((m) => m.t === 'pty.kill')).toBe(false)
+      vi.advanceTimersByTime(11_000)
+      expect(sock.sent).toContainEqual({ t: 'pty.kill', ptyId: 'p1' })
     })
 
     it('pty: отписанный сеанс живёт полчаса, а потом убивается по простою', () => {

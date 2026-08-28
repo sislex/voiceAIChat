@@ -178,6 +178,8 @@ export function registerProjectRoutes(
       ciKbContextMode?: KbContextMode
       ciTestFixCycleLimit?: number
       doneRetentionDays?: number | null
+      /** Политика команд проекта (machines-roadmap п.10). */
+      commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
     }
   }>('/api/projects/:id', async (req, reply) => {
 
@@ -194,6 +196,8 @@ export function registerProjectRoutes(
       try { const { sanitizeProjectTestUsers } = await import('@voicechat/shared'); body.testUsers = sanitizeProjectTestUsers(body.testUsers) } catch (error) { return badReq(reply, errMessage(error)) }
     }
     if (body.doneRetentionDays !== undefined) body.doneRetentionDays = normRetentionDays(body.doneRetentionDays)
+    // Политика команд приходит из формы: чистим мусорные паттерны тем же парсером, что читает БД.
+    if (body.commandPolicy !== undefined) { const { parseProjectCommandPolicy } = await import('@voicechat/shared'); body.commandPolicy = parseProjectCommandPolicy(JSON.stringify(body.commandPolicy)) }
     if (body.ciTestFixCycleLimit !== undefined && (!Number.isInteger(body.ciTestFixCycleLimit) || body.ciTestFixCycleLimit < 0)) return badReq(reply, 'ciTestFixCycleLimit must be a non-negative integer')
     if (body.releaseTimeouts !== undefined) { try { const { validateReleaseTimeouts } = await import('@voicechat/shared'); validateReleaseTimeouts(body.releaseTimeouts) } catch(error) { return badReq(reply,errMessage(error)) } }
     return db.updateProject(uid(req), req.params.id, body) ?? nf(reply)
@@ -260,13 +264,14 @@ export function registerProjectRoutes(
 
   // --- Машины проекта ----------------------------------------------------
 
-  app.put<{ Params: { id: string; agentId: string }; Body: { shared?: boolean } }>(
+  app.put<{ Params: { id: string; agentId: string }; Body: { shared?: boolean; access?: 'full' | 'read' } }>(
     '/api/projects/:id/machines/:agentId/share',
     async (req, reply) => {
       if (!member(req, req.params.id)) return nf(reply)
       if (typeof req.body?.shared !== 'boolean') return badReq(reply, 'shared must be boolean')
+      if (req.body.access !== undefined && req.body.access !== 'full' && req.body.access !== 'read') return badReq(reply, "access must be 'full' or 'read'")
       try {
-        db.setMachineSharedWithProject(uid(req), req.params.id, req.params.agentId, req.body.shared)
+        db.setMachineSharedWithProject(uid(req), req.params.id, req.params.agentId, req.body.shared, req.body.access ?? 'full')
         return withMachineStatus(db.getProject(uid(req), req.params.id), uid(req)) ?? nf(reply)
       } catch (err) {
         return reply.code(403).send({ error: errMessage(err) })

@@ -223,6 +223,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description)
   const [criteria, setCriteria] = useState(() => normalizeAcceptanceCriteria(task.acceptanceCriteria))
+  const currentTaskIdRef = useRef(task.id)
+  const descriptionDirtyRef = useRef(false)
+  const criteriaDirtyRef = useRef(false)
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
   useEffect(() => {
@@ -333,6 +336,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const aiAssist = useAiAssist({
     value: description,
     onChange: (value) => {
+      descriptionDirtyRef.current = true
       if (descriptionRef.current) applyNativeInputValue(descriptionRef.current, value)
       else setDescription(value)
       props.onUpdate(task.id, { description: value })
@@ -343,16 +347,27 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   })
   const aiAssistEnabled = !!props.generateAiAssist
 
-  // Переключение на другую задачу (подзадачу) — сбросить черновики полей.
+  // Полная задача может прийти позднее с тем же id. Каждое тяжёлое поле
+  // синхронизируется независимо, пока пользователь не создал для него черновик.
+  // Другой id всегда означает полную переинициализацию карточки.
   useEffect(() => {
-    setTitle(task.title)
-    setDescription(task.description)
-    setCriteria(normalizeAcceptanceCriteria(task.acceptanceCriteria))
-    setDescEditing(false)
-    setLabelDraft('')
-    setSkillDraft('')
-    setActiveTab(defaultTab())
-  }, [task.id])
+    if (currentTaskIdRef.current !== task.id) {
+      currentTaskIdRef.current = task.id
+      descriptionDirtyRef.current = false
+      criteriaDirtyRef.current = false
+      setTitle(task.title)
+      setDescription(task.description)
+      setCriteria(normalizeAcceptanceCriteria(task.acceptanceCriteria))
+      setDescEditing(false)
+      setCriteriaEditing(false)
+      setLabelDraft('')
+      setSkillDraft('')
+      setActiveTab(defaultTab())
+      return
+    }
+    if (!descriptionDirtyRef.current) setDescription(task.description)
+    if (!criteriaDirtyRef.current) setCriteria(normalizeAcceptanceCriteria(task.acceptanceCriteria))
+  }, [task.id, task.description, task.acceptanceCriteria])
 
 
   // Чат к задаче создаётся сам при первом открытии карточки: дальше в него
@@ -414,6 +429,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   }
 
   const cancelDescEdit = (): void => {
+    descriptionDirtyRef.current = false
     setDescription(task.description)
     setDescEditing(false)
   }
@@ -668,7 +684,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                 placeholder="Добавьте описание…"
                 rows={10}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  descriptionDirtyRef.current = true
+                  setDescription(e.target.value)
+                }}
                 onBlur={(e) => {
                   // Уход на «Сохранить», «Отмена» или палочку AI — не уход из
                   // правки: иначе blur записал бы черновик раньше их клика (а по
@@ -709,10 +728,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             rows={10}
             value={criteria}
             onChange={(e) => {
+              criteriaDirtyRef.current = true
               const raw = e.target.value
               const next = normalizeAcceptanceCriteria(raw)
               const start = e.target.selectionStart
               const end = e.target.selectionEnd
+              criteriaDirtyRef.current = true
               setCriteria(next)
               requestAnimationFrame(() => {
                 const el = criteriaRef.current
@@ -734,6 +755,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               const lineStart = emptyItem ? before.lastIndexOf('\n') + 1 : start
               const next = criteria.slice(0, lineStart) + prefix + criteria.slice(end)
               const cursor = lineStart + prefix.length
+              criteriaDirtyRef.current = true
               setCriteria(next)
               requestAnimationFrame(() => criteriaRef.current?.setSelectionRange(cursor, cursor))
             }}
@@ -741,9 +763,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               const pasted = e.clipboardData.getData('text')
               if (!pasted.includes('\n')) return
               e.preventDefault()
+              criteriaDirtyRef.current = true
               const el = e.currentTarget
               const merged = criteria.slice(0, el.selectionStart) + pasted + criteria.slice(el.selectionEnd)
               const next = normalizeAcceptanceCriteria(merged)
+              criteriaDirtyRef.current = true
               setCriteria(next)
               requestAnimationFrame(() => criteriaRef.current?.setSelectionRange(next.length, next.length))
             }}

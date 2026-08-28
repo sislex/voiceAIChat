@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel } from '@voicechat/shared'
+import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel, type MachineCommandEvent, type ServerMessage } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -33,7 +33,18 @@ import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
 import type { CommandExecutor, CiKbUpdateHook } from './ci/types.js'
 import { BoardHub, NotificationHub } from './projects/boardHub.js'
-import { registerAuth, resolveUser, uid } from './users/auth.js'
+import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.js'
+import { ensureDefaultChatBinding, ensureDefaultStorage } from './agents/defaultStorage.js'
+import { createAgentWatchdog } from './agents/watchdog.js'
+import { createCommandGate } from './agents/commandGate.js'
+import { createMailer, type Mailer } from './users/mailer.js'
+
+/** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
+function cookieToken(header: string | undefined): string | undefined {
+  if (!header) return undefined
+  for (const item of header.split(';')) { const [k, ...rest] = item.trim().split('='); if (k === 'vc_session') return rest.join('=') }
+  return undefined
+}
 import { loadOrCreateSecret } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
@@ -119,6 +130,8 @@ export interface BuildOptions {
   createWsHandlers?: () => WsHandlers
   /** Секрет подписи токенов сессии (для тестов). Иначе — из dataDir/эфемерный. */
   sessionSecret?: string
+  /** Мейлер регистрации (для тестов — фейк). Иначе SMTP из config или консольный. */
+  mailer?: Mailer
   /** Реестр машин (для маршрутных тестов с фейковыми fs-ответами). */
   agentRegistry?: AgentRegistry
   /** Исполнитель CI-команд (в тестах — мок). По умолчанию поверх AgentRegistry. */
@@ -239,7 +252,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     opts.sessionSecret ??
     (opts.db ? randomBytes(32).toString('hex') : loadOrCreateSecret(opts.config.dataDir))
   db.ensureAdmin(opts.config.adminPassword) // сид админа (пароль из VC_ADMIN_PASSWORD)
-  registerAuth(app, db, sessionSecret)
+  registerAuth(app, db, sessionSecret, { mailer: opts.mailer ?? createMailer({ smtpUrl: opts.config.smtpUrl, mailFrom: opts.config.mailFrom }, (m, extra) => app.log.warn(extra ?? {}, m)), publicUrl: opts.config.publicUrl })
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     ok: true,
@@ -264,7 +277,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
   // Реестр создаётся до REST: task-chat context обязан показывать ту же effective
   // online-машину, которую затем использует фактический ход.
-  const agentRegistry = opts.agentRegistry ?? new AgentRegistry()
+  const agentRegistry = opts.agentRegistry ?? new AgentRegistry({ offlineGraceMs: opts.config.agentOfflineGraceMs })
   await registerRest(app, db, opts.config.dataDir, {
     runnerFs: runnerFs ?? undefined,
     authStatus,
@@ -351,10 +364,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   })
 
   // Машины-агенты: реестр онлайн-подключений + REST + MCP-мост для проброса Bash.
+  // Гейт команд (п.10): политика проекта и роли поверх политики машины; опасные команды в чате — с подтверждением.
+  const commandGate = createCommandGate({
+    projectPolicy: (projectId) => db.getProjectCommandPolicy(projectId),
+    rolePolicies: () => db.getRoleCommandPolicies(),
+    userRole: (userId) => db.getUser(userId)?.role ?? null
+  })
   await registerAgentRoutes(app, db, agentRegistry, {
     agentApp: opts.config.agentAppPath,
     desktopApp: opts.config.desktopAppPath
-  })
+  }, commandGate)
   const storageMigrations = new StorageMigrationManager(join(opts.config.dataDir, 'storage-migrations.json'), {
     list: (machineId, path) => agentRegistry.fsList(machineId, path),
     read: (machineId, path) => agentRegistry.fsRead(machineId, path),
@@ -379,7 +398,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     // Машины проекта для адресации операций (query `project` дописывает
     // отправитель хода — turns.ts у чата, modelHooks.ts у CI-рана).
     (projectId) => db.listProjectMachines(projectId),
-    (token) => remoteFileBroker.get(token)
+    (token) => remoteFileBroker.get(token),
+    commandGate
   )
   registerCiCommandsMcp(app, mcpSecret)
   // Консоль с ассистентом (mcp__console__*): ход адресуется query `conv`, а
@@ -389,6 +409,11 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // уходят владельцу кадром make.changed через MakeHub.
   const makeWorkspaces = new MakeWorkspaces(opts.config.dataDir)
   const makeHub = new MakeHub()
+  // Квота на пользователя (roadmap-2 п.15): все проекты Make владельца разговора.
+  makeWorkspaces.setProjectsOfOwner((id) => {
+    const owner = db.conversationOwner(id)
+    return owner ? db.listConversations(owner, { includeCompleted: true }).filter((c) => c.assistantKind === 'make').map((c) => c.id) : null
+  })
   registerMakeMcp(app, { workspaces: makeWorkspaces, hub: makeHub, ownerOf: (id) => db.conversationOwner(id) }, mcpSecret)
   registerMakeRoutes(app, { db, workspaces: makeWorkspaces, hub: makeHub, library: new MakeLibrary(opts.config.dataDir) })
   // Инструменты БЗ для модели (mcp__kb__*): тот же секрет процесса, ход
@@ -481,7 +506,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
-  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats((id) => db.conversationOwner(id)))
+  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats((id) => db.conversationOwner(id)), Boolean(opts.mailer?.configured ?? opts.config.smtpUrl))
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()
@@ -557,19 +582,71 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // только принимает байты запроса и пересылает агенту; без машины сохраняется
   // совместимый локальный режим.
   const uploads = new UploadStore(join(opts.config.dataDir, 'uploads'))
-  const managedChatStorage = (userId: string, conversationId: string) => resolveManagedChatStorage(userId, conversationId, {
-    getBinding: (uid, id) => db.getChatStorageBinding(uid, id),
-    listStorages: (uid, machineId) => db.listMachineStorages(uid, machineId),
-    ownsMachine: (uid, machineId) => db.listAgents(uid).some((agent) => agent.id === machineId),
-    isOnline: (machineId) => agentRegistry.isOnline(machineId),
-    verifyRoot: async (machineId, rootPath) => {
-      const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
-      const marker = await agentRegistry.fsRead(machineId, `${rootPath.replace(/[/\\]$/, '')}${separator}.voicechat${separator}storage.json`)
-      const parsed = JSON.parse(Buffer.from(marker.dataBase64 ?? '', 'base64').toString('utf8')) as { id?: string }
-      const binding = db.getChatStorageBinding(userId, conversationId)
-      if (!binding || parsed.id !== binding.storageId) throw new Error('Marker привязанного хранилища отсутствует или конфликтует')
-    }
+  // Каталог ChatAI по умолчанию: при подключении машины и перед первой записью файлов чата.
+  const defaultStorageDeps = { db, registry: agentRegistry, log: (m: string, extra?: Record<string, unknown>) => app.log.info(extra ?? {}, m) }
+  // Журнал команд машины: пишем всё, что прошло через registry.exec (консоль, чат, системные вызовы).
+  // Публикация в WS владельцу (ciRunManager создаётся ниже — привязываем лениво).
+  let publishToUser: ((message: ServerMessage, userId: string) => void) | null = null
+  agentRegistry.onCommand((rec) => {
+    const { output, ...record } = rec
+    const userId = record.userId || (db.agentOwnerId(record.machineId) ?? '')
+    try { db.addMachineCommand({ ...record, userId }) } catch (error) { app.log.warn({ error }, 'machine command log failed') }
+    // Долгая команда (п.17): тост владельцу; для команды из чата — полный лог в artifacts/commands чата.
+    if (!userId || record.source === 'system' || record.durationMs < opts.config.longCommandMs) return
+    void (async () => {
+      let logPath: string | undefined
+      if (record.source === 'chat' && record.conversationId) {
+        try {
+          const managed = await managedChatStorage(userId, record.conversationId)
+          if (managed) {
+            const separator = managed.artifacts.includes('\\') && !managed.artifacts.includes('/') ? '\\' : '/'
+            const dir = `${managed.artifacts}${separator}commands`
+            await agentRegistry.fsMkdir(managed.binding.machineId, dir)
+            const stamp = new Date(record.startedAt).toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-')
+            const slug = record.command.replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'command'
+            logPath = `${dir}${separator}${stamp}__${slug}.log`
+            const header = `$ ${record.command}\n# exit ${record.exitCode ?? 'null'} · ${record.durationMs} ms · ${new Date(record.startedAt).toISOString()}\n\n`
+            await agentRegistry.fsWrite(managed.binding.machineId, logPath, Buffer.from(header + output).toString('base64'))
+          }
+        } catch (error) {
+          app.log.warn({ error }, 'command log save failed')
+          logPath = undefined
+        }
+      }
+      const event: MachineCommandEvent = {
+        machineId: record.machineId, machineName: agentRegistry.nameOf(record.machineId) ?? db.listAgents(userId).find((a) => a.id === record.machineId)?.name ?? record.machineId,
+        source: record.source, command: record.command, exitCode: record.exitCode, timedOut: record.timedOut, error: record.error,
+        durationMs: record.durationMs, conversationId: record.conversationId, ...(logPath ? { logPath } : {})
+      }
+      publishToUser?.({ t: 'machine.command', event }, userId)
+    })()
   })
+  agentRegistry.onAgentReady((agentId) => {
+    const owner = db.agentOwnerId(agentId)
+    if (owner) void ensureDefaultStorage(defaultStorageDeps, owner, agentId)
+  })
+  const ensureChatStorage = (userId: string, conversationId: string, machineId: string) => ensureDefaultChatBinding(defaultStorageDeps, userId, conversationId, machineId)
+  // Вложения/ретушь/публикация: чат без привязки сначала привязывается к ChatAI машины разговора (если она в сети).
+  const managedChatStorage = async (userId: string, conversationId: string) => {
+    if (!db.getChatStorageBinding(userId, conversationId)) {
+      const machine = db.resolveConversationMachine(userId, conversationId, { isOnline: (id) => agentRegistry.isOnline(id) })
+      if (machine?.agentId && machine.source !== 'disabled') await ensureChatStorage(userId, conversationId, machine.agentId)
+    }
+    return resolveManagedChatStorage(userId, conversationId, {
+      getBinding: (uid, id) => db.getChatStorageBinding(uid, id),
+      listStorages: (uid, machineId) => db.listMachineStorages(uid, machineId),
+      ownsMachine: (uid, machineId) => db.listAgents(uid).some((agent) => agent.id === machineId),
+      isOnline: (machineId) => agentRegistry.isOnline(machineId),
+      waitOnline: (machineId) => agentRegistry.waitForOnline(machineId),
+      verifyRoot: async (machineId, rootPath) => {
+        const separator = rootPath.includes('\\') && !rootPath.includes('/') ? '\\' : '/'
+        const marker = await agentRegistry.fsRead(machineId, `${rootPath.replace(/[/\\]$/, '')}${separator}.voicechat${separator}storage.json`)
+        const parsed = JSON.parse(Buffer.from(marker.dataBase64 ?? '', 'base64').toString('utf8')) as { id?: string }
+        const binding = db.getChatStorageBinding(userId, conversationId)
+        if (!binding || parsed.id !== binding.storageId) throw new Error('Marker привязанного хранилища отсутствует или конфликтует')
+      }
+    })
+  }
   const generatedCleanup = new GeneratedCleanupService({
     targets: () => db.listGeneratedCleanupTargets(),
     ttlDays: (userId) => db.getSettings(userId).generatedFilesTtlDays,
@@ -584,6 +661,28 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Тестовые buildServer используют фейковые реестры и запускают сервис явно.
   // Production-процесс делает первый проход после старта и затем каждые шесть часов.
   if (!process.env.VITEST) {
+    // Фоновая очистка Make (roadmap-2 п.16): снимки и PNG стори старше 30 дней, раз в 6 часов и при старте.
+    const makeSweep = async (): Promise<void> => {
+      try { const r = await makeWorkspaces.sweep(); if (r.snapshots || r.shots) app.log.info({ event: 'make_sweep', ...r }) } catch (error) { app.log.warn({ event: 'make_sweep_failed', error: String(error) }) }
+    }
+    const makeSweepTimer = setInterval(() => { void makeSweep() }, 6 * 60 * 60 * 1000)
+    makeSweepTimer.unref()
+    app.addHook('onClose', async () => clearInterval(makeSweepTimer))
+    queueMicrotask(() => { void makeSweep() })
+    // Учётки и сессии (auth-roadmap п.18): раз в сутки чистим истёкшие сессии/инвайты и отключаем неактивных (VC_INACTIVE_DAYS, 0 — выкл).
+    const inactiveDays = Number(process.env.VC_INACTIVE_DAYS ?? 180)
+    const accountsSweep = (): void => {
+      try {
+        const sessions = db.pruneSessions(), invites = db.pruneInvites()
+        const blocked = inactiveDays > 0 ? db.blockInactiveUsers(inactiveDays) : []
+        for (const name of blocked) db.logSecurityEvent({ user: name, type: 'inactive_blocked', details: `нет входов ${inactiveDays} дн.` })
+        if (sessions || invites || blocked.length) app.log.info({ event: 'accounts_sweep', sessions, invites, blocked }, 'accounts sweep')
+      } catch (error) { app.log.warn({ error }, 'accounts sweep failed') }
+    }
+    accountsSweep()
+    const accountsTimer = setInterval(accountsSweep, 24 * 60 * 60 * 1000)
+    accountsTimer.unref()
+    app.addHook('onClose', async () => clearInterval(accountsTimer))
     const cleanupTimer = setInterval(() => { void generatedCleanup.run() }, 6 * 60 * 60 * 1000)
     cleanupTimer.unref()
     app.addHook('onClose', async () => clearInterval(cleanupTimer))
@@ -822,6 +921,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     agents: {
       isOnline: (id) => agentRegistry.isOnline(id),
+      waitOnline: (id) => agentRegistry.waitForOnline(id),
       nameOf: (id) => agentRegistry.nameOf(id),
       policyOf: (id) => agentRegistry.policyOf(id),
       fsList: (id, path) => agentRegistry.fsList(id, path),
@@ -829,6 +929,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       fsMkdir: (id, path) => agentRegistry.fsMkdir(id, path),
       fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data)
     },
+    ensureChatStorage,
     readServerFile: async (userId, path) => {
       if (runnerFs) return runnerFs.readFile(userId, path)
       const settings = db.getSettings(userId)
@@ -930,7 +1031,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   }
 
   const parseTaskPreparation = (text: string): DevelopmentReadiness => {
-    const raw = text.trim().replace(/^\`\`\`(?:json)?\\s*/i, '').replace(/\\s*\`\`\`$/, '')
+    const raw = text.trim()
+    if (!raw.startsWith('{') || !raw.endsWith('}')) throw new Error('Модель должна вернуть ровно один JSON-объект без окружающего текста')
     const value = JSON.parse(raw) as unknown
     const issues: string[] = []
     const record = (input: unknown): Record<string, unknown> | null =>
@@ -950,12 +1052,13 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     }
     const root = record(value)
     if (!root) throw new Error('Модель вернула неполную структуру готовности: корень должен быть JSON-объектом')
+    if (root.schemaVersion !== 2) issues.push('schemaVersion должен быть равен 2')
     requireString(root, 'functionalRequirements')
     requireString(root, 'acceptanceCriteria')
     requireBoolean(root, 'acceptanceCriteriaConflict')
     const uiImpact = root.uiImpact
-    if (uiImpact !== null && !['none', 'existing_components', 'new_components', 'multi_component_flow'].includes(String(uiImpact))) {
-      issues.push('uiImpact должен быть null или строкой none|existing_components|new_components|multi_component_flow')
+    if (typeof uiImpact !== 'string' || !['none', 'existing_components', 'new_components', 'multi_component_flow'].includes(uiImpact)) {
+      issues.push('uiImpact должен быть строкой none|existing_components|new_components|multi_component_flow')
     }
     const testCases = requireArray(root, 'testCases')
     const affectedComponents = requireArray(root, 'affectedComponents')
@@ -968,7 +1071,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
       }
       requireBoolean(testCase, 'required', `${path}.required`)
       requireBoolean(testCase, 'automatable', `${path}.automatable`)
-      requireArray(testCase, 'automationLinks', `${path}.automationLinks`)
+      for (const [linkIndex, link] of requireArray(testCase, 'automationLinks', `${path}.automationLinks`).entries()) {
+        if (typeof link !== 'string') issues.push(`${path}.automationLinks[${linkIndex}] должен быть строкой`)
+      }
     }
     for (const [index, item] of affectedComponents.entries()) {
       const component = record(item)
@@ -1147,8 +1252,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
 ${machineDiagnostic}`
     const basePrompt = `${researchDirective}
 
-Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
-    const ordinaryResponses: string[] = []
+Подготовь подтверждаемый Development Brief в режиме только чтения. Не меняй код и данные. Ответ должен содержать ровно один JSON-объект: первый непробельный символ «{», последний — «}»; Markdown-ограда, вводный, заключительный и любой служебный текст запрещены. Если есть существенный вопрос, ответ на который меняет продукт, публичный контракт, данные, безопасность, обязательный scope или проверяемость, верни ТОЛЬКО JSON {"question":"текст","material":true}; не принимай такое решение самостоятельно. Иначе верни ТОЛЬКО JSON DevelopmentReadiness schemaVersion=2 со всеми полями: goal, scope, outOfScope, functionalRequirements, businessRules, errorsAndEdgeCases, uiImpact, uiStates, affectedComponents, contractChanges, dataChanges, acceptanceCriteria, acceptanceCriteriaItems (id,title,precondition,action,observableResult), testCases, constraints, contradictions, openQuestions, decisions, assumptions, sources, acceptanceCriteriaConflict. Типы обязательны: functionalRequirements и acceptanceCriteria — строки; uiImpact — строка none|existing_components|new_components|multi_component_flow; acceptanceCriteriaConflict — boolean; scope/outOfScope и остальные списки — массивы. Каждый testCase — объект со строками id, title, description, preconditions, testData, steps, expectedResult, testType, notAutomatedReason, alternativeManualVerification, comments, boolean required, automatable и массивом automationLinks. Каждый affectedComponent — объект со строками id, name, exclusionReason, alternativeVerification, boolean reusable, storybookStoryId string|null и coverage object|null. acceptanceCriteriaItems содержат строковые id,title,precondition,action,observableResult. Строковые списки scope, outOfScope, businessRules, errorsAndEdgeCases, uiStates, contractChanges, dataChanges, constraints и contradictions содержат только непустые строки. Объектные списки: openQuestions — объекты questionId,text,material,answer; decisions — объекты id,text,rationale,questionId; assumptions — объекты id,text,rationale,material; sources — объекты id,kind,status,summary,refs,critical. В sources kind допускает только knowledge|hierarchy|related_tasks|code|tests|storybook, а refs всегда является массивом строк string[]. Не заменяй строки массивами или объектами. Для каждого affectedComponent укажи непустой coverage object. Если Storybook неприменим или отсутствует, storybookStoryId должен быть null, а exclusionReason и alternativeVerification — непустыми и конкретными; coverage перечисляет существующие и обязательные альтернативные проверки. Существенные открытые вопросы и противоречия запрещены. Задача: ${task?.title ?? ''}\\nОписание: ${task?.description ?? ''}\\nКритерии: ${task?.acceptanceCriteria ?? ''}\\n${answeredContext}`
+const ordinaryResponses: string[] = []
     const terminalValidationFailure = (message: string, text: string, recoveryDetail?: string): void => {
       const terminalMessage = recoveryDetail ? `Recovery Development Brief завершился ошибкой: ${recoveryDetail}; исходная диагностика: ${message}` : message
       const readiness = (() => { try { return parseTaskPreparation(text) } catch { return null } })()
@@ -1164,7 +1269,7 @@ ${machineDiagnostic}`
       preparationRunUpdated(userId, projectId, taskId, run.id)
       db.appendTaskPreparationEvent(run.id, 'recovery_started', 'brief_generation', `Recovery через зафиксированную проектную пару ${recoveryName}: ${reason}`, { sourceProvider: provider, sourceModel: model, recoveryProvider: provider, recoveryModel: model, reason })
       db.appendTaskPreparationLog(run.id, `[система] Recovery через зафиксированную проектную пару: ${recoveryName}; причина: ${reason}\\n`)
-      const recoveryPrompt = `Исправь ТОЛЬКО структуру уже подготовленного Development Brief без повторного исследования и без изменения смысла требований. Верни только один JSON-объект schemaVersion=2.\\n
+      const recoveryPrompt = `Исправь ТОЛЬКО структуру уже подготовленного Development Brief без повторного исследования и без изменения смысла требований. Верни ровно один JSON-объект schemaVersion=2: первый непробельный символ «{», последний — «}»; Markdown-ограда и любой текст вне объекта запрещены.\\n
 Диагностика валидатора (точные пути/гейты): ${reason}\\n
 Исходный ответ: ${ordinaryResponses[0] ?? ''}\\n
 Повторный ответ: ${ordinaryResponses[1] ?? ''}\\n
@@ -1209,7 +1314,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       if (handle) taskPreparationHandles.set(run.id, { cancel: () => { closePreparationTools(); handle.cancel() } })
     }
     const sendAttempt = (attempt: number, correction?: string): void => {
-      const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный JSON.` : basePrompt
+      const prompt = correction ? `${basePrompt}\\nПредыдущий ответ отклонён: ${correction}. Верни исправленный единственный JSON-объект без любого текста вне JSON.` : basePrompt
       const handle = client.send({ userId, prompt, sessionId: null, model, permissionMode: 'default', readOnlyRemote: true, ...remote, ...kbFields }, {
         onDelta: (chunk) => { db.appendTaskPreparationLog(run.id, chunk); preparationRunDelta(userId, projectId, taskId, run.id) },
         onSession: () => {},
@@ -1218,7 +1323,9 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
           if (db.getTaskPreparationRun(userId, run.id)?.status !== 'running') return
           ordinaryResponses[attempt - 1] = text
           try {
-            const candidate = JSON.parse(text.trim().replace(/^\`\`\`(?:json)?\\s*/i, '').replace(/\\s*\`\`\`$/, '')) as { question?: unknown; material?: unknown }
+            const questionRaw = text.trim()
+            if (!questionRaw.startsWith('{') || !questionRaw.endsWith('}')) throw new Error('Ожидался чистый JSON-объект')
+            const candidate = JSON.parse(questionRaw) as { question?: unknown; material?: unknown }
             if (typeof candidate.question === 'string' && candidate.question.trim()) {
               const question = db.createTaskPreparationQuestion(run.id, candidate.question, candidate.material !== false)
               if (!question) throw new Error('Не удалось сохранить уточняющий вопрос')
@@ -1428,6 +1535,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     return { projectId: release.projectId, agentId, path: project.productionCheckoutPath, prepareCheckout: false, gitUrl: project.gitUrl, baseBranch: project.ciBaseBranch || 'main', testCommand: project.testCommand?.trim() || 'npm run typecheck && npm run test', deployCommand: project.productionDeployCommand, healthCheckCommand: project.productionHealthCheckCommand, expectedRepository: project.gitUrl, mode:'legacy' }
   })
   registerReleaseRoutes(app, db, releaseManager, managedEnvironments, agentRegistry)
+  publishToUser = (message, userId) => ciRunManager.publish(message, userId)
+  // Watchdog агентов (п.1): раз в минуту ищем машины, пропавшие дольше порога.
+  const agentWatchdog = createAgentWatchdog({ db, registry: agentRegistry, publish: (m, uid) => ciRunManager.publish(m, uid), thresholdMs: opts.config.agentOfflineAlertMs })
+  const watchdogTimer = opts.config.agentOfflineAlertMs > 0 ? setInterval(() => { try { agentWatchdog.tick() } catch (error) { app.log.warn({ error }, 'agent watchdog tick failed') } }, 60_000) : null
+  watchdogTimer?.unref?.()
+  app.addHook('onClose', async () => { if (watchdogTimer) clearInterval(watchdogTimer); agentWatchdog.stop() })
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId))
   mergeRunManager.reconcile()
@@ -1527,16 +1640,18 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         return
       }
       // Аутентификация WS: токен в query (?token=…). Нет/неверный/заблокирован → закрываем.
-      const token = (request.query as { token?: string } | undefined)?.token
-      const user = resolveUser(db, token, sessionSecret)
+      // Токен в query (desktop/старые клиенты) либо cookie-сессия web (п.5): браузер шлёт cookie при upgrade сам.
+      const token = (request.query as { token?: string } | undefined)?.token ?? cookieToken(request.headers.cookie)
+      const user = resolveActiveUser(db, token, sessionSecret)
       if (!user) {
         socket.close()
         return
       }
       attachWs(socket, makeHandlers(user))
     })
-    scoped.get('/agent', { websocket: true }, (socket) => {
-      attachAgentWs(socket, db, agentRegistry)
+    scoped.get('/agent', { websocket: true }, (socket, request) => {
+      const fwd = String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim()
+      attachAgentWs(socket, db, agentRegistry, { ip: fwd || request.socket.remoteAddress || '' })
     })
   })
 

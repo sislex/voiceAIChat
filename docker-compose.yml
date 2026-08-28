@@ -57,6 +57,10 @@ services:
       # Пароль admin при первом создании БД (пустой том). Задаётся в shell/.env;
       # если БД уже создана, пароль меняется в UI (Настройки → Пользователи).
       VC_ADMIN_PASSWORD: ${VC_ADMIN_PASSWORD:-}
+      # Почта для регистрации с подтверждением email: задаются в .env на прод-сервере.
+      VC_SMTP_URL: ${VC_SMTP_URL:-}
+      VC_MAIL_FROM: ${VC_MAIL_FROM:-}
+      VC_PUBLIC_URL: ${VC_PUBLIC_URL:-}
       # Anthropic-compatible backend для внешних клиентов Claude Code.
       # Значения берутся из shell/.env; если URL пуст, gateway отвечает 503.
       VC_CLAUDE_GATEWAY_BACKEND: ${VC_CLAUDE_GATEWAY_BACKEND:-upstream}

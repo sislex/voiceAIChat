@@ -832,57 +832,20 @@ describe('ChatColumn — объявления для скринридера', ()
   })
 })
 
-describe('ChatColumn — кнопка «Использование БЗ»', () => {
-  it('без onOpenKbUsage кнопки нет', () => {
-    renderCol()
-    expect(screen.queryByTestId('kb-usage-open')).not.toBeInTheDocument()
-  })
-
-  it('кнопка открывает панель, число обращений — в aria-label', async () => {
-    const onOpen = vi.fn()
-    renderCol({ onOpenKbUsage: onOpen, kbUsageCount: 3 })
-    const btn = screen.getByTestId('kb-usage-open')
-    expect(btn).toHaveAccessibleName('Использование базы знаний — 3 новых обращения')
-    expect(screen.getByTestId('kb-usage-count')).toHaveTextContent('3')
-    await userEvent.click(btn)
-    expect(onOpen).toHaveBeenCalled()
-  })
-
-  it.each([[99, '99'], [100, '99+'], [128, '99+']] as const)(
-    'граница бейджа: %s новых → %s, точное число остаётся в подписи',
-    (count, visible) => {
-      renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: count })
-      expect(screen.getByTestId('kb-usage-count')).toHaveTextContent(visible)
-      expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName(
-        `Использование базы знаний — ${count} новых обращений`
-      )
+describe('ChatColumn — упрощённая основная шапка', () => {
+  it.each(['idle', 'listening', 'transcribing', 'thinking', 'speaking'] as const)(
+    'не показывает подпись VoiceState и элементы использования БЗ в состоянии %s',
+    (state) => {
+      renderCol({ state, aiLabel: 'Codex' })
+      const header = document.querySelector('.mhead')
+      expect(header).not.toHaveTextContent('Codex думает')
+      expect(header).not.toHaveTextContent('Озвучка')
+      expect(header?.querySelector('.badge')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('kb-usage-open')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('kb-usage-live')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
     }
   )
-
-  it('при нуле бейджа нет, доступное имя сообщает об отсутствии новых обращений', () => {
-    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 0 })
-    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
-    expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName(
-      'Использование базы знаний — новых обращений нет'
-    )
-  })
-
-  it('активное обращение показывает индикатор вместо счётчика', () => {
-    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 2, kbUsageActive: true })
-    expect(screen.getByTestId('kb-usage-live')).toBeInTheDocument()
-    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
-    expect(screen.getByTestId('kb-usage-open')).toHaveAccessibleName(/идёт обращение/)
-  })
-
-  it('при выключенной БЗ кнопка доступна и объясняет пустоту', async () => {
-    renderCol({ onOpenKbUsage: vi.fn(), kbUsageCount: 0, kbContextMode: 'off' })
-    const btn = screen.getByTestId('kb-usage-open')
-    expect(btn).toBeEnabled()
-    expect(btn).toHaveAccessibleName(/база знаний выключена для этого чата/)
-    expect(screen.queryByTestId('kb-usage-count')).not.toBeInTheDocument()
-    await expectNoViolations()
-    expectLabelledIconButtons()
-  })
 
   it('«Откатить правки» у ответа Make со снимком «До правок» (roadmap-2 п.2)', async () => {
     const onMakeRestore = vi.fn()
@@ -893,5 +856,13 @@ describe('ChatColumn — кнопка «Использование БЗ»', () =
     cleanup()
     render(<ChatColumn title="Тест" state="idle" messages={[msg]} liveSegments={[]} diarization={false} voiceBar={null} />)
     expect(screen.queryByRole('button', { name: 'Откатить правки' })).toBeNull()
+  })
+
+  it('шапка: селект «Навыки» для машины хода запускает навык через onRunSkill', async () => {
+    const onRunSkill = vi.fn()
+    const machine = { id: 'm1', name: 'Мак', online: true, createdAt: 1, lastSeen: null, policy: { allowedDirs: [], allowNetwork: true, allowWrite: true, denyPatterns: [], allowPatterns: [], skills: [{ name: 'логи', command: 'docker logs app' }] } }
+    renderCol({ agents: [machine], execTarget: 'm1', onRunSkill })
+    await userEvent.selectOptions(screen.getByLabelText('Навыки машины'), 'логи')
+    expect(onRunSkill).toHaveBeenCalledWith('m1', 'docker logs app')
   })
 })

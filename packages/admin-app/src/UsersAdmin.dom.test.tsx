@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { expectLabelledIconButtons, expectNoViolations } from './test/a11y'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { UsersAdmin, type UsersAdminProps } from './UsersAdmin'
 import type { AdminLlmEngine, AdminUserInfo } from '@shared/admin'
@@ -78,7 +78,7 @@ describe('UsersAdmin', () => {
     await userEvent.type(screen.getByLabelText('Логин нового пользователя'), 'carol')
     await userEvent.selectOptions(screen.getByLabelText('Роль нового пользователя'), 'developer')
     await userEvent.click(screen.getByRole('button', { name: 'Создать' }))
-    expect(p.onCreate).toHaveBeenCalledWith('carol', '', 'developer')
+    expect(p.onCreate).toHaveBeenCalledWith('carol', '', 'developer', true)
   })
 
   it('у обычного пользователя есть блок/удаление', () => {
@@ -184,11 +184,107 @@ describe('UsersAdmin — доступность', () => {
     expectLabelledIconButtons()
   })
 
+  it('строка диска с данными: тревога при свободном месте меньше 10 ГБ (roadmap-4 п.40)', () => {
+    renderAdmin({ isAdmin: true, makeStats: { disk: { totalBytes: 100 * 1024 ** 3, freeBytes: 4 * 1024 ** 3, alert: true }, projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, userLimitBytes: 4 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3.5 * 1048576, published: 1, views: 7 }], top: [] } })
+    const disk = screen.getByTestId('admin-disk')
+    expect(disk).toHaveAttribute('role', 'alert')
+    expect(disk).toHaveTextContent('меньше 10 ГБ')
+  })
+
   it('секция «Make-проекты» показывает сводку и таблицу по пользователям (п.38)', () => {
-    renderAdmin({ isAdmin: true, makeStats: { projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3 * 1048576, published: 1, views: 7 }], top: [] } })
+    renderAdmin({ isAdmin: true, makeStats: { projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, userLimitBytes: 4 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3.5 * 1048576, published: 1, views: 7 }], top: [] } })
     const sec = screen.getByTestId('make-stats')
     expect(sec).toHaveTextContent('Проектов: 3')
     expect(sec).toHaveTextContent('5.0 МБ')
     expect(within(sec).getByText('alice')).toBeInTheDocument()
+    expect(within(sec).getByTestId('make-user-quota-warn')).toHaveTextContent('88% квоты')
+  })
+})
+
+describe('UsersAdmin — сессии пользователя (auth-roadmap п.4)', () => {
+  it('раскрытие «Сессии» запрашивает список; «Завершить» отзывает по sid', async () => {
+    const onLoadSessions = vi.fn()
+    const onRevokeSession = vi.fn()
+    renderAdmin({ isAdmin: true, selected: 'bob', sessions: [{ sid: 's1', user: 'bob', createdAt: 1, lastSeen: 2, expiresAt: 9, ip: '10.0.0.1', userAgent: 'Chrome/1' }], onLoadSessions, onRevokeSession })
+    const details = screen.getByTestId('admin-sessions')
+    await userEvent.click(within(details).getByText(/Сессии \(1\)/))
+    await waitFor(() => expect(onLoadSessions).toHaveBeenCalled())
+    await userEvent.click(within(details).getByRole('button', { name: 'Завершить' }))
+    expect(onRevokeSession).toHaveBeenCalledWith('s1')
+  })
+})
+
+describe('UsersAdmin — журнал безопасности (auth-roadmap п.7)', () => {
+  it('вкладка «Безопасность» запрашивает события и показывает таблицу с подписями', async () => {
+    const onLoadSecurity = vi.fn()
+    renderAdmin({ isAdmin: true, selected: 'bob', onLoadSecurity, security: [
+      { id: 2, at: 2, user: 'bob', type: 'login_failed', ip: '10.0.0.2', userAgent: 'Firefox/1', details: 'неверный пароль' },
+      { id: 1, at: 1, user: 'bob', type: 'login', ip: '10.0.0.1', userAgent: 'Chrome/1', details: '' }
+    ] })
+    await userEvent.click(screen.getByRole('tab', { name: 'Безопасность' }))
+    expect(onLoadSecurity).toHaveBeenCalled()
+    const sec = screen.getByTestId('admin-security')
+    expect(within(sec).getByText('Неверный пароль')).toBeInTheDocument()
+    expect(within(sec).getByText('Вход')).toBeInTheDocument()
+    expect(within(sec).getByText('10.0.0.2')).toBeInTheDocument()
+  })
+})
+
+describe('UsersAdmin — инвайт-ссылки (auth-roadmap п.8)', () => {
+  it('раскрытие загружает список, форма создаёт инвайт с ролью/сроком/лимитом, «Отозвать» удаляет', async () => {
+    const onLoadInvites = vi.fn(); const onCreateInvite = vi.fn(); const onDeleteInvite = vi.fn()
+    renderAdmin({ isAdmin: true, onLoadInvites, onCreateInvite, onDeleteInvite, invites: [{ token: 'abc', role: 'tester', createdBy: 'admin', createdAt: 1, expiresAt: 9_999_999_999_999, maxUses: 2, uses: 0, note: 'QA' }] })
+    const box = screen.getByTestId('admin-invites')
+    await userEvent.click(within(box).getByText(/Инвайт-ссылки/))
+    await waitFor(() => expect(onLoadInvites).toHaveBeenCalled())
+    await userEvent.selectOptions(within(box).getByLabelText('Роль по инвайту'), 'observer')
+    await userEvent.type(within(box).getByLabelText('Заметка к инвайту'), 'гость')
+    await userEvent.click(within(box).getByRole('button', { name: 'Создать ссылку' }))
+    expect(onCreateInvite).toHaveBeenCalledWith({ role: 'observer', ttlHours: 72, maxUses: 1, note: 'гость' })
+    expect(within(box).getByText(/#\/invite\/abc/)).toBeInTheDocument()
+    await userEvent.click(within(box).getByRole('button', { name: 'Отозвать' }))
+    expect(onDeleteInvite).toHaveBeenCalledWith('abc')
+  })
+})
+
+describe('UsersAdmin — временный пароль и код сброса (auth-roadmap пп.10–11)', () => {
+  it('создание передаёт флаг временного пароля; «Код сброса» показывает выданный код', async () => {
+    const onCreate = vi.fn()
+    const onResetCode = vi.fn(async () => ({ code: 'ABCD1234', expiresAt: 9_999_999_999_999 }))
+    renderAdmin({ isAdmin: true, onCreate, onResetCode, selected: 'bob' })
+    await userEvent.type(screen.getByLabelText('Логин нового пользователя'), 'newbie')
+    await userEvent.type(screen.getByLabelText('Пароль нового пользователя'), 'newbie-long-password')
+    await userEvent.click(screen.getByRole('button', { name: 'Создать' }))
+    expect(onCreate).toHaveBeenCalledWith('newbie', 'newbie-long-password', 'developer', true)
+    await userEvent.click(screen.getByRole('button', { name: 'Код сброса' }))
+    expect(await screen.findByTestId('admin-reset-code')).toHaveTextContent('ABCD1234')
+  })
+})
+
+describe('UsersAdmin — лимит LLM (auth-roadmap п.17)', () => {
+  it('поле лимита сохраняет число, пустое — снимает лимит', async () => {
+    const onSetLlmLimit = vi.fn()
+    renderAdmin({ isAdmin: true, selected: 'bob', onSetLlmLimit })
+    const box = screen.getByTestId('admin-llm-limit')
+    await userEvent.type(within(box).getByLabelText('Лимит LLM в месяц, USD'), '12')
+    await userEvent.click(within(box).getByRole('button', { name: 'Сохранить' }))
+    expect(onSetLlmLimit).toHaveBeenCalledWith('bob', 12)
+    await userEvent.click(within(box).getByRole('button', { name: 'Сохранить' }))
+    expect(onSetLlmLimit).toHaveBeenLastCalledWith('bob', null)
+  })
+})
+
+describe('UsersAdmin — открытая регистрация', () => {
+  it('раскрытие запрашивает настройку; галка и роль зовут onSetSignup; без SMTP — предупреждение', async () => {
+    const onLoadSignup = vi.fn(); const onSetSignup = vi.fn()
+    renderAdmin({ isAdmin: true, onLoadSignup, onSetSignup, signup: { enabled: false, role: 'developer', mailConfigured: false } })
+    const box = screen.getByTestId('admin-signup')
+    await userEvent.click(within(box).getByText(/Открытая регистрация/))
+    await waitFor(() => expect(onLoadSignup).toHaveBeenCalled())
+    await userEvent.click(within(box).getByLabelText('Разрешить регистрацию по email'))
+    expect(onSetSignup).toHaveBeenCalledWith({ enabled: true })
+    await userEvent.selectOptions(within(box).getByLabelText('Роль новых пользователей'), 'tester')
+    expect(onSetSignup).toHaveBeenCalledWith({ role: 'tester' })
+    expect(box).toHaveTextContent('SMTP не настроен')
   })
 })

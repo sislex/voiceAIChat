@@ -99,7 +99,13 @@ export interface AppRuntime {
   /** Проверка сессии и, при успехе, защищённый bootstrap. Идемпотентен. */
   start(preferredChatId?: string | null): Promise<void>
   /** Вход по логину/паролю: успех → тот же защищённый bootstrap. */
-  login(name: string, password: string): Promise<void>
+  login(name: string, password: string, remember?: boolean): Promise<void>
+  /** Второй шаг входа — код TOTP (auth-roadmap п.6). */
+  loginCode(code: string): Promise<void>
+  cancelTwoFactor(): void
+  /** Сброс пароля кодом администратора (п.10) и обновление пользователя после смены пароля (п.11). */
+  resetPassword(name: string, code: string, password: string): Promise<void>
+  refreshUser(): Promise<void>
   /** Выход: очистка всех пользовательских доменов и закрытие подписок. */
   logout(): Promise<void>
   /** Открытие админки: ленивый домен, обычный bootstrap его не грузит. */
@@ -347,11 +353,23 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       if (!user) return // требуется вход — защищённый bootstrap не запускаем
       await bootstrap(preferredChatId ?? null)
     },
-    async login(name, password) {
-      const user: SessionUser | null = await session.actions.login(name, password)
+    async login(name, password, remember = true) {
+      const user: SessionUser | null = await session.actions.login(name, password, remember)
       if (!user) return
       await bootstrap(null)
     },
+    async loginCode(code) {
+      const user: SessionUser | null = await session.actions.loginCode(code)
+      if (!user) return
+      await bootstrap(null)
+    },
+    cancelTwoFactor() { session.actions.cancelTwoFactor() },
+    async resetPassword(name, code, password) {
+      const user: SessionUser | null = await session.actions.resetPassword(name, code, password)
+      if (!user) return
+      await bootstrap(null)
+    },
+    async refreshUser() { await session.actions.refreshUser() },
     async logout() {
       await session.actions.logout()
     },

@@ -19,13 +19,14 @@ import { SettingsPage } from './SettingsPage'
 import { ProjectMachinesSettings } from './ProjectMachinesSettings'
 import { ProjectMachineGitAccess } from './ProjectMachineGitAccess'
 
+import { DEFAULT_PROJECT_COMMAND_POLICY, type ProjectCommandPolicy } from '@shared/commandPolicy'
 export interface ProjectSettingsProps {
   detail: ProjectDetail
   agents: AgentInfo[]
   currentUsername?: string
   llmAccess?: UserLlmAccess[]
   llmEngines?: LlmEngineOption[]
-  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; testUsers?: ProjectTestUser[]; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null }) => void
+  onUpdate: (id: string, fields: { name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; testUsers?: ProjectTestUser[]; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null; commandPolicy?: ProjectCommandPolicy }) => void
 
   onDelete: (id: string) => void
   onAddMember: (id: string, username: string) => void
@@ -33,6 +34,8 @@ export interface ProjectSettingsProps {
   onRemoveMember: (id: string, username: string) => void
   onLinkMachine: (id: string, agentId: string) => void | Promise<void>
   onUnlinkMachine: (id: string, agentId: string) => void | Promise<void>
+  /** Уровень доступа предоставленной проекту машины (п.18). */
+  onSetMachineShareAccess?: (id: string, agentId: string, access: 'full' | 'read') => void | Promise<void>
   onConfigureMachineStorage?: (id: string, agentId: string, storageId: string, directories?: ProjectMachineDirectoryAssignments) => void | Promise<void>
   onResetMachineDirectory?: (id: string, agentId: string, kind: ProjectMachineDirectoryKind) => void | Promise<void>
   onSetMachinePath: (id: string, agentId: string, path: string) => void | Promise<void>
@@ -309,6 +312,17 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
 
       {activeTab === 'workflow' && <div className="proj-section feature-policy">
         <p className="proj-field-label">Workflow фич</p>
+        {(() => { const cp = detail.commandPolicy ?? DEFAULT_PROJECT_COMMAND_POLICY; return (
+        <fieldset className="pset-cmdpolicy" data-testid="project-command-policy">
+          <legend>Команды на машинах проекта</legend>
+          <label>Запрещённые паттерны (по одному в строке)
+            <textarea className="sel" rows={2} disabled={!isOwner} aria-label="Запрещённые паттерны команд проекта" defaultValue={cp.denyPatterns.join('\n')} placeholder={'rm\\s+-rf\ndocker system prune'} onBlur={(e) => props.onUpdate(detail.id, { commandPolicy: { ...cp, denyPatterns: e.target.value.split('\n').map((v) => v.trim()).filter(Boolean) } })} />
+          </label>
+          <label>Разрешённые паттерны (если заданы — только они)
+            <textarea className="sel" rows={2} disabled={!isOwner} aria-label="Разрешённые паттерны команд проекта" defaultValue={cp.allowPatterns.join('\n')} placeholder={'^git \n^npm '} onBlur={(e) => props.onUpdate(detail.id, { commandPolicy: { ...cp, allowPatterns: e.target.value.split('\n').map((v) => v.trim()).filter(Boolean) } })} />
+          </label>
+          <label className="pset-check"><input type="checkbox" disabled={!isOwner} aria-label="Подтверждать опасные команды в чате" checked={cp.confirmDangerous} onChange={(e) => props.onUpdate(detail.id, { commandPolicy: { ...cp, confirmDangerous: e.target.checked } })} /> Опасные команды (rm -rf, force-push, DROP …) модель выполняет только после подтверждения в чате</label>
+        </fieldset>) })()}
         <label>Коммиты<select className="sel" disabled={!isOwner} value={detail.commitPolicy} onChange={(e) => props.onUpdate(detail.id, { commitPolicy: e.target.value as ProjectSummary['commitPolicy'] })}><option value="agent_commits">Агент создаёт коммиты</option><option value="final_system_commit">Итоговый системный коммит</option><option value="manual_user_confirmation">Подтверждать коммит</option></select></label>
         <label>Merge<select className="sel" disabled={!isOwner} value={detail.mergeTransport} onChange={(e) => props.onUpdate(detail.id, { mergeTransport: e.target.value as ProjectSummary['mergeTransport'] })}><option value="local">Локальный merge commit</option><option value="github_pull_request">GitHub Pull Request</option></select></label>
         <label>План агента<select className="sel" disabled={!isOwner} value={detail.agentPlanApprovalMode} onChange={(e) => props.onUpdate(detail.id, { agentPlanApprovalMode: e.target.value as ProjectSummary['agentPlanApprovalMode'] })}><option value="manual">Подтверждать</option><option value="automatic">Запускать автоматически</option></select></label>
@@ -433,6 +447,7 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         machines={detail.machines}
         agents={agents}
         onShare={(id, agentId, shared) => shared ? props.onLinkMachine(id, agentId) : props.onUnlinkMachine(id, agentId)}
+        {...(props.onSetMachineShareAccess ? { onSetShareAccess: props.onSetMachineShareAccess } : {})}
         onSave={(id, agentId, field, value, machine) => {
           if (field === 'sshHost' || field === 'sshUser') return props.onSetMachineSsh(id, agentId, field === 'sshHost' ? value : machine.sshHost ?? '', field === 'sshUser' ? value : machine.sshUser ?? '')
           const directoryKind = field === 'path' ? 'projectWorkdir' : field

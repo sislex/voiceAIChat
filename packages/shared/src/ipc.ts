@@ -1,7 +1,8 @@
 // Единый контракт IPC между main и renderer.
 // И preload, и main строятся от этих типов — рассинхрон ловится компилятором.
 
-import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState } from './make'
+import type { MakeCheckIssue, MakeFileContent, MakeImportMode, MakeProjectState, MakeSearchMatch, MakeSnapshotDiff, MakeStoryFile, MakeStoryShot, MakeLibraryItem, MakeUsage, MakeCleanupOptions, MakeCleanupResult, MakeComment, MakeSharedState, MakePresenceClient, MakeShareRole, MakeTestFile, MakeProjectNotes } from './make'
+import type { MakeReplacePreviewLine } from './makeSearch'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
@@ -25,8 +26,7 @@ import type {
   TurnMeta,
   TurnUsage,
   WhisperModel,
-  WhisperModelInfo
-} from './types'
+  WhisperModelInfo, SessionInfo, LoginChallenge, UserRole } from './types'
 import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities, TurnTarget, ActiveTurn } from './protocol'
 import type { GitAccessDiagnostics, GitAccessResult } from './gitAccess'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
@@ -37,13 +37,12 @@ import type {
   LlmEngineOption,
   AdminUserInfo,
   UsageReport,
-  UsageUnit
-} from './admin'
+  UsageUnit, SecurityEvent, InviteInfo, SignupConfig } from './admin'
 import type { McpServer } from './mcp'
 import type { LoginStatusMap } from './auth'
 import type { CcProject, CcSession, CcItem } from './cc'
 import type { CxProject, CxSession, CxItem } from './codexSessions'
-import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult } from './agentProtocol'
+import type { AgentCreated, AgentExecResult, AgentInfo, AgentPolicy, FsResult, FsCopyResult, MachineCommandRecord, MachineCommandSource, MachineCommandEvent, MachineStatusEvent, BatchExecResult } from './agentProtocol'
 import type {
   Board,
   KanbanColumn,
@@ -55,7 +54,7 @@ import type {
   TaskPriority,
   WorkItemDefaultSkills,
   MachineStorage,
-  ChatStorageBinding,
+  ChatStorageBinding, ChatStorageView,
   ProjectMachineDirectoryAssignments,
   ProjectMachineDirectoryKind
 } from './projects'
@@ -144,34 +143,43 @@ export interface IpcInvokeMap {
   'make:restore': { arg: { conversationId: string; snapshotId: string }; result: MakeProjectState }
   'make:reset': { arg: { conversationId: string }; result: MakeProjectState }
   /** snapshotId — закрепить публикацию за снимком; null/отсутствует — публиковать текущее состояние. */
-  'make:publish': { arg: { conversationId: string; snapshotId?: string | null; slug?: string | null; password?: string | null }; result: MakeProjectState }
+  'make:publish': { arg: { conversationId: string; snapshotId?: string | null; slug?: string | null; password?: string | null; allowComments?: boolean }; result: MakeProjectState }
   'make:unpublish': { arg: { conversationId: string }; result: MakeProjectState }
   'make:check': { arg: { conversationId: string }; result: { issues: MakeCheckIssue[] } }
   'make:template': { arg: { conversationId: string; templateId: string }; result: MakeProjectState }
   /** Загрузка бинарного файла (картинка, шрифт) — содержимое в base64. */
   'make:upload': { arg: { conversationId: string; path: string; dataBase64: string }; result: MakeProjectState }
-  'make:search': { arg: { conversationId: string; query: string }; result: { matches: MakeSearchMatch[] } }
+  'make:search': { arg: { conversationId: string; query: string; regex?: boolean; matchCase?: boolean }; result: { matches: MakeSearchMatch[] } }
   'make:stories': { arg: { conversationId: string }; result: { files: MakeStoryFile[] } }
   /** Замена по всем текстовым файлам проекта; перед заменой — снимок. */
-  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean }; result: { files: number; replacements: number; state: MakeProjectState } }
+  /** `dryRun` — только предпросмотр (`preview`), файлы не меняются. `regex` — запрос как регулярное выражение с `$1`-подстановками. */
+  'make:replace': { arg: { conversationId: string; query: string; replacement: string; matchCase?: boolean; regex?: boolean; dryRun?: boolean }; result: { files: number; replacements: number; state: MakeProjectState; preview?: MakeReplacePreviewLine[] } }
   'make:snapshotDiff': { arg: { conversationId: string; snapshotId: string }; result: MakeSnapshotDiff }
   /** Текст файла из снимка — для diff-вью. */
   'make:library': { arg: Record<string, never>; result: { items: MakeLibraryItem[] } }
   /** Сохранить файлы проекта в библиотеку под именем. */
   'make:libraryExport': { arg: { conversationId: string; name: string; paths: string[] }; result: { item: MakeLibraryItem } }
   /** Вставить компонент из библиотеки в проект (существующие файлы перезаписываются). */
-  'make:libraryInsert': { arg: { conversationId: string; slug: string }; result: MakeProjectState }
+  /** `autoImported` — компоненты, import которых добавлен в точку входа (roadmap-4 п.13). */
+  'make:libraryInsert': { arg: { conversationId: string; slug: string }; result: { state: MakeProjectState; mergedTokens: number; autoImported: string[] } }
   'make:libraryRemove': { arg: { slug: string }; result: { items: MakeLibraryItem[] } }
   'make:shots': { arg: { conversationId: string }; result: { shots: MakeStoryShot[] } }
+  'make:tests': { arg: { conversationId: string }; result: { files: MakeTestFile[] } }
+  'make:notes': { arg: { conversationId: string }; result: MakeProjectNotes }
+  'make:setNotes': { arg: { conversationId: string } & Partial<MakeProjectNotes>; result: MakeProjectNotes }
   'make:usage': { arg: { conversationId: string }; result: MakeUsage }
   'make:share': { arg: { conversationId: string }; result: MakeProjectState }
   'make:unshare': { arg: { conversationId: string }; result: MakeProjectState }
+  /** Именной доступ (roadmap-3 п.6): role null — убрать. */
+  'make:shareGrant': { arg: { conversationId: string; user: string; role: MakeShareRole | null }; result: MakeProjectState }
   'make:shared': { arg: { token: string }; result: MakeSharedState }
   'make:sharedFile': { arg: { token: string; path: string }; result: MakeFileContent }
   'make:sharedStories': { arg: { token: string }; result: { files: MakeStoryFile[] } }
   'make:comments': { arg: { conversationId: string }; result: { comments: MakeComment[] } }
+  /** Heartbeat presence (каждые ~15 с и при смене файла/грязности); ответ — все живые вкладки. */
+  'make:presence': { arg: { conversationId: string; clientId: string; path: string | null; editing: boolean; leave?: boolean }; result: { clients: MakePresenceClient[] } }
   'make:commentAdd': { arg: { conversationId: string; selector: string; elementLabel: string; text: string }; result: { comments: MakeComment[] } }
-  'make:commentUpdate': { arg: { conversationId: string; commentId: string; resolved?: boolean; text?: string }; result: { comments: MakeComment[] } }
+  'make:commentUpdate': { arg: { conversationId: string; commentId: string; resolved?: boolean; text?: string; status?: 'pending' | 'approved' }; result: { comments: MakeComment[] } }
   'make:commentRemove': { arg: { conversationId: string; commentId: string }; result: { comments: MakeComment[] } }
   'make:cleanup': { arg: { conversationId: string } & MakeCleanupOptions; result: MakeCleanupResult }
   'make:shot': { arg: { conversationId: string; file: string; story: string; dataBase64: string }; result: { shots: MakeStoryShot[] } }
@@ -250,7 +258,7 @@ export interface IpcInvokeMap {
     }
     result: Conversation
   }
-  'conversations:getStorage': { arg: { id: string }; result: ChatStorageBinding | null }
+  'conversations:getStorage': { arg: { id: string }; result: ChatStorageView | null }
   'conversations:setStorage': { arg: { id: string; machineId: string; storageId: string; relativePath?: string }; result: ChatStorageBinding }
   'conversations:delete': { arg: { id: string }; result: void }
   'messages:add': { arg: AddMessageArgs; result: Message }
@@ -290,9 +298,17 @@ export interface IpcInvokeMap {
   /** Задать политику возможностей машины. */
   'agents:setPolicy': { arg: { id: string; policy: AgentPolicy }; result: void }
   /** Перевыпустить токен (старый перестаёт работать); токен возвращается один раз. */
-  'agents:regenerateToken': { arg: { id: string }; result: { token: string } }
+  'agents:regenerateToken': { arg: { id: string; ttlDays?: number }; result: { token: string } }
+  /** Отозвать токен машины: агент отключается, новый токен — через перевыпуск (п.11). */
+  'agents:revokeToken': { arg: { id: string }; result: { ok: true } }
+  /** Привязать токен к IP последнего подключения. */
+  'agents:setPinIp': { arg: { id: string; pin: boolean }; result: { ok: true } }
   /** Обновить агента на машине: сервер выполняет на ней команду установки. */
   'agents:update': { arg: { id: string }; result: { ok: true; os: string } }
+  /** Одна команда на несколько машин со сводкой (machines-roadmap п.15). */
+  'agents:execBatch': { arg: { machineIds: string[]; command: string; projectId?: string }; result: BatchExecResult }
+  /** Журнал команд машины: новые сверху; q — подстрока команды, source — фильтр источника. */
+  'agents:commands': { arg: { id: string; limit?: number; q?: string; source?: MachineCommandSource }; result: MachineCommandRecord[] }
   /** Абсолютный URL артефакта для скачивания (десктоп/агент-приложение/скрипт). */
   'downloads:url': { arg: { kind: 'desktop' | 'agent-app' | 'agent-script' }; result: string }
   /** Строка подключения (адрес+токен) для настройки агента (приложение и скрипт). */
@@ -324,12 +340,36 @@ export interface IpcInvokeMap {
   'cx:resume': { arg: { id: string }; result: ConversationWithMessages }
   // --- Админ-страница пользователей (только admin) ---
   'admin:users': { arg: void; result: AdminUserInfo[] }
+  /** Сессии пользователя и их отзыв администратором (auth-roadmap п.4). */
+  'admin:userSessions': { arg: { name: string }; result: { sessions: SessionInfo[] } }
+  'admin:revokeSession': { arg: { sid: string }; result: { ok: true } }
+  /** Журнал безопасности (auth-roadmap п.7). */
+  'admin:securityEvents': { arg: { user?: string; limit?: number }; result: { events: SecurityEvent[] } }
+  /** Инвайты (auth-roadmap п.8). */
+  'admin:invites': { arg: void; result: { invites: InviteInfo[] } }
+  'admin:inviteCreate': { arg: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }; result: InviteInfo }
+  'admin:inviteDelete': { arg: { token: string }; result: { ok: true } }
+  /** Одноразовый код сброса пароля (auth-roadmap п.10). */
+  'admin:resetCode': { arg: { name: string }; result: { code: string; expiresAt: number } }
   'admin:usageSummary': { arg: { from?: number; to?: number } | void; result: import('./admin').UserUsageSummary[] }
   'admin:makeStats': { arg: void; result: import('./admin').AdminMakeStats }
+  /** Обновить агента на машине любого пользователя (machines-roadmap п.16). */
+  'admin:updateMachine': { arg: { id: string }; result: { ok: true; os: string } }
+  /** Метрики машин для дашборда админа (п.5). */
+  'admin:machineStats': { arg: void; result: import('./admin').AdminMachineStats }
+  'admin:revokeMachineToken': { arg: { id: string }; result: { ok: true } }
+  /** Ролевые правила команд (п.10). */
+  'admin:commandPolicy': { arg: void; result: { roles: import('./commandPolicy').RoleCommandPolicies } }
+  'admin:setCommandPolicy': { arg: { roles: import('./commandPolicy').RoleCommandPolicies }; result: { roles: import('./commandPolicy').RoleCommandPolicies } }
   'admin:llmAccess': { arg: { name: string }; result: import('./llmAccess').UserLlmAccess[] }
   'admin:saveLlmAccess': { arg: { name: string; access: import('./llmAccess').UserLlmAccess[] }; result: import('./llmAccess').UserLlmAccess[] }
-  'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole }; result: AdminUserInfo }
+  'admin:createUser': { arg: { name: string; password: string; role: import('./types').UserRole; mustChangePassword?: boolean }; result: AdminUserInfo }
   'admin:updateUserRole': { arg: { name: string; role: import('./types').UserRole }; result: AdminUserInfo }
+  /** Месячный лимит расхода LLM (auth-roadmap п.17); null — без лимита. */
+  'admin:setUserLlmLimit': { arg: { name: string; llmLimitUsd: number | null }; result: AdminUserInfo }
+  /** Открытая регистрация: настройка. */
+  'admin:signupConfig': { arg: void; result: SignupConfig }
+  'admin:setSignupConfig': { arg: { enabled?: boolean; role?: UserRole }; result: SignupConfig }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
@@ -401,6 +441,8 @@ export interface IpcInvokeMap {
   /** Привязать/отвязать машину-агента к проекту (только владелец). */
   'projects:linkMachine': { arg: { id: string; agentId: string; storageId?: string }; result: ProjectDetail }
   'projects:unlinkMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
+  /** Уровень доступа предоставленной проекту машины (machines-roadmap п.18); только владелец машины. */
+  'projects:setMachineShareAccess': { arg: { id: string; agentId: string; access: import('./agentProtocol').MachineShareAccess }; result: ProjectDetail }
   'projects:configureMachineStorage': { arg: { id: string; agentId: string; storageId: string; directories?: ProjectMachineDirectoryAssignments }; result: ProjectDetail }
   'projects:resetMachineDirectory': { arg: { id: string; agentId: string; kind: ProjectMachineDirectoryKind }; result: ProjectDetail }
   /** Задать папку проекта на конкретной машине (только владелец). */
@@ -705,6 +747,10 @@ export interface RendererRealtimeBridge {
   connected(): boolean
   /** Invalidation-only событие; полный снимок читается по HTTP. */
   onTaskPreparationNotificationsInvalidated(cb: (m: { projectId: string }) => void): () => void
+  /** Долгая команда машины завершилась — тост/уведомление (machines-roadmap п.17). */
+  onMachineCommand?(cb: (event: MachineCommandEvent) => void): () => void
+  /** Watchdog: машина пропала/вернулась (machines-roadmap п.1). */
+  onMachineStatus?(cb: (event: MachineStatusEvent) => void): () => void
 }
 
 export interface RendererBoardBridge {
@@ -772,9 +818,31 @@ export interface RendererBrowserBridge {
 }
 
 export interface RendererSessionBridge {
-  login(creds: { name: string; password: string }): Promise<SessionUser | null>
+  /** Вход: пользователь, `null` при отказе или вызов второго фактора (auth-roadmap п.6) — тогда нужен `login2fa`. */
+  login(creds: { name: string; password: string; remember?: boolean }): Promise<SessionUser | LoginChallenge | null>
+  login2fa?(input: { ticket: string; code: string }): Promise<SessionUser | null>
+  /** Уведомления безопасности — входы с нового устройства (auth-roadmap п.16): получить непросмотренные и отметить. */
+  securityNotices?(): Promise<Array<{ at: number; ip: string; userAgent: string }>>
+  securityNoticesSeen?(): Promise<void>
+  /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
+  resetPassword?(input: { name: string; code: string; password: string }): Promise<{ ok: true } | { error: string }>
+  changePassword?(input: { current: string; next: string }): Promise<{ ok: true } | { error: string }>
+  /** Открытая регистрация с подтверждением email (web). */
+  signupEnabled?(): Promise<boolean>
+  signup?(input: { name: string; email: string; password: string }): Promise<{ ok: true; mailSent: boolean } | { error: string }>
+  signupResend?(email: string): Promise<void>
+  verifyEmail?(token: string): Promise<{ ok: true } | { error: string }>
+  /** Саморегистрация по инвайту (auth-roadmap п.8, web). */
+  inviteInfo?(token: string): Promise<{ role: string; expiresAt: number; note: string } | null>
+  register?(input: { token: string; name: string; password: string }): Promise<{ ok: true } | { error: string }>
+  /** Настройка второго фактора (web): секрет/ссылка, включить по коду, выключить по коду, статус. */
+  twoFactor?: { status(): Promise<{ enabled: boolean }>; setup(): Promise<{ secret: string; otpauth: string }>; enable(code: string): Promise<void>; disable(code: string): Promise<void> }
   me(): Promise<SessionUser | null>
   logout(): Promise<void>
+  /** Сессии пользователя (auth-roadmap п.4); нет в desktop-мосте. */
+  sessions?(): Promise<SessionInfo[]>
+  logoutAll?(): Promise<void>
+  revokeSession?(sid: string): Promise<void>
   /**
    * Выпускает HttpOnly-cookie превью из действующего Bearer-токена. Нужен сессиям,
    * восстановленным без повторного login (токен из localStorage, перезапуск браузера):
@@ -792,6 +860,10 @@ export interface RendererFsBridge {
   read(agentId: string, path: string, projectId?: string): Promise<FsResult>
   write(agentId: string, path: string, dataBase64: string, projectId?: string): Promise<FsResult>
   remove(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  /** Корзина машины (агент ≥ 0.15.0): результат содержит trashedPath для отката. */
+  trash?(agentId: string, path: string, projectId?: string): Promise<FsResult>
+  /** Скопировать файл на другую машину (targetDir пуст — `ChatAI/incoming` целевой машины). */
+  copyTo?(agentId: string, path: string, targetAgentId: string, targetDir?: string, projectId?: string): Promise<FsCopyResult>
   rename(agentId: string, from: string, to: string, projectId?: string): Promise<FsResult>
   mkdir(agentId: string, path: string, projectId?: string): Promise<FsResult>
   /**
@@ -820,6 +892,8 @@ export interface RendererFilesBridge {
 /** Мост Make (web): сервер сообщает об изменении файлов проекта — панель обновляет превью и дерево. */
 export interface RendererMakeBridge {
   onChanged(cb: (m: { conversationId: string; rev: number; paths: string[] }) => void): () => void
+  /** Presence вкладок (roadmap-2 п.14); у старых хостов может отсутствовать. */
+  onPresence?(cb: (m: { conversationId: string; clients: MakePresenceClient[] }) => void): () => void
 }
 
 export interface RendererPtyBridge {
@@ -928,10 +1002,12 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:cleanup',
   'make:share',
   'make:unshare',
+  'make:shareGrant',
   'make:shared',
   'make:sharedFile',
   'make:sharedStories',
   'make:comments',
+  'make:presence',
   'make:commentAdd',
   'make:commentUpdate',
   'make:commentRemove',
@@ -947,6 +1023,9 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'make:libraryInsert',
   'make:libraryRemove',
   'make:shots',
+  'make:tests',
+  'make:notes',
+  'make:setNotes',
   'make:shot',
   'make:snapshotFile',
   'make:restoreFile',
@@ -989,7 +1068,11 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'agents:delete',
   'agents:setPolicy',
   'agents:regenerateToken',
+  'agents:revokeToken',
+  'agents:setPinIp',
   'agents:update',
+  'agents:commands',
+  'agents:execBatch',
   'downloads:url',
   'agents:connectionString',
   'cc:projects',
@@ -1001,7 +1084,22 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'cx:transcript',
   'cx:resume',
   'admin:users',
+  'admin:userSessions',
+  'admin:revokeSession',
+  'admin:securityEvents',
+  'admin:invites',
+  'admin:inviteCreate',
+  'admin:inviteDelete',
+  'admin:resetCode',
+  'admin:setUserLlmLimit',
+  'admin:signupConfig',
+  'admin:setSignupConfig',
   'admin:makeStats',
+  'admin:updateMachine',
+  'admin:machineStats',
+  'admin:revokeMachineToken',
+  'admin:commandPolicy',
+  'admin:setCommandPolicy',
   'admin:llmAccess',
   'admin:saveLlmAccess',
   'admin:createUser',
@@ -1035,6 +1133,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:removeMember',
   'projects:linkMachine',
   'projects:unlinkMachine',
+  'projects:setMachineShareAccess',
   'projects:configureMachineStorage',
   'projects:resetMachineDirectory',
   'projects:setMachinePath',

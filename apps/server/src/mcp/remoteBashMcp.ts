@@ -17,6 +17,7 @@ import { bashFileReadRejection, evaluateBashFileRead } from './bashFileRead.js'
 
 export const REMOTE_BASH_MCP_PATH = '/mcp/remote-bash'
 
+import { commandGateMessage, type CommandGate } from '../agents/commandGate.js'
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 300_000
 const DEFAULT_READ_LIMIT = 400
@@ -208,7 +209,8 @@ export function registerRemoteBashMcp(
   secret: string,
   limits?: () => ToolOutputLimits,
   projectMachines?: (projectId: string) => RemoteMcpMachine[],
-  fileContexts?: (token: string) => RemoteImageAttachment[] | undefined
+  fileContexts?: (token: string) => RemoteImageAttachment[] | undefined,
+  commandGate?: CommandGate
 ): void {
   // Тело читает сам транспорт, поэтому маршрут живёт в своей области видимости
   // с парсером-пустышкой: Fastify отдаёт управление, не трогая поток.
@@ -224,7 +226,7 @@ export function registerRemoteBashMcp(
     scope.addContentTypeParser('*', (_req, _payload, done) => {
       done(null, undefined)
     })
-    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; ro?: string; project?: string; files?: string } }>(
+    scope.post<{ Querystring: { agent?: string; k?: string; cwd?: string; ro?: string; project?: string; files?: string; conv?: string } }>(
       REMOTE_BASH_MCP_PATH,
       async (req, reply) => {
         if (req.query.k !== secret) return reply.code(403).send({ error: 'forbidden' })
@@ -319,11 +321,21 @@ export function registerRemoteBashMcp(
                 .number()
                 .optional()
                 .describe('Таймаут в мс (по умолчанию 120000, максимум 300000)'),
+              confirm: z
+                .boolean()
+                .optional()
+                .describe('Только после явного согласия пользователя в чате: выполнить опасную команду (rm -rf, force-push, DROP …)'),
               ...machineParam
             }
           },
           async (args) => {
             const { command, timeout_ms } = args
+            const confirm = (args as { confirm?: boolean }).confirm === true
+            // Политика проекта/роли и подтверждение опасных команд (п.10) — до любого exec.
+            if (commandGate) {
+              const verdict = commandGate({ command, projectId: req.query.project ?? null, source: 'chat', confirm })
+              if (!verdict.allowed) return { content: [{ type: 'text' as const, text: commandGateMessage(verdict) }], isError: true }
+            }
             // `machine` есть в схеме только у хода с проектом (условный спред не
             // виден типу шейпа) — достаём через сужение.
             const machine = (args as { machine?: string }).machine
@@ -360,7 +372,7 @@ export function registerRemoteBashMcp(
               const shellCommand = cwd
                 ? `cd -- '${quoteCwd(cwd, registry.platformOf(target.agentId))}' && ${command}`
                 : command
-              const res = await registry.exec(target.agentId, shellCommand, timeoutMs, abort.signal)
+              const res = await registry.exec(target.agentId, shellCommand, timeoutMs, abort.signal, { source: 'chat', conversationId: req.query.conv ?? null })
               const tail = `[exit code: ${res.exitCode ?? '?'}${res.timedOut ? ', таймаут' : ''}]`
               // Вывод сжимаем ДО приписки с кодом выхода: код и хвост лога —
               // самое ценное для fix-loop, и терять их из-за обрезки нельзя.
@@ -509,7 +521,7 @@ export function registerRemoteBashMcp(
               const target = remotePath(machineTarget.cwd, path ?? '.')
               const include = glob ? ` --include=${quoteShell(glob)}` : ''
               const command = `grep -rn --binary-files=without-match${include} -- ${quoteShell(pattern)} ${quoteShell(target)}`
-              const res = await registry.exec(machineTarget.agentId, command, DEFAULT_TIMEOUT_MS, abort.signal)
+              const res = await registry.exec(machineTarget.agentId, command, DEFAULT_TIMEOUT_MS, abort.signal, { source: 'chat', conversationId: req.query.conv ?? null })
               if (res.exitCode !== 0 && res.exitCode !== 1) {
                 throw new Error(res.output.trim() || `grep завершился с кодом ${res.exitCode ?? '?'}`)
               }

@@ -8,6 +8,9 @@ import {
   REST,
   AGENT_VERSION,
   MACHINE_STORAGE_FORMAT_VERSION,
+  chatStorageDirectories,
+  type ChatStorageView,
+  type FsCopyResult,
   recommendedChatStoragePath,
   managedChatAttachmentsPath,
   managedChatArtifactsPath,
@@ -20,11 +23,17 @@ import {
   installCommand,
   installScriptUrl,
   type AgentInfo,
-  type AgentPolicy
+  type AgentPolicy,
+  BATCH_MAX_MACHINES,
+  BATCH_OUTPUT_LIMIT,
+  type BatchExecItem,
+  type BatchExecResult,
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
 import type { AgentRegistry } from '../agents/registry.js'
+import { ensureDefaultStorage } from '../agents/defaultStorage.js'
+import type { CommandGate } from '../agents/commandGate.js'
 import { buildAgentScript } from '../agents/agentScript.js'
 import { buildAndroidInstallScript } from '../agents/androidInstall.js'
 import { buildWindowsInstallScript } from '../agents/windowsInstall.js'
@@ -60,16 +69,87 @@ function sendDmg(
     .send(createReadStream(path))
 }
 
+/** Внешний адрес сервера, каким его видит машина (учитывает x-forwarded-*). */
+function externalBase(req: FastifyRequest): string {
+  const fwdProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim()
+  const fwdHost = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim()
+  const proto = fwdProto || req.protocol
+  const host = fwdHost || req.headers.host || ''
+  return `${proto}://${host}`
+}
+
+/** Локальные адреса машине недостижимы — тогда нужен VC_PUBLIC_URL. */
+function reachableFromMachine(base: string): boolean {
+  try {
+    const host = new URL(base).hostname.replace(/^\[|\]$/g, '')
+    return !(host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost'))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Обновление агента на машине: тот же установщик, что при первой установке, запущенный detached,
+ * чтобы пережить смерть старого агента. Общий для владельца (`/api/agents/:id/update`) и админки
+ * (`/api/admin/machines/:id/update`). Ошибки возвращаются как {status, error} — роут решает, как ответить.
+ */
+export async function updateAgentOnMachine(registry: AgentRegistry, id: string, req: FastifyRequest): Promise<{ ok: true; os: string; output: string } | { status: number; error: string }> {
+  if (!registry.isOnline(id)) {
+    return { status: 409, error: 'Машина не в сети — обновить можно только запущенного агента' }
+  }
+  const telemetry = registry.telemetryOf(id)
+  const os = telemetry ? agentOsFromPlatform(telemetry.os.platform, telemetry.os.isAndroid) : null
+  if (!os) {
+    return { status: 409, error: 'Не удалось определить ОС машины (нужна телеметрия агента 0.4+). Обновите вручную командой из настроек.'
+    }
+  }
+  // Адрес, по которому машина достанет установщик. Берём тот, по которому пришёл
+  // запрос; если он локальный (dev, проброс порта) — нужен явный VC_PUBLIC_URL,
+  // иначе команда уйдёт в саму машину и обновление тихо не случится.
+  const requestBase = externalBase(req)
+  const base = reachableFromMachine(requestBase)
+    ? requestBase
+    : (process.env.VC_PUBLIC_URL ?? '').replace(/\/+$/, '')
+  if (!base) {
+    return { status: 409, error: `Сервер видит себя как ${requestBase} — с машины такой адрес недостижим. ` +
+        'Задайте VC_PUBLIC_URL или скопируйте команду обновления и запустите её на машине.'
+    }
+  }
+  // Установщик должен пережить смерть агента, который его запустил: на unix —
+  // setsid+nohup, на Windows — Start-Process (он и так отвязывает процесс).
+  const detached =
+    os === 'windows'
+      ? `powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Join-Path $env:TEMP 'vc-agent-install.ps1'; ` +
+        `curl.exe -fsSLk ${installScriptUrl(os, base)} -o $p; ` +
+        `Start-Process -WindowStyle Hidden powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$p -RedirectStandardOutput \"$env:USERPROFILE\\voicechat-update.log\" -RedirectStandardError \"$env:USERPROFILE\\voicechat-update.err.log\""`
+      : `(setsid nohup bash -lc ${shellQuote(installCommand(os, base))} > "$HOME/voicechat-update.log" 2>&1 < /dev/null &) ; echo update-started`
+  try {
+    const res = await registry.exec(id, detached, UPDATE_EXEC_TIMEOUT_MS)
+    return { ok: true as const, os, output: res.output.slice(0, 2000) }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    // Гейт политики проверяется и на сервере, и на агенте: обновление качает
+    // скрипт и пишет файлы, поэтому машине с запретом сети/записи оно не пройдёт.
+    const hint = msg.includes('политикой')
+      ? ' Разрешите машине сеть и запись файлов (или обновите вручную командой из списка машин).'
+      : ''
+    return { status: 502, error: msg + hint }
+  }
+}
+
 export async function registerAgentRoutes(
   app: FastifyInstance,
   db: VoiceChatDb,
   registry: AgentRegistry,
-  artifacts: AppArtifacts = {}
+  artifacts: AppArtifacts = {},
+  commandGate?: CommandGate
 ): Promise<void> {
-  const withLiveStatus = (agents: ReturnType<VoiceChatDb['listAgents']>): AgentInfo[] => {
+  const withLiveStatus = (agents: ReturnType<VoiceChatDb['listAgents']>, userId?: string, projectId?: string | null): AgentInfo[] => {
     const online = registry.onlineIds()
     return agents.map((a) => ({
       ...a,
+      // Личная машина или предоставленная проектом, и права на неё (п.18).
+      ...(userId ? { ownership: (a.userId === userId ? 'personal' : 'project') as 'personal' | 'project', access: db.machineAccess(userId, a.id, projectId) ?? undefined } : {}),
       online: online.has(a.id),
       version: registry.versionOf(a.id),
       telemetry: registry.telemetryOf(a.id),
@@ -78,7 +158,7 @@ export async function registerAgentRoutes(
   }
 
   app.get(REST.agents, async (req): Promise<AgentInfo[]> =>
-    withLiveStatus(db.listAgents(uid(req)))
+    withLiveStatus(db.listAgents(uid(req)), uid(req))
   )
 
   const storagePath = (rootPath: string, platform: string, name: string): string => {
@@ -252,9 +332,14 @@ export async function registerAgentRoutes(
   )
 
   app.get<{ Params: { id: string } }>('/api/conversations/:id/storage', async (req, reply) => {
-    const binding = db.getChatStorageBinding(uid(req), req.params.id)
+    const userId = uid(req)
+    const binding = db.getChatStorageBinding(userId, req.params.id)
     if (!binding) return reply.code(404).send({ error: 'not found' })
-    return binding
+    // Карточке чата нужны абсолютные каталоги и состояние хранилища, а не только id.
+    const storage = db.listMachineStorages(userId, binding.machineId).find((item) => item.id === binding.storageId)
+    if (!storage) return binding satisfies ChatStorageView
+    const status: ChatStorageView['status'] = registry.isOnline(binding.machineId) ? storage.status : 'offline'
+    return { ...binding, rootPath: storage.rootPath, status, directories: chatStorageDirectories(storage.rootPath, binding.relativePath) } satisfies ChatStorageView
   })
 
   app.put<{ Params: { id: string }; Body: { machineId?: string; storageId?: string; relativePath?: string } }>(
@@ -295,7 +380,7 @@ export async function registerAgentRoutes(
       const conversation = db.getConversation(userId, req.params.id)
       if (!conversation) return reply.code(404).send({ error: 'not found' })
       const projectId = req.query.projectId ?? conversation.projectId
-      const machines = withLiveStatus(db.listUsableAgents(userId, projectId))
+      const machines = withLiveStatus(db.listUsableAgents(userId, projectId), userId, projectId)
       const personalDefault = projectId
         ? db.getUserProjectDefaultMachine(userId, projectId)
         : db.getSettings(userId).defaultAgentId
@@ -357,22 +442,7 @@ export async function registerAgentRoutes(
    * команда на телефоне ушла бы в него самого (реальный случай: curl молча не
    * находил сервер, обновление «проходило» без эффекта).
    */
-  const reachableFromMachine = (base: string): boolean => {
-    try {
-      const host = new URL(base).hostname.replace(/^\[|\]$/g, '')
-      return !(host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost'))
-    } catch {
-      return false
-    }
-  }
 
-  const externalBase = (req: FastifyRequest): string => {
-    const fwdProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim()
-    const fwdHost = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim()
-    const proto = fwdProto || req.protocol
-    const host = fwdHost || req.headers.host || ''
-    return `${proto}://${host}`
-  }
 
   // Установщики агента (Termux/Android — bash, Windows — PowerShell) с адресом сервера.
   // Строка подключения передаётся аргументом при запуске, в endpoint не вшивается.
@@ -453,70 +523,53 @@ export async function registerAgentRoutes(
     const u = uid(req)
     const id = req.params.id
     if (!ownsAgent(u, id)) return reply.code(404).send({ error: 'not found' })
-    if (!registry.isOnline(id)) {
-      return reply.code(409).send({ error: 'Машина не в сети — обновить можно только запущенного агента' })
-    }
-    const telemetry = registry.telemetryOf(id)
-    const os = telemetry ? agentOsFromPlatform(telemetry.os.platform, telemetry.os.isAndroid) : null
-    if (!os) {
-      return reply.code(409).send({
-        error: 'Не удалось определить ОС машины (нужна телеметрия агента 0.4+). Обновите вручную командой из настроек.'
-      })
-    }
-    // Адрес, по которому машина достанет установщик. Берём тот, по которому пришёл
-    // запрос; если он локальный (dev, проброс порта) — нужен явный VC_PUBLIC_URL,
-    // иначе команда уйдёт в саму машину и обновление тихо не случится.
-    const requestBase = externalBase(req)
-    const base = reachableFromMachine(requestBase)
-      ? requestBase
-      : (process.env.VC_PUBLIC_URL ?? '').replace(/\/+$/, '')
-    if (!base) {
-      return reply.code(409).send({
-        error:
-          `Сервер видит себя как ${requestBase} — с машины такой адрес недостижим. ` +
-          'Задайте VC_PUBLIC_URL или скопируйте команду обновления и запустите её на машине.'
-      })
-    }
-    // Установщик должен пережить смерть агента, который его запустил: на unix —
-    // setsid+nohup, на Windows — Start-Process (он и так отвязывает процесс).
-    const detached =
-      os === 'windows'
-        ? `powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Join-Path $env:TEMP 'vc-agent-install.ps1'; ` +
-          `curl.exe -fsSLk ${installScriptUrl(os, base)} -o $p; ` +
-          `Start-Process -WindowStyle Hidden powershell -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File',$p -RedirectStandardOutput \"$env:USERPROFILE\\voicechat-update.log\" -RedirectStandardError \"$env:USERPROFILE\\voicechat-update.err.log\""`
-        : `(setsid nohup bash -lc ${shellQuote(installCommand(os, base))} > "$HOME/voicechat-update.log" 2>&1 < /dev/null &) ; echo update-started`
-    try {
-      const res = await registry.exec(id, detached, UPDATE_EXEC_TIMEOUT_MS)
-      return { ok: true, os, output: res.output.slice(0, 2000) }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      // Гейт политики проверяется и на сервере, и на агенте: обновление качает
-      // скрипт и пишет файлы, поэтому машине с запретом сети/записи оно не пройдёт.
-      const hint = msg.includes('политикой')
-        ? ' Разрешите машине сеть и запись файлов (или обновите вручную командой из списка машин).'
-        : ''
-      return reply.code(502).send({ error: msg + hint })
-    }
+    const result = await updateAgentOnMachine(registry, id, req)
+    if ('status' in result) return reply.code(result.status).send({ error: result.error })
+    return result
   })
 
   // Перевыпуск токена: старый перестаёт работать, текущее соединение рвём.
-  app.post<{ Params: { id: string } }>('/api/agents/:id/token', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { ttlDays?: number } | undefined }>('/api/agents/:id/token', async (req, reply) => {
     const u = uid(req)
     if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
-    const { token } = db.regenerateAgentToken(u, req.params.id)
+    const ttlDays = typeof req.body?.ttlDays === 'number' && Number.isFinite(req.body.ttlDays) ? Math.max(0, Math.min(3650, req.body.ttlDays)) : undefined
+    const { token, expiresAt } = db.regenerateAgentToken(u, req.params.id, ttlDays ? ttlDays * 24 * 60 * 60_000 : undefined)
     registry.disconnect(req.params.id)
-    return { token }
+    db.logSecurityEvent({ user: u, type: 'agent_token_rotated', details: `${registry.nameOf(req.params.id) ?? req.params.id}${expiresAt ? ` до ${new Date(expiresAt).toISOString()}` : ' (бессрочный)'}` })
+    return { token, expiresAt }
+  })
+
+  // Отзыв токена (п.11): агент отключается и больше не подключится, пока токен не перевыпустят.
+  app.delete<{ Params: { id: string } }>('/api/agents/:id/token', async (req, reply) => {
+    const u = uid(req)
+    if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
+    const name = db.listAgents(u).find((a) => a.id === req.params.id)?.name ?? req.params.id
+    db.revokeAgentToken(req.params.id)
+    registry.disconnect(req.params.id)
+    db.logSecurityEvent({ user: u, type: 'agent_token_revoked', details: name })
+    return { ok: true }
+  })
+
+  app.post<{ Params: { id: string }; Body: { pin?: boolean } | undefined }>(REST.agentPinIp(':id').replace('%3Aid', ':id'), async (req, reply) => {
+    const u = uid(req)
+    if (!ownsAgent(u, req.params.id)) return reply.code(404).send({ error: 'not found' })
+    db.setAgentPinIp(u, req.params.id, req.body?.pin === true)
+    return { ok: true }
   })
 
   // --- Файловый проводник по машине (все под проверкой владения) ---
   /** Проверка владения + читаемый ответ на ошибки агента (офлайн/политика). */
+  /** Только чтение (машина предоставлена проекту в режиме `read`) — мутации запрещены (п.18). */
+  const READ_ONLY_ERROR = 'Машина предоставлена проекту только для чтения: команды, терминал и запись файлов запрещены'
   const withFs = async (
     req: { params: { id: string }; query?: { projectId?: string } },
     reply: FastifyReply,
-    run: (id: string) => Promise<unknown>
+    run: (id: string) => Promise<unknown>,
+    mutates = false
   ): Promise<unknown> => {
     const u = uid(req as never)
     if (!canUseAgent(u, req.params.id, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
+    if (mutates && !db.canWriteAgent(u, req.params.id, req.query?.projectId)) return reply.code(403).send({ error: READ_ONLY_ERROR })
     try {
       return await run(req.params.id)
     } catch (err) {
@@ -536,20 +589,57 @@ export async function registerAgentRoutes(
     '/api/agents/:id/fs/file',
     { bodyLimit: 48 * 1024 * 1024 }, // ~32 МБ файла + запас base64
     async (req, reply) =>
-      withFs(req, reply, (id) => registry.fsWrite(id, req.body?.path ?? '', req.body?.dataBase64 ?? ''))
+      withFs(req, reply, (id) => registry.fsWrite(id, req.body?.path ?? '', req.body?.dataBase64 ?? ''), true)
   )
   app.delete<{ Params: { id: string }; Querystring: { path?: string; projectId?: string } }>(
     '/api/agents/:id/fs',
-    async (req, reply) => withFs(req, reply, (id) => registry.fsDelete(id, req.query.path ?? ''))
+    async (req, reply) => withFs(req, reply, (id) => registry.fsDelete(id, req.query.path ?? ''), true)
   )
   app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { from?: string; to?: string } }>(
     '/api/agents/:id/fs/rename',
     async (req, reply) =>
-      withFs(req, reply, (id) => registry.fsRename(id, req.body?.from ?? '', req.body?.to ?? ''))
+      withFs(req, reply, (id) => registry.fsRename(id, req.body?.from ?? '', req.body?.to ?? ''), true)
+  )
+  app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string } }>(
+    '/api/agents/:id/fs/trash',
+    async (req, reply) => withFs(req, reply, (id) => registry.fsTrash(id, req.body?.path ?? ''), true)
+  )
+  // Копирование между машинами: сервер — посредник (fs.read на источнике → fs.mkdir/fs.write на цели),
+  // прямого канала между агентами нет. Без targetDir файл ложится в `<ChatAI цели>/incoming`.
+  app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string; targetAgentId?: string; targetDir?: string } }>(
+    '/api/agents/:id/fs/copy-to',
+    async (req, reply) => {
+      const u = uid(req)
+      const { path, targetAgentId, targetDir } = req.body ?? {}
+      if (!path || !targetAgentId) return reply.code(400).send({ error: 'нужны path и targetAgentId' })
+      if (!canUseAgent(u, req.params.id, req.query?.projectId) || !canUseAgent(u, targetAgentId, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
+      if (!db.canWriteAgent(u, targetAgentId, req.query?.projectId)) return reply.code(403).send({ error: READ_ONLY_ERROR })
+      if (targetAgentId === req.params.id) return reply.code(400).send({ error: 'Источник и цель — одна машина' })
+      if (!registry.isOnline(targetAgentId)) return reply.code(409).send({ error: 'Целевая машина не в сети' })
+      if (registry.policyOf(targetAgentId)?.allowWrite === false) return reply.code(403).send({ error: 'Запись на целевую машину запрещена политикой' })
+      try {
+        const source = await registry.fsRead(req.params.id, path)
+        const name = source.name ?? path.split(/[\\/]/).pop() ?? 'file'
+        let dir = targetDir?.trim() ?? ''
+        if (!dir) {
+          const storage = await ensureDefaultStorage({ db, registry }, u, targetAgentId)
+          if (!storage) return reply.code(409).send({ error: 'На целевой машине нет хранилища ChatAI — укажите каталог' })
+          dir = storagePath(storage.rootPath, registry.platformOf(targetAgentId) ?? 'linux', 'incoming')
+        }
+        await registry.fsMkdir(targetAgentId, dir)
+        const separator = dir.includes('\\') && !dir.includes('/') ? '\\' : '/'
+        const dest = `${dir.replace(/[\\/]+$/, '')}${separator}${name}`
+        await registry.fsWrite(targetAgentId, dest, source.dataBase64 ?? '')
+        const result: FsCopyResult = { path: dest, targetAgentId, size: Buffer.from(source.dataBase64 ?? '', 'base64').byteLength }
+        return result
+      } catch (err) {
+        return reply.code(400).send({ error: err instanceof Error ? err.message : String(err) })
+      }
+    }
   )
   app.post<{ Params: { id: string }; Querystring: { projectId?: string }; Body: { path?: string } }>(
     '/api/agents/:id/fs/mkdir',
-    async (req, reply) => withFs(req, reply, (id) => registry.fsMkdir(id, req.body?.path ?? ''))
+    async (req, reply) => withFs(req, reply, (id) => registry.fsMkdir(id, req.body?.path ?? ''), true)
   )
 
   // Утилита «Консоль»: выполнить команду на своей машине (проверка политики — в registry.exec).
@@ -565,9 +655,71 @@ export async function registerAgentRoutes(
       reply.raw.on('close', () => {
         if (!reply.raw.writableEnded) abort.abort()
       })
+      if (commandGate) {
+        const verdict = commandGate({ command: req.body?.command ?? '', userId: uid(req), projectId: req.query?.projectId ?? null, source: 'console' })
+        if (!verdict.allowed) return reply.code(403).send({ error: `Запрещено: ${verdict.reason ?? 'политика команд'}` })
+      }
       return withFs(req, reply, (id) =>
-        registry.exec(id, req.body?.command ?? '', EXEC_TIMEOUT_MS, abort.signal)
-      )
+        registry.exec(id, req.body?.command ?? '', EXEC_TIMEOUT_MS, abort.signal, { source: 'console', userId: uid(req) })
+      , true)
+    }
+  )
+
+  // Групповая команда (п.15): одна команда на несколько машин пользователя, сводка по каждой.
+  app.post<{ Querystring: { projectId?: string }; Body: { machineIds?: string[]; command?: string } }>(
+    REST.agentsExecBatch,
+    async (req, reply) => {
+      const u = uid(req)
+      const command = (req.body?.command ?? '').trim()
+      const ids = [...new Set(req.body?.machineIds ?? [])].slice(0, BATCH_MAX_MACHINES)
+      if (!command || ids.length === 0) return reply.code(400).send({ error: 'нужны machineIds и command' })
+      if (commandGate) {
+        const verdict = commandGate({ command, userId: u, projectId: req.query?.projectId ?? null, source: 'console' })
+        if (!verdict.allowed) return reply.code(403).send({ error: `Запрещено: ${verdict.reason ?? 'политика команд'}` })
+      }
+      const startedAt = Date.now()
+      const items: BatchExecItem[] = await Promise.all(ids.map(async (machineId) => {
+        const machineName = registry.nameOf(machineId) ?? db.listAgents(u).find((a) => a.id === machineId)?.name ?? machineId
+        const base = { machineId, machineName, exitCode: null, timedOut: false, output: '', durationMs: 0 }
+        if (!canUseAgent(u, machineId, req.query?.projectId)) return { ...base, ran: false, error: 'Машина недоступна' }
+        if (!db.canWriteAgent(u, machineId, req.query?.projectId)) return { ...base, ran: false, error: 'Только чтение: команды запрещены' }
+        const at = Date.now()
+        try {
+          const res = await registry.exec(machineId, command, EXEC_TIMEOUT_MS, undefined, { source: 'console', userId: u })
+          return { machineId, machineName, ran: true, exitCode: res.exitCode, timedOut: res.timedOut, output: res.output.slice(0, BATCH_OUTPUT_LIMIT), error: null, durationMs: Date.now() - at }
+        } catch (err) {
+          return { ...base, ran: false, error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - at }
+        }
+      }))
+      const result: BatchExecResult = {
+        command, startedAt, items,
+        totals: {
+          requested: ids.length,
+          ok: items.filter((i) => i.ran && i.exitCode === 0 && !i.timedOut).length,
+          failed: items.filter((i) => i.ran && (i.exitCode !== 0 || i.timedOut)).length,
+          skipped: items.filter((i) => !i.ran).length
+        }
+      }
+      return result
+    }
+  )
+
+  // Журнал команд машины (п.4): новые сверху, фильтр по подстроке и источнику; ?format=csv — экспорт.
+  app.get<{ Params: { id: string }; Querystring: { projectId?: string; limit?: string; q?: string; source?: string; format?: string } }>(
+    '/api/agents/:id/commands',
+    async (req, reply) => {
+      const u = uid(req)
+      if (!canUseAgent(u, req.params.id, req.query?.projectId)) return reply.code(404).send({ error: 'not found' })
+      const source = req.query.source === 'console' || req.query.source === 'chat' || req.query.source === 'system' ? req.query.source : undefined
+      const limit = req.query.limit ? Number(req.query.limit) : undefined
+      const rows = db.listMachineCommands(req.params.id, { limit: Number.isFinite(limit) ? limit : undefined, q: req.query.q, source })
+      if (req.query.format === 'csv') {
+        const cell = (v: unknown): string => `"${String(v ?? '').replace(/"/g, '""')}"`
+        const lines = ['startedAt,user,source,command,exitCode,timedOut,durationMs,conversationId,error']
+        for (const r of rows) lines.push([new Date(r.startedAt).toISOString(), r.userId, r.source, r.command, r.exitCode ?? '', r.timedOut, r.durationMs, r.conversationId ?? '', r.error ?? ''].map(cell).join(','))
+        return reply.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="commands-${req.params.id}.csv"`).send(lines.join('\n') + '\n')
+      }
+      return rows
     }
   )
 }

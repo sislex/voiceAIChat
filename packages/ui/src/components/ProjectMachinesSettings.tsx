@@ -9,6 +9,8 @@ type Field = ProjectMachineDirectoryKind | 'path' | 'sshHost' | 'sshUser'
 export interface ProjectMachinesSettingsProps {
   projectId: string; machines: ProjectMachine[]; agents: AgentInfo[]
   onShare: (projectId: string, agentId: string, shared: boolean) => void | Promise<void>
+  /** Уровень доступа предоставленной машины (п.18): полный или только чтение. */
+  onSetShareAccess?: (projectId: string, agentId: string, access: 'full' | 'read') => void | Promise<void>
   onSave: (projectId: string, agentId: string, field: Field, value: string, machine: ProjectMachine) => void | Promise<void>
   onSetDefault: (projectId: string, agentId: string) => void | Promise<void>
   onConfigureStorage?: (projectId: string, agentId: string, storageId: string, directories?: ProjectMachineDirectoryAssignments) => void | Promise<void>
@@ -146,7 +148,7 @@ function ConfigCells({ projectId, machine, readonly, onSave, onReset }: { projec
     </td>
   })}</>
 }
-function Table(p: { title: string; empty: string; projectId: string; machines: ProjectMachine[]; own: boolean; widths: Record<ColumnKey, number>; onResize: (key: ColumnKey, width: number) => void; onShare: ProjectMachinesSettingsProps['onShare']; onSave: ProjectMachinesSettingsProps['onSave']; onSetDefault: ProjectMachinesSettingsProps['onSetDefault']; onConfigureStorage: ProjectMachinesSettingsProps['onConfigureStorage']; onResetDirectory: ProjectMachinesSettingsProps['onResetDirectory'] }): JSX.Element {
+function Table(p: { title: string; empty: string; projectId: string; machines: ProjectMachine[]; own: boolean; widths: Record<ColumnKey, number>; onResize: (key: ColumnKey, width: number) => void; onShare: ProjectMachinesSettingsProps['onShare']; onSetShareAccess?: ProjectMachinesSettingsProps['onSetShareAccess']; onSave: ProjectMachinesSettingsProps['onSave']; onSetDefault: ProjectMachinesSettingsProps['onSetDefault']; onConfigureStorage: ProjectMachinesSettingsProps['onConfigureStorage']; onResetDirectory: ProjectMachinesSettingsProps['onResetDirectory'] }): JSX.Element {
   const [filter, setFilter] = useState<StatusFilter>('online')
   const filtered = p.machines.filter((machine) => filter === 'all' || (machine.online === true) === (filter === 'online'))
   return <section className="proj-section" style={sectionStyle}>
@@ -180,9 +182,21 @@ function Table(p: { title: string; empty: string; projectId: string; machines: P
         <td style={controlCellStyle}><input type="radio" name="project-machine-default" aria-label={`По умолчанию: ${m.name ?? m.agentId}`} checked={m.isMyDefault === true}
           disabled={m.canUse === false || m.online !== true} onChange={() => void p.onSetDefault(p.projectId, m.agentId)} /></td>
         <td style={controlCellStyle}>{p.own
-          ? <input type="checkbox" aria-label={`Предоставить текущему проекту: ${m.name ?? m.agentId}`} checked={m.sharedWithProject === true}
-              onChange={(e) => void p.onShare(p.projectId, m.agentId, e.target.checked)} />
-          : <input type="checkbox" aria-label={`Предоставлена текущему проекту: ${m.name ?? m.agentId}`} checked disabled />}</td>
+          ? <>
+              <input type="checkbox" aria-label={`Предоставить текущему проекту: ${m.name ?? m.agentId}`} checked={m.sharedWithProject === true}
+                onChange={(e) => void p.onShare(p.projectId, m.agentId, e.target.checked)} />
+              {m.sharedWithProject === true && p.onSetShareAccess && (
+                <select className="sel" aria-label={`Доступ участников к машине ${m.name ?? m.agentId}`} value={m.shareAccess ?? 'full'}
+                  onChange={(e) => void p.onSetShareAccess!(p.projectId, m.agentId, e.target.value as 'full' | 'read')}>
+                  <option value="full">полный</option>
+                  <option value="read">только чтение</option>
+                </select>
+              )}
+            </>
+          : <>
+              <input type="checkbox" aria-label={`Предоставлена текущему проекту: ${m.name ?? m.agentId}`} checked disabled />
+              {m.shareAccess === 'read' && <span title="Владелец разрешил только чтение файлов: команды и терминал недоступны"> только чтение</span>}
+            </>}</td>
         <ConfigCells projectId={p.projectId} machine={m} readonly={!p.own} onSave={p.onSave} onReset={p.onResetDirectory} />
       </tr> })}</tbody>
     </table></div>}</section>
@@ -193,6 +207,6 @@ export function ProjectMachinesSettings(p: ProjectMachinesSettingsProps): JSX.El
   const shared = p.machines.filter((m) => m.ownership === 'other' && m.sharedWithProject)
   const [widths, setWidths] = useState<Record<ColumnKey, number>>(() => initialColumnWidths([...mine, ...shared]))
   const resize = (key: ColumnKey, width: number): void => setWidths((current) => ({ ...current, [key]: Math.round(width) }))
-  return <div data-testid="project-machines-settings"><Table title="Мои машины" empty="Нет машин — добавьте машину в меню «Машины»." projectId={p.projectId} machines={mine} own widths={widths} onResize={resize} onShare={p.onShare} onSave={p.onSave} onSetDefault={p.onSetDefault} onConfigureStorage={p.onConfigureStorage} onResetDirectory={p.onResetDirectory} />
-    <Table title="Машины, предоставленные проекту" empty="Нет машин, предоставленных проекту." projectId={p.projectId} machines={shared} own={false} widths={widths} onResize={resize} onShare={p.onShare} onSave={p.onSave} onSetDefault={p.onSetDefault} onConfigureStorage={p.onConfigureStorage} onResetDirectory={p.onResetDirectory} /></div>
+  return <div data-testid="project-machines-settings"><Table title="Мои машины" empty="Нет машин — добавьте машину в меню «Машины»." projectId={p.projectId} machines={mine} own widths={widths} onResize={resize} onShare={p.onShare} onSetShareAccess={p.onSetShareAccess} onSave={p.onSave} onSetDefault={p.onSetDefault} onConfigureStorage={p.onConfigureStorage} onResetDirectory={p.onResetDirectory} />
+    <Table title="Машины, предоставленные проекту" empty="Нет машин, предоставленных проекту." projectId={p.projectId} machines={shared} own={false} widths={widths} onResize={resize} onShare={p.onShare} onSetShareAccess={p.onSetShareAccess} onSave={p.onSave} onSetDefault={p.onSetDefault} onConfigureStorage={p.onConfigureStorage} onResetDirectory={p.onResetDirectory} /></div>
 }

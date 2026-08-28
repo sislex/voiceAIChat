@@ -104,6 +104,8 @@ export interface ProjectsActions {
   removeProjectMember(id: string, username: string): Promise<void>
   linkProjectMachine(id: string, agentId: string): Promise<void>
   unlinkProjectMachine(id: string, agentId: string): Promise<void>
+  /** Уровень доступа предоставленной машины (п.18). */
+  setProjectMachineShareAccess(id: string, agentId: string, access: 'full' | 'read'): Promise<void>
   configureProjectMachineStorage(id: string, agentId: string, storageId: string, directories?: ProjectMachineDirectoryAssignments): Promise<void>
   resetProjectMachineDirectory(id: string, agentId: string, kind: ProjectMachineDirectoryKind): Promise<void>
   setProjectMachinePath(id: string, agentId: string, path: string): Promise<void>
@@ -622,6 +624,13 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       async linkProjectMachine(id, agentId) {
         try {
           setState({ projectDetail: await client['projects:linkMachine']({ id, agentId }) })
+        } catch (err) {
+          fail(err)
+        }
+      },
+      async setProjectMachineShareAccess(id, agentId, access) {
+        try {
+          setState({ projectDetail: await client['projects:setMachineShareAccess']({ id, agentId, access }) })
         } catch (err) {
           fail(err)
         }

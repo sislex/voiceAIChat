@@ -1,3 +1,5 @@
+import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
+import { parseProjectCommandPolicy, parseRoleCommandPolicies } from '@voicechat/shared'
 import Database from 'better-sqlite3'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { MESSAGES_FTS_SQL, SCHEMA_SQL } from './schema'
@@ -274,6 +276,10 @@ interface AgentRow {
   last_seen: number | null
   policy: string | null
   user_id: string | null
+  token_expires_at?: number | null
+  token_issued_at?: number | null
+  last_ip?: string | null
+  pin_ip?: number | null
 }
 
 /** Запись пользователя приложения (без хеша пароля наружу). */
@@ -282,7 +288,25 @@ export interface UserRow {
   role: UserRole
   blocked: boolean
   createdAt: number
+  /** Блокировка после неудач (auth-roadmap п.3): подряд неверных паролей и до какого момента вход закрыт. */
+  failedLogins: number
+  lockedUntil: number | null
+  lockReason: string | null
+  /** Включён ли второй фактор (auth-roadmap п.6); сам секрет наружу не отдаётся. */
+  totpEnabled: boolean
+  /** Временный пароль — при входе требуется сменить (auth-roadmap п.11). */
+  mustChangePassword: boolean
+  /** Последний успешный вход (п.18) и месячный лимит расхода LLM в USD (п.17; null — без лимита). */
+  lastLogin: number | null
+  llmLimitUsd: number | null
+  /** Подтверждённый email (саморегистрация); null — не указан. */
+  email: string | null
 }
+
+/** Порог временной блокировки и её длительность; после `LOGIN_HARD_LOCK_FAILS` подряд — блокировка `blocked`. */
+export const LOGIN_LOCK_FAILS = 5
+export const LOGIN_LOCK_MS = 15 * 60_000
+export const LOGIN_HARD_LOCK_FAILS = 10
 
 interface UserDbRow {
   name: string
@@ -290,6 +314,17 @@ interface UserDbRow {
   role: string
   blocked: number
   created_at: number
+  failed_logins?: number | null
+  locked_until?: number | null
+  lock_reason?: string | null
+  totp_secret?: string | null
+  reset_code_hash?: string | null
+  reset_code_expires?: number | null
+  must_change_password?: number | null
+  last_login?: number | null
+  notices_seen_at?: number | null
+  llm_limit_usd?: number | null
+  email?: string | null
 }
 
 interface LlmEngineRow {
@@ -313,6 +348,11 @@ export interface AgentRecord {
   policy: AgentPolicy
   /** Владелец машины (пользователь, создавший её). */
   userId: string | null
+  /** Токен (п.11): срок, дата выпуска, IP последнего подключения и привязка к нему. */
+  tokenExpiresAt: number | null
+  tokenIssuedAt: number | null
+  lastIp: string | null
+  pinIp: boolean
 }
 
 /** Парсит JSON-политику из БД с откатом к дефолту (терпит старые/битые строки). */
@@ -409,6 +449,7 @@ interface ProjectRow {
   merge_transport: string
   agent_plan_approval_mode: string
   test_command: string
+  command_policy?: string | null
   production_deploy_command: string
   production_agent_id: string | null
   production_environment_mode: string
@@ -712,6 +753,33 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE users SET role = 'admin' WHERE name IN ('admin', 'admin1')`).run()
     this.db.prepare(`UPDATE llm_engines SET allowed_roles = replace(allowed_roles, '"user"', '"developer"') WHERE allowed_roles LIKE '%"user"%'`).run()
 
+    // Блокировка после неудачных входов (auth-roadmap п.3): три колонки поверх существующей таблицы users.
+    const userCols = this.db.prepare(`PRAGMA table_info(users)`).all() as Array<{ name: string }>
+    if (userCols.length && !userCols.some((c) => c.name === 'failed_logins')) this.db.exec(`ALTER TABLE users ADD COLUMN failed_logins INTEGER NOT NULL DEFAULT 0`)
+    if (userCols.length && !userCols.some((c) => c.name === 'locked_until')) this.db.exec(`ALTER TABLE users ADD COLUMN locked_until INTEGER`)
+    if (userCols.length && !userCols.some((c) => c.name === 'lock_reason')) this.db.exec(`ALTER TABLE users ADD COLUMN lock_reason TEXT`)
+    // 2FA (auth-roadmap п.6): base32-секрет TOTP; NULL — второй фактор выключен.
+    if (userCols.length && !userCols.some((c) => c.name === 'totp_secret')) this.db.exec(`ALTER TABLE users ADD COLUMN totp_secret TEXT`)
+    // Сброс пароля кодом от админа (auth-roadmap п.10) и обязательная смена временного пароля (п.11).
+    if (userCols.length && !userCols.some((c) => c.name === 'reset_code_hash')) this.db.exec(`ALTER TABLE users ADD COLUMN reset_code_hash TEXT`)
+    if (userCols.length && !userCols.some((c) => c.name === 'reset_code_expires')) this.db.exec(`ALTER TABLE users ADD COLUMN reset_code_expires INTEGER`)
+    if (userCols.length && !userCols.some((c) => c.name === 'must_change_password')) this.db.exec(`ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0`)
+    // Последний вход и просмотренные уведомления (пп.16, 18), лимит LLM-расхода в месяц (п.17).
+    if (userCols.length && !userCols.some((c) => c.name === 'last_login')) this.db.exec(`ALTER TABLE users ADD COLUMN last_login INTEGER`)
+    if (userCols.length && !userCols.some((c) => c.name === 'notices_seen_at')) this.db.exec(`ALTER TABLE users ADD COLUMN notices_seen_at INTEGER NOT NULL DEFAULT 0`)
+    if (userCols.length && !userCols.some((c) => c.name === 'llm_limit_usd')) this.db.exec(`ALTER TABLE users ADD COLUMN llm_limit_usd REAL`)
+    // Уровень доступа предоставленной проекту машины (machines-roadmap п.18): 'full' | 'read'.
+    const shareCols = this.db.prepare(`PRAGMA table_info(machine_project_shares)`).all() as Array<{ name: string }>
+    if (shareCols.length && !shareCols.some((c) => c.name === 'access')) this.db.exec(`ALTER TABLE machine_project_shares ADD COLUMN access TEXT NOT NULL DEFAULT 'full'`)
+    // Токены агентов (machines-roadmap п.11): срок, дата выпуска, IP последнего подключения и привязка.
+    const agentTokenCols = this.db.prepare(`PRAGMA table_info(agents)`).all() as Array<{ name: string }>
+    if (agentTokenCols.length && !agentTokenCols.some((c) => c.name === 'token_expires_at')) this.db.exec(`ALTER TABLE agents ADD COLUMN token_expires_at INTEGER`)
+    if (agentTokenCols.length && !agentTokenCols.some((c) => c.name === 'token_issued_at')) this.db.exec(`ALTER TABLE agents ADD COLUMN token_issued_at INTEGER`)
+    if (agentTokenCols.length && !agentTokenCols.some((c) => c.name === 'last_ip')) this.db.exec(`ALTER TABLE agents ADD COLUMN last_ip TEXT`)
+    if (agentTokenCols.length && !agentTokenCols.some((c) => c.name === 'pin_ip')) this.db.exec(`ALTER TABLE agents ADD COLUMN pin_ip INTEGER NOT NULL DEFAULT 0`)
+    // Email пользователя (регистрация с подтверждением); уникальность — через индекс.
+    if (userCols.length && !userCols.some((c) => c.name === 'email')) this.db.exec(`ALTER TABLE users ADD COLUMN email TEXT`)
+    this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL`)
     const taskLinkCols = this.db.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'source_task_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
     const improvementCols = this.db.prepare(`PRAGMA table_info(task_improvements)`).all() as Array<{ name: string }>
@@ -1016,6 +1084,7 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'commit_policy')) this.db.exec(`ALTER TABLE projects ADD COLUMN commit_policy TEXT NOT NULL DEFAULT 'agent_commits'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'merge_transport')) this.db.exec(`ALTER TABLE projects ADD COLUMN merge_transport TEXT NOT NULL DEFAULT 'local'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'agent_plan_approval_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'command_policy')) this.db.exec(`ALTER TABLE projects ADD COLUMN command_policy TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'test_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN test_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_deploy_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_deploy_command TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'production_agent_id')) this.db.exec(`ALTER TABLE projects ADD COLUMN production_agent_id TEXT`)
@@ -2161,6 +2230,12 @@ export class VoiceChatDb {
 
   // ---- Machine storage -----------------------------------------------------
 
+  /** Владелец машины (user_id агента); null — машина неизвестна. */
+  agentOwnerId(agentId: string): string | null {
+    const r = this.db.prepare(`SELECT user_id FROM agents WHERE id = ?`).get(agentId) as { user_id?: string | null } | undefined
+    return r?.user_id ?? null
+  }
+
   listMachineStorages(userId: string, machineId?: string): MachineStorage[] {
     const rows = this.db.prepare(
       `SELECT s.id, s.machine_id, s.root_path, s.format_version
@@ -2274,8 +2349,46 @@ export class VoiceChatDb {
       createdAt: r.created_at,
       lastSeen: r.last_seen,
       policy: parsePolicy(r.policy),
-      userId: r.user_id
+      userId: r.user_id,
+      tokenExpiresAt: r.token_expires_at ?? null,
+      tokenIssuedAt: r.token_issued_at ?? null,
+      lastIp: r.last_ip ?? null,
+      pinIp: r.pin_ip === 1
     }
+  }
+
+  /** Агрегаты по командам и тревогам машины (machines-roadmap п.5); без online/версии/телеметрии — их знает реестр. */
+  machineStatsRows(now = Date.now()): Array<{ machineId: string; commandsTotal: number; commands24h: number; errors24h: number; avgDurationMs24h: number; lastCommandAt: number | null; offlineEvents30d: number; offlineMs30d: number }> {
+    const dayAgo = now - 24 * 60 * 60_000
+    const monthAgo = now - 30 * 24 * 60 * 60_000
+    const cmd = this.db.prepare(`SELECT machine_id AS machineId, COUNT(*) AS total,
+        SUM(CASE WHEN started_at >= ? THEN 1 ELSE 0 END) AS day,
+        SUM(CASE WHEN started_at >= ? AND (error IS NOT NULL OR timed_out = 1 OR (exit_code IS NOT NULL AND exit_code <> 0)) THEN 1 ELSE 0 END) AS errors,
+        AVG(CASE WHEN started_at >= ? THEN duration_ms END) AS avgMs,
+        MAX(started_at) AS lastAt
+      FROM machine_commands GROUP BY machine_id`).all(dayAgo, dayAgo, dayAgo) as Array<{ machineId: string; total: number; day: number; errors: number; avgMs: number | null; lastAt: number | null }>
+    const ev = this.db.prepare(`SELECT machine_id AS machineId, COUNT(*) AS n, COALESCE(SUM(offline_for_ms), 0) AS ms FROM machine_events WHERE state = 'offline' AND at >= ? GROUP BY machine_id`).all(monthAgo) as Array<{ machineId: string; n: number; ms: number }>
+    const byId = new Map<string, { machineId: string; commandsTotal: number; commands24h: number; errors24h: number; avgDurationMs24h: number; lastCommandAt: number | null; offlineEvents30d: number; offlineMs30d: number }>()
+    const get = (id: string) => { let r = byId.get(id); if (!r) { r = { machineId: id, commandsTotal: 0, commands24h: 0, errors24h: 0, avgDurationMs24h: 0, lastCommandAt: null, offlineEvents30d: 0, offlineMs30d: 0 }; byId.set(id, r) } return r }
+    for (const c of cmd) { const r = get(c.machineId); r.commandsTotal = c.total; r.commands24h = c.day ?? 0; r.errors24h = c.errors ?? 0; r.avgDurationMs24h = Math.round(c.avgMs ?? 0); r.lastCommandAt = c.lastAt }
+    for (const e of ev) { const r = get(e.machineId); r.offlineEvents30d = e.n; r.offlineMs30d = e.ms }
+    return [...byId.values()]
+  }
+
+  /** Все машины всех пользователей — для серверного watchdog. */
+  listAllAgents(): AgentRecord[] {
+    const rows = this.db.prepare(`SELECT * FROM agents ORDER BY created_at ASC`).all() as AgentRow[]
+    return rows.map((r) => this.mapAgent(r))
+  }
+
+  /** Watchdog: тревога «не в сети» / «вернулась» (machines-roadmap п.1). */
+  logMachineEvent(e: { machineId: string; userId: string; state: 'offline' | 'online'; at: number; offlineForMs: number }): void {
+    this.db.prepare(`INSERT INTO machine_events (machine_id, user_id, state, at, offline_for_ms) VALUES (?, ?, ?, ?, ?)`).run(e.machineId, e.userId, e.state, e.at, e.offlineForMs)
+  }
+
+  listMachineEvents(machineId: string, limit = 50): Array<{ id: number; machineId: string; userId: string; state: 'offline' | 'online'; at: number; offlineForMs: number }> {
+    const rows = this.db.prepare(`SELECT * FROM machine_events WHERE machine_id = ? ORDER BY id DESC LIMIT ?`).all(machineId, Math.min(Math.max(limit, 1), 500)) as Array<{ id: number; machine_id: string; user_id: string; state: 'offline' | 'online'; at: number; offline_for_ms: number }>
+    return rows.map((r) => ({ id: r.id, machineId: r.machine_id, userId: r.user_id, state: r.state, at: r.at, offlineForMs: r.offline_for_ms }))
   }
 
   listAgents(userId: string): AgentRecord[] {
@@ -2325,6 +2438,30 @@ export class VoiceChatDb {
     ).get(agentId, userId))
   }
 
+  /**
+   * Права пользователя на машину (machines-roadmap п.18): 'owner' — своя машина (полный доступ),
+   * 'full'/'read' — уровень, с которым владелец предоставил её проекту, null — доступа нет.
+   */
+  machineAccess(userId: string, agentId: string, projectId?: string | null): MachineAccessLevel | null {
+    if (this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) return 'owner'
+    if (!projectId) return null
+    const row = this.db.prepare(
+      `SELECT share.access AS access FROM machine_project_shares share
+       JOIN project_members member ON member.project_id = share.project_id
+       JOIN users u ON u.name = member.username
+       WHERE share.project_id = ? AND share.agent_id = ? AND share.shared = 1
+         AND member.username = ? AND u.blocked = 0`
+    ).get(projectId, agentId, userId) as { access?: string } | undefined
+    if (!row) return null
+    return row.access === 'read' ? 'read' : 'full'
+  }
+
+  /** Может ли пользователь менять состояние машины (команды, PTY, запись файлов). */
+  canWriteAgent(userId: string, agentId: string, projectId?: string | null): boolean {
+    const access = this.machineAccess(userId, agentId, projectId)
+    return access === 'owner' || access === 'full'
+  }
+
   canUseAgent(userId: string, agentId: string, projectId?: string | null): boolean {
     if (this.db.prepare(`SELECT 1 FROM agents WHERE id = ? AND user_id = ?`).get(agentId, userId)) return true
     if (!projectId) return false
@@ -2359,26 +2496,30 @@ export class VoiceChatDb {
     ).run(userId, projectId, agentId, this.now())
   }
 
-  setMachineSharedWithProject(userId: string, projectId: string, agentId: string, shared: boolean): void {
+  setMachineSharedWithProject(userId: string, projectId: string, agentId: string, shared: boolean, access: MachineShareAccess = 'full'): void {
     if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
     if (!this.db.prepare(`SELECT 1 FROM agents WHERE id=? AND user_id=?`).get(agentId, userId)) {
       throw new Error('Только владелец машины может менять предоставление')
     }
-    const previous = Boolean((this.db.prepare(
-      `SELECT shared FROM machine_project_shares WHERE project_id=? AND agent_id=?`
-    ).get(projectId, agentId) as { shared: number } | undefined)?.shared)
-    if (previous === shared) return
+    const row = this.db.prepare(
+      `SELECT shared, access FROM machine_project_shares WHERE project_id=? AND agent_id=?`
+    ).get(projectId, agentId) as { shared: number; access?: string } | undefined
+    const previous = Boolean(row?.shared)
+    // Смена только уровня доступа (без снятия/выдачи) — тоже сохраняется, но в аудит идёт лишь флаг shared.
+    if (previous === shared && (row?.access ?? 'full') === access) return
     const ts = this.now()
     this.db.transaction(() => {
       this.db.prepare(
-        `INSERT INTO machine_project_shares (project_id,agent_id,shared,created_at,updated_at,updated_by)
-         VALUES (?,?,?,?,?,?)
-         ON CONFLICT(project_id,agent_id) DO UPDATE SET shared=excluded.shared,updated_at=excluded.updated_at,updated_by=excluded.updated_by`
-      ).run(projectId, agentId, shared ? 1 : 0, ts, ts, userId)
-      this.db.prepare(
-        `INSERT INTO machine_project_share_audit (id,project_id,agent_id,actor,old_value,new_value,created_at)
-         VALUES (?,?,?,?,?,?,?)`
-      ).run(this.newId(), projectId, agentId, userId, previous ? 1 : 0, shared ? 1 : 0, ts)
+        `INSERT INTO machine_project_shares (project_id,agent_id,shared,access,created_at,updated_at,updated_by)
+         VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(project_id,agent_id) DO UPDATE SET shared=excluded.shared,access=excluded.access,updated_at=excluded.updated_at,updated_by=excluded.updated_by`
+      ).run(projectId, agentId, shared ? 1 : 0, access, ts, ts, userId)
+      if (previous !== shared) {
+        this.db.prepare(
+          `INSERT INTO machine_project_share_audit (id,project_id,agent_id,actor,old_value,new_value,created_at)
+           VALUES (?,?,?,?,?,?,?)`
+        ).run(this.newId(), projectId, agentId, userId, previous ? 1 : 0, shared ? 1 : 0, ts)
+      }
       if (!shared) {
         this.db.prepare(`DELETE FROM user_project_machine_defaults WHERE project_id=? AND agent_id=?`).run(projectId, agentId)
       }
@@ -2414,13 +2555,29 @@ export class VoiceChatDb {
       .run(JSON.stringify(policy), id, userId)
   }
 
-  /** Перевыпускает токен машины (старый перестаёт работать). Возвращает новый токен. */
-  regenerateAgentToken(userId: string, id: string): { token: string } {
+  /** Перевыпускает токен машины (старый перестаёт работать). Возвращает новый токен; ttlMs — срок (нет — бессрочный). */
+  regenerateAgentToken(userId: string, id: string, ttlMs?: number): { token: string; expiresAt: number | null } {
     const token = randomBytes(24).toString('hex')
+    const now = Date.now()
+    const expiresAt = ttlMs && ttlMs > 0 ? now + ttlMs : null
     this.db
-      .prepare(`UPDATE agents SET token_hash = ? WHERE id = ? AND user_id = ?`)
-      .run(hashAgentToken(token), id, userId)
-    return { token }
+      .prepare(`UPDATE agents SET token_hash = ?, token_issued_at = ?, token_expires_at = ? WHERE id = ? AND user_id = ?`)
+      .run(hashAgentToken(token), now, expiresAt, id, userId)
+    return { token, expiresAt }
+  }
+
+  /** Отзыв токена (п.11): хэш заменяется случайным, срок — «уже истёк»; подключиться можно только после перевыпуска. */
+  revokeAgentToken(id: string): void {
+    this.db.prepare(`UPDATE agents SET token_hash = ?, token_expires_at = ? WHERE id = ?`).run(hashAgentToken(randomBytes(24).toString('hex')), Date.now() - 1, id)
+  }
+
+  setAgentPinIp(userId: string, id: string, pin: boolean): void {
+    this.db.prepare(`UPDATE agents SET pin_ip = ? WHERE id = ? AND user_id = ?`).run(pin ? 1 : 0, id, userId)
+  }
+
+  /** IP успешного подключения агента — для привязки и журнала. */
+  recordAgentIp(id: string, ip: string): void {
+    this.db.prepare(`UPDATE agents SET last_ip = ? WHERE id = ?`).run(ip.slice(0, 64), id)
   }
 
   /**
@@ -2443,7 +2600,141 @@ export class VoiceChatDb {
   // ---- Users (аккаунты приложения) --------------------------------------
 
   private mapUser(r: UserDbRow): UserRow {
-    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at }
+    return { name: r.name, role: r.role as UserRole, blocked: r.blocked !== 0, createdAt: r.created_at, failedLogins: r.failed_logins ?? 0, lockedUntil: r.locked_until ?? null, lockReason: r.lock_reason ?? null, totpEnabled: Boolean(r.totp_secret), mustChangePassword: Boolean(r.must_change_password), lastLogin: r.last_login ?? null, llmLimitUsd: r.llm_limit_usd ?? null, email: r.email ?? null }
+  }
+
+  // ---- Конфигурация приложения (ключ/значение) и регистрация по email ----------------
+
+  /** Политика команд проекта (п.10); null — проекта нет. */
+  getProjectCommandPolicy(projectId: string): ProjectCommandPolicy | null {
+    const r = this.db.prepare(`SELECT command_policy FROM projects WHERE id = ?`).get(projectId) as { command_policy?: string | null } | undefined
+    return r ? parseProjectCommandPolicy(r.command_policy) : null
+  }
+
+  /** Ролевые правила команд (п.10) — одна JSON-запись app_config. */
+  getRoleCommandPolicies(): RoleCommandPolicies { return parseRoleCommandPolicies(this.getAppConfig('commandPolicy.roles')) }
+  setRoleCommandPolicies(roles: RoleCommandPolicies): void { this.setAppConfig('commandPolicy.roles', JSON.stringify(roles)) }
+
+  getAppConfig(key: string): string | null {
+    const r = this.db.prepare(`SELECT value FROM app_config WHERE key = ?`).get(key) as { value: string } | undefined
+    return r?.value ?? null
+  }
+
+  setAppConfig(key: string, value: string): void {
+    this.db.prepare(`INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, value)
+  }
+
+  getUserByEmail(email: string): UserRow | null {
+    const row = this.db.prepare(`SELECT * FROM users WHERE email = ?`).get(email.toLowerCase()) as UserDbRow | undefined
+    return row ? this.mapUser(row) : null
+  }
+
+  /** Заявка на регистрацию: пароль уже хешируется, токен хранится хешем; повторная заявка на тот же email заменяет прежнюю. */
+  createEmailVerification(input: { token: string; name: string; email: string; password: string; ttlMs: number }): void {
+    this.db.prepare(`DELETE FROM email_verifications WHERE email = ? OR name = ?`).run(input.email.toLowerCase(), input.name)
+    this.db.prepare(`INSERT INTO email_verifications (token_hash, name, email, password_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(createHash('sha256').update(input.token).digest('hex'), input.name, input.email.toLowerCase(), hashPassword(input.password), Date.now(), Date.now() + input.ttlMs)
+  }
+
+  /** Подтверждение: создаёт пользователя из заявки и удаляет её; null — токен неизвестен/истёк/логин занят. */
+  redeemEmailVerification(token: string, role: UserRole): UserRow | null {
+    const hash = createHash('sha256').update(token).digest('hex')
+    const r = this.db.prepare(`SELECT * FROM email_verifications WHERE token_hash = ?`).get(hash) as { name: string; email: string; password_hash: string; expires_at: number } | undefined
+    if (!r) return null
+    this.db.prepare(`DELETE FROM email_verifications WHERE token_hash = ?`).run(hash)
+    if (r.expires_at < Date.now() || this.getUser(r.name) || this.getUserByEmail(r.email)) return null
+    this.db.prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at, email) VALUES (?, ?, ?, 0, ?, ?)`).run(r.name, r.password_hash, role, this.now(), r.email)
+    return this.getUser(r.name)
+  }
+
+  pendingVerificationByEmail(email: string): { name: string; expiresAt: number } | null {
+    const r = this.db.prepare(`SELECT name, expires_at FROM email_verifications WHERE email = ? AND expires_at > ?`).get(email.toLowerCase(), Date.now()) as { name: string; expires_at: number } | undefined
+    return r ? { name: r.name, expiresAt: r.expires_at } : null
+  }
+
+  getPendingVerificationRaw(email: string): { name: string } | null {
+    const r = this.db.prepare(`SELECT name FROM email_verifications WHERE email = ?`).get(email.toLowerCase()) as { name: string } | undefined
+    return r ?? null
+  }
+
+  replaceVerificationToken(email: string, token: string, ttlMs: number): void {
+    this.db.prepare(`UPDATE email_verifications SET token_hash = ?, expires_at = ? WHERE email = ?`).run(createHash('sha256').update(token).digest('hex'), Date.now() + ttlMs, email.toLowerCase())
+  }
+
+  pruneEmailVerifications(): number {
+    return this.db.prepare(`DELETE FROM email_verifications WHERE expires_at < ?`).run(Date.now()).changes
+  }
+
+  markLogin(name: string): void {
+    this.db.prepare(`UPDATE users SET last_login = ? WHERE name = ?`).run(Date.now(), name)
+  }
+
+  setUserLlmLimit(name: string, usd: number | null): void {
+    this.db.prepare(`UPDATE users SET llm_limit_usd = ? WHERE name = ?`).run(usd, name)
+  }
+
+  /** Непросмотренные уведомления безопасности (п.16): входы с нового устройства после отметки «видел». */
+  unseenSecurityNotices(name: string): SecurityEvent[] {
+    const r = this.db.prepare(`SELECT notices_seen_at FROM users WHERE name = ?`).get(name) as { notices_seen_at?: number } | undefined
+    const since = r?.notices_seen_at ?? 0
+    return this.listSecurityEvents({ user: name, limit: 50 }).filter((e) => e.type === 'login_new_device' && e.at > since)
+  }
+
+  markNoticesSeen(name: string): void {
+    this.db.prepare(`UPDATE users SET notices_seen_at = ? WHERE name = ?`).run(Date.now(), name)
+  }
+
+  /** Автоотключение неактивных (п.18): не входили дольше `days` (или никогда, но созданы давно) → blocked с причиной inactive; admin не трогаем. */
+  blockInactiveUsers(days: number): string[] {
+    const cutoff = Date.now() - days * 24 * 60 * 60_000
+    const rows = this.db.prepare(`SELECT name FROM users WHERE blocked = 0 AND name != 'admin' AND role != 'admin' AND COALESCE(last_login, created_at) < ?`).all(cutoff) as Array<{ name: string }>
+    for (const r of rows) this.db.prepare(`UPDATE users SET blocked = 1, lock_reason = 'inactive' WHERE name = ?`).run(r.name)
+    return rows.map((r) => r.name)
+  }
+
+  setMustChangePassword(name: string, value: boolean): void {
+    this.db.prepare(`UPDATE users SET must_change_password = ? WHERE name = ?`).run(value ? 1 : 0, name)
+  }
+
+  /** Одноразовый код сброса от администратора (п.10): хранится хеш, действует `ttlMs`. */
+  setResetCode(name: string, code: string, ttlMs: number): void {
+    this.db.prepare(`UPDATE users SET reset_code_hash = ?, reset_code_expires = ? WHERE name = ?`).run(hashPassword(code), Date.now() + ttlMs, name)
+  }
+
+  /** Проверяет код и при успехе ставит новый пароль, снимает код, замок и флаг смены; false — код неверен/истёк. */
+  redeemResetCode(name: string, code: string, newPassword: string): boolean {
+    const r = this.db.prepare(`SELECT reset_code_hash, reset_code_expires FROM users WHERE name = ?`).get(name) as { reset_code_hash?: string | null; reset_code_expires?: number | null } | undefined
+    if (!r?.reset_code_hash || !r.reset_code_expires || r.reset_code_expires < Date.now() || !verifyPassword(code, r.reset_code_hash)) return false
+    this.db.prepare(`UPDATE users SET password_hash = ?, reset_code_hash = NULL, reset_code_expires = NULL, must_change_password = 0, failed_logins = 0, locked_until = NULL, lock_reason = NULL WHERE name = ?`).run(hashPassword(newPassword), name)
+    return true
+  }
+
+  getUserTotpSecret(name: string): string | null {
+    const r = this.db.prepare(`SELECT totp_secret FROM users WHERE name = ?`).get(name) as { totp_secret?: string | null } | undefined
+    return r?.totp_secret ?? null
+  }
+
+  setUserTotpSecret(name: string, secret: string | null): void {
+    this.db.prepare(`UPDATE users SET totp_secret = ? WHERE name = ?`).run(secret, name)
+  }
+
+  /** Неудачный вход: счётчик подряд; с 5-й попытки — замок на 15 минут, с 10-й — постоянная блокировка с причиной `auto`. */
+  recordLoginFailure(name: string): { failedLogins: number; lockedUntil: number | null; blocked: boolean } | null {
+    const row = this.db.prepare(`SELECT * FROM users WHERE name = ?`).get(name) as UserDbRow | undefined
+    if (!row) return null
+    const failed = (row.failed_logins ?? 0) + 1
+    // Замок сравнивается с Date.now() в auth.ts — тестовые часы БД здесь не подходят.
+    const now = Date.now()
+    const hard = failed >= LOGIN_HARD_LOCK_FAILS
+    const lockedUntil = hard ? null : failed >= LOGIN_LOCK_FAILS ? now + LOGIN_LOCK_MS : row.locked_until ?? null
+    this.db.prepare(`UPDATE users SET failed_logins = ?, locked_until = ?, blocked = CASE WHEN ? THEN 1 ELSE blocked END, lock_reason = CASE WHEN ? THEN 'auto' ELSE lock_reason END WHERE name = ?`)
+      .run(failed, lockedUntil, hard ? 1 : 0, hard ? 1 : 0, name)
+    return { failedLogins: failed, lockedUntil, blocked: hard || row.blocked !== 0 }
+  }
+
+  /** Успешный вход или ручная разблокировка: счётчик и замок снимаются. */
+  resetLoginFailures(name: string): void {
+    this.db.prepare(`UPDATE users SET failed_logins = 0, locked_until = NULL, lock_reason = NULL WHERE name = ?`).run(name)
   }
 
   /**
@@ -2463,7 +2754,7 @@ export class VoiceChatDb {
     this.db
       .prepare(`INSERT INTO users (name, password_hash, role, blocked, created_at) VALUES (?, ?, ?, 0, ?)`)
       .run(name, hashPassword(password), role, this.now())
-    return { name, role, blocked: false, createdAt: this.now() }
+    return { name, role, blocked: false, createdAt: this.now(), failedLogins: 0, lockedUntil: null, lockReason: null, totpEnabled: false, mustChangePassword: false, lastLogin: null, llmLimitUsd: null, email: null }
   }
 
   getUser(name: string): UserRow | null {
@@ -2488,7 +2779,9 @@ export class VoiceChatDb {
   }
 
   setUserBlocked(name: string, blocked: boolean): void {
-    this.db.prepare(`UPDATE users SET blocked = ? WHERE name = ?`).run(blocked ? 1 : 0, name)
+    // Ручная разблокировка снимает и авто-замок, иначе пользователь останется «заперт» до истечения таймера.
+    if (blocked) this.db.prepare(`UPDATE users SET blocked = 1 WHERE name = ?`).run(name)
+    else this.db.prepare(`UPDATE users SET blocked = 0, failed_logins = 0, locked_until = NULL, lock_reason = NULL WHERE name = ?`).run(name)
   }
 
   setUserRole(name: string, role: UserRole): UserRow | null {
@@ -2497,11 +2790,133 @@ export class VoiceChatDb {
   }
 
   setUserPassword(name: string, password: string): void {
-    this.db.prepare(`UPDATE users SET password_hash = ? WHERE name = ?`).run(hashPassword(password), name)
+    this.db.prepare(`UPDATE users SET password_hash = ?, must_change_password = 0 WHERE name = ?`).run(hashPassword(password), name)
   }
 
   deleteUser(name: string): void {
     this.db.prepare(`DELETE FROM users WHERE name = ?`).run(name)
+  }
+
+  // ---- Инвайты (auth-roadmap п.8) --------------------------------------------
+
+  createInvite(input: { token: string; role: UserRole; createdBy: string; ttlMs: number; maxUses: number; note?: string }): InviteInfo {
+    const now = Date.now()
+    this.db.prepare(`INSERT INTO invites (token, role, created_by, created_at, expires_at, max_uses, uses, note) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
+      .run(input.token, input.role, input.createdBy, now, now + input.ttlMs, Math.max(1, input.maxUses), (input.note ?? '').slice(0, 200))
+    return this.getInvite(input.token)!
+  }
+
+  getInvite(token: string): InviteInfo | null {
+    const r = this.db.prepare(`SELECT * FROM invites WHERE token = ?`).get(token) as { token: string; role: string; created_by: string; created_at: number; expires_at: number; max_uses: number; uses: number; note: string } | undefined
+    return r ? { token: r.token, role: r.role as UserRole, createdBy: r.created_by, createdAt: r.created_at, expiresAt: r.expires_at, maxUses: r.max_uses, uses: r.uses, note: r.note } : null
+  }
+
+  listInvites(): InviteInfo[] {
+    return (this.db.prepare(`SELECT token FROM invites ORDER BY created_at DESC`).all() as Array<{ token: string }>).map((r) => this.getInvite(r.token)!)
+  }
+
+  /** Инвайт годен: не истёк и не исчерпан. */
+  inviteUsable(token: string): InviteInfo | null {
+    const inv = this.getInvite(token)
+    return inv && inv.expiresAt > Date.now() && inv.uses < inv.maxUses ? inv : null
+  }
+
+  consumeInvite(token: string): void {
+    this.db.prepare(`UPDATE invites SET uses = uses + 1 WHERE token = ?`).run(token)
+  }
+
+  deleteInvite(token: string): boolean {
+    return this.db.prepare(`DELETE FROM invites WHERE token = ?`).run(token).changes > 0
+  }
+
+  /** Чистка истёкших и исчерпанных инвайтов старше недели (auth-roadmap п.18 — вызывается планировщиком). */
+  pruneInvites(): number {
+    return this.db.prepare(`DELETE FROM invites WHERE expires_at < ? OR (uses >= max_uses AND created_at < ?)`).run(Date.now() - 7 * 24 * 60 * 60_000, Date.now() - 7 * 24 * 60 * 60_000).changes
+  }
+
+  // ---- Журнал безопасности (auth-roadmap п.7) --------------------------------
+
+  // ---- Журнал команд машин (machines-roadmap п.4) ----------------------------
+
+  addMachineCommand(rec: Omit<MachineCommandRecord, 'id'>): MachineCommandRecord {
+    const info = this.db.prepare(`INSERT INTO machine_commands (machine_id, user_id, source, command, exit_code, timed_out, error, duration_ms, started_at, conversation_id, output_excerpt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(rec.machineId, rec.userId, rec.source, rec.command.slice(0, 4000), rec.exitCode, rec.timedOut ? 1 : 0, rec.error ? rec.error.slice(0, 500) : null, rec.durationMs, rec.startedAt, rec.conversationId, rec.outputExcerpt.slice(0, 500))
+    // Журнал не растёт бесконечно: по 5000 последних записей на машину.
+    if (Math.random() < 0.02) this.db.prepare(`DELETE FROM machine_commands WHERE machine_id = ? AND id < (SELECT COALESCE(MAX(id), 0) - 5000 FROM machine_commands WHERE machine_id = ?)`).run(rec.machineId, rec.machineId)
+    return { ...rec, id: Number(info.lastInsertRowid) }
+  }
+
+  listMachineCommands(machineId: string, filter: { limit?: number; q?: string; source?: MachineCommandSource } = {}): MachineCommandRecord[] {
+    const limit = Math.min(Math.max(filter.limit ?? 200, 1), 2000)
+    const where = ['machine_id = ?']
+    const params: unknown[] = [machineId]
+    if (filter.source) { where.push('source = ?'); params.push(filter.source) }
+    if (filter.q?.trim()) { where.push('command LIKE ?'); params.push(`%${filter.q.trim()}%`) }
+    const rows = this.db.prepare(`SELECT * FROM machine_commands WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`).all(...params, limit) as Array<{
+      id: number; machine_id: string; user_id: string; source: MachineCommandSource; command: string; exit_code: number | null; timed_out: number; error: string | null; duration_ms: number; started_at: number; conversation_id: string | null; output_excerpt: string
+    }>
+    return rows.map((r) => ({ id: r.id, machineId: r.machine_id, userId: r.user_id, source: r.source, command: r.command, exitCode: r.exit_code, timedOut: r.timed_out === 1, error: r.error, durationMs: r.duration_ms, startedAt: r.started_at, conversationId: r.conversation_id, outputExcerpt: r.output_excerpt }))
+  }
+
+  logSecurityEvent(e: { user: string; type: SecurityEventType; ip?: string; userAgent?: string; details?: string }): void {
+    this.db.prepare(`INSERT INTO security_events (at, user_name, type, ip, user_agent, details) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(Date.now(), e.user.slice(0, 80), e.type, (e.ip ?? '').slice(0, 64), (e.userAgent ?? '').slice(0, 200), (e.details ?? '').slice(0, 500))
+    // Журнал не должен расти бесконечно: держим последние 50 000 записей.
+    if (Math.random() < 0.01) this.db.prepare(`DELETE FROM security_events WHERE id < (SELECT COALESCE(MAX(id), 0) - 50000 FROM security_events)`).run()
+  }
+
+  listSecurityEvents(filter: { user?: string; limit?: number } = {}): SecurityEvent[] {
+    const limit = Math.min(Math.max(filter.limit ?? 200, 1), 1000)
+    const rows = (filter.user
+      ? this.db.prepare(`SELECT * FROM security_events WHERE user_name = ? ORDER BY id DESC LIMIT ?`).all(filter.user, limit)
+      : this.db.prepare(`SELECT * FROM security_events ORDER BY id DESC LIMIT ?`).all(limit)) as Array<{ id: number; at: number; user_name: string; type: SecurityEventType; ip: string; user_agent: string; details: string }>
+    return rows.map((r) => ({ id: r.id, at: r.at, user: r.user_name, type: r.type, ip: r.ip, userAgent: r.user_agent, details: r.details }))
+  }
+
+  // ---- Сессии (auth-roadmap п.4) -------------------------------------------
+
+  /** Регистрирует сессию входа; повторный вызов для того же sid обновляет last_seen. */
+  createSession(sid: string, user: string, meta: { ip: string; userAgent: string; ttlMs: number }): void {
+    const now = Date.now()
+    this.db.prepare(`INSERT INTO sessions (sid, user_name, created_at, last_seen, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(sid) DO UPDATE SET last_seen = excluded.last_seen`).run(sid, user, now, now, now + meta.ttlMs, meta.ip.slice(0, 64), meta.userAgent.slice(0, 200))
+  }
+
+  /** Есть ли запись о сессии вообще (в т.ч. отозванная) — чтобы ленивый импорт старых токенов не воскрешал отозванные. */
+  hasSessionRow(sid: string): boolean {
+    return Boolean(this.db.prepare(`SELECT 1 FROM sessions WHERE sid = ?`).get(sid))
+  }
+
+  getSession(sid: string): SessionInfo | null {
+    const r = this.db.prepare(`SELECT * FROM sessions WHERE sid = ?`).get(sid) as { sid: string; user_name: string; created_at: number; last_seen: number; expires_at: number; ip: string; user_agent: string; revoked_at: number | null } | undefined
+    if (!r || r.revoked_at) return null
+    return { sid: r.sid, user: r.user_name, createdAt: r.created_at, lastSeen: r.last_seen, expiresAt: r.expires_at, ip: r.ip, userAgent: r.user_agent }
+  }
+
+  /** Отметка активности — не чаще раза в минуту, чтобы не писать в БД на каждый запрос. */
+  touchSession(sid: string, ttlMs: number): void {
+    const now = Date.now()
+    this.db.prepare(`UPDATE sessions SET last_seen = ?, expires_at = ? WHERE sid = ? AND last_seen < ?`).run(now, now + ttlMs, sid, now - 60_000)
+  }
+
+  listSessions(user: string): SessionInfo[] {
+    const rows = this.db.prepare(`SELECT * FROM sessions WHERE user_name = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY last_seen DESC`).all(user, Date.now()) as Array<{ sid: string; user_name: string; created_at: number; last_seen: number; expires_at: number; ip: string; user_agent: string }>
+    return rows.map((r) => ({ sid: r.sid, user: r.user_name, createdAt: r.created_at, lastSeen: r.last_seen, expiresAt: r.expires_at, ip: r.ip, userAgent: r.user_agent }))
+  }
+
+  revokeSessionById(sid: string): boolean {
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE sid = ? AND revoked_at IS NULL`).run(Date.now(), sid).changes > 0
+  }
+
+  /** «Выйти везде»: все сессии пользователя, кроме указанной (текущей). */
+  revokeUserSessions(user: string, exceptSid: string | null = null): number {
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE user_name = ? AND revoked_at IS NULL AND (? IS NULL OR sid != ?)`).run(Date.now(), user, exceptSid, exceptSid).changes
+  }
+
+  /** Чистка истёкших и давно отозванных сессий (вызывается на старте и раз в сутки). */
+  pruneSessions(): number {
+    return this.db.prepare(`DELETE FROM sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)`).run(Date.now(), Date.now() - 7 * 24 * 60 * 60_000).changes
   }
 
   /** Делает конкретный Bearer-токен недействительным даже после рестарта сервера. */
@@ -2911,6 +3326,7 @@ export class VoiceChatDb {
       mergeTransport: r.merge_transport === 'github_pull_request' ? 'github_pull_request' : 'local',
       agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
       testCommand: r.test_command || undefined,
+      commandPolicy: parseProjectCommandPolicy(r.command_policy),
       productionDeployCommand: r.production_deploy_command || undefined,
       productionAgentId: r.production_agent_id,
       productionEnvironmentMode: r.production_environment_mode === 'managed' ? 'managed' : 'legacy',
@@ -3034,7 +3450,8 @@ export class VoiceChatDb {
                 s.root_path AS storage_root_path, s.format_version AS storage_format_version,
                 COALESCE(pm.added_at, share.created_at, a.created_at) AS added_at,
                 a.name, a.user_id,
-                CASE WHEN share.shared = 1 THEN 1 ELSE 0 END AS shared
+                CASE WHEN share.shared = 1 THEN 1 ELSE 0 END AS shared,
+                COALESCE(share.access,'full') AS share_access
          FROM agents a
          LEFT JOIN project_machines pm ON pm.agent_id=a.id AND pm.project_id=?
          LEFT JOIN machine_storages s ON s.id=pm.storage_id AND s.machine_id=a.id
@@ -3055,6 +3472,7 @@ export class VoiceChatDb {
         name: string
         user_id: string
         shared: number
+        share_access: string
       }>
     ).map((x) => {
       let directories: ProjectMachineDirectoryAssignments | undefined
@@ -3077,6 +3495,7 @@ export class VoiceChatDb {
         owner: x.user_id,
         ownership: x.user_id === userId ? 'mine' as const : 'other' as const,
         sharedWithProject: !!x.shared,
+        ...(x.shared ? { shareAccess: (x.share_access === 'read' ? 'read' : 'full') as MachineShareAccess } : {}),
         isMyDefault: this.getUserProjectDefaultMachine(userId, id) === x.agent_id,
         canUse: x.user_id === userId || !!x.shared,
         unavailableReason: null,
@@ -3132,6 +3551,7 @@ export class VoiceChatDb {
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
       productionDeployCommand?: string
       productionAgentId?: string | null
       productionEnvironmentMode?: 'legacy' | 'managed'
@@ -3192,6 +3612,7 @@ export class VoiceChatDb {
       vals.push(fields.agentPlanApprovalMode)
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
+    if (fields.commandPolicy !== undefined) { set.push('command_policy = ?'); vals.push(JSON.stringify(fields.commandPolicy)) }
     if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
     if (fields.productionAgentId !== undefined) { set.push('production_agent_id = ?'); vals.push(fields.productionAgentId) }
     if (fields.productionEnvironmentMode !== undefined) { set.push('production_environment_mode = ?'); vals.push(fields.productionEnvironmentMode) }

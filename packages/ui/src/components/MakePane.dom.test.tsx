@@ -8,6 +8,7 @@ import { MAKE_SCAFFOLD } from '@shared/make'
 vi.mock('../lib/makeA11y', async (orig) => ({ ...(await orig<typeof import('../lib/makeA11y')>()), runAxeInFrame: vi.fn(async () => [{ id: 'image-alt', impact: 'critical', help: 'Images must have alternate text', helpUrl: 'https://dequeuniversity.com/rules/axe/image-alt', nodes: 1, target: 'img' }]) }))
 vi.mock('../lib/makeScreenshot', () => ({ captureIframeScreenshot: vi.fn(async (_t: unknown, name: string) => new File(['png'], name, { type: 'image/png' })) }))
 import { MakePane } from './MakePane'
+import type { MakePresenceClient } from '@shared/make'
 
 const CONV = 'make-1'
 
@@ -182,6 +183,91 @@ describe('MakePane', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Сохранить весь кит \(3 файл\.\)/ }))
     await waitFor(() => expect(spy).toHaveBeenCalledWith(expect.objectContaining({ paths: ['src/components/Btn.stories.tsx', 'src/components/Btn.tsx', 'styles.css'] })))
     expect(await screen.findByText('кит')).toBeInTheDocument()
+  })
+
+  it('presence: чип с числом вкладок и read-only при чужом редактировании файла (roadmap-2 п.14)', async () => {
+    const api = createFakeApi([])
+    const listeners: Array<(m: { conversationId: string; clients: MakePresenceClient[] }) => void> = []
+    const make = { onChanged: () => () => {}, onPresence: (cb: (m: { conversationId: string; clients: MakePresenceClient[] }) => void) => { listeners.push(cb); return () => {} } }
+    render(<MakePane conversationId={CONV} api={api} make={make} previewBase={`/api/preview/make/${CONV}/`} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const editor = await screen.findByLabelText('Содержимое index.html') as HTMLTextAreaElement
+    expect(screen.queryByTestId('make-presence')).toBeNull()
+    listeners.forEach((l) => l({ conversationId: CONV, clients: [{ clientId: 'other', user: 'admin', path: 'index.html', editing: true, at: Date.now() }] }))
+    expect(await screen.findByTestId('make-presence')).toHaveTextContent('👥 2')
+    expect(screen.getByTestId('make-lock')).toBeInTheDocument()
+    expect(editor.readOnly).toBe(true)
+    listeners.forEach((l) => l({ conversationId: CONV, clients: [{ clientId: 'other', user: 'admin', path: 'styles.css', editing: true, at: Date.now() }] }))
+    await waitFor(() => expect(screen.queryByTestId('make-lock')).toBeNull())
+    expect(editor.readOnly).toBe(false)
+  })
+
+  it('тесты компонентов: кнопка «Тесты», результаты из раннера, «Исправить» с упавшими (roadmap-4 п.3)', async () => {
+    const api = createFakeApi([])
+    await api['make:write']({ conversationId: CONV, path: 'src/components/Button.test.tsx', content: "test('рендер', async () => {})\ntest('клик', async () => {})" })
+    const onAsk = vi.fn()
+    render(<MakePane conversationId={CONV} api={api} make={{ onChanged: () => () => {} }} previewBase={`/api/preview/make/${CONV}/`} onAskAssistant={onAsk} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Компоненты' }))
+    await userEvent.click(await screen.findByRole('button', { name: /^Тесты \(2\)/ }))
+    const frame = await screen.findByTitle('Тесты src/components/Button.test.tsx') as HTMLIFrameElement
+    expect(frame.src).toContain('__tests__?file=src%2Fcomponents%2FButton.test.tsx')
+    const send = (data: object) => window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }))
+    send({ type: 'vc-make.test', file: './src/components/Button.test.tsx', name: 'рендер', status: 'passed', ms: 12 })
+    send({ type: 'vc-make.test', file: './src/components/Button.test.tsx', name: 'клик', status: 'failed', ms: 3, error: 'expected 1 toBe 2' })
+    send({ type: 'vc-make.tests-done', passed: 1, failed: 1 })
+    const panel = await screen.findByTestId('make-tests')
+    await waitFor(() => expect(within(panel).getByText('✗ клик')).toBeInTheDocument())
+    expect(within(panel).getByText('expected 1 toBe 2')).toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Исправить' }))
+    expect(onAsk).toHaveBeenCalledWith(expect.stringContaining('Button.test.tsx › клик: expected 1 toBe 2'))
+  })
+
+  it('«Только спросить» переключает режим вопроса через onAskOnlyChange (roadmap-4 п.4)', async () => {
+    const onAskOnlyChange = vi.fn()
+    render(<MakePane conversationId={CONV} api={createFakeApi([])} make={{ onChanged: () => () => {} }} previewBase={`/api/preview/make/${CONV}/`} askOnly={false} onAskOnlyChange={onAskOnlyChange} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Только спросить' }))
+    expect(onAskOnlyChange).toHaveBeenCalledWith(true)
+  })
+
+  it('«Сверить с запросом» шлёт скриншот «после» и исходный запрос ассистенту (roadmap-4 п.5)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const origCreate = URL.createObjectURL; const origFetch = globalThis.fetch
+    URL.createObjectURL = () => 'blob:x'; URL.revokeObjectURL = () => undefined
+    globalThis.fetch = (async () => new Response(new Blob(['png'], { type: 'image/png' }))) as typeof fetch
+    try {
+      const api = createFakeApi([])
+      const listeners: Array<(m: { conversationId: string; rev: number; paths: string[] }) => void> = []
+      const make = { onChanged: (cb: (m: { conversationId: string; rev: number; paths: string[] }) => void) => { listeners.push(cb); return () => {} } }
+      const onAttachImage = vi.fn(); const onAsk = vi.fn()
+      const props = { conversationId: CONV, api, make, previewBase: `/api/preview/make/${CONV}/`, onAttachImage, onAskAssistant: onAsk, lastRequest: 'Сделай кнопку синей' }
+      const { rerender } = render(<MakePane {...props} turnActive={false} />)
+      await screen.findByTitle('Превью проекта')
+      rerender(<MakePane {...props} turnActive />)
+      await vi.advanceTimersByTimeAsync(50)
+      listeners.forEach((l) => l({ conversationId: CONV, rev: 2, paths: ['styles.css'] }))
+      rerender(<MakePane {...props} turnActive={false} />)
+      await vi.advanceTimersByTimeAsync(1500)
+      await userEvent.click(await screen.findByRole('button', { name: 'Сверить с запросом' }))
+      await waitFor(() => expect(onAttachImage).toHaveBeenCalled())
+      expect(onAsk).toHaveBeenCalledWith(expect.stringContaining('Сделай кнопку синей'))
+    } finally { URL.createObjectURL = origCreate; globalThis.fetch = origFetch; vi.useRealTimers() }
+  })
+
+  it('после хода показываются чипы «Что дальше», клик отправляет промпт (roadmap-4 п.8)', async () => {
+    const onAsk = vi.fn()
+    const api = createFakeApi([])
+    const props = { conversationId: CONV, api, make: { onChanged: () => () => {} }, previewBase: `/api/preview/make/${CONV}/`, onAskAssistant: onAsk }
+    const { rerender } = render(<MakePane {...props} turnActive={false} />)
+    await screen.findByTitle('Превью проекта')
+    expect(screen.queryByTestId('make-next')).toBeNull()
+    rerender(<MakePane {...props} turnActive />)
+    rerender(<MakePane {...props} turnActive={false} />)
+    const strip = await screen.findByTestId('make-next')
+    const chips = within(strip).getAllByRole('button').filter((b) => b.className.includes('make-next-chip'))
+    expect(chips.length).toBe(3)
+    await userEvent.click(chips[0]!)
+    expect(onAsk).toHaveBeenCalled()
+    expect(screen.queryByTestId('make-next')).toBeNull()
   })
 
   it('onEditorContext сообщает хосту открытый файл и сбрасывает его при размонтировании (п.21)', async () => {
@@ -604,12 +690,12 @@ describe('MakePane', () => {
     const post = vi.spyOn(frame.contentWindow!, 'postMessage')
     await openMore()
     await userEvent.click(screen.getByRole('button', { name: 'Тема превью' }))
-    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: '' }, '*')
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: '' }), '*')
     await openMore()
     await userEvent.selectOptions(screen.getByLabelText('Язык превью'), 'en')
-    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }, '*')
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }), '*')
     fireEvent(window, new MessageEvent('message', { data: { type: 'vc-make.ready' }, source: frame.contentWindow }))
-    expect(post).toHaveBeenLastCalledWith({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }, '*')
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', scheme: 'dark', lang: 'en' }), '*')
   })
 
   it('♿ запускает axe в превью, показывает нарушения и отдаёт их ассистенту', async () => {
@@ -695,5 +781,286 @@ describe('MakePane', () => {
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Вставить' }).length).toBeGreaterThan(1))
     await userEvent.click(screen.getAllByRole('button', { name: 'Вставить' }).at(-1)!)
     await waitFor(() => expect(screen.queryByTestId('make-library')).not.toBeInTheDocument())
+  })
+})
+
+describe('MakePane: inline-diff правок ассистента (roadmap-4 п.9)', () => {
+  it('после make.changed по открытому файлу во время хода показывает плашку с числом изменённых строк', async () => {
+    const { api, emit } = renderPane({ turnActive: true })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const editor = await screen.findByLabelText('Содержимое index.html') as HTMLTextAreaElement
+    await waitFor(() => expect(editor.value).toBe(MAKE_SCAFFOLD['index.html']))
+    await api['make:write']({ conversationId: CONV, path: 'index.html', content: MAKE_SCAFFOLD['index.html'] + '\n<!-- one -->\n<!-- two -->' })
+    emit({ conversationId: CONV, rev: 2, paths: ['index.html'] })
+    await waitFor(() => expect(screen.getByText(/Подсвечены строки, изменённые ассистентом \(2\)/)).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: 'скрыть' }))
+    expect(screen.queryByText(/Подсвечены строки/)).toBeNull()
+  })
+})
+
+describe('MakePane: мультивыбор файлов в дереве (roadmap-4 п.10)', () => {
+  it('Ctrl-клик выбирает файлы, панель показывает счётчик, «Удалить» убирает все выбранные после подтверждения', async () => {
+    const { api } = renderPane()
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const tree = screen.getByRole('navigation', { name: 'Файлы проекта' })
+    const files = within(tree).getAllByRole('button', { name: /^[^ ]+\.(html|css|tsx|js|json|md)$/ })
+    expect(files.length).toBeGreaterThan(2)
+    fireEvent.click(files[0]!, { ctrlKey: true })
+    fireEvent.click(files[1]!, { ctrlKey: true })
+    const bulk = await screen.findByTestId('make-bulk')
+    expect(bulk.textContent).toContain('Выбрано: 2')
+    // Shift-клик добирает диапазон от якоря (files[1]) до files[2].
+    fireEvent.click(files[2]!, { shiftKey: true })
+    expect(screen.getByTestId('make-bulk').textContent).toContain('Выбрано: 3')
+    const before = (await api['make:state']({ conversationId: CONV })).files.length
+    await userEvent.click(within(bulk).getByRole('button', { name: 'Удалить' }))
+    const dlg = await screen.findByRole('alertdialog').catch(() => screen.findByRole('dialog'))
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Удалить' }))
+    await waitFor(async () => expect((await api['make:state']({ conversationId: CONV })).files.length).toBe(before - 3))
+    expect(screen.queryByTestId('make-bulk')).toBeNull()
+  })
+})
+
+describe('MakePane: regex-поиск и предпросмотр замены (roadmap-4 п.11)', () => {
+  it('«.*» включает regex, «Предпросмотр» показывает строки до/после без записи, «Заменить все» применяет $1', async () => {
+    const { api } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'tokens.css', content: ':root { --bg: #fff; --card: #fff; }' })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Регулярное выражение' }))
+    await userEvent.type(screen.getByLabelText('Поиск по файлам проекта'), '--(\\w+): #fff')
+    await userEvent.click(screen.getByRole('button', { name: 'Заменить по проекту' }))
+    await userEvent.type(screen.getByLabelText('Заменить на'), '--$1: white')
+    await userEvent.click(screen.getByRole('button', { name: 'Предпросмотр' }))
+    const preview = await screen.findByTestId('make-replace-preview')
+    expect(preview.textContent).toContain('Изменится строк: 1')
+    expect(preview.textContent).toContain('--bg: white; --card: white;')
+    expect((await api['make:read']({ conversationId: CONV, path: 'tokens.css' })).content).toContain('#fff')
+    await userEvent.click(screen.getByRole('button', { name: 'Заменить все' }))
+    const dlg = await screen.findByRole('alertdialog').catch(() => screen.findByRole('dialog'))
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Заменить' }))
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'tokens.css' })).content).toBe(':root { --bg: white; --card: white; }'))
+  })
+})
+
+describe('MakePane: замечания линтера (roadmap-4 п.12)', () => {
+  it('предупреждения показываются с ⚠, правилом и строкой, без пометки «ошибка»', async () => {
+    const { api } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'src/lint.tsx', content: "console.log('x')\nexport const a = 1\n" })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Проверить' }))
+    const box = await screen.findByTestId('make-issues')
+    expect(box).toHaveTextContent('Ошибок нет; замечания линтера (1)')
+    expect(box).toHaveTextContent('⚠ src/lint.tsx:1 — Отладочный console.log')
+    expect(box).toHaveTextContent('no-console')
+    expect(box.className).toContain('make-issues--warn')
+    expect(box.className).not.toContain('make-issues--bad')
+  })
+})
+
+describe('MakePane: сплит «код | превью» и zen (roadmap-4 п.16)', () => {
+  it('◫ показывает превью рядом с редактором и запоминает выбор; ⛶ скрывает шапку и дерево, Esc возвращает', async () => {
+    renderPane()
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    expect(screen.queryByTestId('make-split-preview')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Превью рядом' }))
+    const side = await screen.findByTestId('make-split-preview')
+    expect(within(side).getByTitle('Превью рядом').getAttribute('src')).toContain('index.html?rev=')
+    expect(screen.getByRole('separator', { name: 'Граница код/превью' })).toBeInTheDocument()
+    expect(localStorage.getItem('vc.make.split')).toBe('on')
+    await userEvent.click(screen.getByRole('button', { name: 'Zen-режим' }))
+    expect(screen.getByTestId('make-pane').className).toContain('make-pane--zen')
+    expect(screen.getByTestId('make-code').className).toContain('make-code--zen')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getByTestId('make-pane').className).not.toContain('make-pane--zen'))
+    await userEvent.click(screen.getByRole('button', { name: 'Превью рядом' }))
+    expect(screen.queryByTestId('make-split-preview')).toBeNull()
+    localStorage.removeItem('vc.make.split')
+  })
+})
+
+describe('MakePane: правка текста в превью (roadmap-4 п.17)', () => {
+  it('vc-make.text из iframe записывает новый текст в файл с единственным вхождением; неоднозначность — тост без записи', async () => {
+    const { api } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'index.html', content: '<h1>Заголовок</h1>\n<p>Абзац\n  текста</p>' })
+    await api['make:write']({ conversationId: CONV, path: 'about.html', content: '<h2>Дубль</h2>' })
+    await api['make:write']({ conversationId: CONV, path: 'contacts.html', content: '<h2>Дубль</h2>' })
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    const send = (data: object) => window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }))
+    send({ type: 'vc-make.text', selector: 'p', before: 'Абзац текста', after: 'Новый <b>текст</b>' })
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toBe('<h1>Заголовок</h1>\n<p>Новый &lt;b&gt;текст&lt;/b&gt;</p>'))
+    send({ type: 'vc-make.text', selector: 'h2', before: 'Дубль', after: 'Другой' })
+    await screen.findByText(/встречается в нескольких файлах/)
+    expect((await api['make:read']({ conversationId: CONV, path: 'about.html' })).content).toBe('<h2>Дубль</h2>')
+  })
+})
+
+describe('MakePane: перетаскивание секций в превью (roadmap-4 п.18)', () => {
+  it('vc-make.reorder переносит фрагмент в файле; при неоднозначности файл не трогается', async () => {
+    const { api } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'index.html', content: '<main>\n  <section id="a">A</section>\n  <section id="b">B</section>\n</main>' })
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    const send = (data: object) => window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow }))
+    send({ type: 'vc-make.reorder', moved: '<section id="a">A</section>', target: '<section id="b">B</section>', position: 'after' })
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'index.html' })).content).toBe('<main>\n  <section id="b">B</section>\n  <section id="a">A</section>\n</main>'))
+    send({ type: 'vc-make.reorder', moved: '<div>nope</div>', target: '<section id="b">B</section>', position: 'after' })
+    await screen.findByText(/порядок в файле не изменён/)
+  })
+})
+
+describe('MakePane: эмуляция состояний превью (roadmap-4 п.20)', () => {
+  it('меню ⋯ переключает reduced motion и медленную сеть — в iframe уходит vc-make.env с флагами; состояние элемента доступно после выбора', async () => {
+    renderPane()
+    const frame = await screen.findByTitle('Превью проекта') as HTMLIFrameElement
+    const post = vi.fn()
+    Object.defineProperty(frame, 'contentWindow', { value: { postMessage: post }, configurable: true })
+    await openMore()
+    expect(screen.getByRole('button', { name: 'Состояние элемента' })).toBeDisabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Reduced motion' }))
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', reducedMotion: true, slowMs: 0 }), '*')
+    await openMore()
+    await userEvent.click(screen.getByRole('button', { name: 'Медленная сеть' }))
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', reducedMotion: true, slowMs: 1500 }), '*')
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'vc-make.selected', selector: 'h1', tag: 'h1', text: 'Привет', html: '<h1>Привет</h1>' }, source: frame.contentWindow }))
+    await openMore()
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Состояние элемента' })).toBeEnabled())
+    await userEvent.click(screen.getByRole('button', { name: 'Состояние элемента' }))
+    expect(post).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'vc-make.env', state: 'hover' }), '*')
+  })
+})
+
+describe('MakePane: три ширины рядом (roadmap-4 п.21)', () => {
+  it('режим ⫼ рисует три кадра; скролл одного уходит остальным как vc-make.restore, эхо не зацикливается', async () => {
+    renderPane()
+    await screen.findByTitle('Превью проекта')
+    await userEvent.click(screen.getByRole('button', { name: 'Три ширины рядом' }))
+    const main = screen.getByTitle('Превью проекта') as HTMLIFrameElement
+    const tablet = screen.getByTitle('Превью 820px') as HTMLIFrameElement
+    const phone = screen.getByTitle('Превью 390px') as HTMLIFrameElement
+    expect(main.style.width).toBe('1200px')
+    // source у MessageEvent должен быть настоящим Window — берём окна jsdom-кадров и подменяем им postMessage.
+    const posts = { main: vi.fn(), tablet: vi.fn(), phone: vi.fn() }
+    Object.defineProperty(main.contentWindow!, 'postMessage', { value: posts.main, configurable: true })
+    Object.defineProperty(tablet.contentWindow!, 'postMessage', { value: posts.tablet, configurable: true })
+    Object.defineProperty(phone.contentWindow!, 'postMessage', { value: posts.phone, configurable: true })
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'vc-make.state', x: 0, y: 240, hash: '' }, source: tablet.contentWindow }))
+    expect(posts.main).toHaveBeenCalledWith({ type: 'vc-make.restore', x: 0, y: 240 }, '*')
+    expect(posts.phone).toHaveBeenCalledWith({ type: 'vc-make.restore', x: 0, y: 240 }, '*')
+    expect(posts.tablet).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'vc-make.restore' }), '*')
+    // Ответный state от телефона в окне 300 мс — эхо, не пересылается.
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'vc-make.state', x: 0, y: 240, hash: '' }, source: phone.contentWindow }))
+    expect(posts.tablet).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'vc-make.restore' }), '*')
+  })
+})
+
+describe('MakePane: автогенерация сториз (roadmap-4 п.23)', () => {
+  it('компонент без сториз показан в группе «Без сториз»; клик создаёт stories-файл и открывает Default', async () => {
+    const { api, emit } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'src/components/Badge.tsx', content: "export interface BadgeProps {\n  text: string\n  tone?: 'ok' | 'warn'\n}\nexport function Badge({ text }: BadgeProps) { return <span>{text}</span> }\n" })
+    emit({ conversationId: CONV, rev: 1, paths: ['src/components/Badge.tsx'] })
+    await userEvent.click(screen.getByRole('tab', { name: 'Компоненты' }))
+    const orphans = await screen.findByTestId('make-orphans')
+    await userEvent.click(within(orphans).getByRole('button', { name: /сториз для Badge\.tsx/ }))
+    await waitFor(async () => expect((await api['make:read']({ conversationId: CONV, path: 'src/components/Badge.stories.tsx' })).content).toContain('export const Warn = () => <Badge tone="warn" text="Пример" />'))
+    await waitFor(() => expect(screen.queryByTestId('make-orphans')).toBeNull())
+    expect(await screen.findByText('Default')).toBeInTheDocument()
+  })
+})
+
+describe('MakePane: таблица коллекции моков (roadmap-4 п.29)', () => {
+  it('mock/*.json с $body открывается таблицей, правка ячейки делает файл грязным и сохраняется JSON-ом; переключатель JSON показывает редактор', async () => {
+    const { api, emit } = renderPane()
+    await api['make:write']({ conversationId: CONV, path: 'mock/api/users.json', content: JSON.stringify({ $collection: true, $body: [{ id: 1, name: 'Анна' }] }, null, 2) })
+    emit({ conversationId: CONV, rev: 1, paths: ['mock/api/users.json'] })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    const tree = screen.getByRole('navigation', { name: 'Файлы проекта' })
+    await userEvent.click(await within(tree).findByRole('button', { name: /^api\/users\.json/ }))
+    const table = await screen.findByTestId('make-mock-table')
+    await userEvent.type(within(table).getByLabelText('name строки 1'), '!')
+    expect(screen.getByText('не сохранено')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
+    await waitFor(async () => expect(JSON.parse((await api['make:read']({ conversationId: CONV, path: 'mock/api/users.json' })).content).$body[0].name).toBe('Анна!'))
+    await userEvent.click(screen.getByRole('button', { name: 'JSON' }))
+    expect(screen.queryByTestId('make-mock-table')).toBeNull()
+    expect(screen.getByLabelText('Содержимое mock/api/users.json')).toBeInTheDocument()
+  })
+})
+
+describe('MakePane: мок из описания (roadmap-4 п.30)', () => {
+  it('пункт меню ⋯ в режиме «Код» спрашивает описание и отправляет ассистенту запрос с форматом коллекции', async () => {
+    const onAskAssistant = vi.fn()
+    renderPane({ onAskAssistant })
+    await userEvent.click(screen.getByRole('tab', { name: 'Код' }))
+    await openMore()
+    await userEvent.click(screen.getByRole('button', { name: 'Мок из описания' }))
+    const dlg = await screen.findByRole('dialog', { name: 'Мок-данные из описания' })
+    await userEvent.type(within(dlg).getByRole('textbox'), 'товары: название, цена, 7 штук')
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Сгенерировать' }))
+    expect(onAskAssistant).toHaveBeenCalledTimes(1)
+    const text = onAskAssistant.mock.calls[0]![0] as string
+    expect(text).toContain('mock/api/tovary.json')
+    expect(text).toContain('7 правдоподобных записей')
+  })
+})
+
+describe('MakePane: комментарии зрителей и модерация (roadmap-4 пп.34–35)', () => {
+  it('pending-комментарий показан отдельно, «Одобрить» переводит его в общий список; новый pending по make.changed даёт тост; флажок публикации шлёт allowComments', async () => {
+    const { api, emit } = renderPane()
+    await api['make:commentAdd']({ conversationId: CONV, selector: 'body', elementLabel: 'страница', text: 'Кнопка мелкая' })
+    const list = (await api['make:comments']({ conversationId: CONV })).comments
+    await api['make:commentUpdate']({ conversationId: CONV, commentId: list[0]!.id, status: 'pending' })
+    await screen.findByTitle('Превью проекта')
+    emit({ conversationId: CONV, rev: 0, paths: ['.comments.json'] })
+    await userEvent.click(screen.getByRole('button', { name: /💬/ }))
+    const panel = await screen.findByTestId('make-comments')
+    await waitFor(() => expect(within(panel).getByTestId('make-comments-pending')).toHaveTextContent('1 на модерации'))
+    expect(within(panel).queryByRole('button', { name: 'Исправить все' })).toBeNull()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Одобрить' }))
+    await waitFor(() => expect(within(panel).queryByTestId('make-comments-pending')).toBeNull())
+    // Новый комментарий зрителя приходит по make.changed → тост владельцу (п.35).
+    await api['make:commentAdd']({ conversationId: CONV, selector: 'body', elementLabel: 'страница', text: 'Ещё одно замечание' })
+    const fresh = (await api['make:comments']({ conversationId: CONV })).comments[0]!
+    await api['make:commentUpdate']({ conversationId: CONV, commentId: fresh.id, status: 'pending' })
+    emit({ conversationId: CONV, rev: 0, paths: ['.comments.json'] })
+    await waitFor(() => expect(screen.getAllByText(/Новый комментарий зрителя/).length).toBeGreaterThan(0))
+    expect(screen.getAllByText(/Ещё одно замечание/).length).toBeGreaterThan(0)
+    // Флажок в публикации.
+    await userEvent.click(screen.getByRole('button', { name: 'Опубликовать' }))
+    const dlg = await screen.findByTestId('make-publish')
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Опубликовать' }))
+    const box = await within(dlg).findByLabelText('Комментарии зрителей')
+    expect(box).not.toBeChecked()
+    await userEvent.click(box)
+    await waitFor(() => expect(within(dlg).getByLabelText('Комментарии зрителей')).toBeChecked())
+  })
+})
+
+describe('MakePane: экспорт под хостинг и сравнение версий (roadmap-4 пп.36–37)', () => {
+  it('селект «Хостинг» добавляет deploy= в ссылку экспорта', async () => {
+    renderPane()
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    await screen.findByTitle('Превью проекта')
+    await openMore()
+    await userEvent.click(screen.getByRole('button', { name: 'Скачать проект (ZIP)' }))
+    const dlg = await screen.findByTestId('make-export')
+    await userEvent.selectOptions(within(dlg).getByLabelText('Хостинг для экспорта'), 'netlify')
+    await userEvent.click(within(dlg).getByRole('button', { name: /Статика как есть/ }))
+    expect(open).toHaveBeenCalledWith(expect.stringContaining('deploy=netlify'), '_blank', 'noopener')
+    open.mockRestore()
+  })
+  it('«Сравнить» в истории публикаций открывает снимок и текущее состояние рядом', async () => {
+    const { api, emit } = renderPane()
+    await api['make:snapshot']({ conversationId: CONV, label: 'v1' })
+    const snap = (await api['make:state']({ conversationId: CONV })).snapshots[0]!
+    await api['make:publish']({ conversationId: CONV, snapshotId: snap.id })
+    await api['make:publish']({ conversationId: CONV, snapshotId: null })
+    await screen.findByTitle('Превью проекта')
+    emit({ conversationId: CONV, rev: 1, paths: ['index.html'] })
+    await userEvent.click(await screen.findByRole('button', { name: 'Опубликован' }))
+    const dlg = await screen.findByTestId('make-publish')
+    await userEvent.click(within(dlg).getByText(/История публикаций/))
+    await userEvent.click(within(dlg).getByRole('button', { name: 'Сравнить' }))
+    const cmp = await screen.findByTestId('make-version-compare')
+    expect((within(cmp).getByTitle('Версия из истории') as HTMLIFrameElement).getAttribute('src')).toContain(`/__snapshot__/${snap.id}/index.html`)
+    expect((within(cmp).getByTitle('Текущая версия') as HTMLIFrameElement).getAttribute('src')).toContain('index.html?rev=')
   })
 })

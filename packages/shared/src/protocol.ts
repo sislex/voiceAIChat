@@ -1,3 +1,4 @@
+import type { MakePresenceClient } from './make'
 // Контракт клиент↔сервер (Ф1). HTTP REST — запрос/ответ; WebSocket — стриминг.
 // Семантика соответствует прежним Electron-IPC каналам (1:1), но транспорт-нейтральна.
 
@@ -15,7 +16,7 @@ import type {
 } from './types'
 import type { CcItem } from './cc'
 import type { CxItem } from './codexSessions'
-import type { AgentInfo } from './agentProtocol'
+import type { AgentInfo, MachineCommandEvent, MachineStatusEvent } from './agentProtocol'
 import type { CiRunDetail, CiLogLine, CiRun, CiRunStep, CiFixAttempt, CiRunConclusion, CiRunSummary, CiInteraction } from './ci'
 import type { KbUsageQuery } from './kb'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
@@ -140,6 +141,19 @@ export const REST = {
   sessionLogin: '/api/session/login',
   sessionMe: '/api/session/me',
   sessionLogout: '/api/session/logout',
+  /** Сессии текущего пользователя и «выйти везде» (auth-roadmap п.4). */
+  sessionList: '/api/session/list',
+  /** Bearer → HttpOnly cookie-сессия + CSRF (auth-roadmap п.5). */
+  sessionCookie: '/api/session/cookie',
+  /** Второй фактор TOTP (auth-roadmap п.6): код после пароля, настройка и отключение. */
+  session2fa: '/api/session/2fa',
+  session2faSetup: '/api/session/2fa/setup',
+  session2faEnable: '/api/session/2fa/enable',
+  session2faDisable: '/api/session/2fa/disable',
+  sessionLogoutAll: '/api/session/logout-all',
+  sessionRevoke: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
+  adminSessions: (user: string) => `/api/admin/users/${encodeURIComponent(user)}/sessions`,
+  adminSessionRevoke: (sid: string) => `/api/admin/sessions/${encodeURIComponent(sid)}`,
   sessionPreview: '/api/session/preview',
   conversations: '/api/conversations',
   /** Make: состояние/файлы проекта разговора. */
@@ -160,6 +174,9 @@ export const REST = {
   makeRestoreFile: (id: string, snapshotId: string) => `/api/make/${encodeURIComponent(id)}/snapshots/${encodeURIComponent(snapshotId)}/restore-file`,
   makeImport: (id: string) => `/api/make/${encodeURIComponent(id)}/import`,
   makeImportUrl: (id: string) => `/api/make/${encodeURIComponent(id)}/import-url`,
+  makeNotes: (id: string) => `/api/make/${encodeURIComponent(id)}/notes`,
+  makeTests: (id: string) => `/api/make/${encodeURIComponent(id)}/tests`,
+  makeTestsPage: (id: string, file: string) => `/api/preview/make/${encodeURIComponent(id)}/__tests__?file=${encodeURIComponent(file)}`,
   makeStories: (id: string) => `/api/make/${encodeURIComponent(id)}/stories`,
   /** Страница-раннер сториз внутри превью (cookie-аутентификация, как у превью). */
   makeLibrary: '/api/make/library',
@@ -169,7 +186,10 @@ export const REST = {
   makeShots: (id: string) => `/api/make/${encodeURIComponent(id)}/shots`,
   makeUsage: (id: string) => `/api/make/${encodeURIComponent(id)}/usage`,
   makeComments: (id: string) => `/api/make/${encodeURIComponent(id)}/comments`,
+  makePresence: (id: string) => `/api/make/${encodeURIComponent(id)}/presence`,
   makeComment: (id: string, commentId: string) => `/api/make/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
+  /** Комментарии зрителей публикации (roadmap-4 п.34): GET — одобренные, POST — новый (в модерацию). */
+  makePublicComments: (token: string) => `/p/${encodeURIComponent(token)}/__comments__`,
   makeCleanup: (id: string) => `/api/make/${encodeURIComponent(id)}/cleanup`,
   makeShotImage: (id: string, shotId: string) => `/api/preview/make/${encodeURIComponent(id)}/__shots__/${encodeURIComponent(shotId)}.png`,
   makeGalleryPage: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/__gallery__`,
@@ -177,6 +197,7 @@ export const REST = {
   /** Превью и ZIP-экспорт живут под /api/preview/…: там действует preview-cookie для iframe и ссылок. */
   makePreview: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/`,
   makeShare: (id: string) => `/api/make/${encodeURIComponent(id)}/share`,
+  makeShareGrants: (id: string) => `/api/make/${encodeURIComponent(id)}/share/grants`,
   makeShared: (token: string) => `/api/make/shared/${encodeURIComponent(token)}`,
   makeSharedFile: (token: string, path: string) => `/api/make/shared/${encodeURIComponent(token)}/file?path=${encodeURIComponent(path)}`,
   makeSharedStories: (token: string) => `/api/make/shared/${encodeURIComponent(token)}/stories`,
@@ -251,7 +272,11 @@ export const REST = {
   agentFsFile: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/file`,
   agentFsRename: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/rename`,
   agentFsMkdir: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/mkdir`,
+  agentFsTrash: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/trash`,
+  agentFsCopyTo: (id: string) => `/api/agents/${encodeURIComponent(id)}/fs/copy-to`,
   agentExec: (id: string) => `/api/agents/${encodeURIComponent(id)}/exec`,
+  agentsExecBatch: '/api/agents/exec-batch',
+  agentCommands: (id: string) => `/api/agents/${encodeURIComponent(id)}/commands`,
   /** Последняя доступная версия агента (публично; для «Проверить обновления»). */
   agentLatestVersion: '/api/agents/version',
   ccProjects: '/api/cc/projects',
@@ -266,6 +291,24 @@ export const REST = {
   // --- Админ-страница пользователей (только admin) ---
   adminUsers: '/api/admin/users',
   adminUsersUsageSummary: '/api/admin/users/usage-summary',
+  /** Журнал безопасности (auth-roadmap п.7): `?user=&limit=`. */
+  adminSecurity: '/api/admin/security',
+  /** Инвайты на саморегистрацию (auth-roadmap п.8). */
+  adminInvites: '/api/admin/invites',
+  adminInvite: (token: string) => `/api/admin/invites/${encodeURIComponent(token)}`,
+  sessionInvite: (token: string) => `/api/session/invite/${encodeURIComponent(token)}`,
+  sessionRegister: '/api/session/register',
+  /** Открытая регистрация с подтверждением email: статус, заявка, подтверждение, повторное письмо; настройка в админке. */
+  sessionSignup: '/api/session/signup',
+  sessionSignupResend: '/api/session/signup/resend',
+  sessionVerify: '/api/session/verify',
+  adminSignup: '/api/admin/signup',
+  /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
+  sessionReset: '/api/session/reset',
+  sessionPassword: '/api/session/password',
+  /** Отметить уведомления безопасности просмотренными (п.16). */
+  sessionNoticesSeen: '/api/session/notices/seen',
+  adminUserResetCode: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/reset-code`,
   adminUser: (name: string) => `/api/admin/users/${encodeURIComponent(name)}`,
   adminUserBlock: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/block`,
   adminUserLlmAccess: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/llm-access`,
@@ -276,6 +319,13 @@ export const REST = {
   adminLlmEngines: '/api/admin/llm-engines',
   adminModelPrices: '/api/admin/model-prices',
   adminMakeStats: '/api/admin/make/stats',
+  adminMachineUpdate: (id: string) => `/api/admin/machines/${encodeURIComponent(id)}/update`,
+  adminMachineStats: '/api/admin/machines/stats',
+  adminCommandPolicy: '/api/admin/command-policy',
+  adminMachineTokenRevoke: (id: string) => `/api/admin/machines/${encodeURIComponent(id)}/token/revoke`,
+  agentPinIp: (id: string) => `/api/agents/${encodeURIComponent(id)}/pin-ip`,
+  adminMachineMetrics: '/api/admin/machines/metrics',
+  adminMakeMetrics: '/api/admin/make/metrics',
   adminModelPrice: (provider: string, model: string) => '/api/admin/model-prices/' + encodeURIComponent(provider) + '/' + encodeURIComponent(model),
   adminLlmEngine: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}`,
   adminLlmEngineHealth: (id: string) => `/api/admin/llm-engines/${encodeURIComponent(id)}/health`,
@@ -287,6 +337,7 @@ export const REST = {
   projectMembers: (id: string) => `/api/projects/${encodeURIComponent(id)}/members`,
   projectMember: (id: string, username: string) =>
     `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(username)}`,
+  projectMachineShare: (id: string, agentId: string) => `/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/share`,
   projectMachines: (id: string) => `/api/projects/${encodeURIComponent(id)}/machines`,
   projectMachine: (id: string, agentId: string) =>
     `/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}`,
@@ -551,6 +602,10 @@ export type ServerMessage =
   | { t: 'pty.exit'; ptyId: string; exitCode: number | null }
   | { t: 'pty.error'; ptyId: string; message: string }
   | { t: 'board.changed'; projectId: string }
+  /** Долгая команда машины завершилась (см. VC_LONG_COMMAND_MS) — тост/уведомление владельцу. */
+  | { t: 'machine.command'; event: MachineCommandEvent }
+  /** Watchdog: машина не в сети дольше порога / вернулась. */
+  | { t: 'machine.status'; event: MachineStatusEvent }
   | { t: 'preparation.run.updated'; projectId: string; taskId: string; runId: string }
   | { t: 'task.repositories.updated'; projectId: string; taskId: string }
   /** Снимок уведомлений подготовки изменился; содержимое читается только по HTTP. */
@@ -586,6 +641,8 @@ export type ServerMessage =
   | { t: 'preview.action'; conversationId: string; requestId: string; action: PreviewAction }
   /** Make: файлы проекта изменились (ассистентом или пользователем) — превью и дерево обновляются. */
   | { t: 'make.changed'; conversationId: string; rev: number; paths: string[] }
+  /** Presence вкладок проекта Make (roadmap-2 п.14): кто открыл проект и какой файл правит. */
+  | { t: 'make.presence'; conversationId: string; clients: MakePresenceClient[] }
 
 export type ClientMessageType = ClientMessage['t']
 export type ServerMessageType = ServerMessage['t']
@@ -647,6 +704,8 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'pty.exit',
   'pty.error',
   'board.changed',
+  'machine.command',
+  'machine.status',
   'preparation.run.updated',
   'task.repositories.updated',
   'task-preparation.notifications.invalidate',

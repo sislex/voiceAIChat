@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 import {
+  type ChatStorageBinding,
   appendChatInstructionHints,
   effectiveChatInstructions,
   stripDisabledInstructionBlocks,
@@ -44,6 +45,9 @@ import type { KnowledgeBaseService } from './kb/types.js'
 import { kbViewOf } from './kb/access.js'
 import { buildKbAutoContext } from './kb/autoContext.js'
 import type { KbUsageTracker } from './kb/usage.js'
+
+/** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
+export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
 
 export interface TurnManagerDeps {
   db: VoiceChatDb
@@ -107,6 +111,8 @@ export interface TurnManagerDeps {
   /** Онлайн-статус и политика машин-агентов (для проброса Bash на клиента). */
   agents?: {
     isOnline(id: string): boolean
+    /** Подождать возврата офлайн-машины перед сохранением файлов (см. registry.waitForOnline). */
+    waitOnline?(id: string): Promise<boolean>
     nameOf(id: string): string | undefined
     policyOf(id: string): AgentPolicy | undefined
     /** Файловые операции машины — нужны, чтобы переложить туда картинки хода. */
@@ -117,6 +123,8 @@ export interface TurnManagerDeps {
   }
   /** Чтение файла картинки с диска сервера или из профиля исполнителя. */
   readServerFile?: (userId: string, path: string) => Promise<{ name: string; dataBase64: string } | null>
+  /** Привязка чата к хранилищу машины по умолчанию (ChatAI), если её ещё нет. */
+  ensureChatStorage?: (userId: string, conversationId: string, machineId: string) => Promise<ChatStorageBinding | null>
   /** База URL MCP-эндпоинта remote-bash (с секретом k); undefined — проброс выключен. */
   mcpBaseUrl?: string
   /** Источник времени (для детерминированных тестов). */
@@ -395,6 +403,21 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       broadcast({ t: 'claude.error', conversationId, message: 'Учётная запись недоступна.' }, userId)
       return
     }
+    // Роль observer (auth-roadmap п.17) — только чтение: ходы модели не запускает.
+    if (account.role === 'observer') {
+      broadcast({ t: 'claude.error', conversationId, message: 'Роль «наблюдатель» не может запускать ходы модели — попросите администратора выдать роль developer или tester.' }, userId)
+      return
+    }
+    // Месячный лимит расхода LLM (п.17): суммируем стоимость ответов пользователя с начала календарного месяца.
+    if (account.llmLimitUsd !== null && account.llmLimitUsd >= 0) {
+      const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
+      const mine = deps.db.usageSummary(monthStart.getTime()).find((u) => u.name === userId)
+      const spent = mine ? Math.max(mine.totals.costUsd, mine.totals.costFromPrices ?? 0) : 0
+      if (spent >= account.llmLimitUsd) {
+        broadcast({ t: 'claude.error', conversationId, message: `Достигнут месячный лимит расхода LLM: $${spent.toFixed(2)} из $${account.llmLimitUsd.toFixed(2)}. Лимит меняет администратор.` }, userId)
+        return
+      }
+    }
     req.messageId ??= [...deps.db.listMessages(userId, conversationId)].reverse().find((m) => m.role !== 'ai')?.id
     // Второй параллельный ход запрещён. Сохраняем payload в SQLite; messageId —
     // ключ идемпотентности для повторной доставки и нескольких вкладок.
@@ -502,7 +525,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Навыки: выключенные (skill-<encoded>) убираем из выбранных для этого хода.
     const effectiveSkills = (conv?.skillNames ?? []).filter((name) => !disabledContext.has(`skill-${encodeURIComponent(name)}`))
     // MCP-инструменты, выключенные пользователем (mcp-remote-*/mcp-kb-*) → --disallowedTools.
-    const disallowedTools = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
+    const disallowedTools: string[] = [...disabledContext].map(toolNameForContextId).filter((tool): tool is string => tool !== null)
     const turnId = randomUUID()
     if (deps.kb && kbMode === 'auto') {
       const kbQuery = req.segments.map((segment) => segment.text).join(' ').trim()
@@ -597,9 +620,12 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       .filter((item) => !(conv?.assistantKind === 'make' && (item.kind === 'taskLaunch' || item.kind === 'console')))
     const makeContextBlock = conv?.assistantKind === 'make' && deps.makeContext ? await deps.makeContext(conversationId).catch(() => '') : ''
     const promptBase = appendChatInstructionHints(basePrompt, instructions) + (makeContextBlock ? `\n\n${makeContextBlock}` : '')
+    // Режим вопроса (roadmap-4 п.4): пользователь сам выбрал «План» для Make-чата — ему нужен ответ, а не план.
+    const makeQuestion = conv?.assistantKind === 'make' && permissionMode === 'plan' && !makeAutoPlan
+    const promptQ = makeQuestion ? `${promptBase}\n\n## Режим вопроса\nФайлы проекта менять нельзя (инструменты записи недоступны). Прочитай нужные файлы make_read_file и ответь по существу, коротко и конкретно; если для ответа нужна правка — опиши её, но не расписывай план на много пунктов.` : promptBase
     const prompt = makeAutoPlan
       ? `${promptBase}\n\n## Режим плана (большая переделка)\nЗапрос затрагивает весь проект. Сначала изучи файлы (make_list_files/make_read_file) и ответь планом: какие файлы создашь/изменишь и что в них будет, 5–12 пунктов. Файлы в этом ходе менять нельзя. Закончи вопросом, подтверждает ли пользователь план — после «да» он пришлёт следующий запрос, и ты выполнишь его целиком.`
-      : promptBase
+      : promptQ
     // Единый resolver используется также REST-каталогом и task-chat context:
     // null хранит наследование, явный override не получает молчаливый fallback.
     const machine = deps.db.resolveConversationMachine(userId, conversationId, {
@@ -727,7 +753,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       }
       remote = {
         mcpUrl:
-          `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}` +
+          `${deps.mcpBaseUrl}&agent=${encodeURIComponent(target)}&conv=${encodeURIComponent(conversationId)}` +
           `${remoteFileToken ? `&files=${encodeURIComponent(remoteFileToken)}` : ''}` +
           `${(conv?.workdir ?? (conv?.projectId ? projectMachines.find((m) => m.agentId === target)?.path : null)) ? `&cwd=${encodeURIComponent((conv?.workdir ?? projectMachines.find((m) => m.agentId === target)?.path)!)}` : ''}` +
           `${conv?.projectId && otherMachines.length ? `&project=${encodeURIComponent(conv.projectId)}` : ''}`,
@@ -742,7 +768,14 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
     // Роль user не имеет прав что-либо делать на сервере: без своей машины ход
     // идёт «на сервере» → форсим режим «план» (только текст/план, без изменений и
     // выполнения). На своей машине действия регулирует политика машины.
-    if (executionDisabled || (role !== 'admin' && !remote)) permissionMode = 'plan'
+    // Make без машины (roadmap-3 п.2): инструменты make_* не требуют машины и безопасны, а нативный
+    // plan-режим CLI их глушит. Для Claude запускаем default, но запрещаем все встроенные инструменты
+    // (shell/файлы сервера) — остаются только MCP. Codex в read-only sandbox блокирует HTTP-MCP, поэтому
+    // там остаётся план (ограничение задокументировано в KB).
+    const makeOnlyExecution = conv?.assistantKind === 'make' && provider === 'claude' && !executionDisabled
+      && role !== 'admin' && !remote && permissionMode !== 'plan'
+    if (executionDisabled || (role !== 'admin' && !remote && !makeOnlyExecution)) permissionMode = 'plan'
+    if (makeOnlyExecution) disallowedTools.push(...MAKE_ONLY_DISALLOWED_TOOLS.filter((t) => !disallowedTools.includes(t)))
     // Полный контекст хода: все сообщения разговора на момент отправки
     // (реплика пользователя уже сохранена клиентом перед claude.send).
     const contextMessages = deps.db
@@ -936,7 +969,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
 
           const prepared = (async (): Promise<string> => {
             const a = deps.agents
+            // Чат без привязки к хранилищу: перед первой записью файла привязываем его к ChatAI машины по умолчанию.
             const binding = deps.db.getChatStorageBinding(userId, conversationId)
+              ?? (target && deps.ensureChatStorage ? await deps.ensureChatStorage(userId, conversationId, target) : null)
             const destinationAgentId = binding?.machineId ?? target
             if (!destinationAgentId || !a?.fsList || !a.fsMkdir || !a.fsWrite || !deps.readServerFile) {
               if (binding) return `${parseImages(taskLaunch.text).body}\n\nНе удалось сохранить изображение: файловый доступ к MachineStorage недоступен.`
@@ -948,6 +983,7 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
                 listStorages: (uid, machineId) => deps.db.listMachineStorages(uid, machineId),
                 ownsMachine: (uid, machineId) => deps.db.listAgents(uid).some((agent) => agent.id === machineId),
                 isOnline: (machineId) => a.isOnline(machineId),
+                waitOnline: a.waitOnline ? (machineId) => a.waitOnline!(machineId) : undefined,
                 verifyRoot: async (machineId, rootPath) => {
                   await a.fsList!(machineId, rootPath)
                   if (!a.fsRead) throw new Error('Проверка marker MachineStorage недоступна')

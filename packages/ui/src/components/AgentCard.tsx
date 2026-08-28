@@ -162,6 +162,25 @@ export function AgentCard({ agent, onSetPolicy }: AgentCardProps): JSX.Element {
           </div>
         </div>
 
+        {/* Живой терминал: ограничения поверх доверенного shell (machines-roadmap п.12). */}
+        <div className="ac-section">
+          <p className="flab">Терминал (PTY)</p>
+          <div className="vrow2">
+            <label className="ac-num">
+              <span>Закрывать без ввода, мин (0 — никогда)</span>
+              <input className="sel" type="number" min={0} max={1440} aria-label="Таймаут простоя терминала, минут" value={policy.ptyIdleMinutes ?? 0} onChange={(e) => patch({ ptyIdleMinutes: Math.max(0, Number(e.target.value) || 0) })} />
+            </label>
+            <label className="ac-num">
+              <span>Одновременных сеансов (0 — без лимита)</span>
+              <input className="sel" type="number" min={0} max={50} aria-label="Лимит одновременных терминалов" value={policy.ptyMaxSessions ?? 0} onChange={(e) => patch({ ptyMaxSessions: Math.max(0, Number(e.target.value) || 0) })} />
+            </label>
+          </div>
+          <label className="ac-check">
+            <input type="checkbox" aria-label="Подтверждать sudo в терминале" checked={policy.ptyConfirmSudo === true} onChange={(e) => patch({ ptyConfirmSudo: e.target.checked })} />
+            <span>Спрашивать подтверждение (y/N) перед командами с <code>sudo</code></span>
+          </label>
+        </div>
+
         <p className="fsub">
           Изменения применяются сразу: политика уходит на сервер, а если агент в сети — и на машину.
         </p>

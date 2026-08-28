@@ -160,4 +160,25 @@ describe('MachineConsole', () => {
     await userEvent.type(screen.getByLabelText('Команда'), '{ArrowUp}')
     expect(screen.getByLabelText('Команда')).toHaveValue('npm test')
   })
+
+  it('навыки машины — чипы над строкой ввода, клик выполняет команду; initialCommand выполняется сразу', async () => {
+    const exec = vi.fn().mockResolvedValue({ exitCode: 0, output: 'ok', timedOut: false })
+    const withSkills: AgentInfo = { ...agent, policy: { ...agent.policy, skills: [{ name: 'логи', command: 'docker logs app', description: 'Логи контейнера' }] } }
+    render(<MachineConsole agents={[withSkills]} initialAgentId="m1" exec={exec} variant="embedded" initialCommand="uptime" />)
+    await waitFor(() => expect(exec).toHaveBeenCalledWith('m1', 'uptime', expect.anything()))
+    const chip = await screen.findByRole('button', { name: '⚡ логи' })
+    expect(chip).toHaveAttribute('title', expect.stringContaining('docker logs app'))
+    await waitFor(() => expect(chip).not.toBeDisabled())
+    await userEvent.click(chip)
+    await waitFor(() => expect(exec).toHaveBeenCalledWith('m1', 'docker logs app', expect.anything()))
+  })
+
+  it('машина только для чтения: ввод команды заблокирован (п.18)', async () => {
+    const exec = vi.fn()
+    render(<MachineConsole agents={[{ ...agent, access: 'read', ownership: 'project' }]} initialAgentId="m1" exec={exec} variant="embedded" />)
+    const input = screen.getByLabelText('Команда')
+    expect(input).toBeDisabled()
+    expect(input).toHaveAttribute('placeholder', expect.stringContaining('только для чтения'))
+    expect(exec).not.toHaveBeenCalled()
+  })
 })

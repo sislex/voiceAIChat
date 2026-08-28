@@ -1,7 +1,7 @@
 ---
 title: Машины: компаньон-агент, политика, PTY, проводник
-updated: 2026-08-26
-checked: ee1d422f
+updated: 2026-08-28
+checked: b8a4d25a
 areas:
   - apps/agent/src
   - apps/agent-tray/src
@@ -91,6 +91,19 @@ esbuild'ом на сервере — `agents/agentScript.ts`, адрес и то
 колонка внешнего ключа не имеет, и CI-ран проекта уходил бы в никуда). Стор
 повторяет сброс `execTarget`/`defaultAgentId` в своём состоянии — иначе селекторы
 показывали бы удалённую машину до перезагрузки страницы.
+
+## Токены агентов: срок, отзыв, привязка к IP
+
+Колонки `agents.token_expires_at`, `token_issued_at`, `last_ip`, `pin_ip` (миграция `ALTER TABLE` в `database.ts`).
+`POST /api/agents/:id/token {ttlDays?}` перевыпускает токен со сроком (UI шлёт `AGENT_TOKEN_DEFAULT_TTL_DAYS` = 90;
+без тела — бессрочный, как раньше; старые токены с `NULL` не истекают), `DELETE /api/agents/:id/token` — отзыв
+(`db.revokeAgentToken`: случайный хэш + «уже истёк», `registry.disconnect`), `POST /api/agents/:id/pin-ip {pin}` —
+привязка к `last_ip`; админ отзывает чужой токен `POST /api/admin/machines/:id/token/revoke`. `wsAgent.ts` получает
+IP подключения (`x-forwarded-for` → `remoteAddress`) из `server.ts`, при `agent.register` отказывает истёкшему токену и,
+если `pin_ip`, — другому IP; успешный вход пишет `last_ip`. Все исходы — в `security_events` владельца:
+`agent_connected`, `agent_rejected`, `agent_token_rotated`, `agent_token_revoked` (подписи в `UsersAdmin`, вкладка
+«Безопасность»). В таблице машин: «токен до дд.мм.гггг»/«токен истёк», «✕ токен», чекбокс «IP …».
+Тесты — `wsAgent.test.ts`, `rest.test.ts › токены агентов`.
 
 ## Установка и обновление агента (одна команда на ОС)
 
@@ -197,22 +210,151 @@ prefix). Существующие пользовательские опреде�
 и пишет на диск: машине с запретом сети/записи кнопка не сработает, ответ 502 с
 подсказкой. Обновить такую машину можно вручную скопированной командой.
 
+## Мастер подключения
+
+После «Добавить машину» блок `AgentCommands` (`MachineStatus`) — трёхшаговый мастер: команда установки под
+ОС / строка подключения / QR для Android (шаг 1, как раньше); шаг 2 берёт `online` созданной машины из живого
+списка агентов (`agents` WS) и меняет «⏳ ждём подключения» на «✓ машина в сети» без перезагрузки; шаг 3 —
+«Выполнить uname -a» (`onExecTest` → `operationsActions.agentExec`, попадает в журнал как `console`) с выводом
+и кодом выхода. Шаги рендерятся только когда передан `online` — встраивания без живого статуса видят старый
+блок. Тест — `AgentCommands.dom.test.tsx`.
+
+## Метрики машин (админка и Prometheus)
+
+`db.machineStatsRows(now)` агрегирует `machine_commands` (всего, за 24 ч, ошибок = ненулевой код/таймаут/отказ,
+средняя длительность, последняя команда) и `machine_events` (тревоги watchdog и суммарный простой за 30 дней);
+`routes/admin.ts` дополняет их живыми online/версией/телеметрией реестра → `AdminMachineStats`
+(`GET /api/admin/machines/stats`, мост `admin:machineStats`, стор `adminMachineStats`, секция «Машины» на дашборде
+`UsersAdmin`, когда пользователь не выбран). `GET /api/admin/machines/metrics` (`agents/metrics.ts:formatMachineMetrics`)
+отдаёт Prometheus-текст: `voicechat_machines[_online]`, per-machine `voicechat_machine_online`, `…_commands_total`,
+`…_commands_24h`, `…_command_errors_24h`, `…_command_avg_duration_ms_24h`, `…_offline_events_30d`, `…_offline_ms_30d`,
+`…_cpu_load_pct`, `…_mem_used_ratio`, `…_disk_free_bytes` с метками `machine`, `machine_id`, `owner`. Онлайн-время
+как непрерывный счётчик не хранится — его заменяют тревоги/простой watchdog; объём переданных файлов не считается,
+потому что fs-операции (upload/copy/write) в журнал команд не попадают. Тесты — `agents/metrics.test.ts`,
+`rest.test.ts › метрики машин`.
+
+## Обновление агентов из админки
+
+`routes/agents.ts:updateAgentOnMachine(registry, id, req)` — общая функция обновления (detached-установщик через
+`exec`, адрес сервера из `x-forwarded-*`/`VC_PUBLIC_URL`); ею пользуются роут владельца `/api/agents/:id/update`
+и админский `POST /api/admin/machines/:id/update` (`requireAdmin`, 404 для неизвестной машины). Админка
+(`packages/admin-app/src/AgentFleetUpdate.tsx`, внутри вкладки «Машины пользователя» в `UsersAdmin`) показывает все
+машины всех пользователей с версиями (`AdminUserInfo.agents[].version` — только у online) и ведёт канареечное
+обновление: «Канарейка: обновить одну» берёт первую устаревшую машину в сети, пока она не вернётся с
+`AGENT_VERSION` компонент раз в 5 с дёргает `onRefresh` (список пользователей), затем открывает «обновить остальные (N)».
+Есть и построчная кнопка. Транспорт — через пропсы `latestAgentVersion`/`onUpdateMachine` из `App.tsx`
+(`admin:updateMachine`), как требует граница admin-app. Тесты — `AgentFleetUpdate.dom.test.tsx`.
+
 ## Версии и гейтинг возможностей
 
 `packages/shared/src/version.ts`: `AGENT_VERSION` — канонная версия (её рапортует
 свежий агент и её же сервер отдаёт как «последнюю доступную» на публичном
-`/api/agents/version`). Текущий релиз — 0.12.0; листинг в нём различает обычные
+`/api/agents/version`). Текущий релиз — 0.15.0 (корзина `fs.trash`, см. «Просмотр и правка файлов»); с 0.12.0 листинг различает обычные
 файлы, каталоги, симлинки и прочие элементы, а отдельная операция
 `fs.delete-file-safe` удаляет только подтверждённый через `lstat` обычный файл
 нерекурсивным `unlink`. Поэтому подключённый агент 0.11.x считается устаревшим:
 UI показывает доступную v0.12.0, кнопку обновления и команду для ручного обновления.
 `TOOL_MIN_VERSION` задаёт минимальную версию агента для инструмента: `exec` 0.1.0,
-`fs` 0.2.0 (проводник), `fs-safe-delete` 0.12.0, `pty` 0.3.0 (терминал);
+`fs` 0.2.0 (проводник), `fs-safe-delete` 0.12.0, `fs-trash` 0.15.0, `pty` 0.3.0 (терминал);
 телеметрия появилась в 0.4.0. Старый агент → инструмент не выполняется, UI просит
 обновиться. **Добавил возможность агента — бампни `AGENT_VERSION` и допиши
 `TOOL_MIN_VERSION`**, иначе сервер разрешит вызов агенту, который его не умеет.
 
+## Быстрый запуск навыков
+
+Навыки политики (`AgentPolicy.skills` — имя + команда) — это и есть сохранённые команды машины.
+Запуск в один клик: в однострочной `MachineConsole` над строкой ввода чипы «⚡ имя» (клик → `runCommand`);
+в шапке чата для машины хода (`execTarget`) селект «⚡ Навыки» → `operationsActions.runSkill(agentId, command)`
+кладёт в стор `utility {kind:'console', agentId, command}`; `ToolSpec.command` доходит до `MachineUtility`:
+живой `MachineTerminal` шлёт команду в PTY один раз после первого вывода (приглашение shell, `TerminalView.initialCommand`),
+однострочная консоль выполняет её `useEffect`-ом при открытии (`initialCommand`). Селект виден только когда
+машина в сети и навыки есть; редактируются навыки по-прежнему в `AgentCard` на странице «Машины».
+
+## Ожидание возврата офлайн-машины
+
+`AgentRegistry` создаётся с `offlineGraceMs` (`config.agentOfflineGraceMs` ← `VC_AGENT_OFFLINE_GRACE_MS`,
+по умолчанию 15 с; под vitest — 0, поэтому тесты «не в сети → 400» отвечают мгновенно). Если машина
+офлайн, `exec` и все `runFs`-операции не падают сразу, а ждут `waitForOnline(agentId)` — `register`
+будит ожидающих; по таймауту ошибка «Машина не в сети (ждали N с)». Тем же ждут
+`resolveManagedChatStorage` (`deps.waitOnline`) и перенос картинок хода (`deps.agents.waitOnline`),
+так что короткий обрыв агента (рестарт, смена сети) больше не превращается в «Не удалось сохранить».
+PTY и preview-туннели не ждут — там обрыв виден пользователю сразу. В журнале команд `durationMs`
+включает время ожидания.
+
+## Машина проекта vs личная: уровень доступа участников
+
+Личная машина принадлежит владельцу (`agents.user_id`), проектная — та же машина, предоставленная проекту
+(`machine_project_shares.shared = 1`; `linkMachine` в настройках проекта делает это с уровнем `full`). Уровень
+хранится в `machine_project_shares.access` (`'full' | 'read'`, machines-roadmap п.18) и меняется владельцем машины
+через `PUT /api/projects/:id/machines/:agentId/share {shared, access}` (мост `projects:setMachineShareAccess`).
+Права считает `db.machineAccess(userId, agentId, projectId)` → `'owner' | 'full' | 'read' | null`, удобная обёртка —
+`db.canWriteAgent`. Сервер запрещает мутации при `read`: `POST /api/agents/:id/exec`, `POST /api/agents/exec-batch`
+(машина уходит в `skipped` с «Только чтение»), запись/удаление/корзина/переименование/mkdir в проводнике,
+`fs/copy-to` (проверяется цель) и `pty.start` в `session.ts` — тексты вида «Машина предоставлена проекту только для
+чтения…». Чтение (`fs`, `fs/file`, скачивание) остаётся доступным. `AgentInfo` в списках несёт `ownership`
+(`personal` | `project`) и `access`, поэтому UI сам знает, что можно: `FileExplorer` отключает правку/удаление и
+объясняет причину, `MachineConsole` блокирует ввод с подсказкой, в настройках машин проекта у своей машины появляется
+селект «полный / только чтение», у чужой — пометка «только чтение». Аудит `machine_project_share_audit` пишется
+только на смену флага shared, смена уровня меняет строку share без записи в аудит. Роль `developer` не может звать
+роуты проекта (`project:settings`), поэтому делиться машиной и менять уровень может владелец с правом на настройки
+проекта (обычно admin). Тесты — `rest.test.ts › доступ участников к машине проекта`, dom-тесты проводника, консоли и
+настроек машин.
+
+## Групповая команда
+
+`POST /api/agents/exec-batch {machineIds, command}` (+`?projectId=` для политики проекта) выполняет одну команду
+на нескольких машинах пользователя параллельно (`Promise.all` поверх `registry.exec`, `source: 'console'`, так что
+каждая попадает в журнал команд). Гейт команд (п.10) проверяется один раз на весь запуск — отказ даёт 403 и ни одна
+команда не стартует. Дубликаты id отбрасываются, лимит — `BATCH_MAX_MACHINES` (50), вывод каждой машины режется до
+`BATCH_OUTPUT_LIMIT` (4000 символов). Ответ `BatchExecResult`: `items[]` (`ran`, `exitCode`, `timedOut`, `output`,
+`error`, `durationMs`) и `totals {requested, ok, failed, skipped}` — `skipped` это офлайн/чужие/отказавшие до запуска
+машины. UI — блок «Групповая команда» на странице «Машины» (`MachineBatchCommand`, виден при 2+ машинах): чекбоксы
+online-машин, «Выбрать все», поле команды, сводная таблица с раскрытием вывода построчно. Тесты —
+`MachineBatchCommand.dom.test.tsx`, `rest.test.ts › групповая команда`.
+
+## Журнал команд машины
+
+Всё, что проходит через `AgentRegistry.exec`, попадает в `machine_commands` (`db.addMachineCommand`,
+по 5000 последних записей на машину): `registry.exec(agentId, command, timeoutMs, signal, meta)` принимает
+`ExecMeta {source: 'console'|'chat'|'system', userId?, conversationId?}` и после завершения (в том числе отказа
+политикой или «не в сети») вызывает подписчиков `onCommand` — сервер (`server.ts`) пишет запись, подставляя
+владельца машины, если `userId` не передан. Консоль (`POST /api/agents/:id/exec`) даёт `source: console`,
+MCP-инструменты `remoteBashMcp.ts` — `chat` с `conversationId` из `&conv=` в MCP-URL (`turns.ts`), остальные
+вызовы (обновление агента, релиз KB, health превью) — `system`. Стриминговый `execStream` PTY в журнал не пишет.
+
+**Долгие команды** (`config.longCommandMs` ← `VC_LONG_COMMAND_MS`, по умолчанию 10 с): тот же `onCommand`-подписчик
+в `server.ts` для команд `console`/`chat` дольше порога публикует владельцу WS-сообщение `machine.command`
+(`MachineCommandEvent`) через `ciRunManager.publish` — сессии форвардят его как и `ci.*`. Для команды из чата
+полный вывод (`output` в payload `onCommand`, в БД — только выдержка) пишется на машину чата в
+`<chatRoot>/artifacts/commands/<ГГГГММДД-ЧЧММСС>__<slug>.log` с шапкой `$ команда / # exit …`, и событие несёт
+`logPath`. UI (`App.tsx`, `realtime.onMachineCommand`): тост — успех на 8 с с действием «Журнал» (страница машин)
+или «Открыть лог» (проводник на файле), ошибка/ненулевой код — до закрытия; во вкладке в фоне дополнительно
+`new Notification(...)`, если разрешение уже выдано (само оно не запрашивается). Тест — `commandNotify.test.ts`.
+
+Чтение: `GET /api/agents/:id/commands?limit&q&source[&format=csv]` (`canUseAgent`), мост `agents:commands`.
+UI — кнопка «Журнал» в строке машины на странице «Машины» (`MachineCommandLog.tsx`): поиск по подстроке,
+фильтр источника, клик по строке раскрывает первые 500 символов вывода/ошибку, «↗ чат» ведёт в разговор,
+«Экспорт CSV» собирает файл на клиенте из загруженных записей (`commandsToCsv`).
+
 ## Политика команд
+
+### Слои поверх политики машины (machines-roadmap п.10)
+
+`packages/shared/src/commandPolicy.ts`: `ProjectCommandPolicy {denyPatterns, allowPatterns, confirmDangerous}`
+(колонка `projects.command_policy`, JSON; редактор — fieldset «Команды на машинах проекта» в `ProjectSettings`,
+PATCH `/api/projects/:id {commandPolicy}`), `RoleCommandPolicies` (app_config `commandPolicy.roles`,
+`GET/PUT /api/admin/command-policy`, редактор «Команды по ролям» на дашборде админа), `DANGEROUS_COMMAND_PATTERNS`
+и `isDangerousCommand` (rm -rf, force-push, reset --hard, DROP/TRUNCATE, mkfs/dd, shutdown, chmod 777, fork bomb,
+удаление контейнеров). `evaluateCommandLayers` проверяет слои по очереди: любой deny — отказ, каждый непустой allow
+обязан пропустить; политика машины остаётся последним слоем в `registry.exec`. Сервер собирает всё в
+`agents/commandGate.ts` (`createCommandGate({projectPolicy, rolePolicies, userRole})`): консольный `POST /api/agents/:id/exec`
+отвечает 403 «Запрещено: …политикой проекта/роли», MCP-инструмент `bash` возвращает `isError` с текстом
+`commandGateMessage`. Опасные команды из чата при `confirmDangerous` (по умолчанию включено, даже без проекта) отклоняются
+с инструкцией модели: объяснить пользователю, дождаться согласия и повторить вызов с `confirm: true` (новый параметр
+схемы `bash`); в консоли подтверждение не требуется — пользователь сам за клавиатурой. PTY-терминал этими слоями не
+ограничивается (там доверенный shell + собственные ограничения п.12). Тесты — `commandPolicy.test.ts`, `commandGate.test.ts`,
+`rest.test.ts › политика команд проекта и роли`.
+
 
 `AgentPolicy` (`agentProtocol.ts`): `allowedDirs`, `allowNetwork`, `allowWrite`,
 `denyPatterns`, `allowPatterns`, `skills`. Проверка — чистая функция
@@ -363,7 +505,15 @@ CI-рана) модель видит остальные машины проек�
 `pty.output/exit/error`.
 
 Внутри живого PTY **per-command гейта политики нет**: это доверенный shell
-пользователя (см. комментарий в `apps/agent/src/connection.ts`). Однострочный
+пользователя (см. комментарий в `apps/agent/src/connection.ts`). Три необязательных
+ограничения политики всё же есть и работают на сервере (`registry.ts`, machines-roadmap п.12):
+`ptyMaxSessions` — `ptyStart` отвечает `pty.error` «Лимит одновременных терминалов…», когда живых
+сеансов машины уже столько; `ptyIdleMinutes` — таймер по вводу (`inputIdleTimer`, сбрасывается
+каждым `ptyInput`) убивает сеанс без нажатий даже при открытой вкладке, с жёлтой строкой в терминале;
+`ptyConfirmSudo` — сервер ведёт набираемую строку по нажатиям (Backspace/Ctrl-U/Ctrl-C/escape-последовательности
+учтены) и, если она начинается с `sudo`, задерживает Enter: в терминал печатается «Команда с sudo — выполнить? (y/N)»,
+`y`/`д` отправляет задержанный `\r`, любой другой ответ — `Ctrl-U` (строка стирается). Пасты и многострочный ввод
+разбираются посимвольно тем же кодом. Редактор — секция «Терминал (PTY)» в `AgentCard`; тесты — `registry.test.ts › pty:`. Однострочный
 `exec` с гейтом остался — он нужен модели и проводнику. `node-pty` не бандлится в
 `.cjs` (нативный модуль): нет модуля → `startPty` ловит ошибку, терминал
 деградирует, `exec` продолжает работать.
@@ -460,10 +610,40 @@ CI-рана) модель видит остальные машины проек�
 предпросмотра со скачиванием.
 
 Текст показан моноширинно. Если политика машины разрешает запись, его можно
-переключить в редактор; сохранение требует отдельного подтверждения, вызывает
-`MachineOps.write` с UTF-8 base64 и затем перечитывает текущий каталог. Ошибки
-чтения и сохранения видны через `ErrorState` с «Повторить». На read-only машине
-панель явно объясняет, что правка запрещена политикой.
+переключить в редактор — это тот же `CodeEditor` (Monaco, в jsdom/на телефоне —
+fallback-textarea), что и в Make; путь машины абсолютный, поэтому обёртка
+`MonacoCodeEditor` срезает ведущие слэши перед `file:///…` (иначе Monaco падает
+на `////` в URI). Пока текст отличается от прочитанного, доступна кнопка
+«Показать изменения» — `CodeDiff` «файл при открытии ↔ сейчас». Сохранение требует
+отдельного подтверждения, вызывает `MachineOps.write` с UTF-8 base64 и затем
+перечитывает текущий каталог. Ошибки чтения и сохранения видны через `ErrorState`
+с «Повторить». На read-only машине панель явно объясняет, что правка запрещена политикой.
+
+**Корзина** (агент ≥ 0.15.0, `TOOL_MIN_VERSION['fs-trash']`): кнопка удаления
+превращается в «В корзину» — `fs.trash` переносит элемент в
+`<корень проводника агента>/.voicechat_trash/<ГГГГММДД-ЧЧММСС>__<имя>` (`fileOps.ts:fsTrash`,
+корень и сама корзина в корзину не переезжают), `FsResult.trashedPath` возвращается
+в UI, и под списком появляется полоса «перемещён в корзину · Вернуть» — возврат
+это обычный `fs.rename` по `trashedPath`. Старый агент или мост без `trash`
+удаляют безвозвратно, как раньше. REST: `POST /api/agents/:id/fs/trash {path}`;
+мост `RendererFsBridge.trash?`. `.voicechat_trash/` — в `.gitignore`, потому что
+у агента, запущенного из исходников, корень — `apps/agent`.
+
+**Копирование между машинами** (`POST /api/agents/:id/fs/copy-to {path, targetAgentId, targetDir?}`):
+прямого канала между агентами нет, сервер читает файл `fs.read` у источника и пишет `fs.mkdir`+`fs.write`
+на цель (лимит — тот же 32 МБ `FS_MAX_BYTES`). Без `targetDir` каталог — `<ChatAI цели>/incoming`
+(`ensureDefaultStorage` создаст хранилище, если машина в сети и без него; иначе 409 «укажите каталог»).
+Обе машины должны быть доступны пользователю (`canUseAgent`), цель — в сети и с `allowWrite`.
+В проводнике у файла кнопка ⇄ (видна, когда есть другая online-машина с записью) открывает панель
+«цель + каталог»; после успеха — полоса «Скопировано на …» с «Открыть» (`onSwitchUtility('explorer', цель, каталог)`).
+Мост: `RendererFsBridge.copyTo?`, `MachineOps.copyTo?`, результат `FsCopyResult {path, targetAgentId, size}`.
+
+**Инцидент 2026-08-28 (CSRF в fs-мосте):** `makeFsBridge` в `packages/ui/src/remote/index.ts`
+собирал заголовки сам — только `authorization: Bearer` — и после перехода на cookie-сессии
+все мутации проводника (запись, переименование, папка, удаление) получали 403 `csrf`,
+хотя чтение работало. Исправлено: мост берёт `sessionHeaders()` из `remote/session.ts`
+(Bearer или `x-vc-csrf` из cookie). Любой новый мост поверх `fetch` должен использовать
+его же, а не собирать заголовки руками; регресс-тест — `remote.test.ts › makeFsBridge`.
 
 ## Раздача картинок машиной
 
@@ -494,6 +674,28 @@ CI-рана) модель видит остальные машины проек�
 Потребитель моста — `/api/preview` (Web Reader): виртуальный host `<agentId>.machine.internal:<port>` доставляется агентом, а не сетью; доступ проверяет `VoiceChatDb.canUseAgentForPreview` (владелец машины либо share машины в любом проекте, где пользователь — активный участник). Внутренние редиректы окружения на `127.0.0.1`/`localhost` возвращаются на мост той же машины; редирект наружу не следуется. Ответ проходит общий rewrite и cookie-контейнер превью, поэтому логин в окружение и относительные ссылки работают как на публичных сайтах. Детали Reader-стороны — [ui.md](ui.md), раздел «Тестовые окружения проекта в Web Reader».
 
 ChatAI можно открыть в его же Web Reader (проверено живьём): вложенный клиент требует отдельного входа — шимованный `localStorage` изолирован по контексту превью, токен верхней сессии внутрь не протекает, поэтому первое, что видно, — экран «Вход», и это норма, а не «не открылось». После входа работают REST-страницы (в том числе `#/machines` с живой телеметрией: WS вложенный клиент открывает мимо шима на реальный origin ChatAI, а это тот же сервер, и токен вложенной сессии валиден). Deep-link вида `…machine.internal:5273/#/machines` доезжает благодаря восстановлению hash context-шимом — см. [server-internals.md](server-internals.md).
+
+## Watchdog агента
+
+`apps/server/src/agents/watchdog.ts` (`createAgentWatchdog`): раз в минуту (`server.ts`, таймер `unref`)
+проходит `db.listAllAgents()` и по машинам, у которых агент когда-то был (`lastSeen` не null), но сейчас
+офлайн дольше `config.agentOfflineAlertMs` (`VC_AGENT_OFFLINE_ALERT_MIN`, по умолчанию 10 мин, 0 — выключить),
+один раз пишет `machine_events(state='offline')` и публикует владельцу WS `machine.status` (`MachineStatusEvent`)
+через `ciRunManager.publish`. Тревога держится в памяти до возврата машины: `registry.onChange` → событие
+`online` с `offlineForMs` и снятием тревоги. App показывает красный тост «не в сети уже N мин» (до закрытия)
+и зелёный «снова в сети». Автоперезапуск процесса агента — дело установщика (`unixInstall.ts`: launchd
+`KeepAlive`, systemd `Restart=always`); watchdog замечает, когда это не помогло. Тесты — `watchdog.test.ts`.
+
+## Здоровье машины в шапке чата
+
+`packages/shared/src/machineHealth.ts`: `machineHealth(agent, AGENT_VERSION, now)` сводит `AgentInfo`
+в `{level: ok|warn|offline, label, details[], warnings[]}` — детали для тултипа (версия агента, CPU,
+память, свободное место `/` и рабочего каталога, возраст телеметрии), предупреждения — то, о чём стоит
+сказать до хода: машина не в сети/не найдена, агент старее `AGENT_VERSION`, телеметрия старше
+`STALE_TELEMETRY_MS` (3 мин), свободно меньше `LOW_DISK_BYTES` (1 ГБ), память занята >95 %.
+В шапке чата вместо имени машины — `MachineHealthBadge` (`data-testid="head-machine"`, цветная точка,
+клик ведёт в «Машины»), над строкой ввода — `MachineHealthWarnings` (`role=status`). Задержки/пинга у
+агента нет — «задержкой» служит возраст телеметрии.
 
 ## Телеметрия
 
@@ -710,6 +912,35 @@ id и версией marker, `read-only` — marker читается, но ко�
 marker. Первое хранилище помечается основным. Проверка выполняется при загрузке списка
 машин и вручную действием «Повторить проверку»; write-probe сервер удаляет после
 успешной проверки.
+
+### Каталог ChatAI по умолчанию (`agents/defaultStorage.ts`)
+
+Хранилище больше не обязано создаваться руками. При первой телеметрии подключившейся
+машины (`AgentRegistry.onAgentReady`, срабатывает, когда известен `os.homePath`) сервер
+для владельца машины без хранилищ на ней создаёт `<home>/ChatAI` со служебной структурой
+`.voicechat/*` и marker'ом и регистрирует его в `machine_storages` (`ensureDefaultStorage`).
+Уже лежащий корректный marker переиспользуется — каталог, оставшийся от прежней регистрации,
+получает прежний id. Если путь выходит за `policy.allowedDirs`, телеметрии нет или машина
+офлайн — ничего не создаётся, и пользователь настраивает хранилище вручную, как раньше.
+
+Чат без строки `chat_storage_bindings` привязывается к первому хранилищу машины по
+рекомендуемому пути (`recommendedChatStoragePath`: `chats/<id>`, `projects/<p>/chats/<id>`,
+`projects/<p>/tasks/<t>/chats/<id>`) в момент первой записи файла
+(`ensureDefaultChatBinding`): в `turns.ts` — перед переносом сгенерированных изображений на
+машину хода (`deps.ensureChatStorage`), в `server.ts` — в обёртке `managedChatStorage`
+для загрузок, ретуши и публикации (машина берётся из `db.resolveConversationMachine`).
+Поэтому файлы чата всегда ложатся внутрь `ChatAI/...`, а legacy-каталог
+`<корень проводника>/.generated_images` остаётся только для машин, где хранилище создать
+не удалось.
+
+Пользователю каталог показывает `ChatStorageCard` (`packages/ui/src/components/ChatStorageCard.tsx`):
+чип `📁 <relativePath>` в шапке чата (клик — проводник машины в каталоге чата) и карточка в разделе
+«Файлы чата» настроек разговора с абсолютными путями вложений/артефактов/`.generated`, кнопками
+«Скопировать путь» и «Открыть в проводнике». Данные — `GET /api/conversations/:id/storage`, который
+возвращает `ChatStorageView`: привязка + `rootPath`, `status` хранилища (`offline`, если машина не в
+сети) и `directories` (`chatStorageDirectories` в `packages/shared/src/projects.ts`). App перечитывает
+привязку при смене чата, закрытии настроек и смене состояния хода — так чип появляется сразу после
+первой записи файла.
 
 ### Каталоги проектной машины
 
