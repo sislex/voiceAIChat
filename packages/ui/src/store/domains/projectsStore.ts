@@ -109,7 +109,8 @@ export interface ProjectsActions {
   /** Загрузить каталог типов (идемпотентно; повторный вызов обновляет список). */
   loadProjectTypes(): Promise<ProjectTypeNode[]>
   loadProjectInvitations(id: string): Promise<void>
-  inviteToProject(id: string, invitee: string, role: 'owner' | 'member'): Promise<boolean>
+  /** Результат нужен вызывающему: ушло письмо или приглашение только в списке. */
+  inviteToProject(id: string, invitee: string, role: 'owner' | 'member'): Promise<{ mailed: boolean; email: string | null } | null>
   resendProjectInvitation(id: string, invitationId: string): Promise<void>
   revokeProjectInvitation(id: string, invitationId: string): Promise<void>
   loadMyInvitations(): Promise<void>
@@ -616,13 +617,13 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       },
       async inviteToProject(id, invitee, role) {
         try {
-          await client['projects:invite']({ id, invitee, role })
+          const { invitation, mailed } = await client['projects:invite']({ id, invitee, role })
           await actions.loadProjectInvitations(id)
-          return true
+          return { mailed, email: invitation.email }
         } catch (err) {
           // Создание не идемпотентно — «Повторить» не предлагаем.
           fail(err)
-          return false
+          return null
         }
       },
       async resendProjectInvitation(id, invitationId) {

@@ -3654,7 +3654,15 @@ export class VoiceChatDb {
 
   /** Каталог выбора: встроенные, опубликованные и собственные узлы пользователя. */
   listProjectTypes(userId: string): ProjectTypeNode[] {
-    return this.allProjectTypes().filter((node) => isProjectTypeVisible(node, userId))
+    // Счёт использования считаем одним запросом на весь каталог: по узлу их было
+    // бы столько же, сколько узлов, а каталог читается на каждом открытии формы.
+    const counts = new Map(
+      (this.db.prepare(`SELECT project_type_id AS id, COUNT(*) AS n FROM projects GROUP BY project_type_id`).all() as Array<{ id: string | null; n: number }>)
+        .map((row) => [row.id ?? '', row.n])
+    )
+    return this.allProjectTypes()
+      .filter((node) => isProjectTypeVisible(node, userId))
+      .map((node) => ({ ...node, usageCount: counts.get(node.id) ?? 0 }))
   }
 
   /** Все узлы, ожидающие решения администратора. */
