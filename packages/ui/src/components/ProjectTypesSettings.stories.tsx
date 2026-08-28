@@ -42,3 +42,12 @@ export const Empty: Story = { args: { types: [] } }
 
 /** Телефон: дерево, чипы и форма создания в одну колонку. */
 export const MobileViewport: Story = { parameters: { viewport: { defaultViewport: 'mobile2' } } }
+
+/** Первая загрузка: скелетоны вместо мигающей пустоты. */
+export const Loading: Story = { args: { types: [], status: 'loading' } }
+
+/** Сбой чтения: экран объясняет причину и даёт «Повторить». */
+export const LoadError: Story = { args: { types: [], status: 'error', error: 'Сеть недоступна', onRetry: () => {} } }
+
+/** Сбой при уже показанном дереве: баннер над данными, а не вместо них. */
+export const StaleError: Story = { args: { status: 'error', error: 'Сеть недоступна', onRetry: () => {} } }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ProjectTypesSettings } from './ProjectTypesSettings'
 import type { ProjectTypeNode } from '@shared/projectTypes'
+import type { LoadStatus } from '../lib/loadState'
 import { Dialog } from '@voicechat/ui-kit'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
@@ -56,6 +57,9 @@ export interface SettingsModalProps {
   settings: Settings
   /** Каталог типов проекта для раздела «Типы проектов». */
   projectTypes?: ProjectTypeNode[]
+  projectTypesStatus?: LoadStatus
+  projectTypesError?: string | null
+  onRetryProjectTypes?: () => void
   currentUsername?: string
   onCreateProjectType?: (input: { name: string; parentId: string | null }) => void | Promise<void>
   onDeleteProjectType?: (id: string) => void | Promise<void>
@@ -101,6 +105,9 @@ export interface SettingsModalProps {
 
 export function SettingsModal({
   projectTypes = [],
+  projectTypesStatus = 'ready',
+  projectTypesError = null,
+  onRetryProjectTypes,
   currentUsername,
   onCreateProjectType,
   onDeleteProjectType,
@@ -597,6 +604,9 @@ export function SettingsModal({
             {section === 'projectTypes' && (
               <ProjectTypesSettings
                 types={projectTypes}
+                status={projectTypesStatus}
+                error={projectTypesError}
+                {...(onRetryProjectTypes ? { onRetry: onRetryProjectTypes } : {})}
                 {...(currentUsername ? { currentUsername } : {})}
                 {...(onCreateProjectType ? { onCreate: onCreateProjectType } : {})}
                 {...(onDeleteProjectType ? { onDelete: onDeleteProjectType } : {})}

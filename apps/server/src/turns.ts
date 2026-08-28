@@ -49,6 +49,12 @@ import type { KbUsageTracker } from './kb/usage.js'
 /** Встроенные инструменты Claude CLI, запрещённые в «только Make» (roadmap-3 п.2): у пользователя без машины не должно быть shell и файлов сервера. */
 export const MAKE_ONLY_DISALLOWED_TOOLS = ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'Glob', 'Grep', 'LS', 'WebFetch', 'WebSearch', 'Task', 'TodoWrite', 'KillShell', 'BashOutput']
 
+/** Список включённых подсистем проекта для промпта: «git, ci, qa» или «нет». */
+function describeFeatures(features: Record<string, boolean>): string {
+  const enabled = Object.entries(features).filter(([, on]) => on).map(([name]) => name)
+  return enabled.length ? enabled.join(', ') : 'нет (только доска и задачи)'
+}
+
 export interface TurnManagerDeps {
   db: VoiceChatDb
   claude: LlmClient
@@ -569,6 +575,10 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       const lines = projectContext
         ? [
             `ID проекта: ${projectContext.id}`,
+            // Тип и его возможности: без них модель предлагает CI и релизы там,
+            // где они выключены, и получает 409 вместо результата.
+            projectContext.typeChain.label ? `Тип проекта: ${projectContext.typeChain.label}` : '',
+            `Доступные подсистемы: ${describeFeatures(projectContext.typeChain.features)}`,
             projectContext.gitUrl ? `Git-репозиторий: ${projectContext.gitUrl}` : '',
             projectContext.technologies.length ? `Технологии: ${projectContext.technologies.join(', ')}` : '',
             projectContext.skills.length ? `Навыки/области: ${projectContext.skills.join(', ')}` : '',

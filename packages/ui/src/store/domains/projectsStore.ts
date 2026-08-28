@@ -7,6 +7,7 @@
 // Chat разговаривает только через порт, который выдаёт AppRuntime.
 
 import type { Board, ProjectDetail, ProjectSummary, Task, TaskChatBadge, WorkItemType, TaskPriority, ProjectMachineDirectoryAssignments, ProjectMachineDirectoryKind } from '@shared/projects'
+import type { LoadStatus } from '../../lib/loadState'
 import type { ProjectTypeNode } from '@shared/projectTypes'
 import type { ProjectInvitation, ProjectInvitationForUser } from '@shared/projects'
 import type {
@@ -27,7 +28,6 @@ import type {
   CiWorkspaceReportItem
 } from '@shared/ci'
 import { isTerminalCiStatus } from '@shared/ci'
-import type { LoadStatus } from '../../lib/loadState'
 import type { ProjectsClient } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 
@@ -75,6 +75,9 @@ export interface ProjectsState {
   /** Каталог типов, видимый пользователю: встроенные, опубликованные и свои. */
   projectTypes: ProjectTypeNode[]
   projectTypesLoaded: boolean
+  /** Состояние загрузки каталога: «пусто» и «сломалось» — разные экраны. */
+  projectTypesStatus: LoadStatus
+  projectTypesError: string | null
   /** Живые приглашения открытого проекта (владельцу). */
   projectInvitations: ProjectInvitation[]
   /** Приглашения, адресованные мне: показываются вне проекта. */
@@ -230,6 +233,8 @@ function initialState(): ProjectsState {
     projectDetail: null,
     projectTypes: [],
     projectTypesLoaded: false,
+  projectTypesStatus: 'idle',
+  projectTypesError: null,
     projectInvitations: [],
     myInvitations: [],
     activeProjectId: null,
@@ -598,12 +603,15 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         }
       },
       async loadProjectTypes() {
+        setState({ projectTypesStatus: 'loading', projectTypesError: null })
         try {
           const types = await client['projectTypes:list']()
-          setState({ projectTypes: types, projectTypesLoaded: true })
+          setState({ projectTypes: types, projectTypesLoaded: true, projectTypesStatus: 'ready', projectTypesError: null })
           return types
         } catch (err) {
-          // Чтение — идемпотентно, поэтому даём «Повторить».
+          // Чтение — идемпотентно, поэтому даём «Повторить». Ошибку держим в
+          // сторе: без неё экран показал бы «типов нет» вместо «сломалось».
+          setState({ projectTypesStatus: 'error', projectTypesError: err instanceof Error ? err.message : String(err) })
           fail(err, () => void actions.loadProjectTypes())
           return []
         }
