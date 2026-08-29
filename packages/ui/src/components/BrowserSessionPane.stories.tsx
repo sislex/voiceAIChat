@@ -57,3 +57,33 @@ export const CommandFailed: Story = {
 export const NoBridge: Story = { args: { browser: undefined } }
 
 export const MobileViewport: Story = { parameters: { viewport: { defaultViewport: 'mobile2' } } }
+
+/** Вкладок больше одной: состояние достижимо только ответом моста. */
+export const ManyTabs: Story = {
+  args: {
+    browser: bridge({
+      start: async () => meta({
+        title: 'Пример страницы',
+        activeTabId: 't1',
+        tabs: [
+          { id: 't1', url: 'https://example.com', title: 'Пример страницы', active: true },
+          { id: 't2', url: 'https://example.com/docs', title: 'Документация', active: false },
+          { id: 't3', url: 'https://example.com/very/long/path', title: 'Очень длинный заголовок вкладки', active: false }
+        ]
+      })
+    })
+  }
+}
+
+/** Повторяемая ошибка: у BrowserError есть retryable, и он даёт кнопку. */
+export const RetryableError: Story = {
+  args: {
+    browser: bridge({
+      command: async () => { throw Object.assign(new Error('Страница не ответила за 30 секунд'), { retryable: true, code: 'timeout' }) }
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const reload = canvasElement.querySelector('[aria-label="Обновить"]') as HTMLButtonElement | null
+    reload?.click()
+  }
+}
