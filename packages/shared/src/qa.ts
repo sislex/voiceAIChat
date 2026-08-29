@@ -637,3 +637,108 @@ export function validateQaResult(status: QaResultStatus, fields: QaRequiredField
   }
   return missing
 }
+
+// --- Automated QA: режим этапа, сценарий и вердикт ---------------------------
+//
+// Этап автотестов исполняется одним из двух способов. `command` — историческое
+// поведение: `projects.automated_qa_command` в воркспейсе задачи. `playwright` —
+// сценарий в изолированном Chromium раннера теми же действиями, которыми модель
+// управляет Playwright Reader. Вердикт общий для обоих: этап обязан объяснять
+// человеку и модели на доработке, что именно не сошлось.
+
+/** Как исполняется этап Automated QA. */
+export type AutomatedQaMode = 'command' | 'playwright'
+export const AUTOMATED_QA_MODES: AutomatedQaMode[] = ['command', 'playwright']
+
+/**
+ * Шаг сценария: действие плюс необязательные ожидания по тексту страницы.
+ * Действие описано в словаре `PreviewAction` — том же, которым пользуется
+ * модель, поэтому записанный ею сценарий воспроизводится без перевода.
+ */
+export interface AutomatedQaScenarioStep {
+  id: string
+  title: string
+  action: import('./previewActions').PreviewAction
+  /** После шага текст обязан присутствовать на странице. */
+  expectText?: string
+  /** …и обязан отсутствовать (проверка на сообщение об ошибке). */
+  expectAbsentText?: string
+}
+
+/** Сценарий этапа — настройка проекта, а не артефакт рана: он обязан быть
+ *  одинаковым от попытки к попытке, иначе сравнивать прогоны не с чем. */
+export interface AutomatedQaScenario {
+  /** Стартовый адрес; пустой означает «сценарий не настроен». */
+  startUrl: string
+  steps: AutomatedQaScenarioStep[]
+}
+
+export const EMPTY_AUTOMATED_QA_SCENARIO: AutomatedQaScenario = { startUrl: '', steps: [] }
+
+export interface AutomatedQaStepResult {
+  id: string
+  title: string
+  status: 'passed' | 'failed' | 'skipped'
+  /** Причина провала или короткий итог действия. */
+  detail: string
+  durationMs: number
+}
+
+/**
+ * Кто виноват в провале. `infrastructure` — воркспейс, исполнитель, таймаут,
+ * недоступный Chromium: возвращать задачу в разработку в этом случае нельзя,
+ * иначе автопроход заводит баг на разработчика за чужой сбой.
+ */
+export type AutomatedQaClassification = 'implementation_defect' | 'infrastructure'
+
+/** Вердикт этапа: кладётся в `QaStageRun.result` и на успехе, и на провале. */
+export interface AutomatedQaVerdict {
+  mode: AutomatedQaMode
+  /** Совместимость с общим гейтом `completeQaStageRun`. */
+  gatePassed: boolean
+  passed: boolean
+  summary: string
+  classification: AutomatedQaClassification | null
+  /** Команда режима `command`; в режиме `playwright` — стартовый адрес. */
+  command: string
+  exitCode: number | null
+  durationMs: number
+  /** Хвост вывода — то, что уходит в замечания на доработку. */
+  logTail: string
+  steps: AutomatedQaStepResult[]
+  /** Ссылка на снимок экрана, если он снят (режим `playwright`). */
+  screenshotUrl: string | null
+}
+
+/** Разбор `QaStageRun.result` в вердикт. Старые раны хранят там `{gatePassed}` —
+ *  для них вердикта нет, и панель обязана показать это, а не пустой блок. */
+export function parseAutomatedQaVerdict(result: Record<string, unknown> | null): AutomatedQaVerdict | null {
+  if (!result || typeof result.summary !== 'string' || typeof result.mode !== 'string') return null
+  if (!AUTOMATED_QA_MODES.includes(result.mode as AutomatedQaMode)) return null
+  const steps = Array.isArray(result.steps) ? result.steps as AutomatedQaStepResult[] : []
+  return {
+    mode: result.mode as AutomatedQaMode,
+    gatePassed: result.gatePassed === true,
+    passed: result.passed === true,
+    summary: result.summary,
+    classification: result.classification === 'implementation_defect' || result.classification === 'infrastructure' ? result.classification : null,
+    command: typeof result.command === 'string' ? result.command : '',
+    exitCode: typeof result.exitCode === 'number' ? result.exitCode : null,
+    durationMs: typeof result.durationMs === 'number' ? result.durationMs : 0,
+    logTail: typeof result.logTail === 'string' ? result.logTail : '',
+    steps,
+    screenshotUrl: typeof result.screenshotUrl === 'string' ? result.screenshotUrl : null
+  }
+}
+
+/** Замечания для возврата в разработку: короткий человеческий текст, который
+ *  кладётся в описание баг-задачи автопрохода. */
+export function automatedQaRemarks(verdict: AutomatedQaVerdict): string {
+  const lines = [verdict.summary]
+  if (verdict.mode === 'command') lines.push(`Команда: ${verdict.command}`, `Код выхода: ${verdict.exitCode ?? 'нет'}`)
+  else lines.push(`Стартовый адрес: ${verdict.command}`)
+  const failed = verdict.steps.filter((step) => step.status === 'failed')
+  if (failed.length) lines.push('Провалившиеся шаги:', ...failed.map((step) => `- ${step.title}: ${step.detail}`))
+  if (verdict.logTail) lines.push('Хвост вывода:', verdict.logTail)
+  return lines.filter(Boolean).join('\n')
+}
