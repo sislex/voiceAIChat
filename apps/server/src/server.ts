@@ -468,6 +468,32 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         return { ok: false, error: err instanceof Error ? err.message : 'Действие в Chromium не выполнено' }
       }
     },
+    // Снимок из изолированного Chromium: отдельным входом, потому что он
+    // возвращает картинку, а не структуру действия.
+    browserScreenshot: async (userId, conversationId) => {
+      if (!browserRunner) return null
+      const conversation = db.getConversation(userId, conversationId)
+      if (!conversation || !isPlaywrightReaderConversation(conversation)) return null
+      try {
+        const session = await browserRunner.start({ sessionId: conversationId, userKey: userId, conversationKey: conversationId })
+        const shot = await browserRunner.screenshot(conversationId, {
+          requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant',
+          command: { type: 'screenshot', format: 'png' }
+        })
+        // Селектор раннер не поддерживает: снимается вьюпорт. Область в ответе
+        // — весь вьюпорт, чтобы модель не считала, что сняла указанный узел.
+        return {
+          ok: true,
+          result: {
+            page: { url: session.currentUrl ?? '', title: session.title ?? '' },
+            rect: { x: 0, y: 0, width: session.viewport.width, height: session.viewport.height },
+            dataUrl: `data:${shot.mimeType};base64,${shot.buffer.toString('base64')}`
+          }
+        }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Снимок в Chromium не сделан' }
+      }
+    },
     context: {
       // Машина алиаса machine.internal: execTarget разговора (agentId) с гейтом доступа.
       machineOf: ({ userId, conversationId }) => {
