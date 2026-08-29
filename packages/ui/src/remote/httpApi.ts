@@ -34,6 +34,7 @@ import type { RendererApi } from '@shared/ipc'
 import type { MessageSearchResult } from '@shared/types'
 import { authHeaders } from './session'
 import { notifyUnauthorized } from './session'
+import { featureUnavailableMessage } from '@shared/projectTypes'
 
 export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi {
   /**
@@ -54,9 +55,14 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     if (!res.ok) {
       let detail = ''
       try {
-        const body = text ? JSON.parse(text) as { error?: unknown; message?: unknown } : null
-        const value = body?.error ?? body?.message
-        if (typeof value === 'string') detail = value
+        const body = text ? JSON.parse(text) as { error?: unknown; message?: unknown; feature?: unknown } : null
+        // Отказ по возможностям типа приходит кодом; переводим его здесь, чтобы
+        // каждый экран не делал это сам и не показывал «feature_unavailable».
+        if (body?.error === 'feature_unavailable') detail = featureUnavailableMessage(body.feature)
+        else {
+          const value = body?.error ?? body?.message
+          if (typeof value === 'string') detail = value
+        }
       } catch {}
       throw new Error(detail || `${init?.method ?? 'GET'} ${path} → ${res.status}`)
     }

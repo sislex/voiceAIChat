@@ -221,6 +221,22 @@ describe('createHttpApi', () => {
     await expect(api['releases:deploy']({ projectId: 'p1', branch: 'release/1.2.3' })).rejects.toThrow('Другой production deploy уже выполняется')
   })
 
+  it('отказ по возможностям типа превращается в человеческий текст', async () => {
+    mockFetch(() => ({ ok: false, status: 409, _text: JSON.stringify({ error: 'feature_unavailable', feature: 'releases' }) }))
+    const api = createHttpApi('', 'ws://x/agent')
+    // Раньше в тост уходило «feature_unavailable» — код, который ничего не
+    // объясняет и подталкивает повторить бесполезное действие.
+    await expect(api['releases:deploy']({ projectId: 'p1', branch: 'release/1.2.3' }))
+      .rejects.toThrow(/В этом проекте нет релизов.*тип проекта/s)
+  })
+
+  it('неизвестная подсистема в отказе не ломает сообщение', async () => {
+    mockFetch(() => ({ ok: false, status: 409, _text: JSON.stringify({ error: 'feature_unavailable' }) }))
+    const api = createHttpApi('', 'ws://x/agent')
+    await expect(api['releases:deploy']({ projectId: 'p1', branch: 'release/1.2.3' }))
+      .rejects.toThrow(/текущего типа проекта/)
+  })
+
   it('сохраняет машину проекта по серверному REST-контракту', async () => {
     mockFetch(() => ({ _text: JSON.stringify({ id: 'p1', defaultAgentId: 'mac' }) }))
     const api = createHttpApi('', 'ws://x/agent')
