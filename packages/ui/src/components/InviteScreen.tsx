@@ -63,6 +63,7 @@ export function InviteScreen({ token, loadPreview, onAccept, onDecline, onLogin,
                 <>
                   <Button
                     fullWidth
+                    variant="primary"
                     loading={busy === 'accept'}
                     onClick={async () => {
                       setBusy('accept')
@@ -87,7 +88,10 @@ export function InviteScreen({ token, loadPreview, onAccept, onDecline, onLogin,
                 </>
               ) : (
                 <>
-                  {onLogin && <Button fullWidth onClick={onLogin}>Войти и принять</Button>}
+                  {/* Главный путь экрана — войти и принять; регистрация рядом вторым
+                      вариантом. Без явного `primary` обе кнопки одинакового веса, и
+                      непонятно, куда идти. */}
+                  {onLogin && <Button fullWidth variant="primary" onClick={onLogin}>Войти и принять</Button>}
                   {onSignup && <Button fullWidth variant="secondary" onClick={onSignup}>Зарегистрироваться</Button>}
                 </>
               )}

@@ -43,6 +43,14 @@ describe('InviteScreen — до входа', () => {
 })
 
 describe('InviteScreen — вошедший пользователь', () => {
+  it('главное действие оформлено как основное, а не наравне с прочими', async () => {
+    render(<InviteScreen token="t1" loadPreview={async () => preview} onAccept={async () => 'p1'} onDecline={async () => {}} onDone={vi.fn()} />)
+    const accept = await screen.findByRole('button', { name: 'Принять приглашение' })
+    expect(accept.className).toContain('vc-btn--primary')
+    // Отклонение остаётся тихим: два акцентных действия рядом сбивают выбор.
+    expect(screen.getByRole('button', { name: 'Отклонить' }).className).toContain('vc-btn--ghost')
+  })
+
   it('вошедшему это модальное окно, а не экран поверх приложения', async () => {
     render(<InviteScreen token="t1" loadPreview={async () => preview} onAccept={async () => 'p1'} onDecline={async () => {}} onDone={vi.fn()} />)
     // `.login-screen` не перекрывает приложение: карточка рисовалась сквозь чат
