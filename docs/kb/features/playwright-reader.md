@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-08-29
-checked: ce44040b
+checked: d9b34064
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -261,3 +261,32 @@ hash-маршруты `#/playwright-reader[/<conversationId>]`, пункт ме�
 канал. Стало: опрос останавливается по `visibilitychange` и ускоряется до 400 мс
 на четыре секунды после каждой команды, потому что сразу после действия страница
 ещё меняется.
+
+## Модель получила доступ к изолированному Chromium (круг 3, 29.08.2026)
+
+**До этого круга модель Playwright Reader не видела вообще.** `actor: 'model'`
+не встречался в коде нигде: единственным, кто звал `runner.command`, был REST-роут
+`/api/browser/:id/command` с `actor: 'user'`. MCP-инструменты `browser`
+(`previewMcp`) уходят в `PreviewActionRelay`, а тот пушит действие **в браузер
+пользователя** — исполняется оно в iframe веб-превью, до изолированного Chromium
+не доходя.
+
+Почему нельзя было просто перенаправить: MCP-инструменты селекторные
+(`click({selector,text})`, `read({selector})`, `wait({selector})`), а
+`BrowserCommand` был координатным (`click(x,y)`, `type`, `wheel`). Разрыв
+закрывается контрактом: добавлена команда `selector` с действиями
+`click | type | read | find | wait` (`BrowserSelectorAction`) и типизированным
+ответом `BrowserSelectorResult` — чтение и поиск возвращают данные, остальные
+только факт.
+
+Исполнение — `apps/browser-runner/src/selectorActions.ts`. Логика намеренно
+вынесена из `sessionManager` и принимает узкий тип `SelectorPage`, а не
+`Page` из Playwright: так она проверяется без Chromium, и у пакета появились
+первые тесты (их не было ни одного).
+
+Два решения, которые стоит помнить:
+- **Ошибка возвращается значением, а не исключением** (`{ ok: false, error }`), и
+  из сообщения Playwright берётся только первая строка. Модели нужна причина,
+  а не стек и не «команда не выполнена».
+- **Чтение обрезается лимитом** (по умолчанию 4000 символов): `innerText` у
+  `body` большой страницы иначе съедает контекст хода целиком.

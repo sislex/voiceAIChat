@@ -71,6 +71,11 @@ export function registerBrowserRoutes(app: FastifyInstance, deps: BrowserRoutesD
       if (typeof incarnation !== 'string' || !command || typeof command !== 'object' || command.type === 'screenshot') {
         throw new BrowserRunnerError(400, 'Нужны incarnation и command (кроме screenshot — для него отдельный роут)')
       }
+      // Селекторное действие возвращает результат чтения/поиска, а не метаданные
+      // сессии: модели нужен текст страницы, а не её заголовок.
+      if (command.type === 'selector' && !command.action) {
+        throw new BrowserRunnerError(400, 'Селекторной команде нужен action')
+      }
       return await runner!.command(id, { requestId: randomUUID(), incarnation, ...(tabId ? { tabId } : {}), actor: 'user', command })
     } catch (err) {
       return fail(reply, err)
