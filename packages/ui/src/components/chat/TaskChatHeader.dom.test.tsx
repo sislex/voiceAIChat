@@ -79,6 +79,7 @@ describe('TaskChatHeader — подсветка состояния рана', ()
     id: 'run-1',
     taskId: 't1',
     status: 'running',
+    error: null,
     slotProgress: { done: 1, total: 4, phase: 'Модель работает' },
     durationMs: null,
     modelActive: true,

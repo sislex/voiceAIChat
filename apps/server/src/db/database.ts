@@ -1261,6 +1261,7 @@ export class VoiceChatDb {
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'requested_llm_model')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN requested_llm_model TEXT`)
     if (mergeRunCols.length && !mergeRunCols.some((c) => c.name === 'llm_fallback_reason')) this.db.exec(`ALTER TABLE merge_runs ADD COLUMN llm_fallback_reason TEXT`)
     const ciRunCols = this.db.prepare(`PRAGMA table_info(ci_runs)`).all() as Array<{ name: string }>
+    if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'error')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN error TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'run_column_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN run_column_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'terminal_column_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN terminal_column_id TEXT`)
     if (ciRunCols.length && !ciRunCols.some((c) => c.name === 'agent_owner_id')) this.db.exec(`ALTER TABLE ci_runs ADD COLUMN agent_owner_id TEXT`)
@@ -5597,10 +5598,14 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC`).all(taskId) as CiRunRow[]).map(mapCiRun)
   }
 
-  updateCiRun(runId: string, patch: { status?: CiStatus; runColumnId?: string | null; terminalColumnId?: string | null; agentId?: string | null; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null; modelSessionId?: string | null; fixContext?: CiFixDiagnosticContext | null }): CiRun | null {
+  updateCiRun(runId: string, patch: { status?: CiStatus; error?: string | null; runColumnId?: string | null; terminalColumnId?: string | null; agentId?: string | null; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null; modelSessionId?: string | null; fixContext?: CiFixDiagnosticContext | null }): CiRun | null {
     const set: string[] = []
     const vals: unknown[] = []
     if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
+    if (patch.error !== undefined || patch.status !== undefined) {
+      const error = patch.error?.trim() || (patch.status === 'failed' ? 'Ран завершился с ошибкой до появления подробной диагностики.' : null)
+      set.push('error = ?'); vals.push(error)
+    }
     if (patch.runColumnId !== undefined) { set.push('run_column_id = ?'); vals.push(patch.runColumnId) }
     if (patch.terminalColumnId !== undefined) { set.push('terminal_column_id = ?'); vals.push(patch.terminalColumnId) }
     if (patch.agentId !== undefined) { set.push('agent_id = ?'); vals.push(patch.agentId) }
@@ -5697,7 +5702,7 @@ export class VoiceChatDb {
       this.db.prepare(`UPDATE ci_run_steps SET status = 'failed', finished_at = ? WHERE run_id = ? AND status IN ('running', 'awaiting_input')`).run(ts, r.id)
       this.db.prepare(`UPDATE ci_run_steps SET status = 'skipped' WHERE run_id = ? AND status = 'queued'`).run(r.id)
       this.db.prepare(`UPDATE ci_interactions SET status = 'cancelled', answered_at = ? WHERE run_id = ? AND status = 'pending'`).run(ts, r.id)
-      this.db.prepare(`UPDATE ci_runs SET status = 'failed', finished_at = ?, duration_ms = ? WHERE id = ?`).run(ts, r.started_at ? ts - r.started_at : null, r.id)
+      this.db.prepare(`UPDATE ci_runs SET status = 'failed', error = ?, finished_at = ?, duration_ms = ? WHERE id = ?`).run('Ран прерван перезапуском сервера.', ts, r.started_at ? ts - r.started_at : null, r.id)
       this.addCiEvent({ projectId: r.project_id, runId: r.id, type: 'run.finished', actorType: 'system', payload: { status: 'failed', reason: 'server_restart' } })
     }
     return rows.map((r) => this.getCiRunRaw(r.id)).filter((r): r is CiRun => r !== null)
@@ -6550,6 +6555,7 @@ export class VoiceChatDb {
       id: run.id,
       taskId: run.taskId,
       status: run.status,
+      error: run.error,
       slotProgress: run.slotProgress,
       durationMs: run.durationMs,
       modelActive,
@@ -8501,7 +8507,7 @@ function parseSlotProgress(j: string): CiSlotProgress {
 }
 
 interface CiRunRow {
-  id: string; project_id: string; task_id: string; agent_id: string | null; agent_owner_id: string | null; agent_owner_name: string | null; agent_selection_source: string | null; status: string
+  id: string; project_id: string; task_id: string; agent_id: string | null; agent_owner_id: string | null; agent_owner_name: string | null; agent_selection_source: string | null; status: string; error: string | null
   workspace_id: string | null; triggered_by: string; prev_column_id: string | null; run_column_id: string | null; terminal_column_id: string | null
   llm_engine_id: string | null; llm_provider: string; llm_model: string
   mode: string | null; clarify_level: string | null; clarify_max: number | null
@@ -8514,7 +8520,7 @@ function mapCiRun(r: CiRunRow): CiRun {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
     agentOwnerId: r.agent_owner_id ?? null, agentOwnerName: r.agent_owner_name ?? 'неизвестно',
     agentSelectionSource: r.agent_selection_source === 'explicit' || r.agent_selection_source === 'task_pinned' || r.agent_selection_source === 'project_default' || r.agent_selection_source === 'user_project_default' || r.agent_selection_source === 'fallback' ? r.agent_selection_source : 'unknown',
-    status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
+    status: normCiStatus(r.status), error: r.error?.trim() || null, workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
     prevColumnId: r.prev_column_id, runColumnId: r.run_column_id ?? null, terminalColumnId: r.terminal_column_id ?? null, llmEngineId: r.llm_engine_id ?? null, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
     mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),
     conversationId: r.conversation_id, modelSessionId: r.model_session_id ?? null,

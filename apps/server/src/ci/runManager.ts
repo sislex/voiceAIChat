@@ -1322,7 +1322,7 @@ fi`
     const project = deps.db.getProject(userId, runRow.projectId)
     const task = deps.db.getCiTask(userId, runRow.projectId, runRow.taskId)
     if (!project || !task) {
-      finalize(runId, userId, 'failed')
+      finalize(runId, userId, 'failed', 'Проект или задача были удалены до начала рана.')
       return
     }
     const stageLlm = (stage: CiUsageKind): CiStageLlmSnapshot => {
@@ -1340,7 +1340,7 @@ fi`
     // ждал в очереди во время удаления машины, смены владельца или отзыва членства.
     if (!agentId || !deps.db.canUseAgent(userId, agentId, runRow.projectId) || (deps.isAgentOnline && !deps.isAgentOnline(agentId))) {
       deps.db.addCiEvent({ projectId: runRow.projectId, runId, type: 'run.machine_unavailable', actorType: 'system', payload: { agentId, message: 'Машина выполнения больше недоступна или offline' } })
-      finalize(runId, userId, 'failed')
+      finalize(runId, userId, 'failed', !agentId ? 'Для рана не выбрана машина выполнения.' : 'Машина выполнения недоступна или находится офлайн.')
       return
     }
     const machine = project.machines.find((m) => m.agentId === agentId)
@@ -2172,7 +2172,7 @@ fi`
     }
   }
 
-  function finalize(runId: string, userId: string, status: CiStatus): void {
+  function finalize(runId: string, userId: string, status: CiStatus, reason?: string): void {
     const run0 = deps.db.getCiRunRaw(runId)
     // Ран, закрытый отменой (в т.ч. сторожевым таймаутом), финальный: подвисший
     // execute, догребший до конца позже, не имеет права переписать его в failed.
@@ -2181,7 +2181,14 @@ fi`
     const durationMs = run0?.startedAt ? finished - run0.startedAt : null
     try { deps.db.calculateAndSaveCiKbHit(runId) } catch { /* метрика не роняет финализацию */ }
     const terminalColumnId = run0 ? deps.db.getCiTask(userId, run0.projectId, run0.taskId)?.columnId ?? null : null
-    const run = deps.db.updateCiRun(runId, { status, terminalColumnId, finishedAt: finished, durationMs: durationMs ?? undefined })
+    const failedStep = status === 'failed'
+      ? [...(deps.db.getCiRun(userId, runId)?.steps ?? [])].reverse().find((step) => step.status === 'failed' || step.status === 'timeout')
+      : undefined
+    const error = reason?.trim()
+      || (status === 'failed'
+        ? run0?.error || (failedStep ? `Шаг «${failedStep.title}» завершился с ошибкой.` : 'Ран завершился с ошибкой до появления подробной диагностики.')
+        : status === 'cancelled' ? run0?.error || 'Ран отменён пользователем.' : null)
+    const run = deps.db.updateCiRun(runId, { status, error, terminalColumnId, finishedAt: finished, durationMs: durationMs ?? undefined })
     if (run) {
       notifyProdDrainFinished(runId)
       deps.db.addCiEvent({ projectId: run.projectId, runId, type: 'run.finished', actorType: 'system', payload: { status } })
