@@ -72,6 +72,41 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     }
     case 'press':
       return { kind: 'command', command: { type: 'input', action: { type: 'press', key: action.key } } }
+    case 'console':
+      return {
+        kind: 'command',
+        command: {
+          type: 'inspect',
+          action: {
+            kind: 'console',
+            ...(action.level ? { level: action.level } : {}),
+            ...(action.pattern ? { pattern: action.pattern } : {}),
+            ...(typeof action.limit === 'number' ? { limit: action.limit } : {}),
+            ...(action.clear ? { clear: true } : {})
+          }
+        }
+      }
+    case 'errors':
+      // «Ошибки страницы» — тот же журнал консоли, отфильтрованный по уровню.
+      return { kind: 'command', command: { type: 'inspect', action: { kind: 'console', level: 'error', ...(action.clear ? { clear: true } : {}) } } }
+    case 'network':
+      return {
+        kind: 'command',
+        command: {
+          type: 'inspect',
+          action: {
+            kind: 'network',
+            ...(action.filter ? { filter: action.filter } : {}),
+            ...(typeof action.limit === 'number' ? { limit: action.limit } : {}),
+            ...(action.clear ? { clear: true } : {})
+          }
+        }
+      }
+    case 'styles':
+      return {
+        kind: 'command',
+        command: { type: 'inspect', action: { kind: 'styles', selector: action.selector, ...(action.properties ? { properties: action.properties } : {}) } }
+      }
     default:
       return { kind: 'unsupported', reason: `Действие «${action.kind}» в Playwright Reader пока не поддерживается: страница живёт в изолированном Chromium, а не в превью пользователя.` }
   }
