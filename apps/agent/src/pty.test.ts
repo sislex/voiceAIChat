@@ -40,8 +40,15 @@ describe('fallback-терминал (VC_PTY_FORCE_FALLBACK)', () => {
     startPty('fb1', 80, 24, process.cwd(), (m) => events.push(m))
     expect(ptyCount()).toBe(1)
     writePty('fb1', 'echo hello_fallback\n')
-    await new Promise((r) => setTimeout(r, 200))
-    const out = events.filter((e) => e.t === 'pty.output').map((e) => e.data ?? '').join('')
+    // Под параллельным affected-check запуск интерактивного bash может занять больше 200 мс.
+    // Ждём наблюдаемое условие с ограничением, а не угадываем задержку процесса.
+    const deadline = Date.now() + 2_000
+    let out = ''
+    while (Date.now() < deadline) {
+      out = events.filter((e) => e.t === 'pty.output').map((e) => e.data ?? '').join('')
+      if (out.includes('hello_fallback')) break
+      await new Promise((r) => setTimeout(r, 20))
+    }
     expect(out).toContain('hello_fallback')
     // Перевод строки нормализован в \r\n для xterm.
     expect(out.includes('\r\n')).toBe(true)

@@ -868,6 +868,8 @@ export interface RendererSessionBridge {
   securityNoticesSeen?(): Promise<void>
   /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
   resetPassword?(input: { name: string; code: string; password: string }): Promise<{ ok: true } | { error: string }>
+  requestPasswordReset?(email: string): Promise<{ ok: true; message: string } | { error: string }>
+  resetPasswordByEmail?(input: { token: string; password: string }): Promise<{ ok: true } | { error: string }>
   changePassword?(input: { current: string; next: string }): Promise<{ ok: true } | { error: string }>
   /** Открытая регистрация с подтверждением email (web). */
   signupEnabled?(): Promise<boolean>
