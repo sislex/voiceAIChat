@@ -6,6 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
+import { isPlaywrightReaderConversation } from '@voicechat/shared'
 import { ciToolOutputLimits, evaluateCommandLayers, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel, type MachineCommandEvent, type ServerMessage } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
@@ -94,6 +95,7 @@ import { createKbUsageTracker, type KbUsageTracker } from './kb/usage.js'
 import { registerKbMcp, kbToolBroker, KB_MCP_PATH } from './kb/kbMcp.js'
 import { registerPreviewMcp, previewToolBroker, PreviewActionRelay, PREVIEW_MCP_PATH } from './mcp/previewMcp.js'
 import { registerBrowserRoutes } from './routes/browser.js'
+import { planModelAction } from './browser/modelActions.js'
 import { createBrowserRunnerClient, type BrowserRunnerClient } from './browser/runnerClient.js'
 import { readUserFile } from './serverFiles.js'
 import { UnixDeployClient, type DeployTrigger } from './routes/admin.js'
@@ -445,6 +447,25 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   registerPreviewMcp(app, {
     secret: mcpSecret,
     relay: previewRelay,
+    // Разговоры Playwright Reader исполняются в изолированном Chromium сервера:
+    // relay пушит действие в браузер пользователя, а страницы там нет.
+    browserExecutor: async (userId, conversationId, action) => {
+      if (!browserRunner) return null
+      const conversation = db.getConversation(userId, conversationId)
+      if (!conversation || !isPlaywrightReaderConversation(conversation)) return null
+      const plan = planModelAction(action)
+      if (plan.kind === 'unsupported') return { ok: false, error: plan.reason }
+      try {
+        // start идемпотентен: живая сессия переиспользуется, incarnation берём из неё.
+        const session = await browserRunner.start({ sessionId: conversationId, userKey: userId, conversationKey: conversationId })
+        const result = await browserRunner.command(conversationId, {
+          requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant', command: plan.command
+        })
+        return { ok: true, data: result as unknown as Record<string, unknown> }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Действие в Chromium не выполнено' }
+      }
+    },
     context: {
       // Машина алиаса machine.internal: execTarget разговора (agentId) с гейтом доступа.
       machineOf: ({ userId, conversationId }) => {
