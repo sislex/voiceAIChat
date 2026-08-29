@@ -44,6 +44,14 @@ describe('RunFeed', () => {
     expect(screen.getByText('выполняется')).toBeInTheDocument()
   })
 
+  it('вместо пустого списка показывает причину падения до первого шага', () => {
+    const run = mkRun({ status: 'failed', error: 'Машина выполнения недоступна или находится офлайн.' })
+    render(<RunFeed {...baseProps({ detail: { run, steps: [], fixAttempts: [], interactions: [] }, log: [], conclusion: null })} />)
+    expect(screen.getByText('Ран завершился до первого шага')).toBeInTheDocument()
+    expect(screen.getByText('Машина выполнения недоступна или находится офлайн.')).toBeInTheDocument()
+    expect(screen.queryByText('Шагов пока нет')).not.toBeInTheDocument()
+  })
+
   it('показывает фактическую модель стадии отдельно от базовой модели рана', () => {
     const run = mkRun({ llmProvider: 'codex', llmModel: 'gpt-5.6-luna' })
     const executionLlm = {

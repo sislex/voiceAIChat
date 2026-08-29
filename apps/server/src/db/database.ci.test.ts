@@ -442,6 +442,20 @@ describe('VoiceChatDb — миграция существующей БД под 
 })
 
 describe('ci: reconciliation после рестарта сервера', () => {
+  it('не сохраняет failed без человекочитаемой причины, даже если шагов ещё нет', () => {
+    const { p, task } = project()
+    const run = db.createCiRun({
+      projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice',
+      prevColumnId: null, slotProgress: { done: 0, total: 0, phase: 'Старт' }
+    })
+
+    db.updateCiRun(run.id, { status: 'failed' })
+
+    const detail = db.getCiRun('alice', run.id)!
+    expect(detail.steps).toEqual([])
+    expect(detail.run.error).toBe('Ран завершился с ошибкой до появления подробной диагностики.')
+  })
+
   it('сохраняет незапущенный ран в очереди, а начатый помечает interrupted', () => {
     const { p, task } = project()
     const queued = db.createCiRun({
@@ -465,6 +479,7 @@ describe('ci: reconciliation после рестарта сервера', () => 
     expect(db.getCiRunRaw(queued.id)?.status).toBe('queued')
     expect(db.getCiRunRaw(run.id)).toMatchObject({
       status: 'interrupted',
+      error: 'Ран прерван перезапуском сервера.',
       slotProgress: { phase: 'Прерван перезапуском сервера' }
     })
     expect(db.getCiRunRaw(run.id)?.finishedAt).not.toBeNull()

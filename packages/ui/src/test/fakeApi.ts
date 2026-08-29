@@ -1346,6 +1346,7 @@ export function createFakeCi(): FakeCi {
     taskId,
     agentId: null,
     status: 'queued',
+    error: null,
     workspaceId: null,
     triggeredBy: 'admin',
     prevColumnId: null,

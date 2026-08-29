@@ -63,6 +63,7 @@ const summaryOf = (taskId: string, status: CiStatus): CiRunSummary => ({
   id: 'run-1',
   taskId,
   status,
+  error: null,
   slotProgress: { done: 4, total: 4, phase: 'после модели' },
   durationMs: 1000,
   modelActive: false,
