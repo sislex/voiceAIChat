@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
 import type { BrowserCommandRequest } from '@voicechat/shared'
-import { registerRunnerAuth } from './security.js'
+import { registerRunnerAuth, type HostAliases } from './security.js'
 import { BrowserSessionManager, type StartSessionRequest } from './sessionManager.js'
 
 const playwrightVersion = createRequire(import.meta.url)('playwright/package.json') as { version?: string }
@@ -23,6 +23,8 @@ export interface BuildBrowserRunnerOptions {
   probe?: () => Promise<BrowserProbe>
   /** Простой, после которого сессия закрывается сборщиком; 0 — не убирать. */
   idleMs?: number
+  /** Подмена внешнего адреса стенда на внутренний адрес сети compose. */
+  hostAliases?: HostAliases
 }
 
 /**
@@ -58,7 +60,7 @@ const SWEEP_EVERY_MS = 5 * 60_000
 
 export async function buildBrowserRunner(options: BuildBrowserRunnerOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
-  const sessions = options.sessions ?? new BrowserSessionManager(options.profilesRoot)
+  const sessions = options.sessions ?? new BrowserSessionManager(options.profilesRoot, options.hostAliases)
   registerRunnerAuth(app, options.token)
 
   // Сессию закрывает явный `stop`, но его никто не зовёт, если пользователь
