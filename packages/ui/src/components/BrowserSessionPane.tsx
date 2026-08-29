@@ -14,7 +14,15 @@ import { Button, IconButton } from '@voicechat/ui-kit'
 // start отсекает команды к пересозданной сессии.
 
 const VIEWPORT: BrowserViewport = { width: 1280, height: 800, deviceScaleFactor: 1 }
+/**
+ * Кадры тянутся поллингом. Сразу после действия страница ещё меняется, поэтому
+ * первые секунды опрашиваем чаще, потом возвращаемся к спокойному интервалу.
+ * Скрытая вкладка не опрашивается вовсе: раньше таймер тикал всегда и жёг
+ * трафик и Chromium, пока человек работал в другом окне.
+ */
 const POLL_MS = 1200
+const POLL_ACTIVE_MS = 400
+const ACTIVE_WINDOW_MS = 4000
 
 /** Размеры для проверки адаптива: те же, на которых мы смотрим свои экраны. */
 const VIEWPORTS: ReadonlyArray<{ id: 'phone' | 'tablet' | 'desktop'; label: string; viewport: BrowserViewport }> = [
@@ -44,6 +52,12 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
   // Навигация занимает секунды, а кадр всё это время старый: без отметки непонятно,
   // идёт работа или страница просто такая.
   const [busy, setBusy] = useState(false)
+  // Момент последнего действия и счётчик перезапуска таймера: после команды
+  // опрос ускоряется, через ACTIVE_WINDOW_MS возвращается к спокойному.
+  const lastAction = useRef(0)
+  const [pollTick, setPollTick] = useState(0)
+  const [retryable, setRetryable] = useState(false)
+  const lastCommand = useRef<Parameters<RendererBrowserBridge['command']>[1]['command'] | null>(null)
   const [message, setMessage] = useState<string>('')
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
   const [frame, setFrame] = useState<string | null>(null)
@@ -91,12 +105,21 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     }
   }, [browser, conversationId, refreshFrame])
 
-  // Поллинг кадров, пока сессия готова.
+  // Поллинг кадров, пока сессия готова и вкладка на экране.
   useEffect(() => {
     if (phase !== 'ready') return
-    const timer = setInterval(() => void refreshFrame(), POLL_MS)
-    return () => clearInterval(timer)
-  }, [phase, refreshFrame])
+    let timer: ReturnType<typeof setInterval> | null = null
+    const stop = (): void => { if (timer) { clearInterval(timer); timer = null } }
+    const start = (): void => {
+      stop()
+      const fresh = Date.now() - lastAction.current < ACTIVE_WINDOW_MS
+      timer = setInterval(() => void refreshFrame(), fresh ? POLL_ACTIVE_MS : POLL_MS)
+    }
+    const onVisibility = (): void => { if (document.hidden) stop(); else { void refreshFrame(); start() } }
+    if (!document.hidden) start()
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility) }
+  }, [phase, refreshFrame, pollTick])
 
   const applyMeta = (next: BrowserSessionMetadata): void => {
     incarnation.current = next.incarnation
@@ -107,13 +130,24 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     if (!browser || !incarnation.current) return
     const generation = alive.current
     setBusy(true)
+    setMessage(''); setRetryable(false)
+    lastCommand.current = command
+    lastAction.current = Date.now()
+    setPollTick((v) => v + 1)
     try {
       const next = await browser.command(conversationId, { incarnation: incarnation.current, command })
       if (generation !== alive.current) return
       applyMeta(next)
       await refreshFrame()
     } catch (err) {
-      if (generation === alive.current) setMessage(err instanceof Error ? err.message : 'Команда не выполнена')
+      if (generation === alive.current) {
+        setMessage(err instanceof Error ? err.message : 'Команда не выполнена')
+        // `BrowserError.retryable` говорит, есть ли смысл в повторе. Раньше он
+        // приходил и терялся: человеку показывали текст без выхода.
+        const code = (err as { code?: unknown })?.code
+        const retry = (err as { retryable?: unknown })?.retryable
+        setRetryable(retry === true || code === 'timeout' || code === 'not_ready')
+      }
     } finally {
       if (generation === alive.current) setBusy(false)
     }
@@ -156,6 +190,41 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     }
   }
 
+  /** Перезапуск сессии: останавливаем текущую и стартуем заново на том же разговоре. */
+  const restartSession = (): void => {
+    if (!browser) return
+    const generation = ++alive.current
+    incarnation.current = null
+    setPhase('starting'); setFrame(null); setMeta(null); setMessage(''); setRetryable(false)
+    void browser.stop(conversationId)
+      .catch(() => {})
+      .then(() => browser.start(conversationId, VIEWPORT))
+      .then((started) => {
+        if (generation !== alive.current) return
+        incarnation.current = started.incarnation
+        setMeta(started); setAddress(started.currentUrl ?? ''); setPhase('ready')
+        void refreshFrame()
+      }, (err: unknown) => {
+        if (generation !== alive.current) return
+        setPhase('error'); setMessage(err instanceof Error ? err.message : 'Не удалось перезапустить Chromium')
+      })
+  }
+
+  /** Снимок всей страницы, а не только вьюпорта: fullPage контракт поддерживает. */
+  const attachFullPage = async (): Promise<void> => {
+    if (!browser || !incarnation.current || !onAttachFrame) return
+    const generation = alive.current
+    setBusy(true)
+    try {
+      const shot = await browser.screenshot(conversationId, { incarnation: incarnation.current, fullPage: true, format: 'png' })
+      if (generation === alive.current) onAttachFrame(shot.dataUrl)
+    } catch (err) {
+      if (generation === alive.current) setMessage(err instanceof Error ? err.message : 'Снимок не получился')
+    } finally {
+      if (generation === alive.current) setBusy(false)
+    }
+  }
+
   const changeViewport = (id: 'phone' | 'tablet' | 'desktop'): void => {
     const found = VIEWPORTS.find((v) => v.id === id)
     if (!found) return
@@ -181,7 +250,30 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     </section>
   }
 
+  const tabs = meta?.tabs ?? []
+
   return <section className="playwright-browser-pane" aria-label="Browser session">
+    {tabs.length > 0 && (
+      <div className="playwright-reader-tabs" role="tablist" aria-label="Вкладки страницы">
+        {tabs.map((tab) => (
+          <span key={tab.id} className={`playwright-reader-tab${tab.id === meta?.activeTabId ? ' is-active' : ''}`}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab.id === meta?.activeTabId}
+              title={tab.url}
+              onClick={() => void run({ type: 'selectTab', tabId: tab.id })}
+            >{tab.title || tab.url || 'Без названия'}</button>
+            {tabs.length > 1 && (
+              <IconButton size="sm" aria-label={`Закрыть вкладку ${tab.title || tab.url}`} title="Закрыть вкладку"
+                onClick={() => void run({ type: 'closeTab', tabId: tab.id })}>✕</IconButton>
+            )}
+          </span>
+        ))}
+        <IconButton size="sm" aria-label="Новая вкладка" title="Новая вкладка" disabled={phase !== 'ready'}
+          onClick={() => void run({ type: 'newTab' })}>+</IconButton>
+      </div>
+    )}
     <div className="playwright-reader-header">
       <IconButton size="sm" aria-label="Назад" title="Назад" disabled={phase !== 'ready'} onClick={() => void run({ type: 'back' })}>‹</IconButton>
       <IconButton size="sm" aria-label="Вперёд" title="Вперёд" disabled={phase !== 'ready'} onClick={() => void run({ type: 'forward' })}>›</IconButton>
@@ -216,9 +308,18 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
           Снимок в чат
         </Button>
       )}
+      {/* Кадр показывает только вьюпорт; у длинной страницы это верхушка. */}
+      {onAttachFrame && (
+        <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void attachFullPage()}>
+          Вся страница
+        </Button>
+      )}
+      {meta?.title && <span className="playwright-reader-title" title={meta.title}>{meta.title}</span>}
       <span className="playwright-reader-state" role="status" data-status={meta?.state ?? phase}>
         {phase === 'starting' ? STATE_LABELS.starting : (STATE_LABELS[meta?.state ?? 'ready'] ?? STATE_LABELS.ready)}
       </span>
+      {/* Зависшую страницу иначе не выкинуть: stop звался только при уходе с экрана. */}
+      <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={restartSession}>Перезапустить</Button>
     </div>
     <div className="playwright-browser-viewport">
       {frame
@@ -252,6 +353,13 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
       <Button size="sm" variant="secondary" disabled={phase !== 'ready' || !typing} onClick={submitTyping}>Ввести</Button>
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'input', action: { type: 'press', key: 'Enter' } })}>Enter</Button>
     </div>
-    {message && <div className="webpreview-empty" role="alert">{message}</div>}
+    {message && (
+      <div className="playwright-reader-error" role="alert">
+        <span>{message}</span>
+        {retryable && lastCommand.current && (
+          <Button size="sm" variant="secondary" onClick={() => { const cmd = lastCommand.current; if (cmd) void run(cmd) }}>Повторить</Button>
+        )}
+      </div>
+    )}
   </section>
 }
