@@ -203,6 +203,13 @@ export interface RegisterPreviewMcpOptions {
   context?: PreviewTurnContext
   /** Таймаут ожидания клиента (переопределяется в тестах). */
   timeoutMs?: number
+  /**
+   * Исполнитель для разговоров Playwright Reader: их страница живёт в
+   * изолированном Chromium сервера, а не в браузере пользователя, поэтому relay
+   * туда не достаёт. Возвращает `null`, если разговор не тот или раннер не
+   * настроен — тогда действие идёт прежним путём.
+   */
+  browserExecutor?: (userId: string, conversationId: string, action: PreviewAction) => Promise<PreviewActionOutcome | null>
 }
 
 /** Ответ инструмента: результат действия сериализованным JSON либо ошибка. */
@@ -239,6 +246,10 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
       }
       const run = async (action: PreviewAction): Promise<ReturnType<typeof toolResult>> => {
         if (!entry) return noContext
+        // Playwright Reader исполняет действие на сервере; остальные разговоры —
+        // в браузере пользователя, как раньше.
+        const direct = await opts.browserExecutor?.(entry.userId, entry.conversationId, action)
+        if (direct) return toolResult(direct)
         const outcome = await opts.relay.request(entry.userId, entry.conversationId, action, opts.timeoutMs)
         return toolResult(outcome)
       }
