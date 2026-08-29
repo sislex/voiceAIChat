@@ -451,12 +451,16 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
         <ul className="ci-steps">
           {topSteps.roots.length === 0 && (
             <li>
-              <EmptyState
-                compact
-                icon="⏱"
-                title="Шагов пока нет"
-                description="Первый шаг появится, когда воркфлоу начнётся, — лента обновляется сама."
-              />
+              {run && isTerminalCiStatus(run.status) && run.error ? (
+                <ErrorState compact message="Ран завершился до первого шага" detail={run.error} />
+              ) : (
+                <EmptyState
+                  compact
+                  icon="⏱"
+                  title="Шагов пока нет"
+                  description="Первый шаг появится, когда воркфлоу начнётся, — лента обновляется сама."
+                />
+              )}
             </li>
           )}
           {topSteps.roots.map((s) => renderStep(s, false))}

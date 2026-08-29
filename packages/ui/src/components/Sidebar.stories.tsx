@@ -24,7 +24,7 @@ const TASK_BADGES: Record<string, TaskChatBadge> = {
   'current-task': { conversationId: 'current-task', projectId: 'project-1', taskId: 'task-1', key: 'CHAT-288', type: 'task', columnSemantic: 'development', run: null }
 }
 const CI: Record<string, CiRunSummary> = {
-  'task-1': { id: 'run-1', taskId: 'task-1', status: 'running', slotProgress: { done: 2, total: 5, phase: 'Проверяет UI' }, durationMs: 42_000, modelActive: true, awaitingInput: false }
+  'task-1': { id: 'run-1', taskId: 'task-1', status: 'running', error: null, slotProgress: { done: 2, total: 5, phase: 'Проверяет UI' }, durationMs: 42_000, modelActive: true, awaitingInput: false }
 }
 const hit: MessageSearchHit = {
   messageId: 'message-1', conversationId: 'older-first', conversationTitle: 'Старая беседа о миграции',

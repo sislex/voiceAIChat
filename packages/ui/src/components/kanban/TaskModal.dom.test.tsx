@@ -116,7 +116,7 @@ describe('TaskModal — синхронизация полных данных з�
 })
 
 function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
-  return { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }
+  return { id: 'run-1', taskId: 't1', status: 'running', error: null, slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }
 }
 
 describe('TaskModal — создание задачи из улучшения', () => {

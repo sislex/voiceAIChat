@@ -672,6 +672,7 @@ CREATE TABLE IF NOT EXISTS ci_runs (
   agent_owner_name TEXT,
   agent_selection_source TEXT,
   status         TEXT NOT NULL DEFAULT 'queued',
+  error          TEXT,
   workspace_id   TEXT,
   triggered_by   TEXT NOT NULL,
   prev_column_id TEXT,

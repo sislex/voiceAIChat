@@ -374,7 +374,7 @@ describe('KanbanBoard (изолированный)', () => {
   // единственным: подсветка берётся из сводки по taskId, у каждой карточки своя.
   it('несколько ранов одновременно: каждая карточка подсвечена своим статусом', () => {
     const ciSummary = (taskId: string, over: Partial<CiRunSummary>): CiRunSummary => ({
-      id: `run-${taskId}`, taskId, status: 'running',
+      id: `run-${taskId}`, taskId, status: 'running', error: null,
       slotProgress: { done: 1, total: 4, phase: 'Модель работает' },
       durationMs: null, modelActive: false, awaitingInput: false, ...over
     })

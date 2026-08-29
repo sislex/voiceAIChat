@@ -98,6 +98,7 @@ export function makeCiSummary(over: Partial<CiRunSummary> & { status?: CiStatus 
     id: 'run-1',
     taskId: 't1',
     status: 'running',
+    error: null,
     slotProgress: { done: 2, total: 6, phase: 'Модель работает' },
     durationMs: 92_000,
     modelActive: true,
