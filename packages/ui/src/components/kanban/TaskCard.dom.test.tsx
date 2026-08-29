@@ -6,6 +6,7 @@ import { render } from '../../test/uiRender'
 import type { Task } from '@shared/projects'
 import type { CiRun, CiRunSummary } from '@shared/ci'
 import { createFakeCi } from '../../test/fakeApi'
+import { expectNoViolations } from '../../test/a11y'
 import { TaskCard, type TaskCardProps } from './TaskCard'
 
 function mkTask(over: Partial<Task> = {}): Task {
@@ -103,7 +104,7 @@ describe('TaskCard CI-панель', () => {
     const ciSummary: CiRunSummary = { id: 'run-1', taskId: 't1', status: 'running', error: null, slotProgress: { done: 1, total: 4, phase: 'до модели' }, durationMs: null, modelActive: false, awaitingInput: false }
     render(<TaskCard {...props({ ciSummary, onOpenCiRun, onStartCi: vi.fn() })} />)
     expect(screen.getByText('выполняется')).toBeInTheDocument()
-    expect(screen.getByText(/до модели 1\/4/)).toBeInTheDocument()
+    expect(screen.getByText(/до модели · шаг 1 из 4/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Лента рана' }))
     expect(onOpenCiRun).toHaveBeenCalledWith('run-1')
   })
@@ -113,15 +114,13 @@ describe('TaskCard CI-панель', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Машина выполнения офлайн.')
   })
 
-  it('показывает на карточке модель фактического этапа и базовую модель отдельно', () => {
+  it('не выводит на карточке движок и модель', () => {
     render(<TaskCard {...props({ ciSummary: mkSummary({ executionLlm: {
       source: 'stage', stage: 'model_work', llmEngineId: null, provider: 'codex', model: 'gpt-5.6-sol',
       base: { llmEngineId: null, provider: 'codex', model: 'gpt-5.6-luna' }
     } }), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
-    const llm = screen.getByTestId('task-ci-execution-llm')
-    expect(llm).toHaveTextContent('Текущий этап: Разработка')
-    expect(llm).toHaveTextContent('Выполняется на: Codex · gpt-5.6-sol')
-    expect(llm).toHaveTextContent('Базовая модель рана: Codex · gpt-5.6-luna')
+    expect(screen.queryByText(/Codex|gpt-5\.6/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Выполняется на|Базовая модель/)).not.toBeInTheDocument()
   })
 
   it('даёт убрать из очереди только queued-ран после подтверждения', async () => {
@@ -147,7 +146,7 @@ describe('TaskCard CI-панель', () => {
     }
   })
 
-  it('ручное завершение убирает старую ошибку с карточки, сохраняя ленту', () => {
+  it('ручное завершение убирает старую ошибку и CI-панель с карточки', () => {
     render(
       <TaskCard
         {...props({
@@ -161,7 +160,8 @@ describe('TaskCard CI-панель', () => {
     )
     expect(screen.queryByText('ошибка')).not.toBeInTheDocument()
     expect(screen.getByTestId('task-card').className).not.toContain('jcard--ci-failed')
-    expect(screen.getByRole('button', { name: 'Лента рана' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Лента рана' })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('task-ci-panel')).not.toBeInTheDocument()
   })
 
   it('у завершённого рана кнопка запуска есть при любом исходе', () => {
@@ -320,7 +320,7 @@ describe('TaskCard — подготовка к разработке', () => {
   it('в TODO показывает только запуск подготовки, без development-кнопок', () => {
     const onStartPreparation = vi.fn()
     render(<TaskCard {...props({ columnSemanticType: 'backlog', onStartPreparation, onStartCi: vi.fn(), onStartCiParallel: vi.fn() })} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Начать подготовку задачи' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Начать подготовку' }))
     expect(onStartPreparation).toHaveBeenCalledWith('t1')
     expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
@@ -330,10 +330,106 @@ describe('TaskCard — подготовка к разработке', () => {
     const onOpen = vi.fn()
     render(<TaskCard {...props({ onOpen, columnSemanticType: 'preparation', task: mkTask({ taskPreparationStatus: 'failed', taskPreparationError: 'Гейт не пройден' }), onStartPreparation: vi.fn(), onStartCi: vi.fn(), onStartCiParallel: vi.fn() })} />)
     expect(screen.getByTestId('task-preparation-panel')).toHaveTextContent('Гейт не пройден')
-    fireEvent.click(screen.getByRole('button', { name: 'Лента подготовки' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Подробнее' }))
     expect(onOpen).toHaveBeenCalledWith('t1', 'preparation')
     expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
+  })
+})
+
+describe('TaskCard — содержимое по стадиям', () => {
+  it('в ready показывает навыки, машину и очередь, но не прошлый ран', () => {
+    render(<TaskCard {...props({
+      columnSemanticType: 'ready',
+      task: mkTask({ skills: ['storybook'], agentId: 'machine-1' }),
+      ciSummary: mkSummary({ status: 'success' }),
+      onStartCi: vi.fn()
+    })} />)
+    expect(screen.getByText('storybook')).toBeInTheDocument()
+    expect(screen.getByText('Машина: machine-1')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'В очередь' })).toBeInTheDocument()
+    expect(screen.queryByText('успех')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['component_qa', 'Component QA'],
+    ['integration_tests', 'Интеграционные тесты'],
+    ['automated_qa', 'Automated QA'],
+    ['manual_qa', 'Ручное QA']
+  ] as const)('в %s показывает только проверку и вердикт', (columnSemanticType, label) => {
+    const { unmount } = render(<TaskCard {...props({
+      columnSemanticType,
+      task: mkTask({ latestRunResult: { id: 'qa-1', kind: columnSemanticType === 'manual_qa' ? 'manual_qa' : columnSemanticType, status: 'success', outcome: 'success', createdAt: 1, finishedAt: 2 } }),
+      ciSummary: mkSummary({ status: 'running' }),
+      onStartCi: vi.fn(),
+      onStartCiParallel: vi.fn()
+    })} />)
+    expect(screen.getByTestId('task-qa-run-panel')).toHaveTextContent(label)
+    expect(screen.getByText('Пройдено')).toBeInTheDocument()
+    expect(screen.queryByTestId('task-ci-panel')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+    unmount()
+  })
+
+  it('в merge показывает ветку и не показывает запуск разработки', () => {
+    render(<TaskCard {...props({
+      columnSemanticType: 'merge',
+      task: mkTask({ mergeSourceBranch: 'feature/CHAT-375', activeMergeRunId: 'merge-1' }),
+      onStartCi: vi.fn(),
+      onStartCiParallel: vi.fn()
+    })} />)
+    expect(screen.getByTestId('task-merge-status')).toHaveTextContent('feature/CHAT-375')
+    expect(screen.getByText('Мерж выполняется')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Параллельно' })).not.toBeInTheDocument()
+  })
+
+  it('в Done оставляет одну строку результата и компактную карточку', () => {
+    render(<TaskCard {...props({
+      columnSemanticType: 'done',
+      doneColumnIds: new Set(['done']),
+      task: mkTask({
+        columnId: 'done',
+        title: 'Очень длинный заголовок '.repeat(8),
+        mergeSourceBranch: 'feature/CHAT-375',
+        doneAt: Date.UTC(2026, 7, 29),
+        latestRunResult: { id: 'run-1', kind: 'development', status: 'success', outcome: 'success', createdAt: 1, finishedAt: 2 }
+      }),
+      ciSummary: mkSummary({ status: 'success', progress: undefined }),
+      onStartCi: vi.fn(),
+      onStartCiParallel: vi.fn()
+    })} />)
+    const card = screen.getByTestId('task-card')
+    expect(card).toHaveClass('jcard--compact')
+    expect(screen.getByTestId('task-done-summary')).toHaveTextContent('feature/CHAT-375')
+    expect(screen.getByText(/Очень длинный/)).toHaveAttribute('title')
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('task-ci-panel')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Текущий этап|Выполняется на|ETA:/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Переход между этапами')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['cancelled', 'Выполнение остановлено пользователем'],
+    ['decision_required', 'Нужен выбор стратегии миграции']
+  ] as const)('в %s показывает только причину остановки', (columnSemanticType, reason) => {
+    const { unmount } = render(<TaskCard {...props({
+      columnSemanticType,
+      task: mkTask({ taskPreparationError: reason }),
+      ciSummary: mkSummary(),
+      onStartCi: vi.fn(),
+      onStartCiParallel: vi.fn()
+    })} />)
+    expect(screen.getByTestId('task-stop-reason')).toHaveTextContent(reason)
+    expect(screen.queryByTestId('task-ci-panel')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Переход между этапами')).not.toBeInTheDocument()
+    unmount()
+  })
+
+  it('остаётся доступной для скринридера', async () => {
+    const { container } = render(<TaskCard {...props({ columnSemanticType: 'done', doneColumnIds: new Set(['c1']) })} />)
+    await expectNoViolations(container)
   })
 })
 
