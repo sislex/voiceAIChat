@@ -347,7 +347,7 @@ export interface IpcInvokeMap {
   'admin:securityEvents': { arg: { user?: string; limit?: number }; result: { events: SecurityEvent[] } }
   /** Инвайты (auth-roadmap п.8). */
   'admin:invites': { arg: void; result: { invites: InviteInfo[] } }
-  'admin:inviteCreate': { arg: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }; result: InviteInfo }
+  'admin:inviteCreate': { arg: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }; result: InviteInfo }
   'admin:inviteDelete': { arg: { token: string }; result: { ok: true } }
   /** Одноразовый код сброса пароля (auth-roadmap п.10). */
   'admin:resetCode': { arg: { name: string }; result: { code: string; expiresAt: number } }

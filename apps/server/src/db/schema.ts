@@ -239,7 +239,9 @@ CREATE TABLE IF NOT EXISTS invites (
   expires_at INTEGER NOT NULL,
   max_uses INTEGER NOT NULL DEFAULT 1,
   uses INTEGER NOT NULL DEFAULT 0,
-  note TEXT NOT NULL DEFAULT ''
+  note TEXT NOT NULL DEFAULT '',
+  email TEXT,
+  emailed_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS machine_commands (

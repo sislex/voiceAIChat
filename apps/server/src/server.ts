@@ -512,7 +512,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
-  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats((id) => db.conversationOwner(id)), Boolean(opts.mailer?.configured ?? opts.config.smtpUrl))
+  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats((id) => db.conversationOwner(id)), mailer, opts.config.publicUrl)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()
