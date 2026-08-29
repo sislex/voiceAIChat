@@ -21,6 +21,8 @@ export interface BuildBrowserRunnerOptions {
   sessions?: BrowserSessionManager
   /** Подмена проверки браузера в тестах: настоящий запуск там не нужен. */
   probe?: () => Promise<BrowserProbe>
+  /** Простой, после которого сессия закрывается сборщиком; 0 — не убирать. */
+  idleMs?: number
 }
 
 /**
@@ -50,10 +52,22 @@ async function defaultProbe(): Promise<BrowserProbe> {
   return cachedProbe
 }
 
+/** Через сколько простоя сессия считается брошенной. */
+const DEFAULT_IDLE_MS = 30 * 60_000
+const SWEEP_EVERY_MS = 5 * 60_000
+
 export async function buildBrowserRunner(options: BuildBrowserRunnerOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
   const sessions = options.sessions ?? new BrowserSessionManager(options.profilesRoot)
   registerRunnerAuth(app, options.token)
+
+  // Сессию закрывает явный `stop`, но его никто не зовёт, если пользователь
+  // просто закрыл вкладку, а ран оборвался: Chromium жил до перезапуска
+  // контейнера. Сборщик закрывает брошенные и удаляет их профили.
+  const idleMs = options.idleMs ?? DEFAULT_IDLE_MS
+  const sweeper = idleMs > 0 ? setInterval(() => { void sessions.sweepIdle(idleMs).catch(() => undefined) }, SWEEP_EVERY_MS) : null
+  sweeper?.unref?.()
+  app.addHook('onClose', async () => { if (sweeper) clearInterval(sweeper) })
 
   // Health обязан проверять то, ради чего сервис существует. Раньше он отвечал
   // литералами `present: true, launch.ok: true`, поэтому контейнер с

@@ -1,4 +1,5 @@
 import type { AutomatedQaScenario, AutomatedQaScenarioStep } from '@shared/qa'
+import { automatedQaStartUrlProblem } from '@shared/qa'
 import type { ProjectDetail } from '@shared/projects'
 import type { PreviewAction } from '@shared/previewActions'
 import { Button, IconButton } from '@voicechat/ui-kit'
@@ -42,12 +43,16 @@ export function AutomatedQaScenarioEditor(props: {
 }): JSX.Element {
   const scenario: AutomatedQaScenario = props.detail.automatedQaScenario ?? { startUrl: '', steps: [] }
   const save = (next: AutomatedQaScenario): void => props.onUpdate(props.detail.id, { automatedQaScenario: next })
+  // Адрес проверяется при вводе: раннер живёт на сервере и в localhost с
+  // приватными сетями не ходит, а узнавать об этом через минуты прогона — плохо.
+  const urlProblem = automatedQaStartUrlProblem(scenario.startUrl)
   const patchStep = (index: number, patch: Partial<AutomatedQaScenarioStep>): void =>
     save({ ...scenario, steps: scenario.steps.map((step, at) => (at === index ? { ...step, ...patch } : step)) })
 
   return <fieldset className="qa-scenario" aria-label="Сценарий Automated QA">
     <legend>Сценарий браузерной проверки</legend>
-    <label>Стартовый адрес<input className="login-input" disabled={!props.isOwner} value={scenario.startUrl} placeholder="http://localhost:5173" onChange={(e) => save({ ...scenario, startUrl: e.target.value })} /></label>
+    <label>Стартовый адрес<input className="login-input" disabled={!props.isOwner} value={scenario.startUrl} placeholder="https://example.com" aria-describedby={urlProblem ? 'qa-scenario-url-problem' : undefined} onChange={(e) => save({ ...scenario, startUrl: e.target.value })} /></label>
+    {urlProblem && <p className="qa-scenario__problem" id="qa-scenario-url-problem" role="alert">{urlProblem}</p>}
     {scenario.steps.length === 0 && <p className="proj-muted">Шагов нет: этап заблокируется, пока сценарий пуст.</p>}
     <ol className="qa-scenario__steps">
       {scenario.steps.map((step, index) => {

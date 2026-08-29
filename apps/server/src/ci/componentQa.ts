@@ -223,6 +223,8 @@ async function runScenario(
   deps.db.updateQaStageRun(runId, { currentStep: 'scenario', progress: { current: 0, total, label: context.scenario.startUrl } })
   const outcome = await deps.scenarioRunner.run({
     runId, userId, scenario: context.scenario, signal: controller.signal,
+    // Тот же бюджет, что у командного режима: до круга 10 у сценария его не было.
+    ...(deps.timeoutMs ? { budgetMs: deps.timeoutMs } : {}),
     onStep: (step, index) => {
       deps.db.appendAutomatedQaLog(runId, step.status === 'failed' ? 'err' : 'out', `${index + 1}/${total} ${step.title} — ${step.status}${step.detail ? `: ${step.detail}` : ''}\n`)
       deps.db.updateQaStageRun(runId, { progress: { current: index + 1, total, label: step.title } })

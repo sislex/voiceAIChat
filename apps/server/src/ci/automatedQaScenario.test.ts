@@ -87,3 +87,54 @@ describe('createAutomatedQaScenarioRunner', () => {
     expect(client.start).not.toHaveBeenCalled()
   })
 })
+
+describe('ресурсы прогона (круг 10)', () => {
+  const shotDir = (): string => mkdtempSync(join(tmpdir(), 'qa-shot-'))
+
+  it('перед прогоном старая сессия гасится: перезапуск не продолжает чужую страницу', async () => {
+    // `start` идемпотентен, а ран после рестарта сервера перезапускается с тем
+    // же id — без этого прогон пошёл бы в старой странице со старым состоянием.
+    const order: string[] = []
+    const client = browser({
+      stop: vi.fn(async () => { order.push('stop'); return true }),
+      start: vi.fn(async () => { order.push('start'); return { incarnation: 'inc' } as never })
+    })
+    const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: shotDir(), screenshotUrl: () => '/shot' })
+    await runner.run({ runId: 'r', userId: 'alice', signal: new AbortController().signal, scenario: scenario([]) })
+    expect(order.slice(0, 2)).toEqual(['stop', 'start'])
+  })
+
+  it('исчерпанный бюджет останавливает прогон и считается инфраструктурой', async () => {
+    let clock = 0
+    const client = browser({ command: vi.fn(async () => { clock += 5_000; return { ok: true } as never }) })
+    const runner = createAutomatedQaScenarioRunner({
+      browser: client, screenshotDir: shotDir(), screenshotUrl: () => '/shot', now: () => clock
+    })
+    const outcome = await runner.run({
+      // Каждая команда «стоит» 5 с, и навигация тоже: бюджета 13 с хватает на
+      // два шага, третий уже за границей.
+      runId: 'r', userId: 'alice', signal: new AbortController().signal, budgetMs: 13_000,
+      scenario: scenario([
+        { id: 's1', title: 'Первый', action: { kind: 'click', selector: '#a' } },
+        { id: 's2', title: 'Второй', action: { kind: 'click', selector: '#b' } },
+        { id: 's3', title: 'Третий', action: { kind: 'click', selector: '#c' } }
+      ])
+    })
+    expect(outcome.steps.map((step) => step.status)).toEqual(['passed', 'passed', 'skipped'])
+    expect(outcome.steps[2].detail).toContain('бюджет')
+    expect(outcome.blocked).toContain('бюджет')
+  })
+
+  it('сигнал отмены доходит до раннера, а не только проверяется между шагами', async () => {
+    const seen: Array<AbortSignal | undefined> = []
+    const client = browser({ command: vi.fn(async (_id, _req, signal) => { seen.push(signal); return { ok: true } as never }) })
+    const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: shotDir(), screenshotUrl: () => '/shot' })
+    const controller = new AbortController()
+    await runner.run({
+      runId: 'r', userId: 'alice', signal: controller.signal,
+      scenario: scenario([{ id: 's1', title: 'Шаг', action: { kind: 'click', selector: '#a' } }])
+    })
+    expect(seen.length).toBeGreaterThan(0)
+    expect(seen.every((signal) => signal === controller.signal)).toBe(true)
+  })
+})

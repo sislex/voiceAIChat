@@ -363,6 +363,8 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           // не JSON. Из-за этого он же дольше всех ходил мимо browserExecutor —
           // в Playwright Reader снимок уходил в браузер пользователя, где
           // страницы этого разговора нет, и модель оставалась без вида страницы.
+          // `rect` координатами документа раннер не поддерживает: у него снимок
+          // либо вьюпорта, либо узла по селектору.
           const direct = await opts.browserScreenshot?.(entry.userId, entry.conversationId, { ...(selector ? { selector } : {}) })
           const outcome = direct ?? await opts.relay.request(entry.userId, entry.conversationId, {
             kind: 'screenshot',
@@ -376,14 +378,10 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             return { content: [{ type: 'text' as const, text: 'Снимок не получен: страница не вернула картинку.' }], isError: true }
           }
           const where = result?.rect ? `x=${result.rect.x}, y=${result.rect.y}, ${result.rect.width}×${result.rect.height} px` : ''
-          // Изолированный Chromium снимает вьюпорт целиком. Молча отдать его в
-          // ответ на запрос по селектору — значит соврать: модель решит, что
-          // видит именно тот узел.
-          const note = direct && selector ? ' Снят весь вьюпорт: снимок по селектору в изолированном Chromium пока не поддержан.' : ''
           return {
             content: [
               { type: 'image' as const, data: match[2], mimeType: match[1] },
-              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.${note}` }
+              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.` }
             ]
           }
         }

@@ -17,7 +17,7 @@ export const Empty: Story = {}
 export const Filled: Story = {
   args: {
     detail: detail({
-      startUrl: 'http://localhost:5173/#/projects/p1',
+      startUrl: 'https://staging.example.com/#/projects/p1',
       steps: [
         { id: 's1', title: 'Открыть доску', action: { kind: 'wait', selector: '.jboard' } },
         { id: 's2', title: 'Создать задачу', action: { kind: 'click', selector: '#create' }, expectText: 'Новая задача' },
@@ -27,3 +27,12 @@ export const Filled: Story = {
   }
 }
 export const ReadOnlyMember: Story = { args: { ...Filled.args, isOwner: false } }
+
+/**
+ * Адрес, в который раннер не пойдёт. Состояние достижимо только значением из
+ * настроек проекта, поэтому живёт в витрине: изолированный Chromium работает на
+ * сервере, и `localhost` с приватными сетями режет SSRF-гейт `validatePublicUrl`.
+ */
+export const InvalidStartUrl: Story = {
+  args: { detail: detail({ startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Открыть доску', action: { kind: 'wait', selector: '.jboard' } }] }) }
+}
