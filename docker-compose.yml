@@ -125,15 +125,15 @@ services:
       VC_BROWSER_DATA_DIR: /data
       VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
       # Корень внутреннего CA стенда (у нас — Caddy): без него изолированный
-      # Chromium не откроет собственный сайт проекта по https. Задаётся в .env
-      # содержимым PEM либо путём к смонтированному файлу.
-      VC_BROWSER_EXTRA_CA_PEM: ${VC_BROWSER_EXTRA_CA_PEM:-}
-      VC_BROWSER_EXTRA_CA_FILE: ${VC_BROWSER_EXTRA_CA_FILE:-/certs-src/caddy/pki/authorities/local/root.crt}
+      # Chromium не откроет собственный сайт проекта по https.
+      #
+      # Передаётся значением, а не монтированием тома Caddy: весь его каталог
+      # `pki` закрыт под root, потому что рядом с корнем лежит приватный ключ
+      # центра — раннеру там делать нечего. Сам корневой сертификат публичен.
+      # base64 — чтобы одна строка пережила .env, подстановку compose и шелл.
+      VC_BROWSER_EXTRA_CA_B64: ${VC_BROWSER_EXTRA_CA_B64:-}
     volumes:
       - vc-browser-data:/data
-      # Том Caddy только на чтение: в нём лежит корень локального CA, которым
-      # подписан сертификат нашего же https.
-      - vc-caddy:/certs-src:ro
     # Chromium падает при нехватке разделяемой памяти: дефолтные 64 МБ ему мало.
     shm_size: 1gb
     healthcheck:
