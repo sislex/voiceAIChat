@@ -146,4 +146,34 @@ describe('Toast', () => {
     expect(region.style.bottom).toMatch(/132px/)
     voicebar.remove()
   })
+  it('на телефоне публикует высоту стека, чтобы страница отодвинула нижние кнопки', () => {
+    setMobile(true)
+    render(
+      <ToastProvider>
+        <Harness />
+      </ToastProvider>
+    )
+    const root = document.documentElement
+    expect(root.style.getPropertyValue('--vc-toast-inset')).toBe('')
+
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, value: 64 })
+    fireEvent.click(screen.getByText('успех'))
+    // 64px стека + 12px зазора: на канбане этот отступ уводит «+ Создать»
+    // из-под тоста, иначе тост перехватывает нажатие.
+    expect(root.style.getPropertyValue('--vc-toast-inset')).toBe('76px')
+
+    fireEvent.click(screen.getByTestId('toast-success').querySelector('.vc-toast-close')!)
+    expect(root.style.getPropertyValue('--vc-toast-inset')).toBe('')
+  })
+
+  it('на десктопе безопасную зону не занимает: стек стоит в углу', () => {
+    setMobile(false)
+    render(
+      <ToastProvider>
+        <Harness />
+      </ToastProvider>
+    )
+    fireEvent.click(screen.getByText('успех'))
+    expect(document.documentElement.style.getPropertyValue('--vc-toast-inset')).toBe('')
+  })
 })
