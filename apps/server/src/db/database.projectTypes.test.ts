@@ -339,4 +339,47 @@ describe('миграция существующей базы', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+  it('нормализация шаблона ветки разовая: осознанный feature/{task_number} переживает перезапуск', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-branch-tpl-'))
+    const file = join(dir, 'db.sqlite')
+    try {
+      // Первое открытие уже проставило отметку о разовой нормализации.
+      const first = new VoiceChatDb(file)
+      first.createUser('alice', '', 'developer')
+      const project = first.createProject('alice', { name: 'Ветки' })
+      // Человек осознанно выбирает исторический шаблон — он ничем не хуже нового.
+      first.updateProject('alice', project.id, { ciBranchTemplate: 'feature/{task_number}' })
+      expect(first.getProject('alice', project.id)!.ciBranchTemplate).toBe('feature/{task_number}')
+      first.close()
+
+      const second = new VoiceChatDb(file)
+      expect(second.getProject('alice', project.id)!.ciBranchTemplate).toBe('feature/{task_number}')
+      second.close()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+  it('старая база нормализуется один раз: исторический дефолт заменяется, отметка ставится', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-branch-tpl-legacy-'))
+    const file = join(dir, 'db.sqlite')
+    try {
+      const first = new VoiceChatDb(file)
+      first.createUser('alice', '', 'developer')
+      const project = first.createProject('alice', { name: 'Старая' })
+      first.close()
+
+      // Воспроизводим базу, созданную до нормализации: старый дефолт и нет отметки.
+      const raw = new Database(file)
+      raw.prepare(`UPDATE projects SET ci_branch_template='feature/{task_number}-{slug}' WHERE id=?`).run(project.id)
+      raw.prepare(`DELETE FROM app_config WHERE key='migration.ciBranchTemplate.normalized'`).run()
+      raw.close()
+
+      const second = new VoiceChatDb(file)
+      expect(second.getProject('alice', project.id)!.ciBranchTemplate).toBe('{task_number}')
+      expect(second.getAppConfig('migration.ciBranchTemplate.normalized')).toBe('1')
+      second.close()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

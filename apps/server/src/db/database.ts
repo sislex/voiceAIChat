@@ -803,6 +803,17 @@ export class VoiceChatDb {
   }
 
   /** Лёгкие миграции существующих БД (idempotent). */
+  /**
+   * Разовая миграция: отметка о выполнении лежит в `app_config`. Нужна там, где
+   * шаг переписывает пользовательские данные — такой шаг обязан отработать один
+   * раз, иначе он превращается в правило, отменяющее настройку на каждом старте.
+   */
+  private runOnce(key: string, step: () => void): void {
+    if (this.getAppConfig(key)) return
+    step()
+    this.setAppConfig(key, '1')
+  }
+
   private migrate(): void {
     // CHAT-193: legacy `user` becomes developer; only the two known ChatAI
     // accounts are elevated. Future accounts are never promoted implicitly.
@@ -1192,8 +1203,16 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'default_skills_task')) this.db.exec(`ALTER TABLE projects ADD COLUMN default_skills_task TEXT NOT NULL DEFAULT '[]'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_base_branch')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_base_branch TEXT NOT NULL DEFAULT 'main'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_branch_template')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_branch_template TEXT NOT NULL DEFAULT '{task_number}'`)
-    // Normalize the two historical defaults. Deliberately custom templates stay intact.
-    if (featureProjectCols.some((c) => c.name === 'ci_branch_template')) this.db.prepare(`UPDATE projects SET ci_branch_template='{task_number}' WHERE ci_branch_template IN ('feature/{task_number}', 'feature/{task_number}-{slug}')`).run()
+    // Нормализация двух исторических дефолтов шаблона ветки — **разовая**: сами
+    // значения `feature/{task_number}` человек вправе выставить осознанно, и
+    // повторный прогон молча откатывал бы его настройку при каждом старте сервера.
+    // Условие по `featureProjectCols` здесь не нужно и было бы вредно: это снимок
+    // PRAGMA до ALTER выше, на свежей базе он колонки не видит — отметка о разовой
+    // миграции не ставилась бы, и нормализация срабатывала бы на втором открытии,
+    // уже поверх пользовательского значения. После ALTER колонка есть всегда.
+    this.runOnce('migration.ciBranchTemplate.normalized', () => {
+      this.db.prepare(`UPDATE projects SET ci_branch_template='{task_number}' WHERE ci_branch_template IN ('feature/{task_number}', 'feature/{task_number}-{slug}')`).run()
+    })
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_reuse_strategy')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_reuse_strategy TEXT NOT NULL DEFAULT 'fail'`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_exec_auth_ref')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_exec_auth_ref TEXT NOT NULL DEFAULT ''`)
     // Режим базы знаний в ходах модели CI-рана: настройка проекта, не чата.
