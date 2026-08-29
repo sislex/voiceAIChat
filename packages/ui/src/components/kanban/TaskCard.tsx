@@ -13,9 +13,8 @@ import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { KanbanColumnSemanticType, Task } from '@shared/projects'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { canStartCiRun, ciCardPulse, ciSummaryForTask, type CiRunSummary } from '@shared/ci'
-import { AutomationProgressView } from './AutomationProgressView'
 import type { TaskModalTab } from './TaskModal'
-import { ciLlmLabel, ciStageLabel, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
+import { ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
 import { Avatar, PriorityIcon, TypeIcon, dueState, epicColor, fmtDue, issueKey } from './kanbanMeta'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
@@ -118,7 +117,8 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   const done = props.doneColumnIds.has(task.columnId)
   // Сервер выбирает состояние; helper сохраняет совместимость со stale payload.
   const visibleCiSummary = ciSummaryForTask(ciSummary, done)
-  const pulse = ciCardPulse(visibleCiSummary)
+  const developmentStage = !done && (props.columnSemanticType == null || props.columnSemanticType === 'development' || props.columnSemanticType === 'custom')
+  const pulse = developmentStage ? ciCardPulse(visibleCiSummary) : null
   const latestFailed = task.latestRunResult?.outcome === 'failure'
   const failureTab: TaskModalTab = task.latestRunResult?.kind === 'preparation' ? 'preparation'
     : task.latestRunResult?.kind === 'component_qa' ? 'component_qa'
@@ -128,9 +128,10 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
             : task.latestRunResult?.kind === 'merge' ? 'merge' : 'feed'
   // В «Готово» запуск нового CI-рана запрещён: завершённая карточка остаётся
   // историей результата, а не точкой повторного выполнения.
-  const qaStage = props.columnSemanticType === 'component_qa' || props.columnSemanticType === 'integration_tests' || props.columnSemanticType === 'automated_qa'
-  const developmentAllowed = props.columnSemanticType !== 'backlog' && props.columnSemanticType !== 'preparation' && !qaStage
-  const canStart = !done && developmentAllowed && canStartCiRun(ciSummary)
+  const qaStage = props.columnSemanticType === 'component_qa' || props.columnSemanticType === 'integration_tests' || props.columnSemanticType === 'automated_qa' || props.columnSemanticType === 'manual_qa' || props.columnSemanticType === 'testing' || props.columnSemanticType === 'qa_preparation'
+  const readyStage = props.columnSemanticType === 'ready'
+  const stoppedStage = props.columnSemanticType === 'cancelled' || props.columnSemanticType === 'decision_required'
+  const canStart = (readyStage || developmentStage) && !done && canStartCiRun(ciSummary)
 
   const epic = epicOf(task, props.allTasks)
   const children = props.allTasks.filter((t) => t.parentId === task.id)
@@ -140,7 +141,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
   return (
     <div
       ref={cardRef}
-      className={`jcard${task.flagged ? ' jcard--flagged' : ''}${task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${latestFailed ? ' jcard--latest-failed' : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
+      className={`jcard jcard--stage-${props.columnSemanticType ?? 'custom'}${done ? ' jcard--compact' : ''}${task.flagged ? ' jcard--flagged' : ''}${developmentStage && task.previewReady ? ' jcard--preview-running' : ''}${pulse ? ` jcard--ci-${pulse}` : ''}${latestFailed && !done ? ' jcard--latest-failed' : ''}${props.dragging ? ' dragging' : ''}${props.grabbed ? ' jcard--grabbed' : ''}`}
       data-testid="task-card"
       data-task-id={task.id}
       tabIndex={0}
@@ -166,7 +167,8 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         >
           ⠿
         </span>
-        <span className="jcard-title">{task.title}</span>
+        <span className="jcard-key jcard-key--head">{key}</span>
+        <span className="jcard-title" title={task.title}>{task.title}</span>
         <span className="jcard-menuwrap" ref={menuRef}>
           <IconButton
             className="jcard-reveal"
@@ -205,7 +207,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </span>
       </div>
 
-      {latestFailed && (
+      {latestFailed && !done && !stoppedStage && (
         <button
           type="button"
           className="jcard-latest-failure"
@@ -217,7 +219,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </button>
       )}
 
-      {(task.flagged || epic || task.labels.length > 0 || task.skills.length > 0) && (
+      {!done && !stoppedStage && (task.flagged || epic || (props.columnSemanticType === 'backlog' && task.labels.length > 0) || (readyStage && task.skills.length > 0)) && (
         <div className="jcard-chips">
           {task.flagged && <span className="jcard-flag" title="Помечена флагом">⚑ Флаг</span>}
           {epic && (
@@ -226,17 +228,17 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
               {epic.title}
             </span>
           )}
-          {task.labels.map((l) => (
+          {props.columnSemanticType === 'backlog' && task.labels.map((l) => (
             <span key={l} className="jcard-label">{l}</span>
           ))}
-          {task.skills.map((s) => (
+          {readyStage && task.skills.map((s) => (
             <span key={`skill-${s}`} className="jcard-skill" title={`Навык: ${s}`}>{s}</span>
           ))}
         </div>
       )}
 
 
-      {children.length > 0 && (
+      {props.columnSemanticType === 'backlog' && children.length > 0 && (
         <div className="jcard-progress" title={`Подзадачи: ${doneChildren.length} из ${children.length}`}>
           <span className="jcard-progress-bar">
             <span className="jcard-progress-fill" style={{ width: `${Math.round((doneChildren.length / children.length) * 100)}%` }} />
@@ -245,7 +247,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </div>
       )}
 
-      {task.type === 'task' && props.onStartMerge && canStartMerge({
+      {task.type === 'task' && props.columnSemanticType === 'awaiting_merge' && props.onStartMerge && canStartMerge({
         semanticType: props.columnSemanticType ?? 'custom',
         sourceBranch: task.mergeSourceBranch,
         alreadyMerged: isCurrentMergeSourceMerged({ sourceSha: task.mergeSourceSha, mergedSourceSha: task.mergedSourceSha, mergedSha: task.mergedSha }),
@@ -254,30 +256,58 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         machineBound: task.mergeMachineBound
       }) && (
         <div className="jcard-ci" data-testid="task-merge-panel" onClick={(e) => e.stopPropagation()}>
-          <Button variant="primary" size="sm" onClick={() => props.onStartMerge?.(task.id)}>Мерж в main</Button>
+          {task.mergeSourceBranch && <code className="jcard-stage-branch">{task.mergeSourceBranch}</code>}
+          <Button variant="primary" size="sm" onClick={() => props.onStartMerge?.(task.id)}>Мерж</Button>
         </div>
       )}
 
       {task.type === 'task' && props.columnSemanticType === 'backlog' && props.onStartPreparation && (
         <div className="jcard-ci" data-testid="task-preparation-panel" onClick={(e) => e.stopPropagation()}>
-          <Button variant="primary" size="sm" onClick={() => void props.onStartPreparation?.(task.id)}>Начать подготовку задачи</Button>
+          <Button variant="primary" size="sm" onClick={() => void props.onStartPreparation?.(task.id)}>Начать подготовку</Button>
         </div>
       )}
       {task.type === 'task' && props.columnSemanticType === 'preparation' && (
         <div className="jcard-ci" data-testid="task-preparation-panel" onClick={(e) => e.stopPropagation()}>
           <div className="jcard-ci-row"><span className="ci-lozenge">{task.taskPreparationStatus === 'running' ? 'Подготовка выполняется' : task.taskPreparationStatus === 'failed' ? 'Подготовка не прошла' : 'Подготовка'}</span></div>
           {task.taskPreparationError && <p className="jcard-ci-phase">{task.taskPreparationError}</p>}
-          <Button size="sm" onClick={() => props.onOpen(task.id, 'preparation')}>Лента подготовки</Button>
+          <Button variant="ghost" size="sm" onClick={() => props.onOpen(task.id, 'preparation')}>Подробнее</Button>
           {task.taskPreparationStatus !== 'running' && props.onStartPreparation && <Button size="sm" onClick={() => void props.onStartPreparation?.(task.id)}>Повторить</Button>}
         </div>
       )}
-      {task.type === 'task' && qaStage && (
-        <div className="jcard-ci" data-testid="task-qa-run-panel" onClick={(e) => e.stopPropagation()}>
-          <div className="jcard-ci-row"><span className="ci-lozenge">{props.columnSemanticType === 'component_qa' ? 'Component QA' : props.columnSemanticType === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA'}</span></div>
-          <Button size="sm" onClick={() => props.onOpen(task.id)}>Лента рана</Button>
+      {task.type === 'task' && readyStage && (
+        <div className="jcard-stage-content" data-testid="task-ready-panel" onClick={(e) => e.stopPropagation()}>
+          {task.agentId && <span className="jcard-stage-machine">Машина: {task.agentId}</span>}
+          {canStart && props.onStartCi && (
+            <Button variant="primary" size="sm" loading={launching === 'queue'} disabled={launching !== null} onClick={() => void launchCi('queue')}>В очередь</Button>
+          )}
         </div>
       )}
-      {task.type === 'task' && developmentAllowed && (props.onStartCi || visibleCiSummary) && (
+      {task.type === 'task' && qaStage && (
+        <div className="jcard-stage-content" data-testid="task-qa-run-panel" onClick={(e) => e.stopPropagation()}>
+          <span>{props.columnSemanticType === 'component_qa' ? 'Component QA' : props.columnSemanticType === 'integration_tests' ? 'Интеграционные тесты' : props.columnSemanticType === 'manual_qa' ? 'Ручное QA' : 'Automated QA'}</span>
+          {task.latestRunResult && <span className={`jcard-stage-verdict jcard-stage-verdict--${task.latestRunResult.outcome}`}>{task.latestRunResult.outcome === 'success' ? 'Пройдено' : task.latestRunResult.outcome === 'active' ? 'Проверяется' : 'Не пройдено'}</span>}
+          <Button variant="ghost" size="sm" onClick={() => props.onOpen(task.id)}>Лента рана</Button>
+        </div>
+      )}
+      {task.type === 'task' && props.columnSemanticType === 'merge' && (
+        <div className="jcard-stage-content" data-testid="task-merge-status">
+          {task.mergeSourceBranch && <code className="jcard-stage-branch">{task.mergeSourceBranch}</code>}
+          <span>{task.activeMergeRunId ? 'Мерж выполняется' : 'Ожидает повторного мержа'}</span>
+        </div>
+      )}
+      {task.type === 'task' && done && (
+        <div className="jcard-stage-content jcard-stage-content--done" data-testid="task-done-summary" onClick={(e) => e.stopPropagation()}>
+          {task.mergeSourceBranch && <code className="jcard-stage-branch">{task.mergeSourceBranch}</code>}
+          {task.doneAt && <time dateTime={new Date(task.doneAt).toISOString()}>{new Date(task.doneAt).toLocaleDateString('ru')}</time>}
+          {task.latestRunResult && <button type="button" className="jcard-stage-link" onClick={() => props.onOpen(task.id, failureTab)}>Ран</button>}
+        </div>
+      )}
+      {task.type === 'task' && stoppedStage && (
+        <div className="jcard-stage-stop" data-testid="task-stop-reason">
+          {task.taskPreparationError ?? (props.columnSemanticType === 'cancelled' ? 'Выполнение отменено' : 'Требуется решение пользователя')}
+        </div>
+      )}
+      {task.type === 'task' && developmentStage && (props.onStartCi || visibleCiSummary) && (
         <div className="jcard-ci" data-testid="task-ci-panel" onClick={(e) => e.stopPropagation()}>
           {visibleCiSummary && (() => {
             const ciSummary = visibleCiSummary
@@ -290,16 +320,11 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 {ciSummary.error && ciSummary.status !== 'success'
                   ? <p className="jcard-ci-phase" role="alert">{ciSummary.error}</p>
                   : ciSummary.progress
-                  ? <AutomationProgressView progress={ciSummary.progress} compact />
-                  : <p className="jcard-ci-phase">{ciSummary.slotProgress.phase} {ciSummary.slotProgress.done}/{ciSummary.slotProgress.total}{ciSummary.durationMs != null ? ` · ${fmtDuration(ciSummary.durationMs)}` : ''}</p>}
-                {ciSummary.executionLlm && <div className="jcard-ci-model" data-testid="task-ci-execution-llm">
-                  {ciSummary.executionLlm.source === 'stage' ? <>
-                    <div>Текущий этап: {ciStageLabel(ciSummary.executionLlm.stage)}</div>
-                    <div>Выполняется на: {ciLlmLabel(ciSummary.executionLlm)}</div>
-                    {(ciSummary.executionLlm.provider !== ciSummary.executionLlm.base.provider || ciSummary.executionLlm.model !== ciSummary.executionLlm.base.model)
-                      && <div>Базовая модель рана: {ciLlmLabel(ciSummary.executionLlm.base)}</div>}
-                  </> : <div>Базовая модель рана: {ciLlmLabel(ciSummary.executionLlm)}</div>}
-                </div>}
+                  ? <div className="jcard-run-progress">
+                      <div className="jcard-run-progress__meta"><span>{ciSummary.progress.stage}</span><span>шаг {ciSummary.progress.completedSteps + 1} из {ciSummary.progress.totalSteps}</span>{ciSummary.durationMs != null && <span>{fmtDuration(ciSummary.durationMs)}</span>}</div>
+                      <span className="jcard-run-progress__bar"><span style={{ width: `${ciSummary.progress.percent ?? 0}%` }} /></span>
+                    </div>
+                  : <p className="jcard-ci-phase">{ciSummary.slotProgress.phase} · шаг {ciSummary.slotProgress.done} из {ciSummary.slotProgress.total}{ciSummary.durationMs != null ? ` · ${fmtDuration(ciSummary.durationMs)}` : ''}</p>}
                 {ciSummary.latestAttempt?.status === 'cancelled' && (
                   <div className="jcard-ci-row">
                     <button className="jcard-ci-phase" onClick={() => props.onOpenCiRun?.(ciSummary.latestAttempt!.id)}>Последняя попытка отменена</button>
@@ -362,7 +387,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </div>
       )}
 
-      <div className="jcard-stage-actions" aria-label="Переход между этапами" onClick={(e) => e.stopPropagation()}>
+      {!done && !stoppedStage && <div className="jcard-stage-actions" aria-label="Переход между этапами" onClick={(e) => e.stopPropagation()}>
         <button
           type="button"
           disabled={movingStage || !props.previousColumn || !props.onMoveToColumn}
@@ -377,7 +402,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
           aria-label={props.nextColumn ? `Перейти вправо в колонку «${props.nextColumn.name}»` : 'Перейти вправо: следующего этапа нет'}
           onClick={() => { if (props.nextColumn) void moveToColumn(props.nextColumn.id) }}
         >→</button>
-      </div>
+      </div>}
 
       {/* Клавиатурный перенос иначе не найти: подсказка видна только скринридеру. */}
       <span className="vc-sr-only">Пробел — взять задачу для переноса</span>
@@ -385,7 +410,6 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
       <div className="jcard-foot">
         <span className="jcard-foot-left">
           <TypeIcon type={task.type} />
-          <span className={`jcard-key${done ? ' jcard-key--done' : ''}`}>{key}</span>
           {props.onOpenChat && (
             <Button
               variant="ghost"

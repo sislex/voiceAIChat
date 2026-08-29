@@ -121,14 +121,14 @@ describe('KanbanBoard (изолированный)', () => {
     expect(surface.scrollTop).toBe(240)
   })
 
-  it('«Лента подготовки» открывает модалку сразу на preparation-вкладке', async () => {
+  it('«Подробнее» подготовки открывает модалку сразу на preparation-вкладке', async () => {
     const preparationBoard: Board = {
       columns: [{ ...board.columns[0]!, name: 'Подготовка к разработке', semanticType: 'preparation' }],
       tasks: [task({ id: 't1', title: 'A', taskPreparationRunId: 'prep-1', taskPreparationStatus: 'failed' })]
     }
     renderBoard({ board: preparationBoard, loadPreparationRuns: async () => [{ id: 'prep-1', projectId: 'p1', taskId: 't1', status: 'failed', attempt: 1, maxAttempts: 2, log: 'Лента', error: 'Ошибка', readiness: null, gateReasons: [], createdAt: 1, finishedAt: 2, canRetry: true, canCancel: false }] })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Лента подготовки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Подробнее' }))
 
     expect(await screen.findByTestId('task-modal')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toHaveAttribute('aria-selected', 'true')
@@ -379,7 +379,7 @@ describe('KanbanBoard (изолированный)', () => {
       durationMs: null, modelActive: false, awaitingInput: false, ...over
     })
     renderBoard({
-      board: { ...board, tasks: [task({ id: 't1', title: 'A' }), task({ id: 't2', title: 'B' }), task({ id: 't3', title: 'C' })] },
+      board: { columns: [{ ...board.columns[0]!, id: 'development', name: 'Development', semanticType: 'development' }], tasks: [task({ id: 't1', columnId: 'development', title: 'A' }), task({ id: 't2', columnId: 'development', title: 'B' }), task({ id: 't3', columnId: 'development', title: 'C' })] },
       ciSummaries: {
         t1: ciSummary('t1', { status: 'running' }),
         t2: ciSummary('t2', { status: 'awaiting_input', awaitingInput: true }),

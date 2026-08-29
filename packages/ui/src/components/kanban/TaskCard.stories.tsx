@@ -157,3 +157,57 @@ export const CiSuccess: Story = {
     onOpenCiRun: () => {}
   }
 }
+
+const stageTask = (columnId: string, over: Partial<Task> = {}): Task => makeTask({ columnId, ...over })
+
+export const StageBacklog: Story = {
+  args: { columnSemanticType: 'backlog', task: stageTask('backlog', { labels: ['ui'], storyPoints: 3 }), onStartPreparation: () => {} }
+}
+export const StagePreparation: Story = {
+  args: { columnSemanticType: 'preparation', task: stageTask('preparation', { taskPreparationStatus: 'running' }), onStartPreparation: () => {} }
+}
+export const StagePreparationError: Story = {
+  args: { columnSemanticType: 'preparation', task: stageTask('preparation', { taskPreparationStatus: 'failed', taskPreparationError: 'Не заполнены критерии приёмки' }), onStartPreparation: () => {} }
+}
+export const StageReady: Story = {
+  args: { columnSemanticType: 'ready', task: stageTask('ready', { skills: ['storybook', 'a11y'], agentId: 'prod-10e' }), onStartCi: () => {} }
+}
+export const StageInProgress: Story = {
+  args: { columnSemanticType: 'development', task: stageTask('development'), ciSummary: makeCiSummary(), onOpenCiRun: () => {} }
+}
+export const StageComponentQa: Story = {
+  args: { columnSemanticType: 'component_qa', task: stageTask('component_qa', { latestRunResult: { id: 'qa-1', kind: 'component_qa', status: 'success', outcome: 'success', createdAt: 1, finishedAt: 2 } }) }
+}
+export const StageIntegrationQa: Story = {
+  args: { columnSemanticType: 'integration_tests', task: stageTask('integration_tests') }
+}
+export const StageAutomatedQa: Story = {
+  args: { columnSemanticType: 'automated_qa', task: stageTask('automated_qa', { latestRunResult: { id: 'qa-2', kind: 'automated_qa', status: 'failed', outcome: 'failure', createdAt: 1, finishedAt: 2 } }) }
+}
+export const StageManualQa: Story = {
+  args: { columnSemanticType: 'manual_qa', task: stageTask('manual_qa') }
+}
+export const StageAwaitingMerge: Story = {
+  args: { columnSemanticType: 'awaiting_merge', task: stageTask('awaiting_merge', { mergeSourceBranch: 'feature/CHAT-375', mergePermitted: true, mergeMachineBound: true }), onStartMerge: () => {} }
+}
+export const StageMerge: Story = {
+  args: { columnSemanticType: 'merge', task: stageTask('merge', { mergeSourceBranch: 'feature/CHAT-375', activeMergeRunId: 'merge-1' }) }
+}
+export const StageDone: Story = {
+  args: { columnSemanticType: 'done', task: stageTask('done', { mergeSourceBranch: 'feature/CHAT-375', doneAt: Date.UTC(2026, 7, 29), latestRunResult: { id: 'run-1', kind: 'merge', status: 'success', outcome: 'success', createdAt: 1, finishedAt: 2 } }) }
+}
+export const StageCancelled: Story = {
+  args: { columnSemanticType: 'cancelled', task: stageTask('cancelled', { taskPreparationError: 'Отменено пользователем' }) }
+}
+export const StageDecisionRequired: Story = {
+  args: { columnSemanticType: 'decision_required', task: stageTask('decision_required', { taskPreparationError: 'Нужно выбрать стратегию миграции' }) }
+}
+export const MobileLongTitle: Story = {
+  args: {
+    columnSemanticType: 'development',
+    task: stageTask('development', { title: 'Длинный мобильный заголовок карточки задачи '.repeat(4) }),
+    ciSummary: makeCiSummary(),
+    onOpenCiRun: () => {}
+  },
+  parameters: { viewport: { defaultViewport: 'mobile1' } }
+}

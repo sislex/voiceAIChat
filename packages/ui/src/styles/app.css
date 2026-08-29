@@ -4496,7 +4496,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Карточка */
 /* position: relative — подсказка .vc-sr-only внутри карточки абсолютная, и её
    блок-контейнером должна быть карточка, а не страница (см. .app). */
-.jcard { background: var(--card-bg, #fff); border-radius: 3px; box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25); padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; position: relative; }
+.jcard { box-sizing: border-box; width: 100%; max-width: 272px; background: var(--card-bg, var(--surface)); border: 1px solid var(--border); border-radius: var(--radius-medium); box-shadow: var(--shadow-sm); padding: var(--space-100) var(--space-150); cursor: pointer; display: flex; flex-direction: column; gap: var(--space-075); max-height: 420px; overflow-y: auto; position: relative; }
+.jcard--compact { max-height: 90px; padding: var(--space-050) var(--space-100); gap: 2px; overflow: hidden; }
 [data-theme='dark'] .jcard { background: #1c2128; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
 .jcard:hover { background: #f4f5f7; }
 [data-theme='dark'] .jcard:hover { background: #22272e; }
@@ -4521,7 +4522,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 [data-theme='dark'] .jcard--flagged { background: #332e1b; }
 [data-theme='dark'] .jcard--flagged:hover { background: #3a3423; }
 .jcard-top { display: flex; align-items: flex-start; gap: 4px; }
-.jcard-title { flex: 1; font-size: 14px; line-height: 1.35; word-break: break-word; }
+.jcard-key--head { flex: 0 0 auto; align-self: baseline; font-family: var(--font-mono); font-size: 10px; }
+.jcard-title { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
 .jcard-menuwrap { position: relative; flex: 0 0 auto; }
 /* ⋯-меню карточки и колонки: проявляется по ховеру карточки, вид — .vc-btn ghost. */
 .jcard-reveal { opacity: 0; }
@@ -4681,7 +4683,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   /* Ручка захвата на телефоне видна всегда (ховера нет) и размером под палец:
      тап по ней сразу поднимает карточку, не дожидаясь удержания. */
   .jcard-grip, .jcol-grip { opacity: 1; display: inline-flex; align-items: center; justify-content: center;
-    min-width: 36px; min-height: 40px; font-size: 16px; }
+    min-width: 40px; min-height: 40px; font-size: 16px; }
+  .jcard .vc-btn, .jcard .vc-btn--icon, .jcard-stage-actions button { min-width: 40px; min-height: 40px; }
 
   /* Узкий экран: колонки стопкой, один общий скролл — два вложенных конфликтуют. */
   .jmodal { flex-direction: column; }
@@ -4840,7 +4843,25 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcard-ci-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
 .jcard-ci-fill--success { background: var(--ci-success); }
 .jcard-ci-fill--removed { background: var(--ci-removed); }
-.jcard-ci-phase { font-size: 11px; color: var(--text-dim); }
+.jcard-ci-phase { margin: 0; font-size: 11px; color: var(--text-dim); }
+.jcard-stage-content { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-075); min-width: 0; font-size: 11px; color: var(--text-dim); }
+.jcard-stage-content--done { flex-wrap: nowrap; white-space: nowrap; overflow: hidden; }
+.jcard-stage-branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-family: var(--font-mono); }
+.jcard-stage-machine { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jcard-stage-verdict { font-weight: 600; }
+.jcard-stage-verdict--success { color: var(--ci-success); }
+.jcard-stage-verdict--failure, .jcard-stage-verdict--cancelled { color: var(--danger); }
+.jcard-stage-verdict--active { color: var(--ci-progress); }
+.jcard-stage-link { min-width: 40px; min-height: 40px; margin: -12px -8px -12px 0; padding: 0 var(--space-100); border: 0; background: transparent; color: var(--accent); font: inherit; cursor: pointer; }
+.jcard-stage-stop { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 11px; line-height: 1.4; color: var(--danger); }
+.jcard-run-progress { display: grid; gap: var(--space-050); min-width: 0; }
+.jcard-run-progress__meta { display: flex; align-items: center; justify-content: space-between; gap: var(--space-050); min-width: 0; font-size: 11px; color: var(--text-dim); }
+.jcard-run-progress__meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jcard-run-progress__bar { height: 4px; overflow: hidden; border-radius: var(--radius-small); background: var(--ci-neutral-bg); }
+.jcard-run-progress__bar > span { display: block; height: 100%; background: var(--ci-progress); }
+.jcard--compact .jcard-reveal { opacity: 1; }
+.jcard--compact .jcard-foot { min-height: 20px; margin-top: 0; }
+.jcard--compact .jcard-chat { min-height: 20px; }
 
 /* Состояние CI-рана на карточке колонки: ран идёт — медленное голубое «дыхание»,
    модель разбирается с ошибкой — медленное красное мигание, ждёт ответа
