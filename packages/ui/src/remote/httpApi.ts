@@ -61,7 +61,9 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
         // Неизвестный код возвращается как есть — терять информацию хуже.
         detail = serverErrorMessage(body)
       } catch {}
-      throw new Error(detail || `${init?.method ?? 'GET'} ${path} → ${res.status}`)
+      // Код ответа кладём на ошибку: без него стор не отличает «доступ отобрали»
+      // (403/404) от временного сбоя сети и предлагает бесполезное «Повторить».
+      throw Object.assign(new Error(detail || `${init?.method ?? 'GET'} ${path} → ${res.status}`), { status: res.status })
     }
     return (text ? JSON.parse(text) : undefined) as T
   }

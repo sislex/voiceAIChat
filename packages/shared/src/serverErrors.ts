@@ -31,14 +31,25 @@ const MESSAGES: Readonly<Record<string, string>> = {
  * терять информацию хуже, чем показать технический текст.
  */
 export function serverErrorMessage(body: { error?: unknown; message?: unknown; feature?: unknown } | null): string {
-  const code = typeof body?.error === 'string' ? body.error : null
+  const code = typeof body?.error === 'string' ? normalizeServerErrorCode(body.error) : null
   if (code === 'feature_unavailable') return featureUnavailableMessage(body?.feature)
   if (code && MESSAGES[code]) return MESSAGES[code]
   const value = body?.error ?? body?.message
   return typeof value === 'string' ? value : ''
 }
 
+/**
+ * Коды сервера пишутся то через пробел, то через подчёркивание: 404 почти везде
+ * отдаётся как `not found`, а остальные — как `feature_unavailable`. Приводим к
+ * одной форме, иначе таблица переводов промахивается мимо самого частого ответа
+ * и человек видит английский технический текст.
+ */
+function normalizeServerErrorCode(code: string): string {
+  return code.trim().toLowerCase().replace(/\s+/g, '_')
+}
+
 /** Известен ли код: нужно тестам и отладке, чтобы видеть непокрытые ответы. */
 export function isKnownServerErrorCode(code: string): boolean {
-  return code === 'feature_unavailable' || code in MESSAGES
+  const normalized = normalizeServerErrorCode(code)
+  return normalized === 'feature_unavailable' || normalized in MESSAGES
 }
