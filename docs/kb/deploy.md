@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-08-29
-checked: 61168bd3
+checked: 789b4847
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -114,6 +114,14 @@ docker exec -it -e CODEX_HOME=/data/cli-users/YWRtaW4/.codex \
 `default_sni <ip>` (браузер при заходе по голому IP не шлёт SNI). Сертификат
 локального CA — предупреждение браузера принимается один раз. Порты 80→443
 редиректом. Локальный CA и сертификаты — в томе `vc-caddy`.
+
+## Ротация логов контейнеров
+
+Все семь сервисов основного `docker-compose.yml` используют общий YAML anchor
+`default-logging`: драйвер `json-file` ограничивает один файл 10 МБ и хранит не
+более трёх файлов на контейнер. Настройка относится к `voicechat`, `stt-runner`,
+`automation-runner`, обоим LLM runner, `tts-runner` и `caddy`; источник истины —
+`docker-compose.yml`.
 
 ## Память контейнера — это не просто лимит
 
