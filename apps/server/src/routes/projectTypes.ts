@@ -170,6 +170,14 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
   app.post<{ Params: { id: string }; Body: { name?: string } }>('/api/projects/:id/derive-type', async (req, reply) => {
     const name = (req.body?.name ?? '').trim()
     if (!name) return badReq(reply, 'Укажите название подтипа')
+    // Участник проект видит, но подтип из него делает только владелец. Без этой
+    // ветки метод БД возвращал null и роут отвечал 404 — «Объект не найден» про
+    // проект, открытый у человека на экране.
+    const project = db.getProject(uid(req), req.params.id)
+    if (!project) return notFound(reply)
+    if (project.role !== 'owner') {
+      return reply.code(403).send({ error: 'Сохранить проект как подтип может только владелец проекта.' })
+    }
     try {
       return db.deriveProjectType(uid(req), req.params.id, name) ?? notFound(reply)
     } catch (error) {
