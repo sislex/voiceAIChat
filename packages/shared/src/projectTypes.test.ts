@@ -4,6 +4,7 @@ import {
   BUILTIN_PROJECT_TYPE_IDS,
   PROJECT_FEATURES,
   canPublishProjectType,
+  featureUnavailableMessage,
   isProjectTypeVisible,
   parseProjectFeature,
   parseProjectFeatureOverride,
@@ -157,5 +158,26 @@ describe('разбор внешнего входа', () => {
   it('ярлык цепочки читается как путь', () => {
     expect(projectTypeChainLabel([node({ name: 'Разработка ПО' }), node({ name: 'Веб-приложение' })]))
       .toBe('Разработка ПО / Веб-приложение')
+  })
+})
+
+describe('сообщение об отказе по возможностям', () => {
+  it('называет подсистему и объясняет, что чинится сменой типа', () => {
+    const message = featureUnavailableMessage('releases')
+    expect(message).toContain('релизов')
+    // Главное: человек должен понять, что повтор действия не поможет.
+    expect(message).toContain('тип проекта')
+    expect(message).not.toContain('feature_unavailable')
+  })
+
+  it('каждая подсистема названа по-русски и в родительном падеже', () => {
+    for (const feature of PROJECT_FEATURES) {
+      expect(featureUnavailableMessage(feature), feature).toMatch(/^В этом проекте нет .+: их выключил тип проекта/)
+    }
+  })
+
+  it('неизвестный код не ломает текст', () => {
+    expect(featureUnavailableMessage('нечто')).toContain('текущего типа проекта')
+    expect(featureUnavailableMessage(undefined)).toContain('текущего типа проекта')
   })
 })

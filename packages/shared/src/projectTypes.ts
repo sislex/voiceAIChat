@@ -271,6 +271,28 @@ export function compareProjectTypes(a: Pick<ProjectTypeNode, 'id' | 'name'>, b: 
   return order(a) - order(b) || a.name.localeCompare(b.name, 'ru')
 }
 
+/** Родительный падеж подсистемы для фразы «в проекте нет …». */
+const FEATURE_GENITIVE: Readonly<Record<ProjectFeature, string>> = {
+  git: 'git-репозитория',
+  machines: 'машин',
+  ci: 'CI-ранов',
+  qa: 'QA-этапов',
+  releases: 'релизов',
+  preview: 'веб-превью'
+}
+
+/**
+ * Сообщение об отказе `409 feature_unavailable`. Сырой код подсистемы в тосте
+ * ничего не объясняет: человек не знает, что подсистему выключил тип проекта и
+ * что чинится это сменой типа, а не повтором действия.
+ */
+export function featureUnavailableMessage(feature: unknown): string {
+  const known = parseProjectFeature(feature)
+  return known
+    ? `В этом проекте нет ${FEATURE_GENITIVE[known]}: их выключил тип проекта. Смените тип в настройках, если они нужны.`
+    : 'Действие недоступно для текущего типа проекта. Смените тип в настройках проекта.'
+}
+
 export function parseProjectFeature(value: unknown): ProjectFeature | null {
   return typeof value === 'string' && (PROJECT_FEATURES as readonly string[]).includes(value) ? (value as ProjectFeature) : null
 }

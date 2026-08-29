@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-29
-checked: ac9e222c
+checked: d1c57d00
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/qa.ts
@@ -89,6 +89,12 @@ areas:
 узел; глубина ≤ `MAX_PROJECT_TYPE_DEPTH`, цикл при смене родителя отклоняется;
 удаление узла с детьми или проектами запрещено (`ON DELETE RESTRICT` + понятный
 409, а не каскад).
+
+**Отказ гейта переводится в транспорте.** Сервер отвечает
+`409 { error: 'feature_unavailable', feature }`; `createHttpApi` превращает это в
+человеческий текст через `featureUnavailableMessage` из shared — один раз, а не на
+каждом экране. Сырой код в тосте ничего не объяснял и подталкивал повторить
+бесполезное действие, хотя чинится это сменой типа проекта.
 
 **Гейт возможностей стоит на сервере, а не только в UI.**
 `projectFeatureForRequest` (`apps/server/src/users/auth.ts`) сопоставляет URL
