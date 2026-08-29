@@ -721,6 +721,8 @@ export interface CiRun {
   agentOwnerName?: string
   agentSelectionSource?: 'explicit' | 'task_pinned' | 'project_default' | 'user_project_default' | 'fallback' | 'unknown'
   status: CiStatus
+  /** Человекочитаемая причина терминального сбоя/отмены; обязательна для failed. */
+  error: string | null
   workspaceId: string | null
   /** Логин запустившего. */
   triggeredBy: string
@@ -989,6 +991,8 @@ export interface CiRunSummary {
   id: string
   taskId: string
   status: CiStatus
+  /** Короткая причина терминального результата для карточки задачи. */
+  error: string | null
   slotProgress: CiSlotProgress
   durationMs: number | null
   /** Активна ли работа модели прямо сейчас. */

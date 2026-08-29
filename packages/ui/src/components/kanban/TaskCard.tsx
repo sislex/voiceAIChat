@@ -287,7 +287,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
                 <div className="jcard-ci-row">
                   <span className={`ci-lozenge ci-lozenge--${tone}`}>{ciStatusLabel(ciSummary.status)}</span>
                 </div>
-                {ciSummary.progress
+                {ciSummary.error && ciSummary.status !== 'success'
+                  ? <p className="jcard-ci-phase" role="alert">{ciSummary.error}</p>
+                  : ciSummary.progress
                   ? <AutomationProgressView progress={ciSummary.progress} compact />
                   : <p className="jcard-ci-phase">{ciSummary.slotProgress.phase} {ciSummary.slotProgress.done}/{ciSummary.slotProgress.total}{ciSummary.durationMs != null ? ` · ${fmtDuration(ciSummary.durationMs)}` : ''}</p>}
                 {ciSummary.executionLlm && <div className="jcard-ci-model" data-testid="task-ci-execution-llm">

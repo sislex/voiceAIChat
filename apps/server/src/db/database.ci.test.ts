@@ -442,6 +442,31 @@ describe('VoiceChatDb — миграция существующей БД под 
 })
 
 describe('ci: раны, прерванные рестартом сервера', () => {
+  it('не сохраняет failed без человекочитаемой причины', () => {
+    const { p, task } = project()
+    const run = db.createCiRun({
+      projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice',
+      prevColumnId: null, slotProgress: { done: 0, total: 0, phase: 'Старт' }
+    })
+
+    expect(db.updateCiRun(run.id, { status: 'failed' })?.error)
+      .toBe('Ран завершился с ошибкой до появления подробной диагностики.')
+  })
+
+  it('закрывает упавший до первого шага ран с видимой причиной', () => {
+    const { p, task } = project()
+    const run = db.createCiRun({
+      projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice',
+      prevColumnId: null, slotProgress: { done: 0, total: 3, phase: 'В очереди' }
+    })
+
+    db.failInterruptedCiRuns()
+
+    const detail = db.getCiRun('alice', run.id)!
+    expect(detail.steps).toEqual([])
+    expect(detail.run).toMatchObject({ status: 'failed', error: 'Ран прерван перезапуском сервера.' })
+  })
+
   it('закрывает активные раны и их шаги, снимает ожидание ответа', () => {
     const { p, task } = project()
     const run = db.createCiRun({

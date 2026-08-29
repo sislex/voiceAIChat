@@ -37,6 +37,7 @@ export function makeRun(over: Partial<CiRun> = {}): CiRun {
     taskId: 't1',
     agentId: null,
     status: 'running',
+    error: null,
     workspaceId: null,
     triggeredBy: 'admin',
     prevColumnId: null,

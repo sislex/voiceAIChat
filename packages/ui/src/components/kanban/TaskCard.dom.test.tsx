@@ -26,7 +26,7 @@ function props(over: Partial<TaskCardProps> = {}): TaskCardProps {
 
 
 function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
-  return { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }
+  return { id: 'run-1', taskId: 't1', status: 'running', error: null, slotProgress: { done: 1, total: 4, phase: 'Модель работает' }, durationMs: null, modelActive: true, awaitingInput: false, ...over }
 }
 
 describe('TaskCard связанный чат', () => {
@@ -100,12 +100,17 @@ describe('TaskCard CI-панель', () => {
 
   it('показывает сводку рана и открывает ленту', () => {
     const onOpenCiRun = vi.fn()
-    const ciSummary: CiRunSummary = { id: 'run-1', taskId: 't1', status: 'running', slotProgress: { done: 1, total: 4, phase: 'до модели' }, durationMs: null, modelActive: false, awaitingInput: false }
+    const ciSummary: CiRunSummary = { id: 'run-1', taskId: 't1', status: 'running', error: null, slotProgress: { done: 1, total: 4, phase: 'до модели' }, durationMs: null, modelActive: false, awaitingInput: false }
     render(<TaskCard {...props({ ciSummary, onOpenCiRun, onStartCi: vi.fn() })} />)
     expect(screen.getByText('выполняется')).toBeInTheDocument()
     expect(screen.getByText(/до модели 1\/4/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Лента рана' }))
     expect(onOpenCiRun).toHaveBeenCalledWith('run-1')
+  })
+
+  it('показывает на карточке короткую причину упавшего рана', () => {
+    render(<TaskCard {...props({ ciSummary: mkSummary({ status: 'failed', error: 'Машина выполнения офлайн.' }), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Машина выполнения офлайн.')
   })
 
   it('показывает на карточке модель фактического этапа и базовую модель отдельно', () => {
@@ -182,6 +187,7 @@ function toSummary(run: CiRun): CiRunSummary {
     id: run.id,
     taskId: run.taskId,
     status: run.status,
+    error: run.error,
     slotProgress: run.slotProgress,
     durationMs: run.durationMs,
     modelActive: false,

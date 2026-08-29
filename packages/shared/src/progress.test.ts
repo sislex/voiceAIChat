@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildCiAutomationProgress, type CiRun, type CiRunStep } from './ci'
 
 const run: CiRun = {
-  id: 'run-new', projectId: 'p', taskId: 't', agentId: 'a', status: 'running',
+  id: 'run-new', projectId: 'p', taskId: 't', agentId: 'a', status: 'running', error: null,
   workspaceId: null, triggeredBy: 'u', prevColumnId: null, llmProvider: 'claude',
   llmModel: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3,
   conversationId: null, kbContextMode: 'auto', slotProgress: { done: 1, total: 3, phase: 'Тесты' },
