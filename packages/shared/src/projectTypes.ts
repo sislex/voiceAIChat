@@ -109,6 +109,9 @@ export const MAX_PROJECT_TYPE_DEPTH = 5
 export const BUILTIN_PROJECT_TYPE_IDS = {
   software: 'type-software',
   web: 'type-software-web',
+  backend: 'type-software-backend',
+  mobile: 'type-software-mobile',
+  library: 'type-software-library',
   general: 'type-general'
 } as const
 
@@ -140,6 +143,41 @@ const GENERAL_COLUMNS: { name: string; semanticType: KanbanColumnSemanticType }[
   { name: 'Требуется решение', semanticType: 'decision_required' }
 ]
 
+const SOFTWARE_COLUMNS: { name: string; semanticType: KanbanColumnSemanticType }[] = [
+  { name: 'Бэклог', semanticType: 'backlog' },
+  { name: 'Подготовка к разработке', semanticType: 'preparation' },
+  { name: 'Ready for Development', semanticType: 'ready' },
+  { name: 'Development', semanticType: 'development' },
+  { name: 'Component QA', semanticType: 'component_qa' },
+  { name: 'Создание интеграционных автотестов', semanticType: 'integration_tests' },
+  { name: 'Automated QA', semanticType: 'automated_qa' },
+  { name: 'Ручное QA', semanticType: 'manual_qa' },
+  { name: 'Ожидает мержа', semanticType: 'awaiting_merge' },
+  { name: 'Мерж', semanticType: 'merge' },
+  { name: 'Готово', semanticType: 'done' },
+  { name: 'Отменено', semanticType: 'cancelled' },
+  { name: 'Требуется решение', semanticType: 'decision_required' }
+]
+
+const LIBRARY_COLUMNS: { name: string; semanticType: KanbanColumnSemanticType }[] = [
+  { name: 'Бэклог', semanticType: 'backlog' },
+  { name: 'Подготовка', semanticType: 'preparation' },
+  { name: 'Готово к разработке', semanticType: 'ready' },
+  { name: 'Разработка', semanticType: 'development' },
+  { name: 'Автотесты', semanticType: 'automated_qa' },
+  { name: 'Ожидает мержа', semanticType: 'awaiting_merge' },
+  { name: 'Мерж', semanticType: 'merge' },
+  { name: 'Готово', semanticType: 'done' },
+  { name: 'Отменено', semanticType: 'cancelled' },
+  { name: 'Требуется решение', semanticType: 'decision_required' }
+]
+
+const SOFTWARE_CI_DEFAULTS: ProjectTypeDefaults = {
+  ciBaseBranch: 'main',
+  ciBranchTemplate: '{task_number}',
+  ciReuseStrategy: 'clean'
+}
+
 export const BUILTIN_PROJECT_TYPES: readonly BuiltinProjectType[] = [
   {
     id: BUILTIN_PROJECT_TYPE_IDS.software,
@@ -158,6 +196,60 @@ export const BUILTIN_PROJECT_TYPES: readonly BuiltinProjectType[] = [
     description: 'Разработка ПО с веб-превью и Storybook: заготовки под фронтенд-проект.',
     features: {},
     defaults: { technologies: ['web'] }
+  },
+  {
+    id: BUILTIN_PROJECT_TYPE_IDS.backend,
+    parentId: BUILTIN_PROJECT_TYPE_IDS.software,
+    name: 'Бэкенд',
+    description: 'Серверное приложение: API, база данных, автоматические проверки и развёртывание.',
+    features: {},
+    defaults: {
+      ...SOFTWARE_CI_DEFAULTS,
+      columns: SOFTWARE_COLUMNS,
+      technologies: ['backend', 'api', 'database'],
+      skills: ['архитектура', 'API', 'базы данных'],
+      defaultSkills: {
+        epic: ['архитектура'],
+        story: ['API', 'базы данных'],
+        task: ['backend', 'тестирование']
+      }
+    }
+  },
+  {
+    id: BUILTIN_PROJECT_TYPE_IDS.mobile,
+    parentId: BUILTIN_PROJECT_TYPE_IDS.software,
+    name: 'Мобильное приложение',
+    description: 'Приложение для iOS и Android: мобильная разработка, тестирование и сборки.',
+    features: {},
+    defaults: {
+      ...SOFTWARE_CI_DEFAULTS,
+      columns: SOFTWARE_COLUMNS,
+      technologies: ['mobile', 'ios', 'android'],
+      skills: ['мобильная разработка', 'UI/UX', 'тестирование'],
+      defaultSkills: {
+        epic: ['мобильная архитектура'],
+        story: ['UI/UX'],
+        task: ['мобильная разработка', 'тестирование']
+      }
+    }
+  },
+  {
+    id: BUILTIN_PROJECT_TYPE_IDS.library,
+    parentId: BUILTIN_PROJECT_TYPE_IDS.software,
+    name: 'Библиотека',
+    description: 'Переиспользуемый пакет или SDK: публичный API, совместимость, тесты и публикация.',
+    features: { preview: false },
+    defaults: {
+      ...SOFTWARE_CI_DEFAULTS,
+      columns: LIBRARY_COLUMNS,
+      technologies: ['library', 'sdk', 'package'],
+      skills: ['проектирование API', 'совместимость', 'документация'],
+      defaultSkills: {
+        epic: ['проектирование API'],
+        story: ['совместимость', 'документация'],
+        task: ['тестирование', 'документация']
+      }
+    }
   },
   {
     id: BUILTIN_PROJECT_TYPE_IDS.general,

@@ -21,7 +21,12 @@ describe('typeCascadeLevels', () => {
     ])
     const two = typeCascadeLevels(types, [BUILTIN_PROJECT_TYPE_IDS.software])
     expect(two.length).toBe(2)
-    expect(two[1].map((t) => t.id)).toEqual([BUILTIN_PROJECT_TYPE_IDS.web])
+    expect(two[1].map((t) => t.id)).toEqual([
+      BUILTIN_PROJECT_TYPE_IDS.web,
+      BUILTIN_PROJECT_TYPE_IDS.backend,
+      BUILTIN_PROJECT_TYPE_IDS.mobile,
+      BUILTIN_PROJECT_TYPE_IDS.library
+    ])
   })
 
   it('у листа следующего уровня нет', () => {

@@ -22,7 +22,8 @@ describe('flattenTypeTree', () => {
   it('обходит от корней вглубь, встроенные впереди пользовательских', () => {
     const rows = flattenTypeTree([...builtin, own()])
     expect(rows.map((r) => `${r.depth}:${r.node.name}`)).toEqual([
-      '0:Разработка ПО', '1:Веб-приложение', '1:Бэкенд-сервис', '0:Общий проект'
+      '0:Разработка ПО', '1:Веб-приложение', '1:Бэкенд', '1:Мобильное приложение',
+      '1:Библиотека', '1:Бэкенд-сервис', '0:Общий проект'
     ])
   })
 
@@ -40,7 +41,7 @@ describe('ProjectTypesSettings', () => {
     const items = screen.getAllByRole('listitem')
     expect(items.some((li) => li.textContent?.includes('встроенный'))).toBe(true)
     expect(screen.getByText(/Бэкенд-сервис/)).toBeInTheDocument()
-    expect(screen.getByText(/личный/)).toBeInTheDocument()
+    expect(screen.getAllByText(/личный/).length).toBeGreaterThan(0)
     // У «Общего проекта» возможностей нет — так и написано.
     expect(screen.getAllByText('только доска и задачи').length).toBeGreaterThan(0)
   })
