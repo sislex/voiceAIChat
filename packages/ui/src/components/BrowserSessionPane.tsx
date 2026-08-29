@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
-import { scaleBrowserCoordinates, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
+import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import { Button, IconButton } from '@voicechat/ui-kit'
 
@@ -46,6 +46,19 @@ export interface BrowserSessionPaneProps {
 
 type Phase = 'starting' | 'ready' | 'unavailable' | 'error'
 
+/**
+ * Схема для адреса, набранного без протокола. Раньше подставлялся `https://`
+ * всему подряд, и стенд по http (`89.125.68.35:8787`) превращался в неработающий
+ * адрес. Явный порт — почти всегда простой http-сервис, поэтому для него https
+ * не навязываем; для имени без порта https по-прежнему разумный выбор.
+ */
+export function withScheme(raw: string): string {
+  const value = raw.trim()
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return value
+  const hasExplicitPort = /^[^/?#]+:\d+(?:[/?#]|$)/.test(value)
+  return `${hasExplicitPort ? 'http' : 'https'}://${value}`
+}
+
 export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: BrowserSessionPaneProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>('starting')
   const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop'>('desktop')
@@ -59,6 +72,9 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
   const [retryable, setRetryable] = useState(false)
   const lastCommand = useRef<Parameters<RendererBrowserBridge['command']>[1]['command'] | null>(null)
   const [message, setMessage] = useState<string>('')
+  // Журналы страницы: раннер копит их с открытия, но до круга 11 показать их
+  // было негде — человек видел белый экран и не знал, что упал запрос.
+  const [diagnostics, setDiagnostics] = useState<{ console: BrowserConsoleEntry[]; network: BrowserNetworkEntry[] } | null>(null)
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
   const [frame, setFrame] = useState<string | null>(null)
   const [address, setAddress] = useState<string>('')
@@ -72,7 +88,9 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     if (!browser || !incarnation.current) return
     const generation = alive.current
     try {
-      const shot = await browser.screenshot(conversationId, { incarnation: incarnation.current, format: 'jpeg', quality: 60 })
+      // Качество 60 мылило мелкий текст, а панель нужна именно для разбора
+      // вёрстки; 82 заметно читаемее, а кадр остаётся лёгким.
+      const shot = await browser.screenshot(conversationId, { incarnation: incarnation.current, format: 'jpeg', quality: 82 })
       if (generation === alive.current) setFrame(shot.dataUrl)
     } catch { /* один пропущенный кадр не роняет панель */ }
   }, [browser, conversationId])
@@ -126,7 +144,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     setMeta(next); setAddress(next.currentUrl ?? '')
   }
 
-  const run = useCallback(async (command: Parameters<RendererBrowserBridge['command']>[1]['command']): Promise<void> => {
+  const run = useCallback(async (command: Parameters<RendererBrowserBridge['command']>[1]['command']): Promise<unknown> => {
     if (!browser || !incarnation.current) return
     const generation = alive.current
     setBusy(true)
@@ -137,8 +155,11 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     try {
       const next = await browser.command(conversationId, { incarnation: incarnation.current, command })
       if (generation !== alive.current) return
-      applyMeta(next)
+      // Метаданные приходят не на всякую команду: `selector` отдаёт чтение,
+      // `inspect` — журналы. Обновляем состояние только по метаданным.
+      if (isBrowserSessionMetadata(next)) applyMeta(next)
       await refreshFrame()
+      return next
     } catch (err) {
       if (generation === alive.current) {
         setMessage(err instanceof Error ? err.message : 'Команда не выполнена')
@@ -198,7 +219,9 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     setPhase('starting'); setFrame(null); setMeta(null); setMessage(''); setRetryable(false)
     void browser.stop(conversationId)
       .catch(() => {})
-      .then(() => browser.start(conversationId, VIEWPORT))
+      // Выбранный размер окна переживает перезапуск: иначе проверка мобильной
+      // вёрстки сбрасывалась на десктоп при каждом «Перезапустить».
+      .then(() => browser.start(conversationId, VIEWPORTS.find((v) => v.id === viewportId)?.viewport ?? VIEWPORT))
       .then((started) => {
         if (generation !== alive.current) return
         incarnation.current = started.incarnation
@@ -225,6 +248,18 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     }
   }
 
+  /** Ошибки страницы и неуспешные запросы — одним запросом на оба журнала. */
+  const loadDiagnostics = async (): Promise<void> => {
+    const errors = await run({ type: 'inspect', action: { kind: 'console', level: 'error', limit: 30 } }) as BrowserInspectResult | undefined
+    const network = await run({ type: 'inspect', action: { kind: 'network', limit: 50 } }) as BrowserInspectResult | undefined
+    setDiagnostics({
+      console: errors?.console ?? [],
+      // Показываем только неуспешные: успешные запросы человеку не нужны, а
+      // список из полусотни строк прячет то, ради чего его открыли.
+      network: (network?.network ?? []).filter((entry) => !entry.ok)
+    })
+  }
+
   const changeViewport = (id: 'phone' | 'tablet' | 'desktop'): void => {
     const found = VIEWPORTS.find((v) => v.id === id)
     if (!found) return
@@ -235,7 +270,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
   const submitAddress = (): void => {
     const url = address.trim()
     if (!url) return
-    void run({ type: 'navigate', url: /^https?:\/\//i.test(url) ? url : `https://${url}` })
+    void run({ type: 'navigate', url: withScheme(url) })
   }
 
   const submitTyping = (): void => {
@@ -318,9 +353,39 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
       <span className="playwright-reader-state" role="status" data-status={meta?.state ?? phase}>
         {phase === 'starting' ? STATE_LABELS.starting : (STATE_LABELS[meta?.state ?? 'ready'] ?? STATE_LABELS.ready)}
       </span>
+      <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadDiagnostics()}>Ошибки страницы</Button>
+      {/* Профиль persistent, поэтому «выйти и посмотреть экран входа» иначе
+          нечем: перезапуск сессии куки не трогает. */}
+      <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'inspect', action: { kind: 'evaluate', code: 'document.cookie.split(";").forEach(c=>{document.cookie=c.split("=")[0]+"=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/"});localStorage.clear();sessionStorage.clear();"очищено"' } }).then(() => run({ type: 'reload' }))}>
+        Очистить сессию сайта
+      </Button>
+      <span className="playwright-reader-keys" role="group" aria-label="Клавиши">
+        {(['Enter', 'Tab', 'Escape'] as const).map((key) => (
+          <Button key={key} size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'input', action: { type: 'press', key } })}>{key}</Button>
+        ))}
+      </span>
       {/* Зависшую страницу иначе не выкинуть: stop звался только при уходе с экрана. */}
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={restartSession}>Перезапустить</Button>
     </div>
+    {diagnostics && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Диагностика страницы">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Ошибки страницы: {diagnostics.console.length} · Неуспешные запросы: {diagnostics.network.length}</strong>
+          <IconButton size="sm" aria-label="Скрыть диагностику" title="Скрыть диагностику" onClick={() => setDiagnostics(null)}>✕</IconButton>
+        </div>
+        {diagnostics.console.length === 0 && diagnostics.network.length === 0 && <p className="proj-muted">Страница не жаловалась.</p>}
+        {diagnostics.console.length > 0 && (
+          <ul className="playwright-reader-diagnostics__list">
+            {diagnostics.console.map((entry, index) => <li key={`c${index}`} data-kind="console">{entry.text}</li>)}
+          </ul>
+        )}
+        {diagnostics.network.length > 0 && (
+          <ul className="playwright-reader-diagnostics__list">
+            {diagnostics.network.map((entry, index) => <li key={`n${index}`} data-kind="network"><code>{entry.status}</code> {entry.method} {entry.url}</li>)}
+          </ul>
+        )}
+      </div>
+    )}
     <div className="playwright-browser-viewport">
       {frame
         ? <img
