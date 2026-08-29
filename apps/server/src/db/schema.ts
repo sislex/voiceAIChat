@@ -270,6 +270,14 @@ CREATE TABLE IF NOT EXISTS security_events (
 );
 CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_name, at DESC);
 
+CREATE TABLE IF NOT EXISTS login_device_emails (
+  user_name TEXT NOT NULL,
+  ip TEXT NOT NULL,
+  user_agent TEXT NOT NULL,
+  sent_at INTEGER NOT NULL,
+  PRIMARY KEY (user_name, ip, user_agent)
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   sid TEXT PRIMARY KEY,
   user_name TEXT NOT NULL,

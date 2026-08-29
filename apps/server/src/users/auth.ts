@@ -227,6 +227,7 @@ export function readSignupConfig(db: VoiceChatDb): { enabled: boolean; role: Use
 
 export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string, options: AuthOptions = {}): void {
   const mailer = options.mailer ?? createMailer({}, (m, extra) => app.log.warn(extra ?? {}, m))
+  const baseUrl = (req: FastifyRequest): string => (options.publicUrl ?? `${String(req.headers['x-forwarded-proto'] ?? req.protocol)}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`).replace(/\/$/, '')
   app.decorateRequest('user', null)
   // Сессии (auth-roadmap п.4): токен действителен, пока есть живая запись в `sessions` (не отозвана, не истекла).
   // Токены без записи (выданы до таблицы) регистрируются лениво — так старые входы не рвутся при обновлении.
@@ -315,7 +316,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   /** Ожидающие второго шага тикеты и незавершённые настройки 2FA — в памяти процесса, живут минуты. */
   const pendingTwoFactor = new Map<string, { name: string; expires: number; attempts: number; remember: boolean }>()
   const pendingSetup = new Map<string, { secret: string; expires: number }>()
-  const issueSession = (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role'], remember = true): { token: string; user: SessionUser; csrf: string } => {
+  const issueSession = async (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role'], remember = true): Promise<{ token: string; user: SessionUser; csrf: string }> => {
     const row = db.getUser(name)
     const user: SessionUser = { name, role, ...(row?.mustChangePassword ? { mustChangePassword: true } : {}) }
     const sid = newSessionId()
@@ -329,7 +330,25 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     db.createSession(sid, name, { ip: req.ip, userAgent: ua, ttlMs: ttl })
     db.markLogin(name)
     db.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: ua })
-    if (isNew) db.logSecurityEvent({ user: name, type: 'login_new_device', ip: req.ip, userAgent: ua, details: 'вход с нового устройства' })
+    if (isNew) {
+      const at = Date.now()
+      db.logSecurityEvent({ user: name, type: 'login_new_device', ip: req.ip, userAgent: ua, details: 'вход с нового устройства' })
+      const email = row?.email
+      if (email && db.getSettings(name).loginNewDeviceEmails && db.reserveLoginDeviceEmail(name, req.ip, ua, at)) {
+        const passwordLink = `${baseUrl(req)}/#/security/password`
+        const sessionsLink = `${baseUrl(req)}/#/security/sessions`
+        const when = `${new Date(at).toLocaleString('ru-RU', { timeZone: 'UTC' })} UTC`
+        try {
+          await mailer.send({
+            to: email,
+            subject: 'Новый вход в ChatAI',
+            text: `Здравствуйте, ${name}!\n\nЗафиксирован вход с нового устройства.\nКогда: ${when}\nIP: ${req.ip}\nUser-Agent: ${ua || 'не указан'}\n\nЕсли это были не вы, смените пароль: ${passwordLink}\nИ отзовите другие сессии: ${sessionsLink}`
+          })
+        } catch (error) {
+          app.log.error({ error, user: name }, 'auth: письмо о новом устройстве не отправлено')
+        }
+      }
+    }
     const csrf = newSessionId()
     reply.header('set-cookie', [previewCookie(token), ...sessionCookies(req, token, csrf, remember ? Math.floor(ttl / 1000) : null)])
     return { token, user, csrf }
@@ -525,7 +544,6 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
 
   // Открытая регистрация с подтверждением email: заявка → письмо со ссылкой #/verify/<token> → учётка и сессия.
   const signupLimiter = new SlidingWindowLimiter(5, 60 * 60_000)
-  const baseUrl = (req: FastifyRequest): string => (options.publicUrl ?? `${String(req.headers['x-forwarded-proto'] ?? req.protocol)}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`).replace(/\/$/, '')
   const sendVerification = async (req: FastifyRequest, name: string, email: string, token: string): Promise<void> => {
     const link = `${baseUrl(req)}/#/verify/${encodeURIComponent(token)}`
     await mailer.send({

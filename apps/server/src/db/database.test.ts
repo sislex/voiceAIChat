@@ -423,8 +423,9 @@ describe('VoiceChatDb — настройки', () => {
       aiAssistPrompts: DEFAULT_SETTINGS.aiAssistPrompts,
       generatedFilesTtlDays: 30,
       personalization: DEFAULT_SETTINGS.personalization,
-      // Нового поля в сохранённом конфиге нет — все инструкции включены по умолчанию.
-      chatInstructions: DEFAULT_SETTINGS.chatInstructions
+      // Новых полей в сохранённом конфиге нет — безопасные значения включены по умолчанию.
+      chatInstructions: DEFAULT_SETTINGS.chatInstructions,
+      loginNewDeviceEmails: true
     })
   })
 
