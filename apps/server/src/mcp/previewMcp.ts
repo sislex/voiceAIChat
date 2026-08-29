@@ -72,6 +72,7 @@ interface PendingRequest {
   expected: number
   answered: number
   firstError?: string
+  action: PreviewAction
   timer: NodeJS.Timeout
   resolve(outcome: PreviewActionOutcome): void
 }
@@ -128,6 +129,7 @@ export class PreviewActionRelay {
         conversationId,
         expected: sinks.size,
         answered: 0,
+        action,
         timer: setTimeout(
           () => settle({ ok: false, error: 'Клиентский мост Web Reader не ответил при формально подключённом клиенте.' }),
           timeoutMs
@@ -145,6 +147,15 @@ export class PreviewActionRelay {
     if (!entry || entry.userId !== userId || (conversationId !== undefined && entry.conversationId !== conversationId)) return
     const error = typeof outcome.error === 'string' ? outcome.error.slice(0, 2_000) : undefined
     if (outcome.ok) {
+      const result = outcome.result as { url?: unknown; title?: unknown; navigated?: unknown } | undefined
+      const address = typeof result?.url === 'string' ? result.url : entry.action.kind === 'open' ? entry.action.url : null
+      const title = typeof result?.title === 'string' ? result.title : null
+      const changed: ServerMessage = {
+        t: 'reader.changed', conversationId: entry.conversationId, address, title,
+        navigated: entry.action.kind === 'open' || entry.action.kind === 'back' || entry.action.kind === 'forward' || result?.navigated === true,
+        action: entry.action
+      }
+      for (const sink of this.sinks.get(userId) ?? []) sink(changed)
       entry.resolve({ ok: true, ...(outcome.result !== undefined ? { result: outcome.result } : {}) })
       return
     }
@@ -180,6 +191,8 @@ export interface PreviewTurnContext {
   environmentsOf?(entry: PreviewToolEntry): PreviewEnvironmentInfo[]
   /** Сброс cookie-контейнера превью пользователя (host сужает до одного сайта). */
   clearCookies?(entry: PreviewToolEntry, host?: string): number
+  /** Проектная/ролевая политика evaluate; audit вызывается для любого вердикта. */
+  gateEvaluate?(entry: PreviewToolEntry, code: string, confirmed: boolean): { allowed: boolean; needsConfirmation?: boolean; reason?: string }
 }
 
 export interface RegisterPreviewMcpOptions {
@@ -436,9 +449,21 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
           description:
             'Выполнить JavaScript в контексте открытой в превью страницы и получить JSON результата (await для промисов). ' +
             'Для чтения состояния приложения, вызова функций страницы и нестандартных контролов, недоступных click/type.',
-          inputSchema: { code: z.string().min(1).max(L.evaluateCode).describe('JS-выражение или код; результат сериализуется JSON') }
+          inputSchema: {
+            code: z.string().min(1).max(L.evaluateCode).describe('JS-выражение или код; результат сериализуется JSON'),
+            confirm: z.boolean().optional().describe('true — пользователь явно подтвердил изменение страницы/хранилища/сети')
+          }
         },
-        async ({ code }) => run({ kind: 'evaluate', code })
+        async ({ code, confirm }) => {
+          if (!entry) return noContext
+          const verdict = opts.context?.gateEvaluate?.(entry, code, confirm === true)
+          req.log.info({ event: 'reader.evaluate', userId: entry.userId, conversationId: entry.conversationId, allowed: verdict?.allowed ?? true, confirmed: confirm === true, reason: verdict?.reason }, 'reader evaluate gate')
+          if (verdict && !verdict.allowed) {
+            const prefix = verdict.needsConfirmation ? 'Требуется подтверждение пользователя. ' : 'Отклонено политикой проекта. '
+            return { content: [{ type: 'text', text: prefix + (verdict.reason ?? '') }], isError: true }
+          }
+          return run({ kind: 'evaluate', code })
+        }
       )
 
       const dragPoint = z.object({
