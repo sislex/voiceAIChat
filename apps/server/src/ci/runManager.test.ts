@@ -19,6 +19,7 @@ let scripts: string[] = []
 let workdirs: string[] = []
 let executorEnvs: Array<Record<string, string>> = []
 let failManagedBootstrap = false
+let lowDisk = false
 let failClaude = false
 let failPush = false
 /** Управляемое падение шага TOGGLE: «сломано» → «починили» между ранами. */
@@ -83,6 +84,7 @@ const ciExecutor: CommandExecutor = {
     if (req.script === 'git rev-parse --show-toplevel >/dev/null') return { exitCode: repoMissing ? 128 : 0, timedOut: false }
     if (req.script.includes('commits=$(git log')) return { exitCode: emptyModelWork ? 70 : 0, timedOut: false }
     if (req.script === 'DIRTY') return { exitCode: 66, timedOut: false }
+    if (req.script.includes('Недостаточно места для запуска рана') && lowDisk) { onChunk('Недостаточно места для запуска рана: свободно 400 МБ, нужно не меньше 1024 МБ. Освободите диск и повторите запуск.\n'); return { exitCode: 74, timedOut: false } }
     if (req.script.includes('MachineStorage недоступен') && failManagedBootstrap) return { exitCode: 73, timedOut: false }
     if (req.script.includes('Рабочая копия содержит локальные изменения') && dirtyWorkspace) return { exitCode: 66, timedOut: false }
     if (syncFailure && req.script.includes('fetch origin main')) return { exitCode: 1, timedOut: false }
@@ -105,6 +107,7 @@ beforeEach(async () => {
   workdirs = []
   executorEnvs = []
   failManagedBootstrap = false
+  lowDisk = false
   failClaude = false
   failPush = false
   failStep = false
@@ -300,6 +303,39 @@ describe('ci run manager', () => {
     expect(detail.run.status).toBe('failed')
     expect(detail.steps.find((step) => step.kind === 'command')?.status).toBe('failed')
     expect(modelRequests).toHaveLength(0)
+  })
+
+  it('нехватка места останавливает ран с понятным сообщением до clone', async () => {
+    const { project, task, agent } = setup()
+    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+    const clone = db.createCiCommand('admin', { scope: 'project', projectId: project.id, name: 'Клонировать репозиторий задачи', script: 'CLONE' })
+    db.setCiSlotCommands('task', task.id, 'before_model', [clone.id])
+    lowDisk = true
+
+    const runId = await run(project.id, task.id)
+    const detail = await waitRun(runId)
+    const log = db.getCiRunLog('admin', runId).map((line) => line.chunk).join('')
+
+    expect(detail.run.status).toBe('failed')
+    expect(scripts[0]).toContain('df -Pk .')
+    expect(scripts).not.toContain('CLONE')
+    expect(log).toContain('Недостаточно места для запуска рана')
+    expect(modelRequests).toHaveLength(0)
+  })
+
+  it('после терминального статуса удаляет только node_modules и сохраняет задачный npm-кэш', async () => {
+    const { project, task, agent } = setup()
+    db.saveMachineStorage('admin', agent.id, '/storage', 1)
+
+    const runId = await run(project.id, task.id)
+    expect((await waitRun(runId)).run.status).toBe('success')
+    for (let i = 0; i < 100 && !scripts.some((script) => script.includes('/node_modules')); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    const cleanup = scripts.find((script) => script.includes('/node_modules'))
+    expect(cleanup).toContain(`'/storage/projects/${project.id}/tasks/${task.id}/environments/test/temporary/repository/P-1/node_modules'`)
+    expect(cleanup).not.toContain('.npm-cache')
   })
 
   it('ошибка записи managed storage обнаруживается до clone', async () => {
