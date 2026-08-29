@@ -73,7 +73,7 @@ export interface AdminActions {
   loadAdminInvites(): Promise<void>
   loadAdminSignup(): Promise<void>
   setAdminSignup(input: { enabled?: boolean; role?: UserRole }): Promise<void>
-  createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }): Promise<InviteInfo | null>
+  createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }): Promise<InviteInfo | null>
   deleteAdminInvite(token: string): Promise<void>
   revokeAdminSession(sid: string): Promise<void>
   openAdminConversation(conversationId: string): Promise<void>
@@ -300,7 +300,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     if (!client.listInvites) return
     try { setState({ adminInvites: await client.listInvites() }) } catch (err) { fail(err, () => void loadAdminInvites()) }
   }
-  async function createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }): Promise<InviteInfo | null> {
+  async function createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }): Promise<InviteInfo | null> {
     if (!client.createInvite) return null
     try { const inv = await client.createInvite(input); await loadAdminInvites(); return inv } catch (err) { fail(err, () => void createAdminInvite(input)); return null }
   }

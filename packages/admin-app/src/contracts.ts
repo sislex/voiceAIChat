@@ -19,7 +19,7 @@ export interface AdminClient {
   securityEvents?(input: { user?: string; limit?: number }): Promise<SecurityEvent[]>
   /** Инвайты на саморегистрацию (auth-roadmap п.8). */
   listInvites?(): Promise<InviteInfo[]>
-  createInvite?(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string }): Promise<InviteInfo>
+  createInvite?(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }): Promise<InviteInfo>
   deleteInvite?(input: { token: string }): Promise<void>
   createUser(input: { name: string; password: string; role: UserRole; mustChangePassword?: boolean }): Promise<AdminUserInfo>
   /** Одноразовый код сброса пароля (auth-roadmap п.10). */
