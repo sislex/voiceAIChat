@@ -143,6 +143,29 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/tts-runner && exec node --import tsx src/index.ts"]
 
 # ---- Runtime durable Automation Runner -----------------------------------
+# ---- Runtime браузерного раннера (Playwright Reader, этап автотестов) -----
+# Отдельная база, а не runtime-base: Chromium тянет десятки системных библиотек,
+# и ставить их в общий образ ради одного сервиса значит раздуть все остальные.
+# Официальный образ Playwright уже содержит браузер и зависимости; версия
+# обязана совпадать с playwright в apps/browser-runner, иначе браузер не тот.
+FROM mcr.microsoft.com/playwright:v1.54.2-noble AS browser-runner-runtime
+WORKDIR /app
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    HOME=/home/node \
+    PORT=8792 \
+    VC_BROWSER_DATA_DIR=/data
+COPY --from=build /app /app
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+  && mkdir -p /data /home/node \
+  && (getent passwd node >/dev/null || useradd -m -u 1000 node) \
+  && chown -R node:node /data /home/node
+VOLUME ["/data"]
+EXPOSE 8792
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["sh", "-c", "cd apps/browser-runner && exec node --import tsx src/index.ts"]
+
 FROM runtime-base AS automation-runner-runtime
 ENV PORT=8800 VC_AUTOMATION_DATA_DIR=/data
 RUN mkdir -p /data && chown -R node:node /data
