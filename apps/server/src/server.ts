@@ -30,6 +30,8 @@ import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
 import { createAutomatedQaRunner, createComponentQaRunner } from './ci/componentQa.js'
+import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
+import { automatedQaRemarks } from '@voicechat/shared'
 import { createIntegrationTestRunner } from './ci/integrationTests.js'
 import { MergeRunManager } from './merge/runManager.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
@@ -524,6 +526,9 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     ? createBrowserRunnerClient({ baseUrl: opts.config.browserRunnerUrl, token: opts.config.browserRunnerToken })
     : undefined)
   registerBrowserRoutes(app, { db, ...(browserRunner ? { runner: browserRunner } : {}) })
+  // Снимки вердикта Playwright-этапа: файл на диске, а не base64 в result_json —
+  // строка рана иначе распухала бы на сотни килобайт с каждой попыткой.
+  const automatedQaScreenshotDir = join(opts.config.dataDir, 'qa-screenshots')
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
   const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
@@ -1589,10 +1594,18 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   registerInvitationRoutes(app, db, { mailer, publicUrl: opts.config.publicUrl, membershipChanged: (projectId, userId) => notificationHub.emit(projectId, userId, 'membership') })
   registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId, 'membership'), emitBoard)
   mergeRunManager.reconcile()
-  const onAutoPilotFailure = (runId: string, userId: string, stage: string, reason: string): void => {
+  const onAutoPilotFailure = (runId: string, userId: string, stage: string, reason: string, options?: { classification?: 'implementation_defect' | 'infrastructure' | null; remarks?: string }): void => {
     const run = stage === 'component_qa' ? db.getComponentQaRun(userId, runId) : stage === 'integration_tests' ? db.getIntegrationTestRun(userId, runId) : db.getQaStageRun(userId, runId)
     if (!run) return
-    const handled = db.handleAutoPilotFailure(userId, run.projectId, run.taskId, stage, runId, reason)
+    // Инфраструктурный сбой (недоступный воркспейс, таймаут, отключившийся
+    // исполнитель) — не дефект разработчика: возвращать задачу и жечь цикл
+    // автопрохода за чужой сбой нельзя, поэтому автопроход просто встаёт.
+    if (options?.classification === 'infrastructure') {
+      db.recordAutoPilotEvent(run.projectId, run.taskId, 'autopilot.stopped', { stage, runId, reason, blockedBy: 'infrastructure' })
+      emitBoard(run.projectId)
+      return
+    }
+    const handled = db.handleAutoPilotFailure(userId, run.projectId, run.taskId, stage, runId, reason, options?.remarks ?? '')
     if (handled && !handled.decisionRequired) ciRunManager.start(userId, run.projectId, run.taskId, { mode: 'development' })
     emitBoard(run.projectId)
   }
@@ -1606,7 +1619,15 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     if(passed){try{db.completeIntegrationTestRun(userId,run.projectId,run.taskId,runId);emitBoard(run.projectId)}catch(error){onAutoPilotFailure(runId,userId,'integration_tests',error instanceof Error?error.message:String(error))}}
     else onAutoPilotFailure(runId,userId,'integration_tests',reason)
   }})
-  const automatedQaRunner=createAutomatedQaRunner({db,executor:ciExecutor,boardChanged:emitBoard,completed:(runId,userId,passed,reason)=>{if(!passed)onAutoPilotFailure(runId,userId,'automated_qa',reason)}})
+  const automatedQaScenarioRunner = browserRunner ? createAutomatedQaScenarioRunner({
+    browser: browserRunner,
+    screenshotDir: automatedQaScreenshotDir,
+    screenshotUrl: (runId) => `/api/qa/runs/${runId}/screenshot`
+  }) : undefined
+  const automatedQaRunner=createAutomatedQaRunner({db,executor:ciExecutor,scenarioRunner:automatedQaScenarioRunner,boardChanged:emitBoard,completed:(runId,userId,passed,reason,verdict)=>{
+    if(passed)return
+    onAutoPilotFailure(runId,userId,'automated_qa',reason,{classification:verdict?.classification??null,remarks:verdict?automatedQaRemarks(verdict):''})
+  }})
   const ticking = new Set<string>()
   autoPilotTick = (projectId) => {
     if (ticking.has(projectId)) return
@@ -1625,7 +1646,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
       finally { ticking.delete(projectId) }
     })
   }
-  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(runId,userId)=>automatedQaRunner.launch(runId,userId),(runId)=>automatedQaRunner.cancel(runId),(id)=>boardHub.emit(id))
+  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(runId,userId)=>automatedQaRunner.launch(runId,userId),(runId)=>automatedQaRunner.cancel(runId),(id)=>boardHub.emit(id),automatedQaScreenshotDir)
 
   // Восстанавливаем process-local очередь. Уже начатые раны закрываются как
   // interrupted, а не начавшиеся снова занимают очередь нового менеджера.

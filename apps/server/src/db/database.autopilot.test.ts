@@ -103,3 +103,57 @@ describe('автопроход: провал этапа', () => {
     expect(() => db.handleAutoPilotFailure('alice', projectId, taskId, 'automated_qa', 'r1', 'упало')).not.toThrow()
   })
 })
+
+describe('замечания этапа в задаче на доработку', () => {
+  it('хвост вывода попадает в описание баг-задачи', () => {
+    const { projectId, taskId } = setup()
+    const remarks = 'Команда: npm test\nКод выхода: 1\nFAIL src/components/TaskCard.dom.test.tsx'
+    const handled = db.handleAutoPilotFailure('alice', projectId, taskId, 'automated_qa', 'run-1', 'Команда автотестов завершилась с кодом 1', remarks)
+    const bug = db.getCiTask('alice', projectId, handled!.bugTaskId!)!
+    expect(bug.description).toContain('## Замечания этапа')
+    expect(bug.description).toContain('FAIL src/components/TaskCard.dom.test.tsx')
+  })
+
+  it('без замечаний блок не добавляется', () => {
+    const { projectId, taskId } = setup()
+    const handled = db.handleAutoPilotFailure('alice', projectId, taskId, 'automated_qa', 'run-1', 'упало')
+    expect(db.getCiTask('alice', projectId, handled!.bugTaskId!)!.description).not.toContain('Замечания этапа')
+  })
+})
+
+describe('этап Automated QA: шаг рана и настройки', () => {
+  it('markAutomatedQaRunning переводит шаг из starting в tests', () => {
+    // Условие `status='queued'` было мёртвым: startQaStageRun вставляет ран
+    // сразу как running, и панель весь прогон показывала «starting».
+    const { projectId, taskId } = setup(false)
+    const run = db.startQaStageRun('alice', projectId, taskId, 'automated_qa')
+    expect(run.currentStep).toBe('starting')
+    db.markAutomatedQaRunning(run.id)
+    expect(db.getQaStageRun('alice', run.id)!.currentStep).toBe('tests')
+  })
+
+  it('режим и сценарий этапа сохраняются и переживают чтение проекта', () => {
+    const project = db.createProject('alice', { name: 'P' })
+    db.updateProject('alice', project.id, {
+      automatedQaMode: 'playwright',
+      automatedQaScenario: { startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Кнопка', action: { kind: 'click', selector: '#create' } }] }
+    })
+    const detail = db.getProject('alice', project.id)!
+    expect(detail.automatedQaMode).toBe('playwright')
+    expect(detail.automatedQaScenario?.steps).toHaveLength(1)
+  })
+
+  it('шаг с неизвестным действием отбрасывается, а не роняет прогон', () => {
+    const project = db.createProject('alice', { name: 'P' })
+    db.updateProject('alice', project.id, {
+      automatedQaScenario: {
+        startUrl: 'http://localhost:5173',
+        steps: [
+          { id: 's1', title: 'Кнопка', action: { kind: 'click', selector: '#create' } },
+          { id: 's2', title: 'Мусор', action: { kind: 'teleport' } as never }
+        ]
+      }
+    })
+    expect(db.getProject('alice', project.id)!.automatedQaScenario?.steps.map((step) => step.id)).toEqual(['s1'])
+  })
+})

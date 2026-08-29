@@ -594,6 +594,10 @@ export interface ProjectSummary {
   testCommand?: string
   /** Команда полного Automated QA; пустое значение использует `npm test`. */
   automatedQaCommand?: string
+  /** Способ исполнения этапа Automated QA; по умолчанию `command`. */
+  automatedQaMode?: import('./qa').AutomatedQaMode
+  /** Сценарий браузерной проверки для режима `playwright`. */
+  automatedQaScenario?: import('./qa').AutomatedQaScenario
   /** Остановить автопроход перед manual_qa. */
   autoPilotRequiresManualQa?: boolean
   /** Максимум автоматических возвратов на доработку. */
