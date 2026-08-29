@@ -83,15 +83,15 @@ describe('приглашения: приём', () => {
     expect(db.acceptProjectInvitation('erin', invite.token).projectId).toBe(p.id)
   })
 
-  it('истёкшее и повторно принятое отклоняются', () => {
+  it('истёкшее отклоняется, отозванное — тоже', () => {
     const p = db.createProject('alice', { name: 'P' })
     const short = db.createProjectInvitation('alice', p.id, 'bob', { ttlMs: 5 })!
     clock += 1000
     expect(() => db.acceptProjectInvitation('bob', short.token)).toThrow(/истёк/i)
 
-    const ok = db.createProjectInvitation('alice', p.id, 'carol')!
-    db.acceptProjectInvitation('carol', ok.token)
-    expect(() => db.acceptProjectInvitation('carol', ok.token)).toThrow(/недействительно/i)
+    const revoked = db.createProjectInvitation('alice', p.id, 'carol')!
+    db.revokeProjectInvitation('alice', p.id, revoked.invitation.id)
+    expect(() => db.acceptProjectInvitation('carol', revoked.token)).toThrow(/недействительно/i)
   })
 
   it('роль из приглашения переносится в членство', () => {
@@ -203,5 +203,30 @@ describe('удаление пользователя и приглашения', 
     db.deleteUserData('iris')
     withEmail('iris', 'iris@example.com')
     expect(db.listInvitationsForUser('iris')).toEqual([])
+  })
+
+  it('повторный переход по принятой ссылке ведёт в проект, а не в отказ', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const { token } = db.createProjectInvitation('alice', p.id, 'bob')!
+    expect(db.acceptProjectInvitation('bob', token)).toEqual({ projectId: p.id })
+    // Письмо остаётся в почте, вкладок может быть две — второй переход того же
+    // человека новых прав не даёт, но и отказом быть не должен.
+    expect(db.acceptProjectInvitation('bob', token)).toEqual({ projectId: p.id })
+  })
+
+  it('принятое приглашение чужому пользователю по-прежнему отказывает', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const { token } = db.createProjectInvitation('alice', p.id, 'bob')!
+    db.acceptProjectInvitation('bob', token)
+    expect(() => db.acceptProjectInvitation('carol', token)).toThrow()
+  })
+
+  it('исключённый участник по старой принятой ссылке обратно не входит', () => {
+    const p = db.createProject('alice', { name: 'P' })
+    const { token } = db.createProjectInvitation('alice', p.id, 'bob')!
+    db.acceptProjectInvitation('bob', token)
+    db.removeMember('alice', p.id, 'bob')
+    // Идемпотентность держится на членстве: без него ссылка снова недействительна.
+    expect(() => db.acceptProjectInvitation('bob', token)).toThrow('Приглашение недействительно')
   })
 })

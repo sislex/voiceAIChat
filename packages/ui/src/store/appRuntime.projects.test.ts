@@ -58,6 +58,20 @@ describe('voiceStore — проекты и доска', () => {
     })
     await store.actions.refreshMembership(id)
     expect(store.getState().projectDetail?.role).toBe('member')
+    // Молча исчезнувшая кнопка читается как поломка — смену роли проговариваем.
+    const notice = store.getState().notices.at(-1)
+    expect(notice?.kind).toBe('info')
+    expect(notice?.text).toContain('только для чтения')
+  })
+
+  it('роль не менялась — лишнего сообщения нет', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    const before = store.getState().notices.length
+    await store.actions.refreshMembership(id)
+    expect(store.getState().notices.length).toBe(before)
   })
 
   it('refreshMembership чужого проекта детали открытого не трогает', async () => {
