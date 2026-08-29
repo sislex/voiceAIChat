@@ -10,7 +10,8 @@ import type { AdminMakeStats, AdminMachineStats, AdminMachineStat, RoleCommandPo
 import { parseRoleCommandPolicies } from '@voicechat/shared'
 import { formatMakeMetrics } from '../make/metrics.js'
 import { formatMachineMetrics } from '../agents/metrics.js'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
+import type { Mailer } from '../users/mailer.js'
 import {
   LLM_RUNNER,
   REST,
@@ -209,9 +210,24 @@ export function registerAdminRoutes(
   registry: AgentRegistry,
   deployTrigger?: DeployTrigger,
   makeStats?: () => Promise<AdminMakeStats>,
-  mailConfigured = false
+  mailer?: Mailer,
+  publicUrl?: string | null
 ): void {
   const guard = { preHandler: requireAdmin }
+  const baseUrl = (req: FastifyRequest): string =>
+    (publicUrl ?? `${String(req.headers['x-forwarded-proto'] ?? req.protocol)}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`).replace(/\/$/, '')
+  const inviteLink = (req: FastifyRequest, token: string): string =>
+    `${baseUrl(req)}/#/invite/${encodeURIComponent(token)}`
+  const sendInvitation = async (req: FastifyRequest, to: string, token: string): Promise<void> => {
+    if (!mailer) throw new Error('mailer unavailable')
+    const link = inviteLink(req, token)
+    await mailer.send({
+      to,
+      subject: 'Приглашение в ChatAI',
+      text: `Вас приглашают зарегистрироваться в ChatAI.\n\nОткройте ссылку для регистрации:\n${link}\n\nЕсли вы не ждали приглашения — просто проигнорируйте письмо.`,
+      html: `<p>Вас приглашают зарегистрироваться в <b>ChatAI</b>.</p><p><a href="${link}" style="display:inline-block;padding:10px 18px;background:#4f7cff;color:#fff;border-radius:8px;text-decoration:none">Зарегистрироваться</a></p><p style="color:#666;font-size:12px">Или скопируйте адрес: ${link}<br>Если вы не ждали приглашения — просто проигнорируйте письмо.</p>`
+    })
+  }
 
   // Метрики Make (п.38): место, публикации, просмотры — по системе и по пользователям.
   // Сессии пользователей (auth-roadmap п.4): список и отзыв администратором.
@@ -223,13 +239,13 @@ export function registerAdminRoutes(
     return db.revokeSessionById(req.params.sid) ? { ok: true } : reply.code(404).send({ error: 'not found' })
   })
   // Открытая регистрация: включить/выключить и роль новых пользователей.
-  app.get(REST.adminSignup, guard, async () => ({ ...readSignupConfig(db), mailConfigured: Boolean(mailConfigured) }))
+  app.get(REST.adminSignup, guard, async () => ({ ...readSignupConfig(db), mailConfigured: Boolean(mailer?.configured) }))
   app.put<{ Body: { enabled?: boolean; role?: string } | undefined }>(REST.adminSignup, guard, async (req, reply) => {
     const role = req.body?.role
     if (role !== undefined && role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
     if (typeof req.body?.enabled === 'boolean') db.setAppConfig('signup.enabled', req.body.enabled ? '1' : '0')
     if (role) db.setAppConfig('signup.role', role)
-    return { ...readSignupConfig(db), mailConfigured: Boolean(mailConfigured) }
+    return { ...readSignupConfig(db), mailConfigured: Boolean(mailer?.configured) }
   })
   // Код сброса пароля (auth-roadmap п.10): администратор выдаёт одноразовый код на 24 часа, пользователь вводит его на экране входа.
   app.post<{ Params: { name: string } }>(REST.adminUserResetCode(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
@@ -242,13 +258,23 @@ export function registerAdminRoutes(
   })
   // Инвайты на саморегистрацию (auth-roadmap п.8): создать (роль, срок, лимит), список, отозвать.
   app.get(REST.adminInvites, guard, async () => ({ invites: db.listInvites() }))
-  app.post<{ Body: { role?: string; ttlHours?: number; maxUses?: number; note?: string } | undefined }>(REST.adminInvites, guard, async (req, reply) => {
+  app.post<{ Body: { role?: string; ttlHours?: number; maxUses?: number; note?: string; email?: string } | undefined }>(REST.adminInvites, guard, async (req, reply) => {
     const role = req.body?.role
     if (role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
+    const email = req.body?.email?.trim().toLowerCase() || undefined
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply.code(400).send({ error: 'bad email' })
     const ttlHours = Math.min(Math.max(Number(req.body?.ttlHours ?? 72), 1), 24 * 30)
     const maxUses = Math.min(Math.max(Number(req.body?.maxUses ?? 1), 1), 100)
-    const invite = db.createInvite({ token: randomBytes(18).toString('base64url'), role, createdBy: uid(req), ttlMs: ttlHours * 60 * 60_000, maxUses, note: req.body?.note })
-    db.logSecurityEvent({ user: uid(req), type: 'invite_created', ip: req.ip, details: `роль ${role}, ${maxUses} исп., ${ttlHours} ч` })
+    let invite = db.createInvite({ token: randomBytes(18).toString('base64url'), role, createdBy: uid(req), ttlMs: ttlHours * 60 * 60_000, maxUses, note: req.body?.note, email })
+    if (email) {
+      try {
+        await sendInvitation(req, email, invite.token)
+        invite = db.markInviteEmailed(invite.token) ?? invite
+      } catch (error) {
+        app.log.warn({ err: error }, 'не удалось отправить системный инвайт')
+      }
+    }
+    db.logSecurityEvent({ user: uid(req), type: 'invite_created', ip: req.ip, details: `роль ${role}, ${maxUses} исп., ${ttlHours} ч${email ? `, email ${email}` : ''}` })
     return invite
   })
   app.delete<{ Params: { token: string } }>(REST.adminInvite(':token').replace('%3Atoken', ':token'), guard, async (req, reply) => {

@@ -848,6 +848,10 @@ export class VoiceChatDb {
     // Email пользователя (регистрация с подтверждением); уникальность — через индекс.
     if (userCols.length && !userCols.some((c) => c.name === 'email')) this.db.exec(`ALTER TABLE users ADD COLUMN email TEXT`)
     this.db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL`)
+    // Адрес и факт успешной отправки системного инвайта (auth-roadmap п.9).
+    const inviteCols = this.db.prepare(`PRAGMA table_info(invites)`).all() as Array<{ name: string }>
+    if (inviteCols.length && !inviteCols.some((c) => c.name === 'email')) this.db.exec(`ALTER TABLE invites ADD COLUMN email TEXT`)
+    if (inviteCols.length && !inviteCols.some((c) => c.name === 'emailed_at')) this.db.exec(`ALTER TABLE invites ADD COLUMN emailed_at INTEGER`)
     const taskLinkCols = this.db.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'source_task_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
     const improvementCols = this.db.prepare(`PRAGMA table_info(task_improvements)`).all() as Array<{ name: string }>
@@ -2928,16 +2932,21 @@ export class VoiceChatDb {
 
   // ---- Инвайты (auth-roadmap п.8) --------------------------------------------
 
-  createInvite(input: { token: string; role: UserRole; createdBy: string; ttlMs: number; maxUses: number; note?: string }): InviteInfo {
+  createInvite(input: { token: string; role: UserRole; createdBy: string; ttlMs: number; maxUses: number; note?: string; email?: string }): InviteInfo {
     const now = Date.now()
-    this.db.prepare(`INSERT INTO invites (token, role, created_by, created_at, expires_at, max_uses, uses, note) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`)
-      .run(input.token, input.role, input.createdBy, now, now + input.ttlMs, Math.max(1, input.maxUses), (input.note ?? '').slice(0, 200))
+    this.db.prepare(`INSERT INTO invites (token, role, created_by, created_at, expires_at, max_uses, uses, note, email) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)`)
+      .run(input.token, input.role, input.createdBy, now, now + input.ttlMs, Math.max(1, input.maxUses), (input.note ?? '').slice(0, 200), input.email || null)
     return this.getInvite(input.token)!
   }
 
   getInvite(token: string): InviteInfo | null {
-    const r = this.db.prepare(`SELECT * FROM invites WHERE token = ?`).get(token) as { token: string; role: string; created_by: string; created_at: number; expires_at: number; max_uses: number; uses: number; note: string } | undefined
-    return r ? { token: r.token, role: r.role as UserRole, createdBy: r.created_by, createdAt: r.created_at, expiresAt: r.expires_at, maxUses: r.max_uses, uses: r.uses, note: r.note } : null
+    const r = this.db.prepare(`SELECT * FROM invites WHERE token = ?`).get(token) as { token: string; role: string; created_by: string; created_at: number; expires_at: number; max_uses: number; uses: number; note: string; email: string | null; emailed_at: number | null } | undefined
+    return r ? { token: r.token, role: r.role as UserRole, createdBy: r.created_by, createdAt: r.created_at, expiresAt: r.expires_at, maxUses: r.max_uses, uses: r.uses, note: r.note, email: r.email, emailedAt: r.emailed_at } : null
+  }
+
+  markInviteEmailed(token: string): InviteInfo | null {
+    this.db.prepare(`UPDATE invites SET emailed_at = ? WHERE token = ?`).run(Date.now(), token)
+    return this.getInvite(token)
   }
 
   listInvites(): InviteInfo[] {

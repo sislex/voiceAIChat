@@ -240,14 +240,16 @@ describe('UsersAdmin — журнал безопасности (auth-roadmap п.
 describe('UsersAdmin — инвайт-ссылки (auth-roadmap п.8)', () => {
   it('раскрытие загружает список, форма создаёт инвайт с ролью/сроком/лимитом, «Отозвать» удаляет', async () => {
     const onLoadInvites = vi.fn(); const onCreateInvite = vi.fn(); const onDeleteInvite = vi.fn()
-    renderAdmin({ isAdmin: true, onLoadInvites, onCreateInvite, onDeleteInvite, invites: [{ token: 'abc', role: 'tester', createdBy: 'admin', createdAt: 1, expiresAt: 9_999_999_999_999, maxUses: 2, uses: 0, note: 'QA' }] })
+    renderAdmin({ isAdmin: true, onLoadInvites, onCreateInvite, onDeleteInvite, invites: [{ token: 'abc', role: 'tester', createdBy: 'admin', createdAt: 1, expiresAt: 9_999_999_999_999, maxUses: 2, uses: 0, note: 'QA', email: 'guest@example.com', emailedAt: 2 }] })
     const box = screen.getByTestId('admin-invites')
     await userEvent.click(within(box).getByText(/Инвайт-ссылки/))
     await waitFor(() => expect(onLoadInvites).toHaveBeenCalled())
     await userEvent.selectOptions(within(box).getByLabelText('Роль по инвайту'), 'observer')
+    await userEvent.type(within(box).getByLabelText('Email получателя'), 'new@example.com')
     await userEvent.type(within(box).getByLabelText('Заметка к инвайту'), 'гость')
     await userEvent.click(within(box).getByRole('button', { name: 'Создать ссылку' }))
-    expect(onCreateInvite).toHaveBeenCalledWith({ role: 'observer', ttlHours: 72, maxUses: 1, note: 'гость' })
+    expect(onCreateInvite).toHaveBeenCalledWith({ role: 'observer', ttlHours: 72, maxUses: 1, note: 'гость', email: 'new@example.com' })
+    expect(within(box).getByText('guest@example.com · email отправлен')).toBeInTheDocument()
     expect(within(box).getByText(/#\/invite\/abc/)).toBeInTheDocument()
     await userEvent.click(within(box).getByRole('button', { name: 'Отозвать' }))
     expect(onDeleteInvite).toHaveBeenCalledWith('abc')
