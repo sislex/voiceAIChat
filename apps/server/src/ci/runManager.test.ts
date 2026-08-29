@@ -12,6 +12,7 @@ import { signToken } from '../users/accounts.js'
 import type { CommandExecutor } from './types.js'
 import type { LlmClient, LlmRequest } from '../claude/types.js'
 import { ciToolBroker } from './ciCommandsMcp.js'
+import { createCiRunManager } from './runManager.js'
 
 const SECRET = 'ci-secret'
 let app: FastifyInstance, db: VoiceChatDb, admin: string
@@ -143,6 +144,48 @@ function setup() {
   const task = db.createTask('admin', project.id, { columnId: ready.id, title: 'T1' })!
   return { project, task, agent, readyColId: ready.id }
 }
+
+it('новый менеджер после рестарта возвращает незапущенный ран в очередь и прерывает активный', async () => {
+  const { project, task, agent, readyColId } = setup()
+  const development = db.getBoard('admin', project.id)!.columns.find((column) => column.semanticType === 'development')!
+  db.moveTask('admin', project.id, task.id, { columnId: development.id })
+  const queued = db.createCiRun({
+    projectId: project.id, taskId: task.id, agentId: agent.id, triggeredBy: 'admin',
+    prevColumnId: readyColId, runColumnId: development.id,
+    slotProgress: { done: 0, total: 2, phase: 'В очереди' }
+  })
+  const activeTask = db.createTask('admin', project.id, { columnId: development.id, title: 'Уже начата' })!
+  const interrupted = db.createCiRun({
+    projectId: project.id, taskId: activeTask.id, agentId: agent.id, triggeredBy: 'admin',
+    prevColumnId: readyColId, runColumnId: development.id,
+    slotProgress: { done: 0, total: 2, phase: 'Работа' }
+  })
+  db.updateCiRun(interrupted.id, { status: 'running', startedAt: Date.now() - 1000 })
+  db.addCiRunStep({ runId: interrupted.id, slot: null, position: 0, kind: 'model_work', title: 'Работа модели', status: 'running' })
+
+  let columnAtModel: string | null = null
+  const restarted = createCiRunManager({
+    db, executor: ciExecutor, boardChanged: () => {},
+    modelWork: async () => {
+      columnAtModel = db.getCiTask('admin', project.id, task.id)?.columnId ?? null
+      return { ok: true }
+    },
+    modelSummary: async () => 'готово'
+  })
+  const result = restarted.reconcile()
+
+  expect(result.queued.map((run) => run.id)).toEqual([queued.id])
+  expect(result.interrupted.map((run) => run.id)).toEqual([interrupted.id])
+  expect(db.getCiRunRaw(queued.id)?.status).toBe('queued')
+  expect(db.getCiTask('admin', project.id, task.id)?.columnId).toBe(readyColId)
+  expect(db.getCiRunRaw(interrupted.id)).toMatchObject({
+    status: 'interrupted',
+    slotProgress: { phase: 'Прерван перезапуском сервера' }
+  })
+
+  await vi.waitFor(() => expect(db.getCiRunRaw(queued.id)?.status).not.toBe('queued'))
+  expect(columnAtModel).toBe(development.id)
+})
 
 it('каталог машин задачи объединяет личные и проектные машины без дублей', async () => {
   const { project, task } = setup()

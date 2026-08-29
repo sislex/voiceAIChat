@@ -5698,24 +5698,35 @@ export class VoiceChatDb {
   }
 
   /**
-   * Раны, оставшиеся активными после остановки процесса (рестарт контейнера,
-   * падение): исполнителя в памяти уже нет, а карточка задачи всё ещё считает CI
-   * занятым и не даёт запустить его заново. При старте сервера закрываем такие
-   * раны и их незавершённые шаги.
+   * Восстанавливает CI после потери process-local исполнителей. Раны, которые ещё
+   * не получили started_at, остаются в очереди; начавшиеся закрываются отдельным
+   * исходом interrupted, чтобы рестарт не выглядел ошибкой задачи.
    */
-  failInterruptedCiRuns(): CiRun[] {
+  reconcileInterruptedCiRuns(): { queued: CiRun[]; interrupted: CiRun[] } {
     const rows = this.db
-      .prepare(`SELECT * FROM ci_runs WHERE status IN ('queued', 'running', 'awaiting_input')`)
+      .prepare(`SELECT * FROM ci_runs WHERE status IN ('queued', 'running', 'awaiting_input') ORDER BY created_at, rowid`)
       .all() as CiRunRow[]
     const ts = this.now()
+    const queued: CiRun[] = []
+    const interrupted: CiRun[] = []
     for (const r of rows) {
-      this.db.prepare(`UPDATE ci_run_steps SET status = 'failed', finished_at = ? WHERE run_id = ? AND status IN ('running', 'awaiting_input')`).run(ts, r.id)
+      if (r.status === 'queued' && r.started_at == null) {
+        const run = this.getCiRunRaw(r.id)
+        if (run) queued.push(run)
+        this.addCiEvent({ projectId: r.project_id, runId: r.id, type: 'run.requeued', actorType: 'system', payload: { reason: 'server_restart' } })
+        continue
+      }
+      this.db.prepare(`UPDATE ci_run_steps SET status = 'interrupted', finished_at = ? WHERE run_id = ? AND status IN ('running', 'awaiting_input')`).run(ts, r.id)
       this.db.prepare(`UPDATE ci_run_steps SET status = 'skipped' WHERE run_id = ? AND status = 'queued'`).run(r.id)
       this.db.prepare(`UPDATE ci_interactions SET status = 'cancelled', answered_at = ? WHERE run_id = ? AND status = 'pending'`).run(ts, r.id)
-      this.db.prepare(`UPDATE ci_runs SET status = 'failed', finished_at = ?, duration_ms = ? WHERE id = ?`).run(ts, r.started_at ? ts - r.started_at : null, r.id)
-      this.addCiEvent({ projectId: r.project_id, runId: r.id, type: 'run.finished', actorType: 'system', payload: { status: 'failed', reason: 'server_restart' } })
+      const progress = parseSlotProgress(r.slot_progress_json)
+      this.db.prepare(`UPDATE ci_runs SET status = 'interrupted', slot_progress_json = ?, finished_at = ?, duration_ms = ? WHERE id = ?`)
+        .run(JSON.stringify({ ...progress, phase: 'Прерван перезапуском сервера', fixing: false }), ts, r.started_at ? ts - r.started_at : null, r.id)
+      this.addCiEvent({ projectId: r.project_id, runId: r.id, type: 'run.finished', actorType: 'system', payload: { status: 'interrupted', reason: 'server_restart' } })
+      const run = this.getCiRunRaw(r.id)
+      if (run) interrupted.push(run)
     }
-    return rows.map((r) => this.getCiRunRaw(r.id)).filter((r): r is CiRun => r !== null)
+    return { queued, interrupted }
   }
 
   addCiRunStep(args: { runId: string; slot: CiSlot | null; position: number; kind: CiStepKind; parentStepId?: string | null; initiatedBy?: CiInitiatedBy; commandId?: string | null; commandSnapshot?: string | null; title: string; workdir?: string | null; status?: CiStatus }): CiRunStep {
@@ -8456,7 +8467,7 @@ function mapCiCommand(r: CiCommandRow): CiCommand {
 }
 
 function normCiStatus(s: string): CiStatus {
-  return s === 'running' || s === 'awaiting_input' || s === 'success' || s === 'failed' || s === 'cancelled' || s === 'timeout' || s === 'skipped' ? s : 'queued'
+  return s === 'running' || s === 'awaiting_input' || s === 'success' || s === 'failed' || s === 'interrupted' || s === 'cancelled' || s === 'timeout' || s === 'skipped' ? s : 'queued'
 }
 /** Режим БЗ из строки БД: неизвестное значение — безопасный дефолт `auto`. */
 function normKbContextMode(value: string | KbContextMode | null | undefined): KbContextMode {
