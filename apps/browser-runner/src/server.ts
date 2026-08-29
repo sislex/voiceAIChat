@@ -1,12 +1,53 @@
 import Fastify, { type FastifyInstance } from 'fastify'
+import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { chromium } from 'playwright'
 import type { BrowserCommandRequest } from '@voicechat/shared'
 import { registerRunnerAuth } from './security.js'
 import { BrowserSessionManager, type StartSessionRequest } from './sessionManager.js'
+
+const playwrightVersion = createRequire(import.meta.url)('playwright/package.json') as { version?: string }
+
+/** Что health знает о браузере: есть ли исполняемый файл и запускается ли он. */
+export interface BrowserProbe {
+  ok: boolean
+  browser: { present: boolean; version: string | null; error?: string }
+  launch: { ok: boolean; error?: string }
+}
 
 export interface BuildBrowserRunnerOptions {
   token: string
   profilesRoot: string
   sessions?: BrowserSessionManager
+  /** Подмена проверки браузера в тестах: настоящий запуск там не нужен. */
+  probe?: () => Promise<BrowserProbe>
+}
+
+/**
+ * Успешный запуск кэшируется: поднимать Chromium на каждый health-запрос (у
+ * compose это раз в полминуты) незачем. Неуспешный не кэшируется — сбой может
+ * быть разовым, и сервис должен уметь вернуться в строй сам.
+ */
+let cachedProbe: BrowserProbe | null = null
+async function defaultProbe(): Promise<BrowserProbe> {
+  if (cachedProbe) return cachedProbe
+  const version = (playwrightVersion as { version?: string }).version ?? null
+  let executable = ''
+  try { executable = chromium.executablePath() } catch (error) {
+    return { ok: false, browser: { present: false, version, error: error instanceof Error ? error.message.split('\n')[0] : 'no executable path' }, launch: { ok: false } }
+  }
+  if (!existsSync(executable)) {
+    // Ровно этот случай: образ и пакет разъехались по версии.
+    return { ok: false, browser: { present: false, version, error: `Исполняемый файл браузера не найден: ${executable}` }, launch: { ok: false } }
+  }
+  try {
+    const browser = await chromium.launch({ headless: true })
+    await browser.close()
+  } catch (error) {
+    return { ok: false, browser: { present: true, version }, launch: { ok: false, error: error instanceof Error ? error.message.split('\n')[0] : 'launch failed' } }
+  }
+  cachedProbe = { ok: true, browser: { present: true, version }, launch: { ok: true } }
+  return cachedProbe
 }
 
 export async function buildBrowserRunner(options: BuildBrowserRunnerOptions): Promise<FastifyInstance> {
@@ -14,12 +55,15 @@ export async function buildBrowserRunner(options: BuildBrowserRunnerOptions): Pr
   const sessions = options.sessions ?? new BrowserSessionManager(options.profilesRoot)
   registerRunnerAuth(app, options.token)
 
-  app.get('/v1/health', async () => ({
-    ok: true,
-    browser: { present: true, version: null },
-    launch: { ok: true },
-    sessions: sessions.count()
-  }))
+  // Health обязан проверять то, ради чего сервис существует. Раньше он отвечал
+  // литералами `present: true, launch.ok: true`, поэтому контейнер с
+  // несовпадающей версией браузера считался здоровым, а падала только первая
+  // сессия — с разъехавшимися версиями Playwright это и произошло.
+  app.get('/v1/health', async (_request, reply) => {
+    const probe = await options.probe?.() ?? await defaultProbe()
+    if (!probe.ok) reply.code(503)
+    return { ...probe, sessions: sessions.count() }
+  })
   app.post<{ Body: StartSessionRequest }>('/v1/sessions', async (request, reply) => {
     try { return await sessions.start(request.body) }
     catch (error) { return reply.code(503).send({ error: 'start_failed', message: error instanceof Error ? error.message : 'unknown error' }) }
