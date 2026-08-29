@@ -41,6 +41,10 @@ describe('PreviewActionRelay', () => {
     relay.resolve(U, first.requestId, { ok: true, result: { url: 'https://a.b' } })
     const outcome = await promise
     expect(outcome).toEqual({ ok: true, result: { url: 'https://a.b' } })
+    expect(got.filter((message) => message.t === 'reader.changed')).toHaveLength(2)
+    expect(got.find((message) => message.t === 'reader.changed')).toEqual(
+      expect.objectContaining({ t: 'reader.changed', conversationId: CONV, address: 'https://a.b', navigated: false, action: { kind: 'read' } })
+    )
     expect(relay.pendingCount()).toBe(0)
   })
 
@@ -335,6 +339,23 @@ describe('previewMcp — инструменты browser', () => {
     const result = await call('type', { selector: '#q', text: 'ноутбук', submit: true })
     expect(seen).toEqual({ kind: 'type', selector: '#q', text: 'ноутбук', submit: true })
     expect(JSON.parse(result.text).submitted).toBe(true)
+  })
+
+  it('evaluate проходит гейт и требует явное подтверждение', async () => {
+    let confirmed = false
+    await makeApp({
+      machineOf: () => null,
+      testUsersOf: () => [],
+      gateEvaluate: (_entry, _code, value) => value ? { allowed: true } : { allowed: false, needsConfirmation: true, reason: 'опасный код' }
+    })
+    client = (message) => { confirmed = true; relay.resolve(U, message.requestId, { ok: true, result: { page: { url: 'https://a.b', title: 'A' }, value: '1' } }) }
+    const denied = await call('evaluate', { code: 'document.body.remove()' })
+    expect(denied.isError).toBe(true)
+    expect(denied.text).toContain('подтверждение')
+    expect(confirmed).toBe(false)
+    const allowed = await call('evaluate', { code: 'document.body.remove()', confirm: true })
+    expect(allowed.isError).not.toBe(true)
+    expect(confirmed).toBe(true)
   })
 
   it('network/console/evaluate/forward/a11y доходят до клиента как действия', async () => {
