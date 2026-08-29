@@ -33,6 +33,7 @@ import { encodeAgentConnection } from '@shared/agentProtocol'
 import type { RendererApi } from '@shared/ipc'
 import type { MessageSearchResult } from '@shared/types'
 import { authHeaders } from './session'
+import { notifyUnauthorized } from './session'
 
 export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi {
   /**
@@ -49,6 +50,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     if (init?.body != null) headers['content-type'] = 'application/json'
     const res = await fetch(httpBase + path, { ...init, headers })
     const text = await res.text()
+    if (res.status === 401) notifyUnauthorized()
     if (!res.ok) {
       let detail = ''
       try {
