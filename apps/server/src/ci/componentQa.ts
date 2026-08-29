@@ -23,6 +23,7 @@ export interface ComponentQaRunnerDeps {
   timeoutMs?: number
   now?: () => number
   boardChanged?: (projectId: string) => void
+  completed?: (runId: string, userId: string, passed: boolean, reason: string) => void
 }
 
 export interface ComponentQaRunner {
@@ -85,10 +86,65 @@ export function createComponentQaRunner(deps: ComponentQaRunnerDeps): ComponentQ
         failureClassification: passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect',
         blockerReasons: infrastructure && failedStage ? [failedStage.diagnostic] : []
       })
+      deps.completed?.(runId, userId, passed, passed ? 'Component QA пройден' : failedStage?.diagnostic || 'Component QA failed')
     })().catch((error) => {
       const current = deps.db.getComponentQaRun(userId, runId)
       if (current?.status === 'running') deps.db.finishComponentQaRun(userId, runId, { status: 'blocked', scenarios: current.scenarios.map((item) => ({ ...item, status: 'blocked', diagnostic: String(error) })), commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })
     }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId) })
   }
   return { launch, cancel: (runId) => controllers.get(runId)?.abort() }
+}
+
+export interface AutomatedQaRunnerDeps {
+  db: {
+    automatedQaExecutionContext(runId: string): { agentId: string; workdir: string; command: string } | null
+    getQaStageRun(userId: string, runId: string): { projectId: string; status: string } | null
+    markAutomatedQaRunning(runId: string): void
+    appendAutomatedQaLog(runId: string, stream: 'out' | 'err' | 'system', text: string): void
+    completeQaStageRun(userId: string, runId: string, result: Record<string, unknown>): unknown
+    updateQaStageRun(runId: string, patch: { status?: 'failed' | 'cancelled'; currentStep?: string; error?: string | null }): void
+  }
+  executor: CommandExecutor
+  timeoutMs?: number
+  boardChanged?: (projectId: string) => void
+  completed?: (runId: string, userId: string, passed: boolean, reason: string) => void
+}
+
+/** Реальный Automated QA: одна настраиваемая команда, потоковый NDJSON-friendly
+ * лог в qa_stage_runs и жёсткий общий timeout. */
+export function createAutomatedQaRunner(deps: AutomatedQaRunnerDeps): ComponentQaRunner {
+  const controllers = new Map<string, AbortController>()
+  return {
+    launch(runId, userId) {
+      if (controllers.has(runId)) return
+      const run = deps.db.getQaStageRun(userId, runId)
+      const context = deps.db.automatedQaExecutionContext(runId)
+      if (!run || !context) {
+        if (run) deps.db.updateQaStageRun(runId, { status: 'failed', currentStep: 'workspace', error: 'Development workspace недоступен' })
+        if (run) deps.boardChanged?.(run.projectId)
+        deps.completed?.(runId, userId, false, 'Development workspace недоступен')
+        return
+      }
+      const controller = new AbortController()
+      controllers.set(runId, controller)
+      deps.db.markAutomatedQaRunning(runId)
+      deps.db.appendAutomatedQaLog(runId, 'system', `$ ${context.command}\n`)
+      deps.boardChanged?.(run.projectId)
+      void deps.executor.run({ agentId: context.agentId, script: context.command, workdir: context.workdir, env: { CI: '1' }, timeoutMs: deps.timeoutMs ?? 30 * 60_000 }, (chunk) => {
+        deps.db.appendAutomatedQaLog(runId, 'out', chunk)
+      }, controller.signal).then((result) => {
+        if (controller.signal.aborted) return
+        const passed = result.exitCode === 0 && !result.timedOut
+        const reason = result.timedOut ? 'Лимит времени Automated QA исчерпан' : result.exitCode == null ? 'Исполнитель Automated QA отключился' : passed ? 'Автотесты успешно пройдены' : `Команда автотестов завершилась с кодом ${result.exitCode}`
+        if (passed) deps.db.completeQaStageRun(userId, runId, { gatePassed: true, command: context.command, exitCode: 0 })
+        else deps.db.updateQaStageRun(runId, { status: 'failed', currentStep: 'tests', error: reason })
+        deps.completed?.(runId, userId, passed, reason)
+      }).catch((error) => {
+        const reason = error instanceof Error ? error.message : String(error)
+        deps.db.updateQaStageRun(runId, { status: 'failed', currentStep: 'executor', error: reason })
+        deps.completed?.(runId, userId, false, reason)
+      }).finally(() => { controllers.delete(runId); deps.boardChanged?.(run.projectId) })
+    },
+    cancel(runId) { controllers.get(runId)?.abort() }
+  }
 }

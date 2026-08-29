@@ -14,7 +14,7 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(status).send({ error: message })
 }
 
-export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, boardChanged?: (projectId:string)=>void): void {
+export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
     const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
@@ -216,18 +216,22 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
     try {
       const stage = stageOf(req.params.stage)
       if (!stage) return reply.code(404).send({ error: 'unknown QA stage' })
-      const run=db.startQaStageRun(uid(req), req.params.projectId, req.params.taskId, stage)
+      const userId = uid(req)
+      const run=db.startQaStageRun(userId, req.params.projectId, req.params.taskId, stage)
+      if (stage === 'automated_qa' && (run.status === 'queued' || run.status === 'running')) launchAutomatedQa?.(run.id, userId)
       boardChanged?.(req.params.projectId)
       return reply.code(202).send(run)
     } catch (error) { return qaError(reply, error) }
   })
   app.delete<{ Params: { runId: string } }>('/api/qa/runs/:runId', async (req, reply) => {
-    try { const run=db.cancelQaStageRun(uid(req), req.params.runId); if(run)boardChanged?.(run.projectId); return run ?? reply.code(404).send({ error: 'run not found' }) }
+    try { cancelAutomatedQa?.(req.params.runId); const run=db.cancelQaStageRun(uid(req), req.params.runId); if(run)boardChanged?.(run.projectId); return run ?? reply.code(404).send({ error: 'run not found' }) }
     catch (error) { return qaError(reply, error) }
   })
   app.post<{ Params: { runId: string } }>('/api/qa/runs/:runId/retry', async (req, reply) => {
     try {
-      const run = db.retryQaStageRun(uid(req), req.params.runId)
+      const userId = uid(req)
+      const run = db.retryQaStageRun(userId, req.params.runId)
+      if (run?.stage === 'automated_qa' && (run.status === 'queued' || run.status === 'running')) launchAutomatedQa?.(run.id, userId)
       if (run) boardChanged?.(run.projectId)
       return run ? reply.code(202).send(run) : reply.code(404).send({ error: 'run not found' })
     } catch (error) { return qaError(reply, error) }

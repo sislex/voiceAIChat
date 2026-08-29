@@ -146,7 +146,7 @@ describe('WS: живое обновление доски', () => {
     ws.close()
   })
 
-  it('обновляет нормализованный результат после старта и отмены QA-рана', async () => {
+  it('обновляет нормализованный результат при недоступном workspace Automated QA', async () => {
     const p = await createProject()
     const auth = { authorization: `Bearer ${adminTok}` }
     const board = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
@@ -162,13 +162,13 @@ describe('WS: живое обновление доски', () => {
     const run = started.json() as { id: string }
     expect(await active).toEqual({ t: 'board.changed', projectId: p.id })
     const activeBoard = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
-    expect(activeBoard.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'active' })
+    expect(activeBoard.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'failure' })
 
     const cancelled = waitBoardChanged(ws, p.id)
     expect((await app.inject({ method: 'DELETE', url: `/api/qa/runs/${run.id}`, headers: auth })).statusCode).toBe(200)
     expect(await cancelled).toEqual({ t: 'board.changed', projectId: p.id })
     const cancelledBoard = (await app.inject({ method: 'GET', url: `/api/projects/${p.id}/board`, headers: auth })).json() as Board
-    expect(cancelledBoard.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'cancelled' })
+    expect(cancelledBoard.tasks.find((item) => item.id === task.id)?.latestRunResult).toMatchObject({ id: run.id, outcome: 'failure' })
     ws.close()
   })
 

@@ -583,6 +583,12 @@ export interface ProjectSummary {
   mergeTransport: 'local' | 'github_pull_request'
   agentPlanApprovalMode: 'manual' | 'automatic'
   testCommand?: string
+  /** Команда полного Automated QA; пустое значение использует `npm test`. */
+  automatedQaCommand?: string
+  /** Остановить автопроход перед manual_qa. */
+  autoPilotRequiresManualQa?: boolean
+  /** Максимум автоматических возвратов на доработку. */
+  autoPilotFixLimit?: number
   productionDeployCommand?: string
   /** Отдельная машина, с которой разрешён только production deploy. */
   productionAgentId?: string | null
@@ -782,6 +788,10 @@ export interface Task {
   dueDate: number | null
   /** Помечена флагом «внимание» (Jira flag). */
   flagged: boolean
+  /** Карточка автоматически проходит development и QA-конвейер. */
+  autoPilot?: boolean
+  /** Уже использованные автоматические круги доработки. */
+  autoPilotFixCycles?: number
   /**
    * Момент попадания в колонку с семантикой `done` (unix ms) или null, если
    * задача не завершена. Отсчёт срока, после которого карточка уходит с доски.

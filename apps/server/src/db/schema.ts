@@ -420,6 +420,9 @@ CREATE TABLE IF NOT EXISTS projects (
   merge_transport TEXT NOT NULL DEFAULT 'local',
   agent_plan_approval_mode TEXT NOT NULL DEFAULT 'manual',
   test_command TEXT NOT NULL DEFAULT '',
+  automated_qa_command TEXT NOT NULL DEFAULT 'npm test',
+  autopilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0,
+  autopilot_fix_limit INTEGER NOT NULL DEFAULT 3,
   production_deploy_command TEXT NOT NULL DEFAULT '',
   production_agent_id TEXT,
   production_environment_mode TEXT NOT NULL DEFAULT 'legacy',
@@ -552,6 +555,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   story_points REAL,
   due_date    INTEGER,
   flagged     INTEGER NOT NULL DEFAULT 0,
+  auto_pilot  INTEGER NOT NULL DEFAULT 0,
+  auto_pilot_fix_cycles INTEGER NOT NULL DEFAULT 0,
   -- Момент попадания в колонку с семантикой done (NULL — задача не завершена).
   done_at     INTEGER,
   preview_ready INTEGER NOT NULL DEFAULT 0,
