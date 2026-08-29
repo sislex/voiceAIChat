@@ -7925,6 +7925,16 @@ export class VoiceChatDb {
       this.recordAutoPilotEvent(projectId, taskId, 'autopilot.stopped', { stage, runId, reason, cycles, limit })
       return { decisionRequired: true }
     }
+    // Задачу могли увести вручную, пока шёл этап: из `awaiting_merge`, `merge` и
+    // `done` пути в разработку нет. Раньше обработчик бросал исключение прямо в
+    // колбэк завершения рана — падал не автопроход, а само завершение.
+    const current = this.getBoard(userId, projectId)?.columns.find((column) => column.id === task.columnId)
+    if (!current || !canTransitionWorkflow(current.semanticType, 'development', 'automation')) {
+      this.recordAutoPilotEvent(projectId, taskId, 'autopilot.stopped', {
+        stage, runId, reason, cycles, limit, blockedFrom: current?.semanticType ?? 'unknown'
+      })
+      return { decisionRequired: true }
+    }
     const backlog = this.getColumnIdBySemantic(projectId, 'backlog')
     if (!backlog) throw new Error('backlog column not found')
     const bug = this.createTask(userId, projectId, { columnId: backlog, title: `Bug: ${stage} — ${task.title}`, description: `Автопроход исходной задачи завершился ошибкой.\n\n- Этап: ${stage}\n- Причина: ${reason}\n- Ран: ${runLink}`, type: 'task', labels: ['bug'] })
