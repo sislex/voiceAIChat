@@ -14,6 +14,7 @@ import type { PreparationClarificationNotification } from '@shared/qa'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetUserAction } from '@shared/widgetAssistant'
 import type { HealthResponse } from '@shared/protocol'
 import type { PreviewElementPayload } from '@shared/previewInspector'
+import type { PreviewAction } from '@shared/previewActions'
 import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration, type WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
 import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
@@ -342,12 +343,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     const saved = Number(globalThis.localStorage?.getItem('voicechat.previewWidth'))
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
   })
-  useEffect(() => { setPreviewElement(null) }, [chat.activeId])
+  useEffect(() => { setPreviewElement(null); setReaderActions([]); setReaderPageError(null) }, [chat.activeId])
   // Действия модели в превью (mcp__browser__*): регистрацию iframe создаёт
   // мост WebReaderFrame (registrationId ротируется на каждый boot Reader).
   // Хранение её вместе с conversationId не даёт переключившемуся чату обратиться
   // к host, который ещё размонтируется, и держит Reader-маршруты источником истины.
   const previewRunnerRef = useRef<ReaderHostRegistration | null>(null)
+  const [readerRevision, setReaderRevision] = useState(0)
+  const [readerActions, setReaderActions] = useState<Array<{ id: string; action: PreviewAction; address: string | null; title: string | null }>>([])
+  const [readerPageError, setReaderPageError] = useState<string | null>(null)
   // Платформенная привязка WebReaderFrame: пакет Reader не трогает window сам.
   const readerPlatform = useMemo(() => ({
     origin: window.location.origin,
@@ -376,6 +380,23 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     window.addEventListener('focus', claimActiveTab)
     return () => window.removeEventListener('focus', claimActiveTab)
   }, [])
+  useEffect(() => {
+    const bridge = window.preview
+    if (!bridge?.onChanged) return
+    return bridge.onChanged((message) => {
+      if (message.conversationId !== chat.activeId) return
+      setReaderActions((items) => [...items, { id: globalThis.crypto.randomUUID(), action: message.action, address: message.address, title: message.title }].slice(-20))
+      if (message.navigated) setReaderRevision((value) => value + 1)
+      if (message.action.kind !== 'errors') {
+        void previewRunnerRef.current?.run({ kind: 'errors' }).then((outcome) => {
+          const result = outcome.result as { errors?: Array<{ message?: string; text?: string }> } | undefined
+          const first = result?.errors?.[0]
+          setReaderPageError(first?.message ?? first?.text ?? null)
+        })
+      }
+    })
+  }, [chat.activeId])
+
   useEffect(() => {
     const bridge = window.preview
     if (!bridge) return
@@ -1947,7 +1968,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
       {sessionsOpen && window.session?.sessions && window.session.logoutAll && window.session.revokeSession && <SessionsDialog load={window.session.sessions} revoke={window.session.revokeSession} logoutAll={window.session.logoutAll} onClose={() => setSessionsOpen(false)} />}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} />}
-      {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
+      {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
       </div>
       )}
 

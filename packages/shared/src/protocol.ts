@@ -668,6 +668,8 @@ export type ServerMessage =
    * остальные отвечают preview.result с ok:false — сервер ждёт первый успех.
    */
   | { t: 'preview.action'; conversationId: string; requestId: string; action: PreviewAction }
+  /** Reader: действие изменило/прочитало живую страницу — панель синхронизирует кадр и ленту. */
+  | { t: 'reader.changed'; conversationId: string; address: string | null; title: string | null; navigated: boolean; action: PreviewAction }
   /** Make: файлы проекта изменились (ассистентом или пользователем) — превью и дерево обновляются. */
   | { t: 'make.changed'; conversationId: string; rev: number; paths: string[] }
   /** Presence вкладок проекта Make (roadmap-2 п.14): кто открыл проект и какой файл правит. */
@@ -751,5 +753,8 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'merge.snapshot',
   'chat.message',
   'kb.usage',
-  'preview.action'
+  'preview.action',
+  'reader.changed',
+  'make.changed',
+  'make.presence'
 ]

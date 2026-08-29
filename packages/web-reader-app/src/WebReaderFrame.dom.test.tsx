@@ -90,6 +90,14 @@ describe('WebReaderFrame', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith('https://new.example/'))
   })
 
+  it('показывает понятную ленту действий и позволяет повторить шаг', async () => {
+    const repeat = vi.fn()
+    render(<WebReaderFrame platform={platform} conversationId="conv-1" conversationUrl={null} projectUrl={null} onSave={vi.fn()} actions={[{ id: 'a1', action: { kind: 'click', text: 'Купить' }, address: null, title: null }]} onRepeatAction={repeat} />)
+    expect(screen.getByLabelText('Действия ассистента')).toHaveTextContent('Нажал Купить')
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(repeat).toHaveBeenCalledWith({ kind: 'click', text: 'Купить' })
+  })
+
   it('размонтирование dispose-ит мост: регистрация снимается, pending закрывается', async () => {
     const register = vi.fn<(registration: ReaderHostRegistration | null) => void>()
     const view = render(<WebReaderFrame platform={platform} conversationId="conv-1" conversationUrl={null} projectUrl={null} onSave={vi.fn()} onRegisterHost={register} />)

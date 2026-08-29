@@ -6,7 +6,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { join, extname } from 'node:path'
 import Fastify, { type FastifyInstance } from 'fastify'
 import fastifyWebsocket from '@fastify/websocket'
-import { ciToolOutputLimits, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel, type MachineCommandEvent, type ServerMessage } from '@voicechat/shared'
+import { ciToolOutputLimits, evaluateCommandLayers, REST, clampModel, firstAllowedProvider, isModelAllowedForUser, isProviderAllowed, canConfirmDevelopmentReadiness, developmentReadinessGateResults, preparationExportFilename, redactPreparationText, DEFAULT_CODEX_MODEL, imageBlock, parseImages, type ImageRetouchRequest, type ImageRetouchResult, type ArtifactPublishRequest, type ArtifactPublishResult, type MessageAttachment, type DevelopmentReadiness, type AcceptanceCriterionSnapshot, type HealthResponse, type LlmProvider, type SttStatus, type WhisperModel, type MachineCommandEvent, type ServerMessage } from '@voicechat/shared'
 import type { ServerConfig } from './config.js'
 import { attachWs, type WsHandlers } from './ws.js'
 import { VoiceChatDb } from './db/database.js'
@@ -480,7 +480,21 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
             storybookUrl: toMachineUrl(env.agentId, env.storybookUrl)
           }))
       },
-      clearCookies: ({ userId }, host) => clearPreviewCookies(userId, host)
+      clearCookies: ({ userId }, host) => clearPreviewCookies(userId, host),
+      gateEvaluate: ({ userId, conversationId }, code, confirmed) => {
+        const conversation = db.getConversation(userId, conversationId)
+        const project = conversation?.projectId ? db.getProject(userId, conversation.projectId) : null
+        const policy = project?.commandPolicy
+        if (policy) {
+          const verdict = evaluateCommandLayers(code, [{ ...policy, name: 'project' }])
+          if (!verdict.allowed) return verdict
+        }
+        const mutating = /(?:\.remove\s*\(|\.delete\s*\(|\.setItem\s*\(|\.clear\s*\(|document\.(?:write|cookie)\s*=|innerHTML\s*=|outerHTML\s*=|fetch\s*\(|XMLHttpRequest|location\s*=)/i.test(code)
+        if (mutating && policy?.confirmDangerous !== false && !confirmed) {
+          return { allowed: false, needsConfirmation: true, reason: 'Код изменяет DOM/хранилище либо выполняет сетевой запрос; спроси пользователя и повтори с confirm=true.' }
+        }
+        return { allowed: true }
+      }
     }
   })
   // Playwright Reader: REST-оркестрация изолированного Chromium в browser-runner.

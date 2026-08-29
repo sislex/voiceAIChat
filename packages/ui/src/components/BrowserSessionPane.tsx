@@ -68,7 +68,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     const generation = ++alive.current
     incarnation.current = null
     setPhase('starting'); setFrame(null); setMeta(null); setMessage('')
-    if (!browser) { setPhase('unavailable'); setMessage('Изолированный Chromium недоступен: браузерный мост не подключён.'); return }
+    if (!browser) { setPhase('unavailable'); setMessage('Изолированный Chromium недоступен: browser-runner не настроен на сервере. Используйте Web Reader для доступных через прокси страниц или попросите администратора задать VC_BROWSER_RUNNER_URL и VC_BROWSER_RUNNER_TOKEN.'); return }
     void browser.start(conversationId, VIEWPORT).then(
       (started) => {
         if (generation !== alive.current) return
