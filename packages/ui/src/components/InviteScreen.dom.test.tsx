@@ -43,6 +43,21 @@ describe('InviteScreen — до входа', () => {
 })
 
 describe('InviteScreen — вошедший пользователь', () => {
+  it('вошедшему это модальное окно, а не экран поверх приложения', async () => {
+    render(<InviteScreen token="t1" loadPreview={async () => preview} onAccept={async () => 'p1'} onDecline={async () => {}} onDone={vi.fn()} />)
+    // `.login-screen` не перекрывает приложение: карточка рисовалась сквозь чат
+    // вместе с композером. Модальность даёт только Dialog.
+    expect(await screen.findByRole('dialog', { name: 'Приглашение в проект' })).toBeInTheDocument()
+    expect(document.querySelector('.login-screen')).toBeNull()
+  })
+
+  it('неавторизованному остаётся отдельный экран входа, а не окно', async () => {
+    render(<InviteScreen token="t1" loadPreview={async () => preview} onLogin={vi.fn()} onSignup={vi.fn()} onDone={vi.fn()} />)
+    await screen.findByText('«Редизайн лендинга»')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.querySelector('.login-screen')).not.toBeNull()
+  })
+
   it('принимает приглашение и уходит в проект', async () => {
     const onAccept = vi.fn().mockResolvedValue('p1')
     const onDone = vi.fn()
