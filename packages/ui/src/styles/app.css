@@ -6066,8 +6066,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* Отдельная страница Web Reader: на обычном чате браузерной панели нет. */
 .chat-page { grid-column: 2; min-width: 0; min-height: 0; height: 100%; }
-.app--web-reader, .app--playwright-reader, .app--make { grid-template-columns: minmax(0, 1fr); height: 100%; }
-.app--playwright-reader > .chat-split, .app--make > .chat-split { grid-column: 1; }
+.app--web-reader, .app--playwright-reader, .app--console-reader, .app--make { grid-template-columns: minmax(0, 1fr); height: 100%; }
+.app--playwright-reader > .chat-split, .app--console-reader > .chat-split, .app--make > .chat-split { grid-column: 1; }
 .playwright-reader-selector > strong, .console-reader-selector > strong { white-space: nowrap; }
 .playwright-browser-pane { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
 .playwright-reader-header { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
