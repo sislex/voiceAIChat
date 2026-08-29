@@ -26,6 +26,8 @@ import type { CiConsoleExecResult, ProjectMachine } from '@voicechat/shared'
  * `queued` до перезапуска сервера.
  */
 const CANCEL_GRACE_MS = 15_000
+/** Минимальный запас перед bootstrap/clone/npm ci: 1 ГиБ. */
+const MIN_RUN_FREE_DISK_KB = 1024 * 1024
 
 export interface CiRunManagerDeps {
   db: VoiceChatDb
@@ -50,6 +52,8 @@ export interface CiRunManagerDeps {
   now?: () => number
   /** Сторожевой таймаут отмены (мс); по умолчанию `CANCEL_GRACE_MS`. */
   cancelGraceMs?: number
+  /** Минимум свободного места перед новым раном, КиБ; инъекция нужна для тестов. */
+  minRunFreeDiskKb?: number
   modelWork?: CiModelWorkHook
   modelSummary?: CiModelSummaryHook
   attemptFix?: CiFixHook
@@ -119,6 +123,7 @@ function slugify(s: string): string {
 export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
   const now = deps.now ?? (() => Date.now())
   const cancelGraceMs = deps.cancelGraceMs ?? CANCEL_GRACE_MS
+  const minRunFreeDiskKb = deps.minRunFreeDiskKb ?? MIN_RUN_FREE_DISK_KB
   const listeners = new Set<(m: ServerMessage, ownerUserId: string) => void>()
   const active = new Map<string, ActiveRun>()
   /** Ожидающие ответа паузы: runId → как разбудить `execute`. */
@@ -549,6 +554,26 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
    * в любом случае — даже если после отмены `execute` завис на процессе модели:
    * иначе слот и мьютекс держатся до перезапуска сервера.
    */
+  async function cleanupTaskNodeModules(runId: string): Promise<void> {
+    const current = active.get(runId)
+    if (!current?.workspacePath) return
+    try {
+      const row = deps.db.getCiRunRaw(runId)
+      if (!row?.agentId || !isTerminalCiStatus(row.status)) return
+      const nodeModules = `${current.workspacePath}/node_modules`
+      await deps.executor.run({
+        agentId: row.agentId,
+        script: `if [ -d ${shq(nodeModules)} ]; then rm -rf -- ${shq(nodeModules)}; fi`,
+        workdir: current.workspacePath,
+        env: { WORKSPACE: current.workspacePath, BRANCH: current.branch ?? '' },
+        timeoutMs: 120_000,
+        secrets: []
+      }, () => {})
+    } catch {
+      // Cleanup best-effort: исход рана уже сохранён и не должен меняться из-за уборки.
+    }
+  }
+
   function enqueue(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint, bypassQueue = false): void {
     const slot: RunSlot = { runId, held: false, abandoned: false, bypass: bypassQueue }
     runSlots.set(runId, slot)
@@ -558,7 +583,10 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
         if (!ctl.signal.aborted) await guardCancel(runId, userId, ctl, execute(runId, userId, ctl, resume))
       })
       .catch(() => {})
-      .finally(() => {
+      .finally(async () => {
+        // Терминальный checkout сохраняем для QA и повторного запуска, но тяжёлые
+        // регенерируемые зависимости удаляем перед освобождением контекста рана.
+        await cleanupTaskNodeModules(runId)
         // Зависший execute может позже дойти до своей паузы или до своего
         // release — `abandoned` и идемпотентный release не дают ему занять
         // слот/мьютекс, которые мы уже отпустили за него.
@@ -1436,7 +1464,8 @@ fi`
     const ensureManaged = managedStorage
       ? `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)} || { echo "MachineStorage недоступен для записи: ${managedStorage.rootPath}" >&2; exit 73; }`
       : `mkdir -p ${shq(commandWorkspacePath)} ${shq(npmCacheDir)}`
-    const cachePrep = `${ensureManaged}; touch ${shq(npmCacheDir)} 2>/dev/null || true; find ${shq(npmCacheRoot)} -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} + 2>/dev/null || true`
+    const freeDiskCheck = `available_kb="$(df -Pk . | awk 'NR == 2 { print $4 }')" || exit 74; case "$available_kb" in ''|*[!0-9]*) echo "Не удалось определить свободное место перед запуском рана" >&2; exit 74;; esac; if [ "$available_kb" -lt ${minRunFreeDiskKb} ]; then echo "Недостаточно места для запуска рана: свободно $((available_kb / 1024)) МБ, нужно не меньше ${Math.ceil(minRunFreeDiskKb / 1024)} МБ. Освободите диск и повторите запуск." >&2; exit 74; fi`
+    const cachePrep = `${freeDiskCheck}\n${ensureManaged}; touch ${shq(npmCacheDir)} 2>/dev/null || true; find ${shq(npmCacheRoot)} -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} + 2>/dev/null || true`
     const repoPath = workspacePath
     // Связанный чат задачи должен выполнять команды там же, где модель CI: внутри
     // клонированного репозитория, а не в каталоге-контейнере workspace.
