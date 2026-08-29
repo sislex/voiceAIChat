@@ -2770,6 +2770,30 @@ export class VoiceChatDb {
     return this.db.prepare(`DELETE FROM email_verifications WHERE expires_at < ?`).run(Date.now()).changes
   }
 
+  /** Выпускает ровно один действующий email-токен сброса для пользователя; сырой токен в БД не попадает. */
+  createPasswordResetToken(user: string, token: string, ttlMs: number): void {
+    this.db.prepare(`DELETE FROM password_reset_tokens WHERE user_name = ?`).run(user)
+    this.db.prepare(`INSERT INTO password_reset_tokens (token_hash, user_name, created_at, expires_at) VALUES (?, ?, ?, ?)`)
+      .run(createHash('sha256').update(token).digest('hex'), user, Date.now(), Date.now() + ttlMs)
+  }
+
+  /** Одноразово применяет токен. Истёкший отличается от неизвестного для понятного экрана, но не раскрывает email. */
+  redeemPasswordResetToken(token: string, password: string): 'ok' | 'expired' | 'invalid' {
+    const hash = createHash('sha256').update(token).digest('hex')
+    const row = this.db.prepare(`SELECT user_name, expires_at FROM password_reset_tokens WHERE token_hash = ?`).get(hash) as { user_name: string; expires_at: number } | undefined
+    if (!row) return 'invalid'
+    this.db.prepare(`DELETE FROM password_reset_tokens WHERE token_hash = ?`).run(hash)
+    if (row.expires_at < Date.now()) return 'expired'
+    this.setUserPassword(row.user_name, password)
+    return 'ok'
+  }
+
+  passwordResetTokenUser(token: string): string | null {
+    const hash = createHash('sha256').update(token).digest('hex')
+    const row = this.db.prepare(`SELECT user_name FROM password_reset_tokens WHERE token_hash = ?`).get(hash) as { user_name: string } | undefined
+    return row?.user_name ?? null
+  }
+
   markLogin(name: string): void {
     this.db.prepare(`UPDATE users SET last_login = ? WHERE name = ?`).run(Date.now(), name)
   }

@@ -16,17 +16,24 @@ export interface LoginScreenProps {
   onCancelTwoFactor?: () => void
   /** Сброс пароля кодом от администратора (auth-roadmap п.10). */
   onReset?: (name: string, code: string, password: string) => void
+  /** Запрос письма на подтверждённый email; ответ намеренно не сообщает, найден ли адрес. */
+  onForgotPassword?: (email: string) => Promise<{ ok: true; message: string } | { error: string }>
   /** Открытая регистрация включена — показать ссылку «Зарегистрироваться». */
   onSignup?: () => void
 }
 
 /** Экран входа многопользовательского режима (web). Пароль может быть пустым. */
-export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false, onCode, onCancelTwoFactor, onReset, onSignup }: LoginScreenProps): JSX.Element {
+export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false, onCode, onCancelTwoFactor, onReset, onForgotPassword, onSignup }: LoginScreenProps): JSX.Element {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [resetMode, setResetMode] = useState(false)
   const [resetCode, setResetCode] = useState('')
+  const [forgotMode, setForgotMode] = useState(false)
+  const [email, setEmail] = useState('')
+  const [forgotStatus, setForgotStatus] = useState<string | null>(null)
+  const [forgotError, setForgotError] = useState<string | null>(null)
+  const [forgotBusy, setForgotBusy] = useState(false)
   // UX входа (auth-roadmap п.14): показать пароль, предупреждение о Caps Lock, «запомнить меня».
   const [showPassword, setShowPassword] = useState(false)
   const [capsLock, setCapsLock] = useState(false)
@@ -37,6 +44,30 @@ export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false
   const submit = (e: FormEvent): void => {
     e.preventDefault()
     if (name.trim()) onLogin(name.trim(), password, remember)
+  }
+
+  if (forgotMode && onForgotPassword) {
+    return (
+      <div className="login-screen" data-theme={theme}>
+        <form className="login-card" onSubmit={(e) => {
+          e.preventDefault()
+          if (!email.trim() || forgotBusy) return
+          setForgotBusy(true); setForgotError(null); setForgotStatus(null)
+          void onForgotPassword(email.trim()).then((result) => {
+            if ('error' in result) setForgotError(result.error)
+            else setForgotStatus(result.message)
+          }).finally(() => setForgotBusy(false))
+        }} data-testid="forgot-password">
+          <h1 className="login-title">Забыли пароль?</h1>
+          <p className="login-hint">Введите подтверждённый email. Если адрес найден, мы отправим ссылку, действующую 1 час.</p>
+          <label className="login-field"><span>Email</span><input className="login-input" type="email" value={email} autoFocus autoComplete="email" aria-label="Email" onChange={(e) => setEmail(e.target.value)} /></label>
+          {forgotStatus && <p className="login-hint" role="status">{forgotStatus}</p>}
+          {forgotError && <p className="login-error" role="alert">{forgotError}</p>}
+          <Button variant="primary" type="submit" disabled={!email.trim() || forgotBusy}>{forgotBusy ? 'Отправляем…' : 'Отправить ссылку'}</Button>
+          <Button variant="ghost" type="button" onClick={() => { setForgotMode(false); setForgotStatus(null); setForgotError(null) }}>Назад ко входу</Button>
+        </form>
+      </div>
+    )
   }
 
   if (resetMode && onReset) {
@@ -115,7 +146,48 @@ export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false
           Войти
         </Button>
         {onSignup && <p className="login-hint">Нет учётной записи? <button type="button" className="make-link" onClick={onSignup}>Зарегистрироваться</button></p>}
-        {onReset && <p className="login-hint"><button type="button" className="make-link" onClick={() => { setResetMode(true); setPassword('') }}>Есть код сброса от администратора?</button></p>}
+        {(onReset || onForgotPassword) && <p className="login-hint">{onReset && <button type="button" className="make-link" onClick={() => { setResetMode(true); setPassword('') }}>Есть код сброса от администратора?</button>} {onForgotPassword && <button type="button" className="make-link" onClick={() => setForgotMode(true)}>Забыли пароль?</button>}</p>}
+      </form>
+    </div>
+  )
+}
+
+export interface ResetPasswordScreenProps {
+  token: string
+  reset: (input: { token: string; password: string }) => Promise<{ ok: true } | { error: string }>
+  theme?: 'light' | 'dark' | 'green'
+  onDone: () => void
+  onBack: () => void
+}
+
+export function ResetPasswordScreen({ token, reset, theme = 'light', onDone, onBack }: ResetPasswordScreenProps): JSX.Element {
+  const [password, setPassword] = useState('')
+  const [repeat, setRepeat] = useState('')
+  const [resetError, setResetError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const policy = password ? checkPasswordPolicy(password) : null
+  const mismatch = Boolean(repeat) && password !== repeat
+
+  return (
+    <div className="login-screen" data-theme={theme}>
+      <form className="login-card" onSubmit={(e) => {
+        e.preventDefault()
+        if (!password || policy || mismatch || busy) return
+        setBusy(true); setResetError(null)
+        void reset({ token, password }).then((result) => {
+          if ('error' in result) setResetError(result.error)
+          else onDone()
+        }).finally(() => setBusy(false))
+      }} data-testid="reset-password-email">
+        <h1 className="login-title">Новый пароль</h1>
+        <p className="login-hint">Установите новый пароль. После смены все прежние сессии будут завершены.</p>
+        <label className="login-field"><span>Новый пароль</span><input className="login-input" type="password" autoFocus autoComplete="new-password" value={password} aria-label="Новый пароль" onChange={(e) => setPassword(e.target.value)} /></label>
+        <label className="login-field"><span>Повторите пароль</span><input className="login-input" type="password" autoComplete="new-password" value={repeat} aria-label="Повторите пароль" onChange={(e) => setRepeat(e.target.value)} /></label>
+        {policy && <p className="login-hint" role="status">{policy}</p>}
+        {mismatch && <p className="login-error" role="alert">Пароли не совпадают</p>}
+        {resetError && <p className="login-error" role="alert">{resetError}</p>}
+        <Button variant="primary" type="submit" disabled={!password || !repeat || Boolean(policy) || mismatch || busy}>{busy ? 'Сохраняем…' : 'Сменить пароль'}</Button>
+        <Button variant="ghost" type="button" onClick={onBack}>Назад ко входу</Button>
       </form>
     </div>
   )

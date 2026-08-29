@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { LoginScreen } from './LoginScreen'
+import { LoginScreen, ResetPasswordScreen } from './LoginScreen'
 import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 
 describe('LoginScreen', () => {
@@ -81,5 +81,28 @@ describe('LoginScreen — ссылка на регистрацию', () => {
     render(<LoginScreen onLogin={() => {}} onSignup={onSignup} />)
     await userEvent.click(screen.getByRole('button', { name: 'Зарегистрироваться' }))
     expect(onSignup).toHaveBeenCalled()
+  })
+})
+
+describe('LoginScreen — сброс по email', () => {
+  it('запрашивает письмо и показывает одинаковое нейтральное сообщение', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, message: 'Если адрес подтверждён, письмо со ссылкой отправлено.' })
+    render(<LoginScreen onLogin={() => {}} onForgotPassword={request} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Забыли пароль?' }))
+    await userEvent.type(screen.getByLabelText('Email'), 'user@example.test')
+    await userEvent.click(screen.getByRole('button', { name: 'Отправить ссылку' }))
+    expect(request).toHaveBeenCalledWith('user@example.test')
+    expect(await screen.findByRole('status')).toHaveTextContent('Если адрес подтверждён')
+  })
+
+  it('экран ссылки проверяет совпадение паролей и отправляет токен', async () => {
+    const reset = vi.fn().mockResolvedValue({ ok: true })
+    const done = vi.fn()
+    render(<ResetPasswordScreen token="one-time-token" reset={reset} onDone={done} onBack={() => {}} />)
+    await userEvent.type(screen.getByLabelText('Новый пароль'), 'new-strong-password-1')
+    await userEvent.type(screen.getByLabelText('Повторите пароль'), 'new-strong-password-1')
+    await userEvent.click(screen.getByRole('button', { name: 'Сменить пароль' }))
+    expect(reset).toHaveBeenCalledWith({ token: 'one-time-token', password: 'new-strong-password-1' })
+    expect(done).toHaveBeenCalled()
   })
 })
