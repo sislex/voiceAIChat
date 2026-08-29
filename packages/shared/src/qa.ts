@@ -203,6 +203,11 @@ export interface QaStageRun {
   progress: QaStageProgress
   log: QaStageLogEntry[]
   result: Record<string, unknown> | null
+  /**
+   * Снимок сценария Playwright-этапа на момент запуска (`null` в режиме
+   * команды и у ранов, заведённых до круга 8). Повтор воспроизводит именно его.
+   */
+  scenario: import('./qa').AutomatedQaScenario | null
   gateReasons: string[]
   error: string | null
   createdAt: number

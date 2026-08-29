@@ -25,7 +25,7 @@ it('shows concrete launch reasons and the unavailable fallback',async()=>{
 const stageRun=(result:Record<string,unknown>|null):AnyQaStageRun=>({
   id:'aq1',projectId:'p1',taskId:'t1',kind:'automatedQaRun',stage:'automated_qa',status:result?.passed===true?'success':'failed',
   attempt:1,triggeredBy:'alexey',branch:'CHAT-380',commitSha:'b'.repeat(40),llmEngineId:null,llmProvider:'claude',llmModel:'',
-  currentStep:'tests',progress:{current:1,total:1,label:'npm test'},log:[],result,gateReasons:[],error:null,
+  currentStep:'tests',progress:{current:1,total:1,label:'npm test'},log:[],result,scenario:null,gateReasons:[],error:null,
   createdAt:1,startedAt:2,finishedAt:3,canCancel:false,canRetry:true
 } as AnyQaStageRun)
 
@@ -60,4 +60,15 @@ it('старый ран без вердикта показывается как 
   render(<QaStageRunPanel projectId="p1" taskId="t1" stage="automated_qa"/>)
   expect(await screen.findByText('Результат')).toBeInTheDocument()
   expect(screen.getByText(/"gatePassed": true/)).toBeInTheDocument()
+})
+
+it('снимок сценария виден, а повтор обещает воспроизвести именно его',async()=>{
+  const retryStageRun=vi.fn()
+  window.qa={listStageRuns:vi.fn().mockResolvedValue([{
+    ...stageRun({mode:'playwright',gatePassed:false,passed:false,summary:'Сценарий провален',classification:'implementation_defect',command:'http://x',exitCode:null,durationMs:1,logTail:'',steps:[],screenshotUrl:null}),
+    scenario:{startUrl:'http://localhost:5173',steps:[{id:'s1',title:'Открыть доску',action:{kind:'click',selector:'#b'}}]}
+  }]),retryStageRun} as unknown as typeof window.qa
+  render(<QaStageRunPanel projectId="p1" taskId="t1" stage="automated_qa"/>)
+  expect(await screen.findByText('Что прогонялось: 1 шаг(ов) с http://localhost:5173')).toBeInTheDocument()
+  expect(screen.getByRole('button',{name:'Повторить тот же сценарий'})).toBeInTheDocument()
 })

@@ -78,6 +78,11 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-btn--md { padding:var(--space-100) var(--space-150);font-size:13px }
 .vc-btn--sm { padding:var(--space-050) var(--space-100);font-size:12px }
 .vc-btn--icon.vc-btn--md { padding:var(--space-100) }.vc-btn--icon.vc-btn--sm { padding:var(--space-050) }
+/* Порог попадания пальцем у кнопки без подписи. Раньше его помнила каждая
+   секция приложения по отдельности (.jcard, .ptypes-actions, .side, …), поэтому
+   каждая новая забывала: во флекс-строке иконка сжимается до 19x22. Место
+   правилу — у самой кнопки. */
+@media (max-width: 640px) { .vc-btn--icon { min-width:40px;min-height:40px } }
 .vc-btn--block { display:flex;width:100% }
 .vc-btn:focus-visible,.vc-btn.is-focus,.vc-toast-action:focus-visible,.vc-toast-close:focus-visible,.vc-confirm-field input:focus-visible { outline:2px solid var(--accent);outline-offset:2px }
 .vc-btn:disabled { opacity:.45;cursor:not-allowed;filter:none }

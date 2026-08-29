@@ -1381,6 +1381,10 @@ export class VoiceChatDb {
     }
     const ciToolCallCols = this.db.prepare(`PRAGMA table_info(ci_run_tool_calls)`).all() as Array<{ name: string }>
     if (ciToolCallCols.length && !ciToolCallCols.some((c) => c.name === 'chars')) this.db.exec(`ALTER TABLE ci_run_tool_calls ADD COLUMN chars INTEGER NOT NULL DEFAULT 0`)
+    // Снимок сценария Playwright-этапа (круг 8): старые раны его не имеют и
+    // читают сценарий проекта — фолбэк в automatedQaExecutionContext.
+    const qaStageCols = this.db.prepare(`PRAGMA table_info(qa_stage_runs)`).all() as Array<{ name: string }>
+    if (qaStageCols.length && !qaStageCols.some((c) => c.name === 'scenario_json')) this.db.exec(`ALTER TABLE qa_stage_runs ADD COLUMN scenario_json TEXT NOT NULL DEFAULT ''`)
     const qaPreparationCols = this.db.prepare(`PRAGMA table_info(qa_preparation_runs)`).all() as Array<{ name: string }>
     if (qaPreparationCols.length && !qaPreparationCols.some((c) => c.name === 'attempt')) this.db.exec(`ALTER TABLE qa_preparation_runs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1`)
     if (qaPreparationCols.length && !qaPreparationCols.some((c) => c.name === 'diagnostics_json')) this.db.exec(`ALTER TABLE qa_preparation_runs ADD COLUMN diagnostics_json TEXT NOT NULL DEFAULT '[]'`)
@@ -7893,6 +7897,7 @@ export class VoiceChatDb {
       llmModel: String(row.llm_model ?? ''), currentStep: String(row.current_step ?? ''),
       progress: parseJsonValue(String(row.progress_json ?? '{}'), { current: 0, total: 0, label: '' }),
       log: parseJsonValue(String(row.log_json ?? '[]'), []), result: row.result_json ? parseJsonValue(String(row.result_json), {}) : null,
+      scenario: row.scenario_json ? parseJsonValue<AutomatedQaScenario>(String(row.scenario_json), EMPTY_AUTOMATED_QA_SCENARIO) : null,
       gateReasons: parseStringArray(String(row.gate_reasons_json ?? '[]')), error: row.error as string | null,
       createdAt: Number(row.created_at), startedAt: row.started_at == null ? null : Number(row.started_at),
       finishedAt: row.finished_at == null ? null : Number(row.finished_at),
@@ -7980,7 +7985,13 @@ export class VoiceChatDb {
     return { decisionRequired: false, bugTaskId: bug.id }
   }
 
-  startQaStageRun(userId: string, projectId: string, taskId: string, stage: QaRunStage): AnyQaStageRun {
+  /**
+   * Новая попытка этапа. Для Playwright-режима фиксируется **снимок** сценария:
+   * настройку проекта владелец правит, а ран обязан помнить, что прогонял
+   * именно он. `scenario` передаёт повтор — он воспроизводит упавший прогон, а
+   * не читает настройку заново.
+   */
+  startQaStageRun(userId: string, projectId: string, taskId: string, stage: QaRunStage, scenario?: AutomatedQaScenario | null): AnyQaStageRun {
     if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
     const task = this.getTask(projectId, taskId)
     if (!task || task.type !== 'task') throw new Error('Задача не найдена')
@@ -7990,21 +8001,27 @@ export class VoiceChatDb {
     if (active) return this.mapQaStageRun(active)
     const attempt = Number((this.db.prepare(`SELECT COALESCE(MAX(attempt),0)+1 AS n FROM qa_stage_runs WHERE task_id=? AND stage=?`).get(taskId, stage) as { n: number }).n)
     const id = this.newId(), now = this.now()
+    const project = stage === 'automated_qa' ? this.db.prepare(`SELECT automated_qa_mode,automated_qa_scenario_json FROM projects WHERE id=?`).get(projectId) as { automated_qa_mode: string | null; automated_qa_scenario_json: string | null } | undefined : undefined
+    const snapshot = stage === 'automated_qa' && project?.automated_qa_mode === 'playwright'
+      ? normalizeAutomatedQaScenario(scenario ?? parseJsonValue<AutomatedQaScenario>(project.automated_qa_scenario_json ?? '', EMPTY_AUTOMATED_QA_SCENARIO))
+      : null
     this.db.prepare(`INSERT INTO qa_stage_runs
-      (id,project_id,task_id,stage,status,attempt,triggered_by,branch,commit_sha,current_step,created_at,started_at)
-      VALUES (?,?,?,?,'running',?,?,?,?, 'starting',?,?)`).run(
-        id, projectId, taskId, stage, attempt, userId, task.mergeSourceBranch ?? '', task.mergeSourceSha ?? '', now, now
+      (id,project_id,task_id,stage,status,attempt,triggered_by,branch,commit_sha,current_step,scenario_json,created_at,started_at)
+      VALUES (?,?,?,?,'running',?,?,?,?, 'starting',?,?,?)`).run(
+        id, projectId, taskId, stage, attempt, userId, task.mergeSourceBranch ?? '', task.mergeSourceSha ?? '', snapshot ? JSON.stringify(snapshot) : '', now, now
       )
     return this.getQaStageRun(userId, id)!
   }
 
   automatedQaExecutionContext(runId: string): AutomatedQaExecutionContext | null {
-    const row = this.db.prepare(`SELECT w.agent_id,w.path,p.automated_qa_command,p.automated_qa_mode,p.automated_qa_scenario_json FROM qa_stage_runs q JOIN ci_workspaces w ON w.task_id=q.task_id AND w.pushed=1 JOIN projects p ON p.id=q.project_id WHERE q.id=? AND q.stage='automated_qa' ORDER BY w.created_at DESC LIMIT 1`).get(runId) as { agent_id: string | null; path: string | null; automated_qa_command: string | null; automated_qa_mode: string | null; automated_qa_scenario_json: string | null } | undefined
+    const row = this.db.prepare(`SELECT w.agent_id,w.path,q.scenario_json,p.automated_qa_command,p.automated_qa_mode,p.automated_qa_scenario_json FROM qa_stage_runs q JOIN ci_workspaces w ON w.task_id=q.task_id AND w.pushed=1 JOIN projects p ON p.id=q.project_id WHERE q.id=? AND q.stage='automated_qa' ORDER BY w.created_at DESC LIMIT 1`).get(runId) as { agent_id: string | null; path: string | null; scenario_json: string | null; automated_qa_command: string | null; automated_qa_mode: string | null; automated_qa_scenario_json: string | null } | undefined
     if (!row?.agent_id || !row.path) return null
     return {
       agentId: row.agent_id, workdir: row.path, command: row.automated_qa_command?.trim() || 'npm test',
       mode: row.automated_qa_mode === 'playwright' ? 'playwright' : 'command',
-      scenario: normalizeAutomatedQaScenario(parseJsonValue<AutomatedQaScenario>(row.automated_qa_scenario_json ?? '', EMPTY_AUTOMATED_QA_SCENARIO))
+      // Снимок рана важнее настройки проекта: пока ран шёл, её могли поправить.
+      // Фолбэк на проект — для ранов, заведённых до появления снимка.
+      scenario: normalizeAutomatedQaScenario(parseJsonValue<AutomatedQaScenario>(row.scenario_json || row.automated_qa_scenario_json || '', EMPTY_AUTOMATED_QA_SCENARIO))
     }
   }
 
@@ -8078,7 +8095,9 @@ export class VoiceChatDb {
     const run = this.getQaStageRun(userId, runId)
     if (!run) return null
     if (!run.canRetry) throw new Error('Повтор этого рана недоступен')
-    return this.startQaStageRun(userId, run.projectId, run.taskId, run.stage)
+    // Повтор воспроизводит упавший прогон: берётся снимок сценария того рана, а
+    // не текущая настройка проекта. Иначе повторяется не то, что упало.
+    return this.startQaStageRun(userId, run.projectId, run.taskId, run.stage, run.scenario)
   }
 
   answerQaStageRun(userId: string, runId: string, answer: string): AnyQaStageRun | null {
