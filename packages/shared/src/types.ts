@@ -194,9 +194,31 @@ export interface BrowserSelectorResult {
   error?: string
 }
 
+/**
+ * Осмотр страницы: журнал консоли, сетевые запросы и вычисленные стили. Нужен
+ * этапу автотестов — без него проверять нечего: модель видит только картинку и
+ * текст, но не знает об ошибках страницы и упавших запросах.
+ */
+export type BrowserInspectAction =
+  | { kind: 'console'; level?: 'log' | 'info' | 'warn' | 'error'; pattern?: string; limit?: number; clear?: boolean }
+  | { kind: 'network'; filter?: string; limit?: number; clear?: boolean }
+  | { kind: 'styles'; selector: string; properties?: string[] }
+
+export interface BrowserConsoleEntry { level: string; text: string; at: number }
+export interface BrowserNetworkEntry { method: string; url: string; status: number; ok: boolean; at: number }
+
+export interface BrowserInspectResult {
+  ok: boolean
+  console?: BrowserConsoleEntry[]
+  network?: BrowserNetworkEntry[]
+  styles?: Record<string, string>
+  error?: string
+}
+
 export type BrowserCommand =
   | { type: 'navigate'; url: string }
   | { type: 'selector'; action: BrowserSelectorAction }
+  | { type: 'inspect'; action: BrowserInspectAction }
   | { type: 'back' | 'forward' | 'reload' | 'stop' }
   | { type: 'newTab'; url?: string }
   | { type: 'selectTab' | 'closeTab'; tabId: string }
