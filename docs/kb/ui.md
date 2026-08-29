@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-29
-checked: 5a1f289b
+checked: 78328204
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -16,6 +16,9 @@ areas:
   - apps/web/src
   - apps/web-recorder/src
   - apps/server/src/routes/previewProxy.ts
+  - apps/server/src/mcp/previewMcp.ts
+  - apps/server/src/server.ts
+  - packages/shared/src/protocol.ts
   - apps/server/src/users/auth.ts
   - apps/server/src/turns.ts
   - packages/shared/src/previewInspector.ts
@@ -51,6 +54,16 @@ areas:
 Оба Reader используют публичный `SplitChatWorkspace` из `@voicechat/chat-app`, но получают Chat только через узкий `ReaderChatPort`: пакет не импортирует `chatStore`, не хранит сообщения и не управляет LLM lifecycle. Платформенные эффекты также инъецируются: Web — через `WebReaderHostPort`, `WebRecorderPort` и `PreviewRelayPort`, Playwright — через `PlaywrightReaderHostPort` и `BrowserSessionPort`. Architecture tests запрещают imports host/другого Reader/chat internals, прямые transport и browser storage API, а также исходники recorder/browser-runner.
 
 Web Reader сохраняет iframe `/api/preview?url=...`; URL разговора имеет приоритет, а project preview служит только нематериализованным fallback. При активации store создаёт recorder для `conversationId`, передаёт ему URL и исполняет relay-запросы только для активной беседы. Generation token отбрасывает устаревшие async-ответы, смена беседы dispose-ит recorder, а общий `dispose()` снимает relay subscription, поэтому поздний результат не доставляется в другой чат. Безопасность конкретного `postMessage` остаётся обязанностью host adapter/существующего recorder-контракта, а пакет видит только transport-agnostic port.
+
+### Живые действия и безопасность Web Reader
+
+После успешного `preview.result` серверный `PreviewActionRelay` публикует `reader.changed` с разговором, адресом, заголовком, признаком навигации и исходным `PreviewAction` (контракт — `packages/shared/src/protocol.ts`, реализация — `apps/server/src/mcp/previewMcp.ts`). Remote-мост передаёт кадр в `App`: только активный разговор добавляет подтверждённый шаг в ограниченную последними 20 элементами ленту, а навигационный кадр перемонтирует Reader, чтобы тот перечитал живую страницу. `WebReaderFrame` переводит действия в понятные подписи и позволяет повторить шаг через ту же актуальную host-регистрацию.
+
+После каждого успешного действия, кроме самой команды `errors`, host запрашивает накопленные ошибки страницы. Первая ошибка показывается над Reader с кнопкой «Исправить», которая отправляет в активный чат просьбу исправить эту ошибку. При смене разговора лента и ошибка очищаются.
+
+`browser.evaluate` принимает необязательный `confirm` и до передачи JavaScript странице проходит `gateEvaluate` в `apps/server/src/server.ts`. Сначала код проверяется слоями `commandPolicy` проекта; запрещённый политикой вызов не исполняется. Эвристически распознанное изменение DOM или storage либо сетевой запрос при `confirmDangerous !== false` требует повторного вызова с `confirm=true`. Любой вердикт — разрешение или отказ — журналируется серверным событием `reader.evaluate`; подтверждение снимает только интерактивный гейт и не обходит запрет project policy.
+
+Standalone-витрина Web Reader различает пустое, загружающееся, ошибочное и недоступное для интерактивной записи состояния. Playwright Reader при отсутствующем browser bridge объясняет, что server-side `browser-runner` не настроен, предлагает доступный через proxy Web Reader и называет серверные переменные `VC_BROWSER_RUNNER_URL`/`VC_BROWSER_RUNNER_TOKEN`.
 
 Самодиагностика доступна только в активном Web Reader-чате: её запускают кнопкой «Самодиагностика» в настройках разговора либо точной командой `самодиагностика Web Reader` или `/web-reader-diagnostics` в композере. Перед первым действием `packages/ui/src/webReaderDiagnostics.ts` сохраняет в чат полный перечень проверяемых возможностей, затем отдельными служебными AI-сообщениями публикует результат и длительность каждого шага, а при сбое — классифицированный проблемный слой. Первые шаги проверяют handshake фактической регистрации iframe (capabilities из `ready`), совпадение `conversationId` с активным чатом и актуальность `registrationId` (localStorage-claim вкладки); все DOM-шаги идут через `registration.run`, то есть через реальный postMessage-контракт, а не прямые вызовы. На время прогона host шлёт Reader-у `diagnostics-start` (Reader показывает прогресс-панель и глушит запись сценария), `finally` выключает режим. Шаг навигации после click перечитывает страницу с retry до 5 секунд: навигация начинается только после ответа клика, и host может ещё не знать о `page-loading` (постановку команд в очередь до ready проверяет связка open → read). Эти сообщения записывает `publishDiagnosticMessage` без запуска LLM; повторный запуск и смена активного разговора отменяют прежний сценарий.
 
