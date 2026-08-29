@@ -17,7 +17,7 @@ const profilesRoot = resolve(process.env.VC_BROWSER_DATA_DIR ?? './data/browser-
 // Дополнительные корневые сертификаты: наши стенды стоят за Caddy с внутренним
 // центром, чей корень не входит в публичные списки доверия. Без этого
 // изолированный Chromium не открывает собственный сайт проекта.
-const extraCa = readExtraCaPem({ file: process.env.VC_BROWSER_EXTRA_CA_FILE, pem: process.env.VC_BROWSER_EXTRA_CA_PEM })
+const extraCa = readExtraCaPem({ base64: process.env.VC_BROWSER_EXTRA_CA_B64, pem: process.env.VC_BROWSER_EXTRA_CA_PEM, file: process.env.VC_BROWSER_EXTRA_CA_FILE })
 if (extraCa.error) console.warn(`[browser-runner] дополнительный CA не прочитан: ${extraCa.error}`)
 if (extraCa.pem) {
   const dbDir = join(process.env.HOME ?? '/tmp', '.pki', 'nssdb')

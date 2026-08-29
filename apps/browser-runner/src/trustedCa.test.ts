@@ -18,6 +18,16 @@ describe('splitPemCertificates', () => {
 })
 
 describe('readExtraCaPem', () => {
+  it('base64 важнее прочего: это основной способ доставки', () => {
+    const encoded = Buffer.from(cert('AAA')).toString('base64')
+    expect(readExtraCaPem({ base64: encoded, pem: cert('BBB'), file: '/нет/такого' }).pem).toBe(cert('AAA'))
+  })
+  it('мусор в base64 объясняется, а не молча игнорируется', () => {
+    expect(readExtraCaPem({ base64: 'bm90IGEgY2VydA==' })).toEqual({ pem: null, error: expect.stringContaining('не содержит сертификата') })
+  })
+  it('пустой base64 не мешает остальным источникам', () => {
+    expect(readExtraCaPem({ base64: '   ', pem: cert('AAA') }).pem).toBe(cert('AAA'))
+  })
   it('inline-значение важнее файла: его задают точечно', () => {
     expect(readExtraCaPem({ pem: cert('AAA'), file: '/нет/такого' }).pem).toBe(cert('AAA'))
   })
