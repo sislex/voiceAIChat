@@ -9,37 +9,37 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 126 коммит(ов) в areas после сверки: 0d3fb22f fix(session): истёкшая сессия наконец обрабатывается … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 134 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 127 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 135 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 14 коммит(ов) в areas после сверки: 7ab9be3b test(projects): сквозной e2e фичи в реальном Chromium … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-29 | ⚠ 2 коммит(ов) в areas после сверки: a1b77643 fix(db): разовые миграции отмечаются в app_config … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-28 | ⚠ 14 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 152 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-28 | ⚠ 15 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 153 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 10 коммит(ов) в areas после сверки: a1b77643 fix(db): разовые миграции отмечаются в app_config … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 25 коммит(ов) в areas после сверки: a1b77643 fix(db): разовые миграции отмечаются в app_config … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 80 коммит(ов) в areas после сверки: 0281d005 feat(projects): приглашения участников по email (сервер) … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 87 коммит(ов) в areas после сверки: a1b77643 fix(db): разовые миграции отмечаются в app_config … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 97 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 92 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 782 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 197 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 50 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 25 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 103 коммит(ов) в areas после сверки: 0d3fb22f fix(session): истёкшая сессия наконец обрабатывается … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 26 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 81 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 88 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 98 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 93 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 783 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 198 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 51 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 26 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 104 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 6 коммит(ов) в areas после сверки: 4ad84a43 feat(machines): каталог ChatAI по умолчанию при подключении машины и привязка чатов к нему … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 29 коммит(ов) в areas после сверки: 0d3fb22f fix(session): истёкшая сессия наконец обрабатывается … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 26 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия … |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 89 коммит(ов) в areas после сверки: 394e3d4c fix(projects): ошибки форм на месте, состояние списка проектов и русские тексты … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 30 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 27 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 90 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 34 коммит(ов) в areas после сверки: a1b77643 fix(db): разовые миграции отмечаются в app_config … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 30 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 74 коммит(ов) в areas после сверки: b69bb844 feat(projects): живые приглашения, сториз новых экранов и покрытие каскада … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 1 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 35 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 31 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 75 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 1 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-29 | ⚠ 1 коммит(ов) в areas после сверки: d2c36a8c fix(kanban): фильтры доски видно как элементы управления, цвета — на токенах |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 27 коммит(ов) в areas после сверки: b69bb844 feat(projects): живые приглашения, сториз новых экранов и покрытие каскада … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-29 | ⚠ 1 коммит(ов) в areas после сверки: e1057606 fix(projects): отзыв доступа закрывает проект, тосты не перехватывают нажатия |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 28 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-29 | ⚠ 2 коммит(ов) в areas после сверки: 8a2ee54e fix(projects): смена роли доходит до открытой страницы настроек … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-29, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
