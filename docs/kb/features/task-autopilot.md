@@ -1,0 +1,83 @@
+---
+title: Автопроход задачи по QA-конвейеру
+updated: 2026-08-29
+checked: a6692e7a
+areas:
+  - packages/shared/src/projects.ts
+  - apps/server/src/server.ts
+  - apps/server/src/db/database.ts
+  - apps/server/src/db/schema.ts
+  - apps/server/src/routes/projects.ts
+  - apps/server/src/routes/qa.ts
+  - apps/server/src/ci/componentQa.ts
+  - apps/server/src/ci/integrationTests.ts
+  - packages/ui/src/components/kanban/TaskCard.tsx
+  - packages/ui/src/components/ProjectSettings.tsx
+---
+
+# Автопроход задачи по QA-конвейеру
+
+## Включение и настройки
+
+Автопроход доступен только элементам типа `task` и по умолчанию выключен. Флаг
+`Task.autoPilot` хранится в `tasks.auto_pilot`, меняется через обычный PATCH
+карточки и меню `TaskCard`; включённое состояние видно на доске чипом
+«⏩ Автопроход». Счётчик уже использованных возвратов хранится отдельно в
+`auto_pilot_fix_cycles` и наружу отдаётся как `autoPilotFixCycles`.
+
+Владелец проекта задаёт в `ProjectSettings` команду полного Automated QA,
+необходимость ручного QA и максимальное число автоматических доработок. Поля
+`projects.automated_qa_command`, `autopilot_requires_manual_qa` и
+`autopilot_fix_limit` имеют дефолты `npm test`, false и 3; лимит принимается
+только как неотрицательное целое. Контракты проекта и задачи находятся в
+`packages/shared/src/projects.ts`, запись и миграции — в
+`apps/server/src/db/database.ts` и `apps/server/src/db/schema.ts`.
+
+## Координатор
+
+Координатор собран в `apps/server/src/server.ts`. Любое изменение доски от CI и
+включение флага или ручной перенос autoPilot-карточки планируют идемпотентный tick
+проекта. Tick смотрит текущий `semantic_type` и запускает ровно соответствующий
+исполнитель: Component QA, Integration Tests, Automated QA либо существующий
+`MergeRunManager`. Активные раны переиспользуются собственными idempotency-гейтами;
+параллельные ticks одного проекта подавляет process-local `Set`.
+
+Успешные специализированные runner-ы сообщают результат callback-ом. Координатор
+завершает gate штатными DB-методами, поэтому переходы идут через
+`canTransitionWorkflow` с actor `automation`, а не прямым обходом карты. Цепочка
+после development имеет вид `component_qa → integration_tests → automated_qa →
+manual_qa → awaiting_merge → merge`. Если ручной QA не обязателен, координатор
+переводит карточку из `manual_qa` в `awaiting_merge`; если обязателен — оставляет
+её ждать человека. `awaiting_merge` не обходится: оттуда запускается существующий
+merge-ран.
+
+Каждый координаторный перенос записывается в `qa_audit` с actor `automation` и
+payload `from/to`; отдельно журналируются ошибка, возврат, пропуск ручного QA и
+исчерпание лимита. Источники поведения — `autoPilotSnapshot`,
+`transitionAutoPilotTask` и `recordAutoPilotEvent` в
+`apps/server/src/db/database.ts`.
+
+## Ошибка и возврат на доработку
+
+Для ошибки выбран связанный bug, а не изменение критериев исходной задачи:
+диагностика сбоя является отдельной работой и должна иметь собственный жизненный
+цикл, не превращая утверждённые критерии приёмки в журнал запусков.
+`handleAutoPilotFailure` создаёт в backlog task с меткой `bug`, записывает в его
+описание этап, причину и ссылку на ран и ставит `source_task_id` на исходную
+карточку. Затем увеличивает счётчик циклов, переводит исходную задачу в
+`development` разрешённым automation-переходом и запускает development fix-run.
+После его успеха board event снова запускает QA-цепочку с Component QA.
+
+Перед созданием очередного bug метод сравнивает использованные циклы с
+`autoPilotFixLimit`. При исчерпанном лимите новая доработка не стартует: карточка
+переходит в `decision_required`, а причина, этап, ран, счётчик и лимит остаются в
+аудите. Автоматика не может вывести её из этой колонки, потому что это запрещает
+общий `canTransitionWorkflow`.
+
+## Automated QA и восстановление
+
+Исполнитель команды, потоковый лог, timeout и повтор после рестарта описаны в
+[qa-stage-runs.md](qa-stage-runs.md). Восстановление относится к самому
+Automated QA-рану; Component QA и Integration Tests при рестарте сохраняют своё
+прежнее терминальное поведение. Ручные start/retry/cancel Automated QA используют
+тот же runner через `apps/server/src/routes/qa.ts`.

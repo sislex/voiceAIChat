@@ -1,7 +1,7 @@
 ---
 title: Проекты и канбан-доска
 updated: 2026-08-29
-checked: e406d7c6
+checked: a6692e7a
 areas:
   - packages/shared/src/projects.ts
   - packages/shared/src/projectTypes.ts
@@ -1098,6 +1098,12 @@ LLM-поля чата при привязке сбрасываются в `null`
 пользователь может вернуть задачу на выбранную стадию, кроме прямого `done`.
 Серверный development-run отвергает старт из `backlog` и `preparation`: на этих
 стадиях UI не показывает действия «В очередь» и «Параллельно».
+
+У task-карточки может быть включён `autoPilot`: после попадания в автоматизируемую
+часть workflow сервер сам запускает последовательные QA-стадии и существующий
+merge-ран. Настройки ручного gate, команды Automated QA и лимита возвратов, а
+также поведение при ошибках описаны в
+[features/task-autopilot.md](features/task-autopilot.md).
 
 Переход таска `backlog → preparation` запускает отдельный пред-разработческий
 ран, а не только меняет колонку. История хранится в `task_preparation_runs` и
