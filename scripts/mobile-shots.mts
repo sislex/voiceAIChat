@@ -60,10 +60,15 @@ async function shot(page: Page, name: string): Promise<void> {
         label: (el.textContent || el.getAttribute('aria-label') || el.tagName).trim().slice(0, 40),
         // Класс обёртки — чтобы чинить точечно, а не подбирать селектор вслепую.
         cls: ((wrapper ?? el).className || el.className || '').toString().slice(0, 60),
-        h: Math.round(Math.max(box.height, el.getBoundingClientRect().height))
+        h: Math.round(Math.max(box.height, el.getBoundingClientRect().height)),
+        w: Math.round(Math.max(box.width, el.getBoundingClientRect().width)),
+        // Ширину требуем только у кнопок без подписи: у текстовой кнопки узкая
+        // ширина законна, а иконка обязана быть примерно квадратной. Порог по
+        // высоте ловил не всё — крестик 19×40 его проходил.
+        iconOnly: el.tagName === 'BUTTON' && !(el.textContent || '').trim()
       }
     })
-    .filter((t) => t.h > 0 && t.h < min), MIN_TAP_HEIGHT)
+    .filter((t) => (t.h > 0 && t.h < min) || (t.iconOnly && t.w > 0 && t.w < min)), MIN_TAP_HEIGHT)
   if (small.length) problems.push({ screen: name, kind: 'tap', detail: JSON.stringify(small) })
   console.log(`✓ ${name}`)
 }

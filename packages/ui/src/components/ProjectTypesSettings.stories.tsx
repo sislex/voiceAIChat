@@ -43,6 +43,16 @@ export const Empty: Story = { args: { types: [] } }
 /** Телефон: дерево, чипы и форма создания в одну колонку. */
 export const MobileViewport: Story = { parameters: { viewport: { defaultViewport: 'mobile2' } } }
 
+/**
+ * Телефон + узел «на утверждении»: у него нет основного действия, и в строке
+ * остаётся один крестик. Раньше он растягивался во всю ширину и глиф вставал по
+ * центру пустой полосы — сочетание, которого не было ни в одной сториз.
+ */
+export const MobilePending: Story = {
+  args: { types: [...builtin, own({ status: 'pending' })] },
+  parameters: { viewport: { defaultViewport: 'mobile2' } }
+}
+
 /** Первая загрузка: скелетоны вместо мигающей пустоты. */
 export const Loading: Story = { args: { types: [], status: 'loading' } }
 
