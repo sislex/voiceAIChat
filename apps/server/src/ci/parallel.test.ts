@@ -536,6 +536,34 @@ describe('параллельный запуск мимо очереди', () => 
   })
 })
 
+describe('явный запуск на указанной машине через очередь', () => {
+  it('при лимите 1 второй ран ждёт освобождения слота', async () => {
+    db.updateCiSettings({ maxConcurrentRuns: 1 })
+    const secondMachine = linkSecondMachine()
+    const { hold, release } = holdModel()
+    const started: string[] = []
+    const ci = manager({ modelWork: async (ctx) => {
+      started.push(ctx.task.id)
+      if (ctx.task.id === taskIds[0]) await hold
+      return { ok: true }
+    } })
+    const first = startRun(ci, taskIds[0])
+    await waitRunning(first)
+    const second = ci.start('admin', projectId, taskIds[1], { launch: 'queue', agentId: secondMachine })
+    if ('error' in second) throw new Error(second.error)
+
+    expect(second.run.agentId).toBe(secondMachine)
+    expect(second.run.agentSelectionSource).toBe('explicit')
+    expect(db.getCiRunRaw(second.run.id)!.status).toBe('queued')
+    expect(started).toEqual([taskIds[0]])
+
+    release()
+    expect(await waitStatus(first)).toBe('success')
+    expect(await waitStatus(second.run.id)).toBe('success')
+    expect(started).toEqual([taskIds[0], taskIds[1]])
+  })
+})
+
 describe('принудительный запуск на указанной машине', () => {
   it('простаивающая задача стартует сразу на указанной машине, мимо очереди', async () => {
     db.updateCiSettings({ maxConcurrentRuns: 1 })
@@ -547,6 +575,7 @@ describe('принудительный запуск на указанной ма
     const res = ci.forceStartOnMachine('admin', projectId, taskIds[1], second)
     if ('error' in res) throw new Error(res.error)
     expect(res.run.agentId).toBe(second)
+    expect(res.run.agentSelectionSource).toBe('explicit_bypass')
     expect(await waitStatus(res.run.id)).toBe('success')
     release()
     expect(await waitStatus(first)).toBe('success')
@@ -566,6 +595,7 @@ describe('принудительный запуск на указанной ма
     // Продвинут именно ожидающий ран, а не создан новый.
     expect(res.run.id).toBe(queued)
     expect(res.run.agentId).toBe(second)
+    expect(res.run.agentSelectionSource).toBe('explicit_bypass')
     expect(await waitStatus(queued)).toBe('success')
     // Первый ран всё ещё держит единственный слот — очередь не пострадала.
     expect(db.getCiRunRaw(first)!.status).toBe('running')

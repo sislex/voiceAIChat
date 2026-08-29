@@ -516,14 +516,23 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
       // promoteQueuedRun не найдёт ран в очереди и запуск честно откажет.
       const row = deps.db.getCiRunRaw(id)
       if (row && row.status === 'queued' && promoteQueuedRun(id, agentId)) {
-        deps.db.addCiEvent({ projectId, runId: id, type: 'run.forced_to_machine', actorType: 'user', actorId: userId, payload: { agentId } })
+        deps.db.updateCiRun(id, { agentSelectionSource: 'explicit_bypass' })
+        deps.db.addCiEvent({ projectId, runId: id, type: 'run.forced_to_machine', actorType: 'user', actorId: userId, payload: { agentId, bypassQueue: true } })
         const promoted = deps.db.getCiRunRaw(id)!
         emitRun(promoted, a.userId)
         return { run: promoted }
       }
       return { error: 'Для этой задачи уже выполняется ран' }
     }
-    return start(userId, projectId, taskId, { launch: 'parallel', agentId })
+    const result = start(userId, projectId, taskId, { launch: 'parallel', agentId })
+    if ('run' in result) {
+      deps.db.updateCiRun(result.run.id, { agentSelectionSource: 'explicit_bypass' })
+      deps.db.addCiEvent({ projectId, runId: result.run.id, type: 'run.forced_to_machine', actorType: 'user', actorId: userId, payload: { agentId, bypassQueue: true } })
+      const marked = deps.db.getCiRunRaw(result.run.id)!
+      emitRun(marked, userId)
+      return { run: marked }
+    }
+    return result
   }
 
   /**
