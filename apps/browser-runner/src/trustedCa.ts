@@ -33,14 +33,29 @@ export function splitPemCertificates(pem: string): string[] {
 }
 
 export interface ExtraCaSource {
-  /** Путь к PEM-файлу внутри контейнера. */
-  file?: string | undefined
-  /** PEM-содержимое строкой — когда файл монтировать неудобно. */
+  /**
+   * PEM в base64 — основной способ. Одна строка без переводов и кавычек
+   * переживает и `.env`, и подстановку compose, и шелл; многострочный PEM в
+   * переменной ломается на каждом из трёх этапов.
+   */
+  base64?: string | undefined
+  /** PEM-содержимое как есть — удобно в тестах и docker run. */
   pem?: string | undefined
+  /**
+   * Путь к PEM-файлу внутри контейнера. Годится, только если файл читаем
+   * пользователем раннера: том Caddy, например, не годится — весь его `pki`
+   * закрыт под root, потому что рядом с корнем лежит приватный ключ центра.
+   */
+  file?: string | undefined
 }
 
-/** Содержимое из файла или из переменной; ошибка чтения не должна ронять раннер. */
+/** Содержимое из значения или файла; ошибка чтения не должна ронять раннер. */
 export function readExtraCaPem(source: ExtraCaSource, read = readFileSync): { pem: string | null; error?: string } {
+  if (source.base64?.trim()) {
+    const decoded = Buffer.from(source.base64.trim(), 'base64').toString('utf8')
+    if (decoded.includes(BEGIN)) return { pem: decoded }
+    return { pem: null, error: 'VC_BROWSER_EXTRA_CA_B64 не содержит сертификата после декодирования' }
+  }
   if (source.pem?.includes(BEGIN)) return { pem: source.pem }
   if (!source.file) return { pem: null }
   try { return { pem: String(read(source.file, 'utf8')) } }
