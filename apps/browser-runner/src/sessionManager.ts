@@ -2,9 +2,10 @@ import { mkdir } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
-import type { BrowserCommandRequest, BrowserSelectorAction, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import type { BrowserCommandRequest, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { isBlockedAddress, profilePath, validatePublicUrl } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
+import { runInspectAction } from './inspectActions.js'
 
 interface Session {
   id: string
@@ -16,7 +17,13 @@ interface Session {
   pageIds: WeakMap<Page, string>
   activeTabId: string
   viewport: BrowserViewport
+  /** Кольцевые журналы страницы: без них модели нечем проверять поведение. */
+  console: BrowserConsoleEntry[]
+  network: BrowserNetworkEntry[]
 }
+
+/** Держим последние записи: журнал живой страницы иначе растёт без предела. */
+const LOG_LIMIT = 500
 
 export interface StartSessionRequest {
   sessionId: string
@@ -62,6 +69,8 @@ export class BrowserSessionManager {
       context,
       pages: new Map(),
       pageIds: new WeakMap(),
+      console: [],
+      network: [],
       activeTabId: '',
       viewport
     }
@@ -82,6 +91,23 @@ export class BrowserSessionManager {
       session.pageIds.set(page, id)
       session.pages.set(id, page)
       page.on('close', () => session.pages.delete(id))
+      // Журналы собираются с момента открытия страницы: спросить их задним
+      // числом нельзя, а этапу автотестов нужны именно они.
+      page.on('console', (message) => {
+        session.console.push({ level: message.type(), text: message.text().slice(0, 2000), at: Date.now() })
+        if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
+      })
+      page.on('response', (response) => {
+        session.network.push({
+          method: response.request().method(), url: response.url().slice(0, 500),
+          status: response.status(), ok: response.ok(), at: Date.now()
+        })
+        if (session.network.length > LOG_LIMIT) session.network.splice(0, session.network.length - LOG_LIMIT)
+      })
+      page.on('pageerror', (err) => {
+        session.console.push({ level: 'error', text: String(err.message).slice(0, 2000), at: Date.now() })
+        if (session.console.length > LOG_LIMIT) session.console.splice(0, session.console.length - LOG_LIMIT)
+      })
       return id
     }
     for (const page of context.pages()) register(page)
@@ -101,7 +127,7 @@ export class BrowserSessionManager {
     return true
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult | BrowserInspectResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     const tabId = request.tabId ?? session.activeTabId
@@ -136,6 +162,8 @@ export class BrowserSessionManager {
       else await page.keyboard.up(action.key)
     } else if (command.type === 'selector') {
       return runSelectorAction(page, command.action)
+    } else if (command.type === 'inspect') {
+      return runInspectAction({ console: session.console, network: session.network }, page, command.action)
     } else if (command.type === 'screenshot') {
       return page.screenshot({ type: command.format === 'jpeg' ? 'jpeg' : command.format === 'webp' ? 'webp' : 'png', fullPage: command.fullPage, quality: command.format === 'png' ? undefined : command.quality })
     }

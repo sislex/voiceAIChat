@@ -51,9 +51,28 @@ describe('перевод действий модели для Playwright Reader'
     if (plan.kind === 'unsupported') expect(plan.reason).toMatch(/Playwright Reader/)
   })
 
-  it('сетевые и консольные запросы тоже отклоняются: их у раннера нет', () => {
-    expect(planModelAction({ kind: 'network' }).kind).toBe('unsupported')
-    expect(planModelAction({ kind: 'console' }).kind).toBe('unsupported')
-    expect(planModelAction({ kind: 'styles', selector: 'body' }).kind).toBe('unsupported')
+  it('консоль и сеть больше не отклоняются: они нужны этапу автотестов', () => {
+    expect(planModelAction({ kind: 'console', level: 'error' })).toMatchObject({
+      command: { type: 'inspect', action: { kind: 'console', level: 'error' } }
+    })
+    expect(planModelAction({ kind: 'network', filter: '/api/' })).toMatchObject({
+      command: { type: 'inspect', action: { kind: 'network', filter: '/api/' } }
+    })
+  })
+
+  it('«ошибки страницы» — это журнал консоли с уровнем error', () => {
+    expect(planModelAction({ kind: 'errors' })).toMatchObject({
+      command: { type: 'inspect', action: { kind: 'console', level: 'error' } }
+    })
+  })
+
+  it('стили читаются по селектору со списком свойств', () => {
+    expect(planModelAction({ kind: 'styles', selector: '.card', properties: ['display'] })).toMatchObject({
+      command: { type: 'inspect', action: { kind: 'styles', selector: '.card', properties: ['display'] } }
+    })
+  })
+
+  it('без раннера нечего исполнять — evaluate по-прежнему отклоняется', () => {
+    expect(planModelAction({ kind: 'evaluate', code: '1' }).kind).toBe('unsupported')
   })
 })
