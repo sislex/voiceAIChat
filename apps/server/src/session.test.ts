@@ -31,9 +31,11 @@ let app: FastifyInstance
 let db: VoiceChatDb
 let port: number
 let authStatus: AuthStatusState
+let sentMail: { to: string; text: string }[]
 
 beforeEach(async () => {
   db = new VoiceChatDb(':memory:')
+  sentMail = []
   authStatus = new AuthStatusState(async () => ({
     claude: { provider: 'claude', loggedIn: true, detail: 'подтверждено' },
     codex: { provider: 'codex', loggedIn: false, detail: 'вход не выполнен' }
@@ -43,7 +45,8 @@ beforeEach(async () => {
     db,
     claude: mockClaude,
     authStatus,
-    sessionSecret: SECRET
+    sessionSecret: SECRET,
+    mailer: { configured: true, send: async (message) => { sentMail.push({ to: message.to, text: message.text }) } }
   })
   await app.listen({ port: 0, host: '127.0.0.1' })
   port = (app.server.address() as AddressInfo).port
@@ -635,5 +638,47 @@ describe('WS: кадры использования базы знаний', () =
     expect(usage[0].query?.status).toBe('pending')
     expect(usage[1].query).toMatchObject({ status: 'delivered', chars: 42 })
     expect(otherFrames.some((f) => f.t === 'kb.usage')).toBe(false)
+  })
+})
+
+describe('сброс пароля по подтверждённому email', () => {
+  it('не раскрывает наличие адреса, шлёт ссылку и одноразово меняет пароль с отзывом сессий', async () => {
+    db.createEmailVerification({ token: 'verify-reset-user', name: 'reset-user', email: 'reset@example.test', password: 'old-password-1', ttlMs: 60_000 })
+    expect(db.redeemEmailVerification('verify-reset-user', 'developer')).not.toBeNull()
+
+    const existing = await app.inject({ method: 'POST', url: '/api/session/reset/request', payload: { email: 'reset@example.test' } })
+    const missing = await app.inject({ method: 'POST', url: '/api/session/reset/request', payload: { email: 'missing@example.test' } })
+    expect(existing.statusCode).toBe(200)
+    expect(missing.statusCode).toBe(200)
+    expect(existing.json()).toEqual(missing.json())
+    expect(sentMail).toHaveLength(1)
+    const token = /#\/reset\/([^\s]+)/.exec(sentMail[0]!.text)?.[1]
+    expect(token).toBeTruthy()
+
+    const login = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'reset-user', password: 'old-password-1' } })
+    const oldToken = login.json<{ token: string }>().token
+    const changed = await app.inject({ method: 'POST', url: '/api/session/reset/email', payload: { token, password: 'new-password-2' } })
+    expect(changed.statusCode).toBe(200)
+    expect(db.verifyUserPassword('reset-user', 'new-password-2')).not.toBeNull()
+    expect((await app.inject({ method: 'GET', url: '/api/settings', headers: { authorization: `Bearer ${oldToken}` } })).statusCode).toBe(401)
+
+    const reused = await app.inject({ method: 'POST', url: '/api/session/reset/email', payload: { token, password: 'another-password-3' } })
+    expect(reused.statusCode).toBe(400)
+    expect(reused.json<{ error: string }>().error).toMatch(/уже использована/)
+    expect(db.listSecurityEvents({ user: 'reset-user', limit: 10 }).some((event) => event.type === 'password_reset' && event.details.includes('email'))).toBe(true)
+  })
+
+  it('отличает истёкшую ссылку и ограничивает запросы', async () => {
+    db.createEmailVerification({ token: 'verify-expired-user', name: 'expired-user', email: 'expired@example.test', password: 'old-password-1', ttlMs: 60_000 })
+    expect(db.redeemEmailVerification('verify-expired-user', 'developer')).not.toBeNull()
+    db.createPasswordResetToken('expired-user', 'expired-token', -1)
+    const expired = await app.inject({ method: 'POST', url: '/api/session/reset/email', payload: { token: 'expired-token', password: 'new-password-2' } })
+    expect(expired.statusCode).toBe(410)
+    expect(expired.json<{ error: string }>().error).toMatch(/истекла/)
+
+    const responses = []
+    for (let i = 0; i < 6; i += 1) responses.push(await app.inject({ method: 'POST', url: '/api/session/reset/request', payload: { email: `rate-${i}@example.test` } }))
+    expect(responses.at(-1)?.statusCode).toBe(429)
+    expect(responses.at(-1)?.headers['retry-after']).toBeTruthy()
   })
 })

@@ -222,6 +222,15 @@ CREATE TABLE IF NOT EXISTS email_verifications (
 );
 CREATE INDEX IF NOT EXISTS idx_email_verifications_email ON email_verifications(email);
 
+-- Сброс пароля по подтверждённому email: наружу уходит сырой токен, в БД хранится только sha256.
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_name);
+
 CREATE TABLE IF NOT EXISTS invites (
   token TEXT PRIMARY KEY,
   role TEXT NOT NULL,

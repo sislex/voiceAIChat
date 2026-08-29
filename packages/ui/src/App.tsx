@@ -35,7 +35,7 @@ import { CHAT_COMPOSER_QUERY, useMediaQuery } from './lib/mediaQuery'
 import { SettingsModal } from './components/SettingsModal'
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
-import { LoginScreen } from './components/LoginScreen'
+import { LoginScreen, ResetPasswordScreen } from './components/LoginScreen'
 import { EnginesObserver, type ObserverEngine } from './components/EnginesObserver'
 import { ProjectSettings } from './components/ProjectSettings'
 import { PersonalizationPage } from './components/SettingsPage'
@@ -1530,6 +1530,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       />
     )
   }
+  const resetEmailToken = /^#\/reset\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
+  if (session.authRequired && !session.currentUser && resetEmailToken && window.session?.resetPasswordByEmail) {
+    return <ResetPasswordScreen token={decodeURIComponent(resetEmailToken)} reset={window.session.resetPasswordByEmail} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/' }} onBack={() => { window.location.hash = '#/' }} />
+  }
   const verifyToken = /^#\/verify\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
   if (session.authRequired && !session.currentUser && verifyToken && window.session?.verifyEmail) {
     return <VerifyScreen token={decodeURIComponent(verifyToken)} verify={window.session.verifyEmail} theme={settingsState.settings.theme} onDone={() => { window.location.hash = '#/'; window.location.reload() }} onBack={() => { window.location.hash = '#/'; setSignupOpen(false) }} />
@@ -1550,6 +1554,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onCode={(code) => void runtime.loginCode(code)}
         onCancelTwoFactor={() => runtime.cancelTwoFactor()}
         onReset={window.session?.resetPassword ? (name, code, password) => void runtime.resetPassword(name, code, password) : undefined}
+        onForgotPassword={window.session?.requestPasswordReset}
         onSignup={signupEnabled ? () => setSignupOpen(true) : undefined}
       />
     )

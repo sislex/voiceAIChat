@@ -271,6 +271,16 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       ws.reconnect()
       return { ok: true }
     },
+    requestPasswordReset: async (email) => {
+      const r = await fetch(httpBase + REST.sessionResetRequest, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email }) })
+      const body = (await r.json().catch(() => ({}))) as { ok?: true; message?: string; error?: string }
+      return r.ok ? { ok: true, message: body.message ?? 'Если адрес подтверждён, письмо со ссылкой отправлено.' } : { error: body.error ?? `Ошибка ${r.status}` }
+    },
+    resetPasswordByEmail: async ({ token, password }) => {
+      const r = await fetch(httpBase + REST.sessionResetEmail, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) })
+      if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
+      return { ok: true }
+    },
     changePassword: async ({ current, next }) => {
       const r = await fetch(httpBase + REST.sessionPassword, { method: 'POST', headers: { ...authHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({ current, next }) })
       if (!r.ok) return { error: ((await r.json().catch(() => ({}))) as { error?: string }).error ?? `Ошибка ${r.status}` }
