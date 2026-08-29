@@ -37,7 +37,7 @@ function formatBytes(bytes: number): string {
 }
 
 /** Разделы меню настроек. */
-type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'instructions' | 'storage' | 'ui' | 'projectTypes'
+type SettingsSection = 'llm' | 'aiAssist' | 'download' | 'stt' | 'tts' | 'dialog' | 'instructions' | 'storage' | 'security' | 'ui' | 'projectTypes'
 const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'llm', label: 'LLM' },
   { id: 'aiAssist', label: 'AI-помощник' },
@@ -47,6 +47,7 @@ const SECTIONS: { id: SettingsSection; label: string }[] = [
   { id: 'dialog', label: 'Голосовой диалог' },
   { id: 'instructions', label: 'Инструкции' },
   { id: 'storage', label: 'Хранилище' },
+  { id: 'security', label: 'Безопасность' },
   { id: 'ui', label: 'Интерфейс' },
   // Типы переживают проекты и не принадлежат ни одному из них — место каталогу
   // в пользовательских настройках, а не внутри конкретного проекта.
@@ -597,6 +598,22 @@ export function SettingsModal({
                   onChange={(event) => setTtlDraft(event.target.value)}
                   onBlur={saveTtl}
                   onKeyDown={(event) => { if (event.key === 'Enter') saveTtl() }}
+                />
+              </div>
+            )}
+
+            {section === 'security' && (
+              <div className="frow">
+                <div>
+                  <p className="flab">Письма о новых входах</p>
+                  <p className="fsub">Отправлять на подтверждённый email при входе с нового сочетания IP и устройства.</p>
+                </div>
+                <button
+                  className={settings.loginNewDeviceEmails ? 'sw on' : 'sw'}
+                  onClick={() => onChange({ loginNewDeviceEmails: !settings.loginNewDeviceEmails })}
+                  role="switch"
+                  aria-checked={settings.loginNewDeviceEmails}
+                  aria-label="Письма о новых входах" title="Письма о новых входах"
                 />
               </div>
             )}

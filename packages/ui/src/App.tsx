@@ -273,9 +273,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     routeProjectSummary?.typeChain?.features ??
     ALL_PROJECT_FEATURES
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
-  const [sessionsOpen, setSessionsOpen] = useState(false)
+  const [sessionsOpen, setSessionsOpen] = useState(() => window.location.hash === '#/security/sessions')
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
-  const [changePasswordOpen, setChangePasswordOpen] = useState(false)
+  const [changePasswordOpen, setChangePasswordOpen] = useState(() => window.location.hash === '#/security/password')
   // Открытая регистрация: спрашиваем сервер один раз, пока пользователь не вошёл.
   const [signupOpen, setSignupOpen] = useState(() => window.location.hash === '#/signup')
   const [signupEnabled, setSignupEnabled] = useState(false)
