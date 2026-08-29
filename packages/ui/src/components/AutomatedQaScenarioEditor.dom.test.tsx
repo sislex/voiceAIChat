@@ -37,3 +37,15 @@ describe('AutomatedQaScenarioEditor', () => {
     expect(screen.getByRole('button', { name: 'Добавить шаг' })).toBeDisabled()
   })
 })
+
+describe('проверка стартового адреса (круг 10)', () => {
+  it('localhost объясняется сразу, а не через минуты прогона', () => {
+    const scenario: AutomatedQaScenario = { startUrl: 'http://localhost:5173', steps: [] }
+    render(<AutomatedQaScenarioEditor detail={detail(scenario)} isOwner onUpdate={vi.fn()} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('не ходит в localhost')
+  })
+  it('внешний адрес не ругается', () => {
+    render(<AutomatedQaScenarioEditor detail={detail({ startUrl: 'https://example.com', steps: [] })} isOwner onUpdate={vi.fn()} />)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+})

@@ -150,7 +150,10 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
     case 'edits':
       return { kind: 'unsupported', reason: 'Правки edit-режима копит прокси веб-превью; у изолированного Chromium этого режима нет вовсе, поэтому и сохранённых правок быть не может.' }
     case 'upload':
-      return { kind: 'unsupported', reason: 'Загрузка файла в изолированном Chromium пока не реализована: содержимое нужно сначала записать на сторону раннера.' }
+      return {
+        kind: 'command',
+        command: { type: 'selector', action: { kind: 'upload', selector: action.selector, name: action.name, base64: action.base64, ...(action.mimeType ? { mimeType: action.mimeType } : {}) } }
+      }
     default:
       return { kind: 'unsupported', reason: `Действие «${(action as { kind: string }).kind}» в Playwright Reader пока не поддерживается.` }
   }

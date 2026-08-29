@@ -35,7 +35,7 @@ export interface BrowserStartInput {
 
 export interface BrowserRunnerClient {
   start(input: BrowserStartInput): Promise<BrowserSessionMetadata>
-  command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata>
+  command(sessionId: string, request: BrowserCommandRequest, signal?: AbortSignal): Promise<BrowserSessionMetadata>
   screenshot(sessionId: string, request: BrowserCommandRequest): Promise<{ buffer: Buffer; mimeType: string }>
   stop(sessionId: string): Promise<boolean>
 }
@@ -45,8 +45,14 @@ export function createBrowserRunnerClient(opts: BrowserRunnerClientOptions): Bro
   const base = opts.baseUrl.replace(/\/$/, '')
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
-  async function call(path: string, method: string, body?: unknown): Promise<Response> {
+  async function call(path: string, method: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
     const abort = new AbortController()
+    // Отмена рана обязана обрывать запрос: шаг `wait` держит соединение до
+    // своего таймаута, и без этого «Отменить» срабатывало через полминуты.
+    if (signal) {
+      if (signal.aborted) abort.abort()
+      else signal.addEventListener('abort', () => abort.abort(), { once: true })
+    }
     const timer = setTimeout(() => abort.abort(), timeoutMs)
     try {
       return await fetchImpl(`${base}${path}`, {
@@ -83,8 +89,8 @@ export function createBrowserRunnerClient(opts: BrowserRunnerClientOptions): Bro
       if (!res.ok) throw await asError(res)
       return res.json() as Promise<BrowserSessionMetadata>
     },
-    async command(sessionId, request) {
-      const res = await call(`/v1/sessions/${encodeURIComponent(sessionId)}/commands`, 'POST', request)
+    async command(sessionId, request, signal) {
+      const res = await call(`/v1/sessions/${encodeURIComponent(sessionId)}/commands`, 'POST', request, signal)
       if (!res.ok) throw await asError(res)
       return res.json() as Promise<BrowserSessionMetadata>
     },

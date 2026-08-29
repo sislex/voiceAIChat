@@ -46,10 +46,10 @@ describe('перевод действий модели для Playwright Reader'
   })
 
   it('неподдерживаемое действие отклоняется с объяснением, а не выполняется не тем', () => {
-    // Загрузка файла: раннеру нужно сначала записать содержимое у себя.
-    const plan = planModelAction({ kind: 'upload', selector: '#file', name: 'a.txt', base64: 'AA==' })
+    // Правки edit-режима копит прокси превью; в браузере такого режима нет.
+    const plan = planModelAction({ kind: 'edits' })
     expect(plan.kind).toBe('unsupported')
-    if (plan.kind === 'unsupported') expect(plan.reason).toMatch(/изолированном Chromium/)
+    if (plan.kind === 'unsupported') expect(plan.reason).toMatch(/edit-режима/)
   })
 
   it('консоль и сеть больше не отклоняются: они нужны этапу автотестов', () => {
@@ -104,12 +104,15 @@ describe('действия, добавленные кругом 9', () => {
     expect(byPoint.kind === 'unsupported' && byPoint.reason).toContain('селекторами')
   })
 
-  it('неподдержанное объясняется по существу, а не одной общей фразой', () => {
+  it('единственное неподдержанное действие объясняется по существу', () => {
+    // До круга 9 общую формулировку про Chromium получали все отказы подряд,
+    // включая `edits`, для которого она была неверна по существу.
     const edits = planModelAction({ kind: 'edits' })
-    const upload = planModelAction({ kind: 'upload', selector: '#f', name: 'a.txt', base64: '' })
-    expect(edits.kind === 'unsupported' && edits.reason).toContain('edit-режима')
-    expect(upload.kind === 'unsupported' && upload.reason).toContain('записать на сторону раннера')
-    // Причины разные: до круга 9 обе получали одну формулировку про Chromium.
-    expect(edits.kind === 'unsupported' && upload.kind === 'unsupported' && edits.reason).not.toBe(upload.kind === 'unsupported' ? upload.reason : '')
+    expect(edits.kind === 'unsupported' && edits.reason).toContain('прокси веб-превью')
+  })
+
+  it('upload доходит до раннера вместе с именем и типом (круг 10)', () => {
+    expect(planModelAction({ kind: 'upload', selector: '#file', name: 'a.png', mimeType: 'image/png', base64: 'AA==' }))
+      .toMatchObject({ command: { type: 'selector', action: { kind: 'upload', selector: '#file', name: 'a.png', mimeType: 'image/png' } } })
   })
 })

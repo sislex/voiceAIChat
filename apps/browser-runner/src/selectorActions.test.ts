@@ -21,6 +21,7 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
     dragTo: vi.fn(async () => {}),
     ariaSnapshot: async () => '- button "Создать"',
     evaluate: async () => null,
+    setInputFiles: vi.fn(async () => {}),
     ...over
   }
   return self
@@ -133,5 +134,32 @@ describe('действия, которых у раннера не было (кр
   it('ошибка Playwright возвращается значением, а не исключением', async () => {
     const target = locator({ hover: vi.fn(async () => { throw new Error('Timeout 5000ms exceeded\nCall log:\n  - waiting') }) })
     expect(await runSelectorAction(page(target), { kind: 'hover', selector: '.menu' })).toEqual({ ok: false, error: 'Timeout 5000ms exceeded' })
+  })
+})
+
+describe('загрузка файла (круг 10)', () => {
+  it('содержимое base64 уходит в setInputFiles с именем и типом', async () => {
+    const target = locator()
+    const result = await runSelectorAction(page(target), { kind: 'upload', selector: '#file', name: 'a.txt', mimeType: 'text/plain', base64: Buffer.from('привет').toString('base64') })
+    expect(result).toEqual({ ok: true })
+    expect(target.setInputFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('привет') }),
+      expect.anything()
+    )
+  })
+
+  it('без типа подставляется нейтральный, пустое содержимое отклоняется', async () => {
+    const target = locator()
+    await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'a.bin', base64: 'AA==' })
+    expect(target.setInputFiles).toHaveBeenCalledWith(expect.objectContaining({ mimeType: 'application/octet-stream' }), expect.anything())
+    expect(await runSelectorAction(page(locator()), { kind: 'upload', selector: '#f', name: 'a', base64: '' })).toEqual({ ok: false, error: 'Пустое содержимое файла' })
+  })
+
+  it('слишком большой файл отклоняется до обращения к странице', async () => {
+    const target = locator()
+    const huge = Buffer.alloc(9 * 1024 * 1024).toString('base64')
+    expect(await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'big.bin', base64: huge }))
+      .toEqual({ ok: false, error: 'Файл больше 8 МБ' })
+    expect(target.setInputFiles).not.toHaveBeenCalled()
   })
 })
