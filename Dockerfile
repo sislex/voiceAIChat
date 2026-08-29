@@ -146,24 +146,32 @@ CMD ["sh", "-c", "cd apps/tts-runner && exec node --import tsx src/index.ts"]
 # ---- Runtime браузерного раннера (Playwright Reader, этап автотестов) -----
 # Отдельная база, а не runtime-base: Chromium тянет десятки системных библиотек,
 # и ставить их в общий образ ради одного сервиса значит раздуть все остальные.
-# Официальный образ Playwright уже содержит браузер и зависимости; версия
-# обязана совпадать с playwright в apps/browser-runner, иначе браузер не тот.
-FROM mcr.microsoft.com/playwright:v1.54.2-noble AS browser-runner-runtime
+# Официальный образ Playwright уже содержит браузеры и зависимости. Тег обязан
+# **точно** совпадать с версией пакета `playwright` в apps/browser-runner:
+# образ приносит сборку браузера под свою версию, а несовпадающий пакет ищет
+# другую (`chromium_headless_shell-1234` против `-1181`) и падает при первом
+# запуске сессии. Поэтому там точная версия без `^`, а совпадение держит тест
+# apps/browser-runner/src/imageVersion.test.ts.
+FROM mcr.microsoft.com/playwright:v1.62.1-noble AS browser-runner-runtime
 WORKDIR /app
+# Пользователь берётся готовый — `pwuser` из образа Playwright (uid 1001).
+# Своего заводить нельзя: образ основан на Ubuntu 24.04, где uid 1000 занят
+# штатным `ubuntu`, и `useradd -u 1000` валит сборку («UID 1000 is not unique»).
+# Общий docker-entrypoint.sh здесь тоже не годится: он сбрасывает привилегии
+# через `gosu`, которого в этом образе нет, и мигрирует профили CLI, которых у
+# браузерного раннера не бывает.
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    HOME=/home/node \
+    HOME=/home/pwuser \
     PORT=8792 \
     VC_BROWSER_DATA_DIR=/data
 COPY --from=build /app /app
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
-  && mkdir -p /data /home/node \
-  && (getent passwd node >/dev/null || useradd -m -u 1000 node) \
-  && chown -R node:node /data /home/node
+# chown до объявления VOLUME: именованный том при первом создании наследует
+# владельца каталога из образа, поэтому процессу под pwuser он доступен на запись.
+RUN mkdir -p /data && chown -R pwuser:pwuser /data
 VOLUME ["/data"]
 EXPOSE 8792
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+USER pwuser
 CMD ["sh", "-c", "cd apps/browser-runner && exec node --import tsx src/index.ts"]
 
 FROM runtime-base AS automation-runner-runtime
