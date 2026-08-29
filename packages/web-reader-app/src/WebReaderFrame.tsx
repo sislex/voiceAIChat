@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PreviewElementPayload } from '@shared/previewInspector'
+import type { PreviewAction } from '@shared/previewActions'
 import type { WebRecorderAreaScreenshot, WebRecorderHostMessage } from '@shared/webRecorder'
 import { browserId } from '@shared/browserId'
 import { createReaderHostBridge, type ReaderHostBridge, type ReaderHostRegistration } from './hostBridge'
@@ -29,11 +30,31 @@ export interface WebReaderFrameProps {
   onAreaScreenshot?: ((shot: WebRecorderAreaScreenshot) => void) | undefined
   /** Актуальная регистрация iframe (или null): host сверяет по ней MCP-команды. */
   onRegisterHost?: ((registration: ReaderHostRegistration | null) => void) | undefined
+  /** Последние подтверждённые действия модели; кнопка повторяет их через тот же host. */
+  actions?: readonly { id: string; action: PreviewAction; address: string | null; title: string | null }[]
+  onRepeatAction?: (action: PreviewAction) => void
+  pageError?: string | null
+  onAskError?: (error: string) => void
   /** Адрес standalone-сборки Reader; production и dev-proxy раздают /web-recorder/. */
   src?: string
 }
 
-export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
+function previewActionLabel(action: PreviewAction): string {
+  switch (action.kind) {
+    case 'open': return `Открыл ${action.url}`
+    case 'click': return `Нажал ${action.text ?? action.selector ?? 'элемент'}`
+    case 'type': return `Ввёл текст в ${action.selector}`
+    case 'read': return `Прочитал ${action.selector ?? 'страницу'}`
+    case 'find': return `Нашёл ${action.text ?? action.selector ?? 'элементы'}`
+    case 'screenshot': return 'Сделал снимок страницы'
+    case 'errors': return 'Проверил ошибки страницы'
+    case 'back': return 'Перешёл назад'
+    case 'forward': return 'Перешёл вперёд'
+    default: return `Выполнил: ${action.kind}`
+  }
+}
+
+export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, platform, ensurePreview, onSave, onSelectElement, onAreaScreenshot, onRegisterHost, actions = [], onRepeatAction, pageError, onAskError, src = '/web-recorder/' }: WebReaderFrameProps): JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [previewSession, setPreviewSession] = useState<'pending' | 'ready' | 'failed'>('ready')
   const [retryKey, setRetryKey] = useState(0)
@@ -107,6 +128,11 @@ export function WebReaderFrame({ conversationId, conversationUrl, projectUrl, pl
   }, [bridgeGeneration, ensurePreview, url, retryKey])
 
   return <section className="webpreview" aria-label="Web Reader">
+    {pageError && <div className="webpreview-error" role="alert"><span>{pageError}</span>{onAskError && <button className="vc-btn vc-btn--secondary vc-btn--sm" type="button" onClick={() => onAskError(pageError)}>Исправить</button>}</div>}
+    {actions.length > 0 && <section className="webpreview-scenario" aria-label="Действия ассистента">
+      <strong>Действия ассистента</strong>
+      <ol>{actions.map((item) => <li key={item.id}><span>{previewActionLabel(item.action)}</span>{onRepeatAction && <button className="vc-btn vc-btn--ghost vc-btn--sm" type="button" onClick={() => onRepeatAction(item.action)}>Повторить</button>}</li>)}</ol>
+    </section>}
     {url && previewSession === 'pending' && <div className="webpreview-empty" role="status">Подключение Web Preview…</div>}
     {url && previewSession === 'failed' && <div className="webpreview-empty" role="alert"><span>Не удалось подготовить Web Preview.</span><button className="vc-btn vc-btn--secondary" type="button" onClick={() => setRetryKey((value) => value + 1)}>Повторить</button></div>}
     <iframe key={conversationId} ref={frameRef} className="webpreview-frame" src={src} title="Web Reader" aria-hidden={previewSession !== 'ready'} />

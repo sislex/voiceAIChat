@@ -821,6 +821,8 @@ export interface RendererBoardBridge {
 export interface RendererPreviewBridge {
   /** Подписка на действия сервера (preview.action). */
   onAction(cb: (m: { conversationId: string; requestId: string; action: PreviewAction }) => void): () => void
+  /** Успешное действие Reader: живое состояние и запись ленты. */
+  onChanged?(cb: (m: { conversationId: string; address: string | null; title: string | null; navigated: boolean; action: PreviewAction }) => void): () => void
   /** Ответ на действие (preview.result). */
   result(m: { conversationId?: string; registrationId?: string; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }): void
 }

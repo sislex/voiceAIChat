@@ -16,6 +16,10 @@ describe('контракт протокола', () => {
       expect(SERVER_MESSAGE_TYPES).toContain(t)
   })
 
+  it('содержит reader.changed для живого Reader', () => {
+    expect(SERVER_MESSAGE_TYPES).toContain('reader.changed')
+  })
+
   it('содержит claude.log (режим консоли)', () => {
     expect(SERVER_MESSAGE_TYPES).toContain('claude.log')
   })
