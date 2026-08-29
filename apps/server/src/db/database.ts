@@ -3580,7 +3580,15 @@ export class VoiceChatDb {
     const ts = this.now()
     return this.db.transaction(() => {
       const row = this.invitationByTokenOrId(tokenOrId)
-      if (!row || row.status !== 'pending') throw new Error('Приглашение недействительно')
+      if (!row) throw new Error('Приглашение недействительно')
+      // Повторный переход по той же ссылке — обычное дело: письмо остаётся в
+      // почте, а вкладок может быть две. Если это приглашение уже принял тот же
+      // человек и он в проекте, отвечаем как на успех: новых прав это не даёт,
+      // зато он попадает в проект вместо отказа «Приглашение недействительно».
+      if (row.status === 'accepted' && this.invitationAddressedTo(row, username) && this.isProjectMember(username, row.project_id)) {
+        return { projectId: row.project_id }
+      }
+      if (row.status !== 'pending') throw new Error('Приглашение недействительно')
       if (row.expires_at <= ts) throw new Error('Срок приглашения истёк — попросите отправить его заново')
       if (!this.invitationAddressedTo(row, username)) throw new Error('Это приглашение адресовано другому пользователю')
       const user = this.getUser(username)

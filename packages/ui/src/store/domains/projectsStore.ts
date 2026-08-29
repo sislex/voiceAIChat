@@ -661,12 +661,24 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
           void refreshProjects().catch(() => {})
           return
         }
+        const previousRole = getState().projectDetail?.role ?? null
         try {
           const [detail] = await Promise.all([
             client['projects:get']({ id: projectId }),
             refreshProjects().catch(() => [])
           ])
-          if (getState().activeProjectId === projectId) setState({ projectDetail: detail })
+          if (getState().activeProjectId !== projectId) return
+          setState({ projectDetail: detail })
+          // Молча исчезнувшие владельческие действия человек принимает за сбой:
+          // он только что видел «Удалить проект», а теперь его нет. Говорим прямо.
+          if (detail && previousRole && detail.role !== previousRole) {
+            notify({
+              kind: 'info',
+              text: detail.role === 'owner'
+                ? 'Вам выдали права владельца проекта.'
+                : 'Ваша роль в проекте изменена на участника: настройки проекта теперь доступны только для чтения.'
+            })
+          }
         } catch (err) {
           if (accessLost(err)) {
             dropInaccessibleProject(projectId)
