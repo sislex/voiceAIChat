@@ -812,6 +812,8 @@ export interface Settings {
   personalization: UserPersonalization
   /** Инструкции чата (терминал, вопросы, картинки, свои тексты): что получает модель с каждым ходом. */
   chatInstructions: ChatInstruction[]
+  /** Письма о входе с нового сочетания IP и User-Agent. */
+  loginNewDeviceEmails: boolean
 }
 
 /** Поддерживаемые LLM-движки (CLI). */
@@ -908,7 +910,8 @@ export const DEFAULT_SETTINGS: Settings = {
   aiAssistPrompts: DEFAULT_AI_ASSIST_PROMPTS,
   generatedFilesTtlDays: 30,
   personalization: DEFAULT_PERSONALIZATION,
-  chatInstructions: DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item }))
+  chatInstructions: DEFAULT_CHAT_INSTRUCTIONS.map((item) => ({ ...item })),
+  loginNewDeviceEmails: true
 }
 
 /** Один сегмент распознанной речи (speakerId=1 до диаризации). */

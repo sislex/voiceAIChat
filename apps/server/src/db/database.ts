@@ -2817,6 +2817,15 @@ export class VoiceChatDb {
     this.db.prepare(`UPDATE users SET notices_seen_at = ? WHERE name = ?`).run(Date.now(), name)
   }
 
+  /** Атомарно резервирует суточное письмо для пары IP+UA; false означает, что письмо уже резервировали. */
+  reserveLoginDeviceEmail(name: string, ip: string, userAgent: string, now = Date.now()): boolean {
+    const cutoff = now - 24 * 60 * 60_000
+    const result = this.db.prepare(`INSERT INTO login_device_emails (user_name, ip, user_agent, sent_at) VALUES (?, ?, ?, ?)
+      ON CONFLICT(user_name, ip, user_agent) DO UPDATE SET sent_at = excluded.sent_at WHERE login_device_emails.sent_at <= ?`)
+      .run(name, ip, userAgent, now, cutoff)
+    return result.changes > 0
+  }
+
   /** Автоотключение неактивных (п.18): не входили дольше `days` (или никогда, но созданы давно) → blocked с причиной inactive; admin не трогаем. */
   blockInactiveUsers(days: number): string[] {
     const cutoff = Date.now() - days * 24 * 60 * 60_000
