@@ -65,6 +65,13 @@ describe('UsersAdmin', () => {
     expect(p.onSelect).toHaveBeenCalledWith('bob')
   })
 
+  it('даты дашборда — в русском формате, а не в локали браузера', () => {
+    // 1 января 2026 в UTC. Без явной локали здесь выходило «1/1/2026»: в русском
+    // интерфейсе день и месяц в таком виде не различить.
+    renderAdmin({ users: [{ name: 'bob', role: 'developer', blocked: false, createdAt: Date.UTC(2026, 0, 1, 12), conversationCount: 0, agents: [] }] })
+    expect(screen.getByTestId('users-dashboard')).toHaveTextContent('01.01.2026')
+  })
+
   it('у обычного пользователя нет вкладки машин', () => {
     renderAdmin({ selected: 'bob', isAdmin: false })
     // Вкладки — role=tab внутри role=tablist: иначе axe даёт critical
