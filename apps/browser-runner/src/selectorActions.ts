@@ -13,6 +13,13 @@ export interface SelectorLocator {
   innerText(options?: { timeout?: number }): Promise<string>
   isVisible(): Promise<boolean>
   waitFor(options?: { state?: 'visible'; timeout?: number }): Promise<void>
+  hover(options?: { timeout?: number }): Promise<void>
+  selectOption(value: string, options?: { timeout?: number }): Promise<unknown>
+  check(options?: { timeout?: number }): Promise<void>
+  uncheck(options?: { timeout?: number }): Promise<void>
+  dragTo(target: SelectorLocator, options?: { timeout?: number }): Promise<void>
+  ariaSnapshot(options?: { timeout?: number }): Promise<string>
+  evaluate(fn: string): Promise<unknown>
 }
 export interface SelectorPage {
   locator(selector: string): SelectorLocator
@@ -47,6 +54,35 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       const text = (await target.innerText({ timeout })).trim()
       const limit = Math.min(Math.max(action.limit ?? 4000, 100), 20_000)
       return { ok: true, text: text.length > limit ? `${text.slice(0, limit)}…` : text }
+    }
+    if (action.kind === 'hover') {
+      const target = locate(action.selector, action.text)
+      if (!target) return { ok: false, error: 'Нужен selector или text' }
+      await target.first().hover({ timeout })
+      return { ok: true }
+    }
+    if (action.kind === 'set') {
+      // Три разных контрола под одним действием: `type` не берёт ни один из них.
+      const target = page.locator(action.selector).first()
+      if (typeof action.checked === 'boolean') {
+        await (action.checked ? target.check({ timeout }) : target.uncheck({ timeout }))
+        return { ok: true }
+      }
+      if (typeof action.value !== 'string') return { ok: false, error: 'Нужен value или checked' }
+      // select отличаем от текстового поля по факту: сначала пробуем как select,
+      // и только на отказе — как поле ввода.
+      try { await target.selectOption(action.value, { timeout }); return { ok: true } }
+      catch { await target.fill(action.value, { timeout }); return { ok: true } }
+    }
+    if (action.kind === 'drag') {
+      await page.locator(action.from).first().dragTo(page.locator(action.to).first(), { timeout })
+      return { ok: true }
+    }
+    if (action.kind === 'a11y') {
+      const target = action.selector ? page.locator(action.selector).first() : page.locator('body')
+      const snapshot = await target.ariaSnapshot({ timeout })
+      const limit = Math.min(Math.max(action.limit ?? 4000, 100), 20_000)
+      return { ok: true, text: snapshot.length > limit ? `${snapshot.slice(0, limit)}…` : snapshot }
     }
     if (action.kind === 'find') {
       const target = locate(action.selector, action.text)

@@ -210,6 +210,12 @@ export interface RegisterPreviewMcpOptions {
    * настроен — тогда действие идёт прежним путём.
    */
   browserExecutor?: (userId: string, conversationId: string, action: PreviewAction) => Promise<PreviewActionOutcome | null>
+  /**
+   * Снимок из изолированного Chromium. Отдельно от `browserExecutor`, потому что
+   * возвращает картинку `dataUrl`, а не структуру действия; `null` — «этот
+   * разговор не про изолированный браузер, иди обычным путём».
+   */
+  browserScreenshot?: (userId: string, conversationId: string, args: { selector?: string }) => Promise<PreviewActionOutcome | null>
 }
 
 /** Ответ инструмента: результат действия сериализованным JSON либо ошибка. */
@@ -353,7 +359,12 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
         },
         async ({ selector, rect }) => {
           if (!entry) return noContext
-          const outcome = await opts.relay.request(entry.userId, entry.conversationId, {
+          // Единственный инструмент со своим транспортом: он отдаёт картинку, а
+          // не JSON. Из-за этого он же дольше всех ходил мимо browserExecutor —
+          // в Playwright Reader снимок уходил в браузер пользователя, где
+          // страницы этого разговора нет, и модель оставалась без вида страницы.
+          const direct = await opts.browserScreenshot?.(entry.userId, entry.conversationId, { ...(selector ? { selector } : {}) })
+          const outcome = direct ?? await opts.relay.request(entry.userId, entry.conversationId, {
             kind: 'screenshot',
             ...(selector ? { selector } : {}),
             ...(rect ? { rect } : {})
@@ -365,10 +376,14 @@ export function registerPreviewMcp(app: FastifyInstance, opts: RegisterPreviewMc
             return { content: [{ type: 'text' as const, text: 'Снимок не получен: страница не вернула картинку.' }], isError: true }
           }
           const where = result?.rect ? `x=${result.rect.x}, y=${result.rect.y}, ${result.rect.width}×${result.rect.height} px` : ''
+          // Изолированный Chromium снимает вьюпорт целиком. Молча отдать его в
+          // ответ на запрос по селектору — значит соврать: модель решит, что
+          // видит именно тот узел.
+          const note = direct && selector ? ' Снят весь вьюпорт: снимок по селектору в изолированном Chromium пока не поддержан.' : ''
           return {
             content: [
               { type: 'image' as const, data: match[2], mimeType: match[1] },
-              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.` }
+              { type: 'text' as const, text: `Скриншот области страницы${where ? ` (${where})` : ''}.${note}` }
             ]
           }
         }
