@@ -7219,6 +7219,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
      цели для пальца, а не для курсора — 22–25px мало. */
   .proj-invite-actions .vc-btn { min-height: 40px; }
   .proj-invite-actions .vc-btn--icon { min-width: 40px; }
+  /* Главные кнопки самого экрана приглашения — «Войти и принять»,
+     «Зарегистрироваться», «Принять»/«Отклонить». Были 34px: экран в прогон
+     снимков не попадал, потому что для него нужен живой токен. */
+  .invite-actions .vc-btn { min-height: 44px; }
+  /* «Принять»/«Отклонить» в списке приглашений сайдбара: этими двумя кнопками
+     человек решает, вступать ли в проект, а они были 25px. Экран в прогон не
+     попадал, пока у пользователя не появилось живое приглашение. */
+  .proj-invites-inbox__actions .vc-btn { min-height: 40px; }
   .invite-card .make-link { display: inline-flex; align-items: center; min-height: 44px; }
 }
 
