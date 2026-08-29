@@ -50,14 +50,28 @@ function sanitizeDefaults(value: unknown): ProjectTypeDefaults {
 
 export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb): void {
   /** Узел, которым пользователь вправе распоряжаться: свой личный либо любой для admin. */
-  const editable = (req: Parameters<typeof uid>[0], id: string): ProjectTypeNode | null => {
+  /**
+   * Узел, который проситель вправе менять, — либо причина отказа.
+   *
+   * Отказы разные по смыслу, и раньше все сводились к 404: автор опубликованного
+   * типа видел его в каталоге, нажимал «Удалить» и получал «Объект не найден» —
+   * будто узел исчез. Теперь про свой узел ему говорят прямо, а про чужой и
+   * невидимый по-прежнему отвечают 404, чтобы не подтверждать существование.
+   */
+  const editableOrRefusal = (
+    req: Parameters<typeof uid>[0],
+    id: string
+  ): { node: ProjectTypeNode } | { code: 404 | 409; error: string } => {
     const node = db.getProjectType(id)
-    if (!node) return null
-    const isAdmin = req.user?.role === 'admin'
+    if (!node || !isProjectTypeVisible(node, uid(req))) return { code: 404, error: 'not found' }
+    if (req.user?.role === 'admin') return { node }
+    if (node.ownerId !== uid(req)) return { code: 404, error: 'not found' }
     // Опубликованный узел автор больше не правит: у него уже могут быть чужие
     // проекты и подтипы. Ему остаётся создать ребёнка или отозвать публикацию.
-    if (node.status === 'published' && !isAdmin) return null
-    return isAdmin || node.ownerId === uid(req) ? node : null
+    if (node.status === 'published') {
+      return { code: 409, error: 'Опубликованный тип меняет только администратор. Отзовите публикацию или создайте под ним подтип.' }
+    }
+    return { node }
   }
 
   app.get('/api/project-types', async (req) => db.listProjectTypes(uid(req)))
@@ -95,8 +109,8 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
   app.patch<{ Params: { id: string }; Body: { parentId?: string | null; name?: string; description?: string; features?: unknown; defaults?: unknown } }>(
     '/api/project-types/:id',
     async (req, reply) => {
-      const node = editable(req, req.params.id)
-      if (!node) return notFound(reply)
+      const access = editableOrRefusal(req, req.params.id)
+      if ('code' in access) return reply.code(access.code).send({ error: access.error })
       const b = req.body ?? {}
       if (b.parentId !== undefined && b.parentId && !db.listProjectTypes(uid(req)).some((t) => t.id === b.parentId)) {
         return badReq(reply, 'Родительский тип недоступен')
@@ -116,8 +130,8 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
   )
 
   app.delete<{ Params: { id: string } }>('/api/project-types/:id', async (req, reply) => {
-    const node = editable(req, req.params.id)
-    if (!node) return notFound(reply)
+    const access = editableOrRefusal(req, req.params.id)
+    if ('code' in access) return reply.code(access.code).send({ error: access.error })
     try {
       return { ok: db.deleteProjectType(req.params.id) }
     } catch (error) {
@@ -127,8 +141,8 @@ export function registerProjectTypeRoutes(app: FastifyInstance, db: VoiceChatDb)
   })
 
   app.post<{ Params: { id: string } }>('/api/project-types/:id/publish', async (req, reply) => {
-    const node = editable(req, req.params.id)
-    if (!node) return notFound(reply)
+    const access = editableOrRefusal(req, req.params.id)
+    if ('code' in access) return reply.code(access.code).send({ error: access.error })
     try {
       return db.setProjectTypeStatus(uid(req), req.params.id, 'pending') ?? notFound(reply)
     } catch (error) {
