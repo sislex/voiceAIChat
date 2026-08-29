@@ -305,6 +305,8 @@ export const REST = {
   adminSignup: '/api/admin/signup',
   /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
   sessionReset: '/api/session/reset',
+  sessionResetRequest: '/api/session/reset/request',
+  sessionResetEmail: '/api/session/reset/email',
   sessionPassword: '/api/session/password',
   /** Отметить уведомления безопасности просмотренными (п.16). */
   sessionNoticesSeen: '/api/session/notices/seen',

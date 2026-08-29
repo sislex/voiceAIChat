@@ -525,7 +525,53 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
 
   // Открытая регистрация с подтверждением email: заявка → письмо со ссылкой #/verify/<token> → учётка и сессия.
   const signupLimiter = new SlidingWindowLimiter(5, 60 * 60_000)
+  const passwordResetByIp = new SlidingWindowLimiter(5, 60 * 60_000)
+  const passwordResetByEmail = new SlidingWindowLimiter(3, 60 * 60_000)
   const baseUrl = (req: FastifyRequest): string => (options.publicUrl ?? `${String(req.headers['x-forwarded-proto'] ?? req.protocol)}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`).replace(/\/$/, '')
+  const resetRequested = { ok: true as const, message: 'Если адрес подтверждён, письмо со ссылкой отправлено.' }
+
+  // Email-вариант сброса (п.10): одинаковый ответ не раскрывает существование адреса; ограничения считаются и по IP, и по адресу.
+  app.post<{ Body: { email?: string } }>(REST.sessionResetRequest, async (req, reply) => {
+    const email = String(req.body?.email ?? '').trim().toLowerCase()
+    const byIp = passwordResetByIp.hit(req.ip)
+    const byEmail = passwordResetByEmail.hit(email || 'invalid')
+    if (!byIp.ok || !byEmail.ok) {
+      const retry = Math.max(byIp.retryAfterSec, byEmail.retryAfterSec)
+      return reply.code(429).header('retry-after', String(retry)).send({ error: `Слишком много запросов — попробуйте через ${retry} с`, retryAfterSec: retry })
+    }
+    const user = email ? db.getUserByEmail(email) : null
+    if (!user || user.blocked) return resetRequested
+    const token = randomBytes(32).toString('base64url')
+    db.createPasswordResetToken(user.name, token, 60 * 60_000)
+    const link = `${baseUrl(req)}/#/reset/${encodeURIComponent(token)}`
+    try {
+      await mailer.send({
+        to: email,
+        subject: 'Сброс пароля ChatAI',
+        text: `Здравствуйте, ${user.name}!\n\nЧтобы установить новый пароль, откройте ссылку (действует 1 час):\n${link}\n\nЕсли вы не запрашивали сброс — просто проигнорируйте письмо.`,
+        html: `<p>Здравствуйте, <b>${user.name}</b>!</p><p>Чтобы установить новый пароль, откройте ссылку (действует 1 час):</p><p><a href="${link}">Сменить пароль</a></p><p>Если вы не запрашивали сброс — просто проигнорируйте письмо.</p>`
+      })
+    } catch (error) {
+      app.log.error({ error, user: user.name }, 'auth: письмо сброса пароля не отправлено')
+    }
+    return resetRequested
+  })
+
+  app.post<{ Body: { token?: string; password?: string } }>(REST.sessionResetEmail, async (req, reply) => {
+    const token = String(req.body?.token ?? '')
+    const name = token ? db.passwordResetTokenUser(token) : null
+    if (!name) return reply.code(400).send({ error: 'Ссылка сброса недействительна или уже использована' })
+    const violation = checkPasswordPolicy(String(req.body?.password ?? ''), { name })
+    if (violation) return reply.code(400).send({ error: violation })
+    const result = db.redeemPasswordResetToken(token, String(req.body?.password ?? ''))
+    if (result === 'expired') return reply.code(410).send({ error: 'Ссылка сброса истекла. Запросите новое письмо.' })
+    if (result !== 'ok') return reply.code(400).send({ error: 'Ссылка сброса недействительна или уже использована' })
+    db.revokeUserSessions(name)
+    db.logSecurityEvent({ user: name, type: 'password_reset', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'по подтверждённому email' })
+    reply.header('set-cookie', [previewCookie('', 0), ...clearSessionCookies(req)])
+    return { ok: true }
+  })
+
   const sendVerification = async (req: FastifyRequest, name: string, email: string, token: string): Promise<void> => {
     const link = `${baseUrl(req)}/#/verify/${encodeURIComponent(token)}`
     await mailer.send({
