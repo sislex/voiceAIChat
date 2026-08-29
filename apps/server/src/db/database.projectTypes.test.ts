@@ -261,6 +261,64 @@ describe('миграция существующей базы', () => {
     }
   })
 
+  it('настроенная доска переживает перезапуск: имена, своя колонка и скрытие целы', () => {
+    // Канонизация системных колонок дописывает недостающие. Проверяем, что она не
+    // трогает то, что человек настроил руками, — иначе каждый перезапуск сервера
+    // возвращал бы доску к заводскому виду.
+    const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-board-'))
+    const file = join(dir, 'db.sqlite')
+    try {
+      const first = new VoiceChatDb(file)
+      first.createUser('alice', '', 'developer')
+      const project = first.createProject('alice', { name: 'Настроенный' })
+      const board = first.getBoard('alice', project.id)!
+      const backlog = board.columns.find((c) => c.semanticType === 'backlog')!
+
+      first.renameColumn('alice', project.id, backlog.id, 'Идеи')
+      const custom = first.createColumn('alice', project.id, 'Согласование')!
+      first.setColumnHidden('alice', project.id, board.columns.find((c) => c.semanticType === 'merge')!.id, true)
+      const task = first.createTask('alice', project.id, { columnId: backlog.id, title: 'Задача' })!
+      const before = first.getBoard('alice', project.id)!
+      first.close()
+
+      const second = new VoiceChatDb(file)
+      const after = second.getBoard('alice', project.id, { includeCompleted: true })!
+      // Количество колонок не выросло: дубли системных не появились.
+      expect(after.columns.length).toBe(before.columns.length)
+      expect(after.columns.find((c) => c.semanticType === 'backlog')?.name).toBe('Идеи')
+      expect(after.columns.some((c) => c.id === custom.id && c.name === 'Согласование')).toBe(true)
+      // Скрытие — пользовательская настройка; до этой правки канонизация сбрасывала
+      // его на каждом старте сервера, и колонка возвращалась на доску сама.
+      expect(after.columns.find((c) => c.semanticType === 'merge')?.hidden).toBe(true)
+      // Карточка осталась в своей колонке.
+      expect(after.tasks.find((t) => t.id === task.id)?.columnId).toBe(backlog.id)
+      second.close()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('своя колонка в «Общем проекте» не удаляется канонизацией', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-general-col-'))
+    const file = join(dir, 'db.sqlite')
+    try {
+      const first = new VoiceChatDb(file)
+      first.createUser('alice', '', 'developer')
+      const project = first.createProject('alice', { name: 'Общий', typeId: BUILTIN_PROJECT_TYPE_IDS.general })
+      const custom = first.createColumn('alice', project.id, 'Закупка')!
+      first.close()
+
+      const second = new VoiceChatDb(file)
+      const columns = second.getBoard('alice', project.id)!.columns
+      // Тип задаёт минимум, а не потолок: добавленное человеком остаётся.
+      expect(columns.some((c) => c.id === custom.id)).toBe(true)
+      expect(columns.length).toBe(6)
+      second.close()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('посев не затирает пользовательские узлы', () => {
     const dir = mkdtempSync(join(tmpdir(), 'vc-ptypes-user-'))
     const file = join(dir, 'db.sqlite')
