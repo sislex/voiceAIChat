@@ -787,6 +787,8 @@ export interface RendererRealtimeBridge {
   onTaskPreparationNotificationsInvalidated(cb: (m: { projectId: string }) => void): () => void
   /** Приглашения текущего пользователя изменились (позвали, отозвали, истекло). */
   onInvitationsInvalidated?(cb: () => void): () => void
+  /** Состав участников или роль в проекте изменились: перечитать проект и список. */
+  onProjectMembershipChanged?(cb: (projectId: string) => void): () => void
   /** Долгая команда машины завершилась — тост/уведомление (machines-roadmap п.17). */
   onMachineCommand?(cb: (event: MachineCommandEvent) => void): () => void
   /** Watchdog: машина пропала/вернулась (machines-roadmap п.1). */

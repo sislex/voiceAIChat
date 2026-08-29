@@ -148,6 +148,7 @@ export interface ProjectsActions {
   setProjectDefaultMachine(id: string, agentId: string): Promise<void>
   fetchProjectDetail(id: string): Promise<ProjectDetail | null>
   openBoard(id: string): Promise<void>
+  refreshMembership(projectId: string): Promise<void>
   closeBoard(): void
   openProjectSettings(): void
   closeProjectSettings(): void
@@ -647,6 +648,32 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         } catch (err) {
           // Навигация по проектам необязательна: чат из-за неё не ломается.
           console.warn('[projects] не удалось загрузить список проектов', err)
+        }
+      },
+      /**
+       * Состав участников или роль изменились. Перечитываем деталь открытого
+       * проекта и список: роль живёт в `projectDetail.role`, и без этого экран
+       * настроек продолжал предлагать понижённому владельцу «Удалить проект» —
+       * действие, которое сервер уже отклоняет.
+       */
+      async refreshMembership(projectId) {
+        if (getState().activeProjectId !== projectId) {
+          void refreshProjects().catch(() => {})
+          return
+        }
+        try {
+          const [detail] = await Promise.all([
+            client['projects:get']({ id: projectId }),
+            refreshProjects().catch(() => [])
+          ])
+          if (getState().activeProjectId === projectId) setState({ projectDetail: detail })
+        } catch (err) {
+          if (accessLost(err)) {
+            dropInaccessibleProject(projectId)
+            fail(new Error('Доступ к проекту закрыт: он удалён или вас исключили из участников.'))
+            return
+          }
+          fail(err, () => void actions.refreshMembership(projectId))
         }
       },
       async selectProject(id) {
