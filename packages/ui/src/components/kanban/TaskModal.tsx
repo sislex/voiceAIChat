@@ -1060,6 +1060,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               ? 'waiting'
               : props.ciSummary.status === 'timeout'
                 ? 'timeout'
+                : props.ciSummary.status === 'interrupted'
+                  ? 'failed'
                 : props.ciSummary.status === 'skipped'
                   ? undefined
                   : props.ciSummary.status

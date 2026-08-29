@@ -441,16 +441,17 @@ describe('VoiceChatDb — миграция существующей БД под 
   })
 })
 
-describe('ci: раны, прерванные рестартом сервера', () => {
-  it('закрывает активные раны и их шаги, снимает ожидание ответа', () => {
+describe('ci: reconciliation после рестарта сервера', () => {
+  it('сохраняет незапущенный ран в очереди, а начатый помечает interrupted', () => {
     const { p, task } = project()
+    const queued = db.createCiRun({
+      projectId: p.id, taskId: task.id, agentId: null, triggeredBy: 'alice',
+      prevColumnId: null, slotProgress: { done: 0, total: 3, phase: 'В очереди' }
+    })
+    const activeTask = db.createTask('alice', p.id, { title: 'active', columnId: task.columnId })
     const run = db.createCiRun({
-      projectId: p.id,
-      taskId: task.id,
-      agentId: null,
-      triggeredBy: 'alice',
-      prevColumnId: null,
-      slotProgress: { done: 0, total: 3, phase: 'Старт' }
+      projectId: p.id, taskId: activeTask!.id, agentId: null, triggeredBy: 'alice',
+      prevColumnId: null, slotProgress: { done: 0, total: 3, phase: 'Старт' }
     })
     db.updateCiRun(run.id, { status: 'running', startedAt: 1000 })
     const done = db.addCiRunStep({ runId: run.id, slot: 'before_model', position: 0, kind: 'command', title: 'клон', status: 'success' })
@@ -458,20 +459,26 @@ describe('ci: раны, прерванные рестартом сервера',
     const later = db.addCiRunStep({ runId: run.id, slot: 'after_model', position: 2, kind: 'command', title: 'тесты', status: 'queued' })
     const it0 = db.addCiInteraction({ runId: run.id, stepId: stuck.id, kind: 'clarify', questions: [{ q: 'а?', options: ['да'], multi: false }] })
 
-    const closed = db.failInterruptedCiRuns()
-    expect(closed.map((r) => r.id)).toEqual([run.id])
-    expect(db.getCiRunRaw(run.id)?.status).toBe('failed')
+    const result = db.reconcileInterruptedCiRuns()
+    expect(result.queued.map((item) => item.id)).toEqual([queued.id])
+    expect(result.interrupted.map((item) => item.id)).toEqual([run.id])
+    expect(db.getCiRunRaw(queued.id)?.status).toBe('queued')
+    expect(db.getCiRunRaw(run.id)).toMatchObject({
+      status: 'interrupted',
+      slotProgress: { phase: 'Прерван перезапуском сервера' }
+    })
     expect(db.getCiRunRaw(run.id)?.finishedAt).not.toBeNull()
 
     const steps = db.getCiRun('alice', run.id)!.steps
     const byId = (id: string) => steps.find((s) => s.id === id)!.status
     expect(byId(done.id)).toBe('success')
-    expect(byId(stuck.id)).toBe('failed')
+    expect(byId(stuck.id)).toBe('interrupted')
     expect(byId(later.id)).toBe('skipped')
     expect(db.getCiInteraction(it0.id)?.status).toBe('cancelled')
 
-    // Повторный вызов ничего не находит: закрытые раны уже терминальны.
-    expect(db.failInterruptedCiRuns()).toHaveLength(0)
+    const again = db.reconcileInterruptedCiRuns()
+    expect(again.queued.map((item) => item.id)).toEqual([queued.id])
+    expect(again.interrupted).toEqual([])
   })
 })
 

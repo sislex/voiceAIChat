@@ -27,6 +27,7 @@ export function ciTone(status: CiStatus): CiTone {
     case 'success':
       return 'success'
     case 'failed':
+    case 'interrupted':
     case 'timeout':
     case 'cancelled':
       return 'removed'
@@ -43,6 +44,7 @@ const STATUS_LABEL: Record<CiStatus, string> = {
   awaiting_input: 'ждёт ответа',
   success: 'успех',
   failed: 'ошибка',
+  interrupted: 'прерван перезапуском',
   cancelled: 'отменён',
   timeout: 'таймаут',
   skipped: 'пропущен'
@@ -68,6 +70,7 @@ export function ciStatusIcon(status: CiStatus): string {
     case 'success':
       return '✓'
     case 'failed':
+    case 'interrupted':
     case 'timeout':
       return '✕'
     case 'cancelled':

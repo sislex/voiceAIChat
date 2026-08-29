@@ -573,8 +573,8 @@ export interface CiProjectSettings {
 /** Общий статус рана и шага. */
 export type CiLlmProvider = 'claude' | 'codex'
 
-export type CiStatus = 'queued' | 'running' | 'awaiting_input' | 'success' | 'failed' | 'cancelled' | 'timeout' | 'skipped'
-export const CI_STATUSES: CiStatus[] = ['queued', 'running', 'awaiting_input', 'success', 'failed', 'cancelled', 'timeout', 'skipped']
+export type CiStatus = 'queued' | 'running' | 'awaiting_input' | 'success' | 'failed' | 'interrupted' | 'cancelled' | 'timeout' | 'skipped'
+export const CI_STATUSES: CiStatus[] = ['queued', 'running', 'awaiting_input', 'success', 'failed', 'interrupted', 'cancelled', 'timeout', 'skipped']
 
 /** Результат попытки убрать ран из очереди. Сервер возвращает фактическое состояние,
  * чтобы клиент не сообщил об успехе, если ран успел начаться. */
@@ -586,7 +586,7 @@ export type CiQueueRemovalResult =
 
 /** Терминальные статусы рана. */
 export function isTerminalCiStatus(s: CiStatus): boolean {
-  return s === 'success' || s === 'failed' || s === 'cancelled' || s === 'timeout'
+  return s === 'success' || s === 'failed' || s === 'interrupted' || s === 'cancelled' || s === 'timeout'
 }
 
 /**
@@ -662,7 +662,7 @@ export function ciSummaryForTask<T extends { status: CiStatus }>(
   taskDone: boolean
 ): T | null {
   if (!summary) return null
-  return taskDone && (summary.status === 'failed' || summary.status === 'timeout') ? null : summary
+  return taskDone && (summary.status === 'failed' || summary.status === 'interrupted' || summary.status === 'timeout') ? null : summary
 }
 
 export function ciCardPulse(
@@ -676,6 +676,7 @@ export function ciCardPulse(
     case 'running':
       return summary.slotProgress.fixing ? 'fixing' : 'running'
     case 'failed':
+    case 'interrupted':
     case 'timeout':
       return 'failed'
     case 'success':
@@ -914,7 +915,7 @@ export interface AutomationProgress {
 
 function automationStatus(status: CiStatus): AutomationProgressStatus | 'pending' | 'skipped' {
   if (status === 'awaiting_input') return 'waiting'
-  if (status === 'timeout') return 'failed'
+  if (status === 'timeout' || status === 'interrupted') return 'failed'
   return status
 }
 
@@ -948,7 +949,7 @@ export function buildCiAutomationProgress(
   const etaMs = terminal || unknownWork || average == null ? null : Math.round(average * remaining)
   const elapsedMs = run.startedAt == null ? 0 : Math.max(0, (run.finishedAt ?? now) - run.startedAt)
   const stateRank = (status: CiStatus): number =>
-    status === 'success' || status === 'failed' || status === 'cancelled' || status === 'timeout' || status === 'skipped'
+    status === 'success' || status === 'failed' || status === 'interrupted' || status === 'cancelled' || status === 'timeout' || status === 'skipped'
       ? 4 : status === 'awaiting_input' ? 3 : status === 'running' ? 2 : status === 'queued' ? 1 : 0
   const version = Math.max(
     run.createdAt,

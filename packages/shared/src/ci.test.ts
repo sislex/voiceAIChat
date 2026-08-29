@@ -133,7 +133,7 @@ describe('canStartCiRun', () => {
   })
 
   it('завершённый ран запуску не мешает — «Выполнить» стартует новый', () => {
-    for (const s of ['success', 'failed', 'cancelled', 'timeout', 'skipped'] as const) {
+    for (const s of ['success', 'failed', 'interrupted', 'cancelled', 'timeout', 'skipped'] as const) {
       expect(canStartCiRun({ status: s })).toBe(true)
     }
   })
@@ -153,7 +153,9 @@ describe('ciSummaryForTask', () => {
   it('закрытая вручную задача не наследует старую ошибку рана', () => {
     const failed = { status: 'failed' as const }
     const timedOut = { status: 'timeout' as const }
+    const interrupted = { status: 'interrupted' as const }
     expect(ciSummaryForTask(failed, true)).toBeNull()
+    expect(ciSummaryForTask(interrupted, true)).toBeNull()
     expect(ciSummaryForTask(timedOut, true)).toBeNull()
     expect(ciSummaryForTask(failed, false)).toBe(failed)
   })
@@ -184,6 +186,7 @@ describe('ciCardPulse', () => {
   it('ожидание ответа, падение и успех дают свои состояния', () => {
     expect(ciCardPulse({ status: 'awaiting_input', slotProgress: sp() })).toBe('awaiting')
     expect(ciCardPulse({ status: 'failed', slotProgress: sp() })).toBe('failed')
+    expect(ciCardPulse({ status: 'interrupted', slotProgress: sp() })).toBe('failed')
     expect(ciCardPulse({ status: 'timeout', slotProgress: sp() })).toBe('failed')
     expect(ciCardPulse({ status: 'success', slotProgress: sp() })).toBe('done')
   })
