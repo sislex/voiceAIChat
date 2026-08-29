@@ -4,7 +4,10 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { VoiceBar } from './VoiceBar'
+import { readFileSync } from 'node:fs'
 import '../styles/app.css'
+
+const appCss = readFileSync('src/styles/app.css', 'utf8')
 
 function setup(state: Parameters<typeof VoiceBar>[0]['state'], overrides = {}) {
   const props = makeProps(state, overrides)
@@ -101,9 +104,25 @@ describe('VoiceBar — состояния', () => {
     const props = setup('idle', { draft: 'привет', submitPending: true })
     const submit = screen.getByLabelText('Отправить сообщение')
     expect(submit).toBeDisabled()
+    expect(submit).toHaveAttribute('aria-busy', 'true')
     expect(screen.getByTestId('request-status')).toHaveTextContent('Запрос отправляется…')
     await userEvent.click(submit)
     expect(props.onSubmitText).not.toHaveBeenCalled()
+  })
+
+  it('attach, send и stop имеют единые компактные контейнеры без уменьшения иконок', () => {
+    setup('thinking', { draft: 'следующий вопрос' })
+    const attach = screen.getByLabelText('Прикрепить файл')
+    const mic = screen.getByLabelText('Говорить')
+    const send = screen.getByLabelText('Добавить сообщение в очередь')
+    const stop = screen.getByLabelText('Остановить ответ')
+    expect(attach).toHaveClass('vc-btn--sm', 'composer-attach')
+    expect(mic).toHaveClass('vc-btn--sm', 'composer-mic')
+    expect(send).toHaveClass('vc-btn--sm', 'vc-btn--primary', 'composer-send')
+    expect(stop).toHaveClass('vc-btn--sm', 'vc-btn--danger', 'composer-stop')
+    expect(appCss).toMatch(/\.voicebar \.composer-mic\.vc-btn--circle,[\s\S]*?width: 32px;[\s\S]*?height: 32px;[\s\S]*?border-radius: 12px;/)
+    expect(send.querySelector('svg')).toHaveAttribute('width', '16')
+    expect(stop.querySelector('svg')).toHaveAttribute('width', '16')
   })
 
   it('повторные realtime-события обновляют единственную строку без дублей', () => {
@@ -291,7 +310,19 @@ describe('VoiceBar — высота поля ввода', () => {
     expect(toggle.parentElement).toHaveClass('composer-input')
     expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+    const resizeIcon = toggle.querySelector('svg')
+    expect(resizeIcon).toHaveAttribute('width', '24')
+    expect(resizeIcon).toHaveAttribute('height', '24')
+    expect(resizeIcon).toHaveAttribute('viewBox', '0 0 24 24')
+    expect(resizeIcon).toHaveAttribute('fill', 'none')
+    expect(resizeIcon).toHaveAttribute('stroke', 'currentColor')
+    expect(resizeIcon).toHaveAttribute('stroke-width', '2')
+    expect(resizeIcon).toHaveAttribute('stroke-linecap', 'round')
+    expect(resizeIcon).toHaveAttribute('stroke-linejoin', 'round')
+    expect(Array.from(resizeIcon?.querySelectorAll('path') ?? []).map((path) => path.getAttribute('d'))).toEqual([
+      'M16 3 L21 3 L21 8',
+      'M8 21 L3 21 L3 16'
+    ])
 
     input.focus()
     input.setSelectionRange(2, 8)
@@ -602,7 +633,19 @@ describe('VoiceBar — адаптивный композер', () => {
     expect(toggle.parentElement).toHaveClass('composer-input')
     expect(toggle).toHaveAccessibleName('Развернуть длинный текст')
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(toggle.querySelectorAll('svg rect')).toHaveLength(3)
+    const resizeIcon = toggle.querySelector('svg')
+    expect(resizeIcon).toHaveAttribute('width', '24')
+    expect(resizeIcon).toHaveAttribute('height', '24')
+    expect(resizeIcon).toHaveAttribute('viewBox', '0 0 24 24')
+    expect(resizeIcon).toHaveAttribute('fill', 'none')
+    expect(resizeIcon).toHaveAttribute('stroke', 'currentColor')
+    expect(resizeIcon).toHaveAttribute('stroke-width', '2')
+    expect(resizeIcon).toHaveAttribute('stroke-linecap', 'round')
+    expect(resizeIcon).toHaveAttribute('stroke-linejoin', 'round')
+    expect(Array.from(resizeIcon?.querySelectorAll('path') ?? []).map((path) => path.getAttribute('d'))).toEqual([
+      'M16 3 L21 3 L21 8',
+      'M8 21 L3 21 L3 16'
+    ])
 
     input.focus()
     input.setSelectionRange(2, 8)

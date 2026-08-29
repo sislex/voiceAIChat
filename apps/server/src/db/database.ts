@@ -1972,7 +1972,7 @@ export class VoiceChatDb {
     return this.db.transaction(() => {
       const row = this.db.prepare(
         `SELECT id, message_id, payload FROM conversation_turn_queue
-         WHERE user_id = ? AND conversation_id = ? AND status IN ('queued','failed')
+         WHERE user_id = ? AND conversation_id = ? AND status = 'queued'
            AND (? IS NULL OR id = ?)
          ORDER BY position LIMIT 1`
       ).get(userId, conversationId, id ?? null, id ?? null) as { id: string; message_id: string; payload: string } | undefined

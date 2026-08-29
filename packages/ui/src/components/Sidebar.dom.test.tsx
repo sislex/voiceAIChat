@@ -164,6 +164,40 @@ describe('Sidebar — инструменты в меню по клику на п
   })
 })
 
+describe('Sidebar — фильтр проектов чатов', () => {
+  const projects = [
+    { id: 'p1', name: 'Альфа', role: 'owner' },
+    { id: 'p2', name: 'Бета', role: 'member' }
+  ] as never[]
+
+  it('по умолчанию показывает «Все», проекты и «Без проекта»', () => {
+    setup({ projects, onSelectProject: vi.fn() })
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
+    const select = screen.getByRole('combobox', { name: 'Проект' })
+    expect(select).toHaveValue('__all__')
+    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Все', 'Альфа', 'Бета', 'Без проекта'
+    ])
+  })
+
+  it('доступен без проектов и сообщает каждый из трёх режимов', async () => {
+    const onSelectProject = vi.fn()
+    const first = setup({ projects: [], onSelectProject })
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
+    const select = screen.getByRole('combobox', { name: 'Проект' })
+    expect(within(select).getAllByRole('option')).toHaveLength(2)
+
+    await userEvent.selectOptions(select, '__none__')
+    await userEvent.selectOptions(select, '__all__')
+    first.unmount()
+    setup({ projects, selectedProjectId: 'p1', onSelectProject })
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Проект' }), 'p2')
+
+    expect(onSelectProject.mock.calls.map(([value]) => value)).toEqual([null, undefined, 'p2'])
+  })
+})
+
 // Выбор проекта и создание нового живут только здесь: страницы-списка проектов
 // нет, а «Проекты» в переключателе открывают страницу первого проекта (адрес
 // считает App, сайдбар лишь сообщает о переключении режима).
