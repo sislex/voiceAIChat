@@ -163,7 +163,10 @@ describe('projects: миграция канонического workflow', () =>
       'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge',
       'merge', 'done', 'cancelled', 'decision_required', 'custom'
     ])
-    expect(board.columns.find((item) => item.id === column('ready').id)).toMatchObject({ name: 'Мой Ready', hidden: false })
+    // Имя и скрытие — пользовательские настройки, канонизация правит только порядок
+    // и семантику. Раньше системной колонке сбрасывался hidden, а своей — нет; эта
+    // асимметрия возвращала скрытую колонку на доску при каждом старте сервера.
+    expect(board.columns.find((item) => item.id === column('ready').id)).toMatchObject({ name: 'Мой Ready', hidden: true })
     expect(board.columns.find((item) => item.id === custom.id)).toMatchObject({ hidden: true })
     expect(board.columns.some((item) => item.id === readyDuplicate.id)).toBe(false)
     expect(board.columns.some((item) => item.semanticType === 'testing' || item.semanticType === 'qa_preparation')).toBe(false)
