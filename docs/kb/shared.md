@@ -1,7 +1,7 @@
 ---
 title: Общий пакет: типы, контракты и чистая логика
-updated: 2026-08-27
-checked: a6f3c3af
+updated: 2026-08-29
+checked: 968ef277
 areas:
   - packages/shared/src
 ---
@@ -126,3 +126,13 @@ Stream-парсеры принимают строки событий CLI и но
 Гейт: `npm run -w @voicechat/shared typecheck && npm run -w @voicechat/shared test`.
 
 **Чистые модули Make и auth, добавленные roadmap-4 / auth-roadmap (2026-08-27).** Все без зависимостей, с тестами рядом: `lineDiff` (построчный LCS для подсветки правок), `makeSelection` (мультивыбор в дереве), `makeSearch` (regex/предпросмотр замены), `makeLint` (эвристики JSX/TS/CSS), `makeAutoImport` (импорт компонентов кита в точку входа), `makeTextEdit` и `makeReorder` (запись правок из превью в исходник по уникальным фрагментам), `makeStoriesGen` (CSF по пропсам), `wcagContrast`, `figmaTokens`, `darkTheme`, `mockTable`, `makeMockPrompt`, `jsonSchemaLite` (валидация моков), `makeDeploy` (конфиги Netlify/Vercel), `passwordPolicy` (общая политика пароля сервера и форм). Контракты: `MakeCheckIssue.severity/rule`, `MakePublication.allowComments`, `MakeComment.status/guestName`, `MakePublicComment`, `SessionInfo`, `LoginChallenge`, `SecurityEvent`, `InviteInfo`, `AdminDiskStats`; в `REST` — сессии (`sessionList/logoutAll/revoke/cookie/2fa*/reset/password/notices`), инвайты, `adminSecurity`, `adminSessions`; в IPC — `admin:userSessions/revokeSession/securityEvents/invites*/resetCode/setUserLlmLimit`. `RendererSessionBridge` получил опциональные `sessions/logoutAll/revokeSession/login2fa/twoFactor/inviteInfo/register/resetPassword/changePassword/securityNotices` — desktop-мост их не реализует.
+
+## Формат дат
+
+`dateFormat.ts` — единый формат дат интерфейса (`ru-RU`): `formatDate`
+(`29.08.2026`), `formatDateTime` (`29.08.2026, 01:38`), `isoDate` для атрибута
+`dateTime` у `<time>`. Живёт в shared, а не в `@voicechat/ui`, потому что нужен
+ещё и `@voicechat/admin-app`, которому импорт из `ui` недоступен (циклическая
+зависимость). Без явной локали браузер отдаёт `8/28/2026`, где день и месяц не
+различить — поэтому `toLocaleDateString()` без аргументов в интерфейсе не
+используем.

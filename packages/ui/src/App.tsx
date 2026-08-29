@@ -95,6 +95,7 @@ import { isPlaywrightReaderDiagnosticsCommand, runPlaywrightReaderDiagnostics } 
 import { isConsoleReaderDiagnosticsCommand, runConsoleReaderDiagnostics } from './consoleReaderDiagnostics'
 import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
 import { REST as REST_PATHS } from '@shared/protocol'
+import { parseAdminRoute } from '@voicechat/admin-app'
 import { consolePtyId } from '@shared/types'
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
 
@@ -214,7 +215,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     ? operationsRoute.page === 'history' ? (operationsRoute.engine === 'claude' ? 'claude-code' : 'codex') : operationsRoute.page === 'knowledge' ? 'kb' : operationsRoute.page
     : segments.length >= 1 && HOST_UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || ((segments[0] === 'users' || segments[0] === 'make-shared') && segments.length === 2)) ? segments[0] : null
   const routeKbDocumentId = operationsRoute?.page === 'knowledge' ? (operationsRoute.documentId ?? null) : null
-  const routeUserName = segments[0] === 'users' ? (segments[1] ?? null) : null
+  // Второй сегмент под `#/users/` — не всегда логин: `engines`, `prices` и
+  // `project-types` служебные. Разбор берём у самой админки (`parseAdminRoute`),
+  // а не повторяем список слов здесь: раньше каждый из этих трёх адресов уходил
+  // запрашивать несуществующего пользователя и встречал человека тостом
+  // «Объект не найден».
+  const adminRoute = segments[0] === 'users' ? parseAdminRoute(path) : null
+  const routeUserName = adminRoute?.page === 'users' ? (adminRoute.userName ?? null) : null
   const onUtilityPage = utilitySeg !== null
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
