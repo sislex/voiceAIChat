@@ -134,6 +134,28 @@ describe('проект и его тип', () => {
     expect(db.getBoard('alice', p.id)!.columns.length).toBe(13)
   })
 
+  it('новые встроенные подтипы копируют свои заготовки в проект', () => {
+    const expected = [
+      [BUILTIN_PROJECT_TYPE_IDS.backend, ['backend', 'api', 'database'], 13],
+      [BUILTIN_PROJECT_TYPE_IDS.mobile, ['mobile', 'ios', 'android'], 13],
+      [BUILTIN_PROJECT_TYPE_IDS.library, ['library', 'sdk', 'package'], 10]
+    ] as const
+
+    for (const [typeId, technologies, columnCount] of expected) {
+      const p = db.createProject('alice', { name: typeId, typeId })
+      expect(p.technologies).toEqual(technologies)
+      expect(p.skills.length).toBeGreaterThan(0)
+      expect(p.defaultSkills.task.length).toBeGreaterThan(0)
+      expect(p.ciBaseBranch).toBe('main')
+      expect(p.ciBranchTemplate).toBe('{task_number}')
+      expect(p.ciReuseStrategy).toBe('clean')
+      expect(db.getBoard('alice', p.id)!.columns).toHaveLength(columnCount)
+    }
+    const library = db.createProject('alice', { name: 'Библиотека', typeId: BUILTIN_PROJECT_TYPE_IDS.library })
+    expect(library.typeChain.features.preview).toBe(false)
+    expect(library.typeChain.features.ci).toBe(true)
+  })
+
   it('явный аргумент важнее заготовки типа', () => {
     const p = db.createProject('alice', { name: 'Веб', typeId: BUILTIN_PROJECT_TYPE_IDS.web, technologies: ['go'] })
     expect(p.technologies).toEqual(['go'])
@@ -225,11 +247,11 @@ describe('миграция существующей базы', () => {
       const migrated = second.getProject('alice', p.id)!
       expect(migrated.typeId).toBe(BUILTIN_PROJECT_TYPE_IDS.software)
       expect(migrated.typeChain.features.ci).toBe(true)
-      expect(second.allProjectTypes().length).toBe(3)
+      expect(second.allProjectTypes().length).toBe(6)
       second.close()
 
       const third = new VoiceChatDb(file)
-      expect(third.allProjectTypes().length).toBe(3)
+      expect(third.allProjectTypes().length).toBe(6)
       third.close()
     } finally {
       rmSync(dir, { recursive: true, force: true })
