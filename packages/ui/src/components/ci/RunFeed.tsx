@@ -365,6 +365,9 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
         <span className={`ci-lozenge ci-lozenge--${run ? ciTone(run.status) : 'neutral'}`}>
           {run ? ciStatusLabel(run.status) : 'загрузка…'}
         </span>
+        {run?.agentSelectionSource === 'explicit_bypass' && (
+          <span className="ci-lozenge ci-lozenge--removed" title="Этот запуск не учитывает maxConcurrentRuns">мимо очереди</span>
+        )}
         {run && (
           <span className="ci-run-progress">
             <span className="ci-step-dur">{run.slotProgress.phase} · {run.slotProgress.done}/{run.slotProgress.total}</span>

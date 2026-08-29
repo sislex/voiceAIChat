@@ -5512,7 +5512,7 @@ export class VoiceChatDb {
 
   // --- Раны и шаги ---
 
-  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; agentOwnerId?: string | null; agentOwnerName?: string; agentSelectionSource?: 'explicit' | 'task_pinned' | 'project_default' | 'user_project_default' | 'fallback' | 'unknown'; triggeredBy: string; prevColumnId: string | null; runColumnId?: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
+  createCiRun(args: { projectId: string; taskId: string; agentId: string | null; agentOwnerId?: string | null; agentOwnerName?: string; agentSelectionSource?: 'explicit' | 'explicit_bypass' | 'task_pinned' | 'project_default' | 'user_project_default' | 'fallback' | 'unknown'; triggeredBy: string; prevColumnId: string | null; runColumnId?: string | null; slotProgress: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; clarifyLevel?: CiClarifyLevel; clarifyMax?: number; conversationId?: string | null; kbContextMode?: KbContextMode }): CiRun {
     const id = this.newId()
     const ts = this.now()
     this.db.prepare(`INSERT INTO ci_runs (id, project_id, task_id, agent_id, agent_owner_id, agent_owner_name, agent_selection_source, status, triggered_by, prev_column_id, run_column_id, llm_engine_id, llm_provider, llm_model, mode, clarify_level, clarify_max, conversation_id, kb_context_mode, slot_progress_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, args.projectId, args.taskId, args.agentId, args.agentOwnerId ?? null, args.agentOwnerName ?? 'неизвестно', args.agentSelectionSource ?? 'unknown', args.triggeredBy, args.prevColumnId, args.runColumnId ?? null, args.llmEngineId ?? null, args.llmProvider ?? 'claude', args.llmModel ?? DEFAULT_CI_CLAUDE_MODEL, normRunMode(args.mode), normClarifyLevel(args.clarifyLevel), clampClarifyMax(args.clarifyMax), args.conversationId ?? null, normKbContextMode(args.kbContextMode), JSON.stringify(args.slotProgress), ts)
@@ -5564,13 +5564,14 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM ci_runs WHERE task_id = ? ORDER BY created_at DESC`).all(taskId) as CiRunRow[]).map(mapCiRun)
   }
 
-  updateCiRun(runId: string, patch: { status?: CiStatus; runColumnId?: string | null; terminalColumnId?: string | null; agentId?: string | null; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null; modelSessionId?: string | null; fixContext?: CiFixDiagnosticContext | null }): CiRun | null {
+  updateCiRun(runId: string, patch: { status?: CiStatus; runColumnId?: string | null; terminalColumnId?: string | null; agentId?: string | null; agentSelectionSource?: CiRun['agentSelectionSource']; workspaceId?: string | null; startedAt?: number; finishedAt?: number; durationMs?: number; slotProgress?: CiSlotProgress; llmEngineId?: string | null; llmProvider?: 'claude' | 'codex'; llmModel?: string; mode?: CiRunMode; conversationId?: string | null; modelSessionId?: string | null; fixContext?: CiFixDiagnosticContext | null }): CiRun | null {
     const set: string[] = []
     const vals: unknown[] = []
     if (patch.status !== undefined) { set.push('status = ?'); vals.push(patch.status) }
     if (patch.runColumnId !== undefined) { set.push('run_column_id = ?'); vals.push(patch.runColumnId) }
     if (patch.terminalColumnId !== undefined) { set.push('terminal_column_id = ?'); vals.push(patch.terminalColumnId) }
     if (patch.agentId !== undefined) { set.push('agent_id = ?'); vals.push(patch.agentId) }
+    if (patch.agentSelectionSource !== undefined) { set.push('agent_selection_source = ?'); vals.push(patch.agentSelectionSource) }
     if (patch.workspaceId !== undefined) { set.push('workspace_id = ?'); vals.push(patch.workspaceId) }
     if (patch.startedAt !== undefined) { set.push('started_at = ?'); vals.push(patch.startedAt) }
     if (patch.finishedAt !== undefined) { set.push('finished_at = ?'); vals.push(patch.finishedAt) }
@@ -8480,7 +8481,7 @@ function mapCiRun(r: CiRunRow): CiRun {
   return {
     id: r.id, projectId: r.project_id, taskId: r.task_id, agentId: r.agent_id,
     agentOwnerId: r.agent_owner_id ?? null, agentOwnerName: r.agent_owner_name ?? 'неизвестно',
-    agentSelectionSource: r.agent_selection_source === 'explicit' || r.agent_selection_source === 'task_pinned' || r.agent_selection_source === 'project_default' || r.agent_selection_source === 'user_project_default' || r.agent_selection_source === 'fallback' ? r.agent_selection_source : 'unknown',
+    agentSelectionSource: r.agent_selection_source === 'explicit' || r.agent_selection_source === 'explicit_bypass' || r.agent_selection_source === 'task_pinned' || r.agent_selection_source === 'project_default' || r.agent_selection_source === 'user_project_default' || r.agent_selection_source === 'fallback' ? r.agent_selection_source : 'unknown',
     status: normCiStatus(r.status), workspaceId: r.workspace_id, triggeredBy: r.triggered_by,
     prevColumnId: r.prev_column_id, runColumnId: r.run_column_id ?? null, terminalColumnId: r.terminal_column_id ?? null, llmEngineId: r.llm_engine_id ?? null, llmProvider: r.llm_provider === 'codex' ? 'codex' : 'claude', llmModel: r.llm_provider === 'codex' ? (r.llm_model ?? '') : (r.llm_model || DEFAULT_CI_CLAUDE_MODEL),
     mode: normRunMode(r.mode), clarifyLevel: normClarifyLevel(r.clarify_level), clarifyMax: clampClarifyMax(r.clarify_max),

@@ -38,7 +38,8 @@ describe('CiTaskSettings', () => {
     expect(screen.getByRole('button', { name: 'Сохранить этапы' })).toBeInTheDocument()
   })
 
-  it('принудительный запуск: кнопка видна только у явно выбранной машины и зовёт forceStartRun', async () => {
+  it('разделяет запуск на машине через очередь и подтверждённый обход лимита', async () => {
+    const start = vi.spyOn(window.ci!, 'startRun')
     const force = vi.spyOn(window.ci!, 'forceStartRun')
     window.ci!.getTaskMachines = vi.fn(async () => ({
       machines: [
@@ -52,19 +53,23 @@ describe('CiTaskSettings', () => {
     render(<CiTaskSettings section="machine" projectId="p1" taskId="t1" />)
     const select = await screen.findByLabelText('Машина выполнения')
     await waitFor(() => expect(screen.getByRole('option', { name: /Ноутбук — online/ })).toBeInTheDocument())
-    expect(screen.getByRole('group', { name: 'Мои машины' })).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Машины проекта' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /Сервер сборки.*по умолчанию/ })).toBeInTheDocument()
-    // Наследование машины проекта — некуда «принудительно»: кнопки нет.
-    expect(screen.queryByRole('button', { name: 'Запустить на этой машине сейчас' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Запустить на этой машине/ })).not.toBeInTheDocument()
 
     fireEvent.change(select, { target: { value: 'm2' } })
     expect(window.api?.['tasks:update']).toHaveBeenCalledWith({ projectId: 'p1', taskId: 't1', agentId: 'm2' })
-    const forceStart = screen.getByRole('button', { name: 'Запустить на этой машине сейчас' })
-    expect(forceStart).toHaveAttribute('title', 'Запустить или продвинуть ожидающий ран на выбранной машине')
-    fireEvent.click(forceStart)
+    expect(screen.getByText(/Обычный запуск встанет в очередь/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить на этой машине через очередь' }))
+    await waitFor(() => expect(start).toHaveBeenCalledWith('p1', 't1', { launch: 'queue', agentId: 'm2' }))
+    expect(await screen.findByText(/поставлен в очередь/)).toBeInTheDocument()
+    expect(force).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить мимо очереди…' }))
+    expect(await screen.findByText(/без учёта maxConcurrentRuns/)).toBeInTheDocument()
+    expect(force).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Запустить мимо очереди' }))
     await waitFor(() => expect(force).toHaveBeenCalledWith('p1', 't1', 'm2'))
-    expect(await screen.findByText(/мимо очереди/)).toBeInTheDocument()
+    expect(await screen.findByText(/Ран запущен.*мимо очереди/)).toBeInTheDocument()
   })
 
   it('не дублирует машину с двумя основаниями и блокирует offline/утраченный выбор', async () => {
@@ -78,7 +83,7 @@ describe('CiTaskSettings', () => {
     expect(await screen.findByRole('option', { name: /Общий Mac.*offline.*моя \+ проектная.*по умолчанию/ })).toBeInTheDocument()
     expect(screen.getAllByRole('option', { name: /Общий Mac/ })).toHaveLength(1)
     expect(screen.getByText(/CI не ждёт подключения/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Запустить на этой машине сейчас' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Запустить на этой машине/ })).not.toBeInTheDocument()
   })
 
   it('сохраняет понятное отображение недоступного выбора без автоподмены', async () => {
@@ -92,7 +97,7 @@ describe('CiTaskSettings', () => {
     expect(await screen.findByLabelText('Машина выполнения')).toHaveValue('lost-machine-id')
     expect(screen.getByRole('option', { name: /Недоступная машина.*lost-mac/ })).toBeInTheDocument()
     expect(screen.getByText(/Выбор не изменён автоматически/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Запустить на этой машине сейчас' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Запустить на этой машине/ })).not.toBeInTheDocument()
   })
 
   it('блокирует селектор до загрузки и показывает актуальную проектную машину', async () => {

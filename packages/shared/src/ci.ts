@@ -719,7 +719,7 @@ export interface CiRun {
   /** Immutable machine ownership/selection snapshot. */
   agentOwnerId?: string | null
   agentOwnerName?: string
-  agentSelectionSource?: 'explicit' | 'task_pinned' | 'project_default' | 'user_project_default' | 'fallback' | 'unknown'
+  agentSelectionSource?: 'explicit' | 'explicit_bypass' | 'task_pinned' | 'project_default' | 'user_project_default' | 'fallback' | 'unknown'
   status: CiStatus
   workspaceId: string | null
   /** Логин запустившего. */
