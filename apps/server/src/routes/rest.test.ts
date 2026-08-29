@@ -372,9 +372,17 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
-  it('инвайты: админ создаёт ссылку с ролью/лимитом, гость регистрируется с политикой пароля и получает сессию, лимит исчерпывается (auth-roadmap п.8)', async () => {
-    const created = (await inj({ method: 'POST', url: '/api/admin/invites', payload: { role: 'tester', maxUses: 1, ttlHours: 1, note: 'QA' } })).json() as { token: string; role: string; uses: number }
-    expect(created.role).toBe('tester')
+  it('инвайты: админ может отправить ссылку письмом, а инвайт без адреса работает как раньше (auth-roadmap пп.8–9)', async () => {
+    const emailed = (await inj({ method: 'POST', url: '/api/admin/invites', payload: { role: 'observer', email: 'Guest@Example.com' } })).json() as { token: string; email: string | null; emailedAt: number | null }
+    expect(emailed.email).toBe('guest@example.com')
+    expect(emailed.emailedAt).toBeTypeOf('number')
+    expect(sentMails).toHaveLength(1)
+    expect(sentMails[0]).toMatchObject({ to: 'guest@example.com', subject: 'Приглашение в ChatAI' })
+    expect(sentMails[0]!.text).toContain(`/#/invite/${emailed.token}`)
+
+    const created = (await inj({ method: 'POST', url: '/api/admin/invites', payload: { role: 'tester', maxUses: 1, ttlHours: 1, note: 'QA' } })).json() as { token: string; role: string; uses: number; email: null; emailedAt: null }
+    expect(created).toMatchObject({ role: 'tester', email: null, emailedAt: null })
+    expect(sentMails).toHaveLength(1)
     expect((await app.inject({ method: 'GET', url: `/api/session/invite/${created.token}` })).json()).toMatchObject({ role: 'tester', note: 'QA' })
     expect((await app.inject({ method: 'GET', url: '/api/session/invite/nope' })).statusCode).toBe(404)
     expect((await app.inject({ method: 'POST', url: '/api/session/register', payload: { token: created.token, name: 'newbie', password: 'short' } })).statusCode).toBe(400)

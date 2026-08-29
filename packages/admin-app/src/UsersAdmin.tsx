@@ -76,7 +76,7 @@ export interface UsersAdminProps {
   /** Инвайты на саморегистрацию (auth-roadmap п.8). */
   invites?: InviteInfo[] | null
   onLoadInvites?: () => void
-  onCreateInvite?: (input: { role: import('@shared/types').UserRole; ttlHours: number; maxUses: number; note: string }) => void
+  onCreateInvite?: (input: { role: import('@shared/types').UserRole; ttlHours: number; maxUses: number; note: string; email?: string }) => void
   onDeleteInvite?: (token: string) => void
   /** База абсолютной ссылки инвайта (origin + путь) — admin-app не трогает window, её даёт хост. */
   inviteBaseUrl?: string
@@ -212,6 +212,7 @@ export function UsersAdmin({
   const [inviteHours, setInviteHours] = useState(72)
   const [inviteUses, setInviteUses] = useState(1)
   const [inviteNote, setInviteNote] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
   const [invitesOpen, setInvitesOpen] = useState(false)
   const [copiedInvite, setCopiedInvite] = useState<string | null>(null)
   /** Временный пароль при создании (п.11) и выданный код сброса (п.10). */
@@ -330,10 +331,11 @@ export function UsersAdmin({
           {onLoadInvites && (
             <details className="uadmin-invites" data-testid="admin-invites" open={invitesOpen} onToggle={(e) => { const open = (e.currentTarget as HTMLDetailsElement).open; setInvitesOpen(open); if (open) onLoadInvites() }}>
               <summary>Инвайт-ссылки{invites ? ` (${invites.length})` : ''}</summary>
-              <form className="uadmin-invite-form" onSubmit={(e) => { e.preventDefault(); onCreateInvite?.({ role: inviteRole, ttlHours: inviteHours, maxUses: inviteUses, note: inviteNote.trim() }); setInviteNote('') }}>
+              <form className="uadmin-invite-form" onSubmit={(e) => { e.preventDefault(); onCreateInvite?.({ role: inviteRole, ttlHours: inviteHours, maxUses: inviteUses, note: inviteNote.trim(), ...(inviteEmail.trim() ? { email: inviteEmail.trim() } : {}) }); setInviteNote(''); setInviteEmail('') }}>
                 <select aria-label="Роль по инвайту" value={inviteRole} onChange={(e) => setInviteRole(e.target.value as import('@shared/types').UserRole)}><option value="developer">developer</option><option value="tester">tester</option><option value="observer">observer</option><option value="admin">admin</option></select>
                 <label>Срок, ч <input type="number" min={1} max={720} aria-label="Срок действия, часов" value={inviteHours} onChange={(e) => setInviteHours(Number(e.target.value) || 1)} /></label>
                 <label>Использований <input type="number" min={1} max={100} aria-label="Максимум использований" value={inviteUses} onChange={(e) => setInviteUses(Number(e.target.value) || 1)} /></label>
+                <input className="login-input" aria-label="Email получателя" type="email" placeholder="email (необязательно)" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
                 <input className="login-input" aria-label="Заметка к инвайту" placeholder="для кого (необязательно)" value={inviteNote} onChange={(e) => setInviteNote(e.target.value)} />
                 <Button size="sm" variant="primary" type="submit">Создать ссылку</Button>
               </form>
@@ -344,7 +346,7 @@ export function UsersAdmin({
                     const dead = inv.expiresAt < Date.now() || inv.uses >= inv.maxUses
                     return (
                       <li key={inv.token} className={dead ? 'sessions-item invite--dead' : 'sessions-item'}>
-                        <div><strong>{inv.role}{inv.note ? ` · ${inv.note}` : ''}</strong><small>{inv.uses}/{inv.maxUses} исп. · до {new Date(inv.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{dead ? ' · недействителен' : ''}</small><code className="invite-url">{url}</code></div>
+                        <div><strong>{inv.role}{inv.note ? ` · ${inv.note}` : ''}</strong><small>{inv.uses}/{inv.maxUses} исп. · до {new Date(inv.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{dead ? ' · недействителен' : ''}</small>{inv.email && <small>{inv.email} · {inv.emailedAt ? 'email отправлен' : 'email не отправлен'}</small>}<code className="invite-url">{url}</code></div>
                         <span className="uadmin-actions">
                           <Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard?.writeText(url).then(() => { setCopiedInvite(inv.token); setTimeout(() => setCopiedInvite(null), 1500) }) }}>{copiedInvite === inv.token ? 'Скопировано' : 'Копировать'}</Button>
                           {onDeleteInvite && <Button size="sm" variant="ghost" onClick={() => onDeleteInvite(inv.token)}>Отозвать</Button>}
