@@ -39,9 +39,37 @@
      в токен — на ней проверяется контраст приглушённого текста. */
   --surface-selected: #e2e0d7;
   --space-050: 4px;
+  --space-075: 6px;
   --space-100: 8px;
   --space-150: 12px;
+  /* Целая форма той же шкалы: 1 = базовые 8px, дальше кратно. Два написания
+     сложились исторически; вместо переписывания сотни мест объявлены оба, а
+     сторож (styles/cssTokens.test.ts) не даёт появиться третьему. */
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --radius-small: 4px;
   --radius-medium: 6px;
+  /* Псевдонимы: под этими именами app.css обращался к цветам, которых не
+     существовало, и объявления молча отбрасывались (круг 8). Псевдоним, а не
+     новый цвет: тема остаётся одна. */
+  --muted: var(--text-dim);
+  --line: var(--border);
+  --surface2: var(--surface-hover);
+  --surface-soft: var(--panel);
+  --surface-raised: var(--surface);
+  --success: var(--ci-success);
+  --success-soft: var(--ci-success-bg);
+  --warning: var(--ci-progress);
+  --warning-soft: var(--surface-warning);
+  --danger-soft: var(--surface-danger);
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  /* Тени: три ступени, которыми app.css уже пользовался. Значения сняты с
+     существующих правил файла, чтобы вид не поехал. */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.14);
+  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.18);
   /* Скелетон загрузки: подложка «косточки» и блик, который по ней бежит. */
   --skeleton-base: #e6e4dc;
   --skeleton-shine: #f5f4ef;
@@ -103,6 +131,11 @@
   --surface-selected: #2e2d25;
   --skeleton-base: #2e2e26;
   --skeleton-shine: #3b3a31;
+  /* На тёмном фоне полупрозрачная чёрная тень не видна вовсе — ступени те же,
+     но плотнее. */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 30px rgba(0, 0, 0, 0.6);
   color-scheme: dark;
 }
 
@@ -7286,7 +7319,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   /* Управление приглашениями и ссылка на экране приглашения: на телефоне это
      цели для пальца, а не для курсора — 22–25px мало. */
   .proj-invite-actions .vc-btn { min-height: 40px; }
-  .proj-invite-actions .vc-btn--icon { min-width: 40px; }
   /* Главные кнопки самого экрана приглашения — «Войти и принять»,
      «Зарегистрироваться», «Принять»/«Отклонить». Были 34px: экран в прогон
      снимков не попадал, потому что для него нужен живой токен. */
@@ -7325,7 +7357,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   /* Иконочная кнопка размер держит сама. У узла «на утверждении» основного
      действия нет, крестик оставался в строке один и растягивался во всю ширину —
      глиф вставал по центру пустой полосы и читался как чужой элемент. */
-  .ptypes-actions .vc-btn--icon { flex: 0 0 auto; min-width: 40px; }
+  .ptypes-actions .vc-btn--icon { flex: 0 0 auto; }
   .ptypes-create .vc-btn { width: 100%; min-height: 40px; }
 }
 
@@ -7379,7 +7411,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .settpane input:not([type='checkbox']):not([type='radio']) { min-height: 40px; }
   .sidesearch input,
   .side-collapse,
-  .side .vc-btn--icon { min-height: 40px; }
   /* Быстрые фильтры доски и опции фильтра исполнителей — цель по всей подписи.
      display обязателен: у строчного элемента min-height не действует вовсе. */
   .jquick,
@@ -7570,7 +7601,4 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @media (max-width: 640px) {
   .qa-scenario__row > label { flex-basis: 100%; }
   .qa-scenario__row--head > label { flex-basis: auto; }
-  /* Порог попадания пальцем — как у .ptypes-actions: у кнопки без подписи он
-     считается и по ширине (см. scripts/mobile-shots.mts). */
-  .qa-scenario__row--head .vc-btn--icon { min-width: 40px; min-height: 40px; }
 }
