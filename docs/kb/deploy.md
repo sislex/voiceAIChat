@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
 updated: 2026-08-29
-checked: e4d638cf
+checked: 61168bd3
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -518,3 +518,18 @@ compose — то есть из `$PROD` (`VC_REPO_DIR`, см. выше), а **н�
   `sislex%40ya.ru` разбираются одинаково (`mailer.ts` затем зовёт
   `decodeURIComponent`). `VC_MAIL_FROM` обязан совпадать с адресом авторизации,
   иначе Яндекс отклонит `MAIL FROM`.
+
+### Ручной `voicechat-deploy` стирает версию в health
+
+`version` в `/api/health` берётся из `VC_RELEASE_VERSION`, которую передаёт
+Release Center. Запуск скрипта руками без неё проходит успешно, но прод начинает
+отдавать `version: null` — метаданные релиза в логе при этом честно пишутся как
+`version=нет … source=none`. Поэтому ручной проход задавай явно:
+
+```bash
+VC_RELEASE_VERSION=<текущая версия> VC_RELEASE_VERSION_SOURCE=explicit voicechat-deploy
+```
+
+Версию перед этим смотри в health: перевыкладывается **тот же** коммит, так что
+метка остаётся честной. Проверено 29.08.2026 — первый проход без переменной дал
+`version: null`, повторный с ней вернул `0.1.184`.
