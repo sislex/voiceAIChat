@@ -10,36 +10,36 @@
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 136 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 142 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 144 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 14 коммит(ов) в areas после сверки: 7ab9be3b test(projects): сквозной e2e фичи в реальном Chromium … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-29 | ⚠ 4 коммит(ов) в areas после сверки: e406d7c6 Merge task e91140cb-121d-4fe5-bf62-ee84cee85f85 … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-29 | ⚠ 6 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-29 | ⚠ 3 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-25 | ⚠ 171 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 20 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 39 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ✓ |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 22 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 41 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 82 коммит(ов) в areas после сверки: 21c1928f feat: email registration invites … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 98 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 108 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 105 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 814 коммит(ов) в areas после сверки: 01b22a52 docs(kb): update after merge 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 215 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 69 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 38 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 100 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 110 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 107 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 817 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 217 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 71 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 40 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 111 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 7 коммит(ов) в areas после сверки: c4449b30 docs(kb): прод-чекаут — не target.path, и состояние почты на проде … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 35 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 39 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 41 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 97 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ✓ |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 10 коммит(ов) в areas после сверки: dc0ca84b Merge task 08aabfe1-d72f-4081-b241-4ca285eb5b4c … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-28 | ⚠ 28 коммит(ов) в areas после сверки: e406d7c6 Merge task e91140cb-121d-4fe5-bf62-ee84cee85f85 … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-29 | ⚠ 10 коммит(ов) в areas после сверки: e406d7c6 Merge task e91140cb-121d-4fe5-bf62-ee84cee85f85 … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 2 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 12 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-28 | ⚠ 30 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-29 | ⚠ 12 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 76 коммит(ов) в areas после сверки: 21c1928f feat: email registration invites … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 1 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-29 | ⚠ 1 коммит(ов) в areas после сверки: 3a9a1745 test(mobile): прогон снимков дошёл до чата и окна настроек |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 29 коммит(ов) в areas после сверки: 21c1928f feat: email registration invites … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-29 | ⚠ 10 коммит(ов) в areas после сверки: e406d7c6 Merge task e91140cb-121d-4fe5-bf62-ee84cee85f85 … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-29 | ⚠ 12 коммит(ов) в areas после сверки: 376b1a03 Merge task 63b2fd4c-7167-4f82-bc74-10f2174e1054 … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-29, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -57,7 +57,7 @@
 
 ## Журнал сессий
 
-Всего записей: 408. Последние:
+Всего записей: 409. Последние:
 
 - [2026-08-29-macbook-air-user-restore-chat-make-css-invariants.md](log/2026-08-29-macbook-air-user-restore-chat-make-css-invariants.md) — restore-chat-make-css-invariants
 - [2026-08-29-germany-4-8-60-password-reset-email.md](log/2026-08-29-germany-4-8-60-password-reset-email.md) — password-reset-email
@@ -65,10 +65,10 @@
 - [2026-08-29-germany-4-8-60-invite-email.md](log/2026-08-29-germany-4-8-60-invite-email.md) — invite-email
 - [2026-08-29-alexeys-macbook-air-2-project-owner-quota.md](log/2026-08-29-alexeys-macbook-air-2-project-owner-quota.md) — project-owner-quota
 - [2026-08-29-alexeys-macbook-air-2-css-regression-177-179.md](log/2026-08-29-alexeys-macbook-air-2-css-regression-177-179.md) — css-regression-177-179
+- [2026-08-29-alexeys-macbook-air-2-ci-machine-queue.md](log/2026-08-29-alexeys-macbook-air-2-ci-machine-queue.md) — ci-machine-queue
 - [2026-08-29-alexeys-macbook-air-2-builtin-project-subtypes.md](log/2026-08-29-alexeys-macbook-air-2-builtin-project-subtypes.md) — builtin-project-subtypes
 - [2026-08-28-macbook-air-user-task-modal-brief-validation.md](log/2026-08-28-macbook-air-user-task-modal-brief-validation.md) — task-modal-brief-validation
 - [2026-08-28-macbook-air-user-simplify-chat-header-kb-usage.md](log/2026-08-28-macbook-air-user-simplify-chat-header-kb-usage.md) — simplify-chat-header-kb-usage
-- [2026-08-28-macbook-air-user-sidebar-project-filter-all.md](log/2026-08-28-macbook-air-user-sidebar-project-filter-all.md) — sidebar-project-filter-all
 
 ## Исторические планы
 
