@@ -77,4 +77,66 @@ describe('BrowserSessionPane', () => {
     unmount()
     await waitFor(() => expect(browser.stop).toHaveBeenCalledWith('c1'))
   })
+  it('колесо прокручивает страницу: длиннее вьюпорта её нечем было листать', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const frame = await screen.findByAltText('Кадр Chromium')
+    fireEvent.wheel(frame, { deltaX: 0, deltaY: 240 })
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1]).toMatchObject({
+      command: { type: 'input', action: { type: 'wheel', deltaX: 0, deltaY: 240 } }
+    })
+  })
+
+  it('правая кнопка и двойной клик доходят до страницы', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const frame = await screen.findByAltText('Кадр Chromium')
+    fireEvent.contextMenu(frame, { clientX: 10, clientY: 10 })
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    const calls = (browser.command as ReturnType<typeof vi.fn>).mock.calls
+    expect(calls[0][1].command.action).toMatchObject({ type: 'click', button: 'right', clickCount: 1 })
+    fireEvent.doubleClick(frame, { clientX: 10, clientY: 10 })
+    await waitFor(() => expect(calls.length).toBeGreaterThan(1))
+    expect(calls[calls.length - 1][1].command.action).toMatchObject({ button: 'left', clickCount: 2 })
+  })
+
+  it('переключатель размера окна шлёт resize', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByText('Телефон'))
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1].command).toMatchObject({
+      type: 'resize', viewport: { width: 390, height: 844 }
+    })
+  })
+
+  it('клавиатура работает прямо в кадре, без отдельного поля', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const frame = await screen.findByAltText('Кадр Chromium')
+    fireEvent.keyDown(frame, { key: 'a' })
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1].command.action).toMatchObject({ type: 'type', text: 'a' })
+    fireEvent.keyDown(frame, { key: 'Enter' })
+    const calls = (browser.command as ReturnType<typeof vi.fn>).mock.calls
+    await waitFor(() => expect(calls.length).toBeGreaterThan(1))
+    expect(calls[calls.length - 1][1].command.action).toMatchObject({ type: 'press', key: 'Enter' })
+  })
+
+  it('снимок уходит в чат тем же кадром, что видит человек', async () => {
+    const onAttachFrame = vi.fn()
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser()} onAttachFrame={onAttachFrame} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByText('Снимок в чат'))
+    expect(onAttachFrame).toHaveBeenCalledWith('data:image/jpeg;base64,QQ==')
+  })
+
+  it('состояние сессии показано словами, а не сырым ready', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser()} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.getByText('Готово')).toBeTruthy()
+    expect(screen.queryByText('ready')).toBeNull()
+  })
 })
