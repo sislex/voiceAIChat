@@ -325,7 +325,14 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         setState({ board, ciSummaries, boardError: null })
         if (prev && !sameTaskChatVisibility(prev, board)) deps.chat.scheduleConversationsRefresh()
       } catch (err) {
-        if (generation === boardGeneration && getState().activeProjectId === id) fail(err, () => void syncBoard())
+        if (generation !== boardGeneration || getState().activeProjectId !== id) {
+          // фоновое обновление отменённой доски — молча
+        } else if (accessLost(err)) {
+          dropInaccessibleProject(id)
+          fail(new Error('Доступ к проекту закрыт: он удалён или вас исключили из участников.'))
+        } else {
+          fail(err, () => void syncBoard())
+        }
       } finally {
         if (boardFlight?.promise === promise) boardFlight = null
         if (generation === boardGeneration && boardPending) {
@@ -372,6 +379,33 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   })
 
   // --- Проекты --------------------------------------------------------------
+
+  /**
+   * Доступ к открытому проекту могли отобрать прямо сейчас: владелец убрал
+   * участника, проект удалили. Сервер отвечает 404/403, и до этого стор молча
+   * оставлял на экране устаревшую доску с тостом «Повторить», который не мог
+   * помочь никогда. Закрываем проект и обновляем список — маршрут уводит
+   * `App`, потому что проекта в списке больше нет.
+   */
+  function accessLost(err: unknown): boolean {
+    const status = (err as { status?: number } | null)?.status
+    return status === 403 || status === 404
+  }
+
+  function dropInaccessibleProject(id: string): void {
+    clearBoardSync()
+    boardBridge?.unsubscribe()
+    setState({
+      activeProjectId: null,
+      board: null,
+      projectDetail: null,
+      boardLoading: false,
+      boardError: null,
+      projectSettingsOpen: false,
+      projects: getState().projects.filter((p) => p.id !== id)
+    })
+    void refreshProjects().catch(() => {})
+  }
 
   async function refreshProjects(): Promise<ProjectSummary[]> {
     setState({ projectsStatus: 'loading', projectsError: null })
@@ -426,6 +460,11 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       setState({ board, projectDetail: detail, ciSummaries, boardLoading: false, boardError: null })
     } catch (err) {
       if (generation !== boardGeneration || getState().activeProjectId !== id) return
+      if (accessLost(err)) {
+        dropInaccessibleProject(id)
+        fail(new Error('Доступ к проекту закрыт: он удалён или вас исключили из участников.'))
+        return
+      }
       setState({ boardLoading: false, boardError: err instanceof Error ? err.message : String(err) })
       fail(err, () => void openBoard(id))
     }
