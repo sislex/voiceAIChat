@@ -87,10 +87,17 @@ describe('наследование заготовок', () => {
 })
 
 describe('встроенное дерево', () => {
-  it('три узла, «Веб-приложение» под «Разработкой ПО», у общего всё выключено', () => {
+  it('шесть встроенных узлов образуют ожидаемое дерево, у общего всё выключено', () => {
     const byId = new Map(BUILTIN_PROJECT_TYPES.map((t) => [t.id, t]))
     expect([...byId.keys()].sort()).toEqual(Object.values(BUILTIN_PROJECT_TYPE_IDS).sort())
-    expect(byId.get(BUILTIN_PROJECT_TYPE_IDS.web)?.parentId).toBe(BUILTIN_PROJECT_TYPE_IDS.software)
+    for (const id of [
+      BUILTIN_PROJECT_TYPE_IDS.web,
+      BUILTIN_PROJECT_TYPE_IDS.backend,
+      BUILTIN_PROJECT_TYPE_IDS.mobile,
+      BUILTIN_PROJECT_TYPE_IDS.library
+    ]) {
+      expect(byId.get(id)?.parentId).toBe(BUILTIN_PROJECT_TYPE_IDS.software)
+    }
     expect(byId.get(BUILTIN_PROJECT_TYPE_IDS.software)?.parentId).toBeNull()
 
     const software = resolveProjectTypeFeatures([byId.get(BUILTIN_PROJECT_TYPE_IDS.software)!])
@@ -98,6 +105,31 @@ describe('встроенное дерево', () => {
 
     const general = resolveProjectTypeFeatures([byId.get(BUILTIN_PROJECT_TYPE_IDS.general)!])
     for (const feature of PROJECT_FEATURES) expect(general[feature], feature).toBe(false)
+  })
+
+  it('новые подтипы имеют собственные заготовки и наследуют возможности', () => {
+    const byId = new Map(BUILTIN_PROJECT_TYPES.map((t) => [t.id, t]))
+    const software = byId.get(BUILTIN_PROJECT_TYPE_IDS.software)!
+    for (const id of [
+      BUILTIN_PROJECT_TYPE_IDS.backend,
+      BUILTIN_PROJECT_TYPE_IDS.mobile,
+      BUILTIN_PROJECT_TYPE_IDS.library
+    ]) {
+      const subtype = byId.get(id)!
+      const defaults = resolveProjectTypeDefaults([software, subtype])
+      expect(defaults.columns?.length).toBeGreaterThan(0)
+      expect(defaults.technologies?.length).toBeGreaterThan(0)
+      expect(defaults.skills?.length).toBeGreaterThan(0)
+      expect(defaults.defaultSkills?.task?.length).toBeGreaterThan(0)
+      expect(defaults.ciBaseBranch).toBe('main')
+      expect(defaults.ciBranchTemplate).toBe('{task_number}')
+      expect(defaults.ciReuseStrategy).toBe('clean')
+      expect(resolveProjectTypeFeatures([software, subtype]).ci).toBe(true)
+    }
+    expect(resolveProjectTypeFeatures([
+      software,
+      byId.get(BUILTIN_PROJECT_TYPE_IDS.library)!
+    ]).preview).toBe(false)
   })
 
   it('«Веб-приложение» наследует все возможности корня и отличается только заготовками', () => {
