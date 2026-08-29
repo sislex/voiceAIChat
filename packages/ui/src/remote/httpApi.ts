@@ -34,7 +34,7 @@ import type { RendererApi } from '@shared/ipc'
 import type { MessageSearchResult } from '@shared/types'
 import { authHeaders } from './session'
 import { notifyUnauthorized } from './session'
-import { featureUnavailableMessage } from '@shared/projectTypes'
+import { serverErrorMessage } from '@shared/serverErrors'
 
 export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi {
   /**
@@ -56,13 +56,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       let detail = ''
       try {
         const body = text ? JSON.parse(text) as { error?: unknown; message?: unknown; feature?: unknown } : null
-        // Отказ по возможностям типа приходит кодом; переводим его здесь, чтобы
-        // каждый экран не делал это сам и не показывал «feature_unavailable».
-        if (body?.error === 'feature_unavailable') detail = featureUnavailableMessage(body.feature)
-        else {
-          const value = body?.error ?? body?.message
-          if (typeof value === 'string') detail = value
-        }
+        // Технические коды сервера переводим здесь, чтобы каждый экран не делал
+        // это сам и не показывал «forbidden» или «feature_unavailable».
+        // Неизвестный код возвращается как есть — терять информацию хуже.
+        detail = serverErrorMessage(body)
       } catch {}
       throw new Error(detail || `${init?.method ?? 'GET'} ${path} → ${res.status}`)
     }
