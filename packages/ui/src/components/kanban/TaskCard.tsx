@@ -31,7 +31,7 @@ export interface TaskCardProps {
   doneColumnIds: ReadonlySet<string>
   columnSemanticType?: KanbanColumnSemanticType
   onOpen: (taskId: string, tab?: TaskModalTab) => void
-  onUpdate: (taskId: string, fields: { flagged?: boolean }) => void
+  onUpdate: (taskId: string, fields: { flagged?: boolean; autoPilot?: boolean }) => void
   onDelete: (taskId: string) => void
   onMoveTop: (taskId: string) => void
   onMoveBottom: (taskId: string) => void
@@ -187,6 +187,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
               <button onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { flagged: !task.flagged }) }}>
                 {task.flagged ? 'Снять флаг' : 'Добавить флаг'}
               </button>
+              <button onClick={() => { setMenuOpen(false); props.onUpdate(task.id, { autoPilot: !task.autoPilot }) }}>
+                {task.autoPilot ? 'Выключить автопроход' : 'Включить автопроход'}
+              </button>
               <button onClick={() => { setMenuOpen(false); props.onMoveTop(task.id) }}>В начало колонки</button>
               <button onClick={() => { setMenuOpen(false); props.onMoveBottom(task.id) }}>В конец колонки</button>
               <button
@@ -217,9 +220,10 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </button>
       )}
 
-      {(task.flagged || epic || task.labels.length > 0 || task.skills.length > 0) && (
+      {(task.flagged || task.autoPilot || epic || task.labels.length > 0 || task.skills.length > 0) && (
         <div className="jcard-chips">
           {task.flagged && <span className="jcard-flag" title="Помечена флагом">⚑ Флаг</span>}
+          {task.autoPilot && <span className="jcard-label" title="Автоматический проход конвейера">⏩ Автопроход</span>}
           {epic && (
             <span className="jcard-epic" style={{ color: epicColor(epic.id) }} title={`Эпик: ${epic.title}`}>
               <span className="jcard-epic-dot" style={{ background: epicColor(epic.id) }} />

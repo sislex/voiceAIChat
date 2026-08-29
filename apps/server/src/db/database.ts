@@ -522,6 +522,9 @@ interface ProjectRow {
   ci_exec_auth_ref: string
   ci_kb_context_mode: string
   ci_test_fix_cycle_limit: number
+  automated_qa_command: string
+  autopilot_requires_manual_qa: number
+  autopilot_fix_limit: number
   done_retention_days: number | null
 }
 
@@ -563,6 +566,8 @@ interface TaskRow {
   story_points: number | null
   due_date: number | null
   flagged: number
+  auto_pilot: number
+  auto_pilot_fix_cycles: number
   done_at: number | null
   preview_ready: number
   seq: number | null
@@ -677,6 +682,8 @@ function mapTask(r: TaskRow): Task {
 
     dueDate: r.due_date ?? null,
     flagged: r.flagged !== 0,
+    autoPilot: r.auto_pilot !== 0,
+    autoPilotFixCycles: r.auto_pilot_fix_cycles ?? 0,
     doneAt: r.done_at ?? null,
     previewReady: r.preview_ready !== 0,
     seq: r.seq ?? 0,
@@ -854,6 +861,8 @@ export class VoiceChatDb {
     if (inviteCols.length && !inviteCols.some((c) => c.name === 'emailed_at')) this.db.exec(`ALTER TABLE invites ADD COLUMN emailed_at INTEGER`)
     const taskLinkCols = this.db.prepare(`PRAGMA table_info(tasks)`).all() as Array<{ name: string }>
     if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'source_task_id')) this.db.exec(`ALTER TABLE tasks ADD COLUMN source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
+    if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'auto_pilot')) this.db.exec(`ALTER TABLE tasks ADD COLUMN auto_pilot INTEGER NOT NULL DEFAULT 0`)
+    if (taskLinkCols.length && !taskLinkCols.some((column) => column.name === 'auto_pilot_fix_cycles')) this.db.exec(`ALTER TABLE tasks ADD COLUMN auto_pilot_fix_cycles INTEGER NOT NULL DEFAULT 0`)
     const improvementCols = this.db.prepare(`PRAGMA table_info(task_improvements)`).all() as Array<{ name: string }>
     if (improvementCols.length && !improvementCols.some((column) => column.name === 'acceptance_criteria')) this.db.exec(`ALTER TABLE task_improvements ADD COLUMN acceptance_criteria TEXT NOT NULL DEFAULT ''`)
     if (improvementCols.length && !improvementCols.some((column) => column.name === 'created_task_id')) this.db.exec(`ALTER TABLE task_improvements ADD COLUMN created_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL`)
@@ -1244,6 +1253,9 @@ export class VoiceChatDb {
     // дефолт 14 дней (DEFAULT в ALTER заполняет старые строки).
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'done_retention_days')) this.db.exec(`ALTER TABLE projects ADD COLUMN done_retention_days INTEGER DEFAULT ${DEFAULT_DONE_RETENTION_DAYS}`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_test_fix_cycle_limit')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_test_fix_cycle_limit INTEGER NOT NULL DEFAULT 10`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN automated_qa_command TEXT NOT NULL DEFAULT 'npm test'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_requires_manual_qa')) this.db.exec(`ALTER TABLE projects ADD COLUMN autopilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_fix_limit')) this.db.exec(`ALTER TABLE projects ADD COLUMN autopilot_fix_limit INTEGER NOT NULL DEFAULT 3`)
     const ciWorkspaceCols = this.db.prepare(`PRAGMA table_info(ci_workspaces)`).all() as Array<{ name: string }>
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'branch')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN branch TEXT`)
     if (ciWorkspaceCols.length && !ciWorkspaceCols.some((c) => c.name === 'commit_sha')) this.db.exec(`ALTER TABLE ci_workspaces ADD COLUMN commit_sha TEXT`)
@@ -3963,6 +3975,9 @@ export class VoiceChatDb {
       mergeTransport: r.merge_transport === 'github_pull_request' ? 'github_pull_request' : 'local',
       agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
       testCommand: r.test_command || undefined,
+      automatedQaCommand: r.automated_qa_command || 'npm test',
+      autoPilotRequiresManualQa: r.autopilot_requires_manual_qa !== 0,
+      autoPilotFixLimit: Number.isInteger(r.autopilot_fix_limit) && r.autopilot_fix_limit >= 0 ? r.autopilot_fix_limit : 3,
       commandPolicy: parseProjectCommandPolicy(r.command_policy),
       productionDeployCommand: r.production_deploy_command || undefined,
       productionAgentId: r.production_agent_id,
@@ -4208,6 +4223,9 @@ export class VoiceChatDb {
       mergeTransport?: 'local' | 'github_pull_request'
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
+      automatedQaCommand?: string
+      autoPilotRequiresManualQa?: boolean
+      autoPilotFixLimit?: number
       commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
       productionDeployCommand?: string
       productionAgentId?: string | null
@@ -4277,6 +4295,12 @@ export class VoiceChatDb {
       vals.push(fields.agentPlanApprovalMode)
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
+    if (fields.automatedQaCommand !== undefined) { set.push('automated_qa_command = ?'); vals.push(fields.automatedQaCommand.trim() || 'npm test') }
+    if (fields.autoPilotRequiresManualQa !== undefined) { set.push('autopilot_requires_manual_qa = ?'); vals.push(fields.autoPilotRequiresManualQa ? 1 : 0) }
+    if (fields.autoPilotFixLimit !== undefined) {
+      if (!Number.isInteger(fields.autoPilotFixLimit) || fields.autoPilotFixLimit < 0) throw new Error('autoPilotFixLimit must be a non-negative integer')
+      set.push('autopilot_fix_limit = ?'); vals.push(fields.autoPilotFixLimit)
+    }
     if (fields.commandPolicy !== undefined) { set.push('command_policy = ?'); vals.push(JSON.stringify(fields.commandPolicy)) }
     if (fields.productionDeployCommand !== undefined) { set.push('production_deploy_command = ?'); vals.push(fields.productionDeployCommand) }
     if (fields.productionAgentId !== undefined) { set.push('production_agent_id = ?'); vals.push(fields.productionAgentId) }
@@ -5007,7 +5031,7 @@ export class VoiceChatDb {
     userId: string,
     projectId: string,
     taskId: string,
-    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean }
+    fields: { title?: string; description?: string; acceptanceCriteria?: string; type?: WorkItemType; parentId?: string | null; priority?: TaskPriority; assignee?: string | null; agentId?: string | null; labels?: string[]; skills?: string[]; storyPoints?: number | null; dueDate?: number | null; flagged?: boolean; autoPilot?: boolean }
   ): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
     const current = this.getTask(projectId, taskId)
@@ -5084,6 +5108,10 @@ export class VoiceChatDb {
     if (fields.flagged !== undefined) {
       set.push('flagged = ?')
       vals.push(fields.flagged ? 1 : 0)
+    }
+    if (fields.autoPilot !== undefined) {
+      set.push('auto_pilot = ?')
+      vals.push(fields.autoPilot ? 1 : 0)
     }
     if (!set.length) return current
     const ts = this.now()
@@ -7856,6 +7884,60 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT * FROM qa_stage_runs WHERE project_id=? AND task_id=? AND stage=? ORDER BY attempt DESC`).all(projectId, taskId, stage) as Record<string, unknown>[]).map((row) => this.mapQaStageRun(row))
   }
 
+  autoPilotSnapshot(projectId: string): Array<{ task: Task; stage: KanbanColumnSemanticType; userId: string; requiresManualQa: boolean }> {
+    const project = this.db.prepare(`SELECT created_by,autopilot_requires_manual_qa FROM projects WHERE id=?`).get(projectId) as { created_by: string; autopilot_requires_manual_qa: number } | undefined
+    if (!project) return []
+    return (this.db.prepare(`SELECT t.* FROM tasks t WHERE t.project_id=? AND t.auto_pilot=1 AND t.type='task'`).all(projectId) as TaskRow[]).map((row) => {
+      const task = mapTask(row)
+      const column = this.db.prepare(`SELECT semantic_type FROM kanban_columns WHERE id=?`).get(task.columnId) as { semantic_type: string } | undefined
+      return { task, stage: normColumnSemantic(column?.semantic_type ?? 'custom'), userId: project.created_by, requiresManualQa: project.autopilot_requires_manual_qa !== 0 }
+    })
+  }
+
+  recordAutoPilotEvent(projectId: string, taskId: string, action: string, payload: Record<string, unknown> = {}): void {
+    this.db.prepare(`INSERT INTO qa_audit (id,project_id,task_id,action,actor,payload_json,created_at) VALUES (?,?,?,?,?,?,?)`).run(this.newId(), projectId, taskId, action, 'automation', JSON.stringify(payload), this.now())
+  }
+
+  transitionAutoPilotTask(projectId: string, taskId: string, to: KanbanColumnSemanticType, action: string): Task {
+    const task = this.getTask(projectId, taskId)
+    if (!task?.autoPilot) throw new Error('autopilot is disabled')
+    const fromRow = this.db.prepare(`SELECT semantic_type FROM kanban_columns WHERE id=?`).get(task.columnId) as { semantic_type: string } | undefined
+    const from = normColumnSemantic(fromRow?.semantic_type ?? 'custom')
+    if (!canTransitionWorkflow(from, to, 'automation')) throw new Error(`workflow transition unavailable: ${from} → ${to}`)
+    const target = this.getColumnIdBySemantic(projectId, to)
+    if (!target) throw new Error(`${to} column not found`)
+    const owner = (this.db.prepare(`SELECT created_by FROM projects WHERE id=?`).get(projectId) as { created_by: string } | undefined)?.created_by
+    if (!owner || !this.moveTask(owner, projectId, taskId, { columnId: target })) throw new Error('autopilot transition failed')
+    this.recordAutoPilotEvent(projectId, taskId, action, { from, to })
+    return this.getTask(projectId, taskId)!
+  }
+
+  handleAutoPilotFailure(userId: string, projectId: string, taskId: string, stage: string, runId: string, reason: string): { decisionRequired: boolean; bugTaskId?: string } | null {
+    const task = this.getTask(projectId, taskId)
+    if (!task?.autoPilot) return null
+    const project = this.getProject(userId, projectId)
+    if (!project) throw new Error('project not found')
+    const cycles = task.autoPilotFixCycles ?? 0
+    const limit = project.autoPilotFixLimit ?? 3
+    const runLink = `/projects/${projectId}/tasks/${taskId}?run=${runId}`
+    if (cycles >= limit) {
+      this.transitionAutoPilotTask(projectId, taskId, 'decision_required', 'autopilot.limit_exhausted')
+      this.recordAutoPilotEvent(projectId, taskId, 'autopilot.stopped', { stage, runId, reason, cycles, limit })
+      return { decisionRequired: true }
+    }
+    const backlog = this.getColumnIdBySemantic(projectId, 'backlog')
+    if (!backlog) throw new Error('backlog column not found')
+    const bug = this.createTask(userId, projectId, { columnId: backlog, title: `Bug: ${stage} — ${task.title}`, description: `Автопроход исходной задачи завершился ошибкой.\n\n- Этап: ${stage}\n- Причина: ${reason}\n- Ран: ${runLink}`, type: 'task', labels: ['bug'] })
+    if (!bug) throw new Error('failed to create autopilot bug')
+    this.db.transaction(() => {
+      this.db.prepare(`UPDATE tasks SET source_task_id=? WHERE id=?`).run(taskId, bug.id)
+      this.db.prepare(`UPDATE tasks SET auto_pilot_fix_cycles=auto_pilot_fix_cycles+1 WHERE id=?`).run(taskId)
+    })()
+    this.transitionAutoPilotTask(projectId, taskId, 'development', 'autopilot.return_to_development')
+    this.recordAutoPilotEvent(projectId, taskId, 'autopilot.failure', { stage, runId, reason, bugTaskId: bug.id, cycle: cycles + 1, limit })
+    return { decisionRequired: false, bugTaskId: bug.id }
+  }
+
   startQaStageRun(userId: string, projectId: string, taskId: string, stage: QaRunStage): AnyQaStageRun {
     if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
     const task = this.getTask(projectId, taskId)
@@ -7872,6 +7954,23 @@ export class VoiceChatDb {
         id, projectId, taskId, stage, attempt, userId, task.mergeSourceBranch ?? '', task.mergeSourceSha ?? '', now, now
       )
     return this.getQaStageRun(userId, id)!
+  }
+
+  automatedQaExecutionContext(runId: string): { agentId: string; workdir: string; command: string } | null {
+    const row = this.db.prepare(`SELECT w.agent_id,w.path,p.automated_qa_command FROM qa_stage_runs q JOIN ci_workspaces w ON w.task_id=q.task_id AND w.pushed=1 JOIN projects p ON p.id=q.project_id WHERE q.id=? AND q.stage='automated_qa' ORDER BY w.created_at DESC LIMIT 1`).get(runId) as { agent_id: string | null; path: string | null; automated_qa_command: string | null } | undefined
+    if (!row?.agent_id || !row.path) return null
+    return { agentId: row.agent_id, workdir: row.path, command: row.automated_qa_command?.trim() || 'npm test' }
+  }
+
+  markAutomatedQaRunning(runId: string): void {
+    this.db.prepare(`UPDATE qa_stage_runs SET status='running',current_step='tests',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(), runId)
+  }
+
+  appendAutomatedQaLog(runId: string, stream: 'out' | 'err' | 'system', text: string): void {
+    const row = this.db.prepare(`SELECT log_json FROM qa_stage_runs WHERE id=?`).get(runId) as { log_json: string } | undefined
+    const log = parseJsonValue<Array<{ seq: number; at: number; stream: 'out'|'err'|'system'; text: string }>>(row?.log_json, [])
+    log.push({ seq: (log.at(-1)?.seq ?? 0) + 1, at: this.now(), stream, text })
+    this.db.prepare(`UPDATE qa_stage_runs SET log_json=? WHERE id=? AND status IN ('queued','running')`).run(JSON.stringify(log.slice(-2000)), runId)
   }
 
   updateQaStageRun(runId: string, patch: {
@@ -7907,6 +8006,7 @@ export class VoiceChatDb {
       return this.getQaStageRun(userId, runId)
     }
     const next: Record<QaRunStage, KanbanColumnSemanticType> = { component_qa: 'integration_tests', integration_tests: 'automated_qa', automated_qa: 'manual_qa' }
+    if (!canTransitionWorkflow(run.stage, next[run.stage], 'automation')) throw new Error(`Переход ${run.stage} → ${next[run.stage]} запрещён workflow`)
     const target = this.getColumnIdBySemantic(run.projectId, next[run.stage])
     if (!target) throw new Error(`Следующая колонка ${next[run.stage]} не найдена`)
     this.db.transaction(() => {
@@ -7939,9 +8039,16 @@ export class VoiceChatDb {
   }
 
   failInterruptedQaStageRuns(): string[] {
-    const rows = this.db.prepare(`SELECT id FROM qa_stage_runs WHERE status IN ('queued','running','awaiting_input')`).all() as Array<{ id: string }>
-    this.db.prepare(`UPDATE qa_stage_runs SET status='interrupted',error='Ран прерван перезапуском сервера',finished_at=? WHERE status IN ('queued','running','awaiting_input')`).run(this.now())
+    const rows = this.db.prepare(`SELECT id FROM qa_stage_runs WHERE stage<>'automated_qa' AND status IN ('queued','running','awaiting_input')`).all() as Array<{ id: string }>
+    this.db.prepare(`UPDATE qa_stage_runs SET status='interrupted',error='Ран прерван перезапуском сервера',finished_at=? WHERE stage<>'automated_qa' AND status IN ('queued','running','awaiting_input')`).run(this.now())
+    // Automated QA детерминирован одной командой: после рестарта безопасно
+    // перезапустить ту же попытку, сохранив её id и накопленный лог.
+    this.db.prepare(`UPDATE qa_stage_runs SET status='queued',current_step='restarting',started_at=NULL,error=NULL WHERE stage='automated_qa' AND status IN ('running','awaiting_input')`).run()
     return rows.map((row) => row.id)
+  }
+
+  recoverableAutomatedQaRuns(): Array<{ id: string; userId: string; projectId: string }> {
+    return this.db.prepare(`SELECT id,triggered_by AS userId,project_id AS projectId FROM qa_stage_runs WHERE stage='automated_qa' AND status='queued'`).all() as Array<{ id: string; userId: string; projectId: string }>
   }
 
   getQaTaskState(userId: string, projectId: string, taskId: string): QaTaskState | null {
