@@ -20,6 +20,7 @@ import { RoleCommandPolicyEditor } from './RoleCommandPolicyEditor'
 import type { RoleCommandPolicies } from '@shared/commandPolicy'
 import { Button, Dialog, Skeleton, RefreshIndicator, EmptyState, ErrorState, ConfirmDialog } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from './loadState'
+import { formatDate } from '@shared/dateFormat'
 
 function AdminFrame({ variant, onClose, children }: { variant: 'modal' | 'page'; onClose: () => void; children: ReactNode }): JSX.Element {
   return variant === 'modal'
@@ -366,7 +367,7 @@ export function UsersAdmin({
                   const summary = summaryFor(user.name)
                   const tokens = (summary?.totals.inputTokens ?? 0) + (summary?.totals.outputTokens ?? 0) + (summary?.totals.cacheReadTokens ?? 0)
                   return <tr key={user.name} onClick={() => onSelect(user.name)} style={{ cursor: 'pointer' }} data-testid="user-dashboard-row">
-                    <td>{user.name}</td><td>{user.role}</td><td>{new Date(user.createdAt).toLocaleDateString()}</td><td>{user.conversationCount}</td>
+                    <td>{user.name}</td><td>{user.role}</td><td>{formatDate(user.createdAt)}</td><td>{user.conversationCount}</td>
                     <td>{kilo(tokens)}</td><td>{displayedUsd(summary?.totals.costUsd ?? 0, summary?.totals.costIncomplete)}</td>
                     <td>{summary?.byModel.map((model) => model.model).join(', ') || '—'}</td>
                   </tr>
@@ -639,7 +640,7 @@ export function UsersAdmin({
           {isAdmin && <section className="uadmin-sec" data-testid="model-prices-section">
             <h3 className="uadmin-h">Стоимость моделей</h3>
             <table className="utable"><thead><tr><th>Провайдер / модель</th><th>Вход</th><th>Кэш</th><th>Запись кэша</th><th>Выход</th><th>Источник / дата</th><th>Действия</th></tr></thead><tbody>
-              {modelPrices.map((price) => <tr key={price.provider + price.model}><td>{price.provider} / {price.model}</td><td>{price.inputPerMillion}</td><td>{price.cachedInputPerMillion}</td><td>{price.cacheWritePerMillion}</td><td>{price.outputPerMillion}</td><td><a href={price.sourceUrl} target="_blank" rel="noreferrer">источник</a> · {new Date(price.effectiveAt).toLocaleDateString()}</td><td><Button size="sm" onClick={() => { setEditingPrice(price.provider + price.model); setPriceDraft({ provider: price.provider, model: price.model, inputPerMillion: price.inputPerMillion, cachedInputPerMillion: price.cachedInputPerMillion, cacheWritePerMillion: price.cacheWritePerMillion, outputPerMillion: price.outputPerMillion, sourceUrl: price.sourceUrl, effectiveAt: price.effectiveAt }) }}>Править</Button><Button variant="danger" size="sm" onClick={() => onDeleteModelPrice(price.provider, price.model)}>Удалить</Button></td></tr>)}
+              {modelPrices.map((price) => <tr key={price.provider + price.model}><td>{price.provider} / {price.model}</td><td>{price.inputPerMillion}</td><td>{price.cachedInputPerMillion}</td><td>{price.cacheWritePerMillion}</td><td>{price.outputPerMillion}</td><td><a href={price.sourceUrl} target="_blank" rel="noreferrer">источник</a> · {formatDate(price.effectiveAt)}</td><td><Button size="sm" onClick={() => { setEditingPrice(price.provider + price.model); setPriceDraft({ provider: price.provider, model: price.model, inputPerMillion: price.inputPerMillion, cachedInputPerMillion: price.cachedInputPerMillion, cacheWritePerMillion: price.cacheWritePerMillion, outputPerMillion: price.outputPerMillion, sourceUrl: price.sourceUrl, effectiveAt: price.effectiveAt }) }}>Править</Button><Button variant="danger" size="sm" onClick={() => onDeleteModelPrice(price.provider, price.model)}>Удалить</Button></td></tr>)}
             </tbody></table>
             <div className="ucreate"><p className="ucreate-h">{editingPrice ? 'Править цену' : 'Добавить цену'}</p>
               <input className="login-input" aria-label="Провайдер цены" placeholder="claude" value={priceDraft.provider} onChange={(e) => setPriceDraft({ ...priceDraft, provider: e.target.value })} />
