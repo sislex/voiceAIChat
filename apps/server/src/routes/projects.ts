@@ -9,6 +9,8 @@ import {
   type KanbanColumn,
   type ProjectDetail,
   type ProjectSummary,
+  type ProjectQuota,
+  DEFAULT_OWNED_PROJECT_LIMIT,
   type ProjectMachineDirectoryAssignments,
   type ProjectMachineDirectoryKind,
   PROJECT_MACHINE_DIRECTORY_KINDS,
@@ -127,10 +129,23 @@ export function registerProjectRoutes(
 
   app.get(REST.projects, async (req): Promise<ProjectSummary[]> => db.listProjects(uid(req)))
 
+  const projectQuota = (req: FastifyRequest): ProjectQuota => {
+    const userId = uid(req)
+    const unlimited = db.getUser(userId)?.role === 'admin'
+    const configured = Number(db.getAppConfig('projects.ownedLimit'))
+    const limit = Number.isInteger(configured) && configured > 0 ? configured : DEFAULT_OWNED_PROJECT_LIMIT
+    return { owned: db.countOwnedProjects(userId), limit, unlimited }
+  }
+  app.get(REST.projectsQuota, async (req): Promise<ProjectQuota> => projectQuota(req))
+
   app.post<{
     Body: { name?: string; typeId?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
   }>(REST.projects, createGuard, async (req, reply): Promise<ProjectDetail | FastifyReply> => {
     const b = req.body ?? {}
+    const quota = projectQuota(req)
+    if (!quota.unlimited && quota.owned >= quota.limit) {
+      return reply.code(409).send({ error: `Достигнут лимит собственных проектов: ${quota.limit}. Удалите ненужный проект или обратитесь к администратору.` })
+    }
     const name = (b.name ?? '').trim()
     if (!name) return badReq(reply, 'name required')
     // Тип берётся только из каталога, видимого этому пользователю: чужой личный

@@ -16,6 +16,7 @@ import {
   resolveProjectTypeFeatures,
   type ProjectTypeNode
 } from '@shared/projectTypes'
+import type { ProjectQuota } from '@shared/projects'
 
 /** Короткие подписи чипов: длинные пояснения остаются в tooltip. */
 const FEATURE_CHIPS: Record<(typeof PROJECT_FEATURES)[number], string> = {
@@ -33,6 +34,7 @@ export interface NewProjectDialogProps {
   onCreate: (name: string, typeId?: string) => void | Promise<void>
   onClose: () => void
   busy?: boolean
+  quota?: ProjectQuota | null
 }
 
 /**
@@ -55,7 +57,7 @@ export function typeCascadeLevels(types: ProjectTypeNode[], selected: string[]):
   return levels
 }
 
-export function NewProjectDialog({ types, onCreate, onClose, busy = false }: NewProjectDialogProps): JSX.Element {
+export function NewProjectDialog({ types, onCreate, onClose, busy = false, quota = null }: NewProjectDialogProps): JSX.Element {
   const [name, setName] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const levels = useMemo(() => typeCascadeLevels(types, selected), [types, selected])
@@ -73,10 +75,12 @@ export function NewProjectDialog({ types, onCreate, onClose, busy = false }: New
   }, [active, types])
   const features = useMemo(() => resolveProjectTypeFeatures(chain), [chain])
   const enabled = PROJECT_FEATURES.filter((feature) => features[feature])
+  const quotaReached = Boolean(quota && !quota.unlimited && quota.owned >= quota.limit)
+  const quotaNear = Boolean(quota && !quota.unlimited && !quotaReached && quota.owned + 1 >= quota.limit)
 
   const submit = (): void => {
     const trimmed = name.trim()
-    if (!trimmed || busy) return
+    if (!trimmed || busy || quotaReached) return
     void onCreate(trimmed, activeId)
   }
 
@@ -91,7 +95,10 @@ export function NewProjectDialog({ types, onCreate, onClose, busy = false }: New
       footer={
         <div className="newproj-actions">
           <Button variant="ghost" onClick={onClose}>Отмена</Button>
-          <Button onClick={submit} loading={busy} disabled={!name.trim()}>Создать</Button>
+          <div>
+            {(quotaReached || quotaNear) && <p className="fsub" role="status">{quotaReached ? `Лимит исчерпан: ${quota!.owned} из ${quota!.limit} проектов. Удалите ненужный проект или обратитесь к администратору.` : `Осталось одно место: ${quota!.owned} из ${quota!.limit} проектов.`}</p>}
+            <Button onClick={submit} loading={busy} disabled={!name.trim() || quotaReached} title={quotaReached ? 'Квота собственных проектов исчерпана' : undefined}>Создать</Button>
+          </div>
         </div>
       }
     >

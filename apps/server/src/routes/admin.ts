@@ -26,7 +26,8 @@ import {
   type UserRole,
   type UserLlmAccess,
   CLAUDE_MODELS,
-  CODEX_MODELS
+  CODEX_MODELS,
+  DEFAULT_OWNED_PROJECT_LIMIT
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from '../agents/registry.js'
@@ -238,14 +239,22 @@ export function registerAdminRoutes(
   app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
     return db.revokeSessionById(req.params.sid) ? { ok: true } : reply.code(404).send({ error: 'not found' })
   })
-  // Открытая регистрация: включить/выключить и роль новых пользователей.
-  app.get(REST.adminSignup, guard, async () => ({ ...readSignupConfig(db), mailConfigured: Boolean(mailer?.configured) }))
-  app.put<{ Body: { enabled?: boolean; role?: string } | undefined }>(REST.adminSignup, guard, async (req, reply) => {
+  // Открытая регистрация и общая квота собственных проектов.
+  const adminConfig = () => ({
+    ...readSignupConfig(db),
+    mailConfigured: Boolean(mailer?.configured),
+    ownedProjectLimit: Number(db.getAppConfig('projects.ownedLimit')) || DEFAULT_OWNED_PROJECT_LIMIT
+  })
+  app.get(REST.adminSignup, guard, async () => adminConfig())
+  app.put<{ Body: { enabled?: boolean; role?: string; ownedProjectLimit?: number } | undefined }>(REST.adminSignup, guard, async (req, reply) => {
     const role = req.body?.role
     if (role !== undefined && role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
+    const limit = req.body?.ownedProjectLimit
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 1000)) return reply.code(400).send({ error: 'project limit must be an integer from 1 to 1000' })
     if (typeof req.body?.enabled === 'boolean') db.setAppConfig('signup.enabled', req.body.enabled ? '1' : '0')
     if (role) db.setAppConfig('signup.role', role)
-    return { ...readSignupConfig(db), mailConfigured: Boolean(mailer?.configured) }
+    if (limit !== undefined) db.setAppConfig('projects.ownedLimit', String(limit))
+    return adminConfig()
   })
   // Код сброса пароля (auth-roadmap п.10): администратор выдаёт одноразовый код на 24 часа, пользователь вводит его на экране входа.
   app.post<{ Params: { name: string } }>(REST.adminUserResetCode(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
