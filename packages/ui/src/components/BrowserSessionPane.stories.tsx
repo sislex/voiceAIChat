@@ -87,3 +87,40 @@ export const RetryableError: Story = {
     reload?.click()
   }
 }
+
+/**
+ * Диагностика страницы: ошибки консоли и неуспешные запросы. Состояние
+ * достижимо только ответом раннера, поэтому живёт в витрине — до круга 11
+ * показать эти журналы было негде вовсе.
+ */
+export const PageDiagnostics: Story = {
+  args: {
+    browser: bridge({
+      command: (async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) => {
+        if (req.command.type !== 'inspect') return meta()
+        return req.command.action?.kind === 'console'
+          ? { ok: true, console: [
+              { level: 'error', text: 'TypeError: Cannot read properties of undefined (reading «columns»)', at: 1 },
+              { level: 'error', text: 'Refused to connect to ws://89.125.68.35:8787/ws', at: 2 }
+            ] }
+          : { ok: true, network: [
+              { method: 'GET', url: 'http://89.125.68.35:8787/api/projects/p1/board', status: 500, ok: false, at: 3 },
+              { method: 'GET', url: 'http://89.125.68.35:8787/assets/app.js', status: 200, ok: true, at: 4 }
+            ] }
+      }) as never
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const button = [...canvasElement.querySelectorAll('button')].find((el) => el.textContent === 'Ошибки страницы')
+    button?.click()
+  }
+}
+
+/** Страница без единой жалобы — отдельное состояние, а не пустой блок. */
+export const PageDiagnosticsClean: Story = {
+  args: { browser: bridge({ command: (async (_id: string, req: { command: { type: string } }) => (req.command.type === 'inspect' ? { ok: true, console: [], network: [] } : meta())) as never }) },
+  play: async ({ canvasElement }) => {
+    const button = [...canvasElement.querySelectorAll('button')].find((el) => el.textContent === 'Ошибки страницы')
+    button?.click()
+  }
+}
