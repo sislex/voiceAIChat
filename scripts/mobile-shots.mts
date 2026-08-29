@@ -157,6 +157,32 @@ try {
       await page.locator('[role="tab"]', { hasText: 'Участники' }).click()
       await page.waitForTimeout(800)
       await shot(page, '5-settings-members')
+
+      // Доска и карточка задачи — главные экраны раздела, и до этого прогон в них
+      // не заходил вовсе: падающий порог сторожит только те экраны, которые
+      // открыты, поэтому мелкие цели на доске он пропускал.
+      await page.goto(`${BASE}/#/projects/${PROJECT}`, { waitUntil: 'networkidle' })
+      await page.waitForTimeout(1800)
+      if (await page.locator('[data-testid="kanban-board"]').count()) {
+        await shot(page, '9-board')
+        // Лента фильтров на телефоне свёрнута — состояние достижимо только действием.
+        const filters = page.locator('[data-testid="board-filters-shell"] summary')
+        if (await filters.count()) {
+          await filters.first().click()
+          await page.waitForTimeout(500)
+          await shot(page, '9b-board-filters')
+          await filters.first().click()
+          await page.waitForTimeout(300)
+        }
+        const card = page.locator('[data-testid="task-card"]')
+        if (await card.count()) {
+          await card.first().click()
+          await page.waitForTimeout(1200)
+          await shot(page, '10-task-modal')
+          await page.keyboard.press('Escape')
+          await page.waitForTimeout(400)
+        }
+      }
     }
 
     // Каталог типов в пользовательских настройках. Меню аккаунта живёт в
