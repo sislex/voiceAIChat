@@ -7181,8 +7181,12 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   border-top: 1px solid var(--border-soft, var(--border)); padding-top: var(--space-3, 10px); }
 
 @media (max-width: 720px) {
-  .ptypes-actions { width: 100%; }
+  .ptypes-actions { width: 100%; justify-content: flex-end; }
   .ptypes-actions .vc-btn { flex: 1 1 auto; min-height: 40px; }
+  /* Иконочная кнопка размер держит сама. У узла «на утверждении» основного
+     действия нет, крестик оставался в строке один и растягивался во всю ширину —
+     глиф вставал по центру пустой полосы и читался как чужой элемент. */
+  .ptypes-actions .vc-btn--icon { flex: 0 0 auto; min-width: 40px; }
   .ptypes-create .vc-btn { width: 100%; min-height: 40px; }
 }
 
@@ -7210,6 +7214,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   /* Управление колонкой: ⋯, фильтр исполнителей, значок автоматизации, «+ Создать». */
   .jcol-head .jcard-reveal,
   .jcol-assignee-filter,
+  /* Размер держит сама кнопка, а не обёртка: у `.jcol-assignee-filter` она
+     позиционирующая, и min-width на ней внутреннюю кнопку не растягивал —
+     цель оставалась 26px шириной при 40px высоты. */
+  .jcol-filter-button,
   .jcol-automation-info-button { min-height: 40px; min-width: 40px; }
   .jcompose-open { min-height: 40px; }
 }
