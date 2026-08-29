@@ -28,7 +28,7 @@ import { ManagedEnvironmentResolver } from './releases/managedEnvironmentResolve
 import { FeaturePreviewManager } from './preview/manager.js'
 import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
-import { createComponentQaRunner } from './ci/componentQa.js'
+import { createAutomatedQaRunner, createComponentQaRunner } from './ci/componentQa.js'
 import { createIntegrationTestRunner } from './ci/integrationTests.js'
 import { MergeRunManager } from './merge/runManager.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
@@ -1458,10 +1458,12 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     catch (error) { return reply.code(409).send({ error: error instanceof Error ? error.message : String(error) }) }
   })
 
+  let autoPilotTick: (projectId: string) => void = () => {}
+  const emitBoard = (projectId: string): void => { boardHub.emit(projectId); queueMicrotask(() => autoPilotTick(projectId)) }
   const ciRunManager = createCiRunManager({
     db,
     executor: ciExecutor,
-    boardChanged: (projectId) => boardHub.emit(projectId),
+    boardChanged: emitBoard,
     // Боевой исполнитель не ждёт reconnect агента; тестовый executor сам задаёт
     // доступность и не зависит от реестра WebSocket.
     isAgentOnline: opts.ciExecutor ? undefined : (agentId) => agentRegistry.isOnline(agentId),
@@ -1550,11 +1552,45 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectTypeRoutes(app, db)
   registerInvitationRoutes(app, db, { mailer, publicUrl: opts.config.publicUrl, membershipChanged: (projectId, userId) => notificationHub.emit(projectId, userId, 'membership') })
-  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId, 'membership'))
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId, 'membership'), emitBoard)
   mergeRunManager.reconcile()
-  const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:(id)=>boardHub.emit(id)})
-  const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor,boardChanged:(id)=>boardHub.emit(id)})
-  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(id)=>boardHub.emit(id))
+  const onAutoPilotFailure = (runId: string, userId: string, stage: string, reason: string): void => {
+    const run = stage === 'component_qa' ? db.getComponentQaRun(userId, runId) : stage === 'integration_tests' ? db.getIntegrationTestRun(userId, runId) : db.getQaStageRun(userId, runId)
+    if (!run) return
+    const handled = db.handleAutoPilotFailure(userId, run.projectId, run.taskId, stage, runId, reason)
+    if (handled && !handled.decisionRequired) ciRunManager.start(userId, run.projectId, run.taskId, { mode: 'development' })
+    emitBoard(run.projectId)
+  }
+  const componentQaRunner=createComponentQaRunner({db,executor:ciExecutor,boardChanged:emitBoard,completed:(runId,userId,passed,reason)=>{
+    const run=db.getComponentQaRun(userId,runId);if(!run)return
+    if(passed){try{db.completeComponentQaRun(userId,run.projectId,run.taskId,runId);emitBoard(run.projectId)}catch(error){onAutoPilotFailure(runId,userId,'component_qa',error instanceof Error?error.message:String(error))}}
+    else onAutoPilotFailure(runId,userId,'component_qa',reason)
+  }})
+  const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor,boardChanged:emitBoard,completed:(runId,userId,passed,reason)=>{
+    const run=db.getIntegrationTestRun(userId,runId);if(!run)return
+    if(passed){try{db.completeIntegrationTestRun(userId,run.projectId,run.taskId,runId);emitBoard(run.projectId)}catch(error){onAutoPilotFailure(runId,userId,'integration_tests',error instanceof Error?error.message:String(error))}}
+    else onAutoPilotFailure(runId,userId,'integration_tests',reason)
+  }})
+  const automatedQaRunner=createAutomatedQaRunner({db,executor:ciExecutor,boardChanged:emitBoard,completed:(runId,userId,passed,reason)=>{if(!passed)onAutoPilotFailure(runId,userId,'automated_qa',reason)}})
+  const ticking = new Set<string>()
+  autoPilotTick = (projectId) => {
+    if (ticking.has(projectId)) return
+    ticking.add(projectId)
+    queueMicrotask(() => {
+      try {
+        for (const item of db.autoPilotSnapshot(projectId)) {
+          const { task, stage, userId } = item
+          if (stage === 'component_qa') { const run=db.startComponentQaRun(userId,projectId,task.id); if(run.status==='queued')componentQaRunner.launch(run.id,userId) }
+          else if (stage === 'integration_tests') { const run=db.startIntegrationTestRun(userId,projectId,task.id); if(run.status==='queued')integrationTestRunner.launch(run.id,userId) }
+          else if (stage === 'automated_qa') { const run=db.startQaStageRun(userId,projectId,task.id,'automated_qa'); if(run.status==='queued'||run.status==='running')automatedQaRunner.launch(run.id,userId) }
+          else if (stage === 'manual_qa' && !item.requiresManualQa) db.transitionAutoPilotTask(projectId,task.id,'awaiting_merge','autopilot.skip_manual_qa')
+          else if (stage === 'awaiting_merge') { const run=db.startMergeRun(userId,projectId,task.id); mergeRunManager.start(run) }
+        }
+      } catch (error) { app.log.warn({ projectId, error }, 'autopilot tick failed') }
+      finally { ticking.delete(projectId) }
+    })
+  }
+  registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(runId,userId)=>automatedQaRunner.launch(runId,userId),(runId)=>automatedQaRunner.cancel(runId),(id)=>boardHub.emit(id))
 
   // Восстанавливаем process-local очередь. Уже начатые раны закрываются как
   // interrupted, а не начавшиеся снова занимают очередь нового менеджера.
@@ -1567,6 +1603,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   if (interruptedQa.length) app.log.warn({ runs: interruptedQa }, 'qa preparation: прерванные раны закрыты как failed')
   const interruptedQaStages = db.failInterruptedQaStageRuns()
   if (interruptedQaStages.length) app.log.warn({ runs: interruptedQaStages }, 'qa stages: прерванные раны закрыты как interrupted')
+  for (const run of db.recoverableAutomatedQaRuns()) automatedQaRunner.launch(run.id, run.userId)
   const interruptedComponentQa=db.failInterruptedComponentQaRuns()
   if (interruptedComponentQa.length) app.log.warn({runs:interruptedComponentQa},'component QA: прерванные раны закрыты как blocked infrastructure')
   const interruptedIntegrationTests=db.failInterruptedIntegrationTestRuns()

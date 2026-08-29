@@ -24,6 +24,7 @@ export interface IntegrationTestRunnerDeps {
   timeoutMs?: number
   now?: () => number
   boardChanged?: (projectId: string) => void
+  completed?: (runId: string, userId: string, passed: boolean, reason: string) => void
 }
 
 export interface IntegrationTestRunner {
@@ -100,6 +101,7 @@ export function createIntegrationTestRunner(deps: IntegrationTestRunnerDeps): In
         failureClassification: passed ? null : infrastructure ? 'infrastructure' : 'implementation_defect',
         blockerReasons: infrastructure && failedStage ? [failedStage.diagnostic] : []
       })
+      deps.completed?.(runId, userId, passed, passed ? 'Integration tests пройдены' : failedStage?.diagnostic || 'Integration tests failed')
     })().catch((error) => {
       const current = deps.db.getIntegrationTestRun(userId, runId)
       if (current?.status === 'running') deps.db.finishIntegrationTestRun(userId, runId, { status: 'blocked', commands: [], summary: String(error), failureClassification: 'infrastructure', blockerReasons: ['executor_error'] })

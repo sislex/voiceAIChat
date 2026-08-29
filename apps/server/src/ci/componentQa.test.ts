@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ComponentQaRun, ComponentQaScenarioSnapshot } from '@voicechat/shared'
 import type { CommandExecRequest, CommandExecResult } from './types.js'
-import { createComponentQaRunner, type ComponentQaFinishInput } from './componentQa.js'
+import { createAutomatedQaRunner, createComponentQaRunner, type ComponentQaFinishInput } from './componentQa.js'
 
 function scenario(): ComponentQaScenarioSnapshot {
   return { testCase: { id: 'tc1', title: 'Кнопка' } as unknown as ComponentQaScenarioSnapshot['testCase'], version: 1, semanticHash: 'v1', status: 'pending', actualResult: '', diagnostic: '' }
@@ -132,5 +132,45 @@ describe('createComponentQaRunner', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(executorRun).toHaveBeenCalledTimes(1)
     expect(finished).toHaveLength(0)
+  })
+})
+
+describe('createAutomatedQaRunner', () => {
+  it('стримит лог и завершает gate успешной команды', async () => {
+    const completed = vi.fn()
+    const complete = vi.fn()
+    const log: Array<[string, string]> = []
+    const runner = createAutomatedQaRunner({
+      db: {
+        automatedQaExecutionContext: () => ({ agentId: 'agent', workdir: '/workspace', command: 'npm run affected-check' }),
+        getQaStageRun: () => ({ projectId: 'project', status: 'queued' }),
+        markAutomatedQaRunning: vi.fn(),
+        appendAutomatedQaLog: (_id, stream, text) => log.push([stream, text]),
+        completeQaStageRun: complete,
+        updateQaStageRun: vi.fn()
+      },
+      executor: { run: vi.fn(async (_request, onChunk) => { onChunk('tests passed\\n'); return { exitCode: 0, timedOut: false } }) },
+      completed
+    })
+    runner.launch('run', 'owner')
+    await vi.waitFor(() => expect(complete).toHaveBeenCalled())
+    expect(log[0]).toEqual(['system', expect.stringContaining('$ npm run affected-check')])
+    expect(log[1]).toEqual(['out', 'tests passed\\n'])
+    expect(complete).toHaveBeenCalledWith('owner', 'run', expect.objectContaining({ gatePassed: true, exitCode: 0 }))
+    expect(completed).toHaveBeenCalledWith('run', 'owner', true, 'Автотесты успешно пройдены')
+  })
+
+  it('фиксирует timeout как понятную ошибку', async () => {
+    const update = vi.fn()
+    const runner = createAutomatedQaRunner({
+      db: {
+        automatedQaExecutionContext: () => ({ agentId: 'agent', workdir: '/workspace', command: 'npm test' }),
+        getQaStageRun: () => ({ projectId: 'project', status: 'queued' }),
+        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: update
+      },
+      executor: { run: vi.fn(async () => ({ exitCode: null, timedOut: true })) }
+    })
+    runner.launch('run', 'owner')
+    await vi.waitFor(() => expect(update).toHaveBeenCalledWith('run', expect.objectContaining({ status: 'failed', error: 'Лимит времени Automated QA исчерпан' })))
   })
 })
