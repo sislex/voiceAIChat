@@ -36,6 +36,7 @@ services:
       - tts-runner
       - stt-runner
       - automation-runner
+      - browser-runner
     environment:
       HOST: 0.0.0.0
       PORT: "8787"
@@ -53,6 +54,10 @@ services:
       VC_TTS_RUNNER_TOKEN: ${VC_TTS_RUNNER_TOKEN:-voicechat-tts-local-token}
       VC_STT_RUNNER_URL: http://stt-runner:8791
       VC_STT_RUNNER_TOKEN: ${VC_STT_RUNNER_TOKEN:-voicechat-stt-runner-local-token}
+      # Playwright Reader и этап автотестов: без этих переменных сервер отвечает
+      # 501, а панель показывает «изолированный Chromium недоступен».
+      VC_BROWSER_RUNNER_URL: http://browser-runner:8792
+      VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
       # Host-side deploy API доступен только через примонтированный Unix-сокет.
       VC_DEPLOY_API_SOCKET: /run/voicechat/deploy-api.sock
       # Адрес, по которому MCP-эндпоинты сервера (remote-bash, kb, ci-commands)
@@ -106,6 +111,29 @@ services:
       retries: 5
     logging: *default-logging
     restart: unless-stopped
+
+  # Изолированный Chromium: Playwright Reader и этап автотестов. Наружу не
+  # публикуется — ходит к нему только сервер по внутренней сети compose.
+  browser-runner:
+    build:
+      context: .
+      target: browser-runner-runtime
+    image: voicechat-browser-runner
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8792"
+      VC_BROWSER_DATA_DIR: /data
+      VC_BROWSER_RUNNER_TOKEN: ${VC_BROWSER_RUNNER_TOKEN:-voicechat-browser-local-token}
+    volumes:
+      - vc-browser-data:/data
+    # Chromium падает при нехватке разделяемой памяти: дефолтные 64 МБ ему мало.
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8792/v1/health',{headers:{authorization:'Bearer '+process.env.VC_BROWSER_RUNNER_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
 
   automation-runner:
     build:
@@ -217,6 +245,7 @@ volumes:
   vc-data:
     name: voicechat-server-data
   vc-automation-data:
+  vc-browser-data:
   vc-claude:
   vc-codex:
   vc-stt-models:
