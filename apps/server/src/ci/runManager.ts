@@ -103,6 +103,8 @@ export interface CiRunManager {
   subscribe(listener: (m: ServerMessage, ownerUserId: string) => void): () => void
   publish(message: ServerMessage, ownerUserId: string): void
   snapshot(userId: string, runId: string): void | ServerMessage
+  /** Восстановить очередь и закрыть начатые раны после рестарта процесса. */
+  reconcile(): { queued: CiRun[]; interrupted: CiRun[] }
   activeRunIds(): string[]
   consoleExec(userId: string, runId: string, command: string, editMode: boolean): Promise<CiConsoleExecResult>
   /** Ответить на паузу рана (из ленты или из связанного чата). */
@@ -1383,6 +1385,19 @@ fi`
     return answered
   }
 
+  function reconcile(): { queued: CiRun[]; interrupted: CiRun[] } {
+    const result = deps.db.reconcileInterruptedCiRuns()
+    for (const run of result.queued) {
+      // Пока восстановленный ран ждёт слот, карточка не должна изображать уже
+      // начавшуюся работу. execute вернёт её в runColumnId непосредственно перед стартом.
+      rollbackTask(run.id, run.triggeredBy, run.prevColumnId)
+      const ctl = new AbortController()
+      active.set(run.id, { userId: run.triggeredBy, projectId: run.projectId, taskId: run.taskId, abort: ctl })
+      enqueue(run.id, run.triggeredBy, ctl)
+    }
+    return result
+  }
+
   async function execute(runId: string, userId: string, ctl: AbortController, resume?: ResumePoint): Promise<void> {
     const runRow = deps.db.getCiRunRaw(runId)
     if (!runRow) return
@@ -1502,6 +1517,14 @@ fi`
     }
 
     const started = now()
+    const currentTask = deps.db.getCiTask(userId, runRow.projectId, runRow.taskId)
+    if (runRow.runColumnId && currentTask && currentTask.columnId !== runRow.runColumnId) {
+      try {
+        deps.db.moveTask(userId, runRow.projectId, runRow.taskId, { columnId: runRow.runColumnId })
+      } catch {
+        /* колонка могла исчезнуть после постановки в очередь */
+      }
+    }
     let run = deps.db.updateCiRun(runId, { status: 'running', startedAt: started })!
     emitRun(run, userId)
 
@@ -2310,7 +2333,7 @@ fi`
     }
   }
 
-  return { start, startForDevelopmentTransition, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, publish, snapshot, activeRunIds, consoleExec, answerInteraction }
+  return { start, startForDevelopmentTransition, forceStartOnMachine, retryFromFailed, discardChangesAndRetry, cancel, dequeue, subscribe, publish, snapshot, reconcile, activeRunIds, consoleExec, answerInteraction }
 }
 
 /**
