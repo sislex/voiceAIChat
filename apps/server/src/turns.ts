@@ -1021,10 +1021,11 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
               assistantContext: req.assistantContext
             }, false)
             deps.db.markQueuedTurnFailed(userId, conversationId, req.messageId)
-            deps.db.setTurnQueuePaused(userId, conversationId, true)
+            deps.db.setTurnQueuePaused(userId, conversationId, false)
             emitQueue(userId, conversationId)
           }
           broadcast({ t: 'claude.error', conversationId, message }, userId)
+          dispatchNext(userId, conversationId)
         },
         // Активность собираем всегда (для подробного вида сообщения); в глобальную
         // консоль (событие claude.log) шлём только если ход запрошен с verbose.

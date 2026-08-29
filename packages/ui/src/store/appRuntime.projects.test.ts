@@ -420,7 +420,7 @@ describe('voiceStore — связка проекта с чатом', () => {
 })
 
 describe('voiceStore — выбор проекта в сайдбаре', () => {
-  it('setSidebarProject сужает список до чатов проекта и до «Без проекта»', async () => {
+  it('по умолчанию показывает все чаты, затем переключается между проектом, «Без проекта» и «Все»', async () => {
     const { store } = makeStore()
     await store.actions.createProject({ name: 'P' })
     const pid = store.getState().projectDetail!.id
@@ -435,12 +435,41 @@ describe('voiceStore — выбор проекта в сайдбаре', () => {
     store.actions.cancelRequest()
     const noProj = store.getState().activeId!
 
+    expect(store.getState().sidebarProjectId).toBeUndefined()
+    expect(store.getState().conversations.map((c) => c.id)).toEqual([noProj, inProj])
+
     await store.actions.setSidebarProject(pid)
     expect(store.getState().sidebarProjectId).toBe(pid)
     expect(store.getState().conversations.map((c) => c.id)).toEqual([inProj])
 
     await store.actions.setSidebarProject(null)
     expect(store.getState().conversations.map((c) => c.id)).toEqual([noProj])
+    expect(localStorage.getItem('vc.sidebar.project')).toBe('__none__')
+
+    await store.actions.setSidebarProject(undefined)
+    expect(store.getState().conversations.map((c) => c.id)).toEqual([noProj, inProj])
+    expect(localStorage.getItem('vc.sidebar.project')).toBeNull()
+  })
+
+  it('фильтр применяется к поиску по названиям, а «Все» не отбрасывает результаты', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P' })
+    const pid = store.getState().projectDetail!.id
+    store.actions.setDraft('Общий заголовок')
+    await store.actions.submitText()
+    const withoutProject = store.getState().activeId!
+    await store.actions.newConversation()
+    store.actions.setDraft('Общий проектный заголовок')
+    await store.actions.submitText()
+    const inProject = store.getState().activeId!
+    await store.actions.setConversationProject(inProject, pid)
+
+    await store.actions.setSearchQuery('Общий')
+    expect(store.getState().conversations.map((c) => c.id)).toEqual([inProject, withoutProject])
+    await store.actions.setSidebarProject(pid)
+    expect(store.getState().conversations.map((c) => c.id)).toEqual([inProject])
+    await store.actions.setSidebarProject(undefined)
+    expect(store.getState().conversations.map((c) => c.id)).toEqual([inProject, withoutProject])
   })
 
   it('проектный черновик сохраняется в проекте только при первой отправке', async () => {

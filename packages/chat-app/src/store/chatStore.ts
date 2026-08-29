@@ -42,9 +42,9 @@ import {
 } from '../lib/kbUsage'
 import type { LoadStatus } from '../lib/loadState'
 import type { LiveSegment } from '../contracts'
-import type { ChatClient, DownloadPort, PreferencesPort } from '../contracts'
+import type { ChatClient, DownloadPort, PreferencesPort, SidebarProjectFilter } from '../contracts'
 import { createStoreCore, type Store } from './createStore'
-import { DONE_TASK_CHATS_KEY, MESSAGE_META_UPDATE_KEY, SIDEBAR_PROJECT_KEY } from '../contracts'
+import { DONE_TASK_CHATS_KEY, MESSAGE_META_UPDATE_KEY, SIDEBAR_NO_PROJECT_VALUE, SIDEBAR_PROJECT_KEY } from '../contracts'
 import { DEFAULT_DELAYS, formatTime, mockReply, titleFromText, type PipelineDelays } from './mockPipeline'
 
 /** Область поиска в сайдбаре: названия бесед или текст сообщений (FTS5). */
@@ -144,6 +144,8 @@ export interface PendingSubmit {
   messageId: string | null
   queueOnly: boolean
   text: string
+  messageText: string
+  attachments: LocalAttachment[]
 }
 
 export interface ChatState {
@@ -191,8 +193,8 @@ export interface ChatState {
   activeTargets: Record<string, TurnTarget>
   /** То же для активного разговора; null — ход не идёт или сервер ещё не сообщил. */
   liveTarget: TurnTarget | null
-  /** Проект сайдбара (null — «Без проекта»); фильтрует список/поиск чатов. */
-  sidebarProjectId: string | null
+  /** Область сайдбара: undefined — «Все», null — «Без проекта», строка — проект. */
+  sidebarProjectId: SidebarProjectFilter
   showDoneTaskChats: boolean
   /** Открытый чат, скрытый из отфильтрованного списка (чат завершённой задачи). */
   pinnedConversation: Conversation | null
@@ -238,7 +240,7 @@ export interface ChatActions {
   loadMoreMessageSearch(): Promise<void>
   focusMessage(messageId: string): void
   clearMessageHighlight(): void
-  setSidebarProject(projectId: string | null): Promise<void>
+  setSidebarProject(projectId: SidebarProjectFilter): Promise<void>
   setShowDoneTaskChats(show: boolean): Promise<void>
   exportConversation(format: 'md' | 'json'): void
   setDraft(value: string): void
@@ -323,7 +325,7 @@ export interface ChatDeps {
   delays?: Partial<PipelineDelays>
 }
 
-function initialState(sidebarProjectId: string | null, showDoneTaskChats: boolean): ChatState {
+function initialState(sidebarProjectId: SidebarProjectFilter, showDoneTaskChats: boolean): ChatState {
   return {
     conversations: [],
     readerConversations: [],
@@ -374,8 +376,12 @@ export function createChatStore(deps: ChatDeps): ChatStore {
   const voice = deps.voice
   const now = deps.now ?? Date.now
   const delays: PipelineDelays = { ...DEFAULT_DELAYS, ...deps.delays }
+  const savedSidebarProject = deps.prefs.get(SIDEBAR_PROJECT_KEY)
+  const initialSidebarProject = savedSidebarProject === SIDEBAR_NO_PROJECT_VALUE
+    ? null
+    : savedSidebarProject ?? undefined
   const core = createStoreCore<ChatState>(
-    initialState(deps.prefs.get(SIDEBAR_PROJECT_KEY), deps.prefs.get(DONE_TASK_CHATS_KEY) === '1')
+    initialState(initialSidebarProject, deps.prefs.get(DONE_TASK_CHATS_KEY) === '1')
   )
   const { getState, setState } = core
   const fail = deps.fail ?? (() => {})
@@ -446,11 +452,15 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     if (conv) setState({ pinnedConversation: conv })
   }
 
-  function keepPinned(list: Conversation[], pid: string | null, query: string): Conversation[] {
+  function keepPinned(list: Conversation[], filter: SidebarProjectFilter, query: string): Conversation[] {
     const pinned = getState().pinnedConversation
     if (!pinned || pinned.id !== getState().activeId) return list
-    if (query || (pinned.projectId ?? null) !== pid) return list
+    if (query || (filter !== undefined && (pinned.projectId ?? null) !== filter)) return list
     return withConversation(list, pinned)
+  }
+
+  function filterBySidebarProject(all: Conversation[], filter: SidebarProjectFilter): Conversation[] {
+    return filter === undefined ? all : all.filter((conversation) => (conversation.projectId ?? null) === filter)
   }
 
   async function refreshConversations(
@@ -474,8 +484,8 @@ export function createChatStore(deps: ChatDeps): ChatStore {
           else pinActiveIfHidden(all, q)
         }
       }
-      const pid = getState().sidebarProjectId
-      const conversations = keepPinned(all.filter((c) => (c.projectId ?? null) === pid), pid, q)
+      const projectFilter = getState().sidebarProjectId
+      const conversations = keepPinned(filterBySidebarProject(all, projectFilter), projectFilter, q)
       setState({
         conversations,
         conversationsStatus: 'ready',
@@ -918,9 +928,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
   }
 
-  async function setSidebarProject(projectId: string | null): Promise<void> {
-    if (projectId) deps.prefs.set(SIDEBAR_PROJECT_KEY, projectId)
-    else deps.prefs.remove(SIDEBAR_PROJECT_KEY)
+  async function setSidebarProject(projectId: SidebarProjectFilter): Promise<void> {
+    if (projectId === undefined) deps.prefs.remove(SIDEBAR_PROJECT_KEY)
+    else deps.prefs.set(SIDEBAR_PROJECT_KEY, projectId ?? SIDEBAR_NO_PROJECT_VALUE)
     setState({ sidebarProjectId: projectId })
     // Поиск по сообщениям тоже сужен проектом — перезапрашиваем.
     if (getState().searchScope === 'messages') scheduleMessageSearch()
@@ -955,7 +965,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     }
   }
 
-  async function performSubmitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
+  async function performSubmitText(operationId?: string, queueOnlyOverride?: boolean, previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
     const state = getState()
     const text = state.draft.trim()
     const atts = state.attachments
@@ -970,7 +980,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     if (!text && ready.length === 0 && !previewElement) return false
     const v = voice.state()
     // Ход уже идёт: реплика уходит в серверную очередь, второй локальный ход не стартует.
-    const queueOnly = v === 'thinking' || v === 'speaking' || v === 'transcribing'
+    const queueOnly = queueOnlyOverride ?? (v === 'thinking' || v === 'speaking' || v === 'transcribing')
     setError(null)
     const messageAttachments = ready.map((file) => ({
       uploadId: file.id,
@@ -994,7 +1004,7 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       ? [...getState().messages].reverse().find((message) => message.role !== 'ai')
       : await persistMessage('u1', messageText, undefined, messageMeta, execTarget, messageAttachments)
     const pendingSubmit = getState().pendingSubmit
-    if (pendingSubmit && persisted) {
+    if (pendingSubmit && pendingSubmit.operationId === operationId && persisted) {
       const conversationId = getState().activeId
       const patch: Partial<ChatState> = {
         pendingSubmit: { ...pendingSubmit, conversationId, messageId: persisted.id },
@@ -1017,7 +1027,15 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     for (const attachment of atts) {
       if (attachment.previewUrl && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(attachment.previewUrl)
     }
-    setState({ draft: '', attachments: [] })
+    const completedState = getState()
+    const sameDraft = completedState.draft.trim() === text
+    const submittedAttachmentIds = new Set(atts.map((item) => item.localId))
+    const sameAttachments = completedState.attachments.length === atts.length &&
+      completedState.attachments.every((item) => submittedAttachmentIds.has(item.localId))
+    setState({
+      ...(sameDraft ? { draft: '' } : {}),
+      ...(sameAttachments ? { attachments: [] } : {})
+    })
     await refreshConversations()
     // Команда «открой консоль/проводник» → виджет в ответе, без обращения к LLM.
     if (!queueOnly && ready.length === 0 && !previewElement && (await maybeOpenUtility(text))) {
@@ -1045,14 +1063,15 @@ export function createChatStore(deps: ChatDeps): ChatStore {
     await persistMessage('ai', text.slice(0, 4_000))
   }
 
-  let submitTextInFlight: Promise<boolean> | null = null
-
   function clearPendingSubmit(operationId?: string, restoreDraft = false): void {
     const state = getState()
     const pending = state.pendingSubmit
     if (!pending || (operationId && pending.operationId !== operationId)) return
     const patch: Partial<ChatState> = { pendingSubmit: null }
     if (restoreDraft && !state.draft && pending.text) patch.draft = pending.text
+    if (restoreDraft && state.attachments.length === 0 && pending.attachments.length > 0) {
+      patch.attachments = pending.attachments
+    }
     if (pending.conversationId) {
       patch.queuedTurns = {
         ...state.queuedTurns,
@@ -1064,16 +1083,24 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   function submitText(previewElement?: PreviewElementPayload, editorContext?: EditorContextPayload): Promise<boolean> {
     // Два keydown/click до первого ответа API видят одну наблюдаемую операцию.
-    if (submitTextInFlight || getState().pendingSubmit) return Promise.resolve(false)
+    if (getState().pendingSubmit) return Promise.resolve(false)
     const state = getState()
     const text = state.draft.trim()
     const ready = state.attachments.filter((item) => item.status === 'ready' && item.upload)
     if ((!text && ready.length === 0 && !previewElement) || state.attachments.some((item) => item.status !== 'ready' || !item.upload)) {
-      return performSubmitText(previewElement, editorContext)
+      return performSubmitText(undefined, undefined, previewElement, editorContext)
     }
-    const queueOnly = voice.state() === 'thinking' || voice.state() === 'speaking' || voice.state() === 'transcribing'
+    const queueOnly = state.preparingReply || voice.state() === 'thinking' || voice.state() === 'speaking' || voice.state() === 'transcribing'
     const operationId = globalThis.crypto?.randomUUID?.() ?? `pending-${now()}-${Math.random()}`
-    const pendingSubmit: PendingSubmit = { operationId, conversationId: state.activeId, messageId: null, queueOnly, text }
+    const pendingSubmit: PendingSubmit = {
+      operationId,
+      conversationId: state.activeId,
+      messageId: null,
+      queueOnly,
+      text,
+      messageText: composeUserText(text, ready.flatMap((item) => item.upload ? [item.upload] : [])),
+      attachments: [...state.attachments]
+    }
     const patch: Partial<ChatState> = { pendingSubmit }
     if (queueOnly && state.activeId) {
       const items = state.queuedTurns[state.activeId] ?? []
@@ -1092,16 +1119,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       }
     }
     setState(patch)
-    const pending = performSubmitText(previewElement, editorContext)
-    submitTextInFlight = pending
-    const clearFlight = (): void => {
-      if (submitTextInFlight === pending) submitTextInFlight = null
-    }
+    const pending = performSubmitText(operationId, queueOnly, previewElement, editorContext)
     void pending.then((sent) => {
-      clearFlight()
       if (!sent && getState().pendingSubmit?.operationId === operationId) clearPendingSubmit(operationId, true)
     }, () => {
-      clearFlight()
       clearPendingSubmit(operationId, true)
     })
     return pending
@@ -1287,8 +1308,17 @@ export function createChatStore(deps: ChatDeps): ChatStore {
       queuePaused: { ...state.queuePaused, [conversationId]: paused }
     }
     const pending = state.pendingSubmit
-    if (pending?.queueOnly && pending.conversationId === conversationId && pending.messageId) {
-      patch.pendingSubmit = null
+    if (pending?.queueOnly && pending.conversationId === conversationId) {
+      const optimistic = state.queuedTurns[conversationId]?.find((item) => item.id === pending.operationId)
+      const confirmed = pending.messageId
+        ? items.some((item) => item.messageId === pending.messageId)
+        : Boolean(optimistic && items.some((item) =>
+            item.text === optimistic.text &&
+            item.position === optimistic.position &&
+            item.attachments.length === optimistic.attachments.length &&
+            item.attachments.every((attachment, index) => attachment === optimistic.attachments[index])
+          ))
+      if (confirmed) patch.pendingSubmit = null
     }
     if (conversationId === state.activeId) {
       const removedIds = new Set(removedMessageIds)
@@ -1333,7 +1363,13 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   function applyChatMessage(conversationId: string, message: Message): void {
     const pending = getState().pendingSubmit
-    if (pending?.conversationId === conversationId && pending.messageId === message.id) clearPendingSubmit(pending.operationId)
+    const sameConversation = pending?.conversationId === null || pending?.conversationId === conversationId
+    const confirmed = pending && !pending.queueOnly && sameConversation && message.role !== 'ai' &&
+      (pending.messageId ? pending.messageId === message.id : pending.messageText === message.text)
+    if (confirmed) {
+      clearPendingSubmit(pending.operationId)
+      setState({ preparingReply: true })
+    }
     if (conversationId !== getState().activeId) {
       scheduleConversationsRefresh()
       return
@@ -1404,9 +1440,9 @@ export function createChatStore(deps: ChatDeps): ChatStore {
         setState({ loadingMessages: true, conversationsStatus: 'loading', conversationsError: null })
         try {
           const conversations = await client['conversations:list']({ includeCompleted: getState().showDoneTaskChats })
-          const pid = getState().sidebarProjectId
+          const projectFilter = getState().sidebarProjectId
           setState({
-            conversations: conversations.filter((c) => (c.projectId ?? null) === pid),
+            conversations: filterBySidebarProject(conversations, projectFilter),
             readerConversations: conversations.filter(isReaderConversation),
             playwrightReaderConversations: conversations.filter(isPlaywrightReaderConversation),
             consoleReaderConversations: conversations.filter(isConsoleReaderConversation),
