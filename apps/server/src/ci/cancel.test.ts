@@ -110,6 +110,47 @@ describe('отмена рана в фазе модели', () => {
     expect(ci.activeRunIds()).toEqual([])
   })
 
+  it('отмена посередине работы очищает checkout, и следующий ран проходит подготовку', async () => {
+    const { projectId, taskIds } = setup()
+    let dirty = false
+    let modelStarted: () => void = () => {}
+    const started = new Promise<void>((resolve) => { modelStarted = resolve })
+    let modelCalls = 0
+    const cleaningExecutor: CommandExecutor = {
+      run: async (req, onChunk, signal) => {
+        execs.push({ script: req.script, env: req.env })
+        if (req.script.includes('reset --hard HEAD') && req.script.includes('clean -fdx')) {
+          dirty = false
+          return { exitCode: 0, timedOut: false }
+        }
+        if (req.script.includes('Рабочая копия содержит локальные изменения') && dirty) {
+          return { exitCode: 66, timedOut: false }
+        }
+        return executor.run(req, onChunk, signal)
+      }
+    }
+    const ci = manager({
+      executor: cleaningExecutor,
+      modelWork: async (ctx) => {
+        modelCalls++
+        if (modelCalls > 1) return { ok: true }
+        dirty = true
+        modelStarted()
+        await new Promise<void>((resolve) => ctx.signal.addEventListener('abort', () => resolve(), { once: true }))
+        return { ok: false, cancelled: true }
+      }
+    })
+    const first = startRun(ci, projectId, taskIds[0])
+    await started
+    expect(ci.cancel('admin', first)).toBe(true)
+    expect(await waitStatus(first)).toBe('cancelled')
+
+    const second = startRun(ci, projectId, taskIds[0])
+    expect(await waitStatus(second, 5000)).toBe('success')
+    expect(dirty).toBe(false)
+    expect(execs.some((entry) => entry.script.includes('reset --hard HEAD') && entry.script.includes('clean -fdx'))).toBe(true)
+  })
+
   it('исполнитель проигнорировал отмену → слот очереди освобождается по сторожевому таймауту', async () => {
     const { projectId, taskIds } = setup()
     db.updateCiSettings({ maxConcurrentRuns: 1 })
