@@ -57,7 +57,7 @@ export interface SessionDeps {
   /** Адресная инвалидизация HTTP-снимка уведомлений подготовки. */
   preparationNotifications?: {
     canAccess(projectId: string): boolean
-    subscribe(cb: (event: { projectId: string; userId?: string }) => void): () => void
+    subscribe(cb: (event: { projectId: string; userId?: string; kind?: 'membership' }) => void): () => void
   }
   /** Live-tail проводника CC/Codex: локальный fs.watch или SSE исполнителя. */
   observerTail?: {
@@ -164,6 +164,11 @@ export function createSession(deps: SessionDeps): WsHandlers {
       if (deps.preparationNotifications) {
         unsubPreparationNotifications = deps.preparationNotifications.subscribe((event) => {
           if (event.userId ? event.userId !== deps.user.name : !deps.preparationNotifications!.canAccess(event.projectId)) return
+          // Смена состава участников меняет и доступные уведомления, и роль, поэтому
+          // кадра нужно два: старый инвалидирует список уведомлений, новый говорит
+          // перечитать сам проект. Обратной дороги нет — по кадру уведомлений
+          // проект перечитывать нельзя, он приходит на каждое событие рана.
+          if (event.kind === 'membership') ctx.send({ t: 'project.membership', v: 1, projectId: event.projectId })
           ctx.send({ t: 'task-preparation.notifications.invalidate', v: 1, projectId: event.projectId })
           // Адресное событие может касаться приглашения — а приглашённый ещё не
           // участник проекта, и по членству его не найти.
