@@ -369,7 +369,7 @@ export interface IpcInvokeMap {
   'admin:setUserLlmLimit': { arg: { name: string; llmLimitUsd: number | null }; result: AdminUserInfo }
   /** Открытая регистрация: настройка. */
   'admin:signupConfig': { arg: void; result: SignupConfig }
-  'admin:setSignupConfig': { arg: { enabled?: boolean; role?: UserRole }; result: SignupConfig }
+  'admin:setSignupConfig': { arg: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number }; result: SignupConfig }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
@@ -391,6 +391,7 @@ export interface IpcInvokeMap {
   // --- Проекты + канбан ---
   /** Проекты, где текущий пользователь — участник. */
   'projects:list': { arg: void; result: ProjectSummary[] }
+  'projects:quota': { arg: void; result: import('./projects').ProjectQuota }
   'projects:create': {
     arg: { name: string; typeId?: string; description?: string; gitUrl?: string; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: 'agent_commits' | 'final_system_commit' | 'manual_user_confirmation'; mergeTransport?: 'local' | 'github_pull_request'; agentPlanApprovalMode?: 'manual' | 'automatic' }
     result: ProjectDetail
@@ -1169,6 +1170,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:deleteLlmEngine',
   'admin:checkLlmEngineHealth',
   'projects:list',
+  'projects:quota',
   'projects:create',
   'projects:get',
   'projects:invitations',
