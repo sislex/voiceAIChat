@@ -212,6 +212,33 @@ try {
         }
       }
     }
+
+    // Предыдущий шаг оставляет открытым окно настроек, а его оверлей перехватывает
+    // нажатия — без закрытия следующий клик ловит таймаут, а не экран.
+    for (let i = 0; i < 3 && (await page.locator('[data-testid="overlay"]').count()) > 0; i++) {
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(400)
+    }
+
+    // Экраны вне раздела «Проекты». Порог целей нажатия до сих пор их не
+    // сторожил, хотя чат — самый частый экран приложения, а окно настроек
+    // открывают все. Снимаем после проектов: маршруты независимы.
+    await page.goto(`${BASE}/#/`, { waitUntil: 'networkidle' })
+    await page.waitForTimeout(1500)
+    await shot(page, '11-chat')
+
+    await openSidebar(page)
+    const acct2 = page.locator('.acct-toggle')
+    if (await acct2.count()) {
+      await acct2.first().click()
+      await page.waitForTimeout(400)
+      const settings2 = page.locator('button[role="menuitem"]', { hasText: 'Настройки' })
+      if (await settings2.count()) {
+        await settings2.first().click()
+        await page.waitForTimeout(1200)
+        await shot(page, '12-settings')
+      }
+    }
     await ctx.close()
   }
 } finally {
