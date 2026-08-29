@@ -1556,10 +1556,11 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   const integrationTestRunner=createIntegrationTestRunner({db,executor:ciExecutor,boardChanged:(id)=>boardHub.emit(id)})
   registerQaRoutes(app, db, uploads, ciRunManager, (args) => launchQaPreparation(args, true),(runId,userId)=>componentQaRunner.launch(runId,userId),(runId)=>componentQaRunner.cancel(runId),(runId,userId)=>integrationTestRunner.launch(runId,userId),(runId)=>integrationTestRunner.cancel(runId),(id)=>boardHub.emit(id))
 
-  // Раны предыдущего процесса живут только в его памяти: после рестарта они
-  // навсегда остались бы «running» и блокировали карточку задачи.
-  const interrupted = db.failInterruptedCiRuns()
-  if (interrupted.length) app.log.warn({ runs: interrupted.map((r) => r.id) }, 'ci: прерванные раны закрыты как failed')
+  // Восстанавливаем process-local очередь. Уже начатые раны закрываются как
+  // interrupted, а не начавшиеся снова занимают очередь нового менеджера.
+  const ciReconciliation = ciRunManager.reconcile()
+  if (ciReconciliation.queued.length) app.log.info({ runs: ciReconciliation.queued.map((r) => r.id) }, 'ci: незапущенные раны возвращены в очередь')
+  if (ciReconciliation.interrupted.length) app.log.warn({ runs: ciReconciliation.interrupted.map((r) => r.id) }, 'ci: начатые раны прерваны рестартом сервера')
   const interruptedPreparation = db.failInterruptedTaskPreparationRuns()
   if (interruptedPreparation.length) app.log.warn({ runs: interruptedPreparation }, 'task preparation: прерванные раны закрыты как failed')
   const interruptedQa = db.failInterruptedQaPreparationRuns()
