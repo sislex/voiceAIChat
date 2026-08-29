@@ -567,7 +567,11 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
         if (!ctl.signal.aborted) await guardCancel(runId, userId, ctl, execute(runId, userId, ctl, resume))
       })
       .catch(() => {})
-      .finally(() => {
+      .finally(async () => {
+        // Сначала дожидаемся остановки исполнителя, затем приводим checkout в
+        // исходное состояние. До конца очистки active сохраняет путь и держит
+        // новый ран этой задачи на барьере рабочей директории.
+        await resetCancelledWorkspace(runId, userId)
         // Зависший execute может позже дойти до своей паузы или до своего
         // release — `abandoned` и идемпотентный release не дают ему занять
         // слот/мьютекс, которые мы уже отпустили за него.
@@ -663,6 +667,43 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     finalize(runId, userId, 'cancelled')
   }
 
+  const workspaceResetScript = (repoPath: string): string =>
+    `test -d ${shq(`${repoPath}/.git`)} || { echo "Git-репозиторий не найден" >&2; exit 67; }; git -C ${shq(repoPath)} reset --hard HEAD; git -C ${shq(repoPath)} clean -fdx`
+
+  /** Best-effort очистка после штатной отмены; ошибка не меняет статус cancelled. */
+  async function resetCancelledWorkspace(runId: string, userId: string): Promise<void> {
+    let run: CiRun | null
+    try { run = deps.db.getCiRunRaw(runId) } catch { return }
+    const current = active.get(runId)
+    if (!run || run.status !== 'cancelled' || !run.agentId || !current?.workspacePath) return
+    const repoPath = current.workspacePath
+    try {
+      const result = await deps.executor.run({
+        agentId: run.agentId, script: workspaceResetScript(repoPath), workdir: repoPath,
+        env: {}, timeoutMs: cancelGraceMs, secrets: []
+      }, () => {})
+      const ok = result.exitCode === 0
+      deps.db.addCiEvent({
+        projectId: run.projectId, runId, type: ok ? 'workspace.reset_after_cancel' : 'workspace.reset_after_cancel_failed',
+        actorType: 'system', payload: { path: repoPath, ...(ok ? {} : { exitCode: result.exitCode }) }
+      })
+      if (!ok) {
+        const step = [...(deps.db.getCiRun(userId, runId)?.steps ?? [])].reverse()[0]
+        if (step) {
+          const line = deps.db.appendCiLog(runId, step.id, 'system', 'Не удалось автоматически сбросить рабочую копию после отмены. В следующем ране используйте кнопку «Сбросить рабочую копию».\n')
+          broadcast({ t: 'ci.log', runId, line }, userId)
+        }
+      }
+    } catch (error) {
+      try {
+        deps.db.addCiEvent({
+          projectId: run.projectId, runId, type: 'workspace.reset_after_cancel_failed',
+          actorType: 'system', payload: { path: repoPath, error: error instanceof Error ? error.message : String(error) }
+        })
+      } catch { /* сервер уже останавливается: аудит недоступен вместе с БД */ }
+    }
+  }
+
   async function discardChangesAndRetry(userId: string, runId: string): Promise<{ run: CiRun } | { error: string }> {
     const detail = deps.db.getCiRun(userId, runId)
     if (!detail || detail.run.status !== 'failed') return { error: 'Действие доступно только для упавшего рана' }
@@ -670,11 +711,11 @@ export function createCiRunManager(deps: CiRunManagerDeps): CiRunManager {
     if (!dirtyStep) return { error: 'Ран не остановлен из-за локальных изменений' }
     if (hasActiveRunForTask(detail.run.taskId)) return { error: 'Для этой задачи уже выполняется ран' }
     const project = deps.db.getProject(userId, detail.run.projectId)
-    const task = deps.db.getCiTask(userId, detail.run.projectId, detail.run.taskId)
     const workspace = detail.run.workspaceId ? deps.db.getCiWorkspaceById(detail.run.workspaceId) : null
-    if (!project || !task || !workspace || !detail.run.agentId) return { error: 'Рабочая директория рана недоступна' }
-    const repoPath = `${workspace.path}/${slugify(task.title)}`
-    const script = `test -d ${shq(`${repoPath}/.git`)} || { echo "Git-репозиторий не найден" >&2; exit 67; }; git -C ${shq(repoPath)} reset --hard HEAD; git -C ${shq(repoPath)} clean -fdx`
+    if (!project || !workspace || !detail.run.agentId) return { error: 'Рабочая директория рана недоступна' }
+    if (project.role !== 'owner') return { error: 'Сброс рабочей копии доступен только владельцу проекта' }
+    const repoPath = workspace.path
+    const script = workspaceResetScript(repoPath)
     const ctl = new AbortController()
     let result: Awaited<ReturnType<CommandExecutor['run']>>
     try {
@@ -1456,7 +1497,7 @@ fi`
       `if git -C ${shq(repoPath)} rev-parse --is-inside-work-tree >/dev/null 2>&1; then`,
       `  git_status="$(git -C ${shq(repoPath)} status --porcelain --untracked-files=all)" || exit $?`,
       `  if [ -n "$git_status" ]; then`,
-      `    echo "Рабочая копия содержит локальные изменения: ${repoPath}" >&2; exit 66`,
+      `    echo "Рабочая копия содержит локальные изменения: ${repoPath}. Они могли остаться после отменённого рана. Откройте техническую ленту и нажмите «Сбросить рабочую копию»." >&2; exit 66`,
       `  fi`,
       `  git -C ${shq(repoPath)} fetch origin main || exit $?`,
       `  git -C ${shq(repoPath)} checkout main || exit $?`,
