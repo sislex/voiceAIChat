@@ -139,4 +139,58 @@ describe('BrowserSessionPane', () => {
     expect(screen.getByText('Готово')).toBeTruthy()
     expect(screen.queryByText('ready')).toBeNull()
   })
+  it('вкладки видны, переключаются и закрываются', async () => {
+    const withTabs = meta({ activeTabId: 't1', tabs: [
+      { id: 't1', url: 'https://a.b', title: 'Первая', active: true },
+      { id: 't2', url: 'https://c.d', title: 'Вторая', active: false }
+    ] })
+    const browser = fakeBrowser({ start: vi.fn(async () => withTabs), command: vi.fn(async () => withTabs) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByRole('tab', { name: 'Вторая' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect((browser.command as ReturnType<typeof vi.fn>).mock.calls[0][1].command).toMatchObject({ type: 'selectTab', tabId: 't2' })
+    fireEvent.click(screen.getByLabelText('Закрыть вкладку Вторая'))
+    const calls = (browser.command as ReturnType<typeof vi.fn>).mock.calls
+    await waitFor(() => expect(calls.length).toBeGreaterThan(1))
+    expect(calls[calls.length - 1][1].command).toMatchObject({ type: 'closeTab', tabId: 't2' })
+  })
+
+  it('заголовок страницы показан рядом с адресом', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ title: 'Пример страницы' })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    expect(screen.getByText('Пример страницы')).toBeTruthy()
+  })
+
+  it('повторяемая ошибка даёт кнопку «Повторить», а неповторяемая — нет', async () => {
+    const failing = Object.assign(new Error('Страница не ответила'), { retryable: true, code: 'timeout' })
+    const browser = fakeBrowser({ command: vi.fn(async () => { throw failing }) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByLabelText('Обновить'))
+    expect(await screen.findByText('Страница не ответила')).toBeTruthy()
+    expect(screen.getByText('Повторить')).toBeTruthy()
+  })
+
+  it('перезапуск сессии останавливает старую и стартует новую', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await screen.findByAltText('Кадр Chromium')
+    ;(browser.start as ReturnType<typeof vi.fn>).mockClear()
+    fireEvent.click(screen.getByText('Перезапустить'))
+    await waitFor(() => expect(browser.stop).toHaveBeenCalledWith('c1'))
+    await waitFor(() => expect(browser.start).toHaveBeenCalled())
+  })
+
+  it('снимок всей страницы просит fullPage, а не текущий кадр', async () => {
+    const onAttachFrame = vi.fn()
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} onAttachFrame={onAttachFrame} />)
+    await screen.findByAltText('Кадр Chromium')
+    fireEvent.click(screen.getByText('Вся страница'))
+    await waitFor(() => expect(onAttachFrame).toHaveBeenCalled())
+    const shots = (browser.screenshot as ReturnType<typeof vi.fn>).mock.calls
+    expect(shots.some((c) => c[1]?.fullPage === true)).toBe(true)
+  })
 })
