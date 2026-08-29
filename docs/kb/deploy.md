@@ -1,7 +1,7 @@
 ---
 title: Деплой: Docker, HTTPS, прод-сервер, env
-updated: 2026-08-28
-checked: 43b33d8b
+updated: 2026-08-29
+checked: a8c0c785
 areas:
   - Dockerfile
   - docker-compose.yml
@@ -164,7 +164,14 @@ localhost, где сервера нет, и инструменты `mcp__remote_
 Результат — `accepted`/`running`; отказ и недоступность host API возвращаются
 структурированной ошибкой без запуска команды.
 
-Для ручного обслуживания: ssh на прод-хост (сейчас 89.125.68.35), каталог прода — `target.path` из настроек проекта в Release Center (сейчас `/root/ChatAI`; ниже обозначен как `$PROD`). Чтобы **обновить
+Для ручного обслуживания: ssh на прод-хост (сейчас 89.125.68.35). **`target.path`
+из настроек Release Center (сейчас `/root/ChatAI`) — это корень данных, а не
+чекаут**: внутри лежат `.voicechat`, `chats`, `projects`, `global`, а `.git` там
+нет вовсе. Каталог, из которого поднят compose и который обновляет деплой, задан
+переменной `VC_REPO_DIR` в `/etc/voicechat/production.env` — это
+`<target.path>/projects/<projectId>/environments/production/temporary/repository`
+(ниже обозначен как `$PROD`). Проверено на живом проде: рабочий каталог
+контейнера `voicechat` совпадает с `VC_REPO_DIR`. Чтобы **обновить
 контейнер** на production, обновить прод целиком или пересобрать прод-контейнеры,
 всегда выполняй **только `voicechat-deploy`**: нельзя заменять его прямым
 `docker compose up`, `docker compose up --build` или ручным перезапуском.
@@ -176,7 +183,7 @@ localhost, где сервера нет, и инструменты `mcp__remote_
 
 ```bash
 cd $PROD
-git branch --show-current       # ожидается main
+git branch --show-current       # ожидается ветка релиза, например release/0.1.184
 git status --short              # ожидается пустой вывод
 command -v voicechat-deploy     # ожидается /usr/local/bin/voicechat-deploy
 ```
@@ -476,4 +483,27 @@ ls /app/scripts/ci-usage-report.mjs`). Лестницы хватает и на �
 
 **Кастомный домен публикаций Make (roadmap-4 п.33, ⏸).** Публикации живут на `/p/<token>/` и `/s/<slug>/` того же хоста. Свой домен на проект требует wildcard-DNS (`*.make.<домен>` → прод) и TLS-сертификата на wildcard в Caddy (`tls` с DNS-челленджем) плюс маршрут, который по `Host` подставляет slug; ни DNS-зоны, ни DNS-провайдера в окружении нет, поэтому пункт отложен. Когда появятся — точка входа: `servePublic` в `apps/server/src/routes/make.ts` (разрешение slug → token через `.published/slug-<slug>.json`).
 
-**Почта для регистрации.** `docker-compose.yml` пробрасывает их из `.env` рядом с compose в каталоге прода — это `target.path` из настроек Release Center проекта (`$PROD`, сейчас `/root/ChatAI`). Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='ChatAI <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
+**Почта для регистрации.** `docker-compose.yml` пробрасывает их из `.env` рядом с
+compose — то есть из `$PROD` (`VC_REPO_DIR`, см. выше), а **не** из корня данных. Прод-контейнеру нужны `VC_SMTP_URL=smtps://user:pass@smtp.example.com:465` (или `smtp://…:587` со STARTTLS), `VC_MAIL_FROM='ChatAI <no-reply@example.com>'`, `VC_PUBLIC_URL=https://…` — задаются в `docker-compose`/env прод-сервера; без них регистрация работает, но ссылки подтверждения видны только в логе сервера (`docker compose logs server | grep 'mail ('`).
+
+## Состояние почты на проде (проверено 29.08.2026)
+
+В прод-`.env` почтовых переменных нет ни одной: там только `COMPOSE_FILE`,
+`COMPOSE_PROJECT_NAME`, `VC_ADMIN_PASSWORD`, `VC_CLAUDE_*`, `VC_LLM_RUNNER_TOKEN`,
+`VC_MCP_PUBLIC_BASE`, `VC_STT_RUNNER_TOKEN`, `VC_TTS_RUNNER_TOKEN`. Значит письма
+регистрации и приглашений уходят в лог, а не адресату. В логе контейнера при этом
+ноль записей «SMTP не настроен» — почтой на проде ещё не пользовались, ничего не
+потеряно.
+
+Публичный origin отдаёт Caddy (`voiceaichat-caddy-1`) — `https://45.135.182.251`;
+`VC_PUBLIC_URL` не задан, и это **не ломает ссылки**: `baseUrl(req)` собирает их
+из `X-Forwarded-Proto`/`X-Forwarded-Host`, которые Caddy проставляет, и получается
+тот же адрес. Задавать переменную стоит, но ради одной её перезапускать
+прод-контейнер незачем — эффекта не будет.
+
+**Обычный пароль аккаунта Яндекса для SMTP не годится** — проверено живьём:
+`smtp.yandex.ru:465` доступен, но `AUTH` на паре «адрес + пароль аккаунта»
+отвечает `535 5.7.8 Invalid user or password`. Нужен именно пароль приложения
+(`id.yandex.ru → Безопасность → Пароли приложений → Почта`) — 16 строчных букв.
+Проверять такие пары надо локально (`smtplib.SMTP_SSL` + `login`), а не правкой
+прод-`.env`: отказ виден за секунду и без перезапуска контейнера.
