@@ -9,6 +9,7 @@ import { join } from 'node:path'
 // рисовалась без раскладки. Поведенческие тесты этого не видят — они не смотрят
 // на стили, — поэтому набор закреплён здесь отдельно.
 const css = readFileSync(join(__dirname, 'app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+const appTsx = readFileSync(join(__dirname, '..', 'App.tsx'), 'utf8')
 const styled = (cls: string): boolean => new RegExp(`\\.${cls}(?![\\w-])`).test(css)
 
 describe('стили, потерянные при слиянии CHAT-354', () => {
@@ -39,6 +40,18 @@ describe('стили, потерянные при слиянии CHAT-354', () =
     // молча, и вся страница консоли осталась без сетки.
     expect(css).toMatch(/\.app--console-reader[^{]*\{[^}]*grid-template-columns/)
     expect(css).toMatch(/\.app--console-reader > \.chat-split/)
+  })
+
+  it('каждый модификатор .app-- из App.tsx имеет правила', () => {
+    // Слепое пятно, из-за которого регресс и прожил три релиза: модификаторы
+    // страницы перечислены строками в массиве классов, а не в `className="…"`,
+    // поэтому ни один поиск по разметке их не находит. `app--console-reader`
+    // вычеркнули из списка селекторов — страница осталась без сетки, и это
+    // никак не проявилось ни в тестах, ни в типах.
+    const used = [...new Set([...appTsx.matchAll(/'(app--[a-z-]+)'/g)].map((m) => m[1]))]
+    expect(used.length).toBeGreaterThan(3)
+    const orphans = used.filter((cls) => !new RegExp(`\\.${cls}(?![\\w-])`).test(css))
+    expect(orphans).toEqual([])
   })
 
   it('лента сообщений позиционирована', () => {
