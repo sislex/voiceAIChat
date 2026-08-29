@@ -6,6 +6,8 @@ import type { MakeReplacePreviewLine } from './makeSearch'
 import type {
   BrowserCommand,
   BrowserSessionMetadata,
+  BrowserSelectorResult,
+  BrowserInspectResult,
   BrowserViewport,
   ClaudeLogEntry,
   Conversation,
@@ -854,8 +856,15 @@ export interface RendererBrowserScreenshotOptions {
 export interface RendererBrowserBridge {
   /** Идемпотентно поднимает Chromium-сессию разговора и возвращает её метаданные. */
   start(conversationId: string, viewport?: BrowserViewport): Promise<BrowserSessionMetadata>
-  /** Команда живой сессии (навигация, ввод, вкладки, resize). incarnation — из start. */
-  command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata>
+  /**
+   * Команда живой сессии. incarnation — из `start`.
+   *
+   * Тип ответа зависит от команды, и раньше он был объявлен неверно: сигнатура
+   * обещала метаданные сессии всегда, хотя `selector` отдаёт результат чтения и
+   * поиска, а `inspect` — журналы страницы. Из-за этого панель не могла
+   * показать ошибки страницы, не соврав компилятору.
+   */
+  command(conversationId: string, req: { incarnation: string; tabId?: string; command: RendererBrowserCommand }): Promise<BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult>
   /** Кадр текущей вкладки как data-URL (поллинг для screencast). */
   screenshot(conversationId: string, req: RendererBrowserScreenshotOptions): Promise<{ dataUrl: string }>
   /** Закрывает Chromium-сессию разговора. */

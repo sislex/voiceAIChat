@@ -97,7 +97,7 @@ import { isConsoleReaderDiagnosticsCommand, runConsoleReaderDiagnostics } from '
 import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
 import { REST as REST_PATHS } from '@shared/protocol'
 import { parseAdminRoute } from '@voicechat/admin-app'
-import { consolePtyId } from '@shared/types'
+import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
 
 const UsersAdmin = lazy(async () => {
@@ -1209,9 +1209,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         },
         reload: async () => {
           if (!browser || !incarnation) throw new Error('сессия не поднята')
-          const meta = await browser.command(conversationId, { incarnation, command: { type: 'reload' } })
-          incarnation = meta.incarnation
-          return meta
+          const result = await browser.command(conversationId, { incarnation, command: { type: 'reload' } })
+          if (!isBrowserSessionMetadata(result)) throw new Error('перезагрузка не вернула состояние сессии')
+          incarnation = result.incarnation
+          return result
         }
       }
     }).finally(() => {

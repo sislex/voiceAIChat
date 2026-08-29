@@ -7559,6 +7559,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .webpreview-tools__menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: flex; flex-direction: column; gap: 4px; min-width: 200px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 32px rgba(31, 35, 48, .16); }
 .webpreview-tools__menu .vc-btn { justify-content: flex-start; text-align: left; }
 
+/* Диагностика страницы в Playwright Reader: ошибки консоли и неуспешные
+   запросы. Раннер копил их с круга 5, но показать было негде. */
+.playwright-reader-keys { display: inline-flex; gap: var(--space-050); }
+
+.playwright-reader-diagnostics { display: flex; flex-direction: column; gap: var(--space-100); padding: var(--space-100) var(--space-150); border-top: 1px solid var(--border); background: var(--panel); max-height: 30vh; overflow: auto; }
+.playwright-reader-diagnostics__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-100); }
+.playwright-reader-diagnostics__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-050); font-size: 12px; }
+.playwright-reader-diagnostics__list li { overflow-wrap: anywhere; }
+.playwright-reader-diagnostics__list li[data-kind='console'] { color: var(--danger); }
+.playwright-reader-diagnostics__list li[data-kind='network'] code { color: var(--danger); font-weight: 600; }
+
 /* Вердикт этапа Automated QA: раньше здесь показывался JSON.stringify, теперь —
    итог, причина, шаги и снимок. Цвета берутся из токенов, чтобы тёмная тема
    получалась сама. */
