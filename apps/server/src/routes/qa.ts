@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
-import { readFileSync } from 'node:fs'
-import { basename, extname } from 'node:path'
+import { existsSync, readFileSync } from 'node:fs'
+import { basename, extname, join } from 'node:path'
 import { QA_RUN_STAGES, type AcceptanceCriterionSnapshot, type QaRunStage } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import type { UploadStore } from '../uploads.js'
@@ -14,7 +14,7 @@ function qaError(reply: FastifyReply, error: unknown): FastifyReply {
   return reply.code(status).send({ error: message })
 }
 
-export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void): void {
+export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads: UploadStore, ci: CiRunManager, retryPreparation?: (args: { userId: string; projectId: string; taskId: string; branch: string; commitSha: string }) => boolean, launchComponentQa?: (runId:string,userId:string)=>void, cancelComponentQa?: (runId:string)=>void, launchIntegrationTests?: (runId:string,userId:string)=>void, cancelIntegrationTests?: (runId:string)=>void, launchAutomatedQa?: (runId:string,userId:string)=>void, cancelAutomatedQa?: (runId:string)=>void, boardChanged?: (projectId:string)=>void, automatedQaScreenshotDir?: string): void {
   const base = '/api/projects/:projectId/tasks/:taskId/qa'
   app.get<{ Params: TaskParams }>(`${base}`, async (req, reply) => {
     const state = db.getQaTaskState(uid(req), req.params.projectId, req.params.taskId)
@@ -235,6 +235,17 @@ export function registerQaRoutes(app: FastifyInstance, db: VoiceChatDb, uploads:
       if (run) boardChanged?.(run.projectId)
       return run ? reply.code(202).send(run) : reply.code(404).send({ error: 'run not found' })
     } catch (error) { return qaError(reply, error) }
+  })
+  // Снимок вердикта Playwright-этапа. Лежит файлом на диске: base64 в
+  // result_json раздувал бы строку рана на каждую попытку.
+  app.get<{ Params: { runId: string } }>('/api/qa/runs/:runId/screenshot', async (req, reply) => {
+    const run = db.getQaStageRun(uid(req), req.params.runId)
+    if (!run || !automatedQaScreenshotDir) return reply.code(404).send({ error: 'screenshot not found' })
+    // runId — идентификатор из БД, но путь всё равно собирается из basename:
+    // роут не должен зависеть от того, что туда однажды попадёт.
+    const file = join(automatedQaScreenshotDir, `${basename(run.id)}.png`)
+    if (!existsSync(file)) return reply.code(404).send({ error: 'screenshot not found' })
+    return reply.type('image/png').send(readFileSync(file))
   })
   app.post<{ Params: { runId: string }; Body: { answer?: string } }>('/api/qa/runs/:runId/answer', async (req, reply) => {
     try { const run=db.answerQaStageRun(uid(req), req.params.runId, req.body?.answer ?? ''); if(run)boardChanged?.(run.projectId); return run ?? reply.code(404).send({ error: 'run not found' }) }

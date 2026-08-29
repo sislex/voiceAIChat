@@ -190,6 +190,8 @@ export function registerProjectRoutes(
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       automatedQaCommand?: string
+      automatedQaMode?: import('@voicechat/shared').AutomatedQaMode
+      automatedQaScenario?: import('@voicechat/shared').AutomatedQaScenario
       autoPilotRequiresManualQa?: boolean
       autoPilotFixLimit?: number
       productionDeployCommand?: string
@@ -230,6 +232,10 @@ export function registerProjectRoutes(
     if (body.commandPolicy !== undefined) { const { parseProjectCommandPolicy } = await import('@voicechat/shared'); body.commandPolicy = parseProjectCommandPolicy(JSON.stringify(body.commandPolicy)) }
     if (body.ciTestFixCycleLimit !== undefined && (!Number.isInteger(body.ciTestFixCycleLimit) || body.ciTestFixCycleLimit < 0)) return badReq(reply, 'ciTestFixCycleLimit must be a non-negative integer')
     if (body.autoPilotFixLimit !== undefined && (!Number.isInteger(body.autoPilotFixLimit) || body.autoPilotFixLimit < 0)) return badReq(reply, 'autoPilotFixLimit must be a non-negative integer')
+    if (body.automatedQaMode !== undefined) {
+      const { AUTOMATED_QA_MODES } = await import('@voicechat/shared')
+      if (!AUTOMATED_QA_MODES.includes(body.automatedQaMode)) return badReq(reply, 'automatedQaMode must be command or playwright')
+    }
     if (body.releaseTimeouts !== undefined) { try { const { validateReleaseTimeouts } = await import('@voicechat/shared'); validateReleaseTimeouts(body.releaseTimeouts) } catch(error) { return badReq(reply,errMessage(error)) } }
     // Тип — только из видимого пользователю каталога (см. POST выше).
     if (body.typeId !== undefined && !db.listProjectTypes(uid(req)).some((t) => t.id === body.typeId)) {

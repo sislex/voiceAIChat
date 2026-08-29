@@ -1,6 +1,8 @@
 // Раздел «Настройки» страницы проекта (шапку и переключатель разделов рисует
 // ProjectPage, здесь — только содержимое).
 import { CiProjectDefaults } from './ci/CiProjectDefaults'
+import { AutomatedQaScenarioEditor } from './AutomatedQaScenarioEditor'
+import type { AutomatedQaMode, AutomatedQaScenario } from '@shared/qa'
 import { formatDate, isoDate } from '../lib/dateFormat'
 // Описание, git, технологии/навыки, workflow фич, участники, машины, удаление.
 // Управляющие контролы (правка, участники, машины, удаление) — только владельцу.
@@ -32,7 +34,7 @@ export interface ProjectSettingsProps {
   currentUsername?: string
   llmAccess?: UserLlmAccess[]
   llmEngines?: LlmEngineOption[]
-  onUpdate: (id: string, fields: { typeId?: string; name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; testUsers?: ProjectTestUser[]; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; automatedQaCommand?: string; autoPilotRequiresManualQa?: boolean; autoPilotFixLimit?: number; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null; commandPolicy?: ProjectCommandPolicy }) => void
+  onUpdate: (id: string, fields: { typeId?: string; name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; testUsers?: ProjectTestUser[]; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; automatedQaCommand?: string; automatedQaMode?: AutomatedQaMode; automatedQaScenario?: AutomatedQaScenario; autoPilotRequiresManualQa?: boolean; autoPilotFixLimit?: number; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null; commandPolicy?: ProjectCommandPolicy }) => void
 
   onDelete: (id: string) => void
   // onAddMember убран намеренно: участник добавляется только приглашением, а
@@ -471,7 +473,10 @@ export function ProjectSettings(props: ProjectSettingsProps): JSX.Element {
         <label>Merge<select className="sel" disabled={!isOwner} value={detail.mergeTransport} onChange={(e) => props.onUpdate(detail.id, { mergeTransport: e.target.value as ProjectSummary['mergeTransport'] })}><option value="local">Локальный merge commit</option><option value="github_pull_request">GitHub Pull Request</option></select></label>
         <label>План агента<select className="sel" disabled={!isOwner} value={detail.agentPlanApprovalMode} onChange={(e) => props.onUpdate(detail.id, { agentPlanApprovalMode: e.target.value as ProjectSummary['agentPlanApprovalMode'] })}><option value="manual">Подтверждать</option><option value="automatic">Запускать автоматически</option></select></label>
         <label>Команда тестирования<input className="login-input" disabled={!isOwner} value={detail.testCommand ?? ''} onChange={(e) => props.onUpdate(detail.id, { testCommand: e.target.value })} placeholder="npm test" /></label>
-        <label>Команда Automated QA<input className="login-input" disabled={!isOwner} value={detail.automatedQaCommand ?? 'npm test'} onChange={(e) => props.onUpdate(detail.id, { automatedQaCommand: e.target.value })} placeholder="npm test" /></label>
+        <label>Этап Automated QA<select className="sel" disabled={!isOwner} value={detail.automatedQaMode ?? 'command'} onChange={(e) => props.onUpdate(detail.id, { automatedQaMode: e.target.value as AutomatedQaMode })}><option value="command">Команда в воркспейсе</option><option value="playwright">Сценарий в браузере (Playwright)</option></select></label>
+        {(detail.automatedQaMode ?? 'command') === 'command'
+          ? <label>Команда Automated QA<input className="login-input" disabled={!isOwner} value={detail.automatedQaCommand ?? 'npm test'} onChange={(e) => props.onUpdate(detail.id, { automatedQaCommand: e.target.value })} placeholder="npm test" /></label>
+          : <AutomatedQaScenarioEditor detail={detail} isOwner={isOwner} onUpdate={props.onUpdate} />}
         <label className="pset-check"><input type="checkbox" disabled={!isOwner} checked={detail.autoPilotRequiresManualQa ?? false} onChange={(e) => props.onUpdate(detail.id, { autoPilotRequiresManualQa: e.target.checked })} /> Останавливать автопроход перед ручным QA</label>
         <label>Лимит автоматических доработок<input className="login-input" type="number" min={0} disabled={!isOwner} value={detail.autoPilotFixLimit ?? 3} onChange={(e) => props.onUpdate(detail.id, { autoPilotFixLimit: Math.max(0, Number(e.target.value) || 0) })} /></label>
         <p className="proj-field-label" data-testid="production-environment-mode">Режим production: {detail.productionEnvironmentMode==='managed'?'Managed MachineStorage':'Legacy compatibility'}</p>

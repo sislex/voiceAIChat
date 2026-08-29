@@ -2,6 +2,37 @@ import { useCallback, useEffect, useState } from 'react'
 import { formatDateTime } from '../../lib/dateFormat'
 import type { AnyQaStageRun, QaRunStage } from '@shared/qa'
 import { Button } from '@voicechat/ui-kit'
+import { parseAutomatedQaVerdict } from '@shared/qa'
+
+const CLASSIFICATION_LABEL = {
+  implementation_defect: 'Дефект реализации — задача уходит на доработку',
+  infrastructure: 'Инфраструктурный сбой — автопроход остановлен, задача не возвращается'
+} as const
+const STEP_LABEL = { passed: 'пройден', failed: 'провален', skipped: 'пропущен' } as const
+
+/**
+ * Вердикт этапа человеку. Раньше здесь лежал `JSON.stringify(result)`: отладочный
+ * дамп вместо ответа на вопрос «что сломалось и кто виноват». Старые раны хранят
+ * в `result` только `{gatePassed}` — для них вердикта нет, и это честно сказано.
+ */
+function AutomatedQaVerdictView(props: { result: Record<string, unknown> }): JSX.Element {
+  const verdict = parseAutomatedQaVerdict(props.result)
+  if (!verdict) return <section><h4>Результат</h4><pre>{JSON.stringify(props.result, null, 2)}</pre></section>
+  return <section className="qa-verdict" data-testid="qa-verdict">
+    <h4>Вердикт</h4>
+    <p className={`qa-verdict__summary qa-verdict__summary--${verdict.passed ? 'passed' : 'failed'}`}>{verdict.summary}</p>
+    {verdict.classification && <p className="qa-verdict__cause">{CLASSIFICATION_LABEL[verdict.classification]}</p>}
+    <dl className="qa-verdict__facts">
+      <dt>Режим</dt><dd>{verdict.mode === 'playwright' ? 'сценарий в браузере' : 'команда в воркспейсе'}</dd>
+      <dt>{verdict.mode === 'playwright' ? 'Стартовый адрес' : 'Команда'}</dt><dd><code>{verdict.command}</code></dd>
+      {verdict.exitCode !== null && <><dt>Код выхода</dt><dd>{verdict.exitCode}</dd></>}
+      <dt>Длительность</dt><dd>{Math.round(verdict.durationMs / 1000)} с</dd>
+    </dl>
+    {verdict.steps.length > 0 && <ol className="qa-verdict__steps">{verdict.steps.map((step) => <li key={step.id} data-status={step.status}>{step.title} — {STEP_LABEL[step.status]}{step.detail && <>: {step.detail}</>}</li>)}</ol>}
+    {verdict.screenshotUrl && <a className="qa-verdict__shot" href={verdict.screenshotUrl} target="_blank" rel="noreferrer"><img src={verdict.screenshotUrl} alt="Снимок экрана в момент вердикта" /></a>}
+    {verdict.logTail && <details><summary>Хвост вывода</summary><pre>{verdict.logTail}</pre></details>}
+  </section>
+}
 
 const LABEL: Record<QaRunStage, string> = {
   component_qa: 'Component QA',
@@ -72,7 +103,7 @@ function GenericQaStageRunPanel(props: { projectId: string; taskId: string; stag
       <progress max={Math.max(1, run.progress.total)} value={run.progress.current} />
       {run.gateReasons.length > 0 && <section><h4>Quality gate не пройден</h4><ul>{run.gateReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></section>}
       {run.error && <p role="alert">{run.error}</p>}
-      {run.result && <section><h4>Результат</h4><pre>{JSON.stringify(run.result, null, 2)}</pre></section>}
+      {run.result && <AutomatedQaVerdictView result={run.result} />}
       <section><h4>Потоковая лента</h4><div className="ci-log">{run.log.map((line) => <div key={line.seq}>{line.text}</div>)}</div></section>
       {run.status === 'awaiting_input' && props.stage === 'integration_tests' && window.qa?.answerStageRun && <form onSubmit={(event) => { event.preventDefault(); void act(async () => { await window.qa!.answerStageRun!(run.id, answer); setAnswer('') }) }}><label>Ответ модели<textarea value={answer} onChange={(event) => setAnswer(event.target.value)} /></label><Button size="sm" type="submit" disabled={busy || !answer.trim()}>Отправить</Button></form>}
     </>}
