@@ -329,8 +329,8 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
             )}
             {step.kind === 'command' && step.status === 'failed' && step.exitCode === 66 && run?.status === 'failed' && (
               <div className="ci-model-retry" data-testid="ci-dirty-workspace">
-                <strong>В рабочем репозитории есть локальные изменения.</strong>
-                <span>Можно сохранить их для диагностики или безвозвратно откатить и начать workflow заново.</span>
+                <strong>Рабочая копия осталась с локальными изменениями — возможно, предыдущий ран был отменён до автоматической очистки.</strong>
+                <span>Сохраните файлы для диагностики либо сбросьте рабочую копию и запустите workflow заново.</span>
                 <Button disabled={!props.onDiscardAndRetry} onClick={() => {
                   // Файлы уходят безвозвратно — просим набрать слово, а не просто «ОК».
                   void confirm({
@@ -343,7 +343,7 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
                     if (ok) props.onDiscardAndRetry?.(runId)
                   })
                 }}>
-                  Откатить изменения и начать заново
+                  Сбросить рабочую копию
                 </Button>
               </div>
             )}

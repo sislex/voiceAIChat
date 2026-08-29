@@ -120,7 +120,7 @@ describe('RunFeed', () => {
     const cache: RunFeedCache = { detail: { run: mkRun({ status: 'failed' }), steps: [dirty], fixAttempts: [], interactions: [] }, log: [], conclusion: null }
     const onDiscardAndRetry = vi.fn()
     render(<RunFeed {...baseProps(cache)} onDiscardAndRetry={onDiscardAndRetry} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Откатить изменения и начать заново' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Сбросить рабочую копию' }))
     const dialog = await screen.findByTestId('confirm-dialog')
     // Предупреждение дословно то же, что было в нативном диалоге.
     expect(within(dialog).getByText('Все незакоммиченные и неотслеживаемые файлы в рабочем репозитории будут удалены. Продолжить?')).toBeInTheDocument()
