@@ -33,6 +33,14 @@ describe('стили, потерянные при слиянии CHAT-354', () =
     expect(bub).toMatch(/position:\s*relative/)
   })
 
+  it('страница консоли участвует в раскладке приложения', () => {
+    // `app--console-reader` ставит `App.tsx` строкой в массиве классов, поэтому
+    // поиск по `className="..."` его не находит — из правил раскладки он выпал
+    // молча, и вся страница консоли осталась без сетки.
+    expect(css).toMatch(/\.app--console-reader[^{]*\{[^}]*grid-template-columns/)
+    expect(css).toMatch(/\.app--console-reader > \.chat-split/)
+  })
+
   it('лента сообщений позиционирована', () => {
     // Иначе абсолютные подсказки `.vc-sr-only` внутри сообщений считаются от
     // `.main` и раздувают scrollHeight колонки до высоты всей ленты.
