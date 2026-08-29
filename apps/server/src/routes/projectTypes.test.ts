@@ -127,9 +127,22 @@ describe('публикация типа', () => {
     await inj(bobTok, { method: 'POST', url: `/api/project-types/${own.id}/publish` })
     await inj(adminTok, { method: 'POST', url: `/api/admin/project-types/${own.id}/review`, payload: { decision: 'approve' } })
 
-    expect((await inj(bobTok, { method: 'PATCH', url: `/api/project-types/${own.id}`, payload: { name: 'Правка' } })).statusCode).toBe(404)
+    // Автору отвечают 409 с объяснением, а не 404: узел он видит в каталоге, и
+    // «Объект не найден» читалось бы как «тип куда-то делся».
+    const denied = await inj(bobTok, { method: 'PATCH', url: `/api/project-types/${own.id}`, payload: { name: 'Правка' } })
+    expect(denied.statusCode).toBe(409)
+    expect(denied.json().error).toMatch(/администратор/i)
+    expect((await inj(bobTok, { method: 'DELETE', url: `/api/project-types/${own.id}` })).statusCode).toBe(409)
     expect((await inj(adminTok, { method: 'PATCH', url: `/api/project-types/${own.id}`, payload: { name: 'Правка админом' } })).statusCode).toBe(200)
     expect((await inj(bobTok, { method: 'POST', url: '/api/project-types', payload: { name: 'Ребёнок', parentId: own.id } })).statusCode).toBe(200)
+  })
+
+  it('чужой и невидимый узел по-прежнему отвечают 404, без подсказок', async () => {
+    const foreign = await create(bobTok, { name: 'Личный Боба' })
+    // Кэрол узел не видит: приватный чужой — существование не подтверждаем.
+    expect((await inj(carolTok, { method: 'PATCH', url: `/api/project-types/${foreign.id}`, payload: { name: 'x' } })).statusCode).toBe(404)
+    expect((await inj(carolTok, { method: 'DELETE', url: `/api/project-types/${foreign.id}` })).statusCode).toBe(404)
+    expect((await inj(carolTok, { method: 'DELETE', url: '/api/project-types/нет-такого' })).statusCode).toBe(404)
   })
 
   it('нельзя вынести на публикацию узел с приватным предком', async () => {
