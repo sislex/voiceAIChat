@@ -220,6 +220,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // а не повторяем список слов здесь: раньше каждый из этих трёх адресов уходил
   // запрашивать несуществующего пользователя и встречал человека тостом
   // «Объект не найден».
+  // Ссылка из письма-приглашения: разбираем здесь, а не только перед экраном
+  // входа. Вошедшему она показывается оверлеем поверх приложения, и до этой
+  // правки синхронизация «адрес ↔ активный чат» успевала переписать адрес на
+  // `#/chat/<id>` — человек из письма попадал в чат вместо приглашения.
+  const projectInviteToken = segments[0] === 'project-invite' ? (segments[1] ?? null) : null
   const adminRoute = segments[0] === 'users' ? parseAdminRoute(path) : null
   const routeUserName = adminRoute?.page === 'users' ? (adminRoute.userName ?? null) : null
   const onUtilityPage = utilitySeg !== null
@@ -811,7 +816,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // первой репликой) — переписываем адрес без новой записи в истории.
   const syncedChatId = useRef<string | null>(routeChatId ?? routeReaderChatId ?? routePlaywrightReaderChatId ?? routeConsoleReaderChatId ?? routeMakeChatId)
   useEffect(() => {
-    if (!authed || !inChat) return
+    if (!authed || !inChat || projectInviteToken) return
     if (routeChatId && routeChatId !== syncedChatId.current) {
       syncedChatId.current = routeChatId
       if (routeChatId === chat.activeId) return // стор уже открыл этот чат
@@ -834,7 +839,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       navigate(`/chat/${chat.activeId}`, { replace: true })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authed, inChat, routeChatId, chat.activeId])
+  }, [authed, inChat, routeChatId, chat.activeId, projectInviteToken])
 
   // Отдельный экран Web Reader держит только типизированные чаты; старые
   // разговоры с сохранённым URL совместимы с ним и остаются доступны после переноса.
@@ -1510,9 +1515,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   }
   const inviteToken = /^#\/invite\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
   // Открытая регистрация с подтверждением email: #/signup — форма, #/verify/<token> — подтверждение из письма.
-  // Ссылка из письма-приглашения в проект работает до входа: показываем, куда
-  // зовут. Маршрут свой — `#/invite/` занят регистрацией по админскому инвайту.
-  const projectInviteToken = /^#\/project-invite\/([^/?#]+)/.exec(window.location.hash)?.[1] ?? null
+  // Ссылка из письма-приглашения в проект работает и до входа, и после: маршрут
+  // свой (`#/invite/` занят регистрацией по админскому инвайту), токен разобран выше.
   if (session.authRequired && !session.currentUser && projectInviteToken && window.session?.projectInvitationPreview) {
     const preview = window.session.projectInvitationPreview
     return (
