@@ -174,9 +174,16 @@ describe('сохранить проект как подтип', () => {
     expect((await inj(carolTok, { method: 'GET', url: '/api/project-types' })).json().map((t: ProjectTypeNode) => t.id)).not.toContain(node.id)
   })
 
-  it('без имени — 400, не владелец — 404', async () => {
+  it('без имени — 400; посторонний — 404; участник — 403 с объяснением', async () => {
     const project = (await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'P' } })).json() as { id: string }
     expect((await inj(bobTok, { method: 'POST', url: `/api/projects/${project.id}/derive-type`, payload: { name: '  ' } })).statusCode).toBe(400)
+    // Кэрол проект не видит — существование не подтверждаем.
     expect((await inj(carolTok, { method: 'POST', url: `/api/projects/${project.id}/derive-type`, payload: { name: 'Чужое' } })).statusCode).toBe(404)
+
+    // А участник проект видит, и 404 читалось бы как «проект куда-то делся».
+    await inj(bobTok, { method: 'POST', url: `/api/projects/${project.id}/members`, payload: { username: 'carol' } })
+    const asMember = await inj(carolTok, { method: 'POST', url: `/api/projects/${project.id}/derive-type`, payload: { name: 'Из чужого' } })
+    expect(asMember.statusCode).toBe(403)
+    expect(asMember.json().error).toMatch(/владелец/i)
   })
 })
