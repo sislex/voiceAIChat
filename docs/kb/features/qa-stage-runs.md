@@ -1,7 +1,7 @@
 ---
 title: Раны QA-этапов: отдельные сущности и вкладки карточки
-updated: 2026-08-20
-checked: 2ba06683
+updated: 2026-08-29
+checked: a6692e7a
 areas:
   - packages/shared/src/qa.ts
   - packages/shared/src/qa.test.ts
@@ -356,23 +356,25 @@ development-workspace, валидирует, что HEAD-дифф содержи
 development fix-run. Источники: `apps/server/src/db/database.ts`,
 `apps/server/src/ci/integrationTests.ts`, `apps/server/src/routes/qa.ts`.
 
-Automated QA запускается только явным `POST …/qa/runs/automated_qa` для задачи,
-уже находящейся в системной колонке `automated_qa`; перенос, сортировка,
-переименование колонки и открытие вкладки рана не создают. Повторный старт
-возвращает существующий активный ран. Попытка хранится в `qa_stage_runs` со
-`stage='automated_qa'`: там лежат статус и номер попытки, инициатор, ветка/SHA,
-текущий шаг, progress, лог, result, причины gate, ошибка и временные метки.
-Неуспешный gate, отмена и прерывание не меняют колонку; внутренний
-`completeQaStageRun` при `result.gatePassed === true` транзакционно ставит
-`success` и переводит карточку в `manual_qa`.
+Automated QA стартует явным `POST …/qa/runs/automated_qa` либо координатором
+автопрохода, когда task уже находится в системной колонке `automated_qa`.
+Повторный старт возвращает существующий активный ран. Попытка хранится в
+`qa_stage_runs` со `stage='automated_qa'`: там лежат статус и номер попытки,
+инициатор, ветка/SHA, текущий шаг, progress, потоковый лог, result, причины gate,
+ошибка и временные метки. Внутренний `completeQaStageRun` при
+`result.gatePassed === true` транзакционно ставит `success` и переводит карточку
+в `manual_qa`; неуспешный ручной запуск сам колонку не меняет.
 
-Automated QA исполняет реальную команду проекта через runner. Для карточки с
-`autoPilot` серверный координатор автоматически запускает все QA-стадии,
-пропускает `manual_qa`, если проект не требует ручного gate, и передаёт задачу
-существующему merge-рану через `awaiting_merge`. Каждое действие пишется в
-`qa_audit` с actor=`automation`. Ошибка создаёт связанную bug-задачу, возвращает
-исходную в `development` и запускает fix-run; число кругов ограничено
-`autopilot_fix_limit` (дефолт 3), затем используется `decision_required`.
+`createAutomatedQaRunner` исполняет `projects.automated_qa_command` (пустое
+значение нормализуется в `npm test`) через общий `CommandExecutor` в последнем
+pushed development-workspace, на его `agent_id`, с `CI=1` и общим лимитом 30
+минут. Команда и stdout последовательно дописываются в `log_json` (хранятся
+последние 2000 кадров); ненулевой exit code, timeout, потеря исполнителя и
+недоступный workspace сохраняются как понятная ошибка. Отмена прерывает
+`AbortController`. При старте сервера активные Automated QA-попытки, в отличие
+от остальных generic QA-ранов, переводятся обратно в `queued` и запускаются с
+тем же id и накопленным логом. Автоматическая реакция карточки на результат
+описана в [task-autopilot.md](task-autopilot.md).
 
 ## Справка об автоматизации на канбане
 
