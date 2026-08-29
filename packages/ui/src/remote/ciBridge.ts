@@ -96,7 +96,7 @@ export interface RendererCiRest {
   getTaskCi(projectId: string, taskId: string): Promise<CiTaskConfig>
   getTaskMachines(projectId: string, taskId: string): Promise<CiTaskMachines>
   putTaskCi(projectId: string, taskId: string, config: Partial<CiSlotConfig> & { enabledStages?: import('@shared/ci').CiProcessStage[] }): Promise<CiSlotConfig & { enabledStages: import('@shared/ci').CiProcessStage[] }>
-  startRun(projectId: string, taskId: string, options?: { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel' }): Promise<CiRun>
+  startRun(projectId: string, taskId: string, options?: { mode?: CiRunMode; provider?: 'claude' | 'codex'; model?: string; launch?: 'queue' | 'parallel'; agentId?: string }): Promise<CiRun>
   getMergeMachines(projectId: string, taskId: string): Promise<import('@shared/merge').MergeMachinesResponse>
   /** agentId выбирает машину проекта для рана; без него — машина workspace. */
   startMerge(projectId: string, taskId: string, agentId?: string | null): Promise<MergeRun>
@@ -110,7 +110,7 @@ export interface RendererCiRest {
   deployMergeRun(runId: string): Promise<MergeRun>
   /** Копии репозиториев задачи по машинам (dev-workspace и merge-клоны). */
   getTaskRepositories(projectId: string, taskId: string): Promise<TaskRepository[]>
-  /** Немедленный запуск на явно указанной машине; ран из очереди продвигается, а не отменяется. */
+  /** Подтверждённый обход очереди на указанной машине; ран из очереди продвигается, а не отменяется. */
   forceStartRun(projectId: string, taskId: string, agentId: string): Promise<CiRun>
   getRun(runId: string): Promise<CiRunDetail>
   getRunLog(runId: string): Promise<CiLogLine[]>
