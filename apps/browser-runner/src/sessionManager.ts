@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
@@ -20,6 +20,10 @@ interface Session {
   /** Кольцевые журналы страницы: без них модели нечем проверять поведение. */
   console: BrowserConsoleEntry[]
   network: BrowserNetworkEntry[]
+  /** Каталог профиля: после остановки его надо удалить, иначе том растёт. */
+  profileDir: string
+  /** Последнее обращение — по нему сборщик находит брошенные сессии. */
+  lastUsedAt: number
 }
 
 /** Держим последние записи: журнал живой страницы иначе растёт без предела. */
@@ -46,7 +50,7 @@ export class BrowserSessionManager {
     }
     const session = await pending
     if (session.userKey !== request.userKey || session.conversationKey !== request.conversationKey) throw new Error('session identity mismatch')
-    return this.metadata(session)
+    return await this.metadata(session)
   }
 
   private async create(request: StartSessionRequest): Promise<Session> {
@@ -72,7 +76,9 @@ export class BrowserSessionManager {
       console: [],
       network: [],
       activeTabId: '',
-      viewport
+      viewport,
+      profileDir: path,
+      lastUsedAt: Date.now()
     }
     await context.route('**/*', async (route) => {
       try {
@@ -124,7 +130,25 @@ export class BrowserSessionManager {
     this.sessions.delete(sessionId)
     const session = await pending
     await session.context.close()
+    // Каталог профиля детерминирован от пары ключей, а у QA-рана вторым ключом
+    // идёт id прогона — значит, каждый прогон оставлял бы свой каталог навсегда.
+    await rm(session.profileDir, { recursive: true, force: true }).catch(() => undefined)
     return true
+  }
+
+  /**
+   * Уборка брошенных сессий. Chromium держится до явного `stop`, а его никто не
+   * зовёт, когда пользователь просто закрыл вкладку или сервер перезапустился:
+   * процесс браузера жил до перезапуска контейнера.
+   */
+  async sweepIdle(idleMs: number, at = Date.now()): Promise<string[]> {
+    const stale: string[] = []
+    for (const [id, pending] of this.sessions) {
+      const session = await pending.catch(() => null)
+      if (session && at - session.lastUsedAt >= idleMs) stale.push(id)
+    }
+    for (const id of stale) await this.stop(id).catch(() => undefined)
+    return stale
   }
 
   async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult | BrowserInspectResult> {
@@ -165,9 +189,13 @@ export class BrowserSessionManager {
     } else if (command.type === 'inspect') {
       return runInspectAction({ console: session.console, network: session.network }, page, command.action)
     } else if (command.type === 'screenshot') {
-      return page.screenshot({ type: command.format === 'jpeg' ? 'jpeg' : command.format === 'webp' ? 'webp' : 'png', fullPage: command.fullPage, quality: command.format === 'png' ? undefined : command.quality })
+      const options = { type: command.format === 'jpeg' ? 'jpeg' as const : command.format === 'webp' ? 'webp' as const : 'png' as const, quality: command.format === 'png' ? undefined : command.quality }
+      // Снимок узла: раньше на запрос по селектору отдавался весь вьюпорт с
+      // оговоркой в тексте — у Playwright для этого есть locator.screenshot().
+      if (command.selector) return page.locator(command.selector).first().screenshot({ ...options, timeout: 10_000 })
+      return page.screenshot({ ...options, fullPage: command.fullPage })
     }
-    return this.metadata(session)
+    return await this.metadata(session)
   }
 
   count(): number { return this.sessions.size }
@@ -182,9 +210,18 @@ export class BrowserSessionManager {
     return session
   }
 
-  private metadata(session: Session): BrowserSessionMetadata {
-    const tabs: BrowserTab[] = [...session.pages].map(([id, page]) => ({ id, url: page.url(), title: '', active: id === session.activeTabId }))
-    const active = session.pages.get(session.activeTabId)
+  /**
+   * Заголовки читаются у страницы, а не подставляются литералами: до этого
+   * `title` был жёстко `null`, поэтому поле заголовка в панели всегда пустовало,
+   * а модель заголовка не видела. `page.title()` асинхронен и на закрывающейся
+   * вкладке бросает — отсюда `catch`, а не жёсткий отказ всей команды.
+   */
+  private async metadata(session: Session): Promise<BrowserSessionMetadata> {
+    session.lastUsedAt = Date.now()
+    const tabs: BrowserTab[] = await Promise.all([...session.pages].map(async ([id, page]) => ({
+      id, url: page.url(), title: await page.title().catch(() => ''), active: id === session.activeTabId
+    })))
+    const active = tabs.find((tab) => tab.active)
     return {
       id: session.id,
       conversationId: session.conversationKey,
@@ -193,8 +230,8 @@ export class BrowserSessionManager {
       activeTabId: session.activeTabId,
       tabs,
       viewport: session.viewport,
-      currentUrl: active?.url() ?? null,
-      title: null
+      currentUrl: active?.url ?? null,
+      title: active?.title || null
     }
   }
 }

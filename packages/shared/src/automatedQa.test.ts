@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { automatedQaRemarks, parseAutomatedQaVerdict, type AutomatedQaVerdict } from './qa'
+import { automatedQaRemarks, automatedQaStartUrlProblem, parseAutomatedQaVerdict, type AutomatedQaVerdict } from './qa'
 
 const verdict = (patch: Partial<AutomatedQaVerdict> = {}): AutomatedQaVerdict => ({
   mode: 'command', gatePassed: false, passed: false, summary: 'Команда автотестов завершилась с кодом 1',
@@ -39,5 +39,32 @@ describe('automatedQaRemarks', () => {
     }))
     expect(text).toContain('- Создать задачу: локатор не найден')
     expect(text).not.toContain('Открыть доску')
+  })
+})
+
+describe('automatedQaStartUrlProblem', () => {
+  it('пустой адрес не ругается — человек ещё не начал вводить', () => {
+    expect(automatedQaStartUrlProblem('')).toBeNull()
+    expect(automatedQaStartUrlProblem('   ')).toBeNull()
+  })
+  it('внешний адрес проходит', () => {
+    expect(automatedQaStartUrlProblem('https://example.com/#/projects/p1')).toBeNull()
+  })
+  it('localhost и приватные сети объясняются, а не просто отклоняются', () => {
+    // Раннер живёт на сервере: SSRF-гейт validatePublicUrl режет такие адреса,
+    // и до круга 10 владелец узнавал об этом только при первом прогоне.
+    expect(automatedQaStartUrlProblem('http://localhost:5173')).toContain('не ходит в localhost')
+    expect(automatedQaStartUrlProblem('http://127.0.0.1:8787')).toContain('внутренних сетей')
+    expect(automatedQaStartUrlProblem('http://192.168.1.10')).toContain('внутренних сетей')
+    expect(automatedQaStartUrlProblem('http://10.0.0.5')).toContain('внутренних сетей')
+    expect(automatedQaStartUrlProblem('http://172.16.0.1')).toContain('внутренних сетей')
+  })
+  it('публичный адрес в том же диапазоне первых октетов не путается с приватным', () => {
+    expect(automatedQaStartUrlProblem('http://172.32.0.1')).toBeNull()
+    expect(automatedQaStartUrlProblem('http://11.0.0.1')).toBeNull()
+  })
+  it('не-http и мусор объясняются по-разному', () => {
+    expect(automatedQaStartUrlProblem('file:///etc/passwd')).toContain('только адреса http')
+    expect(automatedQaStartUrlProblem('просто текст')).toContain('полный адрес с протоколом')
   })
 })

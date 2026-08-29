@@ -31,6 +31,7 @@ import { createCiRunManager } from './ci/runManager.js'
 import { AgentCommandExecutor } from './ci/executor.js'
 import { createAutomatedQaRunner, createComponentQaRunner } from './ci/componentQa.js'
 import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
+import { sweepQaScreenshots } from './ci/qaScreenshots.js'
 import { automatedQaRemarks } from '@voicechat/shared'
 import { createIntegrationTestRunner } from './ci/integrationTests.js'
 import { MergeRunManager } from './merge/runManager.js'
@@ -470,7 +471,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     },
     // Снимок из изолированного Chromium: отдельным входом, потому что он
     // возвращает картинку, а не структуру действия.
-    browserScreenshot: async (userId, conversationId) => {
+    browserScreenshot: async (userId, conversationId, args) => {
       if (!browserRunner) return null
       const conversation = db.getConversation(userId, conversationId)
       if (!conversation || !isPlaywrightReaderConversation(conversation)) return null
@@ -478,10 +479,8 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
         const session = await browserRunner.start({ sessionId: conversationId, userKey: userId, conversationKey: conversationId })
         const shot = await browserRunner.screenshot(conversationId, {
           requestId: randomUUID(), incarnation: session.incarnation, actor: 'assistant',
-          command: { type: 'screenshot', format: 'png' }
+          command: { type: 'screenshot', format: 'png', ...(args.selector ? { selector: args.selector } : {}) }
         })
-        // Селектор раннер не поддерживает: снимается вьюпорт. Область в ответе
-        // — весь вьюпорт, чтобы модель не считала, что сняла указанный узел.
         return {
           ok: true,
           result: {
@@ -555,6 +554,16 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // Снимки вердикта Playwright-этапа: файл на диске, а не base64 в result_json —
   // строка рана иначе распухала бы на сотни килобайт с каждой попыткой.
   const automatedQaScreenshotDir = join(opts.config.dataDir, 'qa-screenshots')
+  // Снимки не удалялись ни при удалении задачи (каскад чистит строку рана, но не
+  // файл), ни по возрасту. Уборка при старте и раз в сутки.
+  const sweepScreenshots = (): void => {
+    try { sweepQaScreenshots({ dir: automatedQaScreenshotDir, knownRunIds: db.qaStageRunIds(), maxAgeMs: 30 * 24 * 60 * 60_000 }) }
+    catch (error) { app.log.warn({ error }, 'qa screenshot sweep failed') }
+  }
+  sweepScreenshots()
+  const screenshotSweepTimer = setInterval(sweepScreenshots, 24 * 60 * 60_000)
+  screenshotSweepTimer.unref?.()
+  app.addHook('onClose', async () => clearInterval(screenshotSweepTimer))
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
   const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)

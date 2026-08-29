@@ -191,6 +191,8 @@ export type BrowserSelectorAction =
   | { kind: 'drag'; from: string; to: string }
   /** Дерево доступности: роли и имена, как их видит скринридер. */
   | { kind: 'a11y'; selector?: string; limit?: number }
+  /** Загрузка файла в input[type=file]: содержимое приходит base64 от модели. */
+  | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string }
 
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
@@ -240,7 +242,8 @@ export type BrowserCommand =
   | { type: 'selectTab' | 'closeTab'; tabId: string }
   | { type: 'resize'; viewport: BrowserViewport }
   | { type: 'input'; action: BrowserInputAction }
-  | { type: 'screenshot'; fullPage?: boolean; format?: 'png' | 'jpeg' | 'webp'; quality?: number }
+  /** Снимок: всей страницы, вьюпорта или узла по селектору. */
+  | { type: 'screenshot'; fullPage?: boolean; selector?: string; format?: 'png' | 'jpeg' | 'webp'; quality?: number }
 
 export interface BrowserCommandRequest {
   requestId: string
