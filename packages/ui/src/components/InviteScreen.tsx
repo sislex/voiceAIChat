@@ -6,7 +6,7 @@
 // два разных экрана расходились бы текстами и состояниями ошибок.
 import { useEffect, useState } from 'react'
 import { formatDate, isoDate } from '../lib/dateFormat'
-import { Button, ErrorState } from '@voicechat/ui-kit'
+import { Button, Dialog, ErrorState } from '@voicechat/ui-kit'
 import type { ProjectInvitationPreview } from '@shared/projects'
 
 export interface InviteScreenProps {
@@ -38,11 +38,8 @@ export function InviteScreen({ token, loadPreview, onAccept, onDecline, onLogin,
 
   const authed = Boolean(onAccept)
 
-  return (
-    <div className="login-screen" data-theme={theme}>
-      <div className="login-card invite-card" data-testid="invite-screen">
-        <h1 className="login-title">Приглашение в проект</h1>
-
+  const body = (
+    <>
         {status === 'loading' && <p className="login-hint" role="status">Проверяю ссылку…</p>}
 
         {status === 'invalid' && (
@@ -103,6 +100,26 @@ export function InviteScreen({ token, loadPreview, onAccept, onDecline, onLogin,
             <button type="button" className="make-link" onClick={onDone}>{authed ? 'К проектам' : 'Ко входу'}</button>
           </p>
         )}
+    </>
+  )
+
+  // Вошедшему это модальное окно поверх приложения, а не отдельный экран, —
+  // значит `Dialog`, как требует пакет. Своя вёрстка `.login-screen` здесь не
+  // годилась: она не перекрывает приложение, и карточка рисовалась сквозь чат
+  // вместе с композером.
+  if (authed) {
+    return (
+      <Dialog title="Приглашение в проект" size="sm" onClose={onDone} testId="invite-screen" padded>
+        <div className="invite-card">{body}</div>
+      </Dialog>
+    )
+  }
+
+  return (
+    <div className="login-screen" data-theme={theme}>
+      <div className="login-card invite-card" data-testid="invite-screen">
+        <h1 className="login-title">Приглашение в проект</h1>
+        {body}
       </div>
     </div>
   )
