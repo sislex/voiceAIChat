@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 85 коммит(ов) в areas после сверки: b69bb844 feat(projects): живые приглашения, сториз новых экранов и покрытие каскада … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 94 коммит(ов) в areas после сверки: aba0df3c fix(protocol): технические коды ошибок переводятся один раз в транспорте … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-25 | ⚠ 89 коммит(ов) в areas после сверки: aba0df3c fix(protocol): технические коды ошибок переводятся один раз в транспорте … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 777 коммит(ов) в areas после сверки: 7ab9be3b test(projects): сквозной e2e фичи в реальном Chromium … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 778 коммит(ов) в areas после сверки: 903869b4 test(projects): e2e покрывает приём приглашения и отказ по чужой ссылке … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-20 | ⚠ 193 коммит(ов) в areas после сверки: 394e3d4c fix(projects): ошибки форм на месте, состояние списка проектов и русские тексты … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-28 | ⚠ 46 коммит(ов) в areas после сверки: aba0df3c fix(protocol): технические коды ошибок переводятся один раз в транспорте … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 22 коммит(ов) в areas после сверки: aba0df3c fix(protocol): технические коды ошибок переводятся один раз в транспорте … |
@@ -31,7 +31,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 29 коммит(ов) в areas после сверки: 0d3fb22f fix(session): истёкшая сессия наконец обрабатывается … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 23 коммит(ов) в areas после сверки: aba0df3c fix(protocol): технические коды ошибок переводятся один раз в транспорте … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 89 коммит(ов) в areas после сверки: 394e3d4c fix(projects): ошибки форм на месте, состояние списка проектов и русские тексты … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 2 коммит(ов) в areas после сверки: aba0df3c fix(protocol): технические коды ошибок переводятся один раз в транспорте … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ✓ |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 1 коммит(ов) в areas после сверки: aba0df3c fix(protocol): технические коды ошибок переводятся один раз в транспорте |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-27 | ⚠ 32 коммит(ов) в areas после сверки: 394e3d4c fix(projects): ошибки форм на месте, состояние списка проектов и русские тексты … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-27 | ⚠ 29 коммит(ов) в areas после сверки: aba0df3c fix(protocol): технические коды ошибок переводятся один раз в транспорте … |

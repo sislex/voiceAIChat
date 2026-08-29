@@ -1154,8 +1154,11 @@ export class VoiceChatDb {
         for (const semantic of order) {
           const matches = columns.filter(column => column.semantic_type === semantic)
           for (const column of matches) {
-            if (semantic === 'custom') this.db.prepare(`UPDATE kanban_columns SET position=? WHERE id=?`).run(position, column.id)
-            else this.db.prepare(`UPDATE kanban_columns SET position=?, hidden=0 WHERE id=?`).run(position, column.id)
+            // Канонизация задаёт только порядок. Флаг hidden не трогаем: скрытие
+            // колонки — пользовательская настройка (задачи при этом остаются), а
+            // сброс делал её бессмысленной — каждый перезапуск сервера возвращал
+            // скрытую системную колонку на доску.
+            this.db.prepare(`UPDATE kanban_columns SET position=? WHERE id=?`).run(position, column.id)
             position += RANK_STEP
           }
         }
