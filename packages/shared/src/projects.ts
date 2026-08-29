@@ -545,6 +545,15 @@ export function sanitizeProjectTestUsers(value: unknown): ProjectTestUser[] {
  * Проект в списке. `role` — роль текущего пользователя (запрос знает uid),
  * технологии/навыки — свободные теги.
  */
+export const DEFAULT_OWNED_PROJECT_LIMIT = 5
+
+/** Квота собственных проектов текущего пользователя; admin получает unlimited. */
+export interface ProjectQuota {
+  owned: number
+  limit: number
+  unlimited: boolean
+}
+
 export interface ProjectSummary {
   id: string
   name: string

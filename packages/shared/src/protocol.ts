@@ -303,6 +303,8 @@ export const REST = {
   sessionSignupResend: '/api/session/signup/resend',
   sessionVerify: '/api/session/verify',
   adminSignup: '/api/admin/signup',
+  /** Квота собственных проектов текущего пользователя. */
+  projectsQuota: '/api/projects/quota',
   /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
   sessionReset: '/api/session/reset',
   sessionPassword: '/api/session/password',

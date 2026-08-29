@@ -83,7 +83,7 @@ export interface UsersAdminProps {
   /** Открытая регистрация с подтверждением email. */
   signup?: SignupConfig | null
   onLoadSignup?: () => void
-  onSetSignup?: (input: { enabled?: boolean; role?: import('@shared/types').UserRole }) => void
+  onSetSignup?: (input: { enabled?: boolean; role?: import('@shared/types').UserRole; ownedProjectLimit?: number }) => void
   onOpenConversation: (id: string) => void
   /** Типы проекта, ожидающие утверждения; нет обработчика — секции нет. */
   pendingProjectTypes?: ProjectTypeNode[]
@@ -322,6 +322,7 @@ export function UsersAdmin({
                 <div className="uadmin-invite-form">
                   <label className="make-autosave"><input type="checkbox" aria-label="Разрешить регистрацию по email" checked={signup.enabled} onChange={(e) => onSetSignup?.({ enabled: e.target.checked })} /> разрешить регистрацию с подтверждением email</label>
                   <label>Роль новых <select aria-label="Роль новых пользователей" value={signup.role} onChange={(e) => onSetSignup?.({ role: e.target.value as import('@shared/types').UserRole })}><option value="developer">developer</option><option value="tester">tester</option><option value="observer">observer</option></select></label>
+                  <label>Проектов на пользователя <input type="number" min={1} max={1000} aria-label="Квота проектов на пользователя" value={signup.ownedProjectLimit} onChange={(e) => { const value = Number(e.target.value); if (Number.isInteger(value) && value > 0) onSetSignup?.({ ownedProjectLimit: value }) }} /></label>
                   {!signup.mailConfigured && <span className="ublock ublock--lock" title="Задайте VC_SMTP_URL и VC_MAIL_FROM на сервере">SMTP не настроен — письма пишутся в лог сервера</span>}
                 </div>
               )}

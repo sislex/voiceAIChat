@@ -182,7 +182,7 @@ export interface AdminMakeUserStat {
 }
 
 /** Настройка открытой регистрации: включена ли и какую роль получают новые пользователи. */
-export interface SignupConfig { enabled: boolean; role: UserRole; mailConfigured: boolean }
+export interface SignupConfig { enabled: boolean; role: UserRole; mailConfigured: boolean; ownedProjectLimit: number }
 
 /** Инвайт на саморегистрацию (auth-roadmap п.8): роль, срок, лимит использований. */
 export interface InviteInfo { token: string; role: UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string }

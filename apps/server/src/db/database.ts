@@ -4016,6 +4016,11 @@ export class VoiceChatDb {
     return this.getProject(userId, id) as ProjectDetail
   }
 
+  countOwnedProjects(userId: string): number {
+    const row = this.db.prepare(`SELECT COUNT(*) AS count FROM project_members WHERE username = ? AND role = 'owner'`).get(userId) as { count: number }
+    return row.count
+  }
+
   listProjects(userId: string): ProjectSummary[] {
     const rows = this.db
       .prepare(

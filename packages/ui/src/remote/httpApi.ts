@@ -366,6 +366,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'admin:checkLlmEngineHealth': ({ id }) => req(REST.adminLlmEngineHealth(id)),
     // --- Проекты + канбан ---
     'projects:list': () => req(REST.projects),
+    'projects:quota': () => req(REST.projectsQuota),
     'projects:invitations': ({ id }) => req(REST.projectInvitations(id)),
     'projects:invite': ({ id, ...body }) => req(REST.projectInvitations(id), { method: 'POST', body: JSON.stringify(body) }),
     'projects:resendInvitation': ({ id, invitationId }) => req(REST.projectInvitationResend(id, invitationId), { method: 'POST', body: '{}' }),
