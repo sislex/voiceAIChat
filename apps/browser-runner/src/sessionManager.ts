@@ -1,9 +1,10 @@
 import { mkdir } from 'node:fs/promises'
 import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
-import { chromium, type BrowserContext, type Page } from 'playwright'
-import type { BrowserCommandRequest, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
+import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
+import type { BrowserCommandRequest, BrowserSelectorAction, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
 import { isBlockedAddress, profilePath, validatePublicUrl } from './security.js'
+import { runSelectorAction } from './selectorActions.js'
 
 interface Session {
   id: string
@@ -100,7 +101,7 @@ export class BrowserSessionManager {
     return true
   }
 
-  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer> {
+  async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     const tabId = request.tabId ?? session.activeTabId
@@ -133,6 +134,8 @@ export class BrowserSessionManager {
       else if (action.type === 'press') await page.keyboard.press(action.key)
       else if (action.type === 'keyDown') await page.keyboard.down(action.key)
       else await page.keyboard.up(action.key)
+    } else if (command.type === 'selector') {
+      return runSelectorAction(page, command.action)
     } else if (command.type === 'screenshot') {
       return page.screenshot({ type: command.format === 'jpeg' ? 'jpeg' : command.format === 'webp' ? 'webp' : 'png', fullPage: command.fullPage, quality: command.format === 'png' ? undefined : command.quality })
     }

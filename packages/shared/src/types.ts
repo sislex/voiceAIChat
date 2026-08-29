@@ -171,8 +171,32 @@ export type BrowserInputAction =
   | { type: 'keyDown'; key: string }
   | { type: 'keyUp'; key: string }
 
+/**
+ * Действие по селектору или тексту. Раньше раннер понимал только координаты
+ * (`click(x, y)`), а MCP-инструменты модели — селекторы, поэтому модель не могла
+ * управлять изолированным Chromium вовсе. В Playwright каждое такое действие —
+ * один вызов локатора, поэтому разрыв закрывается контрактом, а не обвязкой.
+ */
+export type BrowserSelectorAction =
+  | { kind: 'click'; selector?: string; text?: string; button?: 'left' | 'right'; clickCount?: 1 | 2 }
+  | { kind: 'type'; selector: string; text: string; submit?: boolean }
+  | { kind: 'read'; selector?: string; limit?: number }
+  | { kind: 'find'; text?: string; selector?: string; limit?: number }
+  | { kind: 'wait'; selector?: string; text?: string; timeoutMs?: number }
+
+/** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
+export interface BrowserSelectorResult {
+  ok: boolean
+  /** Текст страницы или найденного узла (для `read`). */
+  text?: string
+  /** Совпадения для `find`: селектор, видимый текст и признак видимости. */
+  matches?: Array<{ selector: string; text: string; visible: boolean }>
+  error?: string
+}
+
 export type BrowserCommand =
   | { type: 'navigate'; url: string }
+  | { type: 'selector'; action: BrowserSelectorAction }
   | { type: 'back' | 'forward' | 'reload' | 'stop' }
   | { type: 'newTab'; url?: string }
   | { type: 'selectTab' | 'closeTab'; tabId: string }
