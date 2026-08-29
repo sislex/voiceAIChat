@@ -166,9 +166,14 @@ ENV NODE_ENV=production \
     PORT=8792 \
     VC_BROWSER_DATA_DIR=/data
 COPY --from=build /app /app
+# libnss3-tools даёт `certutil`: Chromium на Linux берёт пользовательские корни
+# из базы NSS, и без него нельзя доверить внутренний CA наших стендов (Caddy).
 # chown до объявления VOLUME: именованный том при первом создании наследует
 # владельца каталога из образа, поэтому процессу под pwuser он доступен на запись.
-RUN mkdir -p /data && chown -R pwuser:pwuser /data
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libnss3-tools \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /data && chown -R pwuser:pwuser /data
 VOLUME ["/data"]
 EXPOSE 8792
 USER pwuser
