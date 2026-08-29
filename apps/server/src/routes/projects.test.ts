@@ -15,7 +15,7 @@ let db: VoiceChatDb
 let adminTok: string
 let bobTok: string
 
-function inj(token: string, opts: { method: 'GET' | 'POST' | 'PATCH' | 'DELETE'; url: string; payload?: object; headers?: Record<string, string> }) {
+function inj(token: string, opts: { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; url: string; payload?: object; headers?: Record<string, string> }) {
   return app.inject({ ...opts, headers: { ...opts.headers, authorization: `Bearer ${token}` } })
 }
 
@@ -101,6 +101,30 @@ describe('projects REST: доступ', () => {
       expect(((await inj(token, { method: 'GET', url: '/api/projects' })).json() as ProjectSummary[]).map((x) => x.id)).toContain(detail.id)
       expect(((await inj(bobTok, { method: 'GET', url: '/api/projects' })).json() as ProjectSummary[]).map((x) => x.id).includes(detail.id)).toBe(name === 'bob')
     }
+  })
+
+  it('ограничивает число собственных проектов, освобождает слот после удаления и не ограничивает admin', async () => {
+    const config = await inj(adminTok, { method: 'PUT', url: '/api/admin/signup', payload: { ownedProjectLimit: 2 } })
+    expect(config.statusCode).toBe(200)
+    expect(config.json().ownedProjectLimit).toBe(2)
+
+    const first = await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'Первый' } })
+    const second = await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'Второй' } })
+    expect(first.statusCode).toBe(200)
+    expect(second.statusCode).toBe(200)
+    expect((await inj(bobTok, { method: 'GET', url: '/api/projects/quota' })).json()).toEqual({ owned: 2, limit: 2, unlimited: false })
+
+    const blocked = await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'Лишний' } })
+    expect(blocked.statusCode).toBe(409)
+    expect(blocked.json().error).toMatch(/Достигнут лимит собственных проектов: 2/)
+
+    expect((await inj(bobTok, { method: 'DELETE', url: `/api/projects/${first.json().id}` })).statusCode).toBe(200)
+    expect((await inj(bobTok, { method: 'POST', url: '/api/projects', payload: { name: 'После удаления' } })).statusCode).toBe(200)
+
+    for (let i = 0; i < 3; i += 1) {
+      expect((await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name: `Админ ${i}` } })).statusCode).toBe(200)
+    }
+    expect((await inj(adminTok, { method: 'GET', url: '/api/projects/quota' })).json()).toEqual({ owned: 3, limit: 2, unlimited: true })
   })
 
   it('/api/projects/ со слешем в конце — 404 до авторизации, а не путь в обход матрицы прав', async () => {

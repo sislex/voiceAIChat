@@ -86,6 +86,23 @@ describe('NewProjectDialog', () => {
     expect(onCreate).toHaveBeenCalledWith('P', BUILTIN_PROJECT_TYPE_IDS.general)
   })
 
+  it('предупреждает у кнопки о последнем месте', async () => {
+    setup({ quota: { owned: 4, limit: 5, unlimited: false } })
+    expect(screen.getByRole('status')).toHaveTextContent('Осталось одно место: 4 из 5 проектов')
+    await userEvent.type(screen.getByLabelText('Название'), 'Последний')
+    expect(screen.getByRole('button', { name: 'Создать' })).not.toBeDisabled()
+  })
+
+  it('при исчерпанной квоте объясняет причину и блокирует создание', async () => {
+    const { onCreate } = setup({ quota: { owned: 5, limit: 5, unlimited: false } })
+    await userEvent.type(screen.getByLabelText('Название'), 'Шестой')
+    const button = screen.getByRole('button', { name: 'Создать' })
+    expect(screen.getByRole('status')).toHaveTextContent('Лимит исчерпан: 5 из 5 проектов')
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('title', 'Квота собственных проектов исчерпана')
+    expect(onCreate).not.toHaveBeenCalled()
+  })
+
   it('показывает, что тип включает, и честно называет пустой набор', async () => {
     setup()
     await userEvent.selectOptions(screen.getByLabelText('Тип проекта'), BUILTIN_PROJECT_TYPE_IDS.software)

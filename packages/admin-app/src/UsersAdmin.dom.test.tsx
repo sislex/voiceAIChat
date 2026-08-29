@@ -286,7 +286,7 @@ describe('UsersAdmin — лимит LLM (auth-roadmap п.17)', () => {
 describe('UsersAdmin — открытая регистрация', () => {
   it('раскрытие запрашивает настройку; галка и роль зовут onSetSignup; без SMTP — предупреждение', async () => {
     const onLoadSignup = vi.fn(); const onSetSignup = vi.fn()
-    renderAdmin({ isAdmin: true, onLoadSignup, onSetSignup, signup: { enabled: false, role: 'developer', mailConfigured: false } })
+    renderAdmin({ isAdmin: true, onLoadSignup, onSetSignup, signup: { enabled: false, role: 'developer', mailConfigured: false, ownedProjectLimit: 5 } })
     const box = screen.getByTestId('admin-signup')
     await userEvent.click(within(box).getByText(/Открытая регистрация/))
     await waitFor(() => expect(onLoadSignup).toHaveBeenCalled())
@@ -294,6 +294,9 @@ describe('UsersAdmin — открытая регистрация', () => {
     expect(onSetSignup).toHaveBeenCalledWith({ enabled: true })
     await userEvent.selectOptions(within(box).getByLabelText('Роль новых пользователей'), 'tester')
     expect(onSetSignup).toHaveBeenCalledWith({ role: 'tester' })
+    const limit = within(box).getByLabelText('Квота проектов на пользователя')
+    fireEvent.change(limit, { target: { value: '7' } })
+    expect(onSetSignup).toHaveBeenCalledWith({ ownedProjectLimit: 7 })
     expect(box).toHaveTextContent('SMTP не настроен')
   })
 })

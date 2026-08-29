@@ -28,7 +28,7 @@ export interface AdminClient {
   setUserLlmLimit?(input: { name: string; llmLimitUsd: number | null }): Promise<AdminUserInfo>
   /** Открытая регистрация с подтверждением email. */
   signupConfig?(): Promise<SignupConfig>
-  setSignupConfig?(input: { enabled?: boolean; role?: UserRole }): Promise<SignupConfig>
+  setSignupConfig?(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number }): Promise<SignupConfig>
   updateUserRole(input: { name: string; role: UserRole }): Promise<AdminUserInfo>
   setUserBlocked(input: { name: string; blocked: boolean }): Promise<void>
   deleteUser(input: { name: string }): Promise<void>

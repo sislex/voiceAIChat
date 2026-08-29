@@ -715,6 +715,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Командная палитра (⌘K) и шпаргалка (?) — окна поверх всего остального.
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [projectQuota, setProjectQuota] = useState<import('@shared/projects').ProjectQuota | null>(null)
   const [creatingProject, setCreatingProject] = useState(false)
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false)
 
@@ -1742,6 +1743,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onCreateProject={() => {
           setSidebarOpen(false)
           setNewProjectOpen(true)
+          setProjectQuota(null)
+          void api['projects:quota']().then(setProjectQuota).catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
           // Каталог типов нужен окну сразу; повторное открытие обновит список.
           void projectsActions.loadProjectTypes()
         }}
@@ -1767,6 +1770,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {newProjectOpen && (
         <NewProjectDialog
           types={projects.projectTypes}
+          quota={projectQuota}
           busy={creatingProject}
           onClose={() => setNewProjectOpen(false)}
           onCreate={async (name, typeId) => {
