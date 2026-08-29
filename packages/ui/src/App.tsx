@@ -530,7 +530,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           realtime.onTaskPreparationNotificationsInvalidated(schedule),
           // Приглашение приходит, пока человек уже в приложении: без этого он
           // увидел бы его только после перезагрузки страницы.
-          ...(realtime.onInvitationsInvalidated ? [realtime.onInvitationsInvalidated(() => { void projectsActions.loadMyInvitations() })] : [])
+          ...(realtime.onInvitationsInvalidated ? [realtime.onInvitationsInvalidated(() => { void projectsActions.loadMyInvitations() })] : []),
+          // Роль в проекте могли поменять прямо сейчас: без перечитывания экран
+          // настроек остался бы с владельческими действиями у участника.
+          ...(realtime.onProjectMembershipChanged
+            ? [realtime.onProjectMembershipChanged((projectId) => { void projectsActions.refreshMembership(projectId) })]
+            : [])
         ]
       : []
 

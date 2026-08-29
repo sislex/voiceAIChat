@@ -72,6 +72,20 @@ function waitInvitationsInvalidation(ws: WebSocket, ms = 800): Promise<boolean> 
   })
 }
 
+/** Кадр «изменился состав участников проекта»: адресуется по членству. */
+function waitMembershipFrame(ws: WebSocket, ms = 800): Promise<string | null> {
+  return new Promise((resolve) => {
+    const onMsg = (data: Buffer) => {
+      const message = JSON.parse(data.toString()) as ServerMessage
+      if (message.t !== 'project.membership') return
+      ws.off('message', onMsg)
+      resolve(message.projectId)
+    }
+    ws.on('message', onMsg)
+    setTimeout(() => { ws.off('message', onMsg); resolve(null) }, ms)
+  })
+}
+
 function waitNotificationInvalidation(ws: WebSocket, ms = 600): Promise<Extract<ServerMessage, { t: 'task-preparation.notifications.invalidate' }> | null> {
   return new Promise((resolve) => {
     const onMsg = (data: Buffer) => {
@@ -212,6 +226,33 @@ describe('WS: приглашение приходит живьём', () => {
       // Боб не участник — по членству его бы не нашли, кадр адресный.
       expect(await invalidated).toBe(true)
       expect(db.getProject('bob', project.id)).toBeNull()
+    } finally {
+      bobWs.close()
+    }
+  })
+
+  it('смена роли участника приходит кадром project.membership, а не уведомлением подготовки', async () => {
+    const project = (await app.inject({
+      method: 'POST', url: '/api/projects', payload: { name: 'Смена роли' },
+      headers: { authorization: `Bearer ${adminTok}` }
+    })).json() as ProjectDetail
+    await app.inject({
+      method: 'POST', url: `/api/projects/${project.id}/members`, payload: { username: 'bob' },
+      headers: { authorization: `Bearer ${adminTok}` }
+    })
+
+    const bobWs = await connect(bobTok)
+    try {
+      const membership = waitMembershipFrame(bobWs)
+      const notification = waitNotificationInvalidation(bobWs)
+      await app.inject({
+        method: 'PATCH', url: `/api/projects/${project.id}/members/bob`, payload: { role: 'owner' },
+        headers: { authorization: `Bearer ${adminTok}` }
+      })
+      // Кадра два и оба нужны: список уведомлений после смены состава другой,
+      // а роль читается только из самого проекта.
+      expect(await membership).toBe(project.id)
+      expect((await notification)?.projectId).toBe(project.id)
     } finally {
       bobWs.close()
     }

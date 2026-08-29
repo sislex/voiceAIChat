@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-29
-checked: fcee0132
+checked: 67fc54b6
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -319,3 +319,12 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 мосты `make:snapshotDiff/restoreFile/import/importUrl`. Сообщение iframe → панель: `vc-make.console`. Константы `MAKE_TRANSPILED_EXTENSIONS`, `MAKE_STORIES_PAGE`, `MAKE_REACT_IMPORT_MAP`.
 
 **Сессии (auth-roadmap п.4).** `REST.sessionList` (`GET /api/session/list` → `{ sessions: SessionInfo[] }`, у текущей `current: true`), `REST.sessionLogoutAll` (`POST`), `REST.sessionRevoke(sid)` (`DELETE /api/session/:sid`), админские `REST.adminSessions(user)` и `REST.adminSessionRevoke(sid)`; IPC `admin:userSessions`, `admin:revokeSession`; мост `RendererSessionBridge.sessions/logoutAll/revokeSession` (опциональные — в desktop их нет).
+
+## Кадр `project.membership`
+
+`{ t: 'project.membership'; v: 1; projectId }` — состав участников или роль в
+проекте изменились, клиенту надо перечитать проект (`projects:get`) и список.
+Адресуется по членству, как `task-preparation.notifications.invalidate`, и
+шлётся **вместе** с ним: у кадров разный смысл (список уведомлений против роли),
+и подменять один другим нельзя. Источник — `NotificationHub` с признаком
+`kind: 'membership'`; его ставит проводка `membershipChanged` в `server.ts`.
