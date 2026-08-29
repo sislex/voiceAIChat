@@ -3,7 +3,7 @@ id: ci-runner
 title: CI-раннер канбана (Авто-подготовка окружения для таска)
 kind: feature
 updated: 2026-08-29
-checked: 789b4847
+checked: be037d92
 areas:
   - packages/shared/src/ci.ts
   - packages/shared/src/merge.ts
@@ -1279,6 +1279,8 @@ CI-справочника в план-фазе не публикуются. Ве
 модели комментарий и новый план, отсутствие решения (таймаут/отмена) завершает ран
 как `cancelled` без слота «после». Уточняющие вопросы разбираются существующим
 `parseQuestions` из `@shared/questions` — нового формата нет.
+
+## Восстановление CI после рестарта
 
 При старте `buildServer` вызывает `CiRunManager.reconcile()`. Ран прошлого
 процесса со статусом `queued` и пустым `started_at` сохраняется в очереди нового
