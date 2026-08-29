@@ -15,6 +15,12 @@
 #   docker compose exec -u node runner-personal claude auth login
 #   # или headless: claude setup-token
 
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   voicechat:
     build:
@@ -74,6 +80,7 @@ services:
     # Дополнительная группа совпадает с владельцем host-side deploy-сокета.
     group_add:
       - "65532"
+    logging: *default-logging
     restart: unless-stopped
 
   stt-runner:
@@ -97,6 +104,7 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+    logging: *default-logging
     restart: unless-stopped
 
   automation-runner:
@@ -117,6 +125,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *default-logging
     restart: unless-stopped
 
   runner-work:
@@ -140,6 +149,7 @@ services:
       - vc-claude:/home/node/.claude
       - vc-codex:/home/node/.codex
       - vc-data:/mnt/server-data:ro
+    logging: *default-logging
     restart: unless-stopped
 
   runner-personal:
@@ -160,6 +170,7 @@ services:
       - vc-runner-personal-data:/data
       - vc-runner-personal-claude:/home/node/.claude
       - vc-runner-personal-codex:/home/node/.codex
+    logging: *default-logging
     restart: unless-stopped
 
   tts-runner:
@@ -184,6 +195,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+    logging: *default-logging
     restart: unless-stopped
 
   # HTTPS для доступа по IP: без secure-контекста браузер не даёт микрофон.
@@ -198,6 +210,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Локальный CA и выписанные сертификаты — переживают пересоздание.
       - vc-caddy:/data
+    logging: *default-logging
     restart: unless-stopped
 
 volumes:
