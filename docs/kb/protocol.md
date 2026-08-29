@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-08-27
-checked: f1c49dce
+updated: 2026-08-29
+checked: fcee0132
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -13,6 +13,18 @@ areas:
 ---
 
 # Контракт клиент↔сервер (REST, WS, мосты)
+
+## Коды ошибок и текст для человека
+
+Сервер отвечает короткими кодами (`forbidden`, `csrf`, `machine_offline`,
+`feature_unavailable`) — это удобно клиентам и логам, но в тосте код ничего не
+объясняет. Перевод живёт в `packages/shared/src/serverErrors.ts`
+(`serverErrorMessage`) и применяется **один раз в транспорте**
+(`createHttpApi`), а не на каждом экране. Неизвестный код возвращается как есть:
+терять информацию хуже, чем показать технический текст. Тест
+`serverErrors.test.ts` держит список кодов, реально отправляемых сервером, —
+новый код без перевода он подсветит.
+
 
 ## Reader ports и неизменённые backend-контракты
 
