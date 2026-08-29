@@ -44,6 +44,32 @@ describe('voiceStore — проекты и доска', () => {
     expect(store.getState().board?.columns.map((c) => c.semanticType)).toEqual(['backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done', 'cancelled', 'decision_required'])
   })
 
+  it('роль понизили: refreshMembership перечитывает проект, и владельческие действия исчезают', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    expect(store.getState().projectDetail?.role).toBe('owner')
+
+    const owned = api['projects:get']
+    api['projects:get'] = vi.fn(async (arg: { id: string }) => {
+      const detail = await owned(arg)
+      return detail ? { ...detail, role: 'member' as const } : null
+    })
+    await store.actions.refreshMembership(id)
+    expect(store.getState().projectDetail?.role).toBe('member')
+  })
+
+  it('refreshMembership чужого проекта детали открытого не трогает', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    await store.actions.refreshMembership('другой-проект')
+    expect(store.getState().projectDetail?.id).toBe(id)
+    expect(store.getState().projectDetail?.role).toBe('owner')
+  })
+
   it('доступ отобрали при открытой доске: проект закрывается, а не висит с «Повторить»', async () => {
     const { store, api } = makeStore()
     await store.actions.createProject({ name: 'P1' })

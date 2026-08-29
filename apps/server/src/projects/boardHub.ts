@@ -12,13 +12,19 @@ export type TaskRepositoriesListener = (update: TaskRepositoriesUpdate) => void
 export interface NotificationInvalidation {
   projectId: string
   userId?: string
+  /**
+   * Вид события. Хаб общий для уведомлений подготовки и для смены состава
+   * участников, а WS-сессии шлют по ним разные кадры: без этого признака
+   * отличить «пришло уведомление» от «сменилась роль» на стороне сессии нечем.
+   */
+  kind?: 'membership'
 }
 
 export class NotificationHub {
   private readonly listeners = new Set<(event: NotificationInvalidation) => void>()
 
-  emit(projectId: string, userId?: string): void {
-    for (const listener of this.listeners) listener({ projectId, ...(userId ? { userId } : {}) })
+  emit(projectId: string, userId?: string, kind?: NotificationInvalidation['kind']): void {
+    for (const listener of this.listeners) listener({ projectId, ...(userId ? { userId } : {}), ...(kind ? { kind } : {}) })
   }
 
   onChange(listener: (event: NotificationInvalidation) => void): () => void {

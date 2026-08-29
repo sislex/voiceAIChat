@@ -633,6 +633,8 @@ export type ServerMessage =
    * его бы отсекла.
    */
   | { t: 'invitations.invalidate'; v: 1 }
+  /** Состав участников или роль в проекте изменились — перечитать проект. */
+  | { t: 'project.membership'; v: 1; projectId: string }
   | { t: 'ci.snapshot'; runId: string; detail: CiRunDetail; log: CiLogLine[] }
   | { t: 'ci.run'; runId: string; run: CiRun }
   | { t: 'ci.step'; runId: string; step: CiRunStep }
@@ -733,6 +735,7 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'task.repositories.updated',
   'task-preparation.notifications.invalidate',
   'invitations.invalidate',
+  'project.membership',
   'ci.snapshot',
   'ci.run',
   'ci.step',
