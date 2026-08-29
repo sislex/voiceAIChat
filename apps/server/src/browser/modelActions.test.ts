@@ -46,9 +46,10 @@ describe('перевод действий модели для Playwright Reader'
   })
 
   it('неподдерживаемое действие отклоняется с объяснением, а не выполняется не тем', () => {
-    const plan = planModelAction({ kind: 'evaluate', code: 'document.title' })
+    // Загрузка файла: раннеру нужно сначала записать содержимое у себя.
+    const plan = planModelAction({ kind: 'upload', selector: '#file', name: 'a.txt', base64: 'AA==' })
     expect(plan.kind).toBe('unsupported')
-    if (plan.kind === 'unsupported') expect(plan.reason).toMatch(/Playwright Reader/)
+    if (plan.kind === 'unsupported') expect(plan.reason).toMatch(/изолированном Chromium/)
   })
 
   it('консоль и сеть больше не отклоняются: они нужны этапу автотестов', () => {
@@ -72,7 +73,43 @@ describe('перевод действий модели для Playwright Reader'
     })
   })
 
-  it('без раннера нечего исполнять — evaluate по-прежнему отклоняется', () => {
-    expect(planModelAction({ kind: 'evaluate', code: '1' }).kind).toBe('unsupported')
+})
+
+describe('действия, добавленные кругом 9', () => {
+  it('evaluate уходит в раннер: гейт стоит выше, на MCP-инструменте', () => {
+    expect(planModelAction({ kind: 'evaluate', code: 'window.store' })).toEqual({
+      kind: 'command', command: { type: 'inspect', action: { kind: 'evaluate', code: 'window.store' } }
+    })
+  })
+
+  it('hover, set и a11y ложатся на селекторные команды', () => {
+    expect(planModelAction({ kind: 'hover', selector: '.menu' })).toMatchObject({ command: { type: 'selector', action: { kind: 'hover', selector: '.menu' } } })
+    expect(planModelAction({ kind: 'set', selector: '#role', value: 'owner' })).toMatchObject({ command: { type: 'selector', action: { kind: 'set', selector: '#role', value: 'owner' } } })
+    expect(planModelAction({ kind: 'set', selector: '#agree', checked: false })).toMatchObject({ command: { type: 'selector', action: { kind: 'set', checked: false } } })
+    expect(planModelAction({ kind: 'a11y', limit: 50 })).toMatchObject({ command: { type: 'selector', action: { kind: 'a11y', limit: 50 } } })
+  })
+
+  it('viewport — это resize раннера; ширина зажимается в разумные пределы', () => {
+    expect(planModelAction({ kind: 'viewport', width: 390 })).toMatchObject({ command: { type: 'resize', viewport: { width: 390 } } })
+    expect(planModelAction({ kind: 'viewport', width: 99_999 })).toMatchObject({ command: { type: 'resize', viewport: { width: 2560 } } })
+    // 0 в словаре модели означает «адаптив»; у раннера адаптива нет — дефолт.
+    expect(planModelAction({ kind: 'viewport', width: 0 })).toMatchObject({ command: { type: 'resize', viewport: { width: 1280 } } })
+  })
+
+  it('drag по селекторам работает, по координатам — честный отказ', () => {
+    expect(planModelAction({ kind: 'drag', from: { selector: '.card' }, to: { selector: '.column' } }))
+      .toMatchObject({ command: { type: 'selector', action: { kind: 'drag', from: '.card', to: '.column' } } })
+    const byPoint = planModelAction({ kind: 'drag', from: { x: 10, y: 10 }, to: { x: 20, y: 20 } })
+    expect(byPoint.kind).toBe('unsupported')
+    expect(byPoint.kind === 'unsupported' && byPoint.reason).toContain('селекторами')
+  })
+
+  it('неподдержанное объясняется по существу, а не одной общей фразой', () => {
+    const edits = planModelAction({ kind: 'edits' })
+    const upload = planModelAction({ kind: 'upload', selector: '#f', name: 'a.txt', base64: '' })
+    expect(edits.kind === 'unsupported' && edits.reason).toContain('edit-режима')
+    expect(upload.kind === 'unsupported' && upload.reason).toContain('записать на сторону раннера')
+    // Причины разные: до круга 9 обе получали одну формулировку про Chromium.
+    expect(edits.kind === 'unsupported' && upload.kind === 'unsupported' && edits.reason).not.toBe(upload.kind === 'unsupported' ? upload.reason : '')
   })
 })

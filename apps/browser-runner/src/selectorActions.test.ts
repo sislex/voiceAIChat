@@ -14,6 +14,13 @@ function locator(over: Partial<SelectorLocator> = {}): SelectorLocator {
     innerText: async () => 'Текст узла',
     isVisible: async () => true,
     waitFor: vi.fn(async () => {}),
+    hover: vi.fn(async () => {}),
+    selectOption: vi.fn(async () => []),
+    check: vi.fn(async () => {}),
+    uncheck: vi.fn(async () => {}),
+    dragTo: vi.fn(async () => {}),
+    ariaSnapshot: async () => '- button "Создать"',
+    evaluate: async () => null,
     ...over
   }
   return self
@@ -77,5 +84,54 @@ describe('селекторные действия раннера', () => {
     expect(result.ok).toBe(false)
     // Модель должна увидеть причину одной строкой, без стека Playwright.
     expect(result.error).toBe('Timeout 5000ms exceeded')
+  })
+})
+
+describe('действия, которых у раннера не было (круг 9)', () => {
+  it('hover доходит до локатора', async () => {
+    const target = locator()
+    expect(await runSelectorAction(page(target), { kind: 'hover', selector: '.menu' })).toEqual({ ok: true })
+    expect(target.hover).toHaveBeenCalled()
+  })
+
+  it('set с checked ставит и снимает флажок', async () => {
+    const target = locator()
+    await runSelectorAction(page(target), { kind: 'set', selector: '#agree', checked: true })
+    expect(target.check).toHaveBeenCalled()
+    await runSelectorAction(page(target), { kind: 'set', selector: '#agree', checked: false })
+    expect(target.uncheck).toHaveBeenCalled()
+  })
+
+  it('set с value сначала пробует select, а на отказе заполняет поле', async () => {
+    const asSelect = locator()
+    await runSelectorAction(page(asSelect), { kind: 'set', selector: '#role', value: 'owner' })
+    expect(asSelect.selectOption).toHaveBeenCalledWith('owner', expect.anything())
+    expect(asSelect.fill).not.toHaveBeenCalled()
+    // Обычное поле ввода на selectOption отвечает исключением — значит, fill.
+    const asInput = locator({ selectOption: vi.fn(async () => { throw new Error('Element is not a <select> element') }) })
+    expect(await runSelectorAction(page(asInput), { kind: 'set', selector: '#date', value: '2026-08-29' })).toEqual({ ok: true })
+    expect(asInput.fill).toHaveBeenCalledWith('2026-08-29', expect.anything())
+  })
+
+  it('set без value и checked объясняет, чего не хватает', async () => {
+    expect(await runSelectorAction(page(locator()), { kind: 'set', selector: '#x' })).toEqual({ ok: false, error: 'Нужен value или checked' })
+  })
+
+  it('drag тянет один локатор к другому', async () => {
+    const target = locator()
+    expect(await runSelectorAction(page(target), { kind: 'drag', from: '.card', to: '.column' })).toEqual({ ok: true })
+    expect(target.dragTo).toHaveBeenCalledWith(target, expect.anything())
+  })
+
+  it('a11y отдаёт снимок дерева ролей и режет его по лимиту', async () => {
+    const short = await runSelectorAction(page(locator()), { kind: 'a11y' })
+    expect(short).toEqual({ ok: true, text: '- button "Создать"' })
+    const long = await runSelectorAction(page(locator({ ariaSnapshot: async () => 'x'.repeat(500) })), { kind: 'a11y', limit: 100 })
+    expect(long.text).toHaveLength(101)
+  })
+
+  it('ошибка Playwright возвращается значением, а не исключением', async () => {
+    const target = locator({ hover: vi.fn(async () => { throw new Error('Timeout 5000ms exceeded\nCall log:\n  - waiting') }) })
+    expect(await runSelectorAction(page(target), { kind: 'hover', selector: '.menu' })).toEqual({ ok: false, error: 'Timeout 5000ms exceeded' })
   })
 })

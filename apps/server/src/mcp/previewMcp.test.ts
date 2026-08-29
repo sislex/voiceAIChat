@@ -2,7 +2,7 @@
 // клиентам пользователя, ожидание первого успеха/всех отказов/таймаута и
 // сериализация результата для модели.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { ServerMessage } from '@voicechat/shared'
 import {
@@ -96,13 +96,16 @@ describe('previewMcp — инструменты browser', () => {
   /** Автоответчик «клиента»: получает preview.action и отвечает через relay. */
   let client: (m: Extract<ServerMessage, { t: 'preview.action' }>) => void
 
-  async function makeApp(context?: import('./previewMcp').PreviewTurnContext): Promise<void> {
+  async function makeApp(
+    context?: import('./previewMcp').PreviewTurnContext,
+    extra?: Partial<Parameters<typeof registerPreviewMcp>[1]>
+  ): Promise<void> {
     app = Fastify({ logger: false })
     relay = new PreviewActionRelay()
     relay.subscribe(U, (m) => {
       if (m.t === 'preview.action') client(m)
     })
-    registerPreviewMcp(app, { secret: SECRET, relay, timeoutMs: 500, ...(context ? { context } : {}) })
+    registerPreviewMcp(app, { secret: SECRET, relay, timeoutMs: 500, ...(context ? { context } : {}), ...(extra ?? {}) })
     await app.ready()
   }
 
@@ -409,5 +412,72 @@ describe('previewMcp — инструменты browser', () => {
     const set = await call('set', { selector: '#lang' })
     expect(set.isError).toBe(true)
     expect(touched).toBe(false)
+  })
+})
+
+// Снимок в Playwright Reader (круг 9). До него `screenshot` был единственным
+// инструментом со своим транспортом: он звал relay напрямую, минуя
+// browserExecutor, поэтому в разговоре с изолированным Chromium запрос уходил в
+// браузер пользователя, где страницы этого разговора нет. Модель оставалась без
+// вида страницы — ровно того, ради чего Playwright и брали.
+describe('previewMcp — снимок из изолированного Chromium', () => {
+  let app: FastifyInstance
+  let relay: PreviewActionRelay
+  const PNG = 'iVBORw0KGgo='
+
+  async function call(name: string, args: Record<string, unknown> = {}): Promise<{ image?: { data: string }; text: string; isError?: boolean }> {
+    const res = await app.inject({
+      method: 'POST', url: `${PREVIEW_MCP_PATH}?k=${SECRET}&turn=${TURN}`, headers: MCP_HEADERS,
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }
+    })
+    const body = res.json() as { result: { content: Array<{ type: string; text?: string; data?: string }>; isError?: boolean } }
+    const image = body.result.content.find((item) => item.type === 'image') as { data: string } | undefined
+    return {
+      ...(image ? { image } : {}),
+      text: body.result.content.filter((item) => item.type === 'text').map((item) => item.text).join('\n'),
+      ...(body.result.isError ? { isError: true } : {})
+    }
+  }
+
+  beforeEach(() => previewToolBroker.register(TURN, { userId: U, conversationId: CONV }))
+  afterEach(async () => { previewToolBroker.unregister(TURN); await app.close() })
+
+  it('снимок берётся у раннера, а не у браузера пользователя', async () => {
+    app = Fastify({ logger: false })
+    relay = new PreviewActionRelay()
+    const relaySpy = vi.spyOn(relay, 'request')
+    registerPreviewMcp(app, {
+      secret: SECRET, relay, timeoutMs: 500,
+      browserScreenshot: async () => ({ ok: true, result: { page: { url: 'http://x', title: 'X' }, rect: { x: 0, y: 0, width: 1280, height: 800 }, dataUrl: `data:image/png;base64,${PNG}` } })
+    })
+    await app.ready()
+    const result = await call('screenshot')
+    expect(result.image?.data).toBe(PNG)
+    expect(relaySpy).not.toHaveBeenCalled()
+  })
+
+  it('запрос по селектору не выдаётся за снимок узла', async () => {
+    app = Fastify({ logger: false })
+    relay = new PreviewActionRelay()
+    registerPreviewMcp(app, {
+      secret: SECRET, relay, timeoutMs: 500,
+      browserScreenshot: async () => ({ ok: true, result: { page: { url: 'http://x', title: 'X' }, rect: { x: 0, y: 0, width: 390, height: 844 }, dataUrl: `data:image/png;base64,${PNG}` } })
+    })
+    await app.ready()
+    expect((await call('screenshot', { selector: '.card' })).text).toContain('Снят весь вьюпорт')
+  })
+
+  it('обычный разговор по-прежнему идёт в браузер пользователя', async () => {
+    app = Fastify({ logger: false })
+    relay = new PreviewActionRelay()
+    relay.subscribe(U, (m) => {
+      if (m.t === 'preview.action') relay.resolve(U, m.requestId, { ok: true, result: { page: { url: 'http://x', title: 'X' }, rect: { x: 1, y: 2, width: 3, height: 4 }, dataUrl: `data:image/png;base64,${PNG}` } })
+    })
+    // browserScreenshot вернул null — «этот разговор не про изолированный браузер».
+    registerPreviewMcp(app, { secret: SECRET, relay, timeoutMs: 500, browserScreenshot: async () => null })
+    await app.ready()
+    const result = await call('screenshot')
+    expect(result.image?.data).toBe(PNG)
+    expect(result.text).not.toContain('вьюпорт')
   })
 })

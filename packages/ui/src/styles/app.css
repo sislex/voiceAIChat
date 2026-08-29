@@ -5821,10 +5821,12 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   border-color: currentColor;
 }
 
-/* Подпись длиннее иконки — квадратную геометрию .vc-btn--icon расширяем. */
+/* Подпись длиннее иконки — квадратную геометрию .vc-btn--icon расширяем.
+   Порог попадания пальцем (40px из ui-kit) при этом не понижаем: 34px было
+   расширением от иконки, но на телефоне читалось как ограничение. */
 .cmdk-open.vc-btn--icon {
   width: auto;
-  min-width: 34px;
+  min-width: 40px;
   padding: 0 var(--space-100);
   border-radius: 8px; /* как у .searchinput рядом */
   font-size: 12px;
@@ -6603,7 +6605,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .make-template { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; }
 .make-template-meta { display: grid; gap: 2px; }
 .make-template-meta small { color: var(--text-dim); }
-.make-head .vc-btn--icon { color: var(--text); font-size: 17px; line-height: 1; min-width: 30px; }
+/* min-width здесь только для десктопа: на телефоне порог 40px задаёт ui-kit, а
+   правило секции перебивало его по специфичности. */
+.make-head .vc-btn--icon { color: var(--text); font-size: 17px; line-height: 1; }
+@media (min-width: 641px) { .make-head .vc-btn--icon { min-width: 30px; } }
 .make-head .vc-btn--icon:disabled { opacity: .5; }
 
 /* Make: поиск в дереве, результаты по содержимому, вкладка «Компоненты». */
@@ -7001,7 +7006,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .make-preview-body.make-preview-split { display: flex; }
   .make-comments { position: fixed; left: 0; right: 0; bottom: 0; max-height: 60vh; z-index: 55; border-top: 0; border-radius: 16px 16px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.18); padding-top: 18px; }
   .make-comments::before { content: ''; position: absolute; top: 6px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 2px; background: var(--border); }
-  .make-comments-head .vc-btn--icon { min-width: 36px; min-height: 36px; }
+  /* 36px было ниже порога попадания пальцем, а шторка комментариев — экран
+     именно для телефона. Минимум даёт ui-kit, здесь дублировать нечего. */
 }
 
 /* Именной доступ (roadmap-3 п.6) */

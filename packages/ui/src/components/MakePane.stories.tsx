@@ -41,11 +41,20 @@ export const HistoryEmpty: Story = {
   }
 }
 
-/** Телефонная ширина превью. */
+/**
+ * Телефонная ширина превью — пресет, которым пользуется человек за десктопом.
+ *
+ * Сам переключатель ширин на телефоне скрыт (`.make-devices { display: none }`),
+ * поэтому при просмотре витрины с телефона кликать нечего: без проверки
+ * сториз рисовала карточку ошибки «Unable to find … Телефон». В jsdom это не
+ * видно — там нет раскладки, медиа-запрос не срабатывает и кнопка есть всегда.
+ */
 export const Mobile: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    await userEvent.click(canvas.getByRole('button', { name: 'Телефон' }))
+    const preset = canvas.queryByRole('button', { name: 'Телефон' })
+    if (preset) await userEvent.click(preset)
+    else await expect(canvas.getByRole('tab', { name: 'Превью' })).toBeInTheDocument()
   }
 }
 

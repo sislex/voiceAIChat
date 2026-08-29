@@ -183,11 +183,19 @@ export type BrowserSelectorAction =
   | { kind: 'read'; selector?: string; limit?: number }
   | { kind: 'find'; text?: string; selector?: string; limit?: number }
   | { kind: 'wait'; selector?: string; text?: string; timeoutMs?: number }
+  /** Наведение курсора: выпадающие меню и тултипы иначе не открыть. */
+  | { kind: 'hover'; selector?: string; text?: string }
+  /** Сложный контрол: select по значению или подписи, checkbox/radio, date/range. */
+  | { kind: 'set'; selector: string; value?: string; checked?: boolean }
+  /** Перетаскивание от одного селектора к другому (перенос карточки на доске). */
+  | { kind: 'drag'; from: string; to: string }
+  /** Дерево доступности: роли и имена, как их видит скринридер. */
+  | { kind: 'a11y'; selector?: string; limit?: number }
 
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
   ok: boolean
-  /** Текст страницы или найденного узла (для `read`). */
+  /** Текст страницы, найденного узла (`read`) или снимок дерева ролей (`a11y`). */
   text?: string
   /** Совпадения для `find`: селектор, видимый текст и признак видимости. */
   matches?: Array<{ selector: string; text: string; visible: boolean }>
@@ -203,12 +211,20 @@ export type BrowserInspectAction =
   | { kind: 'console'; level?: 'log' | 'info' | 'warn' | 'error'; pattern?: string; limit?: number; clear?: boolean }
   | { kind: 'network'; filter?: string; limit?: number; clear?: boolean }
   | { kind: 'styles'; selector: string; properties?: string[] }
+  /**
+   * Выполнить JS в контексте страницы. Гейт (политика проекта и подтверждение
+   * опасного кода) стоит на уровне MCP-инструмента, до выбора транспорта, и
+   * действует на этот путь так же, как на превью пользователя.
+   */
+  | { kind: 'evaluate'; code: string }
 
 export interface BrowserConsoleEntry { level: string; text: string; at: number }
 export interface BrowserNetworkEntry { method: string; url: string; status: number; ok: boolean; at: number }
 
 export interface BrowserInspectResult {
   ok: boolean
+  /** JSON-сериализованный результат `evaluate`. */
+  value?: unknown
   console?: BrowserConsoleEntry[]
   network?: BrowserNetworkEntry[]
   styles?: Record<string, string>
