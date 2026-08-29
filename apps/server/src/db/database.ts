@@ -1,5 +1,22 @@
 import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
-import { parseProjectCommandPolicy, parseRoleCommandPolicies } from '@voicechat/shared'
+import { parseProjectCommandPolicy, parseRoleCommandPolicies, EMPTY_AUTOMATED_QA_SCENARIO } from '@voicechat/shared'
+import type { AutomatedQaMode, AutomatedQaScenario, AutomatedQaScenarioStep } from '@voicechat/shared'
+import { isPreviewAction } from '@voicechat/shared'
+
+/** Сценарий приходит из настроек проекта, то есть извне: отбрасываем шаги с
+ *  неизвестным действием, иначе раннер упадёт на середине прогона. */
+function normalizeAutomatedQaScenario(value: AutomatedQaScenario | null | undefined): AutomatedQaScenario {
+  if (!value || typeof value.startUrl !== 'string') return EMPTY_AUTOMATED_QA_SCENARIO
+  const steps: AutomatedQaScenarioStep[] = (Array.isArray(value.steps) ? value.steps : [])
+    .filter((step) => step && typeof step.id === 'string' && isPreviewAction(step.action))
+    .slice(0, 100)
+    .map((step) => ({
+      id: step.id, title: typeof step.title === 'string' && step.title.trim() ? step.title.trim() : step.action.kind, action: step.action,
+      ...(typeof step.expectText === 'string' && step.expectText ? { expectText: step.expectText } : {}),
+      ...(typeof step.expectAbsentText === 'string' && step.expectAbsentText ? { expectAbsentText: step.expectAbsentText } : {})
+    }))
+  return { startUrl: value.startUrl.trim(), steps }
+}
 import {
   BUILTIN_PROJECT_TYPES,
   DEFAULT_PROJECT_TYPE_ID,
@@ -523,6 +540,8 @@ interface ProjectRow {
   ci_kb_context_mode: string
   ci_test_fix_cycle_limit: number
   automated_qa_command: string
+  automated_qa_mode: string
+  automated_qa_scenario_json: string
   autopilot_requires_manual_qa: number
   autopilot_fix_limit: number
   done_retention_days: number | null
@@ -1254,6 +1273,8 @@ export class VoiceChatDb {
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'done_retention_days')) this.db.exec(`ALTER TABLE projects ADD COLUMN done_retention_days INTEGER DEFAULT ${DEFAULT_DONE_RETENTION_DAYS}`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'ci_test_fix_cycle_limit')) this.db.exec(`ALTER TABLE projects ADD COLUMN ci_test_fix_cycle_limit INTEGER NOT NULL DEFAULT 10`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_command')) this.db.exec(`ALTER TABLE projects ADD COLUMN automated_qa_command TEXT NOT NULL DEFAULT 'npm test'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_mode')) this.db.exec(`ALTER TABLE projects ADD COLUMN automated_qa_mode TEXT NOT NULL DEFAULT 'command'`)
+    if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'automated_qa_scenario_json')) this.db.exec(`ALTER TABLE projects ADD COLUMN automated_qa_scenario_json TEXT NOT NULL DEFAULT ''`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_requires_manual_qa')) this.db.exec(`ALTER TABLE projects ADD COLUMN autopilot_requires_manual_qa INTEGER NOT NULL DEFAULT 0`)
     if (featureProjectCols.length && !featureProjectCols.some((c) => c.name === 'autopilot_fix_limit')) this.db.exec(`ALTER TABLE projects ADD COLUMN autopilot_fix_limit INTEGER NOT NULL DEFAULT 3`)
     const ciWorkspaceCols = this.db.prepare(`PRAGMA table_info(ci_workspaces)`).all() as Array<{ name: string }>
@@ -3976,6 +3997,8 @@ export class VoiceChatDb {
       agentPlanApprovalMode: r.agent_plan_approval_mode === 'automatic' ? 'automatic' : 'manual',
       testCommand: r.test_command || undefined,
       automatedQaCommand: r.automated_qa_command || 'npm test',
+      automatedQaMode: r.automated_qa_mode === 'playwright' ? 'playwright' : 'command',
+      automatedQaScenario: parseJsonValue<AutomatedQaScenario>(r.automated_qa_scenario_json, EMPTY_AUTOMATED_QA_SCENARIO),
       autoPilotRequiresManualQa: r.autopilot_requires_manual_qa !== 0,
       autoPilotFixLimit: Number.isInteger(r.autopilot_fix_limit) && r.autopilot_fix_limit >= 0 ? r.autopilot_fix_limit : 3,
       commandPolicy: parseProjectCommandPolicy(r.command_policy),
@@ -4224,6 +4247,8 @@ export class VoiceChatDb {
       agentPlanApprovalMode?: 'manual' | 'automatic'
       testCommand?: string
       automatedQaCommand?: string
+      automatedQaMode?: AutomatedQaMode
+      automatedQaScenario?: AutomatedQaScenario
       autoPilotRequiresManualQa?: boolean
       autoPilotFixLimit?: number
       commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
@@ -4296,6 +4321,8 @@ export class VoiceChatDb {
     }
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
     if (fields.automatedQaCommand !== undefined) { set.push('automated_qa_command = ?'); vals.push(fields.automatedQaCommand.trim() || 'npm test') }
+    if (fields.automatedQaMode !== undefined) { set.push('automated_qa_mode = ?'); vals.push(fields.automatedQaMode === 'playwright' ? 'playwright' : 'command') }
+    if (fields.automatedQaScenario !== undefined) { set.push('automated_qa_scenario_json = ?'); vals.push(JSON.stringify(normalizeAutomatedQaScenario(fields.automatedQaScenario))) }
     if (fields.autoPilotRequiresManualQa !== undefined) { set.push('autopilot_requires_manual_qa = ?'); vals.push(fields.autoPilotRequiresManualQa ? 1 : 0) }
     if (fields.autoPilotFixLimit !== undefined) {
       if (!Number.isInteger(fields.autoPilotFixLimit) || fields.autoPilotFixLimit < 0) throw new Error('autoPilotFixLimit must be a non-negative integer')
@@ -7912,7 +7939,12 @@ export class VoiceChatDb {
     return this.getTask(projectId, taskId)!
   }
 
-  handleAutoPilotFailure(userId: string, projectId: string, taskId: string, stage: string, runId: string, reason: string): { decisionRequired: boolean; bugTaskId?: string } | null {
+  /**
+   * Возврат задачи в разработку после провала этапа. `remarks` — замечания,
+   * которые уходят в описание баг-задачи: без них на доработке видна одна
+   * строка «команда завершилась с кодом 1», и модель чинит вслепую.
+   */
+  handleAutoPilotFailure(userId: string, projectId: string, taskId: string, stage: string, runId: string, reason: string, remarks = ''): { decisionRequired: boolean; bugTaskId?: string } | null {
     const task = this.getTask(projectId, taskId)
     if (!task?.autoPilot) return null
     const project = this.getProject(userId, projectId)
@@ -7937,7 +7969,7 @@ export class VoiceChatDb {
     }
     const backlog = this.getColumnIdBySemantic(projectId, 'backlog')
     if (!backlog) throw new Error('backlog column not found')
-    const bug = this.createTask(userId, projectId, { columnId: backlog, title: `Bug: ${stage} — ${task.title}`, description: `Автопроход исходной задачи завершился ошибкой.\n\n- Этап: ${stage}\n- Причина: ${reason}\n- Ран: ${runLink}`, type: 'task', labels: ['bug'] })
+    const bug = this.createTask(userId, projectId, { columnId: backlog, title: `Bug: ${stage} — ${task.title}`, description: `Автопроход исходной задачи завершился ошибкой.\n\n- Этап: ${stage}\n- Причина: ${reason}\n- Ран: ${runLink}${remarks.trim() ? `\n\n## Замечания этапа\n\n\`\`\`\n${remarks.trim().slice(-8000)}\n\`\`\`` : ''}`, type: 'task', labels: ['bug'] })
     if (!bug) throw new Error('failed to create autopilot bug')
     this.db.transaction(() => {
       this.db.prepare(`UPDATE tasks SET source_task_id=? WHERE id=?`).run(taskId, bug.id)
@@ -7966,14 +7998,23 @@ export class VoiceChatDb {
     return this.getQaStageRun(userId, id)!
   }
 
-  automatedQaExecutionContext(runId: string): { agentId: string; workdir: string; command: string } | null {
-    const row = this.db.prepare(`SELECT w.agent_id,w.path,p.automated_qa_command FROM qa_stage_runs q JOIN ci_workspaces w ON w.task_id=q.task_id AND w.pushed=1 JOIN projects p ON p.id=q.project_id WHERE q.id=? AND q.stage='automated_qa' ORDER BY w.created_at DESC LIMIT 1`).get(runId) as { agent_id: string | null; path: string | null; automated_qa_command: string | null } | undefined
+  automatedQaExecutionContext(runId: string): AutomatedQaExecutionContext | null {
+    const row = this.db.prepare(`SELECT w.agent_id,w.path,p.automated_qa_command,p.automated_qa_mode,p.automated_qa_scenario_json FROM qa_stage_runs q JOIN ci_workspaces w ON w.task_id=q.task_id AND w.pushed=1 JOIN projects p ON p.id=q.project_id WHERE q.id=? AND q.stage='automated_qa' ORDER BY w.created_at DESC LIMIT 1`).get(runId) as { agent_id: string | null; path: string | null; automated_qa_command: string | null; automated_qa_mode: string | null; automated_qa_scenario_json: string | null } | undefined
     if (!row?.agent_id || !row.path) return null
-    return { agentId: row.agent_id, workdir: row.path, command: row.automated_qa_command?.trim() || 'npm test' }
+    return {
+      agentId: row.agent_id, workdir: row.path, command: row.automated_qa_command?.trim() || 'npm test',
+      mode: row.automated_qa_mode === 'playwright' ? 'playwright' : 'command',
+      scenario: normalizeAutomatedQaScenario(parseJsonValue<AutomatedQaScenario>(row.automated_qa_scenario_json ?? '', EMPTY_AUTOMATED_QA_SCENARIO))
+    }
   }
 
+  /**
+   * Отметка «этап пошёл». Условие `status='queued'` здесь было мёртвым:
+   * `startQaStageRun` вставляет строку сразу как `running`, поэтому шаг рана
+   * навсегда оставался `starting`, и панель весь прогон показывала запуск.
+   */
   markAutomatedQaRunning(runId: string): void {
-    this.db.prepare(`UPDATE qa_stage_runs SET status='running',current_step='tests',started_at=COALESCE(started_at,?) WHERE id=? AND status='queued'`).run(this.now(), runId)
+    this.db.prepare(`UPDATE qa_stage_runs SET status='running',current_step='tests',started_at=COALESCE(started_at,?) WHERE id=? AND status IN ('queued','running')`).run(this.now(), runId)
   }
 
   appendAutomatedQaLog(runId: string, stream: 'out' | 'err' | 'system', text: string): void {
@@ -8848,4 +8889,13 @@ export function projectKbSkeleton(name: string, description: string): string {
     'Пока не описано.',
     ''
   ].join('\n')
+}
+
+/** Всё, что нужно раннеру этапа Automated QA: где выполнять и что именно. */
+export interface AutomatedQaExecutionContext {
+  agentId: string
+  workdir: string
+  command: string
+  mode: AutomatedQaMode
+  scenario: AutomatedQaScenario
 }

@@ -7521,3 +7521,56 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .webpreview-tools > summary[data-active] { border-color: var(--accent); color: var(--accent); }
 .webpreview-tools__menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: flex; flex-direction: column; gap: 4px; min-width: 200px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 32px rgba(31, 35, 48, .16); }
 .webpreview-tools__menu .vc-btn { justify-content: flex-start; text-align: left; }
+
+/* Вердикт этапа Automated QA: раньше здесь показывался JSON.stringify, теперь —
+   итог, причина, шаги и снимок. Цвета берутся из токенов, чтобы тёмная тема
+   получалась сама. */
+.qa-verdict { display: flex; flex-direction: column; gap: var(--space-100); margin-top: var(--space-150); }
+.qa-verdict__summary { margin: 0; font-weight: 600; }
+.qa-verdict__summary--passed { color: var(--ci-success); }
+.qa-verdict__summary--failed { color: var(--danger); }
+.qa-verdict__cause { margin: 0; color: var(--text-dim); font-size: 0.9em; }
+.qa-verdict__facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-050) var(--space-150); margin: 0; }
+.qa-verdict__facts dt { color: var(--text-dim); }
+.qa-verdict__facts dd { margin: 0; overflow-wrap: anywhere; }
+/* На телефоне длинная подпись («Стартовый адрес») съедает колонку и значение
+   встаёт вплотную — на узком экране пара разворачивается в две строки. */
+@media (max-width: 640px) {
+  .qa-verdict__facts { grid-template-columns: 1fr; gap: 0; }
+  .qa-verdict__facts dd { margin-bottom: var(--space-100); }
+}
+.qa-verdict__steps { margin: 0; padding-left: var(--space-150); display: flex; flex-direction: column; gap: var(--space-050); }
+.qa-verdict__steps li[data-status='failed'] { color: var(--danger); }
+.qa-verdict__steps li[data-status='skipped'] { color: var(--text-dim); }
+.qa-verdict__shot { display: block; max-width: 100%; }
+.qa-verdict__shot img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius-medium); }
+
+/* Сценарий Playwright-этапа в настройках проекта. */
+.qa-scenario { display: flex; flex-direction: column; gap: var(--space-100); border: 1px solid var(--border-soft); border-radius: var(--radius-medium); padding: var(--space-150); }
+.qa-scenario > label { display: flex; flex-direction: column; gap: var(--space-050); }
+.qa-scenario__steps { display: flex; flex-direction: column; gap: var(--space-150); margin: 0; padding: 0; list-style: none; }
+/* Рамка вокруг шага: на телефоне поля идут сплошной лентой, и без неё не видно,
+   где кончается один шаг и начинается следующий. */
+.qa-scenario__step { display: flex; flex-direction: column; gap: var(--space-100); border: 1px solid var(--border); border-radius: var(--radius-medium); padding: var(--space-150); background: var(--surface); }
+/* Номер шага рисуется вручную: `display: flex` на <li> убирает ::marker, и без
+   него шаги на телефоне сливаются в одну ленту полей. */
+.qa-scenario__num { flex: 0 0 auto; align-self: center; min-width: 1.5rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.qa-scenario__row { display: flex; flex-wrap: wrap; gap: var(--space-100); align-items: flex-end; }
+.qa-scenario__row > label { flex: 1 1 12rem; display: flex; flex-direction: column; gap: var(--space-050); }
+/* Заголовок шага не переносится: иначе кнопка удаления уезжает на свою строку
+   и встаёт под названием, будто относится к следующему полю. */
+.qa-scenario__row--head { flex-wrap: nowrap; align-items: flex-end; }
+.qa-scenario__row--head > label { flex: 1 1 auto; min-width: 0; }
+/* Кнопка без подписи в непереносимой строке сжимается флексом до 19px — ниже
+   порога попадания пальцем, который сторожит scripts/mobile-shots.mts. */
+.qa-scenario__row--head > button { flex: 0 0 auto; }
+/* `.login-input` несёт свою минимальную ширину; во флекс-строке она распирала
+   шаг, и кнопка удаления вылезала за рамку. */
+.qa-scenario input.login-input, .qa-scenario select.sel { min-width: 0; width: 100%; box-sizing: border-box; }
+@media (max-width: 640px) {
+  .qa-scenario__row > label { flex-basis: 100%; }
+  .qa-scenario__row--head > label { flex-basis: auto; }
+  /* Порог попадания пальцем — как у .ptypes-actions: у кнопки без подписи он
+     считается и по ширине (см. scripts/mobile-shots.mts). */
+  .qa-scenario__row--head .vc-btn--icon { min-width: 40px; min-height: 40px; }
+}
