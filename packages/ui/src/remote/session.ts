@@ -54,3 +54,18 @@ export function authHeaders(): Record<string, string> {
   if (csrf) out['x-vc-csrf'] = csrf
   return out
 }
+
+/**
+ * Сервер ответил 401 — сессия истекла или отозвана. Обработчик ставит рантайм:
+ * до этого код `expire()` в сторе существовал, но его никто не звал, и человек
+ * оставался на сломанном экране с тостами «unauthorized» вместо экрана входа.
+ */
+let unauthorizedHandler: (() => void) | null = null
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler
+}
+
+export function notifyUnauthorized(): void {
+  unauthorizedHandler?.()
+}

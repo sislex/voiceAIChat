@@ -882,6 +882,11 @@ export interface RendererSessionBridge {
   register?(input: { token: string; name: string; password: string }): Promise<{ ok: true } | { error: string }>
   /** Настройка второго фактора (web): секрет/ссылка, включить по коду, выключить по коду, статус. */
   twoFactor?: { status(): Promise<{ enabled: boolean }>; setup(): Promise<{ secret: string; otpauth: string }>; enable(code: string): Promise<void>; disable(code: string): Promise<void> }
+  /**
+   * Транспорт получил 401. Рантайм по этому сигналу гасит сессию и показывает
+   * вход, вместо того чтобы оставлять человека на сломанном экране.
+   */
+  onUnauthorized?(cb: () => void): () => void
   me(): Promise<SessionUser | null>
   logout(): Promise<void>
   /** Сессии пользователя (auth-roadmap п.4); нет в desktop-мосте. */

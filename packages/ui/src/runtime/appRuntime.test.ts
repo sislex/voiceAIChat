@@ -201,3 +201,27 @@ describe('AppRuntime — освобождение ресурсов', () => {
   })
 })
 
+
+describe('AppRuntime — истёкшая сессия', () => {
+  it('401 от транспорта гасит сессию: expire() существовал, но его никто не звал', async () => {
+    let onUnauthorized: null | (() => void) = null
+    const session = { ...makeSession(), onUnauthorized: (cb: () => void) => { onUnauthorized = cb; return () => { onUnauthorized = null } } }
+    const { runtime } = makeRuntime({ session: session as never })
+    await runtime.session.actions.check()
+    expect(runtime.session.getState().currentUser?.name).toBe(USER.name)
+
+    ;(onUnauthorized as (() => void) | null)?.()
+    expect(runtime.session.getState().currentUser).toBeNull()
+    runtime.dispose()
+  })
+
+  it('после dispose сигнал 401 больше не обрабатывается', async () => {
+    let onUnauthorized: null | (() => void) = null
+    const session = { ...makeSession(), onUnauthorized: (cb: () => void) => { onUnauthorized = cb; return () => { onUnauthorized = null } } }
+    const { runtime } = makeRuntime({ session: session as never })
+    await runtime.session.actions.check()
+    runtime.dispose()
+    // Подписка снимается: иначе она держала бы уничтоженный рантайм.
+    expect(onUnauthorized).toBeNull()
+  })
+})

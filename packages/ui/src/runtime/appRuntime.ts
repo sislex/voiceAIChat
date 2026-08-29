@@ -328,6 +328,13 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     shell.actions.reset()
   }
 
+  // Транспорт сообщает о 401 — гасим сессию и показываем вход. До этого `expire()`
+  // в сторе существовал, но его никто не звал: истёкшая сессия оставляла человека
+  // на экране, где каждое действие отвечало тостом «unauthorized».
+  const unsubUnauthorized = clients.session?.onUnauthorized?.(() => {
+    if (session.getState().currentUser) session.actions.expire()
+  })
+
   session.actions.onEvent((event) => {
     if (event.type === 'session.userChanged') {
       // Вход другим пользователем в той же вкладке: чужих данных остаться не должно.
@@ -402,6 +409,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     dispose() {
       disposed = true
       disconnect?.()
+      unsubUnauthorized?.()
       for (const store of stores) store.dispose()
     }
   }
