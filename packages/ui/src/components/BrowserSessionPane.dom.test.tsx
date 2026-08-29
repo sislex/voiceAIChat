@@ -194,3 +194,56 @@ describe('BrowserSessionPane', () => {
     expect(shots.some((c) => c[1]?.fullPage === true)).toBe(true)
   })
 })
+
+describe('Playwright Reader как инструмент автотестов (круг 11)', () => {
+  it('показывает ошибки страницы и неуспешные запросы, скрывая успешные', async () => {
+    // Раннер копит журналы с открытия страницы, но до этого круга человек их не
+    // видел: белый экран и никакого объяснения.
+    const command = vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) => {
+      if (req.command.type !== 'inspect') return meta()
+      return req.command.action?.kind === 'console'
+        ? { ok: true, console: [{ level: 'error', text: 'TypeError: x is not a function', at: 1 }] }
+        : { ok: true, network: [
+            { method: 'GET', url: 'http://site/api/board', status: 500, ok: false, at: 2 },
+            { method: 'GET', url: 'http://site/ok', status: 200, ok: true, at: 3 }
+          ] }
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ command: command as never })} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Ошибки страницы' }))
+    expect(await screen.findByText('TypeError: x is not a function')).toBeInTheDocument()
+    expect(screen.getByText(/api\/board/)).toBeInTheDocument()
+    expect(screen.queryByText(/site\/ok/)).not.toBeInTheDocument()
+    expect(screen.getByText('Ошибки страницы: 1 · Неуспешные запросы: 1')).toBeInTheDocument()
+  })
+
+  it('«страница не жаловалась» — отдельное состояние, а не пустой блок', async () => {
+    const command = vi.fn(async (_id: string, req: { command: { type: string } }) =>
+      req.command.type === 'inspect' ? { ok: true, console: [], network: [] } : meta())
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ command: command as never })} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Ошибки страницы' }))
+    expect(await screen.findByText('Страница не жаловалась.')).toBeInTheDocument()
+  })
+
+  it('клавиши Enter, Tab и Escape шлются как press', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Tab' }))
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: { type: 'input', action: { type: 'press', key: 'Tab' } }
+    })))
+  })
+
+  it('выбранный размер окна переживает перезапуск сессии', async () => {
+    const browser = fakeBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Телефон' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Перезапустить' }))
+    // Раньше перезапуск всегда стартовал с десктопного вьюпорта, и проверка
+    // мобильной вёрстки сбрасывалась на каждом «Перезапустить».
+    await waitFor(() => expect(browser.start).toHaveBeenLastCalledWith('c1', expect.objectContaining({ width: 390 })))
+  })
+})

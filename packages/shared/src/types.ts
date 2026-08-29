@@ -1005,3 +1005,13 @@ export interface EditorContextPayload {
   /** Фрагмент выделения (обрезан до 2000 символов). */
   snippet?: string
 }
+
+/**
+ * Ответ команды раннера зависит от её вида: навигация и вкладки отдают
+ * метаданные сессии, `selector` — результат чтения и поиска, `inspect` —
+ * журналы страницы. Разбор нужен и панели, и мосту: до круга 11 сигнатура
+ * обещала метаданные всегда, и вызывающие читали `incarnation` там, где его нет.
+ */
+export function isBrowserSessionMetadata(value: unknown): value is BrowserSessionMetadata {
+  return typeof value === 'object' && value !== null && typeof (value as { incarnation?: unknown }).incarnation === 'string'
+}
