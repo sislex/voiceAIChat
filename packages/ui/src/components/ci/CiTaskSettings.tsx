@@ -6,7 +6,7 @@ import { CLARIFY_LEVEL_LABEL, RUN_MODE_LABEL } from './ciFormat'
 import { CODEX_MODELS } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import { Button, EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
+import { Button, EmptyState, ErrorState, Skeleton, useConfirm } from '@voicechat/ui-kit'
 import { CiSlotEditor } from './CiSlotEditor'
 import type { LoadStatus } from '../../lib/loadState'
 
@@ -19,6 +19,7 @@ export interface CiTaskSettingsProps {
 }
 
 export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
+  const confirm = useConfirm()
   const [commands, setCommands] = useState<CiCommand[]>([])
   const [before, setBefore] = useState<string[]>([])
   const [after, setAfter] = useState<string[]>([])
@@ -40,7 +41,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
   const [stagesLoading, setStagesLoading] = useState(true)
   const [stagesSaved, setStagesSaved] = useState(true)
   const [stagesError, setStagesError] = useState<string | null>(null)
-  const [forceStatus, setForceStatus] = useState<{ kind: 'idle' | 'started' | 'error'; text?: string }>({ kind: 'idle' })
+  const [forceStatus, setForceStatus] = useState<{ kind: 'idle' | 'started' | 'bypassed' | 'error'; text?: string }>({ kind: 'idle' })
 
   useEffect(() => {
     const bridge = window.ci
@@ -182,19 +183,35 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
             {!agentId && !machines.some((machine) => machine.projectDefault) && <div className="ci-warn">Машина проекта по умолчанию не задана или недоступна. Запуск CI заблокирован.</div>}
             {selectedMachine && !selectedMachine.online && <div className="ci-warn">Машина offline. CI не ждёт подключения и не запустится, пока вы не выберете online-машину.</div>}
             {saveError && <div className="ci-warn">Не удалось сохранить машину: {saveError}</div>}
-            {/* Принудительный запуск работает и для задачи, чей ран стоит в очереди:
-                сервер продвинет его на выбранную машину, а не отменит. */}
             {agentId && selectedMachine?.online && (
-              <div className="ci-task-llm-actions">
-                <Button size="sm" onClick={() => {
-                  setForceStatus({ kind: 'idle' })
-                  void window.ci?.forceStartRun(props.projectId, props.taskId, agentId)
-                    .then(() => setForceStatus({ kind: 'started' }))
-                    .catch((err: unknown) => setForceStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) }))
-                }} title="Запустить или продвинуть ожидающий ран на выбранной машине">Запустить на этой машине сейчас</Button>
-              </div>
+              <>
+                <p className="ci-task-hint">Обычный запуск встанет в очередь и будет учитывать общий лимит параллельных ранов.</p>
+                <div className="ci-task-llm-actions">
+                  <Button size="sm" onClick={() => {
+                    setForceStatus({ kind: 'idle' })
+                    void window.ci?.startRun(props.projectId, props.taskId, { launch: 'queue', agentId })
+                      .then(() => setForceStatus({ kind: 'started' }))
+                      .catch((err: unknown) => setForceStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) }))
+                  }} title="Запустить на выбранной машине через обычную очередь">Запустить на этой машине через очередь</Button>
+                  <Button size="sm" variant="danger" onClick={() => {
+                    setForceStatus({ kind: 'idle' })
+                    void confirm({
+                      title: 'Запустить мимо очереди?',
+                      message: 'Ран стартует на выбранной машине без учёта maxConcurrentRuns и может увеличить нагрузку. Продолжить?',
+                      variant: 'danger',
+                      confirmLabel: 'Запустить мимо очереди'
+                    }).then((ok) => {
+                      if (!ok) return
+                      void window.ci?.forceStartRun(props.projectId, props.taskId, agentId)
+                        .then(() => setForceStatus({ kind: 'bypassed' }))
+                        .catch((err: unknown) => setForceStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) }))
+                    })
+                  }} title="Не учитывать лимит параллельных ранов">Запустить мимо очереди…</Button>
+                </div>
+              </>
             )}
-            {forceStatus.kind === 'started' && <p className="ci-task-hint">Ран запущен на выбранной машине, мимо очереди.</p>}
+            {forceStatus.kind === 'started' && <p className="ci-task-hint">Ран поставлен в очередь на выбранной машине.</p>}
+            {forceStatus.kind === 'bypassed' && <p className="ci-warn">Ран запущен на выбранной машине мимо очереди.</p>}
             {forceStatus.kind === 'error' && <div className="ci-warn">{forceStatus.text}</div>}
           </>}
     </div>
