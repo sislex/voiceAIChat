@@ -157,8 +157,34 @@ export function ToastProvider({ children, avoidSelector }: ToastProviderProps): 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [avoidSelector, visible.length])
 
+  // Безопасная зона снизу: страница узнаёт высоту стека и может отодвинуть свои
+  // нижние элементы управления. Без этого тост на телефоне ложился поверх
+  // «+ Создать» на канбане и буквально перехватывал нажатие — контейнер клики не
+  // ловит, но само тело тоста ловит, а лечь ему на 390px некуда.
+  const stackRef = useRef<HTMLDivElement | null>(null)
+  useLayoutEffect(() => {
+    const root = typeof document === 'undefined' ? null : document.documentElement
+    if (!root) return
+    if (!phone || visible.length === 0) {
+      root.style.removeProperty('--vc-toast-inset')
+      return
+    }
+    const measure = (): void => {
+      const height = stackRef.current?.offsetHeight ?? 0
+      root.style.setProperty('--vc-toast-inset', `${height + 12}px`)
+    }
+    measure()
+    const observer = stackRef.current && typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
+    if (stackRef.current) observer?.observe(stackRef.current)
+    return () => {
+      observer?.disconnect()
+      root.style.removeProperty('--vc-toast-inset')
+    }
+  }, [phone, visible.length, avoidHeight])
+
   const viewport = (
     <div
+      ref={stackRef}
       className={`vc-toasts${phone ? ' vc-toasts--phone' : ''}`}
       // Отступ нужен только на телефоне: на десктопе стек стоит в углу, где
       // композера нет.

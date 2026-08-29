@@ -31,9 +31,19 @@ describe('перевод кодов ответов сервера', () => {
       'unauthorized', 'forbidden', 'csrf', 'password_change_required', 'token_missing',
       'unavailable', 'runner_unavailable', 'browser_runner', 'preview_unavailable',
       'machine_offline', 'no_online_machine', 'offline', 'run_exists',
-      'codex_thread_in_use', 'invalid_url', 'feature_unavailable'
+      'codex_thread_in_use', 'invalid_url', 'feature_unavailable',
+      // Именно с пробелом: так 404 отдаётся в полусотне мест сервера. Раньше в
+      // таблице лежал `not_found`, которого сервер не шлёт нигде, и человек
+      // видел в тосте английское «not found».
+      'not found'
     ]) {
       expect(isKnownServerErrorCode(code), code).toBe(true)
     }
+  })
+
+  it('код с пробелом переводится так же, как с подчёркиванием', () => {
+    expect(serverErrorMessage({ error: 'not found' })).toBe('Объект не найден.')
+    expect(serverErrorMessage({ error: 'Not Found' })).toBe('Объект не найден.')
+    expect(serverErrorMessage({ error: 'not_found' })).toBe('Объект не найден.')
   })
 })

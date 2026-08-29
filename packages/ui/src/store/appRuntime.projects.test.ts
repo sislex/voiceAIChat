@@ -44,6 +44,40 @@ describe('voiceStore — проекты и доска', () => {
     expect(store.getState().board?.columns.map((c) => c.semanticType)).toEqual(['backlog', 'preparation', 'ready', 'development', 'component_qa', 'integration_tests', 'automated_qa', 'manual_qa', 'awaiting_merge', 'merge', 'done', 'cancelled', 'decision_required'])
   })
 
+  it('доступ отобрали при открытой доске: проект закрывается, а не висит с «Повторить»', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    await store.actions.openBoard(id)
+    expect(store.getState().board).not.toBeNull()
+
+    // Владелец исключил участника: сервер отвечает 404 на всё по этому проекту.
+    const gone = Object.assign(new Error('Объект не найден.'), { status: 404 })
+    api['board:get'] = vi.fn(async () => { throw gone })
+    api['projects:get'] = vi.fn(async () => { throw gone })
+    api['projects:list'] = vi.fn(async () => [])
+    await store.actions.openBoard(id)
+
+    expect(store.getState().activeProjectId).toBeNull()
+    expect(store.getState().board).toBeNull()
+    expect(store.getState().projects.some((p) => p.id === id)).toBe(false)
+    // «Повторить» бессмысленно: повтор упрётся в тот же отказ.
+    expect(store.getState().notices.at(-1)?.retry).toBeUndefined()
+    expect(store.getState().notices.at(-1)?.text).toContain('Доступ к проекту закрыт')
+  })
+
+  it('обычный сбой чтения доски проект не закрывает и оставляет «Повторить»', async () => {
+    const { store, api } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    const id = store.getState().projectDetail!.id
+    api['board:get'] = vi.fn(async () => { throw new Error('Сеть недоступна') })
+    await store.actions.openBoard(id)
+
+    expect(store.getState().activeProjectId).toBe(id)
+    expect(store.getState().boardError).toBe('Сеть недоступна')
+    expect(store.getState().notices.at(-1)?.retry).toBeTypeOf('function')
+  })
+
   it('включение показа завершённых немедленно скрывает старую доску до нового снимка', async () => {
     const { store, api } = makeStore()
     await store.actions.createProject({ name: 'P1' })

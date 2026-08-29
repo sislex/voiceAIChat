@@ -4345,7 +4345,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Доска и колонки */
 /* Общая поверхность владеет обеими осями прокрутки: широкая доска движется по
    горизонтали, а длинные колонки — синхронно по вертикали вместе с шапками. */
-.jboard { display: flex; gap: 8px; align-items: stretch; overflow-x: auto; overflow-y: auto; padding: 8px 12px 16px; flex: 1; min-width: 0; min-height: 0; }
+/* Нижний отступ учитывает стек тостов (`--vc-toast-inset` ставит ToastProvider на
+   телефоне): иначе тост ложится поверх «+ Создать» в подвале колонки и
+   перехватывает нажатие — проверено `elementFromPoint` на 390×844. */
+.jboard { display: flex; gap: 8px; align-items: stretch; overflow-x: auto; overflow-y: auto; padding: 8px 12px calc(16px + var(--vc-toast-inset, 0px)); flex: 1; min-width: 0; min-height: 0; }
 .jboard--lanes { flex-direction: column; align-items: stretch; }
 .jcol { flex: 0 0 272px; flex-shrink: 0; width: 272px; display: flex; flex-direction: column; background: #f7f8f9; border-radius: 8px;
   min-width: 0; min-height: 100%; overflow: visible; }
