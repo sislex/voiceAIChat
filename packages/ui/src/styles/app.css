@@ -4316,25 +4316,27 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .javatars { display: inline-flex; align-items: center; }
 .javatar-btn { border: 2px solid transparent; background: none; padding: 0; border-radius: 50%; cursor: pointer; margin-left: -4px; transition: transform 0.1s; }
 .javatar-btn:hover { transform: translateY(-2px); }
-.javatar-btn.on { border-color: #0052cc; }
+.javatar-btn.on { border-color: var(--accent); }
 .javatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; font-weight: 600; width: 24px; height: 24px; font-size: 10px; flex: 0 0 auto; }
 .javatar--none { background: rgba(128, 128, 128, 0.35); color: var(--fg, #222); }
-.jquick { border: none; background: none; color: inherit; font-size: 13px; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
-.jquick:hover { background: rgba(9, 30, 66, 0.08); }
-.jquick.on { background: #e9f2ff; color: #0052cc; font-weight: 600; }
-[data-theme='dark'] .jquick:hover { background: rgba(255, 255, 255, 0.08); }
-[data-theme='dark'] .jquick.on { background: #1c2b41; color: #579dff; }
+/* Быстрые фильтры доски — это переключатели, и в выключенном состоянии они
+   обязаны читаться как элемент управления: без рамки и заливки «С флагом» и
+   «Обновлены за сутки» выглядели обычной подписью рядом с настоящими чекбоксами.
+   Цвета — на токенах, чтобы тёмная тема не требовала второго набора правил. */
+.jquick { border: 1px solid var(--border); background: none; color: inherit; font-size: 13px; padding: 4px 8px; border-radius: var(--radius-medium); cursor: pointer; }
+.jquick:hover { background: var(--surface-hover); }
+.jquick.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.jquick-checkbox { border-color: transparent; }
+.jquick-checkbox.on { border-color: var(--accent); }
 .jquick--clear { opacity: 0.7; }
 .jfilter { position: relative; }
-.jfilter > summary { list-style: none; cursor: pointer; font-size: 13px; padding: 4px 8px; border-radius: 4px; user-select: none; }
+.jfilter > summary { list-style: none; cursor: pointer; font-size: 13px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius-medium); user-select: none; }
 .jfilter > summary::-webkit-details-marker { display: none; }
 .jfilter > summary::after { content: ' ▾'; font-size: 10px; opacity: 0.6; }
-.jfilter > summary:hover { background: rgba(9, 30, 66, 0.08); }
-[data-theme='dark'] .jfilter > summary:hover { background: rgba(255, 255, 255, 0.08); }
-.jfilter[open] > summary { background: #e9f2ff; color: #0052cc; }
-[data-theme='dark'] .jfilter[open] > summary { background: #1c2b41; color: #579dff; }
-.jfilter-count { display: inline-block; min-width: 16px; text-align: center; margin-left: 4px; background: #0052cc; color: #fff; border-radius: 8px; font-size: 11px; padding: 0 4px; }
-.jfilter-menu { position: absolute; top: 100%; left: 0; z-index: 40; min-width: 180px; max-height: 260px; overflow-y: auto; background: var(--card-bg, #fff); border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 6px; box-shadow: 0 8px 16px rgba(9, 30, 66, 0.2); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.jfilter > summary:hover { background: var(--surface-hover); }
+.jfilter[open] > summary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.jfilter-count { display: inline-block; min-width: 16px; text-align: center; margin-left: 4px; background: var(--accent); color: var(--accent-fg); border-radius: 8px; font-size: 11px; padding: 0 4px; }
+.jfilter-menu { position: absolute; top: 100%; left: 0; z-index: 40; min-width: 180px; max-height: 260px; overflow-y: auto; background: var(--card-bg, #fff); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 16px rgba(9, 30, 66, 0.2); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 [data-theme='dark'] .jfilter-menu { background: #1c2128; }
 .jfilter-menu label { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 6px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 .jfilter-menu label:hover { background: rgba(128, 128, 128, 0.12); }
@@ -4465,10 +4467,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcard-progress-bar { flex: 1; height: 4px; border-radius: 2px; background: rgba(128, 128, 128, 0.25); overflow: hidden; }
 .jcard-progress-fill { display: block; height: 100%; background: #36b37e; }
 .jcard-progress-text { font-size: 11px; opacity: 0.7; }
-.jcard-feature { border: none; background: rgba(76, 154, 255, 0.15); color: #0052cc; font-size: 11px; border-radius: 3px; padding: 2px 6px; cursor: pointer; align-self: flex-start; }
-[data-theme='dark'] .jcard-feature { color: #579dff; }
-.jcard-feature-start { border: 1px dashed rgba(76, 154, 255, 0.6); background: none; color: #0052cc; font-size: 11px; border-radius: 3px; padding: 2px 6px; cursor: pointer; align-self: flex-start; }
-[data-theme='dark'] .jcard-feature-start { color: #579dff; }
+.jcard-feature { border: none; background: var(--accent-soft); color: var(--accent); font-size: 11px; border-radius: 3px; padding: 2px 6px; cursor: pointer; align-self: flex-start; }
+.jcard-feature-start { border: 1px dashed var(--accent); background: none; color: var(--accent); font-size: 11px; border-radius: 3px; padding: 2px 6px; cursor: pointer; align-self: flex-start; }
 .jcard-stage-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-height: 24px; }
 .jcard-stage-actions button { width: 28px; height: 24px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; font-weight: 700; line-height: 1; cursor: pointer; }
 .jcard-stage-actions button:hover:not(:disabled) { background: var(--surface-hover); border-color: var(--accent); }
@@ -4665,8 +4665,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .sideswitch button { flex: 0 0 auto; min-width: 0; border: none; background: transparent; color: inherit; font-size: 13px; padding: 6px 4px; border-radius: 6px; cursor: pointer; }
 .sideswitch button.on { flex: 1 1 auto; }
 .sideswitch button:hover { background: rgba(128, 128, 128, 0.22); }
-.sideswitch button.on { background: #e9f2ff; color: #0052cc; font-weight: 600; }
-[data-theme='dark'] .sideswitch button.on { background: #1c2b41; color: #579dff; }
+.sideswitch button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .side-controls {
   max-height: 0;
   opacity: 0;
