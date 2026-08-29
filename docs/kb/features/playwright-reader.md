@@ -1,7 +1,7 @@
 ---
 title: Playwright Reader и browser-runner
 updated: 2026-08-29
-checked: d9b34064
+checked: 4c3004a0
 areas:
   - apps/browser-runner/src
   - apps/server/src/browser
@@ -290,3 +290,25 @@ hash-маршруты `#/playwright-reader[/<conversationId>]`, пункт ме�
   а не стек и не «команда не выполнена».
 - **Чтение обрезается лимитом** (по умолчанию 4000 символов): `innerText` у
   `body` большой страницы иначе съедает контекст хода целиком.
+
+## Инструменты модели работают в изолированном Chromium (круг 4)
+
+`registerPreviewMcp` получил `browserExecutor`: для разговоров
+`playwright-reader` действие исполняется на сервере через `browserRunner`, а не
+уходит в `PreviewActionRelay` (тот пушит его в браузер пользователя, где нужной
+страницы нет). Перевод `PreviewAction` → `BrowserCommand` живёт в
+`apps/server/src/browser/modelActions.ts` и покрыт тестами.
+
+Ложатся напрямую: `open`, `back`, `forward`, `click`, `type`, `read`, `find`,
+`wait`, `scroll` (через колесо; `to: top|bottom` — крупный шаг), `press`.
+**Отклоняются с объяснением** `evaluate`, `network`, `console`, `styles`,
+`errors`, `edits`, `drag`, `hover`: у раннера их нет, и лучше сказать модели
+«здесь этого нет», чем молча выполнить не то.
+
+`start` у раннера идемпотентен — живая сессия переиспользуется, поэтому
+исполнитель берёт `incarnation` из неё и не создаёт вторую.
+
+**Зачем это:** колонка Automated QA в канбане не реализована, и её движком
+предполагается Playwright с ассистентом. Доступ модели к изолированному Chromium
+— первый кирпич; чего ещё не хватает, перечислено в
+`docs/plans/playwright-reader-rounds.md`.
