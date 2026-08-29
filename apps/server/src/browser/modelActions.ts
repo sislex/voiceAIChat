@@ -10,6 +10,9 @@
 import type { PreviewAction } from '@voicechat/shared'
 import type { BrowserCommand } from '@voicechat/shared'
 
+/** Вьюпорт раннера по умолчанию: модель просит только ширину. */
+const DEFAULT_VIEWPORT = { width: 1280, height: 800, deviceScaleFactor: 1 }
+
 /** Действие модели, переведённое в команду раннера, либо причина, почему нельзя. */
 export type ModelActionPlan =
   | { kind: 'command'; command: BrowserCommand }
@@ -107,7 +110,48 @@ export function planModelAction(action: PreviewAction): ModelActionPlan {
         kind: 'command',
         command: { type: 'inspect', action: { kind: 'styles', selector: action.selector, ...(action.properties ? { properties: action.properties } : {}) } }
       }
+    case 'evaluate':
+      // Гейт политики и подтверждение опасного кода стоят выше, на самом
+      // MCP-инструменте, — до выбора транспорта. Здесь дублировать нечего.
+      return { kind: 'command', command: { type: 'inspect', action: { kind: 'evaluate', code: action.code } } }
+    case 'hover':
+      return {
+        kind: 'command',
+        command: { type: 'selector', action: { kind: 'hover', ...(action.selector ? { selector: action.selector } : {}), ...(action.text ? { text: action.text } : {}) } }
+      }
+    case 'set':
+      return {
+        kind: 'command',
+        command: {
+          type: 'selector',
+          action: { kind: 'set', selector: action.selector, ...(typeof action.value === 'string' ? { value: action.value } : {}), ...(typeof action.checked === 'boolean' ? { checked: action.checked } : {}) }
+        }
+      }
+    case 'a11y':
+      return {
+        kind: 'command',
+        command: { type: 'selector', action: { kind: 'a11y', ...(action.selector ? { selector: action.selector } : {}), ...(typeof action.limit === 'number' ? { limit: action.limit } : {}) } }
+      }
+    case 'viewport':
+      // У раннера свой вьюпорт: ширину задаёт resize, высоту держим прежней —
+      // модель просит именно ширину, как в превью.
+      return { kind: 'command', command: { type: 'resize', viewport: { ...DEFAULT_VIEWPORT, width: Math.max(320, Math.min(action.width || DEFAULT_VIEWPORT.width, 2560)) } } }
+    case 'drag': {
+      // Раннер тянет локатор к локатору; координатное перетаскивание у него не
+      // выражается, и подменять его «примерно тем же» хуже, чем отказать.
+      const from = action.from.selector, to = action.to.selector
+      if (!from || !to) return { kind: 'unsupported', reason: 'Перетаскивание в изолированном Chromium задаётся селекторами: укажи from.selector и to.selector, координаты здесь не применимы.' }
+      return { kind: 'command', command: { type: 'selector', action: { kind: 'drag', from, to } } }
+    }
+    case 'screenshot':
+      // Снимок отдаётся картинкой и обрабатывается инструментом отдельно —
+      // сюда попадать не должен.
+      return { kind: 'unsupported', reason: 'Снимок запрашивается инструментом screenshot напрямую.' }
+    case 'edits':
+      return { kind: 'unsupported', reason: 'Правки edit-режима копит прокси веб-превью; у изолированного Chromium этого режима нет вовсе, поэтому и сохранённых правок быть не может.' }
+    case 'upload':
+      return { kind: 'unsupported', reason: 'Загрузка файла в изолированном Chromium пока не реализована: содержимое нужно сначала записать на сторону раннера.' }
     default:
-      return { kind: 'unsupported', reason: `Действие «${action.kind}» в Playwright Reader пока не поддерживается: страница живёт в изолированном Chromium, а не в превью пользователя.` }
+      return { kind: 'unsupported', reason: `Действие «${(action as { kind: string }).kind}» в Playwright Reader пока не поддерживается.` }
   }
 }

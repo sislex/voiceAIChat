@@ -67,3 +67,29 @@ describe('переменные темы', () => {
     })
   }
 })
+
+/**
+ * Порог попадания пальцем задаёт ui-kit (`.vc-btn--icon`, 40x40 на телефоне), но
+ * правило секции перебивает его по специфичности. Круг 9 нашёл так два места:
+ * `.make-head` (30px, без медиа-запроса вовсе) и `.make-comments-head` (36px —
+ * причём прямо внутри мобильной группы). Правило секции с меньшим минимумом
+ * допустимо только под `min-width`, то есть на десктопе.
+ */
+describe('минимум иконочной кнопки в app.css', () => {
+  it('секция не опускает порог ниже 40px на телефоне', () => {
+    const css = readFileSync(join(stylesDir, 'app.css'), 'utf8')
+    const offenders: string[] = []
+    // Медиа-контекст: считаем «десктопным» только `min-width`.
+    const chunks = css.split(/@media/)
+    chunks.forEach((chunk, index) => {
+      const desktopOnly = index > 0 && /^\s*\(min-width/.test(chunk)
+      if (desktopOnly) return
+      for (const match of chunk.matchAll(/([^{}]*\.vc-btn--icon[^{}]*)\{([^}]*)\}/g)) {
+        for (const size of match[2].matchAll(/min-(?:width|height)\s*:\s*(\d+)px/g)) {
+          if (Number(size[1]) < 40) offenders.push(`${match[1].trim()} → ${size[0]}`)
+        }
+      }
+    })
+    expect(offenders).toEqual([])
+  })
+})

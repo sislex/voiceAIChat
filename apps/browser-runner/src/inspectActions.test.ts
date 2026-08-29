@@ -59,3 +59,32 @@ describe('осмотр страницы', () => {
     expect(result).toEqual({ ok: false, error: 'Узел .нет не найден' })
   })
 })
+
+describe('evaluate (круг 9)', () => {
+  const logs = { console: [], network: [] }
+  it('отдаёт значение из страницы', async () => {
+    const page = { evaluate: async () => ({ tasks: 3 }) } as unknown as InspectPage
+    expect(await runInspectAction(logs, page, { kind: 'evaluate', code: 'window.store.tasks.length' })).toEqual({ ok: true, value: { tasks: 3 } })
+  })
+
+  it('несериализуемое значение не роняет действие', async () => {
+    // page.evaluate у Playwright уже сериализует, но раннер не обязан верить
+    // вызывающему: в лог рана и в ответ модели уходит текст, а не объект.
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    const page = { evaluate: async () => cyclic } as unknown as InspectPage
+    const result = await runInspectAction(logs, page, { kind: 'evaluate', code: 'window' })
+    expect(result.ok).toBe(true)
+    expect(typeof result.value).toBe('string')
+  })
+
+  it('длинная строка режется по лимиту', async () => {
+    const page = { evaluate: async () => 'x'.repeat(30_000) } as unknown as InspectPage
+    expect(String((await runInspectAction(logs, page, { kind: 'evaluate', code: 'document.body.innerHTML' })).value)).toHaveLength(20_001)
+  })
+
+  it('ошибка страницы возвращается первой строкой', async () => {
+    const page = { evaluate: async () => { throw new Error('ReferenceError: store is not defined\nat <anonymous>') } } as unknown as InspectPage
+    expect(await runInspectAction(logs, page, { kind: 'evaluate', code: 'store' })).toEqual({ ok: false, error: 'ReferenceError: store is not defined' })
+  })
+})
