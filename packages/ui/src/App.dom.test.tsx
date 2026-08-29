@@ -932,6 +932,28 @@ describe('App — выход из аккаунта', () => {
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/`)
   })
 
+  it('служебные маршруты админки не принимаются за логин пользователя', async () => {
+    const api = await seededApi()
+    const llmAccess = vi.spyOn(api, 'admin:llmAccess')
+    ;(window as unknown as { session: unknown }).session = {
+      me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
+      login: vi.fn(),
+      logout: vi.fn()
+    }
+    // `engines`, `prices` и `project-types` — страницы, а не логины. Раньше App
+    // брал любой второй сегмент за имя и запрашивал несуществующего
+    // пользователя: человек получал тост «Объект не найден» на ровном месте.
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users/engines`)
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Пользователи')
+    await waitFor(() => expect(llmAccess).not.toHaveBeenCalled())
+
+    // Настоящий логин по-прежнему открывает карточку пользователя.
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users/admin`)
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await waitFor(() => expect(llmAccess).toHaveBeenCalledWith({ name: 'admin' }))
+  })
+
   it('просит подтверждение, завершает сессию и закрывает защищённый маршрут экраном входа', async () => {
     const api = await seededApi()
     const logout = vi.fn().mockResolvedValue(undefined)
