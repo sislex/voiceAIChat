@@ -94,7 +94,7 @@ function GenericQaStageRunPanel(props: { projectId: string; taskId: string; stag
     <div className="qa-stage-run__head"><h3>{LABEL[props.stage]}</h3>
       {!run?.canCancel && window.qa?.startStageRun && <Button size="sm" variant="primary" disabled={busy} onClick={() => void act(() => window.qa!.startStageRun!(props.projectId, props.taskId, props.stage))}>Запустить</Button>}
       {run?.canCancel && window.qa?.cancelStageRun && <Button size="sm" variant="danger" disabled={busy} onClick={() => void act(() => window.qa!.cancelStageRun!(run.id))}>Отменить</Button>}
-      {run?.canRetry && window.qa?.retryStageRun && <Button size="sm" disabled={busy} onClick={() => void act(() => window.qa!.retryStageRun!(run.id))}>Повторить</Button>}
+      {run?.canRetry && window.qa?.retryStageRun && <Button size="sm" disabled={busy} onClick={() => void act(() => window.qa!.retryStageRun!(run.id))}>{run.scenario ? 'Повторить тот же сценарий' : 'Повторить'}</Button>}
     </div>
     {error && <p role="alert">{error}</p>}
     {!run && <p>Запусков этого этапа ещё нет.</p>}
@@ -104,6 +104,9 @@ function GenericQaStageRunPanel(props: { projectId: string; taskId: string; stag
       {run.gateReasons.length > 0 && <section><h4>Quality gate не пройден</h4><ul>{run.gateReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></section>}
       {run.error && <p role="alert">{run.error}</p>}
       {run.result && <AutomatedQaVerdictView result={run.result} />}
+      {run.scenario && <details className="qa-verdict__scenario"><summary>Что прогонялось: {run.scenario.steps.length} шаг(ов) с {run.scenario.startUrl}</summary>
+        <ol>{run.scenario.steps.map((step) => <li key={step.id}>{step.title}</li>)}</ol>
+      </details>}
       <section><h4>Потоковая лента</h4><div className="ci-log">{run.log.map((line) => <div key={line.seq}>{line.text}</div>)}</div></section>
       {run.status === 'awaiting_input' && props.stage === 'integration_tests' && window.qa?.answerStageRun && <form onSubmit={(event) => { event.preventDefault(); void act(async () => { await window.qa!.answerStageRun!(run.id, answer); setAnswer('') }) }}><label>Ответ модели<textarea value={answer} onChange={(event) => setAnswer(event.target.value)} /></label><Button size="sm" type="submit" disabled={busy || !answer.trim()}>Отправить</Button></form>}
     </>}

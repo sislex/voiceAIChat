@@ -1440,6 +1440,9 @@ CREATE TABLE IF NOT EXISTS qa_stage_runs (
   log_json TEXT NOT NULL DEFAULT '[]',
   result_json TEXT,
   gate_reasons_json TEXT NOT NULL DEFAULT '[]',
+  -- Снимок сценария Playwright-этапа на момент запуска: настройку проекта
+  -- владелец правит, а ран обязан помнить, что прогонял именно он.
+  scenario_json TEXT NOT NULL DEFAULT '',
   error TEXT,
   created_at INTEGER NOT NULL,
   started_at INTEGER,
