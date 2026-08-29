@@ -186,4 +186,81 @@ describe.skipIf(!existsSync(WEB_DIST))('Проекты E2E', () => {
     expect(message).toContain('релизов')
     expect(message).not.toContain('feature_unavailable')
   })
+
+  it('приглашённый принимает приглашение из сайдбара и получает проект', async () => {
+    // Самый рискованный путь фичи: приём проверяет, что приглашение адресовано
+    // именно этому человеку. До сих пор он был покрыт только API-тестами.
+    const MATE = 'mate'
+    // Пароль не должен содержать логин — политика такие отклоняет.
+    const MATE_PASSWORD = 'Qwerty-Sunrise-77'
+    const created = await api('/api/admin/users', { method: 'POST', body: JSON.stringify({ name: MATE, password: MATE_PASSWORD, role: 'developer' }) })
+    expect(created.status, await created.text()).toBe(200)
+
+    const projects = (await (await api('/api/projects')).json()) as Array<{ id: string; name: string }>
+    const project = projects.find((p) => p.name === 'Разработка')!
+    const invited = await api(`/api/projects/${project.id}/invitations`, { method: 'POST', body: JSON.stringify({ invitee: MATE }) })
+    expect(invited.status).toBe(200)
+    // Приглашение по логину письма не порождает — принимать придётся из интерфейса.
+    expect(((await invited.json()) as { mailed: boolean }).mailed).toBe(false)
+
+    const mateLogin = await fetch(`${BASE}/api/session/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: MATE, password: MATE_PASSWORD }) })
+    const mateToken = ((await mateLogin.json()) as { token: string }).token
+
+    // Онбординг — настройка пользователя, а не приложения: у нового человека его
+    // оверлей перекрывает сайдбар, и клик по «Принять» не доходит до кнопки.
+    await fetch(`${BASE}/api/settings`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${mateToken}` },
+      body: JSON.stringify({ onboarded: true })
+    })
+
+    const mate = await browser.newPage({ viewport: { width: 1400, height: 900 } })
+    try {
+      await mate.goto(`${BASE}/`)
+      await mate.evaluate((t) => localStorage.setItem('vc.session.token', t), mateToken)
+      await mate.goto(`${BASE}/#/projects`)
+      await mate.reload()
+
+      const inbox = mate.locator('.proj-invites-inbox')
+      await expect.poll(() => inbox.isVisible().catch(() => false), { timeout: 30_000 }).toBe(true)
+      await expect.poll(() => inbox.textContent()).toContain('Разработка')
+
+      // .first(): приглашений может быть несколько, а список перерисовывается по
+      // WS-инвалидации — без явного ожидания клик попадает в момент перерисовки.
+      await inbox.getByRole('button', { name: 'Принять' }).first().click({ timeout: 30_000 })
+
+      // Сначала проверяем результат по данным: членство — это то, ради чего всё.
+      await expect.poll(async () => {
+        const response = await fetch(`${BASE}/api/projects`, { headers: { authorization: `Bearer ${mateToken}` } })
+        const mine = (await response.json()) as Array<{ id: string }>
+        return mine.map((p) => p.id).includes(project.id)
+      }, { timeout: 30_000 }).toBe(true)
+
+      // И только потом — что принятое приглашение ушло из списка.
+      await expect.poll(() => inbox.isVisible().catch(() => false), { timeout: 30_000 }).toBe(false)
+    } finally {
+      await mate.close()
+    }
+  })
+
+  it('чужую ссылку приглашения принять нельзя даже вошедшему', async () => {
+    const projects = (await (await api('/api/projects')).json()) as Array<{ id: string; name: string }>
+    const project = projects.find((p) => p.name === 'Разработка')!
+    letters.length = 0
+    await api(`/api/projects/${project.id}/invitations`, { method: 'POST', body: JSON.stringify({ invitee: 'stranger@example.com' }) })
+    await expect.poll(() => letters.length, { timeout: 15_000 }).toBeGreaterThan(0)
+    const token = decodeInviteLink(letters.join('\n'))!
+
+    // Админ вошёл, но приглашение адресовано чужому адресу — утёкшая ссылка
+    // не должна пускать в проект.
+    const message = await page.evaluate(async (t) => {
+      try {
+        await (window as unknown as { api: Record<string, (a: unknown) => Promise<unknown>> }).api['invitations:accept']({ token: t })
+        return 'приняли — этого быть не должно'
+      } catch (error) {
+        return (error as Error).message
+      }
+    }, token)
+    expect(message).toContain('адресовано другому')
+  })
 })
