@@ -425,6 +425,7 @@
   height: 100vh;
 }
 .mhead {
+  gap: 6px;
   padding: 14px 28px;
   border-bottom: 1px solid var(--border-soft);
   display: flex;
@@ -618,6 +619,9 @@
   background: var(--panel);
 }
 .scroll {
+  /* Абсолютные подсказки `.vc-sr-only` внутри сообщений иначе считаются от
+     `.main` и раздувают scrollHeight колонки до высоты всей ленты. */
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -694,6 +698,11 @@
   color: #106b66;
 }
 .bub {
+  /* Якорь для кнопки «Копировать» в углу пузыря: без него `.copymsg`
+     (position: absolute) считается от дальнего предка. Правило на `.bub`, а не
+     на `.ai .bub`: копия есть и у своего сообщения, и её кнопка висела на 45px
+     выше пузыря. */
+  position: relative;
   padding: 12px 16px;
   border-radius: 14px;
   font-size: 14px;
@@ -845,6 +854,7 @@
 }
 .mtime {
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
   color: #a5a296;
   margin: 0;
 }
@@ -4275,6 +4285,8 @@ button.conscmd:hover {
 .acct-toggle { width: 100%; }
 .acct-caret { margin-left: auto; color: var(--text-dim); }
 .acct-menu {
+  max-height: min(70vh, 460px);
+  overflow-y: auto;
   position: absolute;
   left: 0;
   right: 0;
@@ -6056,7 +6068,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .chat-page { grid-column: 2; min-width: 0; min-height: 0; height: 100%; }
 .app--web-reader, .app--playwright-reader, .app--make { grid-template-columns: minmax(0, 1fr); height: 100%; }
 .app--playwright-reader > .chat-split, .app--make > .chat-split { grid-column: 1; }
-.playwright-reader-selector > strong { white-space: nowrap; }
+.playwright-reader-selector > strong, .console-reader-selector > strong { white-space: nowrap; }
 .playwright-browser-pane { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
 .playwright-reader-header { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .playwright-reader-header [role='status'] { margin-left: auto; color: var(--text-dim); }
@@ -6081,7 +6093,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .chat-split-divider { flex: 0 0 7px; cursor: col-resize; background: var(--border-soft); touch-action: none; }
 .chat-split-divider:hover, .chat-split-divider:focus { background: var(--accent); }
 .webpreview { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
-.webpreview-bar { display: flex; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
+.webpreview-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 9px; border-bottom: 1px solid var(--border); }
 .webpreview-address { flex: 1; min-width: 0; }
 .webpreview-inspector-toggle[aria-pressed='true'] { border-color: var(--accent); background: var(--surface-selected); color: var(--accent); }
 .previewchip { max-width: min(100%, 520px); }
@@ -7358,3 +7370,98 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* Ошибка создания подтипа — под полем, а не только тостом. */
 .ptypes-create-error { margin: 0; font-size: 12px; color: var(--danger); }
+
+/* --- Возврат стилей, потерянных при слиянии ветки CHAT-354 (мерж ae9164b3) ---
+   Ветка переписывала сайдбар, но вместе с ним потеряла правила ленты сообщений,
+   страницы консоли, экрана загрузки сессии, редактора инструкций и панели
+   веб-превью. Разметка эти классы использует до сих пор, поэтому на проде у
+   ответов модели разъезжались шапка и подвал, а страница консоли рисовалась без
+   раскладки. Блоки возвращены в том виде, в каком были до мержа; правила
+   инспектора контекста (`.context-*`) намеренно НЕ возвращены — их разметку
+   убрал коммит «simplify context inspector». */
+/* Копировать ответ — та же иконка и тот же угол, что у копии кода в блоке кода. */
+.copymsg {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  border: none;
+  background: var(--surface-hover);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.ai .bub:hover .copymsg,
+.copymsg:focus-visible {
+  opacity: 1;
+}
+.copymsg:hover {
+  color: var(--text);
+}
+/* Правая группа подвала: озвучить/удалить и крайним правым — время окончания. */
+.mfoot-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Шапка ответа ассистента: движок слева, «Вид ответа» рядом, копия/время справа. */
+.msg-head { display: flex; align-items: center; gap: 10px; }
+.msg-head-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.msg-engine { cursor: default; }
+/* Используемая модель скрыта по умолчанию, показывается при наведении на движок. */
+.msg-model { display: none; color: var(--text-dim); font-weight: 500; }
+.msg-engine:hover .msg-model, .msg-engine:focus-within .msg-model { display: inline; }
+.msg-view select { font-size: 12px; padding: 2px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.msg-start, .msg-timer { font-size: 11px; color: #a5a296; font-variant-numeric: tabular-nums; }
+.msg-timer { font-weight: 600; }
+/* Машина выполнения — в шапке, сразу за движком/моделью. */
+.msg-machine-head { font-size: 11px; color: var(--text-dim); }
+/* Стоимость хода — внутри блока токенов подвала. */
+.msgact-cost { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.msgact-sep { color: var(--text-dim); opacity: 0.6; }
+/* ---- Экран входа (многопользовательский режим web) ---- */
+/* Настройки → «Инструкции»: чекбокс + заголовок/описание в одну строку. */
+.instr-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.instr-item { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.instr-item > label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; min-width: 0; }
+.instr-item input[type='checkbox'] { margin-top: 3px; flex: 0 0 auto; }
+.instr-item .flab, .instr-item .fsub { margin: 0; }
+.instr-badge { margin-left: 6px; font-size: 10px; font-weight: 500; padding: 1px 6px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border); color: var(--text-dim); vertical-align: middle; }
+.instr-actions { display: inline-flex; gap: 2px; }
+.instr-editor { grid-column: 1 / -1; display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--border-soft); }
+.instr-field { display: grid; gap: 4px; font-size: 12px; color: var(--text-dim); }
+.instr-text { font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 12px; resize: vertical; }
+.instr-editor-actions, .instr-footer { display: flex; gap: 8px; flex-wrap: wrap; }
+.instr-footer { margin-top: 10px; }
+/* Проверка сохранённой сессии при старте: тот же фон, что у экрана входа, чтобы
+   переход в форму или в приложение не мигал. */
+.auth-loading { align-items: center; justify-content: center; }
+.auth-loading__spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: auth-spin 0.8s linear infinite; }
+/* Панель консоли (живой PTY-терминал), геометрия — как у playwright-панели. */
+/* Геометрия — как у соседних панелей превью: их перевели на тянущиеся
+   границы (`flex: 0 0` + `min-width: 0`), а эту правку панель консоли
+   пропустила, потому что её правила были удалены целиком. */
+.console-browser-pane { flex: 0 0 var(--preview-width); min-width: 0; min-height: 0; height: 100%; display: flex; flex-direction: column; background: var(--panel); }
+.console-pane-header { display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.console-pane-machine { margin-left: auto; }
+.console-pane-machine select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.console-browser-viewport { flex: 1 1 auto; min-height: 0; overflow: hidden; background: #0b0e14; }
+.console-browser-viewport .term-wrap, .console-browser-viewport .term-host { height: 100%; }
+@media (max-width: 768px) {
+  .console-browser-pane { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 0; }
+  .chat-split--chat .console-browser-pane { display: none; }
+}
+/* Свёрнутое меню инструментов страницы Web Reader (Сессия, инспектор, правка,
+   область, запись сценария) — чтобы тулбар не переполнял узкую панель превью. */
+.webpreview-tools { position: relative; flex: none; }
+.webpreview-tools > summary { list-style: none; cursor: pointer; user-select: none; }
+.webpreview-tools > summary::-webkit-details-marker { display: none; }
+.webpreview-tools > summary[data-active] { border-color: var(--accent); color: var(--accent); }
+.webpreview-tools__menu { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: flex; flex-direction: column; gap: 4px; min-width: 200px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 12px 32px rgba(31, 35, 48, .16); }
+.webpreview-tools__menu .vc-btn { justify-content: flex-start; text-align: left; }
