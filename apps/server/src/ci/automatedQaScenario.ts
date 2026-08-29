@@ -19,6 +19,8 @@ export interface AutomatedQaScenarioInput {
   userId: string
   scenario: AutomatedQaScenario
   signal: AbortSignal
+  /** Общий бюджет прогона; шаги за его пределами не начинаются. */
+  budgetMs?: number
   /** Прогресс: вызывается сразу после каждого шага, чтобы лента не молчала. */
   onStep?: (step: AutomatedQaStepResult, index: number, total: number) => void
 }
@@ -46,6 +48,9 @@ export interface AutomatedQaScenarioRunner {
   run(input: AutomatedQaScenarioInput): Promise<AutomatedQaScenarioOutcome>
 }
 
+/** Бюджет всего Playwright-прогона по умолчанию. */
+const DEFAULT_BUDGET_MS = 10 * 60_000
+
 /** Текст ошибки Playwright длинный и многострочный; в вердикт идёт первая строка. */
 function shortError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
@@ -61,18 +66,24 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         return { steps: [], screenshotUrl: null, blocked: 'Сценарий Automated QA не настроен: не задан стартовый адрес' }
       }
       const sessionId = `qa-${input.runId}`
+      const deadline = now() + (input.budgetMs ?? DEFAULT_BUDGET_MS)
       let incarnation: string
       try {
+        // Ран может перезапускаться с тем же id (после рестарта сервера), а
+        // `start` идемпотентен — иначе прогон продолжился бы в старой странице
+        // со старым состоянием, и воспроизводимость сценария пропала бы.
+        await deps.browser.stop(sessionId).catch(() => undefined)
         const session = await deps.browser.start({ sessionId, userKey: input.userId, conversationKey: input.runId })
         incarnation = session.incarnation
       } catch (error) {
         return { steps: [], screenshotUrl: null, blocked: `Изолированный Chromium недоступен: ${shortError(error)}` }
       }
       const send = async (command: Parameters<BrowserRunnerClient['command']>[1]['command']): Promise<unknown> =>
-        deps.browser.command(sessionId, { requestId: randomUUID(), incarnation, actor: 'assistant', command })
+        deps.browser.command(sessionId, { requestId: randomUUID(), incarnation, actor: 'assistant', command }, input.signal)
       const results: AutomatedQaStepResult[] = []
       let screenshotUrl: string | null = null
       let blocked: string | null = null
+      let expiredBudget = false
       try {
         try {
           await send({ type: 'navigate', url: input.scenario.startUrl })
@@ -80,11 +91,15 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
           return { steps: [], screenshotUrl: null, blocked: `Стартовый адрес не открылся: ${shortError(error)}` }
         }
         let failed = false
+        let expired = false
         for (let index = 0; index < steps.length; index++) {
           const step = steps[index]
           if (input.signal.aborted) break
-          if (failed) {
-            const skipped: AutomatedQaStepResult = { id: step.id, title: step.title, status: 'skipped', detail: 'Пропущен после провала предыдущего шага', durationMs: 0 }
+          // Бюджет всего прогона: у командного режима он есть с самого начала, а
+          // сценарий мог идти часами — сто шагов по 30 секунд ожидания.
+          if (!failed && now() >= deadline) expired = true
+          if (failed || expired) {
+            const skipped: AutomatedQaStepResult = { id: step.id, title: step.title, status: 'skipped', detail: expired ? 'Пропущен: исчерпан бюджет времени прогона' : 'Пропущен после провала предыдущего шага', durationMs: 0 }
             results.push(skipped)
             input.onStep?.(skipped, index, steps.length)
             continue
@@ -96,6 +111,7 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
           input.onStep?.(result, index, steps.length)
           if (!outcome.ok) failed = true
         }
+        expiredBudget = expired
         // Снимок делается в любом исходе: на провале он объясняет причину, на
         // успехе служит доказательством, что проверялась именно та страница.
         try {
@@ -110,6 +126,9 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
       } finally {
         await deps.browser.stop(sessionId).catch(() => undefined)
       }
+      // Исчерпанный бюджет — инфраструктура, а не дефект реализации: сценарий
+      // не досмотрен, и судить по нему о работоспособности нельзя.
+      if (expiredBudget) return { steps: results, screenshotUrl, blocked: 'Исчерпан бюджет времени прогона сценария' }
       return { steps: results, screenshotUrl, blocked }
     }
   }

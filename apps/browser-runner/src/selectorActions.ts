@@ -20,6 +20,7 @@ export interface SelectorLocator {
   dragTo(target: SelectorLocator, options?: { timeout?: number }): Promise<void>
   ariaSnapshot(options?: { timeout?: number }): Promise<string>
   evaluate(fn: string): Promise<unknown>
+  setInputFiles(files: { name: string; mimeType: string; buffer: Buffer }, options?: { timeout?: number }): Promise<void>
 }
 export interface SelectorPage {
   locator(selector: string): SelectorLocator
@@ -33,6 +34,9 @@ export interface SelectorPage {
  * Каждое действие — один локатор Playwright; ошибка возвращается значением, а
  * не исключением: модель должна увидеть причину, а не «команда не выполнена».
  */
+/** Потолок загрузки: содержимое едет в JSON, base64 раздувает его на треть. */
+const UPLOAD_LIMIT_BYTES = 8 * 1024 * 1024
+
 export async function runSelectorAction(page: SelectorPage, action: BrowserSelectorAction): Promise<BrowserSelectorResult> {
   const timeout = 'timeoutMs' in action && typeof action.timeoutMs === 'number' ? Math.min(Math.max(action.timeoutMs, 100), 30_000) : 5_000
   const locate = (selector?: string, text?: string): SelectorLocator | null =>
@@ -76,6 +80,15 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
     }
     if (action.kind === 'drag') {
       await page.locator(action.from).first().dragTo(page.locator(action.to).first(), { timeout })
+      return { ok: true }
+    }
+    if (action.kind === 'upload') {
+      // Файл приходит base64 и уходит в память Playwright: писать его на диск
+      // раннера незачем, а вот ограничить размер — обязательно.
+      const buffer = Buffer.from(action.base64, 'base64')
+      if (!buffer.length) return { ok: false, error: 'Пустое содержимое файла' }
+      if (buffer.length > UPLOAD_LIMIT_BYTES) return { ok: false, error: `Файл больше ${Math.round(UPLOAD_LIMIT_BYTES / 1024 / 1024)} МБ` }
+      await page.locator(action.selector).first().setInputFiles({ name: action.name, mimeType: action.mimeType || 'application/octet-stream', buffer }, { timeout })
       return { ok: true }
     }
     if (action.kind === 'a11y') {

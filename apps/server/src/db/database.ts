@@ -8117,6 +8117,11 @@ export class VoiceChatDb {
     return rows.map((row) => row.id)
   }
 
+  /** Идентификаторы всех ранов этапов — для уборки осиротевших снимков на диске. */
+  qaStageRunIds(): Set<string> {
+    return new Set((this.db.prepare(`SELECT id FROM qa_stage_runs`).all() as Array<{ id: string }>).map((row) => row.id))
+  }
+
   recoverableAutomatedQaRuns(): Array<{ id: string; userId: string; projectId: string }> {
     return this.db.prepare(`SELECT id,triggered_by AS userId,project_id AS projectId FROM qa_stage_runs WHERE stage='automated_qa' AND status='queued'`).all() as Array<{ id: string; userId: string; projectId: string }>
   }

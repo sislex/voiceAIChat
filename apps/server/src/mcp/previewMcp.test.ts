@@ -456,15 +456,22 @@ describe('previewMcp — снимок из изолированного Chromium
     expect(relaySpy).not.toHaveBeenCalled()
   })
 
-  it('запрос по селектору не выдаётся за снимок узла', async () => {
+  it('селектор доходит до раннера — снимается узел, а не вьюпорт', async () => {
+    // Круг 10: до этого селектор игнорировался, отдавался вьюпорт с оговоркой.
+    const seen: Array<{ selector?: string }> = []
     app = Fastify({ logger: false })
     relay = new PreviewActionRelay()
     registerPreviewMcp(app, {
       secret: SECRET, relay, timeoutMs: 500,
-      browserScreenshot: async () => ({ ok: true, result: { page: { url: 'http://x', title: 'X' }, rect: { x: 0, y: 0, width: 390, height: 844 }, dataUrl: `data:image/png;base64,${PNG}` } })
+      browserScreenshot: async (_u, _c, args) => {
+        seen.push(args)
+        return { ok: true, result: { page: { url: 'http://x', title: 'X' }, rect: { x: 0, y: 0, width: 390, height: 844 }, dataUrl: `data:image/png;base64,${PNG}` } }
+      }
     })
     await app.ready()
-    expect((await call('screenshot', { selector: '.card' })).text).toContain('Снят весь вьюпорт')
+    const result = await call('screenshot', { selector: '.card' })
+    expect(seen).toEqual([{ selector: '.card' }])
+    expect(result.text).not.toContain('вьюпорт')
   })
 
   it('обычный разговор по-прежнему идёт в браузер пользователя', async () => {

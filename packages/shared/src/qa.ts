@@ -747,3 +747,33 @@ export function automatedQaRemarks(verdict: AutomatedQaVerdict): string {
   if (verdict.logTail) lines.push('Хвост вывода:', verdict.logTail)
   return lines.filter(Boolean).join('\n')
 }
+
+/**
+ * Почему стартовый адрес сценария не подойдёт раннеру. Правило то же, что в
+ * `validatePublicUrl` браузерного раннера (SSRF-гейт): без этой проверки
+ * владелец узнавал о запрете только при первом прогоне, спустя минуты.
+ */
+export function automatedQaStartUrlProblem(raw: string): string | null {
+  const value = raw.trim()
+  if (!value) return null
+  let url: URL
+  try { url = new URL(value) } catch { return 'Нужен полный адрес с протоколом, например http://example.com' }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'Разрешены только адреса http и https'
+  const host = url.hostname.toLowerCase()
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) {
+    return 'Изолированный Chromium не ходит в localhost: он работает на сервере, а не на вашей машине'
+  }
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    const parts = host.split('.').map(Number)
+    const priv = parts[0] === 0 || parts[0] === 10 || parts[0] === 127
+      || (parts[0] === 169 && parts[1] === 254)
+      || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+      || (parts[0] === 192 && parts[1] === 168)
+      || parts[0] >= 224
+    if (priv) return 'Адреса внутренних сетей заблокированы: раннер ходит только во внешнюю сеть'
+  }
+  if (host === '::1' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) {
+    return 'Адреса внутренних сетей заблокированы: раннер ходит только во внешнюю сеть'
+  }
+  return null
+}
