@@ -429,15 +429,42 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
-  it('новое устройство: второй вход с другим UA/IP даёт login_new_device и уведомление в /me, «seen» его гасит (auth-roadmap п.16)', async () => {
-    db.createUser('dev', 'device-pass-2026-x', 'developer')
+  it('новое устройство: уведомляет в приложении и письмом, не чаще раза в сутки для пары UA+IP; настройка отключает письмо (auth-roadmap п.16)', async () => {
+    db.createEmailVerification({ token: 'verified-dev', name: 'dev', email: 'dev@example.com', password: 'device-pass-2026-x', ttlMs: 60_000 })
+    expect(db.redeemEmailVerification('verified-dev', 'developer')).not.toBeNull()
     const a = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Phone/1' } })
-    const b = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Laptop/2' } })
+    const b = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Laptop/2', host: 'chat.example.com' } })
     const me = (await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${a.json().token}` } })).json() as { notices: Array<{ type: string; userAgent: string }> }
     expect(me.notices.map((n) => n.userAgent)).toEqual(['Laptop/2'])
+    expect(sentMails).toHaveLength(1)
+    expect(sentMails[0]).toMatchObject({ to: 'dev@example.com', subject: 'Новый вход в ChatAI' })
+    expect(sentMails[0]!.text).toContain('Laptop/2')
+    expect(sentMails[0]!.text).toContain('127.0.0.1')
+    expect(sentMails[0]!.text).toContain('chat.example.com/#/security/password')
+    expect(sentMails[0]!.text).toContain('chat.example.com/#/security/sessions')
+
+    await app.inject({ method: 'POST', url: '/api/session/logout', headers: { authorization: `Bearer ${b.json().token}` } })
+    const repeated = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Laptop/2' } })
+    expect(repeated.statusCode).toBe(200)
+    expect(sentMails).toHaveLength(1)
+
+    db.saveSettings('dev', { ...db.getSettings('dev'), loginNewDeviceEmails: false })
+    await app.inject({ method: 'POST', url: '/api/session/logout', headers: { authorization: `Bearer ${repeated.json().token}` } })
+    expect((await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'dev', password: 'device-pass-2026-x' }, headers: { 'user-agent': 'Tablet/3' } })).statusCode).toBe(200)
+    expect(sentMails).toHaveLength(1)
+
     await app.inject({ method: 'POST', url: '/api/session/notices/seen', headers: { authorization: `Bearer ${a.json().token}` } })
-    expect(((await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${b.json().token}` } })).json() as { notices: unknown[] }).notices).toEqual([])
+    expect(((await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${a.json().token}` } })).json() as { notices: unknown[] }).notices).toEqual([])
     expect(db.getUser('dev')!.lastLogin).toBeGreaterThan(0)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('вход нового устройства без подтверждённого email не пытается отправить письмо и не ломает вход', async () => {
+    db.createUser('local', 'local-device-pass-2026', 'developer')
+    await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'local', password: 'local-device-pass-2026' }, headers: { 'user-agent': 'Phone/1' } })
+    const next = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'local', password: 'local-device-pass-2026' }, headers: { 'user-agent': 'Laptop/2' } })
+    expect(next.statusCode).toBe(200)
+    expect(sentMails).toEqual([])
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
