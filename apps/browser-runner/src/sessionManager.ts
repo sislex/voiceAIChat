@@ -3,7 +3,7 @@ import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
 import type { BrowserCommandRequest, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
-import { isBlockedAddress, profilePath, validatePublicUrl } from './security.js'
+import { aliasTargets, applyHostAlias, isBlockedAddress, profilePath, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
 
@@ -39,7 +39,11 @@ export interface StartSessionRequest {
 export class BrowserSessionManager {
   private readonly sessions = new Map<string, Promise<Session>>()
 
-  constructor(private readonly profilesRoot: string) {}
+  private readonly allowedTargets: Set<string>
+
+  constructor(private readonly profilesRoot: string, private readonly hostAliases: HostAliases = new Map()) {
+    this.allowedTargets = aliasTargets(hostAliases)
+  }
 
   async start(request: StartSessionRequest): Promise<BrowserSessionMetadata> {
     let pending = this.sessions.get(request.sessionId)
@@ -82,8 +86,17 @@ export class BrowserSessionManager {
     }
     await context.route('**/*', async (route) => {
       try {
-        const url = validatePublicUrl(route.request().url())
-        const addresses = await lookup(url.hostname, { all: true, verbatim: true })
+        const requested = validatePublicUrl(route.request().url())
+        // Алиас применяется после проверки: во внутреннюю сеть пускает оператор
+        // списком пар, а не пользователь адресом.
+        const aliased = applyHostAlias(requested, this.hostAliases)
+        // Цель алиаса разрешена явно: её назвал оператор, а не пользователь
+        // адресом. Проверку приватных сетей для остальных адресов не трогаем.
+        const port = aliased.port || (aliased.protocol === 'https:' ? '443' : '80')
+        if (this.allowedTargets.has(`${aliased.hostname.toLowerCase()}:${port}`) || this.allowedTargets.has(aliased.hostname.toLowerCase())) {
+          return aliased.toString() === requested.toString() ? route.continue() : route.continue({ url: aliased.toString() })
+        }
+        const addresses = await lookup(aliased.hostname, { all: true, verbatim: true })
         if (addresses.some((entry) => isBlockedAddress(entry.address))) return route.abort('blockedbyclient')
         return route.continue()
       } catch {
@@ -158,7 +171,7 @@ export class BrowserSessionManager {
     const page = session.pages.get(tabId)
     if (!page) throw new Error('stale_tab')
     const command = request.command
-    if (command.type === 'navigate') await page.goto(validatePublicUrl(command.url).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 })
+    if (command.type === 'navigate') await page.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString(), { waitUntil: 'domcontentloaded', timeout: 30_000 })
     else if (command.type === 'back') await page.goBack()
     else if (command.type === 'forward') await page.goForward()
     else if (command.type === 'reload') await page.reload()

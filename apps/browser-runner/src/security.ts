@@ -61,3 +61,53 @@ export function validatePublicUrl(raw: string): URL {
   url.password = ''
   return url
 }
+
+/**
+ * Алиасы адресов: «внешний host:port» → «внутренний host:port».
+ *
+ * Нужны, чтобы раннер открывал сайт собственного стенда. Контейнер не достаёт
+ * до публичного IP своего же хоста (ufw режет трафик «контейнер → INPUT», а
+ * опубликованные Docker порты работают в обход ufw только для внешних
+ * подключений), зато прекрасно ходит к соседнему сервису по имени в сети
+ * compose. Адрес подменяется **после** проверки исходного URL, поэтому SSRF-гейт
+ * остаётся на месте: во внутреннюю сеть пускает не пользователь, а оператор,
+ * заранее перечисливший пары в конфигурации.
+ */
+export type HostAliases = Map<string, string>
+
+export function parseHostAliases(raw: string | undefined): HostAliases {
+  const aliases: HostAliases = new Map()
+  for (const item of (raw ?? '').split(',')) {
+    const [from, to] = item.split('=').map((part) => part.trim())
+    if (!from || !to) continue
+    aliases.set(from.toLowerCase(), to)
+  }
+  return aliases
+}
+
+/**
+ * Цели алиасов — единственные внутренние адреса, которым раннер доверяет.
+ * Без этого списка подставленный адрес тут же резался бы собственным
+ * SSRF-гейтом: `site:8787` резолвится в приватную сеть, как и положено.
+ */
+export function aliasTargets(aliases: HostAliases): Set<string> {
+  const targets = new Set<string>()
+  for (const value of aliases.values()) {
+    targets.add(value.toLowerCase())
+    targets.add(value.split(':')[0].toLowerCase())
+  }
+  return targets
+}
+
+/** Возвращает адрес с подменённым host:port либо исходный, если пары нет. */
+export function applyHostAlias(url: URL, aliases: HostAliases): URL {
+  if (!aliases.size) return url
+  const port = url.port || (url.protocol === 'https:' ? '443' : '80')
+  const target = aliases.get(`${url.hostname.toLowerCase()}:${port}`) ?? aliases.get(url.hostname.toLowerCase())
+  if (!target) return url
+  const next = new URL(url.toString())
+  const [host, aliasPort] = target.split(':')
+  next.hostname = host
+  next.port = aliasPort ?? ''
+  return next
+}
