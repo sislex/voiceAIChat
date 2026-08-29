@@ -31,7 +31,7 @@ import type { RendererCiBridge } from './ciBridge'
 import type { RendererKbBridge } from './kbBridge'
 import { createFeaturePreviewRest } from './featurePreviewBridge'
 import { createQaRest } from './qaBridge'
-import { authHeaders as sessionHeaders, dropLegacyToken, getCsrf, getToken, hasSession, legacyToken, setToken } from './session'
+import { authHeaders as sessionHeaders, dropLegacyToken, getCsrf, getToken, hasSession, legacyToken, setToken, setUnauthorizedHandler } from './session'
 import { base64ToArrayBuffer } from './decode'
 
 function makeAuthBridge(ws: WsClient): RendererAuthBridge {
@@ -289,6 +289,10 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       setToken(t)
       ws.reconnect()
       return { ok: true }
+    },
+    onUnauthorized: (cb) => {
+      setUnauthorizedHandler(cb)
+      return () => setUnauthorizedHandler(null)
     },
     projectInvitationPreview: async (token) => {
       const r = await fetch(httpBase + REST.invitationPreview(token))
