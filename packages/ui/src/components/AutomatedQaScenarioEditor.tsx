@@ -1,4 +1,4 @@
-import type { AutomatedQaScenario, AutomatedQaScenarioStep } from '@shared/qa'
+import type { AutomatedQaCheckResult, AutomatedQaScenario, AutomatedQaScenarioStep } from '@shared/qa'
 import { automatedQaStartUrlProblem } from '@shared/qa'
 import type { ProjectDetail } from '@shared/projects'
 import type { PreviewAction } from '@shared/previewActions'
@@ -43,6 +43,11 @@ export function AutomatedQaScenarioEditor(props: {
   detail: ProjectDetail
   isOwner: boolean
   onUpdate: (id: string, fields: { automatedQaScenarios?: AutomatedQaScenario[] }) => void
+  /**
+   * Разовый прогон набора. Без него сценарий проверялся только задачей на
+   * доске: записал — и жди следующего рана, чтобы узнать, работает ли он.
+   */
+  onCheck?: (id: string) => Promise<AutomatedQaCheckResult[]>
 }): JSX.Element {
   // Набор, а не один сценарий: «много автотестов» упиралось именно в это.
   // Правим по одному, выбранный держим локально.
@@ -65,6 +70,16 @@ export function AutomatedQaScenarioEditor(props: {
     saveAll(scenarios.length ? scenarios.map((item, at) => (at === index ? next : item)) : [next])
   }
   const setProblems = scenarioSetProblems(scenarios)
+  const [checking, setChecking] = useState(false)
+  const [checkResults, setCheckResults] = useState<AutomatedQaCheckResult[] | null>(null)
+  const [checkError, setCheckError] = useState('')
+  const runCheck = async (): Promise<void> => {
+    if (!props.onCheck) return
+    setChecking(true); setCheckError(''); setCheckResults(null)
+    try { setCheckResults(await props.onCheck(props.detail.id)) }
+    catch (error) { setCheckError(error instanceof Error ? error.message : 'Проверка не выполнилась') }
+    finally { setChecking(false) }
+  }
   // Адрес проверяется при вводе: раннер живёт на сервере и в localhost с
   // приватными сетями не ходит, а узнавать об этом через минуты прогона — плохо.
   const urlProblem = automatedQaStartUrlProblem(scenario.startUrl)
@@ -91,6 +106,32 @@ export function AutomatedQaScenarioEditor(props: {
     </div>
     <label>Стартовый адрес<input className="login-input" disabled={!props.isOwner} value={scenario.startUrl} placeholder="https://example.com" aria-describedby={urlProblem ? 'qa-scenario-url-problem' : undefined} onChange={(e) => save({ ...scenario, startUrl: e.target.value })} /></label>
     {urlProblem && <p className="qa-scenario__problem" id="qa-scenario-url-problem" role="alert">{urlProblem}</p>}
+    {props.onCheck && scenarios.length > 0 && (
+      <div className="qa-scenario__check">
+        <Button size="sm" disabled={checking || !props.isOwner} onClick={() => void runCheck()}>
+          {checking ? 'Прогоняю набор…' : 'Прогнать набор сейчас'}
+        </Button>
+        {checkError && <span className="qa-scenario__problem" role="alert">{checkError}</span>}
+        {checkResults && checkResults.length === 0 && <span className="proj-muted">Прогонять нечего.</span>}
+        {checkResults && checkResults.length > 0 && (
+          <ul className="qa-scenario__check-list">
+            {checkResults.map((result) => (
+              <li key={result.name} data-state={result.blocked ? 'blocked' : result.passed ? 'passed' : 'failed'}>
+                {result.name}: {result.blocked ? `заблокирован — ${result.blocked}` : result.passed ? 'пройден' : `провален на шаге «${result.steps.find((step) => step.status === 'failed')?.title ?? '?'}»`}
+                {' '}<small>{Math.round(result.durationMs / 100) / 10} с</small>
+                {/* Те же ошибки, что уходят в вердикт этапа: при разборе записи
+                    они отвечают быстрее, чем повторный прогон. */}
+                {result.pageErrors && result.pageErrors.length > 0 && (
+                  <ul className="qa-scenario__check-errors">
+                    {result.pageErrors.map((error, index) => <li key={`${index}-${error.slice(0, 40)}`}>{error}</li>)}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    )}
     {setProblems.length > 0 && (
       // Проверка набора целиком: поштучная её не видит — дубли имён и пустые
       // сценарии заметны только вместе.

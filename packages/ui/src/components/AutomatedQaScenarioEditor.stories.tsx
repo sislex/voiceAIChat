@@ -48,3 +48,48 @@ export const ManyScenarios: Story = {
     )
   }
 }
+
+/**
+ * Непроверяемый шаг (круг 25): страница длиннее предела чтения. Текст отказа
+ * длинный и на телефоне переносится — состояние достижимо только ответом
+ * сервера, поэтому живёт в витрине.
+ */
+export const CheckBlockedUnverifiable: Story = {
+  args: {
+    ...ManyScenarios.args,
+    onCheck: async () => ([
+      { name: 'Вход', passed: true, blocked: null, steps: [], durationMs: 1400 },
+      {
+        name: 'Доска проекта', passed: false, durationMs: 21400, steps: [],
+        blocked: 'Шаг «Открыть доску» проверить нельзя: Текст страницы прочитан не целиком (первые 20000 символов), ожидаемого текста «Задача создана» в этой части нет'
+      }
+    ])
+  },
+  play: async ({ canvasElement }) => {
+    const button = [...canvasElement.querySelectorAll('button')].find((el) => el.textContent === 'Прогнать набор сейчас')
+    button?.click()
+  }
+}
+
+/**
+ * Итог разового прогона набора. Состояние приходит только ответом сервера,
+ * поэтому живёт в витрине: пройденный, провалившийся и заблокированный сразу.
+ */
+export const CheckResults: Story = {
+  args: {
+    ...ManyScenarios.args,
+    onCheck: async () => ([
+      { name: 'Вход', passed: true, blocked: null, steps: [], durationMs: 1400 },
+      {
+        name: 'Доска проекта', passed: false, blocked: null, durationMs: 2600,
+        steps: [{ id: 's', title: 'Создать задачу', status: 'failed' as const, detail: 'локатор не найден', durationMs: 5000 }],
+        pageErrors: ['Uncaught TypeError: Cannot read properties of undefined (reading \'columns\') at BoardView.tsx:142']
+      },
+      { name: 'Настройки', passed: false, blocked: 'Стартовый адрес не открылся', steps: [], durationMs: 300 }
+    ])
+  },
+  play: async ({ canvasElement }) => {
+    const button = [...canvasElement.querySelectorAll('button')].find((el) => el.textContent === 'Прогнать набор сейчас')
+    button?.click()
+  }
+}

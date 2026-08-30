@@ -153,6 +153,12 @@ export interface BrowserSessionMetadata {
    * делят страницу — без этого непонятно, кто её только что увёл.
    */
   lastActor?: 'user' | 'assistant'
+  /**
+   * Внутренний адрес, с которого страница пришла на самом деле, если оператор
+   * настроил алиас. Сам `currentUrl` при этом остаётся тем, который назвал
+   * человек: алиас — деталь транспорта, ей нечего делать в записанном сценарии.
+   */
+  aliasedHost?: string
   error?: BrowserError
 }
 
@@ -216,6 +222,12 @@ export interface BrowserSelectorResult {
   matches?: Array<{ selector: string; text: string; visible: boolean }>
   /** Описание элемента под точкой (`describe`). */
   element?: BrowserElementDescription
+  /**
+   * Текст отдан не целиком: страница длиннее запрошенного лимита. Признак нужен
+   * проверкам сценария — «текста нет» и «до текста не дочитали» это разные
+   * беды, и вторую нельзя выдавать за первую.
+   */
+  truncated?: boolean
   error?: string
 }
 

@@ -100,9 +100,6 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   // Запись сценария: ради неё Reader и делается инструментом автотестов —
   // человек проходит путь руками, а на выходе воспроизводимые шаги.
   const [recording, setRecording] = useState(false)
-  // Адрес, который человек попросил, — отдельно от того, что загрузилось: раннер
-  // мог подменить его алиасом, и молчать об этом нельзя.
-  const [requested, setRequested] = useState<string>('')
   const [history, setHistory] = useState<string[]>([])
   const origin = useRef<string | null>(null)
   /** Последний описанный элемент — к нему привязывается записанный ввод текста. */
@@ -343,7 +340,6 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     const url = address.trim()
     if (!url) return
     const full = withScheme(url)
-    setRequested(full)
     // Происхождение первого открытого адреса — то, с чем сверяемся дальше:
     // уход на другой хост посреди проверки почти всегда промах или редирект.
     if (!origin.current) origin.current = full
@@ -424,7 +420,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const ambiguous = ambiguousSteps(steps)
   const broken = brokenSteps(steps)
   const runnableSteps = toScenario(steps, meta?.currentUrl ?? '').steps.length
-  const alias = aliasNote(requested, meta?.currentUrl ?? null)
+  // Оба поля берутся из одного ответа раннера: пока запрошенный адрес держали
+  // отдельным состоянием, между нажатием Enter и ответом подсказка описывала
+  // старую страницу новым адресом — и врала.
+  const alias = aliasNote(meta?.currentUrl ?? '', meta?.aliasedHost ?? null)
   const strayed = offOrigin(origin.current, meta?.currentUrl ?? null, alias !== null)
 
   return <section className="playwright-browser-pane" aria-label="Browser session">
@@ -556,7 +555,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
         {strayed && <span className="playwright-reader-where__note" role="alert">Страница ушла с проверяемого сайта на {(() => { try { return new URL(meta!.currentUrl!).host } catch { return 'другой адрес' } })()}.</span>}
         {history.length > 1 && (
           <label className="playwright-reader-where__history">Где были
-            <select className="sel" value="" disabled={phase !== 'ready'} onChange={(event) => { if (event.target.value) { setRequested(event.target.value); void run({ type: 'navigate', url: event.target.value }) } }}>
+            <select className="sel" value="" disabled={phase !== 'ready'} onChange={(event) => { if (event.target.value) void run({ type: 'navigate', url: event.target.value }) }}>
               <option value="">выбрать адрес…</option>
               {history.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>

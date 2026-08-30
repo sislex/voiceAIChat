@@ -7788,6 +7788,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .qa-verdict__steps { margin: 0; padding-left: var(--space-150); display: flex; flex-direction: column; gap: var(--space-050); }
 .qa-verdict__steps li[data-status='failed'] { color: var(--danger); }
 .qa-verdict__steps li[data-status='skipped'] { color: var(--text-dim); }
+/* Ошибки страницы: красным их не красим — это улика, а не приговор. Провалом
+   они не считаются, страница может ругаться на постороннее. */
+.qa-verdict__page-errors { display: flex; flex-direction: column; gap: var(--space-050); }
+.qa-verdict__page-errors h5 { margin: 0; font-size: 12px; color: var(--text-dim); font-weight: 600; }
+.qa-verdict__page-errors ul { margin: 0; padding-left: var(--space-150); display: flex; flex-direction: column; gap: var(--space-050); font-size: 12px; color: var(--ci-progress); overflow-wrap: anywhere; }
 .qa-verdict__shot { display: block; max-width: 100%; }
 .qa-verdict__shot img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius-medium); }
 
@@ -7796,6 +7801,16 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .qa-scenario > label { display: flex; flex-direction: column; gap: var(--space-050); }
 .qa-scenario__problem { margin: 0; color: var(--danger); font-size: 0.9em; }
 /* Беды набора целиком: дубли имён и пустые сценарии видны только вместе. */
+.qa-scenario__check { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }
+.qa-scenario__check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-050); font-size: 12px; flex: 1 1 100%; }
+.qa-scenario__check-list li[data-state='passed'] { color: var(--ci-success); }
+.qa-scenario__check-list li[data-state='failed'] { color: var(--danger); }
+/* Заблокированный сценарий красным не красим: это не провал проверки, а
+   невозможность её выполнить — тот же смысл, что у списка проблем набора. */
+.qa-scenario__check-list li[data-state='blocked'] { color: var(--ci-progress); }
+/* Ошибки страницы под итогом сценария: улика, а не приговор — цвет приглушённый. */
+.qa-scenario__check-errors { list-style: disc; margin: var(--space-050) 0 0; padding-left: var(--space-150); color: var(--text-dim); overflow-wrap: anywhere; }
+
 .qa-scenario__problems { margin: 0; padding-left: var(--space-150); color: var(--ci-progress); font-size: 0.9em; display: flex; flex-direction: column; gap: var(--space-050); }
 .qa-scenario__steps { display: flex; flex-direction: column; gap: var(--space-150); margin: 0; padding: 0; list-style: none; }
 /* Рамка вокруг шага: на телефоне поля идут сплошной лентой, и без неё не видно,

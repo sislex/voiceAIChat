@@ -180,8 +180,13 @@ export function placeScenario(
 ): AutomatedQaScenario[] {
   const name = (scenario.name ?? '').trim()
   if (!name) {
-    const generated = `Сценарий ${current.length + 1}`
-    return [...current, { ...scenario, name: generated }]
+    // Имя подбирается свободное, а не по длине набора: «Сценарий 2» мог уже быть
+    // занят вручную, и сгенерированное имя создавало ровно тот дубль, ради
+    // устранения которого эта функция и появилась.
+    const taken = new Set(current.map((item) => (item.name ?? '').trim()))
+    let index = current.length + 1
+    while (taken.has(`Сценарий ${index}`)) index++
+    return [...current, { ...scenario, name: `Сценарий ${index}` }]
   }
   const at = current.findIndex((item) => (item.name ?? '').trim() === name)
   const normalized = { ...scenario, name }
