@@ -36,6 +36,12 @@ export interface AutomatedQaScenarioOutcome {
   blocked: string | null
   /** Почему не вышло снять экран. Пустое — снимок либо сделан, либо не нужен. */
   screenshotError?: string
+  /**
+   * Ошибки консоли страницы за прогон. Проба (`scripts/reader-probe.mjs`)
+   * собирала их с самого начала, а этап — нет: разработчик получал шаг, деталь
+   * и снимок, но не «Uncaught TypeError …», который обычно и есть ответ.
+   */
+  pageErrors: string[]
 }
 
 export interface AutomatedQaScenarioRunnerDeps {
@@ -59,7 +65,7 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
     async run(input) {
       const steps = input.scenario.steps
       if (!input.scenario.startUrl.trim()) {
-        return { steps: [], screenshotUrl: null, blocked: 'Сценарий Automated QA не настроен: не задан стартовый адрес' }
+        return { steps: [], screenshotUrl: null, pageErrors: [], blocked: 'Сценарий Automated QA не настроен: не задан стартовый адрес' }
       }
       const sessionId = `qa-${input.runId}`
       const deadline = now() + (input.budgetMs ?? DEFAULT_BUDGET_MS)
@@ -72,20 +78,21 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         const session = await deps.browser.start({ sessionId, userKey: input.userId, conversationKey: input.runId })
         incarnation = session.incarnation
       } catch (error) {
-        return { steps: [], screenshotUrl: null, blocked: `Изолированный Chromium недоступен: ${firstLine(error)}` }
+        return { steps: [], screenshotUrl: null, pageErrors: [], blocked: `Изолированный Chromium недоступен: ${firstLine(error)}` }
       }
       const send = async (command: Parameters<BrowserRunnerClient['command']>[1]['command']): Promise<unknown> =>
         deps.browser.command(sessionId, { requestId: randomUUID(), incarnation, actor: 'assistant', command }, input.signal)
       const results: AutomatedQaStepResult[] = []
       let screenshotUrl: string | null = null
       let screenshotError = ''
+      let pageErrors: string[] = []
       let blocked: string | null = null
       let expiredBudget = false
       try {
         try {
           await send({ type: 'navigate', url: input.scenario.startUrl })
         } catch (error) {
-          return { steps: [], screenshotUrl: null, blocked: `Стартовый адрес не открылся: ${firstLine(error)}` }
+          return { steps: [], screenshotUrl: null, pageErrors: [], blocked: `Стартовый адрес не открылся: ${firstLine(error)}` }
         }
         let failed = false
         let expired = false
@@ -116,6 +123,19 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         }
         expiredBudget = expired
         if (unverifiable) blocked = unverifiable
+        // Журнал консоли читается до остановки сессии — после неё его негде взять.
+        try {
+          const seen = await send({ type: 'inspect', action: { kind: 'console', level: 'error', limit: 20 } }) as { console?: Array<{ text?: string }> }
+          // Одно исключение приходит дважды: раннер слушает и `console`, и
+          // `pageerror`. Повтор в вердикте — шум, но и терять кратность нельзя:
+          // «×12» отличает разовый сбой от цикла.
+          const counts = new Map<string, number>()
+          for (const entry of seen?.console ?? []) {
+            const text = String(entry.text ?? '').slice(0, 500)
+            if (text) counts.set(text, (counts.get(text) ?? 0) + 1)
+          }
+          pageErrors = [...counts].map(([text, count]) => (count > 1 ? `${text} (×${count})` : text))
+        } catch { /* журнал — не повод завалить прогон */ }
         // Снимок делается в любом исходе: на провале он объясняет причину, на
         // успехе служит доказательством, что проверялась именно та страница.
         try {
@@ -137,8 +157,8 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
       }
       // Исчерпанный бюджет — инфраструктура, а не дефект реализации: сценарий
       // не досмотрен, и судить по нему о работоспособности нельзя.
-      if (expiredBudget) return { steps: results, screenshotUrl, blocked: 'Исчерпан бюджет времени прогона сценария', ...(screenshotError ? { screenshotError } : {}) }
-      return { steps: results, screenshotUrl, blocked, ...(screenshotError ? { screenshotError } : {}) }
+      if (expiredBudget) return { steps: results, screenshotUrl, pageErrors, blocked: 'Исчерпан бюджет времени прогона сценария', ...(screenshotError ? { screenshotError } : {}) }
+      return { steps: results, screenshotUrl, pageErrors, blocked, ...(screenshotError ? { screenshotError } : {}) }
     }
   }
 }

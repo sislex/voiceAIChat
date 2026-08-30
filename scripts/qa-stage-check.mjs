@@ -55,6 +55,9 @@ for (const [index, scenario] of scenarios.entries()) {
   const size = existsSync(shot) ? statSync(shot).size : 0
   console.log(`${label}: ${outcome.blocked ? `ЗАБЛОКИРОВАН — ${outcome.blocked}` : outcome.steps.every((s) => s.status === 'passed') ? 'пройден' : 'ПРОВАЛЕН'}`)
   console.log(`  снимок: ${size ? `${size} байт` : 'НЕТ'}${outcome.screenshotError ? ` (ошибка: ${outcome.screenshotError})` : ''}`)
+  // Ошибки страницы этап собирает с круга 27: провалом они не считаются, но в
+  // вердикт уходят — обычно они и есть ответ на «почему шаг не прошёл».
+  console.log(`  ошибки страницы: ${outcome.pageErrors.length ? outcome.pageErrors.join(' ; ') : 'нет'}`)
   if (outcome.blocked || outcome.steps.some((s) => s.status === 'failed')) { failed = true; break }
 }
 

@@ -139,6 +139,42 @@ describe('ресурсы прогона (круг 10)', () => {
   })
 })
 
+describe('ошибки страницы', () => {
+  it('собираются до остановки сессии и приходят в исходе', async () => {
+    const client = browser({ command: vi.fn(async (_id, request) => (request.command.type === 'inspect'
+      ? { ok: true, console: [{ level: 'error', text: 'Uncaught TypeError: columns is undefined', at: 1 }] }
+      : { ok: true }) as never) })
+    const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: mkdtempSync(join(tmpdir(), 'qa-shot-')), screenshotUrl: () => '/shot' })
+    const outcome = await runner.run({
+      runId: 'run-errors', userId: 'alice', signal: new AbortController().signal,
+      scenario: scenario([{ id: 's1', title: 'Открыть доску', action: { kind: 'click', selector: '#board' } }])
+    })
+    expect(outcome.pageErrors).toEqual(['Uncaught TypeError: columns is undefined'])
+    expect(outcome.pageErrors.join()).not.toContain('×')
+    // Провалом сами по себе не считаются: страница может ругаться на постороннее.
+    expect(outcome.blocked).toBeNull()
+    expect(outcome.steps[0]).toMatchObject({ status: 'passed' })
+  })
+})
+
+describe('повтор ошибки страницы', () => {
+  it('схлопывается с кратностью: одно исключение раннер видит и в console, и в pageerror', async () => {
+    const client = browser({ command: vi.fn(async (_id, request) => (request.command.type === 'inspect'
+      ? { ok: true, console: [
+          { level: 'error', text: 'Cannot read properties of undefined', at: 1 },
+          { level: 'error', text: 'Cannot read properties of undefined', at: 2 },
+          { level: 'error', text: 'Failed to load resource: 500', at: 3 }
+        ] }
+      : { ok: true }) as never) })
+    const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: mkdtempSync(join(tmpdir(), 'qa-shot-')), screenshotUrl: () => '/shot' })
+    const outcome = await runner.run({
+      runId: 'run-dup', userId: 'alice', signal: new AbortController().signal,
+      scenario: scenario([{ id: 's1', title: 'Открыть', action: { kind: 'click', selector: '#a' } }])
+    })
+    expect(outcome.pageErrors).toEqual(['Cannot read properties of undefined (×2)', 'Failed to load resource: 500'])
+  })
+})
+
 describe('шаг, который нельзя проверить', () => {
   it('блокирует прогон вместо провала: судить о реализации по нему нельзя', async () => {
     // Страница длиннее предела чтения: текст мог быть за обрезом.

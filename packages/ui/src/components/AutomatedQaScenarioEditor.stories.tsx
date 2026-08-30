@@ -80,7 +80,11 @@ export const CheckResults: Story = {
     ...ManyScenarios.args,
     onCheck: async () => ([
       { name: 'Вход', passed: true, blocked: null, steps: [], durationMs: 1400 },
-      { name: 'Доска проекта', passed: false, blocked: null, durationMs: 2600, steps: [{ id: 's', title: 'Создать задачу', status: 'failed' as const, detail: 'локатор не найден', durationMs: 5000 }] },
+      {
+        name: 'Доска проекта', passed: false, blocked: null, durationMs: 2600,
+        steps: [{ id: 's', title: 'Создать задачу', status: 'failed' as const, detail: 'локатор не найден', durationMs: 5000 }],
+        pageErrors: ['Uncaught TypeError: Cannot read properties of undefined (reading \'columns\') at BoardView.tsx:142']
+      },
       { name: 'Настройки', passed: false, blocked: 'Стартовый адрес не открылся', steps: [], durationMs: 300 }
     ])
   },
