@@ -53,10 +53,14 @@ export function recordScroll(steps: RecordedStep[], deltaY: number): RecordedSte
   const last = steps.at(-1)
   if (last && last.action.kind === 'scroll' && typeof last.action.dy === 'number') {
     const merged = last.action.dy + deltaY
+    // Прокрутил вниз и обратно — шаг схлопнулся в ноль: такое действие ничего не
+    // делает, а в сценарии выглядит осмысленным. Убираем его целиком.
+    if (merged === 0) return steps.slice(0, -1)
     return steps.map((step, index) => (index === steps.length - 1
       ? { ...step, title: `Прокрутить на ${merged} px`, action: { kind: 'scroll' as const, dy: merged } }
       : step))
   }
+  if (deltaY === 0) return steps
   return [...steps, {
     id: `step-${steps.length + 1}`,
     title: `Прокрутить на ${deltaY} px`,
@@ -87,9 +91,19 @@ export function needsWaitHint(steps: RecordedStep[]): boolean {
  * он зелёный, пока клики попадают, даже если страница показала ошибку.
  */
 export function expectOnLastStep(steps: RecordedStep[], text: string, absent = false): RecordedStep[] {
-  if (!steps.length || !text.trim()) return steps
+  return expectOnStep(steps, steps.at(-1)?.id ?? '', text, absent)
+}
+
+/**
+ * Ожидание на конкретном шаге. Раньше проверку можно было повесить только на
+ * последний: понял на середине записи, что нужна проверка, — переписывай
+ * сценарий целиком.
+ */
+export function expectOnStep(steps: RecordedStep[], id: string, text: string, absent = false): RecordedStep[] {
+  const value = text.trim()
+  if (!steps.length || !value || !steps.some((step) => step.id === id)) return steps
   const key = absent ? 'expectAbsentText' : 'expectText'
-  return steps.map((step, index) => (index === steps.length - 1 ? { ...step, [key]: text.trim() } : step))
+  return steps.map((step) => (step.id === id ? { ...step, [key]: value } : step))
 }
 
 /** Убрать шаг: промах мышью не должен стоить всей записи. */
