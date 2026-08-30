@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 
 export const PACKAGES = [
   { id: 'shared', path: 'packages/shared', workspace: '@voicechat/shared' },
+  { id: 'sessions-core', path: 'packages/sessions-core', workspace: '@voicechat/sessions-core' },
   { id: 'server', path: 'apps/server', workspace: '@voicechat/server' },
   { id: 'runner', path: 'apps/llm-runner', workspace: '@voicechat/llm-runner' },
   { id: 'tts-runner', path: 'apps/tts-runner', workspace: '@voicechat/tts-runner' },
@@ -21,6 +22,9 @@ export const PACKAGES = [
 
 // Это явная карта зависимостей: shared — контракт всех workspace-потребителей.
 const sharedConsumers = ['server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder']
+// Ядро модуля сессий переносимо и ни от кого не зависит, но его правки видны
+// всем, кто им пользуется: серверу (хранилище и политики) и UI (разбор устройств).
+const sessionsCoreConsumers = ['server', 'ui', 'web']
 const workspacePackages = PACKAGES.filter((pkg) => pkg.workspace)
 const fullGate = (reason) => ({ full: true, reason, packages: workspacePackages })
 const harmlessPaths = [/^docs\//, /^generated\/kb\//, /^(README|LICENSE)(\.md)?$/]
@@ -49,6 +53,7 @@ export function selectAffected(files) {
   }
 
   if (affected.has('shared')) for (const consumer of sharedConsumers) affected.add(consumer)
+  if (affected.has('sessions-core')) for (const consumer of sessionsCoreConsumers) affected.add(consumer)
   if (affected.has('ui')) affected.add('web-recorder')
   return { full: false, reason: null, packages: PACKAGES.filter((pkg) => affected.has(pkg.id)) }
 }

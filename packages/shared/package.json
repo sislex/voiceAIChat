@@ -13,6 +13,7 @@
     "test": "vitest run --silent"
   },
   "devDependencies": {
+    "@voicechat/sessions-core": "*",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   }
