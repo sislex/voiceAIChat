@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ProjectDetail } from '@shared/projects'
 import type { AutomatedQaScenario } from '@shared/qa'
 import { AutomatedQaScenarioEditor } from './AutomatedQaScenarioEditor'
@@ -110,6 +110,20 @@ describe('разовый прогон набора (круг 24)', () => {
     expect(line.closest('li')).toHaveAttribute('data-state', 'blocked')
   })
 
+  it('шаги переставляются: раньше поменять порядок можно было только удалив шаг', () => {
+    const onUpdate = vi.fn()
+    const two: AutomatedQaScenario = { name: 'Доска', startUrl: 'https://a.b/', steps: [
+      { id: 's1', title: 'Первый', action: { kind: 'click', selector: '#a' } },
+      { id: 's2', title: 'Второй', action: { kind: 'click', selector: '#b' } }
+    ] }
+    render(<AutomatedQaScenarioEditor detail={detailWith(two)} isOwner onUpdate={onUpdate} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Поднять шаг «Второй»' }))
+    expect(onUpdate.mock.calls[0][1].automatedQaScenarios[0].steps.map((step: { id: string }) => step.id)).toEqual(['s2', 's1'])
+    // У крайних шагов направление, которого нет, недоступно.
+    expect(screen.getByRole('button', { name: 'Поднять шаг «Первый»' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Опустить шаг «Второй»' })).toBeDisabled()
+  })
+
   it('ошибки страницы видны рядом с итогом сценария', async () => {
     // Иначе человек, который только что записал сценарий, видит «провален» и
     // идёт перезапускать, вместо того чтобы прочитать причину.
@@ -121,6 +135,27 @@ describe('разовый прогон набора (круг 24)', () => {
     render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
     fireEvent.click(screen.getByRole('button', { name: 'Прогнать набор сейчас' }))
     expect(await screen.findByText('Uncaught TypeError: columns is undefined')).toBeInTheDocument()
+  })
+
+  it('снимок разового прогона показывается содержимым: роут снимка без рана отвечает 404', async () => {
+    const onCheck = vi.fn(async () => ([{
+      name: 'Доска', passed: false, blocked: null, durationMs: 900, steps: [],
+      screenshot: 'data:image/png;base64,QQ=='
+    }]))
+    render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать набор сейчас' }))
+    expect((await screen.findByAltText('Экран в конце сценария «Доска»') as HTMLImageElement).src).toContain('base64,QQ==')
+  })
+
+  it('отдельный сценарий прогоняется без остального набора', async () => {
+    const onCheck = vi.fn(async () => ([]))
+    const detail = detailWith(
+      { name: 'Вход', startUrl: 'https://a.b/', steps: [{ id: 's1', title: 'Шаг', action: { kind: 'click', selector: '#a' } }] },
+      { name: 'Доска', startUrl: 'https://a.b/board', steps: [{ id: 's1', title: 'Шаг', action: { kind: 'click', selector: '#b' } }] }
+    )
+    render(<AutomatedQaScenarioEditor detail={detail} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Только «Вход»' }))
+    await waitFor(() => expect(onCheck).toHaveBeenCalledWith(detail.id, 0))
   })
 
   it('отказ сервера показывается, а не теряется', async () => {

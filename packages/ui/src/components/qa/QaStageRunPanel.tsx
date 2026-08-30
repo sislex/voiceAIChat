@@ -19,6 +19,8 @@ const STEP_LABEL = { passed: 'пройден', failed: 'провален', skipp
 function AutomatedQaVerdictView(props: { result: Record<string, unknown> }): JSX.Element {
   const verdict = parseAutomatedQaVerdict(props.result)
   if (!verdict) return <section><h4>Результат</h4><pre>{JSON.stringify(props.result, null, 2)}</pre></section>
+  const shownAtSteps = new Set(verdict.steps.flatMap((step) => step.pageErrors ?? []))
+  const restPageErrors = (verdict.pageErrors ?? []).filter((item) => !shownAtSteps.has(item))
   return <section className="qa-verdict" data-testid="qa-verdict">
     <h4>Вердикт</h4>
     <p className={`qa-verdict__summary qa-verdict__summary--${verdict.passed ? 'passed' : 'failed'}`}>{verdict.summary}</p>
@@ -29,14 +31,25 @@ function AutomatedQaVerdictView(props: { result: Record<string, unknown> }): JSX
       {verdict.exitCode !== null && <><dt>Код выхода</dt><dd>{verdict.exitCode}</dd></>}
       <dt>Длительность</dt><dd>{Math.round(verdict.durationMs / 1000)} с</dd>
     </dl>
-    {verdict.steps.length > 0 && <ol className="qa-verdict__steps">{verdict.steps.map((step) => <li key={step.id} data-status={step.status}>{step.title} — {STEP_LABEL[step.status]}{step.detail && <>: {step.detail}</>}</li>)}</ol>}
+    {verdict.steps.length > 0 && <ol className="qa-verdict__steps">{verdict.steps.map((step) => (
+      <li key={step.id} data-status={step.status}>
+        {step.title} — {STEP_LABEL[step.status]}{step.detail && <>: {step.detail}</>}
+        {/* Ошибки, появившиеся именно на этом шаге: за весь прогон было не
+            понять, какое действие сломало страницу. */}
+        {step.pageErrors && step.pageErrors.length > 0 && (
+          <ul className="qa-verdict__step-errors">{step.pageErrors.map((item, at) => <li key={`${at}-${item.slice(0, 40)}`}>{item}</li>)}</ul>
+        )}
+      </li>
+    ))}</ol>}
     {/* Ошибки страницы стоят перед снимком: обычно они и есть ответ, а снимок
         только подтверждает. Провалом сами по себе не считаются — страница может
         ругаться на постороннее. */}
-    {verdict.pageErrors && verdict.pageErrors.length > 0 && (
+    {/* Остаток: ошибки, не привязанные ни к одному шагу (прилетели после
+        последнего) или пришедшие из старого рана без разбивки по шагам. */}
+    {restPageErrors.length > 0 && (
       <div className="qa-verdict__page-errors">
-        <h5>Ошибки на странице</h5>
-        <ul>{verdict.pageErrors.map((item, index) => <li key={`${index}-${item.slice(0, 40)}`}>{item}</li>)}</ul>
+        <h5>{verdict.steps.some((step) => step.pageErrors?.length) ? 'Ошибки вне шагов' : 'Ошибки на странице'}</h5>
+        <ul>{restPageErrors.map((item, index) => <li key={`${index}-${item.slice(0, 40)}`}>{item}</li>)}</ul>
       </div>
     )}
     {verdict.screenshotUrl && <a className="qa-verdict__shot" href={verdict.screenshotUrl} target="_blank" rel="noreferrer"><img src={verdict.screenshotUrl} alt="Снимок экрана в момент вердикта" /></a>}

@@ -23,6 +23,12 @@ export interface AutomatedQaScenarioInput {
   budgetMs?: number
   /** Прогресс: вызывается сразу после каждого шага, чтобы лента не молчала. */
   onStep?: (step: AutomatedQaStepResult, index: number, total: number) => void
+  /**
+   * Снимок содержимым вместо файла. У разового прогона нет рана в БД, а роут
+   * снимка без рана отвечает 404: файл на диске был недостижим и удалялся
+   * сборщиком как осиротевший — писать его значило плодить мусор.
+   */
+  inlineScreenshot?: boolean
 }
 
 export interface AutomatedQaScenarioOutcome {
@@ -36,6 +42,8 @@ export interface AutomatedQaScenarioOutcome {
   blocked: string | null
   /** Почему не вышло снять экран. Пустое — снимок либо сделан, либо не нужен. */
   screenshotError?: string
+  /** Снимок содержимым (`inlineScreenshot`), а не файлом на диске. */
+  screenshotDataUrl?: string
   /**
    * Ошибки консоли страницы за прогон. Проба (`scripts/reader-probe.mjs`)
    * собирала их с самого начала, а этап — нет: разработчик получал шаг, деталь
@@ -58,6 +66,24 @@ export interface AutomatedQaScenarioRunner {
 
 /** Бюджет всего Playwright-прогона по умолчанию. */
 const DEFAULT_BUDGET_MS = 10 * 60_000
+
+/**
+ * Ошибки консоли с момента прошлого чтения: журнал читается с `clear`, поэтому
+ * каждый вызов отдаёт только новое. Повтор одного текста схлопывается с
+ * кратностью — одно исключение раннер видит дважды, слушателями `console` и
+ * `pageerror`, а «×12» отличает разовый сбой от цикла.
+ */
+async function readPageErrors(send: ScenarioSend): Promise<string[]> {
+  try {
+    const seen = await send({ type: 'inspect', action: { kind: 'console', level: 'error', limit: 50, clear: true } }) as { console?: Array<{ text?: string }> }
+    const counts = new Map<string, number>()
+    for (const entry of seen?.console ?? []) {
+      const text = String(entry.text ?? '').slice(0, 500)
+      if (text) counts.set(text, (counts.get(text) ?? 0) + 1)
+    }
+    return [...counts].map(([text, count]) => (count > 1 ? `${text} (×${count})` : text))
+  } catch { return [] }
+}
 
 export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerDeps): AutomatedQaScenarioRunner {
   const now = deps.now ?? Date.now
@@ -85,7 +111,8 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
       const results: AutomatedQaStepResult[] = []
       let screenshotUrl: string | null = null
       let screenshotError = ''
-      let pageErrors: string[] = []
+      let screenshotDataUrl = ''
+      const pageErrors: string[] = []
       let blocked: string | null = null
       let expiredBudget = false
       try {
@@ -111,7 +138,15 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
           }
           const startedAt = now()
           const outcome = await runScenarioStep(step, send as ScenarioSend)
-          const result: AutomatedQaStepResult = { id: step.id, title: step.title, status: outcome.ok ? 'passed' : 'failed', detail: outcome.detail, durationMs: now() - startedAt }
+          // Журнал читается с очисткой: следующий шаг увидит только свои
+          // ошибки. Иначе одна поломка тянулась бы по всем шагам подряд, а за
+          // весь прогон (как в круге 27) непонятно, какое действие её вызвало.
+          const stepErrors = await readPageErrors(send)
+          const result: AutomatedQaStepResult = {
+            id: step.id, title: step.title, status: outcome.ok ? 'passed' : 'failed', detail: outcome.detail, durationMs: now() - startedAt,
+            ...(stepErrors.length ? { pageErrors: stepErrors } : {})
+          }
+          pageErrors.push(...stepErrors)
           results.push(result)
           input.onStep?.(result, index, steps.length)
           // Шаг, который нельзя проверить (действие невыразимо, страница длиннее
@@ -123,27 +158,21 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         }
         expiredBudget = expired
         if (unverifiable) blocked = unverifiable
-        // Журнал консоли читается до остановки сессии — после неё его негде взять.
-        try {
-          const seen = await send({ type: 'inspect', action: { kind: 'console', level: 'error', limit: 20 } }) as { console?: Array<{ text?: string }> }
-          // Одно исключение приходит дважды: раннер слушает и `console`, и
-          // `pageerror`. Повтор в вердикте — шум, но и терять кратность нельзя:
-          // «×12» отличает разовый сбой от цикла.
-          const counts = new Map<string, number>()
-          for (const entry of seen?.console ?? []) {
-            const text = String(entry.text ?? '').slice(0, 500)
-            if (text) counts.set(text, (counts.get(text) ?? 0) + 1)
-          }
-          pageErrors = [...counts].map(([text, count]) => (count > 1 ? `${text} (×${count})` : text))
-        } catch { /* журнал — не повод завалить прогон */ }
+        // Хвост: ошибки, прилетевшие после последнего шага (асинхронный запрос
+        // страницы вполне мог не успеть к моменту его завершения).
+        pageErrors.push(...await readPageErrors(send))
         // Снимок делается в любом исходе: на провале он объясняет причину, на
         // успехе служит доказательством, что проверялась именно та страница.
         try {
           const shot = await deps.browser.screenshot(sessionId, { requestId: randomUUID(), incarnation, actor: 'assistant', command: { type: 'screenshot', format: 'png' } })
-          const file = join(deps.screenshotDir, `${input.runId}.png`)
-          mkdirSync(dirname(file), { recursive: true })
-          writeFileSync(file, shot.buffer)
-          screenshotUrl = deps.screenshotUrl(input.runId)
+          if (input.inlineScreenshot) {
+            screenshotDataUrl = `data:image/png;base64,${shot.buffer.toString('base64')}`
+          } else {
+            const file = join(deps.screenshotDir, `${input.runId}.png`)
+            mkdirSync(dirname(file), { recursive: true })
+            writeFileSync(file, shot.buffer)
+            screenshotUrl = deps.screenshotUrl(input.runId)
+          }
         } catch (error) {
           // Снимок — не повод завалить этап, но и молчать нельзя: если он
           // перестанет получаться совсем, у вердиктов просто никогда не будет
@@ -157,8 +186,9 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
       }
       // Исчерпанный бюджет — инфраструктура, а не дефект реализации: сценарий
       // не досмотрен, и судить по нему о работоспособности нельзя.
-      if (expiredBudget) return { steps: results, screenshotUrl, pageErrors, blocked: 'Исчерпан бюджет времени прогона сценария', ...(screenshotError ? { screenshotError } : {}) }
-      return { steps: results, screenshotUrl, pageErrors, blocked, ...(screenshotError ? { screenshotError } : {}) }
+      const shot = { ...(screenshotError ? { screenshotError } : {}), ...(screenshotDataUrl ? { screenshotDataUrl } : {}) }
+      if (expiredBudget) return { steps: results, screenshotUrl, pageErrors, blocked: 'Исчерпан бюджет времени прогона сценария', ...shot }
+      return { steps: results, screenshotUrl, pageErrors, blocked, ...shot }
     }
   }
 }
