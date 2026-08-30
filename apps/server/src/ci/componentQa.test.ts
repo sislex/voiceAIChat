@@ -233,7 +233,7 @@ describe('createAutomatedQaRunner', () => {
         run: async (input) => {
           const step = { id: 's1', title: 'Открыть доску', status: 'passed' as const, detail: '', durationMs: 5 }
           input.onStep?.(step, 0, 1)
-          return { steps: [step], screenshotUrl: '/api/qa/runs/run/screenshot', blocked: null }
+          return { steps: [step], screenshotUrl: '/api/qa/runs/run/screenshot', pageErrors: [], blocked: null }
         }
       },
       completed: vi.fn()
@@ -254,7 +254,7 @@ describe('createAutomatedQaRunner', () => {
         markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: vi.fn()
       },
       executor: { run: vi.fn() },
-      scenarioRunner: { run: async () => ({ steps: [{ id: 's1', title: 'Кнопка «Создать»', status: 'failed', detail: 'локатор не найден', durationMs: 12 }], screenshotUrl: null, blocked: null }) },
+      scenarioRunner: { run: async () => ({ steps: [{ id: 's1', title: 'Кнопка «Создать»', status: 'failed', detail: 'локатор не найден', durationMs: 12 }], screenshotUrl: null, pageErrors: [], blocked: null }) },
       completed
     })
     runner.launch('run', 'owner')
@@ -263,6 +263,30 @@ describe('createAutomatedQaRunner', () => {
     expect(verdict.classification).toBe('implementation_defect')
     expect(verdict.summary).toContain('Кнопка «Создать»')
     expect(verdict.logTail).toContain('локатор не найден')
+  })
+
+  it('ошибки шага метятся именем сценария так же, как названия шагов', async () => {
+    // Иначе один и тот же текст с меткой (в списке прогона) и без неё (у шага)
+    // не совпадает, и панель показывает его дважды.
+    const completed = vi.fn()
+    const runner = createAutomatedQaRunner({
+      db: {
+        automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ name: 'Доска', startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Создать', action: { kind: 'click', selector: '#create' } }] }] }),
+        getQaStageRun: () => ({ projectId: 'project', status: 'queued' }),
+        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: vi.fn()
+      },
+      executor: { run: vi.fn() },
+      scenarioRunner: { run: async () => ({
+        steps: [{ id: 's1', title: 'Создать', status: 'failed', detail: 'не найден', durationMs: 12, pageErrors: ['TypeError: x is not a function'] }],
+        screenshotUrl: null, pageErrors: ['TypeError: x is not a function'], blocked: null
+      }) },
+      completed
+    })
+    runner.launch('run', 'owner')
+    await vi.waitFor(() => expect(completed).toHaveBeenCalled())
+    const verdict = completed.mock.calls[0][4] as AutomatedQaVerdict
+    expect(verdict.steps[0].pageErrors).toEqual(['Доска: TypeError: x is not a function'])
+    expect(verdict.pageErrors).toEqual(['Доска: TypeError: x is not a function'])
   })
 
   it('без настроенного Chromium режим playwright блокируется, а не валит задачу', async () => {
@@ -302,7 +326,7 @@ describe('набор сценариев (круг 20)', () => {
       scenarioRunner: {
         run: async (input) => {
           seen.push(input.scenario.name ?? input.scenario.startUrl)
-          return { steps: input.scenario.steps.map((step) => ({ id: step.id, title: step.title, status: 'passed' as const, detail: '', durationMs: 1 })), screenshotUrl: '/shot', blocked: null }
+          return { steps: input.scenario.steps.map((step) => ({ id: step.id, title: step.title, status: 'passed' as const, detail: '', durationMs: 1 })), screenshotUrl: '/shot', pageErrors: [], blocked: null }
         }
       },
       completed: vi.fn()
@@ -329,7 +353,7 @@ describe('набор сценариев (круг 20)', () => {
       scenarioRunner: {
         run: async (input) => {
           seen.push(input.scenario.name ?? '')
-          return { steps: [{ id: 'x', title: input.scenario.steps[0].title, status: 'failed' as const, detail: 'не найден', durationMs: 1 }], screenshotUrl: null, blocked: null }
+          return { steps: [{ id: 'x', title: input.scenario.steps[0].title, status: 'failed' as const, detail: 'не найден', durationMs: 1 }], screenshotUrl: null, pageErrors: [], blocked: null }
         }
       },
       completed
@@ -352,7 +376,7 @@ describe('набор сценариев (круг 20)', () => {
         markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: vi.fn()
       },
       executor: { run: vi.fn() },
-      scenarioRunner: { run: async () => ({ steps: [], screenshotUrl: null, blocked: null }) },
+      scenarioRunner: { run: async () => ({ steps: [], screenshotUrl: null, pageErrors: [], blocked: null }) },
       completed
     })
     runner.launch('run', 'owner')

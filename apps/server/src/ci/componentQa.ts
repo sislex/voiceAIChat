@@ -238,6 +238,7 @@ async function runScenario(
   let blocked: string | null = null
   let screenshotUrl: string | null = null
   let failedScenario: string | null = null
+  const pageErrors: string[] = []
 
   for (const [index, scenario] of scenarios.entries()) {
     if (controller.signal.aborted) break
@@ -254,15 +255,26 @@ async function runScenario(
       }
     })
     if (outcome.screenshotError) deps.db.appendAutomatedQaLog(runId, 'err', `${label}: снимок экрана не сделан: ${outcome.screenshotError}\n`)
+    // Ошибки страницы помечаются сценарием: в наборе иначе непонятно, чьи они.
+    for (const error of outcome.pageErrors ?? []) {
+      pageErrors.push(`${label}: ${error}`)
+      deps.db.appendAutomatedQaLog(runId, 'err', `${label}: ошибка страницы: ${error}\n`)
+    }
     // Имя сценария в названии шага: иначе в общем списке непонятно, чей он.
-    collected.push(...outcome.steps.map((step) => ({ ...step, id: `${label}/${step.id}`, title: `${label}: ${step.title}` })))
+    // Ошибки шага метятся так же, как ошибки прогона: иначе один и тот же текст
+    // с меткой и без неё не совпадает, и панель показывает его дважды — под
+    // шагом и в списке «вне шагов».
+    collected.push(...outcome.steps.map((step) => ({
+      ...step, id: `${label}/${step.id}`, title: `${label}: ${step.title}`,
+      ...(step.pageErrors?.length ? { pageErrors: step.pageErrors.map((error) => `${label}: ${error}`) } : {})
+    })))
     done += scenario.steps.length
     if (outcome.screenshotUrl) screenshotUrl = outcome.screenshotUrl
     if (outcome.blocked) { blocked = `${label}: ${outcome.blocked}`; break }
     if (outcome.steps.some((step) => step.status === 'failed')) { failedScenario = label; break }
   }
 
-  if (blocked) return { ...blockedVerdict('playwright', first, blocked, now, startedAt), steps: collected, screenshotUrl }
+  if (blocked) return { ...blockedVerdict('playwright', first, blocked, now, startedAt), steps: collected, screenshotUrl, ...(pageErrors.length ? { pageErrors } : {}) }
   const failed = collected.filter((step) => step.status === 'failed')
   const passed = totalSteps > 0 && failed.length === 0
   return {
@@ -275,6 +287,7 @@ async function runScenario(
     classification: passed ? null : totalSteps === 0 ? 'infrastructure' : 'implementation_defect',
     command: first, exitCode: null, durationMs: now() - startedAt,
     logTail: collected.filter((step) => step.status !== 'skipped').map((step) => `${step.title} — ${step.status}${step.detail ? `: ${step.detail}` : ''}`).join('\n').slice(-LOG_TAIL_LIMIT),
-    steps: collected, screenshotUrl
+    steps: collected, screenshotUrl,
+    ...(pageErrors.length ? { pageErrors } : {})
   }
 }

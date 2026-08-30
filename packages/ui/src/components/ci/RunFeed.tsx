@@ -13,6 +13,7 @@ import type { TaskPreparationStep } from '@shared/qa'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import type { CiMetrics } from '../../remote/ciBridge'
 import { ciLlmLabel, ciStageLabel, ciStatusIcon, ciStatusLabel, ciTone, fmtDuration } from './ciFormat'
+import { AnsiText } from './AnsiText'
 import { CiConsole } from './CiConsole'
 import { QuestionsForm } from '../QuestionsForm'
 import { Button } from '@voicechat/ui-kit'
@@ -243,8 +244,11 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
     const elapsed = step.startedAt ? (step.finishedAt ?? now()) - step.startedAt : null
     const pct = typical && elapsed ? Math.min(100, Math.round((elapsed / typical) * 100)) : null
     return (
-      <li key={step.id} className={`ci-step${nested ? ' ci-step--nested' : ''}`}>
+      <li key={step.id} className={`ci-step${nested ? ' ci-step--nested' : ''}${open ? ' ci-step--open' : ''}`}>
         <button className="ci-step-head" aria-expanded={open} onClick={() => setExpanded((e) => ({ ...e, [step.id]: !open }))}>
+          {/* Шеврон — общий с лентами карточки: до него о том, что строка
+              раскрывается, можно было только догадаться. */}
+          <span className="vc-feed-caret" aria-hidden="true" />
           <span className={`ci-step-icon ci-step-icon--${tone}`}>{ciStatusIcon(step.status)}</span>
           <span className="ci-step-title">{step.title}</span>
           {step.exitCode != null && step.exitCode !== 0 && <span className="ci-lozenge ci-lozenge--removed">exit {step.exitCode}</span>}
@@ -692,7 +696,7 @@ function StepLog({ lines, autoscroll }: StepLogProps): JSX.Element {
   const capped = !showAll && lines.length > LOG_CAP
   const shown = capped ? lines.slice(-LOG_CAP) : lines
   return (
-    <div className="ci-log" ref={ref}>
+    <div className="ci-log" ref={ref} role="log" aria-label="Вывод шага" tabIndex={0}>
       {capped && (
         <div>
           … {lines.length - LOG_CAP} строк скрыто ·{' '}
@@ -700,7 +704,7 @@ function StepLog({ lines, autoscroll }: StepLogProps): JSX.Element {
         </div>
       )}
       {shown.map((l, i) => (
-        <div key={`${l.seq}-${i}`} className={`ci-log-line ci-log-line--${l.stream}`}>{l.chunk}</div>
+        <div key={`${l.seq}-${i}`} className={`ci-log-line ci-log-line--${l.stream}`}><AnsiText>{l.chunk}</AnsiText></div>
       ))}
     </div>
   )

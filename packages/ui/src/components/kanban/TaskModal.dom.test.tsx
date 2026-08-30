@@ -165,6 +165,53 @@ describe('TaskModal — создание задачи из улучшения', 
     expect(screen.getAllByRole('button', { name: 'Реализовано' })).toHaveLength(1)
     expect(screen.getAllByRole('button', { name: 'Создать задачу ChatAI' })).toHaveLength(2)
   })
+
+  // Строка улучшения печатала сырые `new` и `development` — в русской карточке
+  // это читалось как отладочный вывод, а не как состояние ленты.
+  it('подписывает статус и источник по-русски и метит их тоном ленты', async () => {
+    const ci = createFakeCi()
+    ci.listTaskImprovements = vi.fn(async () => [improvement])
+    window.ci = ci
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
+    const row = (await screen.findByText('Улучшить ретраи')).closest('details')!
+    expect(within(row).getByText('Новое')).toHaveClass('vc-feed-status')
+    expect(within(row).getByText(/Разработка/)).toBeInTheDocument()
+    expect(row.querySelector('.vc-feed-dot--progress')).not.toBeNull()
+    expect(within(row).queryByText(/development/)).not.toBeInTheDocument()
+  })
+
+  it('пустой список улучшений показывает общий пустой экран карточки', async () => {
+    const ci = createFakeCi()
+    ci.listTaskImprovements = vi.fn(async () => [])
+    window.ci = ci
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
+    const empty = await screen.findByTestId('task-improvements-empty')
+    expect(empty).toHaveClass('vc-state--empty')
+    expect(within(empty).getByText('Улучшений пока нет')).toBeInTheDocument()
+  })
+})
+
+describe('TaskModal — черновик новой задачи', () => {
+  beforeEach(() => { window.ci = createFakeCi() })
+
+  // Поле названия стояло пустым и без подписи: сверху карточки был просто
+  // отступ, и куда вводить название — непонятно.
+  it('подписывает поле названия и подсказывает пример', () => {
+    render(<TaskModal {...props({ draft: true, task: mkTask({ title: '' }) })} />)
+    const title = screen.getByRole('textbox', { name: 'Заголовок задачи' })
+
+    expect(title).toHaveAttribute('placeholder')
+    expect(title.closest('label')).toHaveClass('jmodal-title-field')
+    expect(within(title.closest('label')!).getByText('Название')).toBeInTheDocument()
+  })
+
+  it('не показывает панель CI-рана: задачи ещё нет', () => {
+    render(<TaskModal {...props({ draft: true, onStartCi: vi.fn(), ciSummary: mkSummary() })} />)
+    expect(screen.queryByTestId('task-modal-ci')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+  })
 })
 
 describe('TaskModal — связанный чат создаётся при открытии карточки', () => {
@@ -275,6 +322,10 @@ describe('TaskModal — панель CI-рана', () => {
     const onOpenCiRun = vi.fn()
     const onStartCi = vi.fn()
     render(<TaskModal {...props({ ciSummary: mkSummary(), onOpenCiRun, onStartCi })} />)
+    // Идущий ран открывает карточку на «Ленте рана»; панель CI живёт в колонке
+    // деталей вкладки «Общее», и до неё надо дойти — теперь у панели вкладки
+    // есть `hidden`, и скрытое содержимое недоступно ни мыши, ни читалке.
+    fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
 
     const panel = screen.getByTestId('task-modal-ci')
     expect(panel).toHaveTextContent('выполняется')
@@ -302,6 +353,7 @@ describe('TaskModal — панель CI-рана', () => {
 
   it('когда ран ждёт ответа, кнопка зовёт ответить', () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'awaiting_input', awaitingInput: true }), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
     expect(screen.getByTestId('task-modal-ci')).toHaveTextContent('ждёт ответа')
     expect(screen.getByRole('button', { name: 'Ответить модели' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
@@ -334,6 +386,18 @@ function setMobile(mobile: boolean): void {
 describe('TaskModal — мобильная раскладка (как в Jira)', () => {
   beforeEach(() => { window.ci = createFakeCi() })
   afterEach(() => { setMobile(false) })
+
+  // Раскрытие в карточке выглядит одинаково: «Подробности» на телефоне брали
+  // текстовые ▾/▸, ленты — свой шеврон.
+  it('раскрывает «Подробности» тем же шевроном, что и ленты', () => {
+    setMobile(true)
+    render(<TaskModal {...props()} />)
+    const toggle = screen.getByRole('button', { name: /Подробности/ })
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle.querySelector('.vc-feed-caret')).not.toBeNull()
+    expect(toggle.textContent).not.toMatch(/[▾▸]/)
+  })
 
   it('статус и исполнитель — над описанием, остальные поля свёрнуты', () => {
     setMobile(true)
@@ -422,6 +486,7 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
   it('панель CI-рана видна и при свёрнутых «Подробностях»', () => {
     setMobile(true)
     render(<TaskModal {...props({ ciSummary: mkSummary(), onOpenCiRun: vi.fn(), onStartCi: vi.fn() })} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
 
     expect(screen.queryByTestId('task-modal-details')).not.toBeInTheDocument()
     expect(screen.getByTestId('task-modal-ci')).toBeInTheDocument()
@@ -546,6 +611,36 @@ describe('TaskModal — вкладки и merge', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
       'Общее', 'Временная шкала', 'Настройки', 'Ход выполнения', 'Улучшения', 'Ручное QA', 'Merge', 'Лента рана'
     ])
+  })
+
+  // `role="tablist"` без `role="tabpanel"` — полуфабрикат: скринридер видит
+  // вкладки, но не знает, что именно они открыли.
+  it('связывает вкладку с её панелью и водит по полосе стрелками', async () => {
+    render(<TaskModal {...props()} />)
+    const timeline = screen.getByRole('tab', { name: 'Временная шкала' })
+    const panel = screen.getByTestId('task-timeline-panel')
+
+    expect(panel).toHaveAttribute('role', 'tabpanel')
+    expect(timeline).toHaveAttribute('aria-controls', panel.id)
+    expect(panel).toHaveAttribute('aria-labelledby', timeline.id)
+    // У «Общего» панель тоже есть: две его колонки лежат в `.jmodal-general`.
+    const general = screen.getByRole('tab', { name: 'Общее' })
+    const generalPanel = document.getElementById(general.getAttribute('aria-controls')!)
+    expect(generalPanel).toHaveClass('jmodal-general')
+    expect(generalPanel).toHaveAttribute('role', 'tabpanel')
+    expect(generalPanel).not.toHaveAttribute('hidden')
+    expect(panel).toHaveAttribute('hidden')
+    // Внутрь полосы Tab заводит один раз: у невыбранных вкладок tabIndex=-1.
+    expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('tabindex', '0')
+    expect(timeline).toHaveAttribute('tabindex', '-1')
+
+    screen.getByRole('tab', { name: 'Общее' }).focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(timeline).toHaveAttribute('aria-selected', 'true')
+    await userEvent.keyboard('{End}')
+    expect(screen.getByRole('tab', { name: 'Лента рана' })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('растягивает только вкладку ленты рана на ширину контентной области', () => {

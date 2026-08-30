@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ComponentQaTaskState } from '@shared/qa'
+import { QA_RUN_STATUS_LABELS, QA_STEP_STATUS_LABELS } from '@shared/qa'
+import { Skeleton } from '@voicechat/ui-kit'
 import { Button } from '@voicechat/ui-kit'
 
 export function ComponentQaPanel(props:{projectId:string;taskId:string;active:boolean;onFixStarted?:(id:string)=>void}):JSX.Element {
@@ -26,11 +28,14 @@ export function ComponentQaPanel(props:{projectId:string;taskId:string;active:bo
     return ()=>window.clearInterval(timer)
   },[state?.activeRun?.id,load])
   if (!window.qa?.getComponent) return <section className="component-qa-panel">Component QA недоступен</section>
-  if (!state) return <section className="component-qa-panel">Загрузка Component QA…</section>
+  if (!state) return <section className="component-qa-panel">
+    <span className="vc-sr-only" aria-live="polite">Загрузка Component QA…</span>
+    <Skeleton variant="list" count={3} item="block" height={64} gap={10} />
+  </section>
   const run=state.latestRun
   const act=async(action:()=>Promise<unknown>)=>{setBusy(true);try{await action();await load()}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}}
   return <section className="component-qa-panel" aria-label="Component QA">
-    <header><h3>Component QA</h3>{run&&<span className={'qa-status qa-status--'+run.status}>{run.status}</span>}</header>
+    <header><h3>Component QA</h3>{run&&<span className={'qa-status qa-status--'+run.status}>{QA_RUN_STATUS_LABELS[run.status]}</span>}</header>
     {error&&<p role="alert">{error}</p>}
     {!run&&<p>Проверка ещё не запускалась.</p>}
     {state.launchReasons.length>0&&<div><strong>Запуск недоступен</strong><ul>{state.launchReasons.map(reason=><li key={reason}>{reason}</li>)}</ul></div>}
@@ -40,7 +45,7 @@ export function ComponentQaPanel(props:{projectId:string;taskId:string;active:bo
       {run.blockerReasons.length>0&&<ul>{run.blockerReasons.map(reason=><li key={reason}>{reason}</li>)}</ul>}
       <h4>Компоненты</h4><ul>{run.components.map(component=><li key={component.id}><strong>{component.name}</strong>{component.storybookStoryId?<> · <a href={run.storybookUrl?run.storybookUrl+'/?path=/story/'+component.storybookStoryId:'#'} target="_blank" rel="noreferrer">{component.storybookStoryId}</a></>:<> · исключён: {component.exclusionReason}; {component.alternativeVerification}</>}</li>)}</ul>
       <h4>Сценарии</h4><ul>{run.scenarios.map(item=><li key={item.testCase.id}>{item.testCase.title} — {item.status}{item.actualResult&&<div>{item.actualResult}</div>}</li>)}</ul>
-      <h4>Команды</h4>{run.commands.map(command=><details key={command.commandId}><summary>{command.name} — {command.status}, exit {command.exitCode??'—'}, {command.durationMs} ms</summary><code>{command.command}</code><pre>{command.stdout}{command.stderr}</pre>{command.diagnostic&&<p>{command.diagnostic}</p>}</details>)}
+      <h4>Команды</h4>{run.commands.map(command=><details key={command.commandId}><summary>{command.name} — {QA_STEP_STATUS_LABELS[command.status]}, exit {command.exitCode??'—'}, {command.durationMs} ms</summary><code>{command.command}</code><pre>{command.stdout}{command.stderr}</pre>{command.diagnostic&&<p>{command.diagnostic}</p>}</details>)}
       {run.log&&<details open={run.status==='running'}><summary>Потоковый лог</summary><pre>{run.log}</pre></details>}
       {run.artifacts.length>0&&<><h4>Артефакты</h4><ul>{run.artifacts.map(artifact=><li key={artifact.id}><a href={artifact.url||artifact.path}>{artifact.name}</a> ({artifact.kind})</li>)}</ul></>}
       {run.summary&&<p><strong>Итог:</strong> {run.summary}</p>}
