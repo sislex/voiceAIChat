@@ -352,6 +352,73 @@ describe('settingsStore', () => {
     store.dispose()
   })
 
+  // Два быстрых тумблера — два PUT; ответы приходят не по порядку.
+  it('ответ обогнанного сохранения не отбрасывает экран назад', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    let releaseFirst: null | (() => void) = null
+    const letFirstThrough = (): void => { (releaseFirst as (() => void) | null)?.() }
+    const realSave = api['settings:save']
+    vi.spyOn(api, 'settings:save').mockImplementationOnce(async (patch) => {
+      // Первый PUT «застревает в сети» и доходит до сервера последним.
+      await new Promise<void>((resolve) => { releaseFirst = resolve })
+      return realSave(patch)
+    })
+
+    const first = store.actions.updateSettings({ autoSpeak: true })
+    await store.actions.updateSettings({ theme: 'dark' }) // второй ответ пришёл раньше
+    expect(store.getState().settings.theme).toBe('dark')
+
+    letFirstThrough()
+    await first
+    // Ответ обогнанного PUT не применён, а расхождение с сервером снято
+    // перечитыванием: в записи есть оба изменения — и на экране тоже.
+    expect(api._state.settings).toMatchObject({ theme: 'dark', autoSpeak: true })
+    expect(store.getState().settings).toMatchObject({ theme: 'dark', autoSpeak: true })
+    store.dispose()
+  })
+
+  // Ответ запроса прежнего пользователя не должен «воскресить» его настройки
+  // в сессии того, кто вошёл следом.
+  it('ответ, отправленный до смены пользователя, игнорируется', async () => {
+    const { store, api } = make()
+    let release: null | ((value: unknown) => void) = null
+    const letThrough = (): void => { (release as ((value: unknown) => void) | null)?.(undefined) }
+    vi.spyOn(api, 'settings:get').mockImplementationOnce(async () => {
+      await new Promise((resolve) => { release = resolve })
+      return { ...DEFAULT_SETTINGS, theme: 'green' } as never
+    })
+
+    const pending = store.actions.refreshSettings()
+    store.actions.reset() // вышел один человек, вошёл другой
+    letThrough()
+    await pending
+
+    expect(store.getState().settingsLoaded).toBe(false)
+    expect(store.getState().settings.theme).toBe(DEFAULT_SETTINGS.theme)
+    store.dispose()
+  })
+
+  // Сервер отвергает движок, недоступный роли, — экран не должен остаться с ним.
+  it('отказ сервера (403) откатывает выбор и уведомляет', async () => {
+    const errors: string[] = []
+    const api = createFakeApi()
+    const store = createSettingsStore({
+      settings: withApi<SettingsClient>(api, {}),
+      stt: { enabled: true, inputEnabled: true },
+      tts: { enabled: true },
+      notify: (notice) => errors.push(notice.text)
+    })
+    await store.actions.load()
+    vi.spyOn(api, 'settings:save').mockRejectedValueOnce(new Error('llm engine is not available for role'))
+
+    await expect(store.actions.updateSettings({ llmEngineId: 'чужой' })).rejects.toThrow()
+
+    expect(store.getState().settings.llmEngineId).toBe(DEFAULT_SETTINGS.llmEngineId)
+    expect(errors[0]).toContain('llm engine is not available for role')
+    store.dispose()
+  })
+
   it('удалённая машина исчезает из настроек', async () => {
     const { store } = make()
     await store.actions.updateSettings({ execTarget: 'a1', defaultAgentId: 'a1' })

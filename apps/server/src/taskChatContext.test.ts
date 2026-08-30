@@ -110,6 +110,38 @@ describe('GET /api/conversations/:id/task-context', () => {
     db.restoreTaskChatWorkdir('admin', chat.id, project.id)
     expect(db.getConversation('admin', chat.id)).toMatchObject({ execTarget: null, workdir: null })
   })
+
+  // Машину могли удалить мимо чата: висячий id оставлял чат навсегда в
+  // «машина недоступна», и человеку приходилось переключать её руками.
+  it('забывает машину чата, которой больше нет в реестре', () => {
+    const { project, chat } = setup()
+    const gone = db.createAgent('admin', 'Удалённая')
+    db.linkMachine('admin', project.id, gone.id)
+    db.setProjectMachinePath('admin', project.id, gone.id, '/srv/gone')
+    db.setConversationExecTarget('admin', chat.id, gone.id)
+    db.deleteAgent('admin', gone.id)
+
+    const resolved = db.resolveConversationMachine('admin', chat.id, { isOnline: () => true })
+
+    expect(resolved?.source).not.toBe('explicit')
+    expect(resolved?.error).toBeNull()
+    expect(db.getConversation('admin', chat.id)?.execTarget).toBeNull()
+  })
+
+  // А машину, которая просто офлайн или временно недоступна в проекте,
+  // забывать нельзя — это осознанный выбор человека.
+  it('не забывает существующую машину, которая сейчас недоступна', () => {
+    const { chat } = setup()
+    db.createUser('stranger', 'password-stranger', 'developer')
+    const foreign = db.createAgent('stranger', 'Чужая машина')
+    db.setConversationExecTarget('admin', chat.id, foreign.id)
+
+    const resolved = db.resolveConversationMachine('admin', chat.id, { isOnline: () => true })
+
+    // Машина есть в реестре, просто недоступна этому чату — забывать нечего.
+    expect(resolved).toMatchObject({ agentId: foreign.id, source: 'explicit', error: 'unavailable' })
+    expect(db.getConversation('admin', chat.id)?.execTarget).toBe(foreign.id)
+  })
 })
 
 describe('контекст задачи в промпте хода', () => {

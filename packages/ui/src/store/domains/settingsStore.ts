@@ -159,6 +159,20 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
   }
 
   /**
+   * Эпоха домена: растёт на каждый `reset()` (выход, вход другим человеком).
+   * Ответ, отправленный до смены, применять нельзя — иначе запрос, начатый
+   * прежним пользователем, «воскресит» его настройки уже в чужой сессии.
+   */
+  let epoch = 0
+  /** Номер последнего начатого сохранения: ответы могут прийти не по порядку. */
+  let lastSave = 0
+
+  /** Ответ актуален: эпоха та же и (для сохранения) это не обгон более свежим патчем. */
+  function stillCurrent(startedAt: number, save = lastSave): boolean {
+    return startedAt === epoch && save === lastSave
+  }
+
+  /**
    * База для сохранения — только настройки, которые сервер уже подтвердил.
    * Если загрузка не удалась, догоняем её здесь; не вышло и это — патч не
    * уходит вовсе (ошибка всплывает вызывающему), потому что запись дефолтов
@@ -166,9 +180,12 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
    */
   async function baseSettings(): Promise<Settings> {
     if (getState().settingsLoaded) return getState().settings
+    const startedAt = epoch
     const settings = await client['settings:get']()
-    setState({ settings, settingsLoaded: true })
-    rememberTheme(settings)
+    if (stillCurrent(startedAt)) {
+      setState({ settings, settingsLoaded: true })
+      rememberTheme(settings)
+    }
     return settings
   }
 
@@ -179,6 +196,13 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
    * которое он только что поменял.
    */
   let savesInFlight = 0
+  /**
+   * Сохранения наложились друг на друга. Ответ последнего PUT видел не все
+   * патчи (сервер мог применить их в другом порядке), поэтому после того, как
+   * очередь опустеет, состояние догоняется с сервера — иначе экран расходится
+   * с записью на один тумблер.
+   */
+  let savesOverlapped = false
 
   /** Перечитывание в полёте: реконнект и `online` часто приходят парой. */
   let refreshing: Promise<void> | null = null
@@ -186,12 +210,13 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
   /** Перечитать настройки с сервера (сигнал извне: соседняя вкладка, реконнект, сеть). */
   async function refreshSettings(): Promise<void> {
     if (refreshing) return refreshing
+    const startedAt = epoch
     refreshing = (async () => {
       try {
         const settings = await client['settings:get']()
         // Своё несохранённое изменение важнее чужого снимка: пока патч в
         // полёте, ответ сервера уже устарел — он не видел нашего PUT.
-        if (savesInFlight > 0) return
+        if (savesInFlight > 0 || !stillCurrent(startedAt)) return
         setState({ settings, settingsLoaded: true })
         rememberTheme(settings)
       } catch (err) {
@@ -208,15 +233,20 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
   async function updateSettings(patch: Partial<Settings>): Promise<void> {
     const base = await baseSettings()
     const optimistic = { ...base, ...patch }
+    const startedAt = epoch
+    const save = ++lastSave
     setState({ settings: optimistic, settingsLoaded: true })
     rememberTheme(optimistic)
+    if (savesInFlight > 0) savesOverlapped = true
     savesInFlight += 1
     try {
       // На сервер уходит только патч: полный снимок этой вкладки затёр бы поля,
       // изменённые в соседней вкладке или на другом устройстве. Ответ — вся
       // запись, какой она стала, и она же становится состоянием.
       const saved = await client['settings:save'](patch)
-      if (saved) {
+      // Два быстрых тумблера дают два PUT, и ответы могут прийти не по порядку:
+      // применив ответ первого, экран отскочил бы к состоянию до второго.
+      if (saved && stillCurrent(startedAt, save)) {
         setState({ settings: saved })
         rememberTheme(saved)
       }
@@ -224,8 +254,12 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
     } catch (err) {
       // Оптимистичное состояние без отката врёт: экран показывает выбор,
       // которого на сервере нет, и следующий патч «закрепил» бы его.
-      setState({ settings: base })
-      rememberTheme(base)
+      // Откатываем только своё изменение — если поверх уже легло более свежее
+      // (или сменился пользователь), трогать состояние нельзя.
+      if (stillCurrent(startedAt, save)) {
+        setState({ settings: base })
+        rememberTheme(base)
+      }
       const text = err instanceof Error ? err.message : 'Не удалось сохранить настройки'
       // Тост, а не баннер экрана: это результат конкретного действия, и он
       // не должен затирать баннер идущей загрузки модели или голоса.
@@ -234,6 +268,10 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
       throw err
     } finally {
       savesInFlight -= 1
+      if (savesInFlight === 0 && savesOverlapped) {
+        savesOverlapped = false
+        await refreshSettings()
+      }
     }
   }
 
@@ -426,6 +464,8 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
       },
       reset() {
         // Тема — настройка взгляда: она переживает выход, как и свёрнутый сайдбар.
+        // Новая эпоха: ответы запросов прежнего пользователя больше не применяются.
+        epoch += 1
         core.resetState(initialState(deps.tts.enabled, savedTheme()))
       },
       selectAllowedProviders() {

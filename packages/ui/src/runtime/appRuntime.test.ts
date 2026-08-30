@@ -6,6 +6,7 @@ import { createAppRuntime } from './appRuntime'
 import { buildTestClients } from '../test/appHarness'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import type { SessionUser } from '@shared/types'
+import { DEFAULT_SETTINGS } from '@shared/types'
 import type { StoreDiagnostics } from '../store/devtools'
 
 const USER: SessionUser = { name: 'ann', role: 'admin' }
@@ -270,6 +271,26 @@ describe('AppRuntime — деплой во время работы', () => {
 
     await vi.waitFor(() => expect(runtime.settings.getState().settingsLoaded).toBe(true))
     expect(runtime.settings.getState().settings.theme).toBe('dark')
+    runtime.dispose()
+  })
+
+  // Один браузер, два человека подряд: настройки первого не должны просвечивать
+  // во второй сессии — ни в состоянии, ни в зеркале темы.
+  it('вход другим пользователем не оставляет чужих настроек', async () => {
+    const api = createFakeApi()
+    await api['settings:save']({ theme: 'dark', codexModel: 'gpt-5.4' })
+    const { runtime } = makeRuntime({ api })
+    await runtime.settings.actions.load()
+    expect(runtime.settings.getState().settings.theme).toBe('dark')
+
+    runtime.settings.actions.reset() // выход
+    expect(runtime.settings.getState()).toMatchObject({ settingsLoaded: false })
+    expect(runtime.settings.getState().settings.codexModel).toBe(DEFAULT_SETTINGS.codexModel)
+
+    // Второй человек: его настройки приходят с сервера, чужие не подмешиваются.
+    await api['settings:save']({ theme: 'light', codexModel: DEFAULT_SETTINGS.codexModel })
+    await runtime.settings.actions.load()
+    expect(runtime.settings.getState().settings).toMatchObject({ theme: 'light', codexModel: DEFAULT_SETTINGS.codexModel })
     runtime.dispose()
   })
 
