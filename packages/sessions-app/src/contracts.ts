@@ -18,6 +18,16 @@ export interface SessionsClient {
   listEnded?(): Promise<DeviceSession[]>
   /** «Это не я»: погасить всё и потребовать смену пароля. */
   panic?(): Promise<void>
+  /** События безопасности этого устройства — ответ на «что тут вообще было». */
+  history?(sid: string): Promise<SessionHistoryEvent[]>
+}
+
+/** Строка истории устройства: тип события, когда и подробность. */
+export interface SessionHistoryEvent {
+  id: number
+  at: number
+  type: string
+  details: string
 }
 
 /** События, приходящие живьём: список устарел или текущую сессию завершили. */
@@ -38,4 +48,11 @@ export interface SessionsHost {
   now?(): number
   /** Свои сроки и лимиты, если приложение живёт по другой политике. */
   policy?: Partial<SessionPolicy>
+  /**
+   * Экран снова показан пользователю (вкладка активна, окно в фокусе). Модуль
+   * по этому сигналу перечитывает список: живые кадры доходят не всегда — сон
+   * машины, обрыв WS, — а читают список именно в момент возврата к нему.
+   * Реализует хост: сам модуль про document и window не знает.
+   */
+  onVisible?(cb: () => void): () => void
 }

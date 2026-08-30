@@ -19,12 +19,14 @@ export interface SessionsPanelProps {
   readOnly?: boolean
   /** Порог, с которого появляется поиск: в списке из двух устройств он лишний. */
   searchFrom?: number
+  /** Сколько карточек рисовать за раз: аккаунты агентов набирают десятки сессий. */
+  maxVisible?: number
   confirm?: SessionsConfirm
   /** Момент отсчёта: тесты и Storybook замораживают время. */
   now?: number
 }
 
-export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readOnly = false, searchFrom = 4, confirm, now }: SessionsPanelProps): JSX.Element {
+export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readOnly = false, searchFrom = 4, maxVisible = 20, confirm, now }: SessionsPanelProps): JSX.Element {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState)
   const texts = useMemo(() => ({ ...DEFAULT_TEXTS, ...overrides }), [overrides])
   // Время идёт: «активность 5 минут назад» обязана стареть, пока окно открыто,
@@ -41,8 +43,13 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
   useEffect(() => {
     void store.actions.load()
   }, [store])
+  // Возврат к экрану — момент, когда список читают. Сигнал даёт хост
+  // (SessionsHost.onVisible): сам модуль про document и window не знает.
+  useEffect(() => store.onVisible?.(() => void store.actions.reload()), [store])
 
-  const views = store.visible()
+  const allViews = store.visible()
+  const views = allViews.slice(0, maxVisible)
+  const hidden = allViews.length - views.length
   const platforms = store.platforms()
   const ask = async (request: { title: string; text?: string }): Promise<boolean> => (confirm ? confirm({ ...request, variant: 'danger' }) : true)
 
@@ -101,10 +108,20 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
               }}
               onRename={(label) => void store.actions.rename(view.session.sid, label)}
               onTrust={(trusted) => void store.actions.setTrusted(view.session.sid, trusted)}
+              {...(store.capabilities.history ? { history: state.history[view.session.sid], onHistory: () => void store.actions.loadHistory(view.session.sid) } : {})}
+              {...(!readOnly && view.session.deviceKey
+                ? {
+                    onRevokeDevice: () => {
+                      void ask({ title: texts.revokeDeviceConfirmTitle(view.title), text: texts.revokeDeviceConfirmText })
+                        .then((ok) => (ok ? store.actions.revokeDevice(view.session.deviceKey!) : false))
+                    }
+                  }
+                : {})}
             />
           ))}
         </ul>
       )}
+      {hidden > 0 && <p className="vcs-note">{texts.moreHidden(hidden)}</p>}
       {!readOnly && store.capabilities.ended && (
         <EndedSessions sessions={state.ended} texts={texts} locale={locale} onOpen={() => void store.actions.loadEnded()} />
       )}

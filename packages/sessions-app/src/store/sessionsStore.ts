@@ -6,7 +6,7 @@
 // на место. Ждать ответа сервера здесь нечестно — человек нажимает «Завершить»
 // именно тогда, когда встревожен, и подвисший список читается как отказ.
 import { filterSessions, platformsOf, sortSessions, toView, type DeviceSession, type SessionPolicy, type SessionView } from '@voicechat/sessions-core'
-import type { SessionsClient, SessionsEvent, SessionsHost, SessionsRealtime } from '../contracts'
+import type { SessionHistoryEvent, SessionsClient, SessionsEvent, SessionsHost, SessionsRealtime } from '../contracts'
 
 export type SessionsStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -19,6 +19,8 @@ export interface SessionsState {
   platform: string | null
   /** Недавно завершённые сессии; null — ещё не запрашивали. */
   ended: DeviceSession[] | null
+  /** История по устройствам: sid → события; null — грузится. */
+  history: Record<string, SessionHistoryEvent[] | null>
   /** Sid, по которому идёт действие: карточка показывает занятость точечно. */
   busySid: string | null
   /** Идёт массовое действие — «выйти на других»/«выйти везде». */
@@ -32,6 +34,9 @@ export interface SessionsActions {
   setPlatform(platform: string | null): void
   loadEnded(): Promise<void>
   panic(): Promise<boolean>
+  loadHistory(sid: string): Promise<void>
+  /** Завершить все сессии этого устройства разом. */
+  revokeDevice(deviceKey: string): Promise<boolean>
   revoke(sid: string): Promise<boolean>
   revokeOthers(): Promise<boolean>
   revokeAll(): Promise<boolean>
@@ -48,6 +53,7 @@ export interface SessionsCapabilities {
   revokeAll: boolean
   ended: boolean
   panic: boolean
+  history: boolean
 }
 
 export interface SessionsStore {
@@ -59,6 +65,8 @@ export interface SessionsStore {
   visible(): SessionView[]
   /** Платформы, встреченные в списке: из них строится фильтр. */
   platforms(): string[]
+  /** Подписка на «экран снова видно» от хоста; нет хоста — нет подписки. */
+  onVisible?(cb: () => void): () => void
   /** Сколько сессий кроме текущей — от этого зависит массовая кнопка. */
   otherCount(): number
 }
@@ -71,7 +79,7 @@ export interface SessionsStoreOptions {
   notify?: { success?(message: string): void; error?(message: string): void }
 }
 
-const initial = (): SessionsState => ({ status: 'idle', sessions: [], error: null, query: '', platform: null, ended: null, busySid: null, busyAll: false })
+const initial = (): SessionsState => ({ status: 'idle', sessions: [], error: null, query: '', platform: null, ended: null, history: {}, busySid: null, busyAll: false })
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
@@ -133,7 +141,8 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
       revokeOthers: typeof client.revokeOthers === 'function',
       revokeAll: typeof client.revokeAll === 'function',
       ended: typeof client.listEnded === 'function',
-      panic: typeof client.panic === 'function'
+      panic: typeof client.panic === 'function',
+      history: typeof client.history === 'function'
     },
     getState: () => state,
     subscribe(listener) {
@@ -147,6 +156,7 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
     platforms() {
       return platformsOf(state.sessions)
     },
+    ...(host?.onVisible ? { onVisible: (cb: () => void) => host.onVisible!(cb) } : {}),
     otherCount() {
       return state.sessions.filter((s) => !s.current).length
     },
@@ -164,6 +174,34 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
       },
       setPlatform(platform) {
         set({ platform })
+      },
+      async loadHistory(sid) {
+        if (!client.history || state.history[sid] !== undefined) return
+        set({ history: { ...state.history, [sid]: null } })
+        try {
+          const events = await client.history(sid)
+          if (!disposed) set({ history: { ...state.history, [sid]: events } })
+        } catch (error) {
+          if (!disposed) set({ history: { ...state.history, [sid]: [] } })
+          notify?.error?.(messageOf(error))
+        }
+      },
+      async revokeDevice(deviceKey) {
+        // Отзываем по одной: массового роута нет, а последовательные вызовы
+        // честнее «атомарного» обещания, которого сервер не даёт.
+        const victims = state.sessions.filter((s) => s.deviceKey === deviceKey && !s.current)
+        if (victims.length === 0) return false
+        set({ busyAll: true, sessions: state.sessions.filter((s) => !victims.includes(s)) })
+        try {
+          for (const victim of victims) await client.revoke(victim.sid)
+          if (!disposed) set({ busyAll: false })
+          await read()
+          return true
+        } catch (error) {
+          if (!disposed) set({ busyAll: false })
+          await read()
+          return fail(error)
+        }
       },
       async loadEnded() {
         if (!client.listEnded) return

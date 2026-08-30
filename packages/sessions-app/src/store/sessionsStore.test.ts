@@ -25,12 +25,12 @@ describe('createSessionsStore: чтение', () => {
     await store.actions.load()
     expect(store.getState().status).toBe('ready')
     expect(store.getState().sessions).toHaveLength(4)
-    expect(store.capabilities).toEqual({ rename: true, trust: true, revokeOthers: true, revokeAll: true, ended: false, panic: false })
+    expect(store.capabilities).toEqual({ rename: true, trust: true, revokeOthers: true, revokeAll: true, ended: false, panic: false, history: false })
   })
 
   it('урезанный клиент (админка) объявляет только чтение и отзыв', () => {
     const store = createSessionsStore({ client: { list: async () => [], revoke: async () => undefined } })
-    expect(store.capabilities).toEqual({ rename: false, trust: false, revokeOthers: false, revokeAll: false, ended: false, panic: false })
+    expect(store.capabilities).toEqual({ rename: false, trust: false, revokeOthers: false, revokeAll: false, ended: false, panic: false, history: false })
   })
 
   it('ошибка чтения переводит в error и сохраняет текст для ErrorState', async () => {
@@ -242,6 +242,58 @@ describe('createSessionsStore: завершённые, паника и филь�
     await store.actions.load()
     expect(store.visible().find((v) => v.session.sid === 'a')?.siblings).toBe(1)
     expect(store.visible().find((v) => v.session.sid === 'c')?.siblings).toBe(0)
+  })
+})
+
+describe('createSessionsStore: история, отзыв устройства и сигнал видимости', () => {
+  it('история грузится один раз на устройство и переживает ошибку', async () => {
+    const history = vi.fn(async (sid: string) => [{ id: 1, at: FIXTURE_NOW, type: 'login', details: sid }])
+    const store = createSessionsStore({ client: clientOf(makeSessions(), { history }) })
+    await store.actions.load()
+    expect(store.capabilities.history).toBe(true)
+    await store.actions.loadHistory('phone')
+    expect(store.getState().history.phone?.[0]?.details).toBe('phone')
+    await store.actions.loadHistory('phone')
+    expect(history).toHaveBeenCalledTimes(1)
+
+    const failing = createSessionsStore({ client: clientOf(makeSessions(), { history: async () => { throw new Error('нет') } }) })
+    await failing.actions.load()
+    await failing.actions.loadHistory('phone')
+    // Пустой массив, а не «вечная загрузка»: иначе раздел висит спиннером.
+    expect(failing.getState().history.phone).toEqual([])
+  })
+
+  it('отзыв устройства гасит все его сессии, кроме текущей', async () => {
+    const sessions = [
+      makeSession({ sid: 'current', deviceKey: 'same', current: true }),
+      makeSession({ sid: 'a', deviceKey: 'same' }),
+      makeSession({ sid: 'b', deviceKey: 'same' }),
+      makeSession({ sid: 'other', deviceKey: 'another' })
+    ]
+    const revoked: string[] = []
+    const client = clientOf(sessions, {
+      revoke: async (sid) => { revoked.push(sid); const i = sessions.findIndex((s) => s.sid === sid); sessions.splice(i, 1) }
+    })
+    const store = createSessionsStore({ client })
+    await store.actions.load()
+    expect(await store.actions.revokeDevice('same')).toBe(true)
+    expect(revoked.sort()).toEqual(['a', 'b'])
+    expect(store.getState().sessions.map((s) => s.sid).sort()).toEqual(['current', 'other'])
+    // Устройства без соседей отзывать нечего.
+    expect(await store.actions.revokeDevice('another-missing')).toBe(false)
+  })
+
+  it('сигнал «экран снова видно» перечитывает список', async () => {
+    // Держим подписчика в объекте: с обычным let TypeScript сужает тип до null.
+    const bus: { notify: (() => void) | null } = { notify: null }
+    const client = clientOf(makeSessions())
+    const store = createSessionsStore({ client, host: { onVisible: (cb) => { bus.notify = cb; return () => { bus.notify = null } } } })
+    await store.actions.load()
+    expect(client.calls.filter((c) => c === 'list')).toHaveLength(1)
+    // Подписывается панель — здесь повторяем ровно её вызов.
+    store.onVisible?.(() => void store.actions.reload())
+    bus.notify?.()
+    await vi.waitFor(() => expect(client.calls.filter((c) => c === 'list').length).toBeGreaterThan(1))
   })
 })
 

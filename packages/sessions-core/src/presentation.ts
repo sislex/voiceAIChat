@@ -90,6 +90,16 @@ export function groupByDevice(sessions: readonly DeviceSession[]): Map<string, D
   return groups
 }
 
+/**
+ * Флаг страны из ISO-кода: две буквы переводятся в regional indicator symbols.
+ * Флаг читается быстрее кода — глаз находит «не ту» страну в списке мгновенно.
+ */
+export function countryFlag(country: string | null | undefined): string {
+  const code = (country ?? '').trim().toUpperCase()
+  if (!/^[A-Z]{2}$/.test(code)) return ''
+  return String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65))
+}
+
 /** Платформы, встреченные в списке: по ним строится фильтр в панели. */
 export function platformsOf(sessions: readonly DeviceSession[]): string[] {
   return [...new Set(sessions.map((s) => s.platform).filter((p): p is string => Boolean(p)))].sort()

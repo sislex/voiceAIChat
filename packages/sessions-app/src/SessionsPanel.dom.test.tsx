@@ -253,3 +253,70 @@ describe('SessionsPanel: платформы, соседи, активность 
   })
 })
 
+describe('SessionsPanel: цикл 3 — флаг, 2FA, история, устройство целиком, длинный список', () => {
+  it('флаг страны и бейдж подтверждённого входа видны в карточке', async () => {
+    const store = setup([
+      makeSession({ sid: 'a', current: true, twoFactor: true, geo: { country: 'RU', city: 'Москва', label: 'Москва, RU' } })
+    ])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    const card = await screen.findByTestId('session-a')
+    expect(within(card).getByText(/🇷🇺 Москва, RU/)).toBeInTheDocument()
+    expect(within(card).getByText('подтверждено кодом')).toBeInTheDocument()
+  })
+
+  it('история устройства грузится при раскрытии и показывает человеческие подписи', async () => {
+    const history = vi.fn(async () => [{ id: 7, at: FIXTURE_NOW - 60_000, type: 'session_trusted', details: 'Рабочий ноут' }])
+    const store = setup([makeSession({ sid: 'a', current: true })], { history })
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    const card = await screen.findByTestId('session-a')
+    expect(history).not.toHaveBeenCalled()
+    await userEvent.click(within(card).getByText('Что делало это устройство'))
+    await waitFor(() => expect(within(card).getByText(/устройство доверено: Рабочий ноут/)).toBeInTheDocument())
+  })
+
+  it('в истории не дублируется подпись события, если деталь совпадает с ней', async () => {
+    // Сервер кладёт в details ту же фразу — печатать её дважды незачем.
+    const history = vi.fn(async () => [{ id: 1, at: FIXTURE_NOW, type: 'login_new_device', details: 'вход с нового устройства' }])
+    const store = setup([makeSession({ sid: 'a', current: true })], { history })
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    const card = await screen.findByTestId('session-a')
+    await userEvent.click(within(card).getByText('Что делало это устройство'))
+    await waitFor(() => expect(within(card).getByText(/вход с нового устройства/)).toBeInTheDocument())
+    expect(within(card).queryByText(/вход с нового устройства: вход с нового устройства/)).toBeNull()
+  })
+
+  it('кнопка «завершить все сессии устройства» появляется только при соседях', async () => {
+    const store = setup([
+      makeSession({ sid: 'current', deviceKey: 'same', current: true }),
+      makeSession({ sid: 'a', deviceKey: 'same' }),
+      makeSession({ sid: 'lonely', deviceKey: 'other' })
+    ])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} confirm={async () => true} />)
+    await screen.findByTestId('session-current')
+    expect(within(screen.getByTestId('session-lonely')).queryByRole('button', { name: /Завершить устройство|Завершить другие входы/ })).toBeNull()
+    await userEvent.click(within(screen.getByTestId('session-current')).getByRole('button', { name: 'Завершить другие входы (1)' }))
+    await waitFor(() => expect(screen.queryByTestId('session-a')).toBeNull())
+    // Текущая остаётся: выбивать себя этой кнопкой пользователь не просил.
+    expect(screen.getByTestId('session-current')).toBeInTheDocument()
+  })
+
+  it('длинный список подрезается и честно говорит, сколько скрыто', async () => {
+    const many = Array.from({ length: 8 }, (_, i) => makeSession({ sid: `s${i}`, current: i === 0 }))
+    const store = setup(many)
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} maxVisible={5} />)
+    await screen.findByTestId('session-s0')
+    expect(screen.getAllByTestId(/^session-s\d$/)).toHaveLength(5)
+    expect(screen.getByText('Показаны первые записи, ещё 3 скрыто — уточните поиск')).toBeInTheDocument()
+  })
+
+  it('режим только для чтения не предлагает гасить устройство целиком', async () => {
+    const store = setup([
+      makeSession({ sid: 'a', deviceKey: 'same', current: true }),
+      makeSession({ sid: 'b', deviceKey: 'same' })
+    ])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} readOnly />)
+    await screen.findByTestId('session-a')
+    expect(screen.queryByRole('button', { name: /Завершить устройство|Завершить другие входы/ })).toBeNull()
+  })
+})
+

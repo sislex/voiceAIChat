@@ -61,6 +61,8 @@ export interface DeviceSession {
    * секрет, а не на User-Agent и подсеть, которые подделываются.
    */
   deviceSecret?: string | null
+  /** Вход подтверждён вторым фактором (или доверенным устройством после него). */
+  twoFactor?: boolean
   /** Сессия уже завершена (отозвана или истекла): в списке живых её нет. */
   ended?: boolean
   endedAt?: number
