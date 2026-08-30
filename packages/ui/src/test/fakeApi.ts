@@ -7,6 +7,7 @@ import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnap
 
 import type { RendererApi } from '@shared/ipc'
 import type { Conversation, Message, Settings } from '@shared/types'
+import { sanitizeSettingsPatch } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo, ModelPrice } from '@shared/admin'
 import type { AgentInfo } from '@shared/agentProtocol'
@@ -675,8 +676,10 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'llm:engines': async () => llmEngines.filter((e) => e.enabled).map(({ id, name, kind, isDefault }) => ({ id, name, kind, isDefault })),
     'settings:get': async () => ({ ...settings }),
     'settings:save': async (next) => {
-      // Как на сервере: тело — патч, отсутствующие поля сохраняют значение.
-      settings = { ...settings, ...next }
+      // Как на сервере: тело — патч, отсутствующие поля сохраняют значение,
+      // а в ответ уходит вся запись целиком.
+      settings = { ...settings, ...sanitizeSettingsPatch(next) }
+      return { ...settings }
     },
     'system:capabilities': async () => ({
       stt: { available: true, reason: '' },

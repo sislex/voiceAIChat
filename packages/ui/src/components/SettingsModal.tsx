@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ProjectTypesSettings } from './ProjectTypesSettings'
 import type { ProjectTypeNode } from '@shared/projectTypes'
 import type { LoadStatus } from '../lib/loadState'
-import { Dialog } from '@voicechat/ui-kit'
+import { Dialog, ErrorState } from '@voicechat/ui-kit'
 import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
@@ -91,6 +91,14 @@ export interface SettingsModalProps {
   /** Скачать скрипт агента (Node, .cjs). */
   onDownloadAgentScript: () => void
   onChange: (patch: Partial<Settings>) => void
+  /**
+   * Настройки загружены с сервера. `false` — на экране дефолты, и сохранять их
+   * нельзя: так после деплоя (сервер недоступен пару секунд) выбор пользователя
+   * уезжал в дефолты. Показываем это явно, а не молча рисуем «сброшенные».
+   */
+  settingsLoaded?: boolean
+  /** Повторить загрузку настроек (кнопка в баннере). */
+  onRetryLoad?: () => void
   onDownloadVoice: (id: string) => void
   /** Удалить установленный голос Piper. */
   onDeleteVoice: (id: string) => void
@@ -129,6 +137,8 @@ export function SettingsModal({
   onDownloadAgentApp,
   onDownloadAgentScript,
   onChange,
+  settingsLoaded = true,
+  onRetryLoad,
   onDownloadVoice,
   onDeleteVoice,
   onDeleteModel,
@@ -154,6 +164,15 @@ export function SettingsModal({
 
   return (
     <Dialog title="Настройки" size="md" testId="overlay" onClose={onClose}>
+        {!settingsLoaded && (
+          <ErrorState
+            compact
+            testId="settings-not-loaded"
+            message="Настройки не загружены — показаны значения по умолчанию"
+            detail="Сервер не ответил на запрос настроек. Менять их сейчас не стоит: изменение не сохранится, а прежний выбор вернётся после успешной загрузки."
+            {...(onRetryLoad ? { onRetry: onRetryLoad } : {})}
+          />
+        )}
         <div className="settbody">
           <nav className="settnav" aria-label="Разделы настроек">
             {SECTIONS.map((s) => (

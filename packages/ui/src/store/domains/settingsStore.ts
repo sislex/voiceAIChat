@@ -91,6 +91,8 @@ export interface SettingsActions {
   deleteModel(model: WhisperModel): Promise<void>
   /** Машину удалили: сбросить ссылки на неё в настройках. */
   forgetAgent(id: string): void
+  /** Настройки изменены снаружи (соседняя вкладка): перечитать их с сервера. */
+  refreshSettings(): Promise<void>
   reset(): void
   // --- Селекторы (нормализованный публичный вид) ---
   selectAllowedProviders(): LlmProvider[]
@@ -112,8 +114,12 @@ export interface SettingsDeps {
    * выглядит как сброшенные настройки.
    */
   prefs?: { get(key: string): string | null; set(key: string, value: string): void; remove(key: string): void }
-  /** Ошибка/успех операции — тостом (владелец очереди тостов — shellStore). */
+  /** Ошибка загрузки/скачивания — баннером экрана (владелец — shellStore). */
   notifyError?: (message: string) => void
+  /** Разовое уведомление тостом: неудачное сохранение настроек видно сразу. */
+  notify?: (notice: { kind: 'error' | 'success' | 'info'; text: string }) => void
+  /** Настройки сохранены — повод сообщить соседним вкладкам (адаптер знает как). */
+  onSettingsSaved?: (patch: Partial<Settings>) => void
 }
 
 function initialState(ttsAvailable: boolean, theme: Settings['theme'] = DEFAULT_SETTINGS.theme): SettingsState {
@@ -167,12 +173,32 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
   }
 
   async function updateSettings(patch: Partial<Settings>): Promise<void> {
-    const settings = { ...(await baseSettings()), ...patch }
-    setState({ settings, settingsLoaded: true })
-    rememberTheme(settings)
-    // На сервер уходит только патч: полный снимок этой вкладки затёр бы поля,
-    // изменённые в соседней вкладке или на другом устройстве.
-    await client['settings:save'](patch)
+    const base = await baseSettings()
+    const optimistic = { ...base, ...patch }
+    setState({ settings: optimistic, settingsLoaded: true })
+    rememberTheme(optimistic)
+    try {
+      // На сервер уходит только патч: полный снимок этой вкладки затёр бы поля,
+      // изменённые в соседней вкладке или на другом устройстве. Ответ — вся
+      // запись, какой она стала, и она же становится состоянием.
+      const saved = await client['settings:save'](patch)
+      if (saved) {
+        setState({ settings: saved })
+        rememberTheme(saved)
+      }
+      deps.onSettingsSaved?.(patch)
+    } catch (err) {
+      // Оптимистичное состояние без отката врёт: экран показывает выбор,
+      // которого на сервере нет, и следующий патч «закрепил» бы его.
+      setState({ settings: base })
+      rememberTheme(base)
+      const text = err instanceof Error ? err.message : 'Не удалось сохранить настройки'
+      // Тост, а не баннер экрана: это результат конкретного действия, и он
+      // не должен затирать баннер идущей загрузки модели или голоса.
+      if (deps.notify) deps.notify({ kind: 'error', text: `Настройки не сохранены: ${text}` })
+      else deps.notifyError?.(text)
+      throw err
+    }
   }
 
   /**
@@ -277,13 +303,24 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         rememberTheme(settings)
       },
       async loadCatalogs() {
-        await refreshMics()
-        await refreshModelStatus()
-        await refreshWhisperModels()
-        await refreshTtsVoices()
-        await refreshVoiceCatalog()
-        await refreshCapabilities()
-        await refreshMcpServers()
+        // Каталоги независимы, и отказ одного не должен отменять остальные:
+        // на стенде без Piper падение `tts:voices` уносило с собой и
+        // возможности системы, и список MCP — экран настроек оставался пустым.
+        const catalogs: Array<[string, () => Promise<void>]> = [
+          ['микрофоны', refreshMics],
+          ['статус модели', refreshModelStatus],
+          ['модели Whisper', refreshWhisperModels],
+          ['голоса TTS', refreshTtsVoices],
+          ['каталог голосов', refreshVoiceCatalog],
+          ['возможности системы', refreshCapabilities],
+          ['MCP-серверы', refreshMcpServers]
+        ]
+        const failed = (await Promise.allSettled(catalogs.map(([, load]) => load())))
+          .map((result, index) => result.status === 'rejected' ? { name: catalogs[index][0], reason: result.reason } : null)
+          .filter((item): item is { name: string; reason: unknown } => item !== null)
+        if (failed.length) {
+          console.warn('[settings] каталоги загружены не полностью:', failed.map((item) => item.name).join(', '), failed[0].reason)
+        }
       },
       updateSettings,
       async completeOnboarding() {
@@ -338,6 +375,15 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         await client['stt:deleteModel']({ model })
         await refreshWhisperModels()
         await refreshModelStatus()
+      },
+      async refreshSettings() {
+        try {
+          const settings = await client['settings:get']()
+          setState({ settings, settingsLoaded: true })
+          rememberTheme(settings)
+        } catch (err) {
+          console.warn('[settings] не удалось перечитать настройки', err)
+        }
       },
       forgetAgent(id) {
         const { settings } = getState()

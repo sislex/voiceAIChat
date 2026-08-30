@@ -35,10 +35,13 @@ import { createOperationsStore, type OperationsStore } from '../store/domains/op
 import { createAdminStore, type AdminStore } from '@voicechat/admin-app'
 import { createProjectsStore, type ProjectsStore } from '../store/domains/projectsStore'
 import { createBrowserReduxDevToolsDiagnostics, type StoreDiagnostics } from '../store/devtools'
+import { SETTINGS_UPDATE_KEY } from '../store/contracts'
 
 /** Входящие realtime-кадры: их владельца знает только runtime. */
 export interface RealtimeHandlers {
   authStatus(status: LoginStatusMap): void
+  /** Настройки изменены снаружи (соседняя вкладка) — их нужно перечитать. */
+  settingsChanged(): void
   sttPartial(update: SttUpdate): void
   sttFinal(update: SttUpdate): void
   sttError(message: string): void
@@ -135,7 +138,14 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     stt: clients.stt,
     tts: clients.tts,
     prefs: clients.prefs,
-    notifyError: (message) => shell.actions.setError(message)
+    notifyError: (message) => shell.actions.setError(message),
+    notify: (notice) => shell.actions.notify(notice),
+    // Сигнал соседним вкладкам: ключ пишется и сразу снимается — важен сам факт
+    // события storage, а не значение.
+    onSettingsSaved: () => {
+      clients.prefs.set(SETTINGS_UPDATE_KEY, String(now()))
+      clients.prefs.remove(SETTINGS_UPDATE_KEY)
+    }
   }), 'ChatAI Settings', 'settings')
 
   const voice = diagnostics.attach(createVoiceStore({
@@ -231,6 +241,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
 
   const handlers: RealtimeHandlers = {
     authStatus: (status) => settings.actions.applyLoginStatus(status),
+    settingsChanged: () => void settings.actions.refreshSettings(),
     sttPartial: (update) => voice.actions.applySttPartial(update),
     sttFinal: (update) => void voice.actions.applySttFinal(update),
     sttError: (message) => voice.actions.applySttError(message),
@@ -298,9 +309,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
       await Promise.all([
         projects.actions.loadNavigation(),
         operations.actions.refreshAgents(),
-        settings.actions.loadCatalogs().catch((err: unknown) => {
-          console.warn('[settings] каталоги загружены не полностью', err)
-        })
+        settings.actions.loadCatalogs() // отказ отдельного каталога стор глотает сам
       ])
       if (disposed) return
       // 4) Адрес важнее «самого свежего»: чат по ссылке может быть и из другого

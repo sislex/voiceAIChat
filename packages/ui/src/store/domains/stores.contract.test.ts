@@ -272,6 +272,65 @@ describe('settingsStore', () => {
     store.dispose()
   })
 
+  // Оптимистичное состояние без отката врёт: экран показывает выбор, которого
+  // на сервере нет, и следующий патч «закрепил» бы его.
+  it('ошибка сохранения откатывает состояние и уведомляет', async () => {
+    const errors: string[] = []
+    const api = createFakeApi()
+    const store = createSettingsStore({
+      settings: withApi<SettingsClient>(api, {}),
+      stt: { enabled: true, inputEnabled: true },
+      tts: { enabled: true },
+      notify: (notice) => errors.push(notice.text)
+    })
+    await store.actions.load()
+    vi.spyOn(api, 'settings:save').mockRejectedValueOnce(new Error('сервер перезапускается'))
+
+    await expect(store.actions.updateSettings({ theme: 'dark' })).rejects.toThrow('сервер перезапускается')
+
+    expect(store.getState().settings.theme).toBe(DEFAULT_SETTINGS.theme)
+    // Тост, а не баннер: баннер занят загрузкой модели/голоса.
+    expect(errors).toEqual(['Настройки не сохранены: сервер перезапускается'])
+    store.dispose()
+  })
+
+  it('состоянием становится ответ сервера, а не собственный снимок', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    // Сервер применил патч поверх изменений соседней вкладки и вернул всю запись.
+    await api['settings:save']({ codexModel: 'gpt-5.4' })
+
+    await store.actions.updateSettings({ theme: 'dark' })
+
+    expect(store.getState().settings).toMatchObject({ theme: 'dark', codexModel: 'gpt-5.4' })
+    store.dispose()
+  })
+
+  it('refreshSettings подхватывает изменение соседней вкладки', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    await api['settings:save']({ theme: 'green' })
+
+    await store.actions.refreshSettings()
+
+    expect(store.getState().settings.theme).toBe('green')
+    store.dispose()
+  })
+
+  // Стенд без Piper: падение `tts:voices` уносило с собой возможности системы
+  // и список MCP — экран настроек оставался наполовину пустым.
+  it('отказ одного каталога не отменяет остальные', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    vi.spyOn(api, 'tts:voices').mockRejectedValueOnce(new Error('TTS недоступен'))
+
+    await store.actions.loadCatalogs()
+
+    expect(store.getState().capabilities).not.toBeNull()
+    expect(store.getState().whisperModels.length).toBeGreaterThan(0)
+    store.dispose()
+  })
+
   it('удалённая машина исчезает из настроек', async () => {
     const { store } = make()
     await store.actions.updateSettings({ execTarget: 'a1', defaultAgentId: 'a1' })
