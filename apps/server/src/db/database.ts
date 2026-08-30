@@ -1719,6 +1719,14 @@ export class VoiceChatDb {
     const isOnline = options.isOnline ?? (() => true)
     if (explicitTarget) {
       if (!this.canUseAgent(userId, explicitTarget, projectId)) {
+        // Машины больше нет в реестре (удалена мимо UI, чистка) — ссылка
+        // висячая, и чат залипал бы на «машина недоступна» до ручного
+        // переключения. Забываем её и решаем заново, как для нового чата.
+        const gone = !this.db.prepare(`SELECT 1 FROM agents WHERE id = ?`).get(explicitTarget)
+        if (gone && options.execTarget === undefined) {
+          this.db.prepare(`UPDATE conversations SET exec_target = NULL WHERE id = ? AND user_id = ?`).run(conversationId, userId)
+          return this.resolveConversationMachine(userId, conversationId, { ...options, execTarget: null })
+        }
         return { agentId: explicitTarget, source: 'explicit', error: 'unavailable' }
       }
       return {

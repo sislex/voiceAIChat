@@ -9,7 +9,7 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 149 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 150 коммит(ов) в areas после сверки: dcc67f26 feat(settings): вернувшийся сервер подхватывается сам, патч в полёте не затирается … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 160 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-30 | ⚠ 2 коммит(ов) в areas после сверки: 451dd6eb feat(qa-stage): сквозная проверка серверного пути; DNS-сбой отличается от запрета … |
@@ -22,20 +22,20 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 126 коммит(ов) в areas после сверки: 2d656f2b Merge remote-tracking branch 'origin/main' … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 139 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 5 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 892 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 893 коммит(ов) в areas после сверки: dcc67f26 feat(settings): вернувшийся сервер подхватывается сам, патч в полёте не затирается … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 22 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 51 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 19 коммит(ов) в areas после сверки: 318c94ac Merge remote-tracking branch 'origin/main' … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 72 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 137 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 8 коммит(ов) в areas после сверки: 002085de feat(gate): одна честная команда проверки; молчаливые сбои стали заметны … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 40 коммит(ов) в areas после сверки: 3fce54fa feat(settings): защита настроек в глубину — санитайзер, откат, синхронизация вкладок … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 41 коммит(ов) в areas после сверки: dcc67f26 feat(settings): вернувшийся сервер подхватывается сам, патч в полёте не затирается … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 67 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 110 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-30 | ⚠ 28 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 26 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-30 | ⚠ 8 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 14 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 15 коммит(ов) в areas после сверки: dcc67f26 feat(settings): вернувшийся сервер подхватывается сам, патч в полёте не затирается … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 97 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: b1ce0a93 fix(dev): порты dev-сеанса из окружения — второй чекаут поднимается рядом с первым … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-30 | ⚠ 5 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
