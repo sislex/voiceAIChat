@@ -283,7 +283,8 @@ CREATE TABLE IF NOT EXISTS security_events (
   session_sid TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_name, at DESC);
-CREATE INDEX IF NOT EXISTS idx_security_events_sid ON security_events(session_sid, id DESC);
+-- Индекс по session_sid создаётся в migrate(): на существующей базе схема
+-- выполняется до ALTER TABLE, и индекс по ещё не добавленной колонке падает.
 
 CREATE TABLE IF NOT EXISTS login_device_emails (
   user_name TEXT NOT NULL,

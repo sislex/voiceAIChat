@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Button, EmptyState, ErrorState } from '@voicechat/ui-kit'
 import { DeviceCard } from './DeviceCard'
+import { formatMoment } from './format'
 import { EndedSessions } from './EndedSessions'
 import { DEFAULT_TEXTS, type SessionsTexts } from './texts'
 import type { SessionsStore } from './store/sessionsStore'
@@ -47,6 +48,7 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
   // (SessionsHost.onVisible): сам модуль про document и window не знает.
   useEffect(() => store.onVisible?.(() => void store.actions.reload()), [store])
 
+  const selected = state.selected
   const allViews = store.visible()
   const views = allViews.slice(0, maxVisible)
   const hidden = allViews.length - views.length
@@ -61,6 +63,37 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
 
   return (
     <div className="vcs" data-testid="sessions-panel">
+      {/* Результат действия — для скринридера: он не видит, что карточка исчезла. */}
+      <p className="vcs-live" role="status" aria-live="polite">{state.announcement ?? ''}</p>
+      <div className="vcs-toolbar">
+        <label className="vcs-order">
+          <span className="vcs-search-label">{texts.orderLabel}</span>
+          <select className="vcs-input" value={state.order} onChange={(e) => store.actions.setOrder(e.target.value as typeof state.order)}>
+            <option value="activity">{texts.orderActivity}</option>
+            <option value="created">{texts.orderCreated}</option>
+            <option value="title">{texts.orderTitle}</option>
+          </select>
+        </label>
+        <Button size="sm" variant="ghost" onClick={() => void store.actions.reload()}>{texts.refresh}</Button>
+        {state.loadedAt !== null && <span className="vcs-note">{texts.refreshedAt(formatMoment(state.loadedAt, locale))}</span>}
+      </div>
+      {selected.length > 0 && (
+        <div className="vcs-bulk vcs-bulk--selection">
+          <span>{texts.selectedCount(selected.length)}</span>
+          <Button
+            size="sm"
+            variant="danger"
+            loading={state.busyAll}
+            onClick={() => {
+              void ask({ title: texts.revokeSelected(selected.length), text: texts.revokeConfirmText })
+                .then((ok) => (ok ? store.actions.revokeSelected() : false))
+            }}
+          >
+            {texts.revokeSelected(selected.length)}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => store.actions.clearSelected()}>{texts.clearSelection}</Button>
+        </div>
+      )}
       {platforms.length > 1 && (
         <div className="vcs-chips" role="group" aria-label="Фильтр по платформе">
           <Button size="sm" variant={state.platform === null ? 'primary' : 'ghost'} onClick={() => store.actions.setPlatform(null)}>{texts.platformAll}</Button>
@@ -108,6 +141,7 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
               }}
               onRename={(label) => void store.actions.rename(view.session.sid, label)}
               onTrust={(trusted) => void store.actions.setTrusted(view.session.sid, trusted)}
+              {...(readOnly ? {} : { selected: selected.includes(view.session.sid), onToggleSelected: () => store.actions.toggleSelected(view.session.sid) })}
               {...(store.capabilities.history ? { history: state.history[view.session.sid], onHistory: () => void store.actions.loadHistory(view.session.sid) } : {})}
               {...(!readOnly && view.session.deviceKey
                 ? {
@@ -136,7 +170,7 @@ export function SessionsBulkActions({ store, texts: overrides, confirm }: { stor
   const others = store.otherCount()
   const showOthers = store.capabilities.revokeOthers && others > 0
   const showAll = store.capabilities.revokeAll && state.sessions.length > 0
-  if (!showOthers && !showAll && !store.capabilities.panic) return null
+  if (!showOthers && !showAll && !store.capabilities.panic && !store.capabilities.copy) return null
   const ask = async (request: { title: string; text?: string }): Promise<boolean> => (confirm ? confirm({ ...request, variant: 'danger' }) : true)
   return (
     <div className="vcs-bulk">
@@ -156,6 +190,11 @@ export function SessionsBulkActions({ store, texts: overrides, confirm }: { stor
           }}
         >
           {texts.revokeAll}
+        </Button>
+      )}
+      {store.capabilities.copy && (
+        <Button size="sm" variant="ghost" disabled={state.busyAll} onClick={() => void store.actions.copySummary()}>
+          {texts.copySummary}
         </Button>
       )}
       {store.capabilities.panic && (

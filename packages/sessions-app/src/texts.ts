@@ -53,10 +53,34 @@ export interface SessionsTexts {
   historyEmpty: string
   historyEvent: (type: string) => string
   moreHidden: (count: number) => string
+  expiringSoon: string
+  orderLabel: string
+  orderActivity: string
+  orderCreated: string
+  orderTitle: string
+  refresh: string
+  refreshedAt: (when: string) => string
+  selectSession: string
+  selectedCount: (count: number) => string
+  revokeSelected: (count: number) => string
+  clearSelection: string
+  copySummary: string
+  endReason: (reason: string) => string
   createdAt: (when: string) => string
   lastSeen: (when: string) => string
   expiresIn: (when: string) => string
   expired: string
+}
+
+/** Почему сессия закончилась — человеческим языком, а не кодом из базы. */
+const END_REASONS: Record<string, string> = {
+  revoked: 'завершена вручную',
+  expired: 'истёк срок',
+  evicted: 'вытеснена лимитом',
+  panic: 'закрыта тревогой',
+  logout_all: 'выход на всех устройствах',
+  admin: 'завершена администратором',
+  stale: 'закрыта из-за простоя'
 }
 
 /** Подписи событий журнала: в карточке нужен человеческий язык, а не коды. */
@@ -130,6 +154,19 @@ export const DEFAULT_TEXTS: SessionsTexts = {
   historyEmpty: 'Событий по этому устройству нет',
   historyEvent: (type) => HISTORY_LABELS[type] ?? type,
   moreHidden: (count) => `Показаны первые записи, ещё ${count} скрыто — уточните поиск`,
+  expiringSoon: 'скоро истечёт',
+  orderLabel: 'Порядок',
+  orderActivity: 'по активности',
+  orderCreated: 'по времени входа',
+  orderTitle: 'по названию',
+  refresh: 'Обновить',
+  refreshedAt: (when) => `обновлено ${when}`,
+  selectSession: 'Отметить сессию',
+  selectedCount: (count) => `Выбрано: ${count}`,
+  revokeSelected: (count) => `Завершить выбранные (${count})`,
+  clearSelection: 'Снять отметки',
+  copySummary: 'Скопировать сводку',
+  endReason: (reason) => END_REASONS[reason] ?? 'завершена',
   activity: (requests, path) => {
     const hits = `${requests} ${plural(requests, 'обращение', 'обращения', 'обращений')}`
     return path ? `${hits} · ${path}` : hits

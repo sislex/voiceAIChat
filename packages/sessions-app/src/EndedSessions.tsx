@@ -32,7 +32,11 @@ export function EndedSessions({ sessions, texts, locale, onOpen }: EndedSessions
               <div className="vcs-main">
                 <p className="vcs-head"><strong className="vcs-title">{sessionTitle(session) || texts.legacyTitle}</strong></p>
                 <small className="vcs-meta">
-                  {[session.geo?.label || session.ip || texts.unknownPlace, texts.endedAt(formatMoment(session.endedAt ?? session.expiresAt, locale))].join(' · ')}
+                  {[
+                    session.geo?.label || session.ip || texts.unknownPlace,
+                    texts.endedAt(formatMoment(session.endedAt ?? session.expiresAt, locale)),
+                    texts.endReason(session.endReason ?? 'revoked')
+                  ].join(' · ')}
                 </small>
               </div>
             </li>

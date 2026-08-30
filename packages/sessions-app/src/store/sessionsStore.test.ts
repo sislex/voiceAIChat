@@ -25,12 +25,12 @@ describe('createSessionsStore: чтение', () => {
     await store.actions.load()
     expect(store.getState().status).toBe('ready')
     expect(store.getState().sessions).toHaveLength(4)
-    expect(store.capabilities).toEqual({ rename: true, trust: true, revokeOthers: true, revokeAll: true, ended: false, panic: false, history: false })
+    expect(store.capabilities).toEqual({ rename: true, trust: true, revokeOthers: true, revokeAll: true, ended: false, panic: false, history: false, copy: false })
   })
 
   it('урезанный клиент (админка) объявляет только чтение и отзыв', () => {
     const store = createSessionsStore({ client: { list: async () => [], revoke: async () => undefined } })
-    expect(store.capabilities).toEqual({ rename: false, trust: false, revokeOthers: false, revokeAll: false, ended: false, panic: false, history: false })
+    expect(store.capabilities).toEqual({ rename: false, trust: false, revokeOthers: false, revokeAll: false, ended: false, panic: false, history: false, copy: false })
   })
 
   it('ошибка чтения переводит в error и сохраняет текст для ErrorState', async () => {
@@ -294,6 +294,88 @@ describe('createSessionsStore: история, отзыв устройства �
     store.onVisible?.(() => void store.actions.reload())
     bus.notify?.()
     await vi.waitFor(() => expect(client.calls.filter((c) => c === 'list').length).toBeGreaterThan(1))
+  })
+})
+
+describe('createSessionsStore: порядок, выбор, сводка и объявления', () => {
+  it('порядок списка переключается и текущая остаётся первой', async () => {
+    const sessions = [
+      makeSession({ sid: 'старая', lastSeen: FIXTURE_NOW - 5 * 86_400_000, createdAt: FIXTURE_NOW - 86_400_000 }),
+      makeSession({ sid: 'свежая', lastSeen: FIXTURE_NOW, createdAt: FIXTURE_NOW - 10 * 86_400_000 }),
+      makeSession({ sid: 'текущая', current: true, lastSeen: FIXTURE_NOW - 86_400_000 })
+    ]
+    const store = createSessionsStore({ client: clientOf(sessions), host: { now: () => FIXTURE_NOW } })
+    await store.actions.load()
+    expect(store.visible().map((v) => v.session.sid)).toEqual(['текущая', 'свежая', 'старая'])
+    store.actions.setOrder('created')
+    expect(store.visible().map((v) => v.session.sid)).toEqual(['текущая', 'старая', 'свежая'])
+  })
+
+  it('отметка времени чтения обновляется при каждой загрузке', async () => {
+    let clock = FIXTURE_NOW
+    const store = createSessionsStore({ client: clientOf(makeSessions()), host: { now: () => clock } })
+    await store.actions.load()
+    expect(store.getState().loadedAt).toBe(FIXTURE_NOW)
+    clock = FIXTURE_NOW + 60_000
+    await store.actions.reload()
+    expect(store.getState().loadedAt).toBe(FIXTURE_NOW + 60_000)
+  })
+
+  it('выбранные сессии завершаются пачкой, текущая в пачку не попадает', async () => {
+    const sessions = makeSessions()
+    const revoked: string[] = []
+    const client = clientOf(sessions, {
+      revoke: async (sid) => { revoked.push(sid); sessions.splice(sessions.findIndex((s) => s.sid === sid), 1) }
+    })
+    const store = createSessionsStore({ client })
+    await store.actions.load()
+    store.actions.toggleSelected('phone')
+    store.actions.toggleSelected('work')
+    store.actions.toggleSelected('current')
+    expect(store.getState().selected).toHaveLength(3)
+    expect(await store.actions.revokeSelected()).toBe(true)
+    expect(revoked.sort()).toEqual(['phone', 'work'])
+    expect(store.getState().selected).toEqual([])
+    expect(store.getState().announcement).toBe('Завершено сессий: 2')
+  })
+
+  it('повторная отметка снимает выбор, а исчезнувшие сессии из выбора вычищаются', async () => {
+    const sessions = makeSessions()
+    const client = clientOf(sessions)
+    const store = createSessionsStore({ client })
+    await store.actions.load()
+    store.actions.toggleSelected('phone')
+    store.actions.toggleSelected('phone')
+    expect(store.getState().selected).toEqual([])
+    store.actions.toggleSelected('phone')
+    sessions.splice(sessions.findIndex((s) => s.sid === 'phone'), 1)
+    await store.actions.reload()
+    expect(store.getState().selected).toEqual([])
+  })
+
+  it('сводка уходит в буфер через порт хоста', async () => {
+    const copied: string[] = []
+    const store = createSessionsStore({
+      client: clientOf(makeSessions()),
+      host: { now: () => FIXTURE_NOW, copy: (text) => { copied.push(text) } }
+    })
+    await store.actions.load()
+    expect(store.capabilities.copy).toBe(true)
+    expect(await store.actions.copySummary()).toBe(true)
+    expect(copied[0]).toContain('Сессии (4)')
+    expect(store.getState().announcement).toBe('Сводка сессий скопирована')
+    // Без порта возможности нет и действие честно отвечает отказом.
+    const bare = createSessionsStore({ client: clientOf(makeSessions()) })
+    expect(bare.capabilities.copy).toBe(false)
+    expect(await bare.actions.copySummary()).toBe(false)
+  })
+
+  it('точечный отзыв объявляет результат словами', async () => {
+    const sessions = makeSessions()
+    const store = createSessionsStore({ client: clientOf(sessions, { revoke: async (sid) => { sessions.splice(sessions.findIndex((s) => s.sid === sid), 1) } }) })
+    await store.actions.load()
+    await store.actions.revoke('work')
+    expect(store.getState().announcement).toBe('Сессия «Рабочий ноут» завершена')
   })
 })
 

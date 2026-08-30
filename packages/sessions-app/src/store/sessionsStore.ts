@@ -5,7 +5,10 @@
 // Отзыв сделан оптимистично: сессия исчезает сразу, а при ошибке возвращается
 // на место. Ждать ответа сервера здесь нечестно — человек нажимает «Завершить»
 // именно тогда, когда встревожен, и подвисший список читается как отказ.
-import { filterSessions, platformsOf, sortSessions, toView, type DeviceSession, type SessionPolicy, type SessionView } from '@voicechat/sessions-core'
+import {
+  filterSessions, platformsOf, sessionsSummary, sortSessions, toView,
+  type DeviceSession, type SessionOrder, type SessionPolicy, type SessionView
+} from '@voicechat/sessions-core'
 import type { SessionHistoryEvent, SessionsClient, SessionsEvent, SessionsHost, SessionsRealtime } from '../contracts'
 
 export type SessionsStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -17,6 +20,14 @@ export interface SessionsState {
   query: string
   /** Платформа-фильтр (`web`/`desktop`/`agent`); null — показываем все. */
   platform: string | null
+  /** Порядок списка: свежесть активности, дата входа или подпись. */
+  order: SessionOrder
+  /** Когда список прочитан в последний раз; null — ещё не читали. */
+  loadedAt: number | null
+  /** Отмеченные карточки для массового завершения. */
+  selected: string[]
+  /** Последнее сообщение о результате действия — его читает скринридер. */
+  announcement: string | null
   /** Недавно завершённые сессии; null — ещё не запрашивали. */
   ended: DeviceSession[] | null
   /** История по устройствам: sid → события; null — грузится. */
@@ -32,6 +43,11 @@ export interface SessionsActions {
   reload(): Promise<void>
   setQuery(query: string): void
   setPlatform(platform: string | null): void
+  setOrder(order: SessionOrder): void
+  toggleSelected(sid: string): void
+  clearSelected(): void
+  revokeSelected(): Promise<boolean>
+  copySummary(): Promise<boolean>
   loadEnded(): Promise<void>
   panic(): Promise<boolean>
   loadHistory(sid: string): Promise<void>
@@ -54,6 +70,7 @@ export interface SessionsCapabilities {
   ended: boolean
   panic: boolean
   history: boolean
+  copy: boolean
 }
 
 export interface SessionsStore {
@@ -79,7 +96,10 @@ export interface SessionsStoreOptions {
   notify?: { success?(message: string): void; error?(message: string): void }
 }
 
-const initial = (): SessionsState => ({ status: 'idle', sessions: [], error: null, query: '', platform: null, ended: null, history: {}, busySid: null, busyAll: false })
+const initial = (): SessionsState => ({
+  status: 'idle', sessions: [], error: null, query: '', platform: null, order: 'activity',
+  loadedAt: null, selected: [], announcement: null, ended: null, history: {}, busySid: null, busyAll: false
+})
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
@@ -105,7 +125,10 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
     try {
       const sessions = await client.list()
       if (disposed) return
-      set({ sessions, status: 'ready', error: null })
+      // Выбор чистим от исчезнувших сессий: иначе «завершить выбранные»
+      // молча промахивается по уже отозванным.
+      const alive = new Set(sessions.map((s) => s.sid))
+      set({ sessions, status: 'ready', error: null, loadedAt: now(), selected: state.selected.filter((sid) => alive.has(sid)) })
     } catch (error) {
       if (disposed) return
       set({ status: 'error', error: messageOf(error) })
@@ -142,7 +165,8 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
       revokeAll: typeof client.revokeAll === 'function',
       ended: typeof client.listEnded === 'function',
       panic: typeof client.panic === 'function',
-      history: typeof client.history === 'function'
+      history: typeof client.history === 'function',
+      copy: typeof host?.copy === 'function'
     },
     getState: () => state,
     subscribe(listener) {
@@ -151,7 +175,7 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
     },
     visible() {
       const byPlatform = state.platform ? state.sessions.filter((s) => s.platform === state.platform) : state.sessions
-      return sortSessions(filterSessions(byPlatform, state.query)).map((s) => toView(s, now(), policy, state.sessions))
+      return sortSessions(filterSessions(byPlatform, state.query), state.order).map((s) => toView(s, now(), policy, state.sessions))
     },
     platforms() {
       return platformsOf(state.sessions)
@@ -174,6 +198,41 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
       },
       setPlatform(platform) {
         set({ platform })
+      },
+      setOrder(order) {
+        set({ order })
+      },
+      toggleSelected(sid) {
+        const selected = state.selected.includes(sid) ? state.selected.filter((s) => s !== sid) : [...state.selected, sid]
+        set({ selected })
+      },
+      clearSelected() {
+        set({ selected: [] })
+      },
+      async revokeSelected() {
+        const victims = state.selected.filter((sid) => state.sessions.some((s) => s.sid === sid && !s.current))
+        if (victims.length === 0) return false
+        set({ busyAll: true, sessions: state.sessions.filter((s) => !victims.includes(s.sid)) })
+        try {
+          for (const sid of victims) await client.revoke(sid)
+          if (!disposed) set({ busyAll: false, selected: [], announcement: `Завершено сессий: ${victims.length}` })
+          await read()
+          return true
+        } catch (error) {
+          if (!disposed) set({ busyAll: false })
+          await read()
+          return fail(error)
+        }
+      },
+      async copySummary() {
+        if (!host?.copy) return false
+        try {
+          await host.copy(sessionsSummary(state.sessions, now()))
+          if (!disposed) set({ announcement: 'Сводка сессий скопирована' })
+          return true
+        } catch (error) {
+          return fail(error)
+        }
       },
       async loadHistory(sid) {
         if (!client.history || state.history[sid] !== undefined) return
@@ -228,7 +287,10 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
         }
       },
       async revoke(sid) {
-        return mutate({ sid }, (list) => list.filter((s) => s.sid !== sid), () => client.revoke(sid))
+        const title = state.sessions.find((s) => s.sid === sid)?.label ?? ''
+        const ok = await mutate({ sid }, (list) => list.filter((s) => s.sid !== sid), () => client.revoke(sid))
+        if (ok && !disposed) set({ announcement: title ? `Сессия «${title}» завершена` : 'Сессия завершена' })
+        return ok
       },
       async revokeOthers() {
         if (!client.revokeOthers) return false

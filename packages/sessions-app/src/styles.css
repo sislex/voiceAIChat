@@ -220,3 +220,56 @@
   line-height: 1.6;
 }
 
+.vcs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-100);
+  align-items: center;
+  margin-bottom: var(--space-150);
+}
+
+.vcs-order {
+  display: flex;
+  gap: var(--space-050);
+  align-items: center;
+}
+
+.vcs-order .vcs-input {
+  width: auto;
+}
+
+/* Область для скринридера: сообщение не должно занимать место в раскладке. */
+.vcs-live {
+  position: absolute;
+  overflow: hidden;
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+}
+
+.vcs-bulk--selection {
+  margin-bottom: var(--space-150);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.vcs-check {
+  margin-top: 4px;
+  width: 16px;
+  height: 16px;
+}
+
+.vcs-badge--soon {
+  background: var(--ci-removed-bg);
+  color: var(--ci-removed);
+}
+
+@media (max-width: 640px) {
+  /* На узком экране колонка действий занимает всю ширину под текстом: доля от
+     ширины карточки там оставляет кнопкам полосу в пару сантиметров. */
+  .vcs-actions {
+    max-width: 100%;
+  }
+}
+
