@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
-import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
+import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
+import { fragileSteps, recordClick, recordNavigate, toScenario, type RecordedStep } from '../lib/scenarioRecorder'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import { Button, IconButton } from '@voicechat/ui-kit'
 
@@ -75,6 +76,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
   // Журналы страницы: раннер копит их с открытия, но до круга 11 показать их
   // было негде — человек видел белый экран и не знал, что упал запрос.
   const [diagnostics, setDiagnostics] = useState<{ console: BrowserConsoleEntry[]; network: BrowserNetworkEntry[] } | null>(null)
+  // Запись сценария: ради неё Reader и делается инструментом автотестов —
+  // человек проходит путь руками, а на выходе воспроизводимые шаги.
+  const [recording, setRecording] = useState(false)
+  const [steps, setSteps] = useState<RecordedStep[]>([])
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
   const [frame, setFrame] = useState<string | null>(null)
   const [address, setAddress] = useState<string>('')
@@ -186,7 +191,16 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
   const clickAt = (event: ReactMouseEvent<HTMLImageElement>, button: 'left' | 'right', clickCount: 1 | 2): void => {
     const point = pointFromEvent(event)
     if (!point) return
-    void run({ type: 'input', action: { type: 'click', x: point.x, y: point.y, button, clickCount } })
+    void (async () => {
+      // В режиме записи сначала спрашиваем, что под курсором: шаг сценария
+      // обязан быть селекторным, координатная запись рассыплется от сдвига
+      // вёрстки. Клик выполняется в любом случае — запись не мешает работе.
+      if (recording && button === 'left') {
+        const described = await run({ type: 'selector', action: { kind: 'describe', x: point.x, y: point.y } }) as { element?: BrowserElementDescription } | undefined
+        if (described?.element) setSteps((current) => recordClick(current, described.element!))
+      }
+      await run({ type: 'input', action: { type: 'click', x: point.x, y: point.y, button, clickCount } })
+    })()
   }
 
   // Колесо: страница длиннее вьюпорта иначе недостижима — прокрутить её было нечем.
@@ -278,6 +292,12 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     void run({ type: 'input', action: { type: 'type', text: typing } }).then(() => setTyping(''))
   }
 
+  /** Переход записывается отдельным шагом: с него начинается сценарий. */
+  const startRecording = (): void => {
+    setSteps(meta?.currentUrl ? recordNavigate([], meta.currentUrl) : [])
+    setRecording(true)
+  }
+
   if (phase === 'unavailable' || phase === 'error') {
     return <section className="playwright-browser-pane" aria-label="Browser session">
       <div className="playwright-reader-header"><strong>Playwright Reader</strong></div>
@@ -286,6 +306,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
   }
 
   const tabs = meta?.tabs ?? []
+  const fragile = fragileSteps(steps)
 
   return <section className="playwright-browser-pane" aria-label="Browser session">
     {tabs.length > 0 && (
@@ -353,6 +374,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
       <span className="playwright-reader-state" role="status" data-status={meta?.state ?? phase}>
         {phase === 'starting' ? STATE_LABELS.starting : (STATE_LABELS[meta?.state ?? 'ready'] ?? STATE_LABELS.ready)}
       </span>
+      <Button size="sm" variant={recording ? 'primary' : 'ghost'} aria-pressed={recording} disabled={phase !== 'ready'}
+        onClick={() => (recording ? setRecording(false) : startRecording())}>
+        {recording ? `Записывается: ${steps.length}` : 'Записать сценарий'}
+      </Button>
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadDiagnostics()}>Ошибки страницы</Button>
       {/* Профиль persistent, поэтому «выйти и посмотреть экран входа» иначе
           нечем: перезапуск сессии куки не трогает. */}
@@ -367,25 +392,8 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
       {/* Зависшую страницу иначе не выкинуть: stop звался только при уходе с экрана. */}
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={restartSession}>Перезапустить</Button>
     </div>
-    {diagnostics && (
-      <div className="playwright-reader-diagnostics" role="region" aria-label="Диагностика страницы">
-        <div className="playwright-reader-diagnostics__head">
-          <strong>Ошибки страницы: {diagnostics.console.length} · Неуспешные запросы: {diagnostics.network.length}</strong>
-          <IconButton size="sm" aria-label="Скрыть диагностику" title="Скрыть диагностику" onClick={() => setDiagnostics(null)}>✕</IconButton>
-        </div>
-        {diagnostics.console.length === 0 && diagnostics.network.length === 0 && <p className="proj-muted">Страница не жаловалась.</p>}
-        {diagnostics.console.length > 0 && (
-          <ul className="playwright-reader-diagnostics__list">
-            {diagnostics.console.map((entry, index) => <li key={`c${index}`} data-kind="console">{entry.text}</li>)}
-          </ul>
-        )}
-        {diagnostics.network.length > 0 && (
-          <ul className="playwright-reader-diagnostics__list">
-            {diagnostics.network.map((entry, index) => <li key={`n${index}`} data-kind="network"><code>{entry.status}</code> {entry.method} {entry.url}</li>)}
-          </ul>
-        )}
-      </div>
-    )}
+    {/* Панели записи и диагностики — ПОД кадром: появляясь сверху, они сдвигали
+        изображение, и следующий клик человека попадал мимо цели. */}
     <div className="playwright-browser-viewport">
       {frame
         ? <img
@@ -405,6 +413,48 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
         : <div className="webpreview-empty" role="status">Запуск изолированного Chromium…</div>}
       {busy && <span className="playwright-reader-busy" role="status">Выполняется…</span>}
     </div>
+    {steps.length > 0 && (
+      <div className="playwright-reader-record" role="region" aria-label="Записанный сценарий">
+        <div className="playwright-reader-record__head">
+          <strong>Сценарий: {steps.length} шаг(ов)</strong>
+          <Button size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText(JSON.stringify(toScenario(steps, meta?.currentUrl ?? ''), null, 2))}>
+            Скопировать для настроек
+          </Button>
+          <IconButton size="sm" aria-label="Очистить запись" title="Очистить запись" onClick={() => { setSteps([]); setRecording(false) }}>✕</IconButton>
+        </div>
+        {fragile.length > 0 && (
+          // Селектор по пути в дереве ломается от вставки соседнего узла —
+          // честно предупреждаем сразу, а не оставляем сценарий падать потом.
+          <p className="playwright-reader-record__warn" role="alert">
+            Ненадёжных шагов: {fragile.length}. Их селектор построен по месту в дереве и сломается от правки вёрстки — лучше добавить элементам `data-testid`.
+          </p>
+        )}
+        <ol className="playwright-reader-record__list">
+          {steps.map((step) => (
+            <li key={step.id} data-stability={step.stability}>{step.title}<code>{'selector' in step.action ? step.action.selector : ''}</code></li>
+          ))}
+        </ol>
+      </div>
+    )}
+    {diagnostics && (
+      <div className="playwright-reader-diagnostics" role="region" aria-label="Диагностика страницы">
+        <div className="playwright-reader-diagnostics__head">
+          <strong>Ошибки страницы: {diagnostics.console.length} · Неуспешные запросы: {diagnostics.network.length}</strong>
+          <IconButton size="sm" aria-label="Скрыть диагностику" title="Скрыть диагностику" onClick={() => setDiagnostics(null)}>✕</IconButton>
+        </div>
+        {diagnostics.console.length === 0 && diagnostics.network.length === 0 && <p className="proj-muted">Страница не жаловалась.</p>}
+        {diagnostics.console.length > 0 && (
+          <ul className="playwright-reader-diagnostics__list">
+            {diagnostics.console.map((entry, index) => <li key={`c${index}`} data-kind="console">{entry.text}</li>)}
+          </ul>
+        )}
+        {diagnostics.network.length > 0 && (
+          <ul className="playwright-reader-diagnostics__list">
+            {diagnostics.network.map((entry, index) => <li key={`n${index}`} data-kind="network"><code>{entry.status}</code> {entry.method} {entry.url}</li>)}
+          </ul>
+        )}
+      </div>
+    )}
     <div className="playwright-browser-input">
       <input
         type="text"

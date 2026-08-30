@@ -247,3 +247,59 @@ describe('Playwright Reader как инструмент автотестов (к
     await waitFor(() => expect(browser.start).toHaveBeenLastCalledWith('c1', expect.objectContaining({ width: 390 })))
   })
 })
+
+describe('запись сценария автотеста (круг 12)', () => {
+  const element = { selector: '[data-testid="create"]', stability: 'testid', tag: 'button', text: 'Создать', rect: { x: 0, y: 0, width: 100, height: 40 } }
+
+  const recordingBrowser = (over: Partial<{ element: unknown }> = {}): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element: over.element ?? element }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const startAndRecord = async (browser: RendererBrowserBridge): Promise<HTMLElement> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    return frame
+  }
+
+  it('клик по кадру превращается в селекторный шаг, а не в координаты', async () => {
+    const frame = await startAndRecord(recordingBrowser())
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    expect(await screen.findByText('Нажать «Создать»')).toBeInTheDocument()
+    expect(screen.getByText('[data-testid="create"]')).toBeInTheDocument()
+    // Первым шагом записывается открытый адрес — с него начинается сценарий.
+    expect(screen.getByText('Открыть http://89.125.68.35:8787/')).toBeInTheDocument()
+  })
+
+  it('клик всё равно выполняется: запись не мешает работать', async () => {
+    const browser = recordingBrowser()
+    const frame = await startAndRecord(browser)
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: { type: 'input', action: { type: 'click', x: 50, y: 30, button: 'left', clickCount: 1 } }
+    })))
+  })
+
+  it('ненадёжный селектор предупреждает при записи, а не падает потом', async () => {
+    const frame = await startAndRecord(recordingBrowser({ element: { ...element, selector: 'div > span:nth-of-type(2)', stability: 'path', text: '' } }))
+    fireEvent.click(frame, { clientX: 10, clientY: 10 })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ненадёжных шагов: 1')
+  })
+
+  it('без записи клик остаётся координатным и шагов не появляется', async () => {
+    const browser = recordingBrowser()
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await waitFor(() => expect(browser.command).toHaveBeenCalled())
+    expect(screen.queryByLabelText('Записанный сценарий')).not.toBeInTheDocument()
+  })
+})

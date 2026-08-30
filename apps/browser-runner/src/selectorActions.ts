@@ -1,4 +1,5 @@
-import type { BrowserSelectorAction, BrowserSelectorResult } from '@voicechat/shared'
+import type { BrowserElementDescription, BrowserSelectorAction, BrowserSelectorResult } from '@voicechat/shared'
+import { describeElementScript, scrollToScript } from './describeElement.js'
 
 /**
  * Минимум от Playwright, который нужен селекторным действиям. Узкий тип вместо
@@ -26,6 +27,8 @@ export interface SelectorPage {
   locator(selector: string): SelectorLocator
   getByText(text: string, options?: { exact?: boolean }): SelectorLocator
   keyboard: { press(key: string): Promise<void> }
+  /** Код строкой: описание элемента и прокрутка исполняются в самой странице. */
+  evaluate(script: string): Promise<unknown>
 }
 
 /**
@@ -90,6 +93,14 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       if (buffer.length > UPLOAD_LIMIT_BYTES) return { ok: false, error: `Файл больше ${Math.round(UPLOAD_LIMIT_BYTES / 1024 / 1024)} МБ` }
       await page.locator(action.selector).first().setInputFiles({ name: action.name, mimeType: action.mimeType || 'application/octet-stream', buffer }, { timeout })
       return { ok: true }
+    }
+    if (action.kind === 'describe') {
+      const found = await page.evaluate(describeElementScript(action.x, action.y)) as BrowserElementDescription | null
+      return found ? { ok: true, element: found } : { ok: false, error: 'В этой точке нет элемента' }
+    }
+    if (action.kind === 'scrollTo') {
+      const reached = await page.evaluate(scrollToScript(action.selector))
+      return reached ? { ok: true } : { ok: false, error: `Элемент ${action.selector} не найден` }
     }
     if (action.kind === 'a11y') {
       const target = action.selector ? page.locator(action.selector).first() : page.locator('body')

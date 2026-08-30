@@ -32,6 +32,7 @@ function page(target: SelectorLocator, over: Partial<SelectorPage> = {}): Select
     locator: vi.fn(() => target),
     getByText: vi.fn(() => target),
     keyboard: { press: vi.fn(async () => {}) },
+    evaluate: vi.fn(async () => null),
     ...over
   }
 }
@@ -161,5 +162,24 @@ describe('загрузка файла (круг 10)', () => {
     expect(await runSelectorAction(page(target), { kind: 'upload', selector: '#f', name: 'big.bin', base64: huge }))
       .toEqual({ ok: false, error: 'Файл больше 8 МБ' })
     expect(target.setInputFiles).not.toHaveBeenCalled()
+  })
+})
+
+describe('описание элемента и прокрутка (круг 12)', () => {
+  it('describe отдаёт элемент страницы как есть', async () => {
+    const element = { selector: '[data-testid="create"]', stability: 'testid', tag: 'button', text: 'Создать', rect: { x: 1, y: 2, width: 100, height: 40 } }
+    const result = await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => element) }), { kind: 'describe', x: 50, y: 30 })
+    expect(result).toEqual({ ok: true, element })
+  })
+
+  it('точка без элемента объясняется, а не отдаёт пустоту', async () => {
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => null) }), { kind: 'describe', x: 0, y: 0 }))
+      .toEqual({ ok: false, error: 'В этой точке нет элемента' })
+  })
+
+  it('scrollTo сообщает, что элемента нет, а не молчит', async () => {
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => true) }), { kind: 'scrollTo', selector: '#a' })).toEqual({ ok: true })
+    expect(await runSelectorAction(page(locator(), { evaluate: vi.fn(async () => false) }), { kind: 'scrollTo', selector: '#нет' }))
+      .toEqual({ ok: false, error: 'Элемент #нет не найден' })
   })
 })

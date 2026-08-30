@@ -124,3 +124,36 @@ export const PageDiagnosticsClean: Story = {
     button?.click()
   }
 }
+
+/**
+ * Запись сценария автотеста: человек проходит путь руками, а на выходе —
+ * воспроизводимые селекторные шаги. Состояние достижимо только кликами по
+ * кадру, поэтому набирается play-функцией.
+ */
+export const ScenarioRecording: Story = {
+  args: {
+    browser: bridge({
+      start: async () => meta({ currentUrl: 'http://89.125.68.35:8787/#/projects/p1' }),
+      command: (async (_id: string, req: { command: { type: string; action?: { kind?: string; x?: number } } }) => {
+        if (req.command.type !== 'selector' || req.command.action?.kind !== 'describe') return meta({ currentUrl: 'http://89.125.68.35:8787/#/projects/p1' })
+        // Второй клик попадает по узлу без опознавательных знаков — так видно
+        // предупреждение о ненадёжном селекторе.
+        return (req.command.action.x ?? 0) > 300
+          ? { ok: true, element: { selector: 'div > span:nth-of-type(2)', stability: 'path', tag: 'span', text: 'Задача №4', rect: { x: 320, y: 200, width: 180, height: 24 } } }
+          : { ok: true, element: { selector: '[data-testid="create-task"]', stability: 'testid', tag: 'button', text: 'Создать задачу', rect: { x: 40, y: 60, width: 160, height: 36 } } }
+      }) as never
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const buttons = [...canvasElement.querySelectorAll('button')]
+    buttons.find((el) => el.textContent === 'Записать сценарий')?.click()
+    await new Promise((done) => setTimeout(done, 60))
+    const frame = canvasElement.querySelector('img')
+    if (!frame) return
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    for (const x of [80, 400]) {
+      frame.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: 70 }))
+      await new Promise((done) => setTimeout(done, 80))
+    }
+  }
+}

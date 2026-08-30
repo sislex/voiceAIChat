@@ -7563,6 +7563,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    запросы. Раннер копил их с круга 5, но показать было негде. */
 .playwright-reader-keys { display: inline-flex; gap: var(--space-050); }
 
+/* Запись сценария автотеста прямо из работы руками. */
+.playwright-reader-record { display: flex; flex-direction: column; gap: var(--space-100); padding: var(--space-100) var(--space-150); border-top: 1px solid var(--border); background: var(--panel); max-height: 30vh; overflow: auto; }
+.playwright-reader-record__head { display: flex; align-items: center; gap: var(--space-100); flex-wrap: wrap; }
+.playwright-reader-record__head strong { flex: 1 1 auto; }
+.playwright-reader-record__warn { margin: 0; color: var(--ci-progress); font-size: 12px; }
+.playwright-reader-record__list { list-style: decimal; margin: 0; padding-left: var(--space-150); display: flex; flex-direction: column; gap: var(--space-050); font-size: 12px; }
+.playwright-reader-record__list li { overflow-wrap: anywhere; }
+.playwright-reader-record__list code { display: block; color: var(--text-dim); }
+/* Ненадёжный селектор виден в списке, а не только в общем предупреждении. */
+.playwright-reader-record__list li[data-stability='path'] code { color: var(--ci-progress); }
+
 .playwright-reader-diagnostics { display: flex; flex-direction: column; gap: var(--space-100); padding: var(--space-100) var(--space-150); border-top: 1px solid var(--border); background: var(--panel); max-height: 30vh; overflow: auto; }
 .playwright-reader-diagnostics__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-100); }
 .playwright-reader-diagnostics__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-050); font-size: 12px; }
