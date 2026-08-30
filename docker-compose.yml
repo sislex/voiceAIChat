@@ -247,6 +247,10 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      # Публичный адрес стенда: подставляется в Caddyfile. Без него Caddy
+      # поднимется с пустым хостом и не ответит ни на один запрос.
+      VC_PUBLIC_HOST: ${VC_PUBLIC_HOST:?нужен VC_PUBLIC_HOST в .env — адрес, по которому стенд виден снаружи}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Локальный CA и выписанные сертификаты — переживают пересоздание.
