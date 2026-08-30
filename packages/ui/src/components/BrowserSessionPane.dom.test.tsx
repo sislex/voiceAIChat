@@ -306,17 +306,36 @@ describe('запись сценария автотеста (круг 12)', () =>
 })
 
 describe('где мы и кто действовал (круг 13)', () => {
-  it('подмена адреса алиасом объясняется, а не выглядит как «открылось не то»', async () => {
+  it('подмена адреса алиасом объясняется по факту от раннера, а адрес остаётся внешним', async () => {
+    // Раннер отдаёт тот адрес, который назвал человек (иначе внутренний уедет в
+    // startUrl записанного сценария), а подмену сообщает отдельным полем.
     const browser = fakeBrowser({
       start: vi.fn(async () => meta({ currentUrl: null })),
-      command: vi.fn(async () => meta({ currentUrl: 'http://voicechat:8787/' }))
+      command: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/', aliasedHost: 'voicechat:8787' }))
     })
     render(<BrowserSessionPane conversationId="c1" browser={browser} />)
     await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
     const address = screen.getByLabelText('Адрес страницы') as HTMLInputElement
     fireEvent.change(address, { target: { value: 'http://89.125.68.35:8787/' } })
     fireEvent.keyDown(address, { key: 'Enter' })
-    expect(await screen.findByText(/адрес подменён алиасом раннера/)).toBeInTheDocument()
+    expect(await screen.findByText(/страница загружена с voicechat:8787/)).toBeInTheDocument()
+    expect((screen.getByLabelText('Адрес страницы') as HTMLInputElement).value).toBe('http://89.125.68.35:8787/')
+  })
+
+  it('уход с проверяемого сайта виден и на стенде с алиасом', async () => {
+    // Раньше подмену вычисляли по расхождению хостов, и на стенде с алиасом
+    // предупреждение «ушли с сайта» не показывалось никогда: любой чужой адрес
+    // тоже объявлялся «подменой алиасом».
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/', aliasedHost: 'voicechat:8787' })),
+      command: vi.fn(async () => meta({ currentUrl: 'https://accounts.google.com/', aliasedHost: undefined }))
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    const address = screen.getByLabelText('Адрес страницы') as HTMLInputElement
+    fireEvent.change(address, { target: { value: 'https://accounts.google.com/' } })
+    fireEvent.keyDown(address, { key: 'Enter' })
+    expect(await screen.findByText(/ушла с проверяемого сайта/)).toBeInTheDocument()
   })
 
   it('уход с проверяемого сайта показывается тревогой', async () => {

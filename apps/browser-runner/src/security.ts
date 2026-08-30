@@ -99,6 +99,31 @@ export function aliasTargets(aliases: HostAliases): Set<string> {
   return targets
 }
 
+/**
+ * Обратная подстановка: внутренний адрес → тот, который назвал человек.
+ *
+ * Алиас — деталь транспорта оператора, а наружу он протекал: `page.url()` после
+ * подмены отдаёт внутренний адрес, и панель показывала «страница загружена с
+ * voicechat:8787», а записанный сценарий уносил этот адрес в `startUrl`. На
+ * другом стенде такой сценарий не открывается вовсе. Наружу отдаём тот адрес,
+ * который человек набрал; факт подмены сообщается отдельным полем.
+ */
+export function restoreHostAlias(url: URL, aliases: HostAliases): URL {
+  if (!aliases.size) return url
+  const defaultPort = url.protocol === 'https:' ? '443' : '80'
+  const port = url.port || defaultPort
+  for (const [key, target] of aliases) {
+    const [targetHost, targetPort] = target.split(':')
+    if (url.hostname.toLowerCase() !== targetHost.toLowerCase() || port !== (targetPort || defaultPort)) continue
+    const next = new URL(url.toString())
+    const [keyHost, keyPort] = key.split(':')
+    next.hostname = keyHost
+    next.port = keyPort && keyPort !== defaultPort ? keyPort : ''
+    return next
+  }
+  return url
+}
+
 /** Возвращает адрес с подменённым host:port либо исходный, если пары нет. */
 export function applyHostAlias(url: URL, aliases: HostAliases): URL {
   if (!aliases.size) return url
