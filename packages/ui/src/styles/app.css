@@ -4439,17 +4439,25 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcol--add { background: none; gap: 6px; padding: 4px; }
 .jcol--headonly { height: auto; max-height: none; min-height: 0; overflow: visible; }
 .jcol--incell { height: auto; max-height: none; min-height: 0; overflow: visible; background: var(--panel); border-radius: 8px; }
-.jcol-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 10px 10px 6px; cursor: grab; flex: none; }
+/* Верх колонок ровный: без фиксированной высоты шапка с длинным названием
+   («Создание интеграционных автотестов» — три строки) была на 16px выше
+   соседних, и первые карточки в колонках начинались на разной высоте. */
+.jcol-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; min-height: 50px; padding: 10px 10px 6px; cursor: grab; flex: none; }
 .jcol-head--over { background: var(--ci-removed-bg); border-radius: 8px 8px 0 0; }
 /* Перенос колонки: поднятая колонка гаснет, колонка-цель обведена. */
 .jcol--drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
 .jcol-head--drop { background: var(--accent-soft); border-radius: 8px 8px 0 0; }
 .jcol-head--lifted { opacity: 0.5; }
-.jcol-name { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-dim); display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+/* Счётчик и бейджи остаются в строке с названием (`nowrap`), а переносится и
+   обрезается только само название — иначе они уезжали на третью строку и
+   шапка снова становилась выше соседних. */
+.jcol-name { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-dim); display: inline-flex; align-items: center; flex-wrap: nowrap; gap: 6px; min-width: 0; }
+.jcol-name > :not(.jcol-name-text) { flex: 0 0 auto; }
+.jcol-name-text { flex: 0 1 auto; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-width: 0; }
+.jcol-hidden-mark { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .3px; padding: 0 5px; border-radius: 3px; background: var(--ci-neutral-bg); color: var(--ci-neutral); }
 .jcol-count { font-weight: 400; opacity: 0.8; text-transform: none; }
 .jcol-wip { font-weight: 600; border-radius: 3px; padding: 0 5px; background: var(--ci-neutral-bg); }
 .jcol-wip--over { background: var(--ci-removed-bg); color: var(--ci-removed); }
-.jcol-hidden-mark { font-size: 12px; }
 .jcol-assignee-filter { position: relative; flex: 0 0 auto; }
 .jcol-filter-button { position: relative; color: var(--text-dim); }
 .jcol-filter-button.is-active { color: var(--accent); background: var(--accent-soft); }
