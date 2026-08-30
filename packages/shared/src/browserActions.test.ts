@@ -3,7 +3,7 @@
 // пушит действие в браузер пользователя, а страница живёт в Chromium сервера.
 
 import { describe, it, expect } from 'vitest'
-import { planModelAction } from './modelActions'
+import { planModelAction } from './browserActions'
 
 describe('перевод действий модели для Playwright Reader', () => {
   it('открытие адреса становится навигацией', () => {
