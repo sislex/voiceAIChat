@@ -8,5 +8,5 @@ export type {
 } from './store/sessionsStore'
 export type { SessionsClient, SessionsEvent, SessionsHost, SessionsRealtime } from './contracts'
 export { DEFAULT_TEXTS, type SessionsTexts } from './texts'
-export { describeUserAgent, formatDuration, formatMoment, plural } from './format'
+export { formatDuration, formatMoment, plural } from './format'
 export { makeSession, makeSessions } from './fixtures'
