@@ -110,6 +110,19 @@ describe('разовый прогон набора (круг 24)', () => {
     expect(line.closest('li')).toHaveAttribute('data-state', 'blocked')
   })
 
+  it('ошибки страницы видны рядом с итогом сценария', async () => {
+    // Иначе человек, который только что записал сценарий, видит «провален» и
+    // идёт перезапускать, вместо того чтобы прочитать причину.
+    const onCheck = vi.fn(async () => ([{
+      name: 'Доска', passed: false, blocked: null, durationMs: 4200,
+      steps: [{ id: 's', title: 'Создать', status: 'failed' as const, detail: 'локатор не найден', durationMs: 4000 }],
+      pageErrors: ['Uncaught TypeError: columns is undefined']
+    }]))
+    render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать набор сейчас' }))
+    expect(await screen.findByText('Uncaught TypeError: columns is undefined')).toBeInTheDocument()
+  })
+
   it('отказ сервера показывается, а не теряется', async () => {
     const onCheck = vi.fn(async () => { throw new Error('Изолированный Chromium не настроен') })
     render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
