@@ -1,7 +1,7 @@
 // Форматирование дат и длительностей. Ядро отдаёт величины (durationOf), а
 // склонение и локаль — здесь: это единственное место в модуле, которое знает
 // про русский язык, и его проще всего заменить при переносе.
-import { durationOf, parseUserAgent, type Duration } from '@voicechat/sessions-core'
+import { durationOf, type Duration } from '@voicechat/sessions-core'
 
 /** Русское склонение числительных: 1 минута, 2 минуты, 5 минут. */
 export function plural(value: number, one: string, few: string, many: string): string {
@@ -31,15 +31,4 @@ export function formatDuration(ms: number): string {
 /** Короткая отметка «30.08 15:40» — в списке важнее компактность, чем год. */
 export function formatMoment(at: number, locale = 'ru-RU'): string {
   return new Date(at).toLocaleString(locale, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
-
-/**
- * Подпись устройства без версии браузера — совместима с прежним
- * `describeUserAgent` приложения: её всё ещё показывают тосты о входе с нового
- * устройства, где версия только удлиняет и без того длинную фразу.
- */
-export function describeUserAgent(ua: string): string {
-  const profile = parseUserAgent(ua)
-  if (profile.legacy) return 'Устройство (вход до появления списка сессий)'
-  return profile.os ? `${profile.browser} · ${profile.os}` : profile.browser
 }
