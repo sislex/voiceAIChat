@@ -9,7 +9,7 @@ import { SlidingWindowLimiter } from '../make/rateLimit.js'
 const LOGIN_LIMIT = 10
 const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
-import { REST, type SessionUser, type UserRole, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
+import { REST, type SessionInfo, type SessionUser, type UserRole, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
 import { deviceKey, findTrustedDevice, isNewDevice, localGeo, overLimit, parseUserAgent, type GeoResolver } from '@voicechat/sessions-core'
 import { createGeoResolver } from './geo.js'
 import type { SessionHub } from './sessionHub.js'
@@ -17,7 +17,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
 import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { createMailer, type Mailer } from './mailer.js'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import type { ProjectFeature } from '@voicechat/shared'
 
 const PREVIEW_SESSION_COOKIE = 'vc_preview_session'
@@ -26,6 +26,14 @@ const PREVIEW_COOKIE_PATH = '/api/preview'
 /** Cookie-сессия (auth-roadmap п.5): HttpOnly-токен на весь /api + читаемый CSRF-токен для мутаций. */
 export const SESSION_COOKIE = 'vc_session'
 export const CSRF_COOKIE = 'vc_csrf'
+/**
+ * Долгоживущий секрет устройства. На нём держится «доверенное устройство»:
+ * приметы запроса (User-Agent, подсеть) подделываются, секрет — нет. Отдельная
+ * cookie, а не сессионная: переживает выход и перелогин, иначе доверие
+ * приходилось бы подтверждать после каждого logout.
+ */
+export const DEVICE_COOKIE = 'vc_device'
+const DEVICE_COOKIE_MAX_AGE = 400 * 24 * 60 * 60
 export const CSRF_HEADER = 'x-vc-csrf'
 function secureFlag(req: FastifyRequest): string {
   const proto = String(req.headers['x-forwarded-proto'] ?? req.protocol)
@@ -39,6 +47,11 @@ export function sessionCookies(req: FastifyRequest, token: string, csrf: string,
     `${CSRF_COOKIE}=${csrf}; Path=/; SameSite=Strict${age}${secureFlag(req)}`
   ]
 }
+/** Cookie секрета устройства: SameSite=Lax, чтобы переживать переходы по ссылкам из писем. */
+export function deviceCookie(req: FastifyRequest, secret: string): string {
+  return `${DEVICE_COOKIE}=${secret}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${DEVICE_COOKIE_MAX_AGE}${secureFlag(req)}`
+}
+
 export function clearSessionCookies(req: FastifyRequest): string[] {
   return [`${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secureFlag(req)}`, `${CSRF_COOKIE}=; Path=/; SameSite=Strict; Max-Age=0${secureFlag(req)}`]
 }
@@ -233,6 +246,25 @@ export function readSignupConfig(db: VoiceChatDb): { enabled: boolean; role: Use
 }
 
 /**
+ * Что отдаём клиенту: хеш секрета устройства наружу не уходит. Он нужен только
+ * серверу для решения о доверии, а в ответе стал бы подсказкой для подбора.
+ */
+function publicSession(session: SessionInfo): SessionInfo {
+  const { deviceSecret: _hidden, ...rest } = session
+  return rest
+}
+
+/** Секрет устройства из cookie: голый секрет наружу не хранится, только хеш. */
+function deviceSecretOf(req: FastifyRequest): string | undefined {
+  const raw = cookieOf(req, DEVICE_COOKIE)
+  return raw && raw.length >= 16 ? raw.slice(0, 128) : undefined
+}
+
+function hashDeviceSecret(secret: string): string {
+  return createHash('sha256').update(secret).digest('hex')
+}
+
+/**
  * Откуда вошли. Отдельного заголовка у клиентов нет, поэтому смотрим на UA:
  * Electron-оболочка и компаньон-агент представляются явно, всё прочее — веб.
  */
@@ -360,11 +392,14 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     // поэтому предупреждение приходит на смену устройства, а не на смену версии.
     const known = db.listSessions(name)
     const isNew = isNewDevice(known, { userAgent: ua, ip: req.ip })
+    // Секрет устройства: из cookie, если браузер её уже носит, иначе новый.
+    const deviceSecret = deviceSecretOf(req) ?? randomBytes(24).toString('base64url')
     db.createSession(sid, name, {
       ip: req.ip,
       userAgent: ua,
       ttlMs: ttl,
       deviceKey: deviceKey({ userAgent: ua, ip: req.ip }),
+      deviceSecret: hashDeviceSecret(deviceSecret),
       platform: platformOf(ua),
       clientVersion: clientVersionOf(req),
       geo: localGeo(req.ip)
@@ -408,7 +443,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       }
     }
     const csrf = newSessionId()
-    reply.header('set-cookie', [previewCookie(token), ...sessionCookies(req, token, csrf, remember ? Math.floor(ttl / 1000) : null)])
+    reply.header('set-cookie', [previewCookie(token), ...sessionCookies(req, token, csrf, remember ? Math.floor(ttl / 1000) : null), deviceCookie(req, deviceSecret)])
     return { token, user, csrf }
   }
   app.post<{ Body: { name?: string; password?: string; remember?: boolean } }>(
@@ -446,8 +481,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       // второй фактор защищает от входа с чужого устройства, а на своём он
       // превращается в ежедневный налог и подталкивает выключить 2FA совсем.
       if (db.getUserTotpSecret(u.name)) {
-        const ua = String(req.headers['user-agent'] ?? '')
-        const trusted = findTrustedDevice(db.listSessions(u.name), { userAgent: ua, ip: req.ip })
+        const secret = deviceSecretOf(req)
+        const trusted = findTrustedDevice(db.listSessions(u.name), { deviceSecret: secret ? hashDeviceSecret(secret) : null })
         if (!trusted) {
           const ticket = newSessionId()
           pendingTwoFactor.set(ticket, { name: u.name, expires: Date.now() + 5 * 60_000, attempts: 0, remember })
@@ -721,11 +756,15 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   })
 
   // Сессии пользователя (auth-roadmap п.4): список, «выйти везде» (кроме текущей), отзыв одной.
-  app.get(REST.sessionList, async (req, reply) => {
+  app.get<{ Querystring: { ended?: string } }>(REST.sessionList, async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     const current = sidOf(req)
-    return { sessions: db.listSessions(user.name).map((s) => ({ ...s, current: s.sid === current })) }
+    const sessions = db.listSessions(user.name).map((s) => publicSession({ ...s, current: s.sid === current }))
+    // Завершённые отдаём только по запросу: обычному списку они не нужны, а
+    // лишний запрос в БД на каждое открытие окна — тоже плата.
+    if (req.query?.ended !== '1') return { sessions }
+    return { sessions, ended: db.listEndedSessions(user.name).map(publicSession) }
   })
   app.post<{ Body: { includeCurrent?: boolean } | undefined }>(REST.sessionLogoutAll, async (req, reply) => {
     const user = activeUser(tokenOf(req))
@@ -748,6 +787,26 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     db.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}${includeCurrent ? ', включая текущую' : ''}` })
     for (const session of doomed) options.sessions?.emit(user.name, session.sid)
     if (doomed.length === 0) options.sessions?.emit(user.name)
+    return { revoked }
+  })
+  /**
+   * «Это не я»: человек увидел чужой вход и жмёт одну кнопку. Полумеры здесь
+   * вредны — гасим все сессии без исключений (включая свою) и требуем сменить
+   * пароль при следующем входе: чужая сессия жива ровно потому, что пароль уже
+   * у кого-то есть.
+   */
+  app.post(REST.sessionPanic, async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
+    const doomed = db.listSessions(user.name)
+    const revoked = db.revokeUserSessions(user.name, null)
+    const token = tokenOf(req)
+    if (token) db.revokeSession(token)
+    db.setMustChangePassword(user.name, true)
+    reply.header('set-cookie', [previewCookie('', 0), ...clearSessionCookies(req)])
+    db.logSecurityEvent({ user: user.name, type: 'session_panic', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}, требуется смена пароля` })
+    for (const session of doomed) options.sessions?.emit(user.name, session.sid)
     return { revoked }
   })
   app.delete<{ Params: { sid: string } }>('/api/session/:sid', async (req, reply) => {

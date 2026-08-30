@@ -25,12 +25,12 @@ describe('createSessionsStore: чтение', () => {
     await store.actions.load()
     expect(store.getState().status).toBe('ready')
     expect(store.getState().sessions).toHaveLength(4)
-    expect(store.capabilities).toEqual({ rename: true, trust: true, revokeOthers: true, revokeAll: true })
+    expect(store.capabilities).toEqual({ rename: true, trust: true, revokeOthers: true, revokeAll: true, ended: false, panic: false })
   })
 
   it('урезанный клиент (админка) объявляет только чтение и отзыв', () => {
     const store = createSessionsStore({ client: { list: async () => [], revoke: async () => undefined } })
-    expect(store.capabilities).toEqual({ rename: false, trust: false, revokeOthers: false, revokeAll: false })
+    expect(store.capabilities).toEqual({ rename: false, trust: false, revokeOthers: false, revokeAll: false, ended: false, panic: false })
   })
 
   it('ошибка чтения переводит в error и сохраняет текст для ErrorState', async () => {
@@ -179,3 +179,69 @@ describe('createSessionsStore: живые события', () => {
     expect(client.calls.filter((c) => c === 'list')).toHaveLength(1)
   })
 })
+
+describe('createSessionsStore: завершённые, паника и фильтр по платформе', () => {
+  const ended = [makeSession({ sid: 'gone', ended: true, endedAt: FIXTURE_NOW - 60_000 })]
+
+  it('завершённые грузятся отдельно и только по запросу', async () => {
+    const listEnded = vi.fn(async () => ended)
+    const store = createSessionsStore({ client: clientOf(makeSessions(), { listEnded }) })
+    await store.actions.load()
+    expect(store.getState().ended).toBeNull()
+    expect(listEnded).not.toHaveBeenCalled()
+    await store.actions.loadEnded()
+    expect(store.getState().ended?.map((s) => s.sid)).toEqual(['gone'])
+  })
+
+  it('сбой запроса завершённых не ломает основной список', async () => {
+    const error = vi.fn()
+    const store = createSessionsStore({
+      client: clientOf(makeSessions(), { listEnded: async () => { throw new Error('502') } }),
+      notify: { error }
+    })
+    await store.actions.load()
+    await store.actions.loadEnded()
+    expect(store.getState().status).toBe('ready')
+    expect(store.getState().sessions).toHaveLength(4)
+    expect(error).toHaveBeenCalledWith('502')
+  })
+
+  it('«это не я» очищает список и уводит на экран входа', async () => {
+    const panic = vi.fn(async () => undefined)
+    const onSignedOut = vi.fn()
+    const store = createSessionsStore({ client: clientOf(makeSessions(), { panic }), host: { onSignedOut } })
+    await store.actions.load()
+    expect(store.capabilities.panic).toBe(true)
+    expect(await store.actions.panic()).toBe(true)
+    expect(panic).toHaveBeenCalled()
+    expect(store.getState().sessions).toEqual([])
+    expect(onSignedOut).toHaveBeenCalled()
+  })
+
+  it('фильтр по платформе сужает список и снимается повторным выбором', async () => {
+    const sessions = [
+      makeSession({ sid: 'web', platform: 'web' }),
+      makeSession({ sid: 'app', platform: 'desktop' })
+    ]
+    const store = createSessionsStore({ client: clientOf(sessions), host: { now: () => FIXTURE_NOW } })
+    await store.actions.load()
+    expect(store.platforms()).toEqual(['desktop', 'web'])
+    store.actions.setPlatform('desktop')
+    expect(store.visible().map((v) => v.session.sid)).toEqual(['app'])
+    store.actions.setPlatform(null)
+    expect(store.visible()).toHaveLength(2)
+  })
+
+  it('карточка знает о соседних сессиях того же устройства', async () => {
+    const sessions = [
+      makeSession({ sid: 'a', deviceKey: 'same' }),
+      makeSession({ sid: 'b', deviceKey: 'same' }),
+      makeSession({ sid: 'c', deviceKey: 'other' })
+    ]
+    const store = createSessionsStore({ client: clientOf(sessions), host: { now: () => FIXTURE_NOW } })
+    await store.actions.load()
+    expect(store.visible().find((v) => v.session.sid === 'a')?.siblings).toBe(1)
+    expect(store.visible().find((v) => v.session.sid === 'c')?.siblings).toBe(0)
+  })
+})
+

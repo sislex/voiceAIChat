@@ -2,6 +2,7 @@
 export { SessionsPanel, SessionsBulkActions, type SessionsPanelProps, type SessionsConfirm } from './SessionsPanel'
 export { SessionsDialog, type SessionsDialogProps } from './SessionsDialog'
 export { DeviceCard, type DeviceCardProps } from './DeviceCard'
+export { EndedSessions, type EndedSessionsProps } from './EndedSessions'
 export { createSessionsStore } from './store/sessionsStore'
 export type {
   SessionsActions, SessionsCapabilities, SessionsState, SessionsStatus, SessionsStore, SessionsStoreOptions

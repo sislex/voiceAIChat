@@ -71,7 +71,7 @@ export interface AdminActions {
   loadAdminSecurity(): Promise<void>
   loadAdminInvites(): Promise<void>
   loadAdminSignup(): Promise<void>
-  setAdminSignup(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number }): Promise<void>
+  setAdminSignup(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }): Promise<void>
   createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }): Promise<InviteInfo | null>
   deleteAdminInvite(token: string): Promise<void>
   revokeAdminSession(sid: string): Promise<void>
@@ -290,7 +290,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     if (!client.signupConfig) return
     try { setState({ adminSignup: await client.signupConfig() }) } catch (err) { fail(err, () => void loadAdminSignup()) }
   }
-  async function setAdminSignup(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number }): Promise<void> {
+  async function setAdminSignup(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }): Promise<void> {
     if (!client.setSignupConfig) return
     try { setState({ adminSignup: await client.setSignupConfig(input) }) } catch (err) { fail(err, () => void setAdminSignup(input)) }
   }

@@ -18,6 +18,8 @@ export interface SessionView {
   place: string
   /** Сколько осталось до истечения, мс; ≤ 0 — сессия уже мертва. */
   expiresInMs: number
+  /** Сколько ещё живых сессий у этого же устройства. */
+  siblings: number
 }
 
 /** Подпись устройства для человека. Для унаследованных записей UA нет вовсе. */
@@ -28,7 +30,7 @@ export function sessionTitle(session: DeviceSession): string {
   return profile.label
 }
 
-export function toView(session: DeviceSession, now = Date.now(), policy?: Partial<SessionPolicy>): SessionView {
+export function toView(session: DeviceSession, now = Date.now(), policy?: Partial<SessionPolicy>, all: readonly DeviceSession[] = []): SessionView {
   return {
     session,
     profile: parseUserAgent(session.userAgent),
@@ -37,7 +39,8 @@ export function toView(session: DeviceSession, now = Date.now(), policy?: Partia
     trusted: isTrusted(session, now, policy),
     current: Boolean(session.current),
     place: session.geo?.label ?? '',
-    expiresInMs: session.expiresAt - now
+    expiresInMs: session.expiresAt - now,
+    siblings: deviceSiblings(all, session)
   }
 }
 
@@ -61,6 +64,35 @@ export function filterSessions(sessions: readonly DeviceSession[], query: string
     return [s.label ?? '', profile.browser, profile.os, s.ip, s.geo?.label ?? '', s.userAgent]
       .join(' ').toLowerCase().includes(q)
   })
+}
+
+/**
+ * Сколько живых сессий приходится на то же устройство. Один браузер легко
+ * набирает несколько входов (перелогин, другая вкладка после выхода), и без
+ * этой подсказки список выглядит так, будто устройств больше, чем есть.
+ */
+export function deviceSiblings(sessions: readonly DeviceSession[], session: DeviceSession): number {
+  const key = session.deviceKey
+  if (!key) return 0
+  return sessions.filter((s) => s.sid !== session.sid && s.deviceKey === key).length
+}
+
+/** Группы «одно устройство — несколько сессий»: ключ устройства → его сессии. */
+export function groupByDevice(sessions: readonly DeviceSession[]): Map<string, DeviceSession[]> {
+  const groups = new Map<string, DeviceSession[]>()
+  for (const session of sessions) {
+    // Сессии без ключа (старые записи) в группы не сводим: они не сравнимы.
+    const key = session.deviceKey ?? `sid:${session.sid}`
+    const bucket = groups.get(key)
+    if (bucket) bucket.push(session)
+    else groups.set(key, [session])
+  }
+  return groups
+}
+
+/** Платформы, встреченные в списке: по ним строится фильтр в панели. */
+export function platformsOf(sessions: readonly DeviceSession[]): string[] {
+  return [...new Set(sessions.map((s) => s.platform).filter((p): p is string => Boolean(p)))].sort()
 }
 
 /** Сколько сессий кроме текущей — от этого зависит кнопка «выйти на других». */

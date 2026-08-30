@@ -10,6 +10,10 @@ const BOT = /bot\b|crawler|spider|curl\/|wget|python-requests|postmanruntime|nod
 
 // Порядок важен: Edge и Opera представляются Chrome, Chrome на iOS — Safari.
 const BROWSERS: Array<[RegExp, string]> = [
+  // Electron идёт первым: внутри он тот же Chrome, но для человека это
+  // «приложение», а не вкладка браузера, и ключ устройства у них обязан
+  // различаться — иначе список склеивает их в одно устройство.
+  [/Electron\/([\d.]+)/, 'Electron'],
   [/Edg(?:iOS|A)?\/(\d+)/, 'Edge'],
   [/OPR\/(\d+)/, 'Opera'],
   [/YaBrowser\/(\d+)/, 'Yandex Browser'],
@@ -84,7 +88,9 @@ export function parseUserAgent(userAgent: string | null | undefined): DeviceProf
   // как это делал прежний разбор: «MyAgent/1.2» читается лучше, чем «неизвестно».
   if (!browser) browser = (ua.split('/')[0] ?? ua).slice(0, 40).trim() || 'Неизвестный клиент'
   const kind = kindOf(ua, os)
-  const head = browserVersion ? `${browser} ${browserVersion}` : browser
+  // У Electron версия вида 33.0.0 — в подписи оставляем мажорную, как у прочих.
+  const shortVersion = browserVersion ? browserVersion.split('.')[0]! : null
+  const head = shortVersion ? `${browser} ${shortVersion}` : browser
   return { browser, browserVersion, os, osVersion, kind, label: os ? `${head} · ${os}` : head, legacy: false }
 }
 

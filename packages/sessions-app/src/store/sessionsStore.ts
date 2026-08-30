@@ -5,7 +5,7 @@
 // Отзыв сделан оптимистично: сессия исчезает сразу, а при ошибке возвращается
 // на место. Ждать ответа сервера здесь нечестно — человек нажимает «Завершить»
 // именно тогда, когда встревожен, и подвисший список читается как отказ.
-import { filterSessions, sortSessions, toView, type DeviceSession, type SessionPolicy, type SessionView } from '@voicechat/sessions-core'
+import { filterSessions, platformsOf, sortSessions, toView, type DeviceSession, type SessionPolicy, type SessionView } from '@voicechat/sessions-core'
 import type { SessionsClient, SessionsEvent, SessionsHost, SessionsRealtime } from '../contracts'
 
 export type SessionsStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -15,6 +15,10 @@ export interface SessionsState {
   sessions: DeviceSession[]
   error: string | null
   query: string
+  /** Платформа-фильтр (`web`/`desktop`/`agent`); null — показываем все. */
+  platform: string | null
+  /** Недавно завершённые сессии; null — ещё не запрашивали. */
+  ended: DeviceSession[] | null
   /** Sid, по которому идёт действие: карточка показывает занятость точечно. */
   busySid: string | null
   /** Идёт массовое действие — «выйти на других»/«выйти везде». */
@@ -25,6 +29,9 @@ export interface SessionsActions {
   load(): Promise<void>
   reload(): Promise<void>
   setQuery(query: string): void
+  setPlatform(platform: string | null): void
+  loadEnded(): Promise<void>
+  panic(): Promise<boolean>
   revoke(sid: string): Promise<boolean>
   revokeOthers(): Promise<boolean>
   revokeAll(): Promise<boolean>
@@ -39,6 +46,8 @@ export interface SessionsCapabilities {
   trust: boolean
   revokeOthers: boolean
   revokeAll: boolean
+  ended: boolean
+  panic: boolean
 }
 
 export interface SessionsStore {
@@ -48,6 +57,8 @@ export interface SessionsStore {
   actions: SessionsActions
   /** Что рисовать: отфильтровано, отсортировано и обогащено признаками. */
   visible(): SessionView[]
+  /** Платформы, встреченные в списке: из них строится фильтр. */
+  platforms(): string[]
   /** Сколько сессий кроме текущей — от этого зависит массовая кнопка. */
   otherCount(): number
 }
@@ -60,7 +71,7 @@ export interface SessionsStoreOptions {
   notify?: { success?(message: string): void; error?(message: string): void }
 }
 
-const initial = (): SessionsState => ({ status: 'idle', sessions: [], error: null, query: '', busySid: null, busyAll: false })
+const initial = (): SessionsState => ({ status: 'idle', sessions: [], error: null, query: '', platform: null, ended: null, busySid: null, busyAll: false })
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
@@ -120,7 +131,9 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
       rename: typeof client.rename === 'function',
       trust: typeof client.setTrusted === 'function',
       revokeOthers: typeof client.revokeOthers === 'function',
-      revokeAll: typeof client.revokeAll === 'function'
+      revokeAll: typeof client.revokeAll === 'function',
+      ended: typeof client.listEnded === 'function',
+      panic: typeof client.panic === 'function'
     },
     getState: () => state,
     subscribe(listener) {
@@ -128,7 +141,11 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
       return () => listeners.delete(listener)
     },
     visible() {
-      return sortSessions(filterSessions(state.sessions, state.query)).map((s) => toView(s, now(), policy))
+      const byPlatform = state.platform ? state.sessions.filter((s) => s.platform === state.platform) : state.sessions
+      return sortSessions(filterSessions(byPlatform, state.query)).map((s) => toView(s, now(), policy, state.sessions))
+    },
+    platforms() {
+      return platformsOf(state.sessions)
     },
     otherCount() {
       return state.sessions.filter((s) => !s.current).length
@@ -144,6 +161,33 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
       },
       setQuery(query) {
         set({ query })
+      },
+      setPlatform(platform) {
+        set({ platform })
+      },
+      async loadEnded() {
+        if (!client.listEnded) return
+        try {
+          const ended = await client.listEnded()
+          if (!disposed) set({ ended })
+        } catch (error) {
+          // Завершённые — справка, а не основной список: молча оставляем пустым,
+          // чтобы сбой второстепенного запроса не ломал рабочий экран.
+          notify?.error?.(messageOf(error))
+        }
+      },
+      async panic() {
+        if (!client.panic) return false
+        set({ busyAll: true })
+        try {
+          await client.panic()
+          if (!disposed) set({ busyAll: false, sessions: [], ended: null })
+          host?.onSignedOut?.()
+          return true
+        } catch (error) {
+          if (!disposed) set({ busyAll: false })
+          return fail(error)
+        }
       },
       async revoke(sid) {
         return mutate({ sid }, (list) => list.filter((s) => s.sid !== sid), () => client.revoke(sid))

@@ -291,6 +291,7 @@ interface SessionRow {
   geo: string | null
   requests: number | null
   last_path: string | null
+  device_secret: string | null
 }
 
 /** Строка → контракт. Гео хранится JSON-ом: битую запись просто теряем. */
@@ -312,7 +313,8 @@ function sessionOf(r: SessionRow): SessionInfo {
     clientVersion: r.client_version ?? null,
     geo,
     requests: r.requests ?? 0,
-    lastPath: r.last_path ?? null
+    lastPath: r.last_path ?? null,
+    deviceSecret: r.device_secret ?? null
   }
 }
 
@@ -922,6 +924,7 @@ export class VoiceChatDb {
       add('geo', 'geo TEXT')
       add('requests', 'requests INTEGER NOT NULL DEFAULT 0')
       add('last_path', 'last_path TEXT')
+      add('device_secret', 'device_secret TEXT')
       this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(user_name, device_key)`)
     }
     // Уровень доступа предоставленной проекту машины (machines-roadmap п.18): 'full' | 'read'.
@@ -3129,13 +3132,13 @@ export class VoiceChatDb {
 
 
   /** Регистрирует сессию входа; повторный вызов для того же sid обновляет last_seen. */
-  createSession(sid: string, user: string, meta: { ip: string; userAgent: string; ttlMs: number; deviceKey?: string | null; platform?: string | null; clientVersion?: string | null; geo?: SessionGeo | null; at?: number }): void {
+  createSession(sid: string, user: string, meta: { ip: string; userAgent: string; ttlMs: number; deviceKey?: string | null; deviceSecret?: string | null; platform?: string | null; clientVersion?: string | null; geo?: SessionGeo | null; at?: number }): void {
     const now = meta.at ?? Date.now()
-    this.db.prepare(`INSERT INTO sessions (sid, user_name, created_at, last_seen, expires_at, ip, user_agent, device_key, platform, client_version, geo)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    this.db.prepare(`INSERT INTO sessions (sid, user_name, created_at, last_seen, expires_at, ip, user_agent, device_key, device_secret, platform, client_version, geo)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(sid) DO UPDATE SET last_seen = excluded.last_seen`)
       .run(sid, user, now, now, now + meta.ttlMs, meta.ip.slice(0, 64), meta.userAgent.slice(0, 200),
-        meta.deviceKey ?? null, meta.platform ?? null, meta.clientVersion ?? null, meta.geo ? JSON.stringify(meta.geo) : null)
+        meta.deviceKey ?? null, meta.deviceSecret ?? null, meta.platform ?? null, meta.clientVersion ?? null, meta.geo ? JSON.stringify(meta.geo) : null)
   }
 
   /** Есть ли запись о сессии вообще (в т.ч. отозванная) — чтобы ленивый импорт старых токенов не воскрешал отозванные. */
@@ -3175,6 +3178,18 @@ export class VoiceChatDb {
   listSessions(user: string, at?: number): SessionInfo[] {
     const rows = this.db.prepare(`SELECT * FROM sessions WHERE user_name = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY last_seen DESC`).all(user, at ?? Date.now()) as SessionRow[]
     return rows.map(sessionOf)
+  }
+
+  /**
+   * Недавно завершённые сессии: отозванные и истёкшие, пока их не убрал prune.
+   * Нужны, чтобы «сессия исчезла» отличалось от «сессии не было» — иначе после
+   * отзыва человек не может убедиться, что закрыл именно тот вход.
+   */
+  listEndedSessions(user: string, limit = 20, at?: number): SessionInfo[] {
+    const now = at ?? Date.now()
+    const rows = this.db.prepare(`SELECT * FROM sessions WHERE user_name = ? AND (revoked_at IS NOT NULL OR expires_at <= ?)
+      ORDER BY COALESCE(revoked_at, expires_at) DESC LIMIT ?`).all(user, now, Math.min(Math.max(limit, 1), 100)) as SessionRow[]
+    return rows.map((r) => ({ ...sessionOf(r), endedAt: r.revoked_at ?? r.expires_at, ended: true }))
   }
 
   revokeSessionById(sid: string, at?: number): boolean {

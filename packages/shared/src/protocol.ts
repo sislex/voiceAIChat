@@ -151,6 +151,8 @@ export const REST = {
   session2faEnable: '/api/session/2fa/enable',
   session2faDisable: '/api/session/2fa/disable',
   sessionLogoutAll: '/api/session/logout-all',
+  /** «Это не я»: гасит все сессии и требует смену пароля при следующем входе. */
+  sessionPanic: '/api/session/panic',
   sessionRevoke: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
   /** Имя устройства и отметка «доверенное» для своей сессии. */
   sessionUpdate: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,

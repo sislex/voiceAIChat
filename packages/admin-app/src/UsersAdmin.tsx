@@ -31,7 +31,7 @@ function AdminFrame({ variant, onClose, children }: { variant: 'modal' | 'page';
 }
 
 /** Подписи событий журнала безопасности (auth-roadmap п.7). */
-const SECURITY_LABEL: Record<SecurityEventType, string> = { agent_connected: 'Агент подключился', agent_rejected: 'Агент отклонён', agent_token_rotated: 'Токен агента перевыпущен', agent_token_revoked: 'Токен агента отозван', signup_requested: 'Заявка на регистрацию', signup_verified: 'Email подтверждён', login_new_device: 'Вход с нового устройства', inactive_blocked: 'Отключён за неактивность', reset_code_issued: 'Выдан код сброса', password_reset: 'Пароль сброшен по коду', password_changed: 'Пароль изменён', invite_created: 'Создан инвайт', project_invited: 'Приглашение в проект', project_invite_accepted: 'Приглашение принято', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', session_renamed: 'Устройство переименовано', session_trusted: 'Устройство доверено', session_untrusted: 'Доверие снято', session_evicted: 'Сессия вытеснена лимитом', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
+const SECURITY_LABEL: Record<SecurityEventType, string> = { agent_connected: 'Агент подключился', agent_rejected: 'Агент отклонён', agent_token_rotated: 'Токен агента перевыпущен', agent_token_revoked: 'Токен агента отозван', signup_requested: 'Заявка на регистрацию', signup_verified: 'Email подтверждён', login_new_device: 'Вход с нового устройства', inactive_blocked: 'Отключён за неактивность', reset_code_issued: 'Выдан код сброса', password_reset: 'Пароль сброшен по коду', password_changed: 'Пароль изменён', invite_created: 'Создан инвайт', project_invited: 'Приглашение в проект', project_invite_accepted: 'Приглашение принято', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', session_renamed: 'Устройство переименовано', session_trusted: 'Устройство доверено', session_untrusted: 'Доверие снято', session_evicted: 'Сессия вытеснена лимитом', session_panic: 'Тревога: «это не я»', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
 
 export interface UsersAdminProps {
   variant?: 'modal' | 'page'
@@ -87,7 +87,7 @@ export interface UsersAdminProps {
   /** Открытая регистрация с подтверждением email. */
   signup?: SignupConfig | null
   onLoadSignup?: () => void
-  onSetSignup?: (input: { enabled?: boolean; role?: import('@shared/types').UserRole; ownedProjectLimit?: number }) => void
+  onSetSignup?: (input: { enabled?: boolean; role?: import('@shared/types').UserRole; ownedProjectLimit?: number; sessionLimit?: number }) => void
   onOpenConversation: (id: string) => void
   /** Типы проекта, ожидающие утверждения; нет обработчика — секции нет. */
   pendingProjectTypes?: ProjectTypeNode[]
@@ -326,6 +326,8 @@ export function UsersAdmin({
                   <label className="make-autosave"><input type="checkbox" aria-label="Разрешить регистрацию по email" checked={signup.enabled} onChange={(e) => onSetSignup?.({ enabled: e.target.checked })} /> разрешить регистрацию с подтверждением email</label>
                   <label>Роль новых <select aria-label="Роль новых пользователей" value={signup.role} onChange={(e) => onSetSignup?.({ role: e.target.value as import('@shared/types').UserRole })}><option value="developer">developer</option><option value="tester">tester</option><option value="observer">observer</option></select></label>
                   <label>Проектов на пользователя <input type="number" min={1} max={1000} aria-label="Квота проектов на пользователя" value={signup.ownedProjectLimit} onChange={(e) => { const value = Number(e.target.value); if (Number.isInteger(value) && value > 0) onSetSignup?.({ ownedProjectLimit: value }) }} /></label>
+                  {/* 0 — без ограничения: лимит сессий выключен по умолчанию, включать его должен человек осознанно. */}
+                  <label>Сессий на пользователя <input type="number" min={0} max={100} aria-label="Лимит одновременных сессий (0 — без ограничения)" value={signup.sessionLimit ?? 0} onChange={(e) => { const value = Number(e.target.value); if (Number.isInteger(value) && value >= 0 && value <= 100) onSetSignup?.({ sessionLimit: value }) }} /></label>
                   {!signup.mailConfigured && <span className="ublock ublock--lock" title="Задайте VC_SMTP_URL и VC_MAIL_FROM на сервере">SMTP не настроен — письма пишутся в лог сервера</span>}
                 </div>
               )}

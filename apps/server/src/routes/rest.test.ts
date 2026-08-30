@@ -382,24 +382,6 @@ describe('REST: аутентификация', () => {
     legacyDb.close()
   })
 
-  it('доверенное устройство пропускает второй фактор, чужое — нет', async () => {
-    db.createUser('trusty', 'trusty-pass-2026-ok', 'developer')
-    const chrome = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
-    const login = async (ua: string) => app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'trusty', password: 'trusty-pass-2026-ok' }, headers: { 'user-agent': ua } })
-    const first = await login(chrome)
-    const token = first.json().token as string
-    const sid = db.listSessions('trusty')[0]!.sid
-    // Помечаем текущее устройство доверенным и включаем второй фактор.
-    expect((await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { trusted: true }, headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200)
-    const secret = (await app.inject({ method: 'POST', url: '/api/session/2fa/setup', headers: { authorization: `Bearer ${token}` } })).json().secret as string
-    expect((await app.inject({ method: 'POST', url: '/api/session/2fa/enable', payload: { code: totpCode(secret) }, headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(200)
-    // То же устройство: код не спрашивают.
-    expect((await login(chrome)).json()).toMatchObject({ user: { name: 'trusty' } })
-    // Другое устройство: обычный второй фактор.
-    expect((await login('Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Version/17.5 Mobile Safari/604.1')).json()).toMatchObject({ requires2fa: true })
-    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
-  })
-
   it('переименование и доверие: только своя сессия, пустое имя снимает метку, чужая — 404', async () => {
     db.createUser('named', 'named-pass-2026-ok', 'developer')
     db.createUser('alien', 'alien-pass-2026-ok', 'developer')
@@ -498,6 +480,91 @@ describe('REST: аутентификация', () => {
     }
     expect((await app.inject({ method: 'PATCH', url: `/api/session/${cookieSid}`, payload: { label: 'Ноут' }, headers: { cookie: cookieHeader, 'x-vc-csrf': csrf } })).statusCode).toBe(200)
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('доверие привязано к секрету устройства: тот же браузер из той же сети без cookie проходит второй фактор', async () => {
+    db.createUser('secretly', 'secretly-pass-2026', 'developer')
+    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
+    const login = async (cookie?: string) => app.inject({
+      method: 'POST', url: '/api/session/login',
+      payload: { name: 'secretly', password: 'secretly-pass-2026' },
+      headers: { 'user-agent': ua, ...(cookie ? { cookie } : {}) }
+    })
+    const first = await login()
+    const deviceCookie = ([] as string[]).concat(first.headers['set-cookie'] as string[]).find((c) => c.startsWith('vc_device='))!
+    expect(deviceCookie).toContain('HttpOnly')
+    const deviceHeader = deviceCookie.split(';')[0]!
+    const token = first.json().token as string
+    const sid = db.listSessions('secretly')[0]!.sid
+    await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { trusted: true }, headers: { authorization: `Bearer ${token}` } })
+    const secret = (await app.inject({ method: 'POST', url: '/api/session/2fa/setup', headers: { authorization: `Bearer ${token}` } })).json().secret as string
+    await app.inject({ method: 'POST', url: '/api/session/2fa/enable', payload: { code: totpCode(secret) }, headers: { authorization: `Bearer ${token}` } })
+
+    // С cookie устройства — второй фактор пропускается.
+    expect((await login(deviceHeader)).json()).toMatchObject({ user: { name: 'secretly' } })
+    // Тот же User-Agent и тот же адрес, но без секрета — код спрашиваем: иначе
+    // сосед по сети, укравший пароль, обошёл бы второй фактор подделкой примет.
+    expect((await login()).json()).toMatchObject({ requires2fa: true })
+    // Чужой секрет тоже не подходит.
+    expect((await login('vc_device=подделанный-секрет-достаточной-длины')).json()).toMatchObject({ requires2fa: true })
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('список сессий не отдаёт хеш секрета устройства ни владельцу, ни админу', async () => {
+    db.createUser('hidden', 'hidden-pass-2026-ok', 'developer')
+    const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'hidden', password: 'hidden-pass-2026-ok' } })).json().token as string
+    // В базе хеш есть — наружу он не уходит: иначе это подсказка для подбора.
+    expect(db.listSessions('hidden')[0]!.deviceSecret).toMatch(/^[0-9a-f]{64}$/)
+    const own = (await app.inject({ method: 'GET', url: '/api/session/list', headers: { authorization: `Bearer ${token}` } })).json() as { sessions: Array<Record<string, unknown>> }
+    expect(own.sessions[0]).not.toHaveProperty('deviceSecret')
+    const admin = (await inj({ method: 'GET', url: '/api/admin/users/hidden/sessions' })).json() as { sessions: Array<Record<string, unknown>> }
+    expect(admin.sessions[0]).not.toHaveProperty('deviceSecret')
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('завершённые сессии отдаются по запросу и показывают момент завершения', async () => {
+    db.createUser('history', 'history-pass-2026-ok', 'developer')
+    const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'history', password: 'history-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
+    const keep = await login('Laptop/1.0')
+    await login('Phone/2.0')
+    const phoneSid = db.listSessions('history').find((s) => s.userAgent === 'Phone/2.0')!.sid
+    await app.inject({ method: 'DELETE', url: `/api/session/${phoneSid}`, headers: { authorization: `Bearer ${keep}` } })
+
+    const auth = { authorization: `Bearer ${keep}` }
+    const plain = (await app.inject({ method: 'GET', url: '/api/session/list', headers: auth })).json() as { ended?: unknown }
+    // Без запроса завершённых лишнего чтения из базы не делаем.
+    expect(plain.ended).toBeUndefined()
+    const withEnded = (await app.inject({ method: 'GET', url: '/api/session/list?ended=1', headers: auth })).json() as { sessions: unknown[]; ended: Array<{ sid: string; ended: boolean; endedAt: number }> }
+    expect(withEnded.sessions).toHaveLength(1)
+    expect(withEnded.ended[0]).toMatchObject({ sid: phoneSid, ended: true })
+    expect(withEnded.ended[0]!.endedAt).toBeGreaterThan(0)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('«это не я» гасит все сессии и требует смену пароля при следующем входе', async () => {
+    db.createUser('panicky', 'panicky-pass-2026-ok', 'developer')
+    const login = async () => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'panicky', password: 'panicky-pass-2026-ok' } })).json()
+    const first = (await login()).token as string
+    const second = (await login()).token as string
+    const res = await app.inject({ method: 'POST', url: '/api/session/panic', headers: { authorization: `Bearer ${first}` } })
+    expect(res.json()).toMatchObject({ revoked: 2 })
+    for (const token of [first, second]) {
+      expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(401)
+    }
+    // Следующий вход проходит, но приложение обязано увести на смену пароля.
+    expect((await login()).user).toMatchObject({ name: 'panicky', mustChangePassword: true })
+    expect(db.listSecurityEvents({ user: 'panicky' }).map((e) => e.type)).toContain('session_panic')
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('админ задаёт лимит одновременных сессий; отрицательное значение и мусор отвергаются', async () => {
+    expect((await inj({ method: 'GET', url: '/api/admin/signup' })).json()).toMatchObject({ sessionLimit: 0 })
+    expect((await inj({ method: 'PUT', url: '/api/admin/signup', payload: { sessionLimit: 3 } })).json()).toMatchObject({ sessionLimit: 3 })
+    expect(db.getAppConfig('sessions.maxPerUser')).toBe('3')
+    expect((await inj({ method: 'PUT', url: '/api/admin/signup', payload: { sessionLimit: -1 } })).statusCode).toBe(400)
+    expect((await inj({ method: 'PUT', url: '/api/admin/signup', payload: { sessionLimit: 1.5 } })).statusCode).toBe(400)
+    // Ноль — «без ограничения», он обязан приниматься.
+    expect((await inj({ method: 'PUT', url: '/api/admin/signup', payload: { sessionLimit: 0 } })).json()).toMatchObject({ sessionLimit: 0 })
   })
 
   it('cookie-сессия: login ставит HttpOnly vc_session + vc_csrf; GET по cookie проходит, мутация без CSRF → 403, с заголовком → ок; logout гасит cookie (auth-roadmap п.5)', async () => {

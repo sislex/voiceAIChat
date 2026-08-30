@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-30
-checked: da6632d4
+checked: d9eba6b9
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -337,7 +337,8 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 Все мутации по cookie-сессии требуют заголовок `x-vc-csrf`. WS: `sessions.update`
 (лёгкая инвалидация списка) и адресный `session.revoked { sid }` — приходит только
 тому соединению, чью сессию завершили, поэтому WS-сессия знает свой `sid`.
-Мост: `window.session.sessions/logoutAll/revokeSession/renameSession/trustSession/
-onSessionsChanged` — все необязательные, desktop их не реализует, и UI-модуль
+Ещё два роута: `GET /api/session/list?ended=1` (добавляет `ended` — завершённые
+сессии) и `POST /api/session/panic` («это не я»: гасит всё и требует смену
+пароля). Мост: `window.session.sessions/logoutAll/revokeSession/renameSession/
+trustSession/endedSessions/panicSessions/onSessionsChanged` — все необязательные, desktop их не реализует, и UI-модуль
 скрывает действия по `store.capabilities`.
-

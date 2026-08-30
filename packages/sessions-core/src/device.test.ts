@@ -14,7 +14,8 @@ const UA = {
   chromeIos: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/125.0.6422.80 Mobile/15E148 Safari/604.1',
   curl: 'curl/8.6.0',
   bot: 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-  agent: 'VoiceChatAgent/1.4.2 (darwin)'
+  agent: 'VoiceChatAgent/1.4.2 (darwin)',
+  electron: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Electron/33.0.0 Chrome/130.0.0.0 Safari/537.36'
 }
 
 describe('parseUserAgent', () => {
@@ -48,6 +49,13 @@ describe('parseUserAgent', () => {
     expect(parseUserAgent('%%%').legacy).toBe(false)
     // Слишком длинную строку режем: она приходит из заголовка и может быть любой.
     expect(parseUserAgent('X'.repeat(5000)).browser.length).toBeLessThanOrEqual(40)
+  })
+
+  it('десктоп-приложение опознаётся как Electron, а не как Chrome', () => {
+    // Внутри Electron тот же Chrome, но человеку важно отличать приложение от
+    // вкладки браузера — иначе в списке устройств они выглядят одинаково.
+    expect(parseUserAgent(UA.electron)).toMatchObject({ browser: 'Electron', browserVersion: '33.0.0', os: 'macOS', kind: 'desktop', label: 'Electron 33 · macOS' })
+    expect(parseUserAgent(UA.macChrome).label).toBe('Chrome 128 · macOS')
   })
 
   it('иконка зависит от класса устройства', () => {

@@ -53,3 +53,30 @@ export const LoadFailed: Story = {
 
 /** Пусто: объясняем, что будет дальше, а не констатируем пустоту. */
 export const Empty: Story = { args: { store: storeOf(async () => []) } }
+
+/** Разные платформы: появляется фильтр, у устройства видно соседние сессии. */
+export const MixedPlatforms: Story = {
+  args: {
+    store: storeOf(async () => [
+      makeSession({ sid: 'web-1', platform: 'web', current: true, deviceKey: 'dev-1', requests: 128, lastPath: '/api/projects' }),
+      makeSession({ sid: 'web-2', platform: 'web', deviceKey: 'dev-1' }),
+      makeSession({ sid: 'app', platform: 'desktop', deviceKey: 'dev-2', userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Electron/33.0.0 Chrome/130.0.0.0 Safari/537.36' })
+    ])
+  }
+}
+
+/** Завершённые входы: раздел закрыт по умолчанию и грузится при раскрытии. */
+export const WithEnded: Story = {
+  args: {
+    store: storeOf(async () => makeSessions(), {
+      listEnded: async () => [makeSession({ sid: 'gone', ended: true, endedAt: FIXTURE_NOW - 3 * 60 * 60_000 })],
+      panic: async () => undefined
+    })
+  },
+  render: (args) => (
+    <>
+      <SessionsPanel {...args} />
+      <SessionsBulkActions store={args.store} />
+    </>
+  )
+}

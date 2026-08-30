@@ -8,6 +8,7 @@ export { normalizeIp, localGeo, deviceKey, hash32, type NormalizedIp } from './d
 export { ttlFor, isActive, isOnline, isTrusted, isStale, overLimit, isNewDevice, findTrustedDevice } from './policy'
 export {
   sessionTitle, toView, sortSessions, filterSessions, otherSessions, durationOf,
+  deviceSiblings, groupByDevice, platformsOf,
   type SessionView, type Duration
 } from './presentation'
 export { systemClock, type Awaitable, type Clock, type GeoResolver, type PruneOptions, type SessionStore } from './ports'

@@ -82,12 +82,20 @@ describe('isNewDevice', () => {
 })
 
 describe('findTrustedDevice', () => {
-  const candidate = { userAgent: CHROME, ip: '203.0.113.7' }
+  const candidate = { deviceSecret: 'secret-hash' }
 
-  it('находит доверенную сессию того же устройства и игнорирует протухшее доверие', () => {
-    expect(findTrustedDevice([make({ sid: 'a', trustedAt: T0 - DAY })], candidate, T0)?.sid).toBe('a')
-    expect(findTrustedDevice([make({ sid: 'a', trustedAt: T0 - 40 * DAY })], candidate, T0)).toBeNull()
-    expect(findTrustedDevice([make({ sid: 'a' })], candidate, T0)).toBeNull()
-    expect(findTrustedDevice([make({ sid: 'a', ip: '198.51.100.1', trustedAt: T0 })], candidate, T0)).toBeNull()
+  it('находит доверенную сессию по секрету устройства и игнорирует протухшее доверие', () => {
+    expect(findTrustedDevice([make({ sid: 'a', trustedAt: T0 - DAY, deviceSecret: 'secret-hash' })], candidate, T0)?.sid).toBe('a')
+    expect(findTrustedDevice([make({ sid: 'a', trustedAt: T0 - 40 * DAY, deviceSecret: 'secret-hash' })], candidate, T0)).toBeNull()
+    expect(findTrustedDevice([make({ sid: 'a', deviceSecret: 'secret-hash' })], candidate, T0)).toBeNull()
+  })
+
+  it('приметы устройства доверия не дают: подделать UA и подсеть может кто угодно', () => {
+    // Доверенная сессия того же браузера из той же сети, но с другим секретом.
+    expect(findTrustedDevice([make({ sid: 'a', trustedAt: T0, deviceSecret: 'другой' })], candidate, T0)).toBeNull()
+    // Сессия вообще без секрета (заведена до появления cookie устройства).
+    expect(findTrustedDevice([make({ sid: 'a', trustedAt: T0 })], candidate, T0)).toBeNull()
+    // Клиент не прислал секрет — второй фактор спрашиваем.
+    expect(findTrustedDevice([make({ sid: 'a', trustedAt: T0, deviceSecret: 'secret-hash' })], {}, T0)).toBeNull()
   })
 })

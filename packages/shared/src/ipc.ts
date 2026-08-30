@@ -371,7 +371,7 @@ export interface IpcInvokeMap {
   'admin:setUserLlmLimit': { arg: { name: string; llmLimitUsd: number | null }; result: AdminUserInfo }
   /** Открытая регистрация: настройка. */
   'admin:signupConfig': { arg: void; result: SignupConfig }
-  'admin:setSignupConfig': { arg: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number }; result: SignupConfig }
+  'admin:setSignupConfig': { arg: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }; result: SignupConfig }
   'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
@@ -923,6 +923,10 @@ export interface RendererSessionBridge {
   renameSession?(sid: string, label: string | null): Promise<void>
   /** Доверенное устройство не спрашивает второй фактор при следующем входе. */
   trustSession?(sid: string, trusted: boolean): Promise<void>
+  /** Недавно завершённые сессии — справка «я точно закрыл тот вход». */
+  endedSessions?(): Promise<SessionInfo[]>
+  /** «Это не я»: гасит все сессии и требует смену пароля при следующем входе. */
+  panicSessions?(): Promise<void>
   /**
    * Живые изменения сессий: список устарел либо эту сессию завершили с другого
    * устройства. Второе приходит адресно — иначе вкладка узнаёт о потере доступа

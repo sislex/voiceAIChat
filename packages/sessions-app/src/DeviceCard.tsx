@@ -73,6 +73,12 @@ export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust
         <small className="vcs-meta">
           {[place, texts.createdAt(formatMoment(session.createdAt, locale)), texts.lastSeen(online ? texts.onlineBadge : `${formatDuration(now - session.lastSeen)} назад`), expiry].join(' · ')}
         </small>
+        {/* Активность собирается всё равно — показываем её вместо того, чтобы
+            держать в базе «на всякий случай»: по разделу видно, чем занята сессия. */}
+        {(session.requests ?? 0) > 0 && (
+          <small className="vcs-meta vcs-meta--dim">{texts.activity(session.requests ?? 0, session.lastPath ?? '')}</small>
+        )}
+        {view.siblings > 0 && <small className="vcs-meta vcs-meta--dim">{texts.siblings(view.siblings)}</small>}
       </div>
       <div className="vcs-actions">
         {canRename && !editing && (

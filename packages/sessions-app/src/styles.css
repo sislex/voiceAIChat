@@ -159,3 +159,36 @@
     justify-content: flex-start;
   }
 }
+
+.vcs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-050);
+  margin-bottom: var(--space-150);
+}
+
+.vcs-meta--dim {
+  opacity: 0.75;
+}
+
+.vcs-ended {
+  margin-top: var(--space-150);
+  border-top: 1px solid var(--border-soft);
+  padding-top: var(--space-100);
+}
+
+.vcs-ended > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.vcs-ended .vcs-list {
+  margin-top: var(--space-100);
+}
+
+.vcs-item--ended {
+  opacity: 0.7;
+  background: var(--panel);
+}
+

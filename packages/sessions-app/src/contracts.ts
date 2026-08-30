@@ -14,6 +14,10 @@ export interface SessionsClient {
   /** Имя устройства от пользователя; null — вернуть автоматическую подпись. */
   rename?(sid: string, label: string | null): Promise<void>
   setTrusted?(sid: string, trusted: boolean): Promise<void>
+  /** Недавно завершённые сессии: отозванные и истёкшие, пока их не убрали. */
+  listEnded?(): Promise<DeviceSession[]>
+  /** «Это не я»: погасить всё и потребовать смену пароля. */
+  panic?(): Promise<void>
 }
 
 /** События, приходящие живьём: список устарел или текущую сессию завершили. */
