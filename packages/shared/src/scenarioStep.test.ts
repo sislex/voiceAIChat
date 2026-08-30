@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runScenarioStep, scenarioProblems, stepHint, type ScenarioSend, type ScenarioStepOptions } from './scenarioStep'
+import { runScenarioStep, scenarioProblems, scenarioSetProblems, stepHint, type ScenarioSend, type ScenarioStepOptions } from './scenarioStep'
 
 // Ожидания повторяются до таймаута, поэтому в тестах сон мгновенный, а часы
 // двигаются сами: иначе каждая проверка стоила бы пять секунд.
@@ -127,5 +127,40 @@ describe('scenarioProblems', () => {
   it('отсутствие проверок — тоже проблема сценария, а не мелочь', () => {
     expect(scenarioProblems({ ...ok, steps: [{ id: 's1', title: 'Нажать', action: { kind: 'click', selector: '#a' } }] }))
       .toContain('Ни одной проверки: сценарий пройдёт, даже если страница сломана')
+  })
+})
+
+describe('scenarioSetProblems (круг 21)', () => {
+  const s = (name: string, steps = 1) => ({ name, startUrl: 'http://x/', steps: Array.from({ length: steps }, () => ({})) })
+
+  it('исправный набор молчит', () => {
+    expect(scenarioSetProblems([s('Вход'), s('Доска')])).toEqual([])
+  })
+
+  it('пустой набор объясняет, что запускать нечем', () => {
+    expect(scenarioSetProblems([])).toEqual(['Ни одного сценария: этап Playwright запускать нечем'])
+  })
+
+  it('безымянные в наборе — проблема: их нечем различить', () => {
+    // Ровно этот случай приводил к тому, что второй сценарий затирал первый.
+    const problems = scenarioSetProblems([{ startUrl: 'http://a/', steps: [{}] }, { startUrl: 'http://b/', steps: [{}] }])
+    expect(problems[0]).toContain('Без названия: 2 из 2')
+  })
+
+  it('единственный безымянный сценарий проблемой не считается', () => {
+    expect(scenarioSetProblems([{ startUrl: 'http://a/', steps: [{}] }])).toEqual([])
+  })
+
+  it('повтор названия называет оба места', () => {
+    expect(scenarioSetProblems([s('Вход'), s('Вход')])[0]).toBe('Название «Вход» повторяется (сценарии 1 и 2)')
+  })
+
+  it('пустой стартовый адрес назван как блокирующий весь этап', () => {
+    expect(scenarioSetProblems([s('Вход'), { name: 'Пустой', startUrl: '  ', steps: [] }])[0])
+      .toContain('заблокирует весь этап')
+  })
+
+  it('сценарий без шагов тоже называется', () => {
+    expect(scenarioSetProblems([{ name: 'Пусто', startUrl: 'http://a/', steps: [] }])).toEqual(['«Пусто»: нет ни одного шага'])
   })
 })
