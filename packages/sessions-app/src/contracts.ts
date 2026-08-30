@@ -20,6 +20,8 @@ export interface SessionsClient {
   panic?(): Promise<void>
   /** События безопасности этого устройства — ответ на «что тут вообще было». */
   history?(sid: string): Promise<SessionHistoryEvent[]>
+  /** Снять доверие со всех устройств разом. */
+  untrustAll?(): Promise<void>
 }
 
 /** Строка истории устройства: тип события, когда и подробность. */

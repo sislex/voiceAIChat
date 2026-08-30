@@ -2,7 +2,7 @@
 // ядре, а не в компоненте, потому что тот же порядок нужен и в админке, и в
 // чужом хосте с другим UI — расхождение порядка выглядит как потерянная сессия.
 import { parseUserAgent } from './device'
-import { isExpiringSoon, isOnline, isTrusted } from './policy'
+import { isExpiringSoon, isOnline, isTrusted, trustLeftMs } from './policy'
 import type { DeviceSession, DeviceProfile, SessionPolicy } from './types'
 
 /** Сессия, готовая к отрисовке: разбор UA и вычисленные признаки уже сделаны. */
@@ -22,6 +22,8 @@ export interface SessionView {
   siblings: number
   /** Срок кончается в ближайшие сутки. */
   expiringSoon: boolean
+  /** Сколько осталось доверию, мс; 0 — устройство не доверенное. */
+  trustLeftMs: number
 }
 
 /** Подпись устройства для человека. Для унаследованных записей UA нет вовсе. */
@@ -43,7 +45,8 @@ export function toView(session: DeviceSession, now = Date.now(), policy?: Partia
     place: session.geo?.label ?? '',
     expiresInMs: session.expiresAt - now,
     siblings: deviceSiblings(all, session),
-    expiringSoon: isExpiringSoon(session, now)
+    expiringSoon: isExpiringSoon(session, now),
+    trustLeftMs: trustLeftMs(session, now, policy)
   }
 }
 
