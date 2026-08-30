@@ -130,6 +130,29 @@ describe.skipIf(!existsSync(WEB_DIST))('Сессии и устройства E2E
     await expect.poll(() => ended.locator('[data-testid^="ended-"]').count(), { timeout: 30_000 }).toBeGreaterThan(0)
   })
 
+  it('на узком экране карточка не разъезжается: подпись читается, кнопки внутри', async () => {
+    // Проверяем именно геометрию: в jsdom ширины нулевые, и такой дефект там
+    // невидим — в цикле 3 карточка уже сыпалась по букве в столбик.
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await phone.goto(`${BASE}/`)
+    await phone.evaluate((t) => localStorage.setItem('vc.session.token', t), token)
+    await phone.goto(`${BASE}/#/security/sessions`)
+    await phone.reload()
+    await expect.poll(() => phone.getByTestId('sessions-panel').count(), { timeout: 30_000 }).toBe(1)
+
+    const card = phone.locator('[data-testid^="session-"]').first()
+    const cardBox = await card.boundingBox()
+    const titleBox = await card.locator('.vcs-title').first().boundingBox()
+    const actionsBox = await card.locator('.vcs-actions').first().boundingBox()
+    expect(cardBox && titleBox && actionsBox).toBeTruthy()
+    // Подпись устройства занимает разумную полосу, а не колонку из букв.
+    expect(titleBox!.width).toBeGreaterThan(80)
+    expect(titleBox!.height).toBeLessThan(60)
+    // Кнопки не вылезают за карточку.
+    expect(actionsBox!.x + actionsBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1)
+    await phone.close()
+  })
+
   it('когда завершают текущую сессию, вкладка сама уходит на экран входа', async () => {
     const sessions = (await (await fetch(`${BASE}/api/session/list`, { headers: { authorization: `Bearer ${token}` } })).json()) as { sessions: Array<{ sid: string; current?: boolean }> }
     // Именно та сессия, которой живёт вкладка: по User-Agent её не отличить —

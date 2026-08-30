@@ -21,12 +21,15 @@ export interface DeviceCardProps {
   onHistory?(): void
   /** Завершить все сессии этого устройства; нет обработчика — нет кнопки. */
   onRevokeDevice?(): void
+  /** Отметка для массового завершения; нет обработчика — нет чекбокса. */
+  selected?: boolean
+  onToggleSelected?(): void
   onRevoke(): void
   onRename(label: string | null): void
   onTrust(trusted: boolean): void
 }
 
-export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust, history, onHistory, onRevokeDevice, onRevoke, onRename, onTrust }: DeviceCardProps): JSX.Element {
+export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust, history, onHistory, onRevokeDevice, selected, onToggleSelected, onRevoke, onRename, onTrust }: DeviceCardProps): JSX.Element {
   const { session, profile, title, online, trusted, current } = view
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session.label ?? '')
@@ -48,6 +51,15 @@ export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust
 
   return (
     <li className={current ? 'vcs-item vcs-item--current' : 'vcs-item'} data-testid={`session-${session.sid}`}>
+      {onToggleSelected && !current && (
+        <input
+          type="checkbox"
+          className="vcs-check"
+          checked={Boolean(selected)}
+          aria-label={`${texts.selectSession}: ${title}`}
+          onChange={onToggleSelected}
+        />
+      )}
       <span className="vcs-ico" aria-hidden="true">{deviceIcon(profile.kind)}</span>
       <div className="vcs-main">
         {editing ? (
@@ -75,6 +87,7 @@ export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust
             {trusted && <span className="vcs-badge vcs-badge--trusted">{texts.trustedBadge}</span>}
             {online && !current && <span className="vcs-badge vcs-badge--online">{texts.onlineBadge}</span>}
             {session.twoFactor && <span className="vcs-badge vcs-badge--2fa">{texts.twoFactorBadge}</span>}
+            {view.expiringSoon && <span className="vcs-badge vcs-badge--soon">{texts.expiringSoon}</span>}
           </p>
         )}
         <small className="vcs-meta">

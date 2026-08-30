@@ -260,7 +260,7 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
     securityNotices: async () => {
       const r = await fetch(httpBase + REST.sessionMe, { headers: authHeaders() })
       if (!r.ok) return []
-      const { notices } = (await r.json()) as { notices?: Array<{ at: number; ip: string; userAgent: string }> }
+      const { notices } = (await r.json()) as { notices?: Array<{ at: number; ip: string; userAgent: string; type: string }> }
       return notices ?? []
     },
     securityNoticesSeen: async () => { await fetch(httpBase + REST.sessionNoticesSeen, { method: 'POST', headers: authHeaders() }) },

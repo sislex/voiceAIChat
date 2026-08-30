@@ -320,3 +320,80 @@ describe('SessionsPanel: цикл 3 — флаг, 2FA, история, устр�
   })
 })
 
+describe('SessionsPanel: цикл 4 — порядок, обновление, выбор, доступность', () => {
+  it('порядок списка меняется выбором и остаётся применённым', async () => {
+    const store = setup([
+      makeSession({ sid: 'current', current: true, lastSeen: FIXTURE_NOW - 86_400_000 }),
+      makeSession({ sid: 'fresh', lastSeen: FIXTURE_NOW, createdAt: FIXTURE_NOW - 10 * 86_400_000 }),
+      makeSession({ sid: 'old', lastSeen: FIXTURE_NOW - 5 * 86_400_000, createdAt: FIXTURE_NOW - 86_400_000 })
+    ])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    await screen.findByTestId('session-current')
+    const order = (): string[] => screen.getAllByTestId(/^session-/).map((el) => el.getAttribute('data-testid')!)
+    expect(order()).toEqual(['session-current', 'session-fresh', 'session-old'])
+    await userEvent.selectOptions(screen.getByLabelText('Порядок'), 'created')
+    await waitFor(() => expect(order()).toEqual(['session-current', 'session-old', 'session-fresh']))
+  })
+
+  it('кнопка «Обновить» перечитывает список и показывает время чтения', async () => {
+    const list = vi.fn(async () => [makeSession({ sid: 'a', current: true })])
+    const store = createSessionsStore({ client: { list, revoke: async () => undefined }, host: { now: () => FIXTURE_NOW } })
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    await screen.findByTestId('session-a')
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(screen.getByText(/обновлено/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2))
+  })
+
+  it('выбор карточек завершает их пачкой; у текущей чекбокса нет', async () => {
+    const store = setup(makeSessions())
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} confirm={async () => true} />)
+    await screen.findByTestId('session-current')
+    expect(within(screen.getByTestId('session-current')).queryByRole('checkbox')).toBeNull()
+    await userEvent.click(within(screen.getByTestId('session-phone')).getByRole('checkbox'))
+    await userEvent.click(within(screen.getByTestId('session-work')).getByRole('checkbox'))
+    expect(screen.getByText('Выбрано: 2')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Завершить выбранные (2)' }))
+    await waitFor(() => expect(screen.queryByTestId('session-phone')).toBeNull())
+    expect(screen.queryByTestId('session-work')).toBeNull()
+    expect(screen.getByTestId('session-current')).toBeInTheDocument()
+  })
+
+  it('результат действия объявляется скринридеру', async () => {
+    const store = setup(makeSessions())
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} confirm={async () => true} />)
+    await screen.findByTestId('session-work')
+    await userEvent.click(within(screen.getByTestId('session-work')).getByRole('button', { name: 'Завершить' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Сессия «Рабочий ноут» завершена'))
+  })
+
+  it('сессия на исходе срока помечена бейджем', async () => {
+    const store = setup([
+      makeSession({ sid: 'soon', current: true, expiresAt: FIXTURE_NOW + 3 * 60 * 60_000 }),
+      makeSession({ sid: 'long', expiresAt: FIXTURE_NOW + 20 * 86_400_000 })
+    ])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    expect(within(await screen.findByTestId('session-soon')).getByText('скоро истечёт')).toBeInTheDocument()
+    expect(within(screen.getByTestId('session-long')).queryByText('скоро истечёт')).toBeNull()
+  })
+
+  it('в завершённых видно, почему сессия закончилась', async () => {
+    const listEnded = vi.fn(async () => [
+      makeSession({ sid: 'gone', ended: true, endedAt: FIXTURE_NOW - 60_000, endReason: 'evicted' })
+    ])
+    const store = setup([makeSession({ sid: 'a', current: true })], { listEnded })
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    await userEvent.click(within(await screen.findByTestId('sessions-ended')).getByText('Недавно завершённые'))
+    await waitFor(() => expect(within(screen.getByTestId('ended-gone')).getByText(/вытеснена лимитом/)).toBeInTheDocument())
+  })
+
+  it('доступность: тулбар, чекбоксы и объявления не дают нарушений axe', async () => {
+    const store = setup(makeSessions())
+    render(<><SessionsPanel store={store} now={FIXTURE_NOW} /><SessionsBulkActions store={store} /></>)
+    await screen.findByTestId('sessions-panel')
+    await userEvent.click(within(screen.getByTestId('session-phone')).getByRole('checkbox'))
+    await expectNoViolations()
+  })
+})
+

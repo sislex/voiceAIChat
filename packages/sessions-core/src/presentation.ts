@@ -132,3 +132,27 @@ export function durationOf(ms: number): Duration {
   if (abs < 60 * 24 * 60 * 60_000) return { unit: 'day', value: Math.round(abs / (24 * 60 * 60_000)) }
   return { unit: 'month', value: Math.round(abs / (30 * 24 * 60 * 60_000)) }
 }
+
+/**
+ * Текстовая сводка списка — её отправляют в поддержку, когда «кто-то заходил в
+ * мой аккаунт». Собирается в ядре, а не в компоненте: буфер обмена платформенный,
+ * а вот что именно писать — общее решение, и оно должно быть проверяемым.
+ */
+export function sessionsSummary(sessions: readonly DeviceSession[], now = Date.now()): string {
+  if (sessions.length === 0) return 'Активных сессий нет'
+  const line = (s: DeviceSession): string => {
+    const profile = parseUserAgent(s.userAgent)
+    const parts = [
+      s.label || profile.label || 'устройство без метки',
+      s.geo?.label || s.ip || 'адрес неизвестен',
+      `вход ${new Date(s.createdAt).toISOString()}`,
+      `активность ${new Date(s.lastSeen).toISOString()}`
+    ]
+    if (s.current) parts.push('это устройство')
+    if (isTrusted(s, now)) parts.push('доверенное')
+    if (s.twoFactor) parts.push('подтверждено кодом')
+    return `- ${parts.join(' · ')}`
+  }
+  return [`Сессии (${sessions.length}) на ${new Date(now).toISOString()}:`, ...sortSessions(sessions).map(line)].join('\n')
+}
+

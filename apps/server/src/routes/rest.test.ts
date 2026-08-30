@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildServer } from '../server.js'
 import { loadConfig } from '../config.js'
 import { VoiceChatDb, hashAgentToken } from '../db/database.js'
+import { SCHEMA_SQL } from '../db/schema.js'
 import { AgentRegistry } from '../agents/registry.js'
 import { signToken } from '../users/accounts.js'
 import { isPublicAddress, previewInspectorScript, rewritePreviewBody, upstreamRequestHeaders } from './previewProxy.js'
@@ -361,6 +362,25 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
+  it('старая база без новых колонок сессий и журнала открывается без ошибок', () => {
+    // Сторож правила: индексы по колонкам, которые добавляет migrate(), нельзя
+    // объявлять в schema.ts — схема выполняется раньше ALTER TABLE. Дважды
+    // наступали, теперь проверяется.
+    const old = new VoiceChatDb(':memory:')
+    ;(old as unknown as { db: { exec(sql: string): void } }).db.exec(`
+      DROP TABLE sessions;
+      DROP TABLE security_events;
+      CREATE TABLE sessions (sid TEXT PRIMARY KEY, user_name TEXT NOT NULL, created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL, ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '', revoked_at INTEGER);
+      CREATE TABLE security_events (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, user_name TEXT NOT NULL,
+        type TEXT NOT NULL, ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '');
+    `)
+    expect(() => (old as unknown as { migrate(): void }).migrate()).not.toThrow()
+    // И повторное применение схемы поверх мигрированной базы тоже проходит.
+    expect(() => (old as unknown as { db: { exec(sql: string): void } }).db.exec(SCHEMA_SQL)).not.toThrow()
+    old.close()
+  })
+
   it('старая база без колонок устройства мигрирует и продолжает читать прежние сессии', async () => {
     const legacyDb = new VoiceChatDb(':memory:')
     // Воспроизводим таблицу такой, какой она была до метаданных устройства.
@@ -657,6 +677,52 @@ describe('REST: аутентификация', () => {
       if (res.statusCode === 429) limited++
     }
     expect(limited).toBeGreaterThan(0)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('история устройства держится на sid и переживает смену адреса', async () => {
+    db.createUser('roamer', 'roamer-pass-2026-ok', 'developer')
+    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
+    const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'roamer', password: 'roamer-pass-2026-ok' }, headers: { 'user-agent': ua }, remoteAddress: '203.0.113.7' })).json().token as string
+    const sid = db.listSessions('roamer')[0]!.sid
+    // Тот же вход, но человек уехал в другую сеть — событие пишется с другого адреса.
+    await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { label: 'Ноут' }, headers: { authorization: `Bearer ${token}`, 'user-agent': ua }, remoteAddress: '198.51.100.9' })
+    const history = (await app.inject({ method: 'GET', url: `/api/session/${sid}/history`, headers: { authorization: `Bearer ${token}` } })).json() as { events: Array<{ type: string }> }
+    expect(history.events.map((e) => e.type)).toEqual(expect.arrayContaining(['login', 'session_renamed']))
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('завершённая сессия помнит причину: отзыв, лимит, тревога и простой', async () => {
+    db.setAppConfig('sessions.maxPerUser', '2')
+    db.createUser('reasons', 'reasons-pass-2026-ok', 'developer')
+    const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'reasons', password: 'reasons-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
+    const first = await login('Phone/1.0')
+    await login('Laptop/2.0')
+    const keep = await login('Tablet/3.0')
+    const endedByLimit = db.listEndedSessions('reasons').find((s) => s.userAgent === 'Phone/1.0')
+    expect(endedByLimit?.endReason).toBe('evicted')
+    expect(first).toBeTruthy()
+
+    const laptopSid = db.listSessions('reasons').find((s) => s.userAgent === 'Laptop/2.0')!.sid
+    await app.inject({ method: 'DELETE', url: `/api/session/${laptopSid}`, headers: { authorization: `Bearer ${keep}` } })
+    expect(db.listEndedSessions('reasons').find((s) => s.sid === laptopSid)?.endReason).toBe('revoked')
+
+    await app.inject({ method: 'POST', url: '/api/session/panic', headers: { authorization: `Bearer ${keep}` } })
+    expect(db.listEndedSessions('reasons').find((s) => s.userAgent === 'Tablet/3.0')?.endReason).toBe('panic')
+
+    db.setAppConfig('sessions.maxPerUser', '')
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('вытесненную лимитом сессию человек видит в уведомлениях', async () => {
+    db.setAppConfig('sessions.maxPerUser', '1')
+    db.createUser('noticed', 'noticed-pass-2026-ok', 'developer')
+    await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'noticed', password: 'noticed-pass-2026-ok' }, headers: { 'user-agent': 'Phone/1.0' } })
+    const second = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'noticed', password: 'noticed-pass-2026-ok' }, headers: { 'user-agent': 'Laptop/2.0' } })).json().token as string
+    const me = (await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${second}` } })).json() as { notices: Array<{ type: string }> }
+    // Иначе выход выглядит как сбой: сессия исчезла, а причины нигде нет.
+    expect(me.notices.map((n) => n.type)).toContain('session_evicted')
+    db.setAppConfig('sessions.maxPerUser', '')
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 

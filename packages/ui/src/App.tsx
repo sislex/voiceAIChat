@@ -334,7 +334,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     let alive = true
     void window.session.securityNotices().then((list) => {
       if (!alive || list.length === 0) return
-      for (const n of list.slice(-3)) toast.info(`Вход в ваш аккаунт с нового устройства: ${deviceLabel(n.userAgent)} · ${n.ip || 'адрес неизвестен'} · ${new Date(n.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}. Не вы — завершите сессии в меню аккаунта.`)
+      for (const n of list.slice(-3)) {
+        const where = `${deviceLabel(n.userAgent)} · ${n.ip || 'адрес неизвестен'} · ${new Date(n.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+        // Вытеснение лимитом — не тревога, а объяснение: сессия исчезла не сама.
+        toast.info(n.type === 'session_evicted'
+          ? `Сессия на устройстве ${where} завершена: превышен лимит одновременных входов.`
+          : `Вход в ваш аккаунт с нового устройства: ${where}. Не вы — завершите сессии в меню аккаунта.`)
+      }
       void window.session?.securityNoticesSeen?.()
     }).catch(() => undefined)
     return () => { alive = false }

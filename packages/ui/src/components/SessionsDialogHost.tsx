@@ -34,6 +34,9 @@ export function SessionsDialogHost({ onClose, onSignedOut }: SessionsDialogHostP
       client,
       host: {
         onSignedOut,
+        // Буфер обмена — платформенная деталь, поэтому живёт в хосте. Старый
+        // execCommand не нужен: приложение и так требует современный браузер.
+        copy: (text) => navigator.clipboard.writeText(text),
         // Возврат к вкладке — сигнал перечитать список. Знание про document
         // живёт здесь, в хосте: модуль остаётся платформенно-нейтральным.
         onVisible: (cb) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countryFlag, deviceSiblings, durationOf, filterSessions, groupByDevice, otherSessions, platformsOf, sessionTitle, sortSessions, toView } from './presentation'
+import { countryFlag, deviceSiblings, durationOf, filterSessions, groupByDevice, otherSessions, platformsOf, sessionTitle, sessionsSummary, sortSessions, toView } from './presentation'
 import type { DeviceSession } from './types'
 
 const T0 = 1_700_000_000_000
@@ -121,6 +121,39 @@ describe('countryFlag', () => {
     expect(countryFlag('RU')).toBe('🇷🇺')
     expect(countryFlag('de')).toBe('🇩🇪')
     for (const bad of ['', null, undefined, 'RUS', '1A', 'локальная сеть']) expect(countryFlag(bad)).toBe('')
+  })
+})
+
+describe('sortSessions: порядок по выбору', () => {
+  const list = [
+    make({ sid: 'старая-активность', lastSeen: T0 - 5 * DAY, createdAt: T0 - DAY, label: 'Бета' }),
+    make({ sid: 'свежая', lastSeen: T0, createdAt: T0 - 10 * DAY, label: 'Альфа' }),
+    make({ sid: 'текущая', lastSeen: T0 - DAY, createdAt: T0 - 3 * DAY, current: true, label: 'Гамма' })
+  ]
+
+  it('текущая первой при любом порядке, дальше — по выбранному признаку', () => {
+    expect(sortSessions(list, 'activity').map((s) => s.sid)).toEqual(['текущая', 'свежая', 'старая-активность'])
+    expect(sortSessions(list, 'created').map((s) => s.sid)).toEqual(['текущая', 'старая-активность', 'свежая'])
+    expect(sortSessions(list, 'title').map((s) => s.sid)).toEqual(['текущая', 'свежая', 'старая-активность'])
+  })
+})
+
+describe('sessionsSummary', () => {
+  it('собирает текст для поддержки с признаками устройств', () => {
+    const text = sessionsSummary([
+      make({ sid: 'a', current: true, twoFactor: true, geo: { country: 'RU', city: 'Москва', label: 'Москва, RU' } }),
+      make({ sid: 'b', label: 'Рабочий ноут', trustedAt: T0 })
+    ], T0)
+    expect(text).toContain('Сессии (2)')
+    expect(text).toContain('Москва, RU')
+    expect(text).toContain('это устройство')
+    expect(text).toContain('подтверждено кодом')
+    expect(text).toContain('Рабочий ноут')
+    expect(text).toContain('доверенное')
+  })
+
+  it('пустой список говорит об этом прямо', () => {
+    expect(sessionsSummary([], T0)).toBe('Активных сессий нет')
   })
 })
 

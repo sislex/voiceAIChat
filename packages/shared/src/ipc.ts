@@ -892,7 +892,8 @@ export interface RendererSessionBridge {
   login(creds: { name: string; password: string; remember?: boolean }): Promise<SessionUser | LoginChallenge | null>
   login2fa?(input: { ticket: string; code: string }): Promise<SessionUser | null>
   /** Уведомления безопасности — входы с нового устройства (auth-roadmap п.16): получить непросмотренные и отметить. */
-  securityNotices?(): Promise<Array<{ at: number; ip: string; userAgent: string }>>
+  /** `type` нужен клиенту: вход с нового устройства и вытеснение лимитом — разные новости. */
+  securityNotices?(): Promise<Array<{ at: number; ip: string; userAgent: string; type: string }>>
   securityNoticesSeen?(): Promise<void>
   /** Сброс пароля кодом администратора (п.10) и смена своего пароля (пп.11–12). */
   resetPassword?(input: { name: string; code: string; password: string }): Promise<{ ok: true } | { error: string }>
