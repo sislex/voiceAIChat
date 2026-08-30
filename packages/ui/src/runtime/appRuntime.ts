@@ -134,6 +134,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     settings: clients.settings,
     stt: clients.stt,
     tts: clients.tts,
+    prefs: clients.prefs,
     notifyError: (message) => shell.actions.setError(message)
   }), 'ChatAI Settings', 'settings')
 
@@ -212,6 +213,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
 
   const projects: ProjectsStore = diagnostics.attach(createProjectsStore({
     projects: clients.projects,
+    prefs: clients.prefs,
     now,
     chat: {
       scheduleConversationsRefresh: () => chat.actions.scheduleConversationsRefresh(),

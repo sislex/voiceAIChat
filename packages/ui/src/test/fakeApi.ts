@@ -675,7 +675,8 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'llm:engines': async () => llmEngines.filter((e) => e.enabled).map(({ id, name, kind, isDefault }) => ({ id, name, kind, isDefault })),
     'settings:get': async () => ({ ...settings }),
     'settings:save': async (next) => {
-      settings = { ...next }
+      // Как на сервере: тело — патч, отсутствующие поля сохраняют значение.
+      settings = { ...settings, ...next }
     },
     'system:capabilities': async () => ({
       stt: { available: true, reason: '' },

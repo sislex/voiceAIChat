@@ -637,7 +637,11 @@ export async function registerRest(
   app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.usage, async (req, reply) => usageForMe(uid(req), req.query, reply))
   app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.meUsage, async (req, reply) => usageForMe(uid(req), req.query, reply))
 
-  app.put<{ Body: Settings }>(REST.settings, async (req, reply) => {
+  // Тело — патч, а не полная замена: неизвестные серверу поля не приходят, а
+  // отсутствующие сохраняют прежнее значение. Это граница сохранности настроек —
+  // клиент со старой сборкой (или не догрузивший настройки) больше не в силах
+  // стереть чужие поля записи.
+  app.put<{ Body: Partial<Settings> }>(REST.settings, async (req, reply) => {
     const role = db.getUser(uid(req))?.role ?? 'developer'
     if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
       return reply.code(403).send({ error: 'llm engine is not available for role' })
@@ -659,7 +663,7 @@ export async function registerRest(
       ['neutral', 'friendly', 'business', 'plain'].includes(raw.tone)
     if (preferredName && preferredName.length > 80) return reply.code(400).send({ error: 'preferredName is too long' })
     if (!validParts || !validDate || !validEnums) return reply.code(400).send({ error: 'invalid personalization' })
-    db.saveSettings(uid(req), { ...req.body, generatedFilesTtlDays, personalization: { ...raw, preferredName } })
+    db.saveSettings(uid(req), { ...db.getSettings(uid(req)), ...req.body, generatedFilesTtlDays, personalization: { ...raw, preferredName } })
     return db.getSettings(uid(req))
   })
 }

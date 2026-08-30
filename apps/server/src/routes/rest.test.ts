@@ -1312,6 +1312,18 @@ describe('REST: conversations/messages/settings', () => {
     expect(saved.voice).toBe('ru_RU-dmitri-medium')
   })
 
+  // Частичное тело — патч: клиент со старой сборкой (или не догрузивший
+  // настройки) не должен стирать поля, о которых он не знает.
+  it('settings put применяет патч, а не заменяет запись целиком', async () => {
+    const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, theme: 'dark', codexModel: 'gpt-5.4', autoSpeak: true } })
+
+    const patched = (await inj({ method: 'PUT', url: '/api/settings', payload: { autoSpeak: false } })).json()
+
+    expect(patched).toMatchObject({ theme: 'dark', codexModel: 'gpt-5.4', autoSpeak: false })
+    expect((await inj({ method: 'GET', url: '/api/settings' })).json()).toMatchObject({ theme: 'dark', codexModel: 'gpt-5.4' })
+  })
+
   it('нормализует персонализацию и отвергает невозможную дату', async () => {
     const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
     const invalid = await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, personalization: { ...def.personalization, birthDay: 31, birthMonth: 2 } } })

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTestStore, type TestStore } from '../test/appHarness'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import type { ClaudeLogEntry, Message } from '@shared/types'
+import { DEFAULT_SETTINGS } from '@shared/types'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 
 // Быстрые задержки + фейковые таймеры делают мок-пайплайн детерминированным.
@@ -1213,7 +1214,10 @@ describe('voiceStore — TTS (ttsEnabled, Шаг 10)', () => {
     await reachSpeaking(store)
 
     expect(store.getState().voice).toBe('speaking')
-    expect(speakText).toHaveBeenCalledWith(expect.any(String), store.getState().settings.voice)
+    // Сохранённого голоса нет среди голосов движка — синтез идёт доступным,
+    // но саму настройку это не переписывает (её вернёт скачанный голос).
+    expect(speakText).toHaveBeenCalledWith(expect.any(String), 'ru_RU-irina-medium')
+    expect(store.getState().settings.voice).toBe(DEFAULT_SETTINGS.voice)
 
     // Сам не уходит из speaking — ждём tts:done.
     await vi.advanceTimersByTimeAsync(STEP)

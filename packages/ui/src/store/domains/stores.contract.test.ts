@@ -198,6 +198,80 @@ describe('settingsStore', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
+  // Деплой: сервер на секунды недоступен, `settings:get` падает — и раньше
+  // первое же изменение уносило на сервер дефолты стора, стирая тему, движок,
+  // модель и машину по умолчанию.
+  it('изменение при неудачной загрузке не затирает серверные настройки', async () => {
+    const { store, api } = make()
+    await api['settings:save']({ ...api._state.settings, theme: 'dark', llmProvider: 'codex', defaultAgentId: 'a1' })
+    vi.spyOn(api, 'settings:get').mockRejectedValueOnce(new Error('502'))
+    await expect(store.actions.load()).rejects.toThrow('502')
+    expect(store.getState().settingsLoaded).toBe(false)
+
+    await store.actions.updateSettings({ autoSpeak: true })
+
+    expect(api._state.settings).toMatchObject({ theme: 'dark', llmProvider: 'codex', defaultAgentId: 'a1', autoSpeak: true })
+    expect(store.getState().settings).toMatchObject({ theme: 'dark', autoSpeak: true })
+    store.dispose()
+  })
+
+  it('недоступный сервер не даёт сохранить настройки поверх незагруженных', async () => {
+    const { store, api } = make()
+    await api['settings:save']({ ...api._state.settings, theme: 'green' })
+    vi.spyOn(api, 'settings:get').mockRejectedValue(new Error('502'))
+    const save = vi.spyOn(api, 'settings:save')
+
+    await expect(store.actions.updateSettings({ theme: 'dark' })).rejects.toThrow('502')
+
+    expect(save).not.toHaveBeenCalled()
+    expect(api._state.settings.theme).toBe('green')
+    store.dispose()
+  })
+
+  it('отказ каталога движков не оставляет настройки дефолтными', async () => {
+    const { store, api } = make()
+    await api['settings:save']({ ...api._state.settings, theme: 'dark' })
+    vi.spyOn(api, 'llm:engines').mockRejectedValueOnce(new Error('503'))
+
+    await store.actions.load()
+
+    expect(store.getState()).toMatchObject({ settingsLoaded: true })
+    expect(store.getState().settings.theme).toBe('dark')
+    store.dispose()
+  })
+
+  // Голоса Piper поднимаются позже сервера: пропавший из списка голос не должен
+  // переписывать выбор пользователя в БД — иначе он теряется навсегда.
+  it('исчезнувший голос подменяется только для синтеза, но не сохраняется', async () => {
+    const { store, api } = make()
+    await api['settings:save']({ ...api._state.settings, voice: 'ru_RU-dmitri-medium' })
+    await store.actions.load()
+    vi.spyOn(api, 'tts:voices').mockResolvedValueOnce([{ id: 'ru_RU-ruslan-medium', label: 'Руслан' }])
+    const save = vi.spyOn(api, 'settings:save')
+
+    await store.actions.loadCatalogs()
+
+    expect(save).not.toHaveBeenCalled()
+    expect(store.getState().settings.voice).toBe('ru_RU-dmitri-medium')
+    expect(store.actions.selectEffectiveVoiceSettings().voice).toBe('ru_RU-ruslan-medium')
+    store.dispose()
+  })
+
+  // Две вкладки одного пользователя: сохранение полного снимка возвращало бы
+  // соседней вкладке её устаревшие значения.
+  it('на сервер уходит только изменённое поле', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    const save = vi.spyOn(api, 'settings:save')
+    await api['settings:save']({ theme: 'dark' }) // соседняя вкладка сменила тему
+
+    await store.actions.updateSettings({ autoSpeak: true })
+
+    expect(save).toHaveBeenLastCalledWith({ autoSpeak: true })
+    expect(api._state.settings).toMatchObject({ theme: 'dark', autoSpeak: true })
+    store.dispose()
+  })
+
   it('удалённая машина исчезает из настроек', async () => {
     const { store } = make()
     await store.actions.updateSettings({ execTarget: 'a1', defaultAgentId: 'a1' })

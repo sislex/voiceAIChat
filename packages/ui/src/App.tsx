@@ -27,7 +27,8 @@ import { SignupScreen, VerifyScreen } from './components/SignupScreen'
 import { NewProjectDialog } from './components/NewProjectDialog'
 import { InviteScreen } from './components/InviteScreen'
 import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
-import { Sidebar } from './components/Sidebar'
+import { SIDEBAR_WIDTH_KEY } from './store/contracts'
+import { Sidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
 import { VoiceBar } from './components/VoiceBar'
@@ -708,7 +709,16 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Режим списка сайдбара: маршрут ведёт его автоматически, ручной выбор
   // (переключатель) живёт до следующей смены маршрута.
   const [sidebarMode, setSidebarMode] = useState<'chats' | 'projects'>('chats')
-  const [sidebarWidth, setSidebarWidth] = useState(264)
+  // Ширина сайдбара — настройка взгляда, как ширина превью: без сохранения она
+  // возвращалась к 264px на каждой перезагрузке (в том числе после деплоя).
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = Number(globalThis.localStorage?.getItem(SIDEBAR_WIDTH_KEY))
+    return Number.isFinite(saved) && saved >= SIDEBAR_MIN_WIDTH && saved <= SIDEBAR_MAX_WIDTH ? saved : 264
+  })
+  const changeSidebarWidth = (next: number): void => {
+    setSidebarWidth(next)
+    globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(next))
+  }
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
   useVoiceCues(voice.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
@@ -1651,7 +1661,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       <Sidebar
         open={sidebarOpen}
         width={sidebarWidth}
-        onWidthChange={compactChat ? undefined : setSidebarWidth}
+        onWidthChange={compactChat ? undefined : changeSidebarWidth}
         onToggleCollapse={() => shellActions.setSidebarCollapsed(true)}
         conversations={chat.conversations.filter((conversation) => conversation.assistantKind !== 'web-recorder' && !conversation.previewUrl)}
         conversationsStatus={chat.conversationsStatus}

@@ -477,6 +477,11 @@ export function SettingsModal({
                     onChange={(e) => onChange({ voice: e.target.value })}
                   >
                     {voices.length === 0 && <option value={settings.voice}>По умолчанию</option>}
+                    {/* Голос выбран, но движок его сейчас не отдаёт (не докачан, поднимается после деплоя):
+                        показываем сохранённый выбор, иначе селект «сбросился» бы на первый доступный. */}
+                    {voices.length > 0 && !voices.some((v) => v.id === settings.voice) && (
+                      <option value={settings.voice}>{settings.voice} — сейчас недоступен</option>
+                    )}
                     {voices.map((v) => (
                       <option key={v.id} value={v.id}>
                         {v.label}

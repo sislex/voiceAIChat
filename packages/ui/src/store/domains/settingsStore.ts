@@ -23,11 +23,20 @@ import type { MicDevice } from '../../audio/microphones'
 import type { SettingsClient, SttPort, TtsPort } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 import type { EffectiveVoiceSettings } from '../contracts'
+import { THEME_KEY } from '../contracts'
 
 
 
 export interface SettingsState {
   settings: Settings
+  /**
+   * Настройки пришли с сервера (а не остались дефолтами стора). Пока это не так,
+   * состояние показывать можно, а строить на нём сохранение — нет: дефолты
+   * уехали бы на сервер как осознанный выбор. Ровно так настройки «сбрасывались»
+   * после деплоя: сервер на пару секунд недоступен, `settings:get` падает,
+   * а первое же изменение уносит на сервер дефолты.
+   */
+  settingsLoaded: boolean
   /** Доступные LLM-движки и их модели. */
   llmEngines: LlmEngineOption[]
   /** Персональные запреты моделей текущего пользователя; пусто = полный доступ. */
@@ -96,13 +105,21 @@ export interface SettingsDeps {
   settings: SettingsClient
   stt: SttPort
   tts: TtsPort
+  /**
+   * Предпочтения взгляда (порт `prefs`). Здесь живёт только зеркало темы:
+   * источник правды — сервер, но до его ответа интерфейс обязан рисоваться той
+   * же темой, а не светлой по умолчанию — иначе перезагрузка во время деплоя
+   * выглядит как сброшенные настройки.
+   */
+  prefs?: { get(key: string): string | null; set(key: string, value: string): void; remove(key: string): void }
   /** Ошибка/успех операции — тостом (владелец очереди тостов — shellStore). */
   notifyError?: (message: string) => void
 }
 
-function initialState(ttsAvailable: boolean): SettingsState {
+function initialState(ttsAvailable: boolean, theme: Settings['theme'] = DEFAULT_SETTINGS.theme): SettingsState {
   return {
-    settings: { ...DEFAULT_SETTINGS },
+    settings: { ...DEFAULT_SETTINGS, theme },
+    settingsLoaded: false,
     llmEngines: [],
     llmAccess: [],
     capabilities: null,
@@ -123,26 +140,57 @@ function initialState(ttsAvailable: boolean): SettingsState {
 
 export function createSettingsStore(deps: SettingsDeps): SettingsStore {
   const client = deps.settings
-  const core = createStoreCore<SettingsState>(initialState(deps.tts.enabled))
+  const savedTheme = (): Settings['theme'] => {
+    const value = deps.prefs?.get(THEME_KEY)
+    return value === 'dark' || value === 'light' || value === 'green' ? value : DEFAULT_SETTINGS.theme
+  }
+  const core = createStoreCore<SettingsState>(initialState(deps.tts.enabled, savedTheme()))
   const { getState, setState } = core
 
-  async function updateSettings(patch: Partial<Settings>): Promise<void> {
-    const settings = { ...getState().settings, ...patch }
-    setState({ settings })
-    await client['settings:save'](settings)
+  /** Зеркалим тему в предпочтения: следующий старт нарисует её ещё до ответа сервера. */
+  function rememberTheme(settings: Settings): void {
+    deps.prefs?.set(THEME_KEY, settings.theme)
   }
 
   /**
-   * Грузит реальные голоса TTS; если выбранный отсутствует — переключает на
-   * дефолтный голос (если он доступен), иначе на первый из списка.
+   * База для сохранения — только настройки, которые сервер уже подтвердил.
+   * Если загрузка не удалась, догоняем её здесь; не вышло и это — патч не
+   * уходит вовсе (ошибка всплывает вызывающему), потому что запись дефолтов
+   * необратимо затёрла бы серверную запись.
+   */
+  async function baseSettings(): Promise<Settings> {
+    if (getState().settingsLoaded) return getState().settings
+    const settings = await client['settings:get']()
+    setState({ settings, settingsLoaded: true })
+    rememberTheme(settings)
+    return settings
+  }
+
+  async function updateSettings(patch: Partial<Settings>): Promise<void> {
+    const settings = { ...(await baseSettings()), ...patch }
+    setState({ settings, settingsLoaded: true })
+    rememberTheme(settings)
+    // На сервер уходит только патч: полный снимок этой вкладки затёр бы поля,
+    // изменённые в соседней вкладке или на другом устройстве.
+    await client['settings:save'](patch)
+  }
+
+  /**
+   * Грузит реальные голоса активного движка. Выбор пользователя при этом не
+   * переписывается: после деплоя движок TTS поднимается раньше, чем его голоса
+   * (том с голосами, догрузка Piper), и запись фолбэка в БД теряла выбранный
+   * голос навсегда. Пока голоса нет — его подменяет `selectEffectiveVoice`.
    */
   async function refreshTtsVoices(): Promise<void> {
-    const voices = await client['tts:voices']()
-    setState({ ttsVoices: voices })
-    if (voices.length > 0 && !voices.some((v) => v.id === getState().settings.voice)) {
-      const fallback = voices.find((v) => v.id === DEFAULT_SETTINGS.voice) ?? voices[0]
-      await updateSettings({ voice: fallback.id })
-    }
+    setState({ ttsVoices: await client['tts:voices']() })
+  }
+
+  /** Голос для синтеза: сохранённый, а если его сейчас нет — дефолтный или первый доступный. */
+  function selectEffectiveVoice(): string {
+    const { settings, ttsVoices } = getState()
+    if (ttsVoices.length === 0 || ttsVoices.some((v) => v.id === settings.voice)) return settings.voice
+    const fallback = ttsVoices.find((v) => v.id === DEFAULT_SETTINGS.voice) ?? ttsVoices[0]
+    return fallback.id
   }
 
   async function refreshVoiceCatalog(): Promise<void> {
@@ -211,13 +259,22 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
     dispose: core.dispose,
     actions: {
       async load() {
-        // Права и каталог движков нужны раньше любой фильтрации моделей.
+        // Права и каталог движков нужны раньше любой фильтрации моделей, но их
+        // отказ не должен оставлять настройки дефолтными: на дефолтах интерфейс
+        // выглядит «сброшенным», а сохранение уносит их на сервер.
         const [settings, llmEngines, llmAccess] = await Promise.all([
           client['settings:get'](),
-          client['llm:engines'](),
-          client['llm:access']()
+          client['llm:engines']().catch((err: unknown) => {
+            console.warn('[settings] каталог движков LLM недоступен', err)
+            return getState().llmEngines
+          }),
+          client['llm:access']().catch((err: unknown) => {
+            console.warn('[settings] права на модели недоступны', err)
+            return getState().llmAccess
+          })
         ])
-        setState({ settings, llmEngines, llmAccess })
+        setState({ settings, settingsLoaded: true, llmEngines, llmAccess })
+        rememberTheme(settings)
       },
       async loadCatalogs() {
         await refreshMics()
@@ -294,7 +351,8 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         })
       },
       reset() {
-        core.resetState(initialState(deps.tts.enabled))
+        // Тема — настройка взгляда: она переживает выход, как и свёрнутый сайдбар.
+        core.resetState(initialState(deps.tts.enabled, savedTheme()))
       },
       selectAllowedProviders() {
         const access = getState().llmAccess
@@ -316,7 +374,7 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         const { settings } = getState()
         return {
           micDeviceId: settings.micDeviceId,
-          voice: settings.voice,
+          voice: selectEffectiveVoice(),
           handsFree: settings.handsFree,
           bargeIn: settings.bargeIn,
           autoSpeak: settings.autoSpeak,
