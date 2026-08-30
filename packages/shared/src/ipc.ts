@@ -470,6 +470,9 @@ export interface IpcInvokeMap {
       ciReuseStrategy?: 'reuse' | 'clean' | 'fail'
       ciExecAuthRef?: string
       doneRetentionDays?: number | null
+      /** Режим и сценарий этапа Automated QA — их пишет и запись из Reader. */
+      automatedQaMode?: import('./qa').AutomatedQaMode
+      automatedQaScenario?: import('./qa').AutomatedQaScenario
     }
     result: ProjectDetail
   }

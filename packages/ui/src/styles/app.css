@@ -7581,6 +7581,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .playwright-reader-record__list { list-style: decimal; margin: 0; padding-left: var(--space-150); display: flex; flex-direction: column; gap: var(--space-050); font-size: 12px; }
 .playwright-reader-record__list li { overflow-wrap: anywhere; }
 .playwright-reader-record__list code { display: block; color: var(--text-dim); }
+.playwright-reader-record__row { display: flex; align-items: center; gap: var(--space-100); justify-content: space-between; }
+.playwright-reader-record__check { color: var(--ci-success); font-style: normal; }
+.playwright-reader-record__expect { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-100); }
+.playwright-reader-record__expect label { flex: 1 1 14rem; display: flex; flex-direction: column; gap: var(--space-050); }
+.playwright-reader-record__expect input { min-width: 0; width: 100%; box-sizing: border-box; }
 /* Ненадёжный селектор виден в списке, а не только в общем предупреждении. */
 .playwright-reader-record__list li[data-stability='path'] code { color: var(--ci-progress); }
 
