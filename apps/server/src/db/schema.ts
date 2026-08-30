@@ -501,6 +501,17 @@ CREATE TABLE IF NOT EXISTS machine_project_shares (
   FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
 );
 
+-- Вид доски конкретного человека в проекте (фильтры, свимлейны, показ скрытых
+-- и завершённых). Раньше жил в localStorage и терялся на другом компьютере.
+CREATE TABLE IF NOT EXISTS board_views (
+  username   TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  value      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (username, project_id),
+  FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS user_project_machine_defaults (
   username   TEXT NOT NULL,
   project_id TEXT NOT NULL,

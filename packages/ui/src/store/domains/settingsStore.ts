@@ -23,7 +23,7 @@ import type { MicDevice } from '../../audio/microphones'
 import type { SettingsClient, SttPort, TtsPort } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 import type { EffectiveVoiceSettings } from '../contracts'
-import { THEME_KEY } from '../contracts'
+import { THEME_KEY, userThemeKey } from '../contracts'
 
 
 
@@ -93,6 +93,8 @@ export interface SettingsActions {
   forgetAgent(id: string): void
   /** Настройки изменены снаружи (соседняя вкладка): перечитать их с сервера. */
   refreshSettings(): Promise<void>
+  /** Известен вошедший: до ответа сервера рисуем интерфейс его темой, а не чужой. */
+  hydrateThemeFor(login: string): void
   reset(): void
   // --- Селекторы (нормализованный публичный вид) ---
   selectAllowedProviders(): LlmProvider[]
@@ -120,6 +122,8 @@ export interface SettingsDeps {
   notify?: (notice: { kind: 'error' | 'success' | 'info'; text: string }) => void
   /** Настройки сохранены — повод сообщить соседним вкладкам (адаптер знает как). */
   onSettingsSaved?: (patch: Partial<Settings>) => void
+  /** Логин текущего человека: тема-зеркало хранится отдельно для каждого. */
+  currentUser?: () => string | null
 }
 
 function initialState(ttsAvailable: boolean, theme: Settings['theme'] = DEFAULT_SETTINGS.theme): SettingsState {
@@ -144,18 +148,34 @@ function initialState(ttsAvailable: boolean, theme: Settings['theme'] = DEFAULT_
   }
 }
 
+/** Тема на момент создания стора: человек ещё может быть неизвестен. */
+function startTheme(deps: SettingsDeps): Settings['theme'] {
+  const login = deps.currentUser?.()
+  const raw = (login ? deps.prefs?.get(userThemeKey(login)) : null) ?? deps.prefs?.get(THEME_KEY)
+  return raw === 'dark' || raw === 'light' || raw === 'green' ? raw : DEFAULT_SETTINGS.theme
+}
+
 export function createSettingsStore(deps: SettingsDeps): SettingsStore {
   const client = deps.settings
-  const savedTheme = (): Settings['theme'] => {
-    const value = deps.prefs?.get(THEME_KEY)
-    return value === 'dark' || value === 'light' || value === 'green' ? value : DEFAULT_SETTINGS.theme
-  }
-  const core = createStoreCore<SettingsState>(initialState(deps.tts.enabled, savedTheme()))
+  const savedTheme = (): Settings['theme'] => readTheme(deps.currentUser?.())
+  const core = createStoreCore<SettingsState>(initialState(deps.tts.enabled, startTheme(deps)))
   const { getState, setState } = core
 
-  /** Зеркалим тему в предпочтения: следующий старт нарисует её ещё до ответа сервера. */
+  /**
+   * Зеркалим тему в предпочтения: следующий старт нарисует её ещё до ответа
+   * сервера. Пишем оба ключа — общий (для экрана входа, где человек ещё
+   * неизвестен) и личный (чтобы чужой сеанс не оставлял свою тему).
+   */
   function rememberTheme(settings: Settings): void {
     deps.prefs?.set(THEME_KEY, settings.theme)
+    const login = deps.currentUser?.()
+    if (login) deps.prefs?.set(userThemeKey(login), settings.theme)
+  }
+
+  /** Тема из предпочтений: сначала личная, иначе последняя тема браузера. */
+  function readTheme(login?: string | null): Settings['theme'] {
+    const raw = (login ? deps.prefs?.get(userThemeKey(login)) : null) ?? deps.prefs?.get(THEME_KEY)
+    return raw === 'dark' || raw === 'light' || raw === 'green' ? raw : DEFAULT_SETTINGS.theme
   }
 
   /**
@@ -451,6 +471,11 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         await refreshModelStatus()
       },
       refreshSettings,
+      hydrateThemeFor(login) {
+        // Настройки уже пришли — они и есть истина, зеркало не нужно.
+        if (getState().settingsLoaded) return
+        setState({ settings: { ...getState().settings, theme: readTheme(login) } })
+      },
       forgetAgent(id) {
         const { settings } = getState()
         if (settings.execTarget !== id && settings.defaultAgentId !== id) return

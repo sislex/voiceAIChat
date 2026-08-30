@@ -32,7 +32,8 @@ import {
   taskWidgetItem,
   type WidgetToolActionRequest,
   type WidgetToolGetRequest,
-  type WidgetToolQueryRequest
+  type WidgetToolQueryRequest,
+  sanitizeBoardView
 } from '@voicechat/shared'
 
 import type { VoiceChatDb } from '../db/database.js'
@@ -330,6 +331,18 @@ export function registerProjectRoutes(
       }
     }
   )
+
+  // Вид доски — личная настройка участника, поэтому и права проверяются как у
+  // участника, и запись адресуется его логином, а не проектом целиком.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/board/view', async (req, reply) => {
+    if (!member(req, req.params.id)) return nf(reply)
+    return db.getBoardView(uid(req), req.params.id)
+  })
+
+  app.put<{ Params: { id: string }; Body: unknown }>('/api/projects/:id/board/view', async (req, reply) => {
+    if (!member(req, req.params.id)) return nf(reply)
+    return db.saveBoardView(uid(req), req.params.id, sanitizeBoardView(req.body))
+  })
 
   app.put<{ Params: { id: string }; Body: { agentId?: string | null } }>(
     '/api/projects/:id/machines/default',

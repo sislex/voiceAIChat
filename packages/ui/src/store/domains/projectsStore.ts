@@ -29,6 +29,7 @@ import type {
 } from '@shared/ci'
 import { isTerminalCiStatus } from '@shared/ci'
 import { BOARD_COMPLETED_KEY } from '../contracts'
+import { DEFAULT_BOARD_VIEW, type BoardView } from '@shared/projects'
 import type { ProjectsClient } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 
@@ -94,6 +95,8 @@ export interface ProjectsState {
   boardLoading: boolean
   boardError: string | null
   boardIncludeCompleted: boolean
+  /** Вид доски (фильтры, свимлейны) текущего человека; null — ещё не загружен. */
+  boardView: BoardView | null
   ciOpen: boolean
   ciCommands: CiCommand[]
   ciStatus: LoadStatus
@@ -155,6 +158,8 @@ export interface ProjectsActions {
   closeProjectSettings(): void
   applyBoardChanged(projectId: string): void
   setBoardIncludeCompleted(include: boolean): Promise<void>
+  /** Сохранить патч вида доски на сервере (источник истины — он, не браузер). */
+  saveBoardView(patch: Partial<BoardView>): Promise<void>
   createColumn(name: string): Promise<void>
   updateColumn(columnId: string, fields: { name?: string; wipLimit?: number | null }): Promise<void>
   setColumnHidden(columnId: string, hidden: boolean): Promise<void>
@@ -255,6 +260,7 @@ function initialState(includeCompleted = false): ProjectsState {
     boardLoading: false,
     boardError: null,
     boardIncludeCompleted: includeCompleted,
+    boardView: null,
     ciOpen: false,
     ciCommands: [],
     ciStatus: 'loading',
@@ -456,14 +462,21 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
     boardBridge?.subscribe(id)
     try {
       const includeCompleted = getState().boardIncludeCompleted
-      const [board, detail] = await Promise.all([
+      const [board, detail, view] = await Promise.all([
         client['board:get']({ id, includeCompleted }),
-        client['projects:get']({ id })
+        client['projects:get']({ id }),
+        // Вид доски — личная настройка на сервере; её отказ не должен ронять доску.
+        client['board:getView']({ id }).catch((err: unknown) => {
+          console.warn('[projects] вид доски недоступен', err)
+          return null
+        })
       ])
       if (generation !== boardGeneration || getState().activeProjectId !== id || getState().boardIncludeCompleted !== includeCompleted) return
       const ciSummaries = { ...getState().ciSummaries }
       for (const r of board.ciRuns ?? []) ciSummaries[r.taskId] = r
-      setState({ board, projectDetail: detail, ciSummaries, boardLoading: false, boardError: null })
+      setState({ board, projectDetail: detail, ciSummaries, boardLoading: false, boardError: null, boardView: view })
+      // «Показывать завершённые» живёт в том же виде: приводим доску к нему.
+      if (view && view.showCompleted !== includeCompleted) void actions.setBoardIncludeCompleted(view.showCompleted)
     } catch (err) {
       if (generation !== boardGeneration || getState().activeProjectId !== id) return
       if (accessLost(err)) {
@@ -976,11 +989,26 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
         if (projectId !== getState().activeProjectId) return
         scheduleBoardSync()
       },
+      async saveBoardView(patch) {
+        const id = getState().activeProjectId
+        if (!id) return
+        const optimistic = { ...(getState().boardView ?? DEFAULT_BOARD_VIEW), ...patch }
+        setState({ boardView: optimistic })
+        try {
+          const saved = await client['board:saveView']({ id, view: patch })
+          if (getState().activeProjectId === id) setState({ boardView: saved })
+        } catch (err) {
+          // Вид — не данные проекта: молчаливая потеря лучше, чем баннер поверх
+          // доски, но в консоли причина должна остаться.
+          console.warn('[projects] вид доски не сохранён', err)
+        }
+      },
       async setBoardIncludeCompleted(include) {
         if (getState().boardIncludeCompleted === include) return
         setState({ boardIncludeCompleted: include })
         if (include) deps.prefs?.set(BOARD_COMPLETED_KEY, '1')
         else deps.prefs?.remove(BOARD_COMPLETED_KEY)
+        if (getState().boardView && getState().boardView?.showCompleted !== include) void actions.saveBoardView({ showCompleted: include })
         await loadBoardForCompletedFilter(include)
       },
       async createColumn(name) {

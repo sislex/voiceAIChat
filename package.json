@@ -51,6 +51,7 @@
     "kb:impact": "node scripts/kb-search.mjs impact",
     "e2e:make": "vitest run --config e2e/vitest.config.ts",
     "e2e:projects": "vitest run --config e2e/vitest.config.ts e2e/projects.e2e.test.ts",
+    "e2e:settings": "vitest run --config e2e/vitest.config.ts e2e/settings.e2e.test.ts",
     "browser-runner:local": "bash scripts/browser-runner-local.sh up",
     "browser-runner:stop": "bash scripts/browser-runner-local.sh down",
     "reader:probe": "tsx scripts/reader-probe.mjs",
