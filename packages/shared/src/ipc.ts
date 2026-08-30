@@ -505,7 +505,7 @@ export interface IpcInvokeMap {
    * можно было проверить только задачей на доске: записал сценарий — и жди
    * следующего рана, чтобы узнать, работает ли он.
    */
-  'projects:checkAutomatedQa': { arg: { id: string }; result: { results: import('./qa').AutomatedQaCheckResult[] } }
+  'projects:checkAutomatedQa': { arg: { id: string; scenarioIndex?: number }; result: { results: import('./qa').AutomatedQaCheckResult[] } }
   /** Назначить персональную машину пользователя по умолчанию для проекта. */
   'projects:setUserDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */

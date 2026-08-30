@@ -1107,7 +1107,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const composer = (col: KanbanColumn): JSX.Element =>
     composerCol === col.id ? (
-      <div className="jcompose" onKeyDown={(e) => { if (e.key === 'Escape') setComposerCol(null) }}>
+      <div className="jcompose" data-testid="column-composer" onKeyDown={(e) => { if (e.key === 'Escape') setComposerCol(null) }}>
         <div className="jcompose-row">
           <select
             className="sel"
@@ -1141,6 +1141,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         <input
           ref={composerRef}
           className="login-input"
+          data-testid="column-create-title"
           placeholder="Что нужно сделать?"
           aria-label={`Новая задача в «${col.name}»`}
           value={newTitle}
@@ -1151,7 +1152,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         />
       </div>
     ) : (
-      <button className="jcompose-open" aria-label={`Создать элемент в «${col.name}»`} onClick={() => openComposer(col.id)}>
+      // `data-testid` — якорь для записанных сценариев: без него шаг цепляется
+      // за `aria-label` с именем колонки и ломается от переименования.
+      <button className="jcompose-open" data-testid="column-create" aria-label={`Создать элемент в «${col.name}»`} onClick={() => openComposer(col.id)}>
         + Создать
       </button>
     )

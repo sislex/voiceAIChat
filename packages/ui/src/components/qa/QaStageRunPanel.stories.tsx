@@ -55,7 +55,8 @@ export const AutomatedPlaywrightPageErrors:Story={args:{stage:'automated_qa'},pa
   logTail:'Доска: Создать задачу — failed: локатор «#create» не найден',
   steps:[
     {id:'s1',title:'Доска: Открыть доску',status:'passed',detail:'',durationMs:900},
-    {id:'s2',title:'Доска: Создать задачу',status:'failed',detail:'локатор «#create» не найден',durationMs:5200}
+    {id:'s2',title:'Доска: Создать задачу',status:'failed',detail:'локатор «#create» не найден',durationMs:5200,
+      pageErrors:['Доска: Uncaught TypeError: Cannot read properties of undefined (reading \'columns\') at BoardView.tsx:142']}
   ],
   pageErrors:[
     'Доска: Uncaught TypeError: Cannot read properties of undefined (reading \'columns\') at BoardView.tsx:142',
