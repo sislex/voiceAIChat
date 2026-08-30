@@ -81,25 +81,29 @@ export function TypeIcon({ type }: { type: WorkItemType }): JSX.Element {
 }
 
 /** Иконка приоритета Jira: стрелки (срочный ↑↑, высокий ↑, средний =, низкий ↓). */
+/**
+ * Стрелка приоритета. Цвета — токены статусов: захардкоженные `#cd1316`/`#4c9aff`
+ * не следовали теме, и на тёмном фоне низкий приоритет сливался с акцентом.
+ */
 export function PriorityIcon({ priority }: { priority: TaskPriority }): JSX.Element {
   const label = `Приоритет: ${PRIORITY_LABEL[priority]}`
   return (
     <svg className={`jprio jprio--${priority}`} width="14" height="14" viewBox="0 0 14 14" role="img" aria-label={label}>
       <title>{label}</title>
       {priority === 'urgent' && (
-        <g stroke="#cd1316" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+        <g stroke="var(--ci-removed)" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 7.2 7 3.6l4 3.6" />
           <path d="M3 11 7 7.4l4 3.6" />
         </g>
       )}
-      {priority === 'high' && <path d="M3 9.4 7 5.6l4 3.8" stroke="#e9494a" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />}
+      {priority === 'high' && <path d="M3 9.4 7 5.6l4 3.8" stroke="var(--ci-removed)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />}
       {priority === 'medium' && (
-        <g stroke="#ea7d24" strokeWidth="2" strokeLinecap="round">
+        <g stroke="var(--ci-progress)" strokeWidth="2" strokeLinecap="round">
           <path d="M3 5.2h8" />
           <path d="M3 9.2h8" />
         </g>
       )}
-      {priority === 'low' && <path d="M3 5.6 7 9.4l4-3.8" stroke="#4c9aff" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />}
+      {priority === 'low' && <path d="M3 5.6 7 9.4l4-3.8" stroke="var(--accent)" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />}
     </svg>
   )
 }

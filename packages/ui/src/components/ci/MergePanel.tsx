@@ -149,6 +149,7 @@ export function MergePanel(props: {
         {machinesView.state === 'empty' && (
           <EmptyState
             compact
+            icon="🖥"
             title="Нет доступных машин для merge"
             description="Добавьте машину к проекту или проверьте доступ к личным машинам."
             testId="merge-machines-empty"
@@ -163,7 +164,7 @@ export function MergePanel(props: {
             <div className="merge-start">
               <label className="merge-start-machine">
                 Машина рана{' '}
-                <select aria-label="Машина merge-рана" value={agentId} onChange={(event) => setAgentId(event.target.value)}>
+                <select className="sel" aria-label="Машина merge-рана" value={agentId} onChange={(event) => setAgentId(event.target.value)}>
                   <option value="" disabled>Выберите готовую машину</option>
                   {personalMachines.length > 0 && <optgroup label="Мои машины">{personalMachines.map(machineOption)}</optgroup>}
                   {projectMachines.length > 0 && <optgroup label="Машины проекта">{projectMachines.map(machineOption)}</optgroup>}
@@ -176,10 +177,17 @@ export function MergePanel(props: {
           )}
         </>}
       </section>
-      {activeRun ? <MergeRunFeed runId={activeRun.id} initialRun={activeRun} machines={machines} onRunChanged={(run) => { if (run) upsertRun(run) }} /> : activeRunId ? <p className="task-tab-empty">Загрузка merge-рана…</p> : <p className="task-tab-empty">Merge-ранов у задачи ещё не было.</p>}
+      {activeRun
+        ? <MergeRunFeed runId={activeRun.id} initialRun={activeRun} machines={machines} onRunChanged={(run) => { if (run) upsertRun(run) }} />
+        : activeRunId
+          ? <>
+            <span className="vc-sr-only" aria-live="polite">Загрузка merge-рана…</span>
+            <Skeleton variant="list" count={3} item="block" height={64} gap={10} />
+          </>
+          : <EmptyState compact icon="🔀" title="Merge-ранов у задачи ещё не было" description="Ран появится после запуска слияния ветки задачи в main." testId="merge-runs-empty" />}
       {runs.length > 1 && (
         <section className="merge-history">
-          <strong>Попытки</strong>
+          <h3 className="ci-task-title">Попытки</h3>
           <ul>
             {runs.map((run) => (
               <li key={run.id}>
@@ -196,7 +204,7 @@ export function MergePanel(props: {
       {repos.length > 0 && (
         <section className="merge-repos" data-testid="task-repositories">
           <div className="merge-repos-head">
-            <strong>Репозитории задачи</strong>
+            <h3 className="ci-task-title">Репозитории задачи</h3>
             {repos.some((repo) => repo.state === 'deleted') && (
               <label><input type="checkbox" checked={showDeleted} onChange={(event) => setShowDeleted(event.target.checked)} /> показывать удалённые</label>
             )}

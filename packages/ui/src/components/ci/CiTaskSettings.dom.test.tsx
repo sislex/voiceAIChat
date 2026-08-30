@@ -7,6 +7,15 @@ import { createFakeCi } from '../../test/fakeApi'
 describe('CiTaskSettings', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
+  // Секции карточки настроек были `span`-ами, а в заголовке стояло английское
+  // «InProgress» посреди русского интерфейса.
+  it('называет секции по-русски и делает их заголовками', async () => {
+    render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
+    expect(await screen.findByRole('heading', { name: 'Этапы работы над задачей' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Команды воркфлоу' })).toBeInTheDocument()
+    expect(screen.queryByText(/InProgress/)).not.toBeInTheDocument()
+  })
+
   it('показывает все этапы отмеченными, сохраняет независимый выбор и восстанавливает его', async () => {
     const { unmount } = render(<CiTaskSettings section="commands" projectId="p1" taskId="t1" />)
     const model = await screen.findByRole('checkbox', { name: 'Работа модели' })

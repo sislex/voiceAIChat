@@ -1,14 +1,22 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { formatDateTime } from '../../lib/dateFormat'
-import type { MergeRun } from '@shared/merge'
+import type { MergeRun, MergeRunStatus } from '@shared/merge'
 import type { CiTaskMachine } from '@shared/ci'
 import { Button } from '@voicechat/ui-kit'
 import { fmtDuration } from './ciFormat'
+import { AnsiText } from './AnsiText'
 
-export const MERGE_STATUS_LABEL: Record<string, string> = {
+/**
+ * Подпись статуса merge-рана. Карта покрывает `MergeRunStatus` целиком: раньше
+ * в ней не было `deploying`, `production_checks`, `rolling_back` и `timeout`, и
+ * в списке запусков они показывались сырыми английскими идентификаторами рядом
+ * с русскими соседями.
+ */
+export const MERGE_STATUS_LABEL: Record<MergeRunStatus, string> = {
   success: 'успех', failed: 'ошибка', cancelled: 'отменён', decision_required: 'нужно решение',
   queued: 'в очереди', checking: 'выполняется', fetching: 'выполняется', merging: 'выполняется',
-  resolving_conflicts: 'выполняется', kb_update: 'выполняется', testing: 'выполняется', pushing: 'выполняется'
+  resolving_conflicts: 'выполняется', kb_update: 'выполняется', testing: 'выполняется', pushing: 'выполняется',
+  deploying: 'публикация', production_checks: 'проверки прода', rolling_back: 'откат', timeout: 'таймаут'
 }
 const STAGE_LABEL: Record<string, string> = {
   checking: 'Проверки сервера', fetching: 'Получение веток', merging: 'Merge',
@@ -43,7 +51,9 @@ function MergeKbDisclosure({ run }: { run: MergeRun }): JSX.Element {
         onClick={() => setOpen(!open)}>
         <span className="kbu-brief__icon" aria-hidden>⧉</span>
         <span className="kbu-brief__line"><strong>База знаний</strong><span>Актуализация БЗ</span><span className={stage?.status === 'failed' ? 'kbu-brief__status kbu-brief__status--error' : 'kbu-brief__status'}>{status}</span></span>
-        <span className="kbu-brief__chevron" aria-hidden>{stage?.status === 'running' ? '…' : stage?.status === 'failed' ? '⚠' : open ? '⌃' : '⌄'}</span>
+        <span className="kbu-brief__chevron" aria-hidden>
+          {stage?.status === 'running' ? '…' : stage?.status === 'failed' ? '⚠' : <span className="vc-feed-caret" />}
+        </span>
       </button>
       {open && <div id={panelId} className="kbu-run-report" onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }}>
         <section><h4>Актуализация базы знаний</h4>
@@ -147,7 +157,7 @@ export function MergeRunFeed({ runId, initialRun, machines = [], onRunChanged }:
       {run.checks.map((check) => (
         <details key={check.name} className="merge-collapse">
           <summary>{check.name}: {check.status} · exit {check.exitCode ?? '—'} · {fmtDuration(check.durationMs)}</summary>
-          <pre className="merge-terminal">{check.output}</pre>
+          <pre className="merge-terminal"><AnsiText>{check.output}</AnsiText></pre>
         </details>
       ))}
       <details className="merge-collapse" open={!terminal}>
@@ -158,7 +168,7 @@ export function MergeRunFeed({ runId, initialRun, machines = [], onRunChanged }:
           <Button size="sm" onClick={() => void navigator.clipboard.writeText(run.log)}>Копировать</Button>
           <Button size="sm" onClick={download}>Скачать .txt</Button>
         </div>
-        <pre ref={logRef} className="merge-terminal merge-terminal--log" onScroll={onLogScroll}>{run.log}</pre>
+        <pre ref={logRef} className="merge-terminal merge-terminal--log" onScroll={onLogScroll}><AnsiText>{run.log}</AnsiText></pre>
       </details>
       <dl className="merge-feed-details">
         <dt>Инициатор</dt><dd>{run.triggeredBy}</dd>
