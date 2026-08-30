@@ -5,7 +5,7 @@ import { aliasNote, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
 import type { AutomatedQaScenario } from '@shared/qa'
-import { runScenarioStep, stepHint } from '@shared/scenarioStep'
+import { runScenarioStep, scenarioProblems, stepHint } from '@shared/scenarioStep'
 import { Button, IconButton } from '@voicechat/ui-kit'
 
 // Панель Playwright Reader: живой изолированный Chromium разговора. В отличие от
@@ -58,6 +58,11 @@ export interface BrowserSessionPaneProps {
    * «много автотестов» это главный барьер.
    */
   onSaveScenario?: (scenario: AutomatedQaScenario) => Promise<void>
+  /**
+   * Сценарий, уже сохранённый в проекте. Без него существующий сценарий нельзя
+   * поправить — только записать заново.
+   */
+  savedScenario?: AutomatedQaScenario
 }
 
 type Phase = 'starting' | 'ready' | 'unavailable' | 'error'
@@ -75,7 +80,7 @@ export function withScheme(raw: string): string {
   return `${hasExplicitPort ? 'http' : 'https'}://${value}`
 }
 
-export function BrowserSessionPane({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario }: BrowserSessionPaneProps): JSX.Element {
+export function BrowserSessionPane({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario, savedScenario }: BrowserSessionPaneProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>('starting')
   const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop'>('desktop')
   // Навигация занимает секунды, а кадр всё это время старый: без отметки непонятно,
@@ -116,6 +121,8 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   // поправил» иначе разорван — запись здесь, прогон на доске.
   const [stepResults, setStepResults] = useState<Record<string, { ok: boolean; detail: string }>>({})
   const [running, setRunning] = useState(false)
+  /** Длительность последнего прогона: по ней прикидывают бюджет этапа. */
+  const [replayMs, setReplayMs] = useState<number | null>(null)
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
   const [frame, setFrame] = useState<string | null>(null)
   const [address, setAddress] = useState<string>('')
@@ -374,6 +381,8 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     if (!steps.length) return
     setRunning(true)
     setStepResults({})
+    setReplayMs(null)
+    const startedAt = Date.now()
     const scenario = toScenario(steps, meta?.currentUrl ?? '')
     try {
       if (scenario.startUrl) await run({ type: 'navigate', url: scenario.startUrl })
@@ -387,7 +396,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
         setStepResults((current) => ({ ...current, [step.id]: { ok: outcome.ok, detail: outcome.detail } }))
         if (!outcome.ok) { setMessage(`${step.title}: ${outcome.detail}${stepHint(outcome.detail) ? ` — ${stepHint(outcome.detail)}` : ''}`); break }
       }
-    } finally { setRunning(false) }
+    } finally { setRunning(false); setReplayMs(Date.now() - startedAt) }
   }
 
   /** Переход записывается отдельным шагом: с него начинается сценарий. */
@@ -483,6 +492,17 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       <span className="playwright-reader-state" role="status" data-status={meta?.state ?? phase}>
         {phase === 'starting' ? STATE_LABELS.starting : (STATE_LABELS[meta?.state ?? 'ready'] ?? STATE_LABELS.ready)}
       </span>
+      {/* Кнопка живёт в ряду инструментов, а не в панели записи: та появляется
+          только при непустой записи, и загрузить туда было бы нечем. */}
+      {savedScenario && savedScenario.steps.length > 0 && steps.length === 0 && (
+        <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => {
+          setSteps([
+            ...(savedScenario.startUrl ? recordNavigate([], savedScenario.startUrl) : []),
+            ...savedScenario.steps.map((step) => ({ ...step, stability: 'testid' as const }))
+          ])
+          setStepResults({})
+        }}>Загрузить сценарий проекта</Button>
+      )}
       <Button size="sm" variant={recording ? 'primary' : 'ghost'} aria-pressed={recording} disabled={phase !== 'ready'}
         onClick={() => (recording ? setRecording(false) : startRecording())}>
         {recording ? `Записывается: ${steps.length}` : 'Записать сценарий'}
@@ -557,9 +577,11 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           {onSaveScenario && (
             <Button size="sm" variant="primary" disabled={busy} onClick={() => void (async () => {
               const scenario = toScenario(steps, meta?.currentUrl ?? '')
-              // Пустой сценарий сохранялся молча, а этап потом блокировался — и
-              // узнавалось это только на прогоне.
-              if (!scenario.steps.length) { setMessage('Сценарий пуст: запишите хотя бы один шаг'); return }
+              // Раньше в проект уезжали шаги с неисполнимым действием и пустым
+              // селектором, и узнавалось это только на прогоне — через сутки, на
+              // доске, у другого человека.
+              const problems = scenarioProblems(scenario)
+              if (problems.length) { setMessage(`Сценарий не сохранён: ${problems.join('; ')}`); return }
               try { await onSaveScenario(scenario); setMessage('Сценарий сохранён в настройках проекта') }
               catch (err) { setMessage(err instanceof Error ? err.message : 'Сценарий не сохранён') }
             })()}>Сохранить в проект</Button>
@@ -572,6 +594,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           <Button size="sm" variant="ghost" onClick={() => { setSteps(meta?.currentUrl ? recordNavigate([], meta.currentUrl) : []); lastStepAt.current = Date.now(); setStepResults({}); setRecording(true) }}>
             Начать заново
           </Button>
+          {replayMs !== null && <span className="playwright-reader-record__time">прогон {Math.round(replayMs / 100) / 10} с</span>}
           <Button size="sm" variant="ghost" onClick={() => void (async () => {
             // Буфер обмена доступен не всегда (нужен secure-контекст); раньше
             // кнопка при отказе молча ничего не делала.
