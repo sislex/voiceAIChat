@@ -742,9 +742,12 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             </button>
           )}
           {props.draft && (
-            <textarea
+            <label className="jmodal-title-field">
+              Название
+              <textarea
               className="jmodal-title"
               aria-label="Заголовок задачи"
+              placeholder="Например: оплата картой падает на 3-DS"
               ref={titleGrow}
               value={title}
               rows={1}
@@ -756,7 +759,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                   commitTitle()
                 }
               }}
-            />
+              />
+            </label>
           )}
           {mobile && (
             <div className="jmodal-quick" data-testid="task-modal-quick">
@@ -1062,7 +1066,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               </p>}
             </div>
           )}
-          {task.type === 'task' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation' && (props.onStartCi || props.ciSummary) && (
+          {/* В черновике панели рана нет: задача ещё не создана, запускать нечего. */}
+          {!props.draft && task.type === 'task' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation' && (props.onStartCi || props.ciSummary) && (
             <div className="jmodal-ci" data-testid="task-modal-ci">
               <div className="jmodal-ci-head">
                 <span className="ci-task-title">CI-ран</span>

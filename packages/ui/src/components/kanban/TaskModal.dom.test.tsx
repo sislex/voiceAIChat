@@ -193,6 +193,27 @@ describe('TaskModal — создание задачи из улучшения', 
   })
 })
 
+describe('TaskModal — черновик новой задачи', () => {
+  beforeEach(() => { window.ci = createFakeCi() })
+
+  // Поле названия стояло пустым и без подписи: сверху карточки был просто
+  // отступ, и куда вводить название — непонятно.
+  it('подписывает поле названия и подсказывает пример', () => {
+    render(<TaskModal {...props({ draft: true, task: mkTask({ title: '' }) })} />)
+    const title = screen.getByRole('textbox', { name: 'Заголовок задачи' })
+
+    expect(title).toHaveAttribute('placeholder')
+    expect(title.closest('label')).toHaveClass('jmodal-title-field')
+    expect(within(title.closest('label')!).getByText('Название')).toBeInTheDocument()
+  })
+
+  it('не показывает панель CI-рана: задачи ещё нет', () => {
+    render(<TaskModal {...props({ draft: true, onStartCi: vi.fn(), ciSummary: mkSummary() })} />)
+    expect(screen.queryByTestId('task-modal-ci')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'В очередь' })).not.toBeInTheDocument()
+  })
+})
+
 describe('TaskModal — связанный чат создаётся при открытии карточки', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
