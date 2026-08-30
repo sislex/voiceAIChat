@@ -125,3 +125,33 @@ export function scenarioProblems(scenario: { startUrl: string; steps: AutomatedQ
   }
   return problems
 }
+
+/**
+ * Проверка набора целиком — то, чего не видит поштучная `scenarioProblems`.
+ * Имя в наборе не украшение: по нему сценарии различают вердикт, лог,
+ * переключатель настроек и сохранение записи. Без него два сценария неотличимы,
+ * и один молча заменяет другой.
+ */
+export function scenarioSetProblems(scenarios: Array<{ name?: string; startUrl: string; steps: unknown[] }>): string[] {
+  const problems: string[] = []
+  if (!scenarios.length) return ['Ни одного сценария: этап Playwright запускать нечем']
+  const named = scenarios.map((item, index) => ({ index, name: (item.name ?? '').trim() }))
+  const unnamed = named.filter((item) => !item.name)
+  if (unnamed.length && scenarios.length > 1) {
+    problems.push(`Без названия: ${unnamed.length} из ${scenarios.length}. В наборе имя — единственный способ различить сценарии.`)
+  }
+  const seen = new Map<string, number>()
+  for (const item of named) {
+    if (!item.name) continue
+    const before = seen.get(item.name)
+    if (before !== undefined) problems.push(`Название «${item.name}» повторяется (сценарии ${before + 1} и ${item.index + 1})`)
+    else seen.set(item.name, item.index)
+  }
+  scenarios.forEach((item, index) => {
+    const label = (item.name ?? '').trim() || `Сценарий ${index + 1}`
+    // Пустой сценарий раннер считает ненастроенным и блокирует им весь этап.
+    if (!item.startUrl.trim()) problems.push(`«${label}»: не задан стартовый адрес — такой сценарий заблокирует весь этап`)
+    else if (!item.steps.length) problems.push(`«${label}»: нет ни одного шага`)
+  })
+  return problems
+}

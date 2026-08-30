@@ -166,3 +166,24 @@ export function toScenario(steps: RecordedStep[], currentUrl: string): Automated
 export function fragileSteps(steps: RecordedStep[]): RecordedStep[] {
   return steps.filter((step) => step.stability === 'path')
 }
+
+/**
+ * Куда положить записанный сценарий: заменить одноимённый или добавить в конец.
+ *
+ * Сравнение по имени работает, только если имя есть. У двух безымянных оно
+ * совпадает, и второй молча заменял первый — записал два теста, остался один.
+ * Безымянный поэтому всегда добавляется и получает имя по порядку.
+ */
+export function placeScenario(
+  current: AutomatedQaScenario[],
+  scenario: AutomatedQaScenario
+): AutomatedQaScenario[] {
+  const name = (scenario.name ?? '').trim()
+  if (!name) {
+    const generated = `Сценарий ${current.length + 1}`
+    return [...current, { ...scenario, name: generated }]
+  }
+  const at = current.findIndex((item) => (item.name ?? '').trim() === name)
+  const normalized = { ...scenario, name }
+  return at >= 0 ? current.map((item, index) => (index === at ? normalized : item)) : [...current, normalized]
+}
