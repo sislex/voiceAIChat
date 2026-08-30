@@ -112,9 +112,29 @@ describe.skipIf(!existsSync(WEB_DIST))('Сессии и устройства E2E
     }, { timeout: 30_000 }).toBe(401)
   })
 
+  it('фильтр по платформе, соседние сессии устройства и раздел завершённых работают в браузере', async () => {
+    // Вход «приложением»: платформа отличается от браузерной, появляется фильтр.
+    await loginAs('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Electron/33.0.0 Chrome/130.0.0.0 Safari/537.36')
+    // Чипы ищем внутри своей группы: «Все» иначе матчится и с «…закрыть все входы».
+    const filter = page.getByRole('group', { name: 'Фильтр по платформе' })
+    await expect.poll(() => filter.getByRole('button', { name: 'Приложение' }).count(), { timeout: 30_000 }).toBe(1)
+    await filter.getByRole('button', { name: 'Приложение' }).click()
+    await expect.poll(() => page.getByText('это устройство', { exact: true }).count(), { timeout: 30_000 }).toBe(0)
+    await filter.getByRole('button', { name: 'Все' }).click()
+    await expect.poll(() => page.getByText('это устройство', { exact: true }).count(), { timeout: 30_000 }).toBe(1)
+
+    // Завершённые: раздел закрыт, при раскрытии показывает отозванный вход.
+    const ended = page.getByTestId('sessions-ended')
+    await expect.poll(() => ended.count(), { timeout: 30_000 }).toBe(1)
+    await ended.getByText('Недавно завершённые').click()
+    await expect.poll(() => ended.locator('[data-testid^="ended-"]').count(), { timeout: 30_000 }).toBeGreaterThan(0)
+  })
+
   it('когда завершают текущую сессию, вкладка сама уходит на экран входа', async () => {
-    const sessions = (await (await fetch(`${BASE}/api/session/list`, { headers: { authorization: `Bearer ${token}` } })).json()) as { sessions: Array<{ sid: string; userAgent: string }> }
-    const current = sessions.sessions.find((s) => s.userAgent.includes('Chrome'))!
+    const sessions = (await (await fetch(`${BASE}/api/session/list`, { headers: { authorization: `Bearer ${token}` } })).json()) as { sessions: Array<{ sid: string; current?: boolean }> }
+    // Именно та сессия, которой живёт вкладка: по User-Agent её не отличить —
+    // Electron-вход тоже представляется Chrome.
+    const current = sessions.sessions.find((s) => s.current)!
     // Отзыв «со стороны» — как из админки или с другого устройства.
     await fetch(`${BASE}/api/admin/sessions/${current.sid}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } })
     await expect.poll(() => page.getByTestId('login-form').count(), { timeout: 30_000 }).toBe(1)

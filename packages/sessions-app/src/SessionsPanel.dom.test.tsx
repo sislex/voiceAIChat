@@ -177,3 +177,79 @@ describe('доступность', () => {
     await expectNoViolations()
   })
 })
+
+describe('SessionsPanel: платформы, соседи, активность и завершённые', () => {
+  it('фильтр по платформе появляется только при разных платформах и сужает список', async () => {
+    const store = setup([
+      makeSession({ sid: 'web', platform: 'web', current: true }),
+      makeSession({ sid: 'app', platform: 'desktop' })
+    ])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    await screen.findByTestId('session-web')
+    await userEvent.click(screen.getByRole('button', { name: 'Приложение' }))
+    await waitFor(() => expect(screen.queryByTestId('session-web')).toBeNull())
+    expect(screen.getByTestId('session-app')).toBeInTheDocument()
+    // Повторный клик по той же платформе снимает фильтр.
+    await userEvent.click(screen.getByRole('button', { name: 'Приложение' }))
+    await waitFor(() => expect(screen.getByTestId('session-web')).toBeInTheDocument())
+  })
+
+  it('одинаковая платформа фильтра не рисует', async () => {
+    const store = setup([makeSession({ sid: 'a', platform: 'web', current: true }), makeSession({ sid: 'b', platform: 'web' })])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    await screen.findByTestId('session-a')
+    expect(screen.queryByRole('button', { name: 'Браузер' })).toBeNull()
+  })
+
+  it('карточка показывает активность и число сессий того же устройства', async () => {
+    const store = setup([
+      makeSession({ sid: 'a', deviceKey: 'same', requests: 42, lastPath: '/api/projects', current: true }),
+      makeSession({ sid: 'b', deviceKey: 'same' })
+    ])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    const card = await screen.findByTestId('session-a')
+    expect(within(card).getByText('42 обращения · /api/projects')).toBeInTheDocument()
+    expect(within(card).getByText('ещё 1 сессия этого устройства')).toBeInTheDocument()
+  })
+
+  it('число обращений склоняется', async () => {
+    const store = setup([
+      makeSession({ sid: 'one', requests: 1, current: true }),
+      makeSession({ sid: 'five', requests: 5 })
+    ])
+    render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    expect(within(await screen.findByTestId('session-one')).getByText('1 обращение')).toBeInTheDocument()
+    expect(within(screen.getByTestId('session-five')).getByText('5 обращений')).toBeInTheDocument()
+  })
+
+  it('завершённые сессии грузятся при раскрытии и не показываются в админском режиме', async () => {
+    const listEnded = vi.fn(async () => [makeSession({ sid: 'gone', ended: true, endedAt: FIXTURE_NOW - 60_000 })])
+    const store = setup([makeSession({ sid: 'a', current: true })], { listEnded })
+    const { unmount } = render(<SessionsPanel store={store} now={FIXTURE_NOW} />)
+    const details = await screen.findByTestId('sessions-ended')
+    expect(listEnded).not.toHaveBeenCalled()
+    await userEvent.click(within(details).getByText('Недавно завершённые'))
+    await waitFor(() => expect(screen.getByTestId('ended-gone')).toBeInTheDocument())
+    unmount()
+
+    const adminStore = setup([makeSession({ sid: 'a', current: true })], { listEnded })
+    render(<SessionsPanel store={adminStore} now={FIXTURE_NOW} readOnly />)
+    await screen.findByTestId('session-a')
+    expect(screen.queryByTestId('sessions-ended')).toBeNull()
+  })
+
+  it('«это не я» спрашивает подтверждение и уводит на экран входа', async () => {
+    const panic = vi.fn(async () => undefined)
+    const onSignedOut = vi.fn()
+    const store = createSessionsStore({
+      client: { list: async () => makeSessions(), revoke: async () => undefined, panic },
+      host: { now: () => FIXTURE_NOW, onSignedOut }
+    })
+    await store.actions.load()
+    render(<SessionsBulkActions store={store} confirm={async () => true} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Это не я — закрыть все входы' }))
+    await waitFor(() => expect(panic).toHaveBeenCalled())
+    expect(onSignedOut).toHaveBeenCalled()
+  })
+})
+

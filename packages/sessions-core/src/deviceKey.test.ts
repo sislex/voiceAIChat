@@ -57,6 +57,11 @@ describe('deviceKey', () => {
     expect(deviceKey({ userAgent: chromeMac, ip: '198.51.100.7' })).not.toBe(base)
   })
 
+  it('приложение и браузер на одной машине — разные устройства', () => {
+    const electron = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Electron/33.0.0 Chrome/130.0.0.0 Safari/537.36'
+    expect(deviceKey({ userAgent: electron, ip: '203.0.113.7' })).not.toBe(deviceKey({ userAgent: chromeMac, ip: '203.0.113.7' }))
+  })
+
   it('пустой UA и пустой адрес дают стабильный ключ, а не исключение', () => {
     expect(deviceKey({ userAgent: '', ip: '' })).toBe(deviceKey({ userAgent: null, ip: null }))
   })

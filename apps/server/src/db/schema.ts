@@ -307,7 +307,10 @@ CREATE TABLE IF NOT EXISTS sessions (
   client_version TEXT,
   geo TEXT,
   requests INTEGER NOT NULL DEFAULT 0,
-  last_path TEXT
+  last_path TEXT,
+  -- SHA-256 секрета устройства из cookie vc_device: доверие привязано к нему, а
+  -- не к угадываемым свойствам запроса (User-Agent и подсеть подделываются).
+  device_secret TEXT
 );
 -- Индекс по device_key создаётся в migrate(), а не здесь: на старой базе схема
 -- выполняется до ALTER TABLE, и индекс по ещё не добавленной колонке падает.

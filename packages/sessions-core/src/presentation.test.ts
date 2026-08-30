@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { durationOf, filterSessions, otherSessions, sessionTitle, sortSessions, toView } from './presentation'
+import { deviceSiblings, durationOf, filterSessions, groupByDevice, otherSessions, platformsOf, sessionTitle, sortSessions, toView } from './presentation'
 import type { DeviceSession } from './types'
 
 const T0 = 1_700_000_000_000
@@ -80,5 +80,38 @@ describe('durationOf', () => {
     expect(durationOf(90 * DAY)).toEqual({ unit: 'month', value: 3 })
     // Знак не важен: «5 минут назад» и «через 5 минут» — одна и та же величина.
     expect(durationOf(-5 * 60_000)).toEqual({ unit: 'minute', value: 5 })
+  })
+})
+
+describe('устройства и платформы', () => {
+  const list = [
+    make({ sid: 'a', deviceKey: 'dev-1', platform: 'web' }),
+    make({ sid: 'b', deviceKey: 'dev-1', platform: 'web' }),
+    make({ sid: 'c', deviceKey: 'dev-2', platform: 'desktop' }),
+    make({ sid: 'd', platform: null })
+  ]
+
+  it('считает соседние сессии того же устройства', () => {
+    expect(deviceSiblings(list, list[0]!)).toBe(1)
+    expect(deviceSiblings(list, list[2]!)).toBe(0)
+    // Сессия без ключа устройства ни с кем не сравнима — соседей у неё нет.
+    expect(deviceSiblings(list, list[3]!)).toBe(0)
+  })
+
+  it('группирует по устройству, безключевые оставляет поодиночке', () => {
+    const groups = groupByDevice(list)
+    expect(groups.get('dev-1')?.map((s) => s.sid)).toEqual(['a', 'b'])
+    expect(groups.get('dev-2')?.map((s) => s.sid)).toEqual(['c'])
+    expect(groups.get('sid:d')?.map((s) => s.sid)).toEqual(['d'])
+  })
+
+  it('собирает список платформ без пустых и дублей', () => {
+    expect(platformsOf(list)).toEqual(['desktop', 'web'])
+    expect(platformsOf([])).toEqual([])
+  })
+
+  it('toView знает про соседей, если ему передали весь список', () => {
+    expect(toView(list[0]!, T0, undefined, list).siblings).toBe(1)
+    expect(toView(list[0]!, T0).siblings).toBe(0)
   })
 })

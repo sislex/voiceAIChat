@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Button, EmptyState, ErrorState } from '@voicechat/ui-kit'
 import { DeviceCard } from './DeviceCard'
+import { EndedSessions } from './EndedSessions'
 import { DEFAULT_TEXTS, type SessionsTexts } from './texts'
 import type { SessionsStore } from './store/sessionsStore'
 
@@ -26,14 +27,23 @@ export interface SessionsPanelProps {
 export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readOnly = false, searchFrom = 4, confirm, now }: SessionsPanelProps): JSX.Element {
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState)
   const texts = useMemo(() => ({ ...DEFAULT_TEXTS, ...overrides }), [overrides])
-  // Часы фиксируем на монтирование: иначе «5 минут назад» меняется на каждый
-  // рендер и тесты со снимками текста становятся флаки.
-  const [mountedAt] = useState(() => now ?? Date.now())
+  // Время идёт: «активность 5 минут назад» обязана стареть, пока окно открыто,
+  // иначе через полчаса список уверенно врёт. Тик редкий (полминуты) — этого
+  // хватает подписям и не заставляет перерисовывать список постоянно. Проп
+  // `now` замораживает часы для тестов и витрины.
+  const [tick, setTick] = useState(() => now ?? Date.now())
+  useEffect(() => {
+    if (now !== undefined) return
+    const timer = setInterval(() => setTick(Date.now()), 30_000)
+    return () => clearInterval(timer)
+  }, [now])
+  const currentNow = now ?? tick
   useEffect(() => {
     void store.actions.load()
   }, [store])
 
   const views = store.visible()
+  const platforms = store.platforms()
   const ask = async (request: { title: string; text?: string }): Promise<boolean> => (confirm ? confirm({ ...request, variant: 'danger' }) : true)
 
   if (state.status === 'loading' || state.status === 'idle') return <p className="vcs-note">{texts.loading}</p>
@@ -44,6 +54,21 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
 
   return (
     <div className="vcs" data-testid="sessions-panel">
+      {platforms.length > 1 && (
+        <div className="vcs-chips" role="group" aria-label="Фильтр по платформе">
+          <Button size="sm" variant={state.platform === null ? 'primary' : 'ghost'} onClick={() => store.actions.setPlatform(null)}>{texts.platformAll}</Button>
+          {platforms.map((platform) => (
+            <Button
+              key={platform}
+              size="sm"
+              variant={state.platform === platform ? 'primary' : 'ghost'}
+              onClick={() => store.actions.setPlatform(state.platform === platform ? null : platform)}
+            >
+              {texts.platformLabel(platform)}
+            </Button>
+          ))}
+        </div>
+      )}
       {state.sessions.length >= searchFrom && (
         <label className="vcs-search">
           <span className="vcs-search-label">{texts.searchLabel}</span>
@@ -66,7 +91,7 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
               view={view}
               texts={texts}
               locale={locale}
-              now={mountedAt}
+              now={currentNow}
               busy={state.busySid === view.session.sid || state.busyAll}
               canRename={!readOnly && store.capabilities.rename}
               canTrust={!readOnly && store.capabilities.trust}
@@ -80,6 +105,9 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
           ))}
         </ul>
       )}
+      {!readOnly && store.capabilities.ended && (
+        <EndedSessions sessions={state.ended} texts={texts} locale={locale} onOpen={() => void store.actions.loadEnded()} />
+      )}
     </div>
   )
 }
@@ -91,7 +119,7 @@ export function SessionsBulkActions({ store, texts: overrides, confirm }: { stor
   const others = store.otherCount()
   const showOthers = store.capabilities.revokeOthers && others > 0
   const showAll = store.capabilities.revokeAll && state.sessions.length > 0
-  if (!showOthers && !showAll) return null
+  if (!showOthers && !showAll && !store.capabilities.panic) return null
   const ask = async (request: { title: string; text?: string }): Promise<boolean> => (confirm ? confirm({ ...request, variant: 'danger' }) : true)
   return (
     <div className="vcs-bulk">
@@ -111,6 +139,19 @@ export function SessionsBulkActions({ store, texts: overrides, confirm }: { stor
           }}
         >
           {texts.revokeAll}
+        </Button>
+      )}
+      {store.capabilities.panic && (
+        <Button
+          size="sm"
+          variant="danger"
+          disabled={state.busyAll}
+          onClick={() => {
+            void ask({ title: texts.panicConfirmTitle, text: texts.panicConfirmText })
+              .then((ok) => (ok ? store.actions.panic() : false))
+          }}
+        >
+          {texts.panic}
         </Button>
       )}
     </div>

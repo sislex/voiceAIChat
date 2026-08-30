@@ -55,6 +55,15 @@ export interface DeviceSession {
   /** Сколько раз отмечалась активность (реализация вправе экономить записи). */
   requests?: number
   lastPath?: string | null
+  /**
+   * Хеш секрета устройства (например, из долгоживущей cookie). Ядро его не
+   * вычисляет и не сравнивает — только переносит: доверие обязано опираться на
+   * секрет, а не на User-Agent и подсеть, которые подделываются.
+   */
+  deviceSecret?: string | null
+  /** Сессия уже завершена (отозвана или истекла): в списке живых её нет. */
+  ended?: boolean
+  endedAt?: number
 }
 
 /** Данные новой сессии: всё, что известно в момент входа. */
@@ -68,6 +77,7 @@ export interface NewSession {
   platform?: string | null
   clientVersion?: string | null
   geo?: GeoInfo | null
+  deviceSecret?: string | null
 }
 
 /** Что разрешено менять у существующей сессии. */

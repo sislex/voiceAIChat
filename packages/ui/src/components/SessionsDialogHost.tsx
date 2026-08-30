@@ -25,7 +25,9 @@ export function SessionsDialogHost({ onClose, onSignedOut }: SessionsDialogHostP
         ? { revokeOthers: () => bridge.logoutAll!(), revokeAll: () => bridge.logoutAll!({ includeCurrent: true }) }
         : {}),
       ...(bridge.renameSession ? { rename: (sid, label) => bridge.renameSession!(sid, label) } : {}),
-      ...(bridge.trustSession ? { setTrusted: (sid, trusted) => bridge.trustSession!(sid, trusted) } : {})
+      ...(bridge.trustSession ? { setTrusted: (sid, trusted) => bridge.trustSession!(sid, trusted) } : {}),
+      ...(bridge.endedSessions ? { listEnded: () => bridge.endedSessions!() } : {}),
+      ...(bridge.panicSessions ? { panic: () => bridge.panicSessions!() } : {})
     }
     return createSessionsStore({
       client,

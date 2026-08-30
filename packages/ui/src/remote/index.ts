@@ -360,6 +360,18 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       const res = await fetch(httpBase + REST.sessionRevoke(sid), { method: 'DELETE', headers: authHeaders() })
       if (!res.ok) throw new Error('Не удалось завершить сессию')
     },
+    endedSessions: async () => {
+      const res = await fetch(`${httpBase + REST.sessionList}?ended=1`, { headers: authHeaders() })
+      if (!res.ok) throw new Error('Не удалось получить завершённые сессии')
+      return ((await res.json()) as { ended?: SessionInfo[] }).ended ?? []
+    },
+    panicSessions: async () => {
+      const res = await fetch(httpBase + REST.sessionPanic, { method: 'POST', headers: authHeaders() })
+      if (!res.ok) throw new Error('Не удалось закрыть все входы')
+      // Сессия умерла вместе с остальными: держать мёртвый токен незачем.
+      setToken(null)
+      ws.reconnect()
+    },
     renameSession: async (sid, label) => {
       const res = await fetch(httpBase + REST.sessionUpdate(sid), {
         method: 'PATCH',

@@ -57,13 +57,19 @@ export function isNewDevice(known: readonly DeviceSession[], candidate: { userAg
   return !known.some((s) => (s.deviceKey ?? deviceKey({ userAgent: s.userAgent, ip: s.ip })) === key)
 }
 
-/** Доверенное устройство среди известных сессий — по нему пропускается второй фактор. */
+/**
+ * Доверенное устройство среди известных сессий — по нему пропускается второй
+ * фактор. Сверяется **секрет** устройства, а не его приметы: User-Agent и
+ * подсеть подделываются, и тогда укравший пароль сосед по сети обходил бы 2FA.
+ * Нет секрета (старая сессия, клиент без cookie) — нет и доверия.
+ */
 export function findTrustedDevice(
   known: readonly DeviceSession[],
-  candidate: { userAgent: string; ip: string },
+  candidate: { deviceSecret?: string | null },
   now = Date.now(),
   policy?: Partial<SessionPolicy>
 ): DeviceSession | null {
-  const key = deviceKey(candidate)
-  return known.find((s) => isTrusted(s, now, policy) && (s.deviceKey ?? deviceKey({ userAgent: s.userAgent, ip: s.ip })) === key) ?? null
+  const secret = candidate.deviceSecret
+  if (!secret) return null
+  return known.find((s) => isTrusted(s, now, policy) && s.deviceSecret === secret) ?? null
 }

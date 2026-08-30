@@ -237,7 +237,9 @@ export function registerAdminRoutes(
   // Сессии пользователей (auth-roadmap п.4): список и отзыв администратором.
   app.get<{ Params: { name: string } }>(REST.adminSessions(':name').replace('%3Aname', ':name'), guard, async (req, reply) => {
     if (!db.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
-    return { sessions: db.listSessions(req.params.name) }
+    // Хеш секрета устройства — серверная деталь: админу он не нужен, а в ответе
+    // стал бы способом выдать себя за доверенное устройство пользователя.
+    return { sessions: db.listSessions(req.params.name).map(({ deviceSecret: _hidden, ...rest }) => rest) }
   })
   app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
     // Владельца берём до отзыва: после него getSession уже ничего не отдаст.
@@ -253,17 +255,23 @@ export function registerAdminRoutes(
   const adminConfig = () => ({
     ...readSignupConfig(db),
     mailConfigured: Boolean(mailer?.configured),
-    ownedProjectLimit: Number(db.getAppConfig('projects.ownedLimit')) || DEFAULT_OWNED_PROJECT_LIMIT
+    ownedProjectLimit: Number(db.getAppConfig('projects.ownedLimit')) || DEFAULT_OWNED_PROJECT_LIMIT,
+    // 0 — без ограничения: политика по умолчанию, менять её должен человек осознанно.
+    sessionLimit: Number(db.getAppConfig('sessions.maxPerUser')) || 0
   })
   app.get(REST.adminSignup, guard, async () => adminConfig())
-  app.put<{ Body: { enabled?: boolean; role?: string; ownedProjectLimit?: number } | undefined }>(REST.adminSignup, guard, async (req, reply) => {
+  app.put<{ Body: { enabled?: boolean; role?: string; ownedProjectLimit?: number; sessionLimit?: number } | undefined }>(REST.adminSignup, guard, async (req, reply) => {
     const role = req.body?.role
     if (role !== undefined && role !== 'admin' && role !== 'developer' && role !== 'tester' && role !== 'observer') return reply.code(400).send({ error: 'bad role' })
     const limit = req.body?.ownedProjectLimit
     if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 1000)) return reply.code(400).send({ error: 'project limit must be an integer from 1 to 1000' })
+    const sessionLimit = req.body?.sessionLimit
+    // 0 разрешён и означает «без лимита»; верхняя граница — от опечатки в поле.
+    if (sessionLimit !== undefined && (!Number.isInteger(sessionLimit) || sessionLimit < 0 || sessionLimit > 100)) return reply.code(400).send({ error: 'session limit must be an integer from 0 to 100' })
     if (typeof req.body?.enabled === 'boolean') db.setAppConfig('signup.enabled', req.body.enabled ? '1' : '0')
     if (role) db.setAppConfig('signup.role', role)
     if (limit !== undefined) db.setAppConfig('projects.ownedLimit', String(limit))
+    if (sessionLimit !== undefined) db.setAppConfig('sessions.maxPerUser', String(sessionLimit))
     return adminConfig()
   })
   // Код сброса пароля (auth-roadmap п.10): администратор выдаёт одноразовый код на 24 часа, пользователь вводит его на экране входа.

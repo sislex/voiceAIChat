@@ -300,7 +300,7 @@ describe('UsersAdmin — лимит LLM (auth-roadmap п.17)', () => {
 describe('UsersAdmin — открытая регистрация', () => {
   it('раскрытие запрашивает настройку; галка и роль зовут onSetSignup; без SMTP — предупреждение', async () => {
     const onLoadSignup = vi.fn(); const onSetSignup = vi.fn()
-    renderAdmin({ isAdmin: true, onLoadSignup, onSetSignup, signup: { enabled: false, role: 'developer', mailConfigured: false, ownedProjectLimit: 5 } })
+    renderAdmin({ isAdmin: true, onLoadSignup, onSetSignup, signup: { enabled: false, role: 'developer', mailConfigured: false, ownedProjectLimit: 5, sessionLimit: 0 } })
     const box = screen.getByTestId('admin-signup')
     await userEvent.click(within(box).getByText(/Открытая регистрация/))
     await waitFor(() => expect(onLoadSignup).toHaveBeenCalled())

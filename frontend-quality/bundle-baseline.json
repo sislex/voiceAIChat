@@ -1,14 +1,15 @@
 {
   "schemaVersion": 1,
   "measurement": "Vite minified JavaScript bytes",
-  "measuredAt": "2026-08-27 after merging current main into desktop sidebar",
-  "headroom": "12% rounded up; budgets must be re-baselined explicitly",
+  "measuredAt": "2026-08-30 после мержа main в work1 и модуля «сессии и устройства»",
+  "headroom": "~1% над фактом; бюджет поднимается только явно и с причиной",
   "maxBytes": {
-    "index-": 1291000,
+    "index-": 1310000,
     "react-": 160000,
     "markdown-": 375000,
     "terminal-": 327000,
     "qrcode-": 27000
   },
-  "totalJsMaxBytes": 18120000
+  "totalJsMaxBytes": 18120000,
+  "//": "index- превысил прежние 1291000 ещё до правок сессий: 1295864 принёс мерж main (запись сценариев), модуль сессий добавил 854 байта — окно грузится лениво."
 }
