@@ -474,9 +474,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   )
 
   // Полоса вкладок и панели связаны id: у `role="tablist"` без `role="tabpanel"`
-  // скринридер не знает, что именно открыла вкладка. Исключение — «Общее»: его
-  // содержимое это две колонки `.jmodal-main`/`.jmodal-side`, обернуть их в один
-  // элемент нельзя, не сломав флекс-раскладку карточки.
+  // скринридер не знает, что именно открыла вкладка. Панель есть у каждой
+  // вкладки, включая «Общее» — две его колонки лежат в `.jmodal-general`.
   const domId = useId()
   const tabDomId = (tab: TaskTab): string => `${domId}-tab-${tab}`
   const panelDomId = (tab: TaskTab): string => `${domId}-panel-${tab}`
@@ -718,7 +717,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             id={tabDomId(id)}
             role="tab"
             aria-selected={activeTab === id}
-            aria-controls={id === 'general' ? undefined : panelDomId(id)}
+            aria-controls={panelDomId(id)}
             tabIndex={activeTab === id ? 0 : -1}
             className={activeTab === id ? 'task-tab task-tab--active' : 'task-tab'}
             onClick={() => setActiveTab(id)}
@@ -730,6 +729,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         const field: keyof TaskUpdateFields | null = label.includes('Заголовок') ? 'title' : label.includes('Описание') ? 'description' : label.includes('Критерии') ? 'acceptanceCriteria' : label.includes('Приоритет') ? 'priority' : label.includes('Исполнитель') ? 'assignee' : label.includes('Стори') ? 'storyPoints' : label.includes('Срок') ? 'dueDate' : null
         props.onSelectedFieldChange?.(field)
       }}>
+        {/* «Общее» — такая же панель вкладки, как остальные: две колонки внутри
+            одного `role="tabpanel"`. Раньше они лежали прямо в `.jmodal` и
+            прятались правилом `.jmodal:not(.jmodal--tab-general) > …`, поэтому
+            вкладка «Общее» была единственной без панели. */}
+        <div className="jmodal-general" {...panelProps('general')}>
         <div className="jmodal-main">
           {task.activeMergeRunId && <p className="task-merge-hint">Идёт merge-ран — прогресс во вкладке «Merge».</p>}
           {parent && (
@@ -913,7 +917,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               aria-expanded={detailsOpen}
               onClick={() => setDetailsOpen((v) => !v)}
             >
-              <span className="jmodal-side-caret" aria-hidden>{detailsOpen ? '▾' : '▸'}</span>
+              {/* Шеврон общий с лентами: раскрытие в карточке выглядит одинаково. */}
+              <span className="vc-feed-caret" aria-hidden="true" />
               Подробности
             </button>
           )}
@@ -927,7 +932,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                   {/* Пустое значение — приглушённое «—», как в остальных полях
                       карточки: жирное «Нет данных» читалось как настоящее имя. */}
                   {task.createdByName ?? task.createdBy
-                    ? <strong>{task.createdByName ?? task.createdBy}</strong>
+                    ? <span className="jmodal-assignee">
+                      <Avatar username={task.createdBy ?? task.createdByName ?? ''} size={20} />
+                      <strong>{task.createdByName ?? task.createdBy}</strong>
+                    </span>
                     : <span className="jmodal-field-empty">—</span>}
                 </div>
               )}
@@ -1111,6 +1119,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             </div>
           )}
         </aside>
+        </div>
         {!props.draft && <section className="task-tab-panel" data-testid="task-settings-panel" {...panelProps('settings')}>
           <div className="task-settings-stack">
             <CiTaskSettings section="machine" projectId={task.projectId} taskId={task.id} mergeMachineBound={task.mergeMachineBound} />
