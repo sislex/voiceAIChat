@@ -51,7 +51,9 @@ function MergeKbDisclosure({ run }: { run: MergeRun }): JSX.Element {
         onClick={() => setOpen(!open)}>
         <span className="kbu-brief__icon" aria-hidden>⧉</span>
         <span className="kbu-brief__line"><strong>База знаний</strong><span>Актуализация БЗ</span><span className={stage?.status === 'failed' ? 'kbu-brief__status kbu-brief__status--error' : 'kbu-brief__status'}>{status}</span></span>
-        <span className="kbu-brief__chevron" aria-hidden>{stage?.status === 'running' ? '…' : stage?.status === 'failed' ? '⚠' : open ? '⌃' : '⌄'}</span>
+        <span className="kbu-brief__chevron" aria-hidden>
+          {stage?.status === 'running' ? '…' : stage?.status === 'failed' ? '⚠' : <span className="vc-feed-caret" />}
+        </span>
       </button>
       {open && <div id={panelId} className="kbu-run-report" onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }}>
         <section><h4>Актуализация базы знаний</h4>
