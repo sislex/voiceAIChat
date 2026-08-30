@@ -858,6 +858,22 @@ describe('KanbanBoard — фильтры исполнителей', () => {
     expect(screen.getByText('Чужая')).toBeInTheDocument()
   })
 
+  // Вид доски раньше жил только в памяти: после перезагрузки (а на проде — после
+  // каждого деплоя) свимлейны и «скрытые» возвращались к исходным.
+  it('свимлейны и показ скрытых колонок переживают перезагрузку', async () => {
+    const props = { board: filteredBoard, currentUserId: 'view-user', members: [{ username: 'alice', role: 'member' as const, addedAt: 1 }] }
+    const view = render(<KanbanBoardHarness {...props} />)
+    await userEvent.selectOptions(screen.getByLabelText('Свимлейны'), 'assignee')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'скрытые' }))
+    await waitFor(() => expect(localStorage.getItem('voicechat.kanban.filters.v3.view-user.p1')).toContain('"swimlane":"assignee"'))
+    view.unmount()
+
+    render(<KanbanBoardHarness {...props} />)
+
+    await waitFor(() => expect(screen.getByLabelText<HTMLSelectElement>('Свимлейны').value).toBe('assignee'))
+    expect(screen.getByRole('checkbox', { name: 'скрытые' })).toBeChecked()
+  })
+
   it('восстанавливает массив после перезагрузки и реагирует на обновление назначения', async () => {
     const members = [{ username: 'alice', role: 'member' as const, addedAt: 1 }, { username: 'bob', role: 'member' as const, addedAt: 1 }]
     const props = { board: filteredBoard, currentUserId: 'persist-user', members }

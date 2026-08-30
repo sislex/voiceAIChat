@@ -534,6 +534,25 @@ describe('App — интеграция UI со стором и IPC', () => {
     expect(screen.getByLabelText<HTMLSelectElement>('Голос озвучки').value).toBe('ru_RU-dmitri-medium')
   })
 
+  // Ширина сайдбара раньше жила только в памяти: каждая перезагрузка (в том
+  // числе после деплоя) возвращала её к исходной.
+  it('ширина сайдбара переживает «перезапуск»', async () => {
+    const api = await seededApi()
+    const first = render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Поездка в Лиссабон', {}, { timeout: 10_000 })
+    const handle = screen.getByRole('separator', { name: 'Изменить ширину сайдбара' })
+    handle.focus()
+    await userEvent.keyboard('{End}')
+    const widened = handle.getAttribute('aria-valuenow')
+    expect(widened).not.toBe('264')
+
+    first.unmount()
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Поездка в Лиссабон', {}, { timeout: 10_000 })
+
+    expect(screen.getByRole('separator', { name: 'Изменить ширину сайдбара' })).toHaveAttribute('aria-valuenow', widened)
+  })
+
   it('меню голоса показывает реальные названия из движка', async () => {
     await renderApp()
     await openSettings('Озвучка')

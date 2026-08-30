@@ -10,6 +10,12 @@ export const SIDEBAR_PROJECT_KEY = 'vc.sidebar.project'
 export const DONE_TASK_CHATS_KEY = 'vc.sidebar.doneTaskChats'
 /** Ключ localStorage для межвкладочного обновления meta сообщения. */
 export const MESSAGE_META_UPDATE_KEY = 'vc:message-meta-update'
+/** Ключ предпочтений для фильтра доски «Показывать завершённые». */
+export const BOARD_COMPLETED_KEY = 'vc.board.includeCompleted'
+/** Ключ предпочтений для ширины сайдбара. */
+export const SIDEBAR_WIDTH_KEY = 'vc.sidebar.width'
+/** Ключ предпочтений с последней известной темой: до ответа сервера интерфейс рисуется ею. */
+export const THEME_KEY = 'vc.theme'
 /** Ключ localStorage для свёрнутого сайдбара на десктопе. */
 export const SIDEBAR_COLLAPSED_KEY = 'vc:sidebarCollapsed'
 
