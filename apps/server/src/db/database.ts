@@ -1,4 +1,4 @@
-import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
+import type { SessionInfo, SessionGeo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
 import { parseProjectCommandPolicy, parseRoleCommandPolicies, EMPTY_AUTOMATED_QA_SCENARIO, parseAutomatedQaScenarios } from '@voicechat/shared'
 import { DEFAULT_BOARD_VIEW, sanitizeBoardView, type BoardView } from '@voicechat/shared'
 import type { AutomatedQaMode, AutomatedQaScenario, AutomatedQaScenarioStep } from '@voicechat/shared'
@@ -273,6 +273,54 @@ import {
   isContextToggleable
 } from '@voicechat/shared'
 import { hashPassword, verifyPassword } from '../users/passwords.js'
+
+/** Строка таблицы `sessions` со всеми метаданными устройства. */
+interface SessionRow {
+  sid: string
+  user_name: string
+  created_at: number
+  last_seen: number
+  expires_at: number
+  ip: string
+  user_agent: string
+  revoked_at: number | null
+  label: string | null
+  device_key: string | null
+  trusted_at: number | null
+  platform: string | null
+  client_version: string | null
+  geo: string | null
+  requests: number | null
+  last_path: string | null
+  device_secret: string | null
+  two_factor: number | null
+}
+
+/** Строка → контракт. Гео хранится JSON-ом: битую запись просто теряем. */
+function sessionOf(r: SessionRow): SessionInfo {
+  let geo: SessionGeo | null = null
+  if (r.geo) { try { geo = JSON.parse(r.geo) as SessionGeo } catch { geo = null } }
+  return {
+    sid: r.sid,
+    user: r.user_name,
+    createdAt: r.created_at,
+    lastSeen: r.last_seen,
+    expiresAt: r.expires_at,
+    ip: r.ip,
+    userAgent: r.user_agent,
+    label: r.label ?? null,
+    deviceKey: r.device_key ?? null,
+    trustedAt: r.trusted_at ?? null,
+    platform: r.platform ?? null,
+    clientVersion: r.client_version ?? null,
+    geo,
+    requests: r.requests ?? 0,
+    lastPath: r.last_path ?? null,
+    deviceSecret: r.device_secret ?? null,
+    twoFactor: r.two_factor === 1
+  }
+}
+
 
 /** Инъектируемые зависимости — для детерминированных тестов. */
 export interface DbDeps {
@@ -864,6 +912,25 @@ export class VoiceChatDb {
     if (userCols.length && !userCols.some((c) => c.name === 'last_login')) this.db.exec(`ALTER TABLE users ADD COLUMN last_login INTEGER`)
     if (userCols.length && !userCols.some((c) => c.name === 'notices_seen_at')) this.db.exec(`ALTER TABLE users ADD COLUMN notices_seen_at INTEGER NOT NULL DEFAULT 0`)
     if (userCols.length && !userCols.some((c) => c.name === 'llm_limit_usd')) this.db.exec(`ALTER TABLE users ADD COLUMN llm_limit_usd REAL`)
+    // Метаданные устройства сессии: ставятся поверх существующей таблицы, все
+    // необязательные — старые строки продолжают читаться без них.
+    const sessionCols = this.db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>
+    if (sessionCols.length) {
+      const add = (name: string, ddl: string): void => {
+        if (!sessionCols.some((c) => c.name === name)) this.db.exec(`ALTER TABLE sessions ADD COLUMN ${ddl}`)
+      }
+      add('label', 'label TEXT')
+      add('device_key', 'device_key TEXT')
+      add('trusted_at', 'trusted_at INTEGER')
+      add('platform', 'platform TEXT')
+      add('client_version', 'client_version TEXT')
+      add('geo', 'geo TEXT')
+      add('requests', 'requests INTEGER NOT NULL DEFAULT 0')
+      add('last_path', 'last_path TEXT')
+      add('device_secret', 'device_secret TEXT')
+      add('two_factor', 'two_factor INTEGER NOT NULL DEFAULT 0')
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(user_name, device_key)`)
+    }
     // Уровень доступа предоставленной проекту машины (machines-roadmap п.18): 'full' | 'read'.
     const shareCols = this.db.prepare(`PRAGMA table_info(machine_project_shares)`).all() as Array<{ name: string }>
     if (shareCols.length && !shareCols.some((c) => c.name === 'access')) this.db.exec(`ALTER TABLE machine_project_shares ADD COLUMN access TEXT NOT NULL DEFAULT 'full'`)
@@ -3114,11 +3181,19 @@ export class VoiceChatDb {
 
   // ---- Сессии (auth-roadmap п.4) -------------------------------------------
 
+  // Время сессий — настенное (Date.now), а не тестовые часы базы: сроки жизни,
+  // Retry-After и Max-Age у cookie измеряются в реальных днях. Необязательный
+  // `at` есть только ради контрактного набора ядра, который двигает часы сам.
+
+
   /** Регистрирует сессию входа; повторный вызов для того же sid обновляет last_seen. */
-  createSession(sid: string, user: string, meta: { ip: string; userAgent: string; ttlMs: number }): void {
-    const now = Date.now()
-    this.db.prepare(`INSERT INTO sessions (sid, user_name, created_at, last_seen, expires_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(sid) DO UPDATE SET last_seen = excluded.last_seen`).run(sid, user, now, now, now + meta.ttlMs, meta.ip.slice(0, 64), meta.userAgent.slice(0, 200))
+  createSession(sid: string, user: string, meta: { ip: string; userAgent: string; ttlMs: number; deviceKey?: string | null; deviceSecret?: string | null; platform?: string | null; clientVersion?: string | null; geo?: SessionGeo | null; twoFactor?: boolean; at?: number }): void {
+    const now = meta.at ?? Date.now()
+    this.db.prepare(`INSERT INTO sessions (sid, user_name, created_at, last_seen, expires_at, ip, user_agent, device_key, device_secret, platform, client_version, geo, two_factor)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(sid) DO UPDATE SET last_seen = excluded.last_seen`)
+      .run(sid, user, now, now, now + meta.ttlMs, meta.ip.slice(0, 64), meta.userAgent.slice(0, 200),
+        meta.deviceKey ?? null, meta.deviceSecret ?? null, meta.platform ?? null, meta.clientVersion ?? null, meta.geo ? JSON.stringify(meta.geo) : null, meta.twoFactor ? 1 : 0)
   }
 
   /** Есть ли запись о сессии вообще (в т.ч. отозванная) — чтобы ленивый импорт старых токенов не воскрешал отозванные. */
@@ -3127,34 +3202,87 @@ export class VoiceChatDb {
   }
 
   getSession(sid: string): SessionInfo | null {
-    const r = this.db.prepare(`SELECT * FROM sessions WHERE sid = ?`).get(sid) as { sid: string; user_name: string; created_at: number; last_seen: number; expires_at: number; ip: string; user_agent: string; revoked_at: number | null } | undefined
+    const r = this.db.prepare(`SELECT * FROM sessions WHERE sid = ?`).get(sid) as SessionRow | undefined
     if (!r || r.revoked_at) return null
-    return { sid: r.sid, user: r.user_name, createdAt: r.created_at, lastSeen: r.last_seen, expiresAt: r.expires_at, ip: r.ip, userAgent: r.user_agent }
+    return sessionOf(r)
   }
 
-  /** Отметка активности — не чаще раза в минуту, чтобы не писать в БД на каждый запрос. */
-  touchSession(sid: string, ttlMs: number): void {
-    const now = Date.now()
-    this.db.prepare(`UPDATE sessions SET last_seen = ?, expires_at = ? WHERE sid = ? AND last_seen < ?`).run(now, now + ttlMs, sid, now - 60_000)
+  /**
+   * Отметка активности — не чаще раза в минуту, чтобы не писать в БД на каждый
+   * запрос. Поэтому `requests` считает не запросы, а минутные интервалы, в
+   * которых сессия была жива: как мера активности этого достаточно, а полный
+   * счётчик стоил бы записи в SQLite на каждом обращении к API.
+   */
+  touchSession(sid: string, ttlMs: number, path?: string, at?: number): void {
+    const now = at ?? Date.now()
+    this.db.prepare(`UPDATE sessions SET last_seen = ?, expires_at = ?, requests = requests + 1, last_path = COALESCE(?, last_path)
+      WHERE sid = ? AND revoked_at IS NULL AND last_seen < ?`).run(now, now + ttlMs, path ? path.slice(0, 120) : null, sid, now - 60_000)
   }
 
-  listSessions(user: string): SessionInfo[] {
-    const rows = this.db.prepare(`SELECT * FROM sessions WHERE user_name = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY last_seen DESC`).all(user, Date.now()) as Array<{ sid: string; user_name: string; created_at: number; last_seen: number; expires_at: number; ip: string; user_agent: string }>
-    return rows.map((r) => ({ sid: r.sid, user: r.user_name, createdAt: r.created_at, lastSeen: r.last_seen, expiresAt: r.expires_at, ip: r.ip, userAgent: r.user_agent }))
+  /** Правка метки и доверия своей сессии; false — строки нет или она отозвана. */
+  updateSession(sid: string, patch: { label?: string | null; trusted?: boolean; geo?: SessionGeo | null }, at?: number): boolean {
+    const sets: string[] = []
+    const params: Array<string | number | null> = []
+    if (patch.label !== undefined) { sets.push('label = ?'); params.push(patch.label ? patch.label.slice(0, 60) : null) }
+    if (patch.trusted !== undefined) { sets.push('trusted_at = ?'); params.push(patch.trusted ? (at ?? Date.now()) : null) }
+    if (patch.geo !== undefined) { sets.push('geo = ?'); params.push(patch.geo ? JSON.stringify(patch.geo) : null) }
+    if (sets.length === 0) return Boolean(this.getSession(sid))
+    return this.db.prepare(`UPDATE sessions SET ${sets.join(', ')} WHERE sid = ? AND revoked_at IS NULL`).run(...params, sid).changes > 0
   }
 
-  revokeSessionById(sid: string): boolean {
-    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE sid = ? AND revoked_at IS NULL`).run(Date.now(), sid).changes > 0
+  listSessions(user: string, at?: number): SessionInfo[] {
+    const rows = this.db.prepare(`SELECT * FROM sessions WHERE user_name = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY last_seen DESC`).all(user, at ?? Date.now()) as SessionRow[]
+    return rows.map(sessionOf)
+  }
+
+  /**
+   * События безопасности, относящиеся к устройству сессии. Ключ сопоставления —
+   * User-Agent и адрес: в журнале нет sid, а по паре видно именно тот вход,
+   * про который человек спрашивает «что это устройство делало».
+   */
+  listSessionHistory(user: string, session: { userAgent: string; ip: string }, limit = 10): SecurityEvent[] {
+    const rows = this.db.prepare(`SELECT * FROM security_events WHERE user_name = ? AND user_agent = ? AND (ip = ? OR ip = '')
+      ORDER BY id DESC LIMIT ?`).all(user, session.userAgent.slice(0, 200), session.ip.slice(0, 64), Math.min(Math.max(limit, 1), 50)) as Array<{ id: number; at: number; user_name: string; type: SecurityEventType; ip: string; user_agent: string; details: string }>
+    return rows.map((r) => ({ id: r.id, at: r.at, user: r.user_name, type: r.type, ip: r.ip, userAgent: r.user_agent, details: r.details }))
+  }
+
+  /**
+   * Недавно завершённые сессии: отозванные и истёкшие, пока их не убрал prune.
+   * Нужны, чтобы «сессия исчезла» отличалось от «сессии не было» — иначе после
+   * отзыва человек не может убедиться, что закрыл именно тот вход.
+   */
+  listEndedSessions(user: string, limit = 20, at?: number): SessionInfo[] {
+    const now = at ?? Date.now()
+    const rows = this.db.prepare(`SELECT * FROM sessions WHERE user_name = ? AND (revoked_at IS NOT NULL OR expires_at <= ?)
+      ORDER BY COALESCE(revoked_at, expires_at) DESC LIMIT ?`).all(user, now, Math.min(Math.max(limit, 1), 100)) as SessionRow[]
+    return rows.map((r) => ({ ...sessionOf(r), endedAt: r.revoked_at ?? r.expires_at, ended: true }))
+  }
+
+  revokeSessionById(sid: string, at?: number): boolean {
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE sid = ? AND revoked_at IS NULL`).run(at ?? Date.now(), sid).changes > 0
   }
 
   /** «Выйти везде»: все сессии пользователя, кроме указанной (текущей). */
-  revokeUserSessions(user: string, exceptSid: string | null = null): number {
-    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE user_name = ? AND revoked_at IS NULL AND (? IS NULL OR sid != ?)`).run(Date.now(), user, exceptSid, exceptSid).changes
+  revokeUserSessions(user: string, exceptSid: string | null = null, at?: number): number {
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE user_name = ? AND revoked_at IS NULL AND (? IS NULL OR sid != ?)`).run(at ?? Date.now(), user, exceptSid, exceptSid).changes
+  }
+
+  /**
+   * Отзывает сессии, в которых давно не было активности. Формально они ещё живы
+   * (TTL продлевается каждым запросом), но забытый вход с чужого ноутбука —
+   * ровно та сессия, о которой владелец не вспомнит сам.
+   */
+  revokeStaleSessions(staleDays: number, at?: number): number {
+    if (staleDays <= 0) return 0
+    const now = at ?? Date.now()
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL AND last_seen < ?`)
+      .run(now, now - staleDays * 24 * 60 * 60_000).changes
   }
 
   /** Чистка истёкших и давно отозванных сессий (вызывается на старте и раз в сутки). */
-  pruneSessions(): number {
-    return this.db.prepare(`DELETE FROM sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)`).run(Date.now(), Date.now() - 7 * 24 * 60 * 60_000).changes
+  pruneSessions(keepRevokedMs = 7 * 24 * 60 * 60_000, at?: number): number {
+    const now = at ?? Date.now()
+    return this.db.prepare(`DELETE FROM sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)`).run(now, now - keepRevokedMs).changes
   }
 
   /** Делает конкретный Bearer-токен недействительным даже после рестарта сервера. */

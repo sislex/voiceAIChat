@@ -35,7 +35,6 @@ export interface AdminState {
   adminSelected: string | null
   adminUsage: UsageReport | null
   /** Сессии выбранного пользователя (auth-roadmap п.4); null — не загружены. */
-  adminSessions: SessionInfo[] | null
   /** Журнал безопасности выбранного пользователя (auth-roadmap п.7). */
   adminSecurity: SecurityEvent[] | null
   /** Инвайты (auth-roadmap п.8). */
@@ -68,11 +67,11 @@ export interface AdminActions {
   deleteUserAccount(name: string): Promise<void>
   selectAdminUser(name: string): Promise<void>
   loadAdminUsage(unit: UsageUnit, from?: number, to?: number, conversationId?: string): Promise<void>
-  loadAdminSessions(): Promise<void>
+  loadAdminSessions(): Promise<SessionInfo[]>
   loadAdminSecurity(): Promise<void>
   loadAdminInvites(): Promise<void>
   loadAdminSignup(): Promise<void>
-  setAdminSignup(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number }): Promise<void>
+  setAdminSignup(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }): Promise<void>
   createAdminInvite(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }): Promise<InviteInfo | null>
   deleteAdminInvite(token: string): Promise<void>
   revokeAdminSession(sid: string): Promise<void>
@@ -112,7 +111,6 @@ function initialState(): AdminState {
     adminUsersError: null,
     adminSelected: null,
     adminUsage: null,
-    adminSessions: null,
     adminSecurity: null,
     adminInvites: null,
     adminSignup: null,
@@ -202,7 +200,6 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
       usersOpen: false,
       adminSelected: null,
       adminUsage: null,
-    adminSessions: null,
     adminSecurity: null,
     adminInvites: null,
     adminSignup: null,
@@ -220,7 +217,6 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     setState({
       adminSelected: name,
       adminUsage: null,
-    adminSessions: null,
     adminSecurity: null,
     adminInvites: null,
     adminSignup: null,
@@ -275,10 +271,13 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     }
   }
 
-  async function loadAdminSessions(): Promise<void> {
+  // Список сессий держит сам модуль «сессии и устройства» (@voicechat/sessions-app):
+  // он же показывает ошибку чтения и откатывает неудавшийся отзыв. Поэтому здесь
+  // нет ни состояния, ни fail-обёртки — только доступ к серверу.
+  async function loadAdminSessions(): Promise<SessionInfo[]> {
     const name = getState().adminSelected
-    if (!name || !client.userSessions) return
-    try { setState({ adminSessions: await client.userSessions({ name }) }) } catch (err) { fail(err, () => void loadAdminSessions()) }
+    if (!name || !client.userSessions) return []
+    return client.userSessions({ name })
   }
 
   async function loadAdminSecurity(): Promise<void> {
@@ -291,7 +290,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
     if (!client.signupConfig) return
     try { setState({ adminSignup: await client.signupConfig() }) } catch (err) { fail(err, () => void loadAdminSignup()) }
   }
-  async function setAdminSignup(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number }): Promise<void> {
+  async function setAdminSignup(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }): Promise<void> {
     if (!client.setSignupConfig) return
     try { setState({ adminSignup: await client.setSignupConfig(input) }) } catch (err) { fail(err, () => void setAdminSignup(input)) }
   }
@@ -311,7 +310,7 @@ export function createAdminStore(deps: AdminDeps): AdminStore {
 
   async function revokeAdminSession(sid: string): Promise<void> {
     if (!client.revokeSession) return
-    try { await client.revokeSession({ sid }); await loadAdminSessions() } catch (err) { fail(err, () => void revokeAdminSession(sid)) }
+    await client.revokeSession({ sid })
   }
 
   async function openAdminConversation(conversationId: string): Promise<void> {

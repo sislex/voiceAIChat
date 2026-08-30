@@ -9,12 +9,15 @@ import { SlidingWindowLimiter } from '../make/rateLimit.js'
 const LOGIN_LIMIT = 10
 const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
-import { REST, type SessionUser, type UserRole, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
+import { REST, type SessionInfo, type SessionUser, type UserRole, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
+import { deviceKey, findTrustedDevice, isNewDevice, localGeo, overLimit, parseUserAgent, type GeoResolver } from '@voicechat/sessions-core'
+import { createGeoResolver } from './geo.js'
+import type { SessionHub } from './sessionHub.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
 import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js'
 import { createMailer, type Mailer } from './mailer.js'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import type { ProjectFeature } from '@voicechat/shared'
 
 const PREVIEW_SESSION_COOKIE = 'vc_preview_session'
@@ -23,6 +26,16 @@ const PREVIEW_COOKIE_PATH = '/api/preview'
 /** Cookie-сессия (auth-roadmap п.5): HttpOnly-токен на весь /api + читаемый CSRF-токен для мутаций. */
 export const SESSION_COOKIE = 'vc_session'
 export const CSRF_COOKIE = 'vc_csrf'
+/**
+ * Долгоживущий секрет устройства. На нём держится «доверенное устройство»:
+ * приметы запроса (User-Agent, подсеть) подделываются, секрет — нет. Отдельная
+ * cookie, а не сессионная: переживает выход и перелогин, иначе доверие
+ * приходилось бы подтверждать после каждого logout.
+ */
+export const DEVICE_COOKIE = 'vc_device'
+const DEVICE_COOKIE_MAX_AGE = 400 * 24 * 60 * 60
+/** Срок жизни сессии для ролей, которые заходят эпизодически. */
+const ROLE_SHORT_TTL_MS = 7 * 24 * 60 * 60_000
 export const CSRF_HEADER = 'x-vc-csrf'
 function secureFlag(req: FastifyRequest): string {
   const proto = String(req.headers['x-forwarded-proto'] ?? req.protocol)
@@ -36,6 +49,11 @@ export function sessionCookies(req: FastifyRequest, token: string, csrf: string,
     `${CSRF_COOKIE}=${csrf}; Path=/; SameSite=Strict${age}${secureFlag(req)}`
   ]
 }
+/** Cookie секрета устройства: SameSite=Lax, чтобы переживать переходы по ссылкам из писем. */
+export function deviceCookie(req: FastifyRequest, secret: string): string {
+  return `${DEVICE_COOKIE}=${secret}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${DEVICE_COOKIE_MAX_AGE}${secureFlag(req)}`
+}
+
 export function clearSessionCookies(req: FastifyRequest): string[] {
   return [`${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secureFlag(req)}`, `${CSRF_COOKIE}=; Path=/; SameSite=Strict; Max-Age=0${secureFlag(req)}`]
 }
@@ -217,6 +235,10 @@ export interface AuthOptions {
   mailer?: Mailer
   /** Публичный адрес приложения для ссылок в письмах; иначе берём Origin/Host запроса. */
   publicUrl?: string | null
+  /** Определение места входа по IP; по умолчанию офлайн — только локальная сеть. */
+  geo?: GeoResolver
+  /** Куда сообщать об изменениях списка сессий (живое обновление по WS). */
+  sessions?: SessionHub
 }
 
 /** Настройка открытой регистрации хранится в app_config: `signup.enabled` ('1'/'0') и `signup.role`. */
@@ -225,19 +247,86 @@ export function readSignupConfig(db: VoiceChatDb): { enabled: boolean; role: Use
   return { enabled: db.getAppConfig('signup.enabled') === '1', role: role === 'admin' || role === 'developer' || role === 'tester' || role === 'observer' ? role : 'developer' }
 }
 
+/**
+ * Что отдаём клиенту: хеш секрета устройства наружу не уходит. Он нужен только
+ * серверу для решения о доверии, а в ответе стал бы подсказкой для подбора.
+ */
+function publicSession(session: SessionInfo): SessionInfo {
+  const { deviceSecret: _hidden, ...rest } = session
+  return rest
+}
+
+/**
+ * Письмо о массовом закрытии входов. Такое действие необратимо и часто идёт от
+ * чужих рук: если это был не владелец, письмо — единственный канал, который у
+ * него остался, ведь все сессии уже погашены.
+ */
+async function notifyBulkRevoke(
+  deps: { mailer: Mailer; log: FastifyInstance['log']; baseUrl: string },
+  input: { user: string; email: string | null | undefined; kind: 'logout_all' | 'panic'; revoked: number; ip: string }
+): Promise<void> {
+  if (!input.email) return
+  const when = `${new Date().toLocaleString('ru-RU', { timeZone: 'UTC' })} UTC`
+  const what = input.kind === 'panic'
+    ? 'закрыты все входы и запрошена смена пароля'
+    : `завершены другие сессии (${input.revoked})`
+  try {
+    await deps.mailer.send({
+      to: input.email,
+      subject: 'Входы в ChatAI закрыты',
+      text: `В вашей учётной записи ${what}.\nКогда: ${when}\nIP: ${input.ip}\n\nЕсли это были не вы — смените пароль: ${deps.baseUrl}/#/security/password`
+    })
+  } catch (error) {
+    // Письмо — предупреждение, а не часть операции: сбой почты её не отменяет.
+    deps.log.error({ error, user: input.user }, 'auth: письмо о закрытии входов не отправлено')
+  }
+}
+
+/** Секрет устройства из cookie: голый секрет наружу не хранится, только хеш. */
+function deviceSecretOf(req: FastifyRequest): string | undefined {
+  const raw = cookieOf(req, DEVICE_COOKIE)
+  return raw && raw.length >= 16 ? raw.slice(0, 128) : undefined
+}
+
+function hashDeviceSecret(secret: string): string {
+  return createHash('sha256').update(secret).digest('hex')
+}
+
+/**
+ * Откуда вошли. Отдельного заголовка у клиентов нет, поэтому смотрим на UA:
+ * Electron-оболочка и компаньон-агент представляются явно, всё прочее — веб.
+ */
+function platformOf(ua: string): string {
+  if (/Electron/i.test(ua)) return 'desktop'
+  if (/VoiceChatAgent/i.test(ua)) return 'agent'
+  const profile = parseUserAgent(ua)
+  return profile.legacy ? 'unknown' : 'web'
+}
+
+/** Версия клиента, если он её сообщает: помогает отличить залипший старый бандл. */
+function clientVersionOf(req: FastifyRequest): string | null {
+  const raw = req.headers['x-vc-client-version']
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return value ? String(value).slice(0, 32) : null
+}
+
 export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string, options: AuthOptions = {}): void {
   const mailer = options.mailer ?? createMailer({}, (m, extra) => app.log.warn(extra ?? {}, m))
+  const geo = options.geo ?? createGeoResolver({
+    url: process.env.VC_GEOIP_URL ?? null,
+    onError: (message) => app.log.warn({ err: message }, 'geoip: место входа определить не удалось')
+  })
   const baseUrl = (req: FastifyRequest): string => (options.publicUrl ?? `${String(req.headers['x-forwarded-proto'] ?? req.protocol)}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`).replace(/\/$/, '')
   app.decorateRequest('user', null)
   // Сессии (auth-roadmap п.4): токен действителен, пока есть живая запись в `sessions` (не отозвана, не истекла).
   // Токены без записи (выданы до таблицы) регистрируются лениво — так старые входы не рвутся при обновлении.
-  const activeUser = (token: string | undefined): SessionUser | null => {
+  const activeUser = (token: string | undefined, path?: string): SessionUser | null => {
     if (!token || db.isSessionRevoked(token)) return null
     const parsed = verifyToken(token, secret)
     if (!parsed) return null
     if (parsed.sid) {
       const s = db.getSession(parsed.sid)
-      if (s) { if (s.expiresAt < Date.now()) return null; db.touchSession(parsed.sid, Math.max(SESSION_SHORT_TTL_MS, s.expiresAt - s.lastSeen)) }
+      if (s) { if (s.expiresAt < Date.now()) return null; db.touchSession(parsed.sid, Math.max(SESSION_SHORT_TTL_MS, s.expiresAt - s.lastSeen), path) }
       else if (db.hasSessionRow(parsed.sid)) return null // отозвана или истекла
       else if (db.getUser(parsed.name)) db.createSession(parsed.sid, parsed.name, { ip: '', userAgent: 'legacy', ttlMs: SESSION_TTL_MS })
     }
@@ -259,7 +348,9 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     let viaCookie = false
     if (!token) { token = cookieOf(req, SESSION_COOKIE); viaCookie = Boolean(token) }
     if (!token) token = previewSession(req, url)
-    const user = activeUser(token)
+    // Путь запоминаем в сессии: в списке устройств он отвечает на вопрос «а что
+    // это устройство вообще делает», когда вход выглядит подозрительно.
+    const user = activeUser(token, url)
     if (!user) {
       await reply.code(401).send({ error: 'unauthorized' })
       return reply
@@ -312,24 +403,66 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   const loginByIp = new SlidingWindowLimiter(LOGIN_IP_LIMIT, LOGIN_WINDOW_MS)
   const loginByName = new SlidingWindowLimiter(LOGIN_LIMIT, LOGIN_WINDOW_MS)
   const registerLimiter = new SlidingWindowLimiter(5, 60 * 60_000)
-  app.decorate('resetLoginLimiters', () => { loginByIp.reset(); loginByName.reset() })
+  // Изменения сессий не должны стать инструментом: перебирать чужие sid или
+  // раз за разом гасить всё подряд смысла нет, а нагрузку это создаёт.
+  const sessionOpsLimiter = new SlidingWindowLimiter(30, 5 * 60_000)
+  app.decorate('resetLoginLimiters', () => { loginByIp.reset(); loginByName.reset(); sessionOpsLimiter.reset() })
+  /** Общая проверка частоты для мутаций сессий; null — можно продолжать. */
+  const sessionOpsBlocked = (req: FastifyRequest, user: string): { retryAfterSec: number } | null => {
+    const hit = sessionOpsLimiter.hit(`${user}:${req.ip}`)
+    return hit.ok ? null : { retryAfterSec: hit.retryAfterSec }
+  }
   /** Ожидающие второго шага тикеты и незавершённые настройки 2FA — в памяти процесса, живут минуты. */
   const pendingTwoFactor = new Map<string, { name: string; expires: number; attempts: number; remember: boolean }>()
   const pendingSetup = new Map<string, { secret: string; expires: number }>()
-  const issueSession = async (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role'], remember = true): Promise<{ token: string; user: SessionUser; csrf: string }> => {
+  const issueSession = async (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role'], remember = true, twoFactor = false): Promise<{ token: string; user: SessionUser; csrf: string }> => {
     const row = db.getUser(name)
     const user: SessionUser = { name, role, ...(row?.mustChangePassword ? { mustChangePassword: true } : {}) }
     const sid = newSessionId()
     const token = signToken(user, secret, sid)
     // «Запомнить меня» (п.15): 30 дней и cookie с Max-Age; иначе 12 часов и сессионная cookie (умирает с браузером).
-    const ttl = remember ? SESSION_TTL_MS : SESSION_SHORT_TTL_MS
+    // Роль укорачивает срок: наблюдатель и тестировщик заходят эпизодически, и
+    // месячная сессия у них живёт дольше, чем сам повод её открыть.
+    const roleTtl = role === 'observer' || role === 'tester' ? ROLE_SHORT_TTL_MS : SESSION_TTL_MS
+    const ttl = Math.min(remember ? roleTtl : SESSION_SHORT_TTL_MS, roleTtl)
     const ua = String(req.headers['user-agent'] ?? '')
-    // Новое устройство (п.16): среди живых сессий нет ни одной с таким же User-Agent и IP — событие + уведомление в другие сессии.
+    // Новое устройство (п.16): решает ядро модуля сессий по ключу устройства —
+    // тот не меняется от обновления браузера и от соседнего адреса провайдера,
+    // поэтому предупреждение приходит на смену устройства, а не на смену версии.
     const known = db.listSessions(name)
-    const isNew = known.length > 0 && !known.some((s) => s.userAgent === ua && s.ip === req.ip) && !known.every((s) => s.userAgent === 'legacy')
-    db.createSession(sid, name, { ip: req.ip, userAgent: ua, ttlMs: ttl })
+    const isNew = isNewDevice(known, { userAgent: ua, ip: req.ip })
+    // Секрет устройства: из cookie, если браузер её уже носит, иначе новый.
+    const deviceSecret = deviceSecretOf(req) ?? randomBytes(24).toString('base64url')
+    db.createSession(sid, name, {
+      ip: req.ip,
+      userAgent: ua,
+      ttlMs: ttl,
+      deviceKey: deviceKey({ userAgent: ua, ip: req.ip }),
+      deviceSecret: hashDeviceSecret(deviceSecret),
+      platform: platformOf(ua),
+      clientVersion: clientVersionOf(req),
+      geo: localGeo(req.ip),
+      twoFactor
+    })
+    // Лимит одновременных сессий: превышение гасит самые давно неактивные, но
+    // никогда — только что выданную. Ноль или отсутствие настройки — без лимита.
+    const limit = Number(db.getAppConfig('sessions.maxPerUser')) || 0
+    for (const victim of overLimit(db.listSessions(name), limit || null, sid)) {
+      db.revokeSessionById(victim.sid)
+      db.logSecurityEvent({ user: name, type: 'session_evicted', ip: victim.ip, userAgent: victim.userAgent, details: `лимит ${limit} сессий` })
+      options.sessions?.emit(name, victim.sid)
+    }
+    // Публичный адрес уточняем в фоне: вход не должен ждать внешний сервис, а
+    // список сессий читают уже после — к этому моменту место обычно на месте.
+    if (!localGeo(req.ip)) {
+      // Резолвер по контракту ядра может быть и синхронным — приводим к промису.
+      void Promise.resolve(geo.resolve(req.ip))
+        .then((place) => { if (place) db.updateSession(sid, { geo: place }) })
+        .catch(() => undefined)
+    }
     db.markLogin(name)
     db.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: ua })
+    options.sessions?.emit(name)
     if (isNew) {
       const at = Date.now()
       db.logSecurityEvent({ user: name, type: 'login_new_device', ip: req.ip, userAgent: ua, details: 'вход с нового устройства' })
@@ -350,7 +483,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       }
     }
     const csrf = newSessionId()
-    reply.header('set-cookie', [previewCookie(token), ...sessionCookies(req, token, csrf, remember ? Math.floor(ttl / 1000) : null)])
+    reply.header('set-cookie', [previewCookie(token), ...sessionCookies(req, token, csrf, remember ? Math.floor(ttl / 1000) : null), deviceCookie(req, deviceSecret)])
     return { token, user, csrf }
   }
   app.post<{ Body: { name?: string; password?: string; remember?: boolean } }>(
@@ -384,10 +517,19 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       db.resetLoginFailures(u.name)
       loginByName.forget(u.name.trim().toLowerCase())
       // 2FA (п.6): пароль верен, но сессию выдаём только после кода — клиенту уходит одноразовый тикет на 5 минут.
+      // Исключение — устройство, которое пользователь сам пометил доверенным:
+      // второй фактор защищает от входа с чужого устройства, а на своём он
+      // превращается в ежедневный налог и подталкивает выключить 2FA совсем.
       if (db.getUserTotpSecret(u.name)) {
-        const ticket = newSessionId()
-        pendingTwoFactor.set(ticket, { name: u.name, expires: Date.now() + 5 * 60_000, attempts: 0, remember })
-        return { requires2fa: true, ticket }
+        const secret = deviceSecretOf(req)
+        const trusted = findTrustedDevice(db.listSessions(u.name), { deviceSecret: secret ? hashDeviceSecret(secret) : null })
+        if (!trusted) {
+          const ticket = newSessionId()
+          pendingTwoFactor.set(ticket, { name: u.name, expires: Date.now() + 5 * 60_000, attempts: 0, remember })
+          return { requires2fa: true, ticket }
+        }
+        // Доверенное устройство однажды прошло проверку — сессия наследует признак.
+        return issueSession(req, reply, u.name, u.role, remember, true)
       }
       return issueSession(req, reply, u.name, u.role, remember)
     }
@@ -408,7 +550,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       return reply.code(401).send({ error: 'неверный код подтверждения' })
     }
     pendingTwoFactor.delete(ticket!)
-    return issueSession(req, reply, u.name, u.role, pending.remember)
+    return issueSession(req, reply, u.name, u.role, pending.remember, true)
   })
   // Настройка 2FA: setup выдаёт секрет и otpauth-ссылку (ещё не включено), enable включает после верного кода, disable — по коду.
   app.post(REST.session2faSetup, async (req, reply) => {
@@ -656,26 +798,113 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   })
 
   // Сессии пользователя (auth-roadmap п.4): список, «выйти везде» (кроме текущей), отзыв одной.
-  app.get(REST.sessionList, async (req, reply) => {
+  app.get<{ Querystring: { ended?: string } }>(REST.sessionList, async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     const current = sidOf(req)
-    return { sessions: db.listSessions(user.name).map((s) => ({ ...s, current: s.sid === current })) }
+    const sessions = db.listSessions(user.name).map((s) => publicSession({ ...s, current: s.sid === current }))
+    // Завершённые отдаём только по запросу: обычному списку они не нужны, а
+    // лишний запрос в БД на каждое открытие окна — тоже плата.
+    if (req.query?.ended !== '1') return { sessions }
+    return { sessions, ended: db.listEndedSessions(user.name).map(publicSession) }
   })
-  app.post(REST.sessionLogoutAll, async (req, reply) => {
+  app.post<{ Body: { includeCurrent?: boolean } | undefined }>(REST.sessionLogoutAll, async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
-    const revoked = db.revokeUserSessions(user.name, sidOf(req))
-    db.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}` })
+    const limited = sessionOpsBlocked(req, user.name)
+    if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
+    // `includeCurrent` — «выйти везде, включая это устройство»: после кражи
+    // пароля человек хочет обнулить всё разом, а не оставлять себе исключение.
+    const includeCurrent = req.body?.includeCurrent === true
+    const current = sidOf(req)
+    // Список берём до отзыва: каждой убитой вкладке нужен адресный кадр, иначе
+    // «выйти везде» оставляет их выглядящими рабочими до следующего запроса —
+    // ровно тот разрыв, который закрывает session.revoked в остальных местах.
+    const doomed = db.listSessions(user.name).filter((s) => includeCurrent || s.sid !== current)
+    const revoked = db.revokeUserSessions(user.name, includeCurrent ? null : current)
+    if (includeCurrent) {
+      const token = tokenOf(req)
+      if (token) db.revokeSession(token)
+      reply.header('set-cookie', clearSessionCookies(req))
+    }
+    db.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}${includeCurrent ? ', включая текущую' : ''}` })
+    if (revoked > 0) void notifyBulkRevoke({ mailer, log: app.log, baseUrl: baseUrl(req) }, { user: user.name, email: db.getUser(user.name)?.email, kind: 'logout_all', revoked, ip: req.ip })
+    for (const session of doomed) options.sessions?.emit(user.name, session.sid)
+    if (doomed.length === 0) options.sessions?.emit(user.name)
+    return { revoked }
+  })
+  /**
+   * «Это не я»: человек увидел чужой вход и жмёт одну кнопку. Полумеры здесь
+   * вредны — гасим все сессии без исключений (включая свою) и требуем сменить
+   * пароль при следующем входе: чужая сессия жива ровно потому, что пароль уже
+   * у кого-то есть.
+   */
+  app.post(REST.sessionPanic, async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
+    const limited = sessionOpsBlocked(req, user.name)
+    if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
+    const doomed = db.listSessions(user.name)
+    const revoked = db.revokeUserSessions(user.name, null)
+    const token = tokenOf(req)
+    if (token) db.revokeSession(token)
+    db.setMustChangePassword(user.name, true)
+    reply.header('set-cookie', [previewCookie('', 0), ...clearSessionCookies(req)])
+    db.logSecurityEvent({ user: user.name, type: 'session_panic', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}, требуется смена пароля` })
+    void notifyBulkRevoke({ mailer, log: app.log, baseUrl: baseUrl(req) }, { user: user.name, email: db.getUser(user.name)?.email, kind: 'panic', revoked, ip: req.ip })
+    for (const session of doomed) options.sessions?.emit(user.name, session.sid)
     return { revoked }
   })
   app.delete<{ Params: { sid: string } }>('/api/session/:sid', async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const s = db.getSession(req.params.sid)
     if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
     db.revokeSessionById(s.sid)
+    db.logSecurityEvent({ user: user.name, type: 'session_revoked', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '' })
+    options.sessions?.emit(user.name, s.sid)
+    return { ok: true }
+  })
+  // История устройства: что этот вход делал. Отвечает на вопрос «а точно ли это
+  // я», когда подпись и место сами по себе ничего не проясняют.
+  app.get<{ Params: { sid: string } }>(REST.sessionHistory(':sid').replace('%3Asid', ':sid'), async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    const s = db.getSession(req.params.sid) ?? db.listEndedSessions(user.name, 100).find((x) => x.sid === req.params.sid)
+    if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
+    return { events: db.listSessionHistory(user.name, { userAgent: s.userAgent, ip: s.ip }) }
+  })
+  // Имя устройства и отметка «доверенное» — только для своей сессии.
+  app.patch<{ Params: { sid: string }; Body: { label?: string | null; trusted?: boolean } }>('/api/session/:sid', async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
+    const limited = sessionOpsBlocked(req, user.name)
+    if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
+    const s = db.getSession(req.params.sid)
+    // Чужая и несуществующая сессия отвечают одинаково: по ответу не должно быть
+    // видно, существует ли сессия с таким sid у кого-то другого.
+    if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
+    const patch: { label?: string | null; trusted?: boolean } = {}
+    if (req.body?.label !== undefined) {
+      const label = typeof req.body.label === 'string' ? req.body.label.trim() : ''
+      patch.label = label || null
+    }
+    if (typeof req.body?.trusted === 'boolean') patch.trusted = req.body.trusted
+    if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'нечего менять' })
+    // Доверие пропускает второй фактор — значит выдавать его сессии, которая
+    // сама его не проходила, бессмысленно: так проверка обходится навсегда.
+    if (patch.trusted === true && db.getUserTotpSecret(user.name) && !s.twoFactor) {
+      return reply.code(409).send({ error: 'Сделать доверенным можно только устройство, вход с которого подтверждён кодом' })
+    }
+    db.updateSession(s.sid, patch)
+    const ua = String(req.headers['user-agent'] ?? '')
+    if (patch.label !== undefined) db.logSecurityEvent({ user: user.name, type: 'session_renamed', ip: req.ip, userAgent: ua, details: patch.label ?? 'имя снято' })
+    if (patch.trusted !== undefined) db.logSecurityEvent({ user: user.name, type: patch.trusted ? 'session_trusted' : 'session_untrusted', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '' })
+    options.sessions?.emit(user.name)
     return { ok: true }
   })
 }

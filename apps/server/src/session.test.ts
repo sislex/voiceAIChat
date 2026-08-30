@@ -82,6 +82,95 @@ describe('WS: аутентификация соединения', () => {
   })
 })
 
+describe('WS: живые изменения списка сессий', () => {
+  /** Собирает кадры сессий, пришедшие на соединение. */
+  const collect = (ws: WebSocket): Array<Record<string, unknown>> => {
+    const frames: Array<Record<string, unknown>> = []
+    ws.on('message', (data) => {
+      const message = JSON.parse(data.toString()) as Record<string, unknown>
+      if (message.t === 'sessions.update' || message.t === 'session.revoked') frames.push(message)
+    })
+    return frames
+  }
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 50))
+
+  it('отзыв своей сессии доезжает адресно, соседняя получает только инвалидацию', async () => {
+    db.createUser('wsuser', 'ws-user-pass-2026', 'developer')
+    const login = async (ua: string): Promise<string> =>
+      (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'wsuser', password: 'ws-user-pass-2026' }, headers: { 'user-agent': ua } })).json().token as string
+    const victimToken = await login('Phone/1.0')
+    const observerToken = await login('Laptop/2.0')
+    const victim = await connect(port, victimToken)
+    const observer = await connect(port, observerToken)
+    const victimFrames = collect(victim)
+    const observerFrames = collect(observer)
+
+    const victimSid = db.listSessions('wsuser').find((s) => s.userAgent === 'Phone/1.0')!.sid
+    await app.inject({ method: 'DELETE', url: `/api/session/${victimSid}`, headers: { authorization: `Bearer ${observerToken}` } })
+    await settle()
+
+    expect(victimFrames).toEqual([{ t: 'session.revoked', v: 1, sid: victimSid }])
+    expect(observerFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    victim.close()
+    observer.close()
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('«выйти везде» адресно гасит каждую убитую вкладку', async () => {
+    db.createUser('bulk', 'bulk-user-pass-2026', 'developer')
+    const login = async (ua: string): Promise<string> =>
+      (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'bulk', password: 'bulk-user-pass-2026' }, headers: { 'user-agent': ua } })).json().token as string
+    const phoneToken = await login('Phone/1.0')
+    const laptopToken = await login('Laptop/2.0')
+    const phone = await connect(port, phoneToken)
+    const laptop = await connect(port, laptopToken)
+    const phoneFrames = collect(phone)
+    const laptopFrames = collect(laptop)
+    const phoneSid = db.listSessions('bulk').find((s) => s.userAgent === 'Phone/1.0')!.sid
+
+    // «Выйти на других» с ноутбука: телефон мёртв и должен узнать это сразу.
+    await app.inject({ method: 'POST', url: '/api/session/logout-all', headers: { authorization: `Bearer ${laptopToken}` } })
+    await settle()
+    expect(phoneFrames).toEqual([{ t: 'session.revoked', v: 1, sid: phoneSid }])
+    // Оставшемуся ноутбуку тот же кадр приходит как обычная инвалидация списка.
+    expect(laptopFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    phone.close()
+    laptop.close()
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('чужому пользователю кадры не приходят', async () => {
+    db.createUser('mine', 'mine-user-pass-2026', 'developer')
+    db.createUser('other', 'other-user-pass-2026', 'developer')
+    const mineToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'mine', password: 'mine-user-pass-2026' } })).json().token as string
+    const otherToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'other', password: 'other-user-pass-2026' } })).json().token as string
+    const otherWs = await connect(port, otherToken)
+    const otherFrames = collect(otherWs)
+    await app.inject({ method: 'POST', url: '/api/session/logout-all', payload: { includeCurrent: true }, headers: { authorization: `Bearer ${mineToken}` } })
+    await settle()
+    expect(otherFrames).toEqual([])
+    otherWs.close()
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('переименование и админский отзыв тоже обновляют список живьём', async () => {
+    db.createUser('renamer', 'renamer-pass-2026-ok', 'developer')
+    const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'renamer', password: 'renamer-pass-2026-ok' } })).json().token as string
+    const ws = await connect(port, token)
+    const frames = collect(ws)
+    const sid = db.listSessions('renamer')[0]!.sid
+    await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { label: 'Ноут' }, headers: { authorization: `Bearer ${token}` } })
+    await settle()
+    expect(frames).toEqual([{ t: 'sessions.update', v: 1 }])
+    // Отзыв администратором приходит владельцу так же адресно, как свой.
+    await app.inject({ method: 'DELETE', url: `/api/admin/sessions/${sid}`, headers: { authorization: `Bearer ${TOKEN}` } })
+    await settle()
+    expect(frames.at(-1)).toEqual({ t: 'session.revoked', v: 1, sid })
+    ws.close()
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+})
+
 describe('WS: auth status', () => {
   it('шлёт полный снимок при каждом подключении и только содержательные обновления', async () => {
     const connectWithAuth = (): Promise<{ ws: WebSocket; message: any }> => new Promise((resolve, reject) => {

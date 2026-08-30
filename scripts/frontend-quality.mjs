@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const FRONTEND = [
   { name: '@voicechat/ui-kit', dir: 'packages/ui-kit', layer: 'shared' },
+  // Модуль сессий переносим целиком: он лежит слоем «shared», потому что его
+  // берут и хост-приложение, и админка, а собственного маршрута у него нет.
+  { name: '@voicechat/sessions-app', dir: 'packages/sessions-app', layer: 'shared' },
   { name: '@voicechat/app-shell', dir: 'packages/app-shell', layer: 'shell' },
   { name: '@voicechat/chat-app', dir: 'packages/chat-app', layer: 'product' },
   { name: '@voicechat/web-reader-app', dir: 'packages/web-reader-app', layer: 'product' },
@@ -72,7 +75,8 @@ const STORY_MATRIX = {
   'packages/playwright-reader-app/src/PlaywrightReaderApp.stories.tsx': ['Default', 'SessionConnected', 'CapabilityUnavailable', 'Mobile'],
   'packages/projects-app/src/ProjectsApp.stories.tsx': ['Default', 'Loading', 'KanbanLongCards'],
   'packages/operations-app/src/Operations.stories.tsx': ['MachinesOnline', 'MachinesOffline', 'UtilityRestricted'],
-  'packages/admin-app/src/AdminApp.stories.tsx': ['Overview', 'EmptyUsage', 'AccessMatrix']
+  'packages/admin-app/src/AdminApp.stories.tsx': ['Overview', 'EmptyUsage', 'AccessMatrix'],
+  'packages/sessions-app/src/SessionsApp.stories.tsx': ['Default', 'SingleDevice', 'ReadOnly', 'LoadFailed', 'Empty']
 }
 export function checkStories({ root = ROOT, matrix = STORY_MATRIX } = {}) {
   for (const [path, stories] of Object.entries(matrix)) {
