@@ -148,6 +148,11 @@ export interface BrowserSessionMetadata {
   viewport: BrowserViewport
   currentUrl: string | null
   title: string | null
+  /**
+   * Кто выполнял последнюю команду. Сессия одна на разговор, человек и модель
+   * делят страницу — без этого непонятно, кто её только что увёл.
+   */
+  lastActor?: 'user' | 'assistant'
   error?: BrowserError
 }
 
