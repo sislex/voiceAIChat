@@ -21,6 +21,15 @@ describe('ComponentQaPanel',()=>{
     expect(screen.getByText(/Button default/)).toBeInTheDocument()
     expect(screen.getByText(/Component QA пройден/)).toBeInTheDocument()
   })
+  // Статусы печатались сырыми: `passed` рядом с русским «Component QA пройден».
+  it('подписывает статусы рана и команд по-русски',async()=>{
+    window.qa={get:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),completePreparation:vi.fn(),startSession:vi.fn(),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),requestFix:vi.fn(),getComponent:vi.fn().mockResolvedValue(state()),completeComponent:vi.fn()}
+    render(<ComponentQaPanel projectId="p1" taskId="t1" active={false}/>)
+    expect(await screen.findByText('Пройден')).toHaveClass('qa-status--passed')
+    expect(screen.getByText(/Component tests — Пройден/)).toBeInTheDocument()
+    expect(screen.queryByText(/— passed,/)).not.toBeInTheDocument()
+  })
+
   it('advances only through server gate action',async()=>{
     const completeComponent=vi.fn().mockResolvedValue(state().latestRun)
     window.qa={get:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),completePreparation:vi.fn(),startSession:vi.fn(),saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),requestFix:vi.fn(),getComponent:vi.fn().mockResolvedValue(state()),completeComponent}

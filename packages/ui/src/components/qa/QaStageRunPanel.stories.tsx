@@ -45,6 +45,25 @@ export const AutomatedPlaywrightVerdict:Story={args:{stage:'automated_qa'},param
   ],
   screenshotUrl:null
 }}}
+/**
+ * Ошибки консоли страницы в вердикте (круг 27). Провалом сами по себе не
+ * считаются, но при разборе шага отвечают быстрее снимка экрана.
+ */
+export const AutomatedPlaywrightPageErrors:Story={args:{stage:'automated_qa'},parameters:{verdict:{
+  mode:'playwright',gatePassed:false,passed:false,summary:'Сценарий «Доска» провален на шаге «Создать задачу»',
+  classification:'implementation_defect',command:'http://localhost:5173/#/projects/p1',exitCode:null,durationMs:11200,
+  logTail:'Доска: Создать задачу — failed: локатор «#create» не найден',
+  steps:[
+    {id:'s1',title:'Доска: Открыть доску',status:'passed',detail:'',durationMs:900},
+    {id:'s2',title:'Доска: Создать задачу',status:'failed',detail:'локатор «#create» не найден',durationMs:5200,
+      pageErrors:['Доска: Uncaught TypeError: Cannot read properties of undefined (reading \'columns\') at BoardView.tsx:142']}
+  ],
+  pageErrors:[
+    'Доска: Uncaught TypeError: Cannot read properties of undefined (reading \'columns\') at BoardView.tsx:142',
+    'Доска: Failed to load resource: the server responded with a status of 500 (/api/projects/p1/board)'
+  ],
+  screenshotUrl:null
+}}}
 export const AutomatedPlaywrightPassed:Story={args:{stage:'automated_qa'},parameters:{verdict:{
   mode:'playwright',gatePassed:true,passed:true,summary:'Сценарий пройден: 3 шаг(ов)',
   classification:null,command:'http://localhost:5173/#/projects/p1',exitCode:null,durationMs:7300,logTail:'',

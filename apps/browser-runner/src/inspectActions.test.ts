@@ -88,3 +88,11 @@ describe('evaluate (круг 9)', () => {
     expect(await runInspectAction(logs, page, { kind: 'evaluate', code: 'store' })).toEqual({ ok: false, error: 'ReferenceError: store is not defined' })
   })
 })
+
+describe('битый фильтр журнала', () => {
+  it('отвечает понятной ошибкой, а не исключением наружу', async () => {
+    const result = await runInspectAction(logs(), page(), { kind: 'console', pattern: '([' })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('не регулярное выражение')
+  })
+})

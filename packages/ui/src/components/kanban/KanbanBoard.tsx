@@ -38,6 +38,7 @@ import { ErrorState } from '@voicechat/ui-kit'
 import { loadView, type LoadStatus } from '../../lib/loadState'
 import { useCommandSource } from '../../lib/useCommands'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
+import { DotsIcon, GripIcon } from '../icons'
 import {
   autoScroll,
   nearestByCenterY,
@@ -895,7 +896,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             grabColumn(e, e.currentTarget, col.id, true)
           }}
         >
-          ⠿
+          <GripIcon />
         </span>
         {renaming === col.id ? (
           <input
@@ -918,19 +919,22 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         ) : (
           <span
             className="jcol-name"
+            title={`${col.name} — двойной клик, чтобы переименовать`}
             onDoubleClick={() => {
               setRenaming(col.id)
               setRenameDraft(col.name)
             }}
           >
-            {col.name}
+            {/* Имя в своём элементе: обрезка в две строки требует `-webkit-box`,
+                а он несовместим с флекс-раскладкой счётчика и бейджей рядом. */}
+            <span className="jcol-name-text">{col.name}</span>
             <span className="jcol-count">{filtersActive || hasColumnAssigneeFilter ? `${visible} из ${total}` : total}</span>
             {col.wipLimit != null && (
               <span className={`jcol-wip${overWip ? ' jcol-wip--over' : ''}`} title={`WIP-лимит: ${col.wipLimit}`}>
                 {total}/{col.wipLimit}
               </span>
             )}
-            {col.hidden && <span className="jcol-hidden-mark" title="Колонка скрыта">🙈</span>}
+            {col.hidden && <span className="jcol-hidden-mark">скрыта</span>}
           </span>
         )}
         {automationInfoFor(col) && (
@@ -1049,7 +1053,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             aria-expanded={colMenu === col.id}
             onClick={() => setColMenu((v) => (v === col.id ? null : col.id))}
           >
-            ⋯
+            <DotsIcon />
           </IconButton>
           {colMenu === col.id && (
             <div className="jcard-menu" data-testid="column-menu">
@@ -1126,7 +1130,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
 
   const composer = (col: KanbanColumn): JSX.Element =>
     composerCol === col.id ? (
-      <div className="jcompose" onKeyDown={(e) => { if (e.key === 'Escape') setComposerCol(null) }}>
+      <div className="jcompose" data-testid="column-composer" onKeyDown={(e) => { if (e.key === 'Escape') setComposerCol(null) }}>
         <div className="jcompose-row">
           <select
             className="sel"
@@ -1160,6 +1164,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         <input
           ref={composerRef}
           className="login-input"
+          data-testid="column-create-title"
           placeholder="Что нужно сделать?"
           aria-label={`Новая задача в «${col.name}»`}
           value={newTitle}
@@ -1170,7 +1175,9 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
         />
       </div>
     ) : (
-      <button className="jcompose-open" aria-label={`Создать элемент в «${col.name}»`} onClick={() => openComposer(col.id)}>
+      // `data-testid` — якорь для записанных сценариев: без него шаг цепляется
+      // за `aria-label` с именем колонки и ломается от переименования.
+      <button className="jcompose-open" data-testid="column-create" aria-label={`Создать элемент в «${col.name}»`} onClick={() => openComposer(col.id)}>
         + Создать
       </button>
     )
@@ -1179,6 +1186,10 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     const tasks = tasksOf(col.id, lane)
     const ordered = fullTasksOf(col.id, lane)
     const overWip = col.wipLimit != null && allTasks.filter((t) => t.columnId === col.id).length > col.wipLimit
+    // Свой фильтр исполнителей у этой колонки — от него зависит, какой сброс
+    // предлагать на пустом экране.
+    const columnFilter = columnAssigneeFilters[col.id] ?? EMPTY_COLUMN_ASSIGNEE_FILTER
+    const columnFilterActive = columnFilter.assigneeIds.length > 0 || columnFilter.includeUnassigned
     const key = bodyKey(lane ? lane.id : null, col.id)
     // Зона вставки между соседями after (сверху) и before (снизу): по ней
     // считается место указателя, из неё же берутся afterId/beforeId. Активная
@@ -1226,7 +1237,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
             icon="＋"
             title={filtersActive ? 'Нет задач под фильтром' : 'Здесь пока пусто'}
             description={filtersActive ? 'Измените или сбросьте фильтр этой колонки, чтобы увидеть остальные задачи.' : 'Перетащите карточку сюда или создайте задачу кнопкой ниже.'}
-            {...(filtersActive ? { action: { label: 'Сбросить фильтр колонки', onClick: () => setColumnAssigneeFilters((prev) => ({ ...prev, [col.id]: EMPTY_COLUMN_ASSIGNEE_FILTER })) } } : {})}
+            {...(columnFilterActive
+              // Пусто из-за фильтра самой колонки — сбрасываем его.
+              ? {
+                actionLabel: 'Сбросить фильтр колонки',
+                onAction: () => setColumnAssigneeFilters((prev) => ({ ...prev, [col.id]: EMPTY_COLUMN_ASSIGNEE_FILTER }))
+              }
+              // Пусто из-за фильтров доски — сброс колонки ничего бы не изменил,
+              // и кнопка выглядела бы сломанной.
+              : filtersActive ? { actionLabel: 'Сбросить фильтры доски', onAction: resetFilters } : {})}
           />
         )}
       </div>

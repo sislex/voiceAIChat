@@ -123,7 +123,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
 
   return <section className="ci-task">
     {props.section === 'commands' && <>
-    <div className="ci-task-head"><span className="ci-task-title">Этапы процесса InProgress</span></div>
+    <div className="ci-task-head"><h3 className="ci-task-title">Этапы работы над задачей</h3></div>
     {stagesLoading ? <p className="ci-task-hint" role="status">Загрузка этапов…</p> : <div className="ci-task-stages">
       {CI_PROCESS_STAGES.map((stage) => <label key={stage}><input
         type="checkbox"
@@ -138,14 +138,14 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     </div>}
     {!stagesSaved && <Button variant="primary" className="ci-task-save" onClick={saveStages}>Сохранить этапы</Button>}
     {stagesError && <div className="ci-warn" role="alert">Не удалось сохранить этапы: {stagesError}</div>}
-    <div className="ci-task-head"><span className="ci-task-title">Команды воркфлоу</span><span className={`lozenge ${overridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{overridden ? 'переопределено' : 'унаследовано'}</span></div>
+    <div className="ci-task-head"><h3 className="ci-task-title">Команды воркфлоу</h3><span className={`lozenge ${overridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{overridden ? 'переопределено' : 'унаследовано'}</span></div>
     <CiSlotEditor label="До работы модели" commands={commands} value={before} onChange={(v) => { setBefore(v); setSaved(false) }} />
     <CiSlotEditor label="После работы модели" commands={commands} value={after} onChange={(v) => { setAfter(v); setSaved(false) }} />
     {cleanupWarn && <div className="ci-warn">В слоте «после» есть cleanup-команда, но в «до» нет команды, создающей рабочую директорию.</div>}
     {!saved && <Button variant="primary" className="ci-task-save" onClick={save}>Сохранить команды</Button>}
     </>}
     {props.section === 'machine' && <>
-    <div className="ci-task-head"><span className="ci-task-title">Машина выполнения</span></div>
+    <div className="ci-task-head"><h3 className="ci-task-title">Машина выполнения</h3></div>
     <div aria-busy={machinesStatus === 'loading'}>
       {machinesStatus === 'loading' || !machineDataReady && machinesStatus !== 'error'
         ? <Skeleton variant="block" height={54} testId="task-machines-skeleton" />
@@ -217,7 +217,7 @@ export function CiTaskSettings(props: CiTaskSettingsProps): JSX.Element {
     </div>
     </>}
     {props.section === 'model' && <>
-    <div className="ci-task-head"><span className="ci-task-title">Движок модели</span><span className={`lozenge ${llmOverridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{llmOverridden ? 'переопределено' : 'унаследовано'}</span></div>
+    <div className="ci-task-head"><h3 className="ci-task-title">Движок модели</h3><span className={`lozenge ${llmOverridden ? 'lozenge-progress' : 'lozenge-neutral'}`}>{llmOverridden ? 'переопределено' : 'унаследовано'}</span></div>
     <div className="ci-task-llm">
       <label>Движок<select aria-label="Движок модели" className="sel" value={llm.provider} onChange={(e) => changeProvider(e.target.value as 'claude' | 'codex')}>{isProviderAllowed(access, 'claude') && <option value="claude">Claude</option>}{isProviderAllowed(access, 'codex') && <option value="codex">Codex</option>}{!isProviderAllowed(access, 'claude') && !isProviderAllowed(access, 'codex') && <option value="">Нет доступных движков</option>}</select></label>
       <label>Модель<select aria-label="Модель" className="sel" value={llm.model} onChange={(e) => { setLlm({ ...llm, model: e.target.value }); setLlmSaved(false) }}>{!models.some((m) => m.id === llm.model) && <option value={llm.model}>{llm.model}</option>}{models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select></label>

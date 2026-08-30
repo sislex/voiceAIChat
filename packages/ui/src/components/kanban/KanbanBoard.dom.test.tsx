@@ -796,6 +796,22 @@ describe('KanbanBoard — фильтры исполнителей', () => {
     expect(screen.getAllByTestId('task-card').map((card) => card.textContent).join(' ')).not.toContain('Без исполнителя')
   })
 
+  // Пустой экран колонки под фильтром обещал кнопку сброса, но она не
+  // рендерилась: `EmptyState` принимает `actionLabel`/`onAction`, а сюда
+  // передавали несуществующий `action` — проверка лишних свойств у спреда не
+  // работает, и tsc молчал.
+  it('под фильтром пустая колонка даёт кнопку сброса, и она работает', async () => {
+    renderBoard({ board: filteredBoard, currentUserId: 'alice', currentUser: 'Отображаемое имя', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Показывать только мои задачи' }))
+
+    // Пусто из-за фильтра доски, а не колонки — значит и сброс предлагается
+    // тот, который действительно вернёт задачи.
+    const empty = screen.getByText('Нет задач под фильтром').closest('.vc-state')!
+    const reset = within(empty as HTMLElement).getByRole('button', { name: 'Сбросить фильтры доски' })
+    await userEvent.click(reset)
+    expect(screen.getByText('Без исполнителя')).toBeInTheDocument()
+  })
+
   it('выбирает нескольких исполнителей по ИЛИ и показывает badge', async () => {
     renderBoard({ board: filteredBoard, currentUserId: 'filter-user', members: [{ username: 'alice', role: 'member', addedAt: 1 }, { username: 'bob', role: 'member', addedAt: 1 }] })
     const button = screen.getByRole('button', { name: /Фильтр исполнителей колонки «To Do»/ })

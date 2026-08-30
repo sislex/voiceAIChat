@@ -49,12 +49,20 @@ for (const [index, scenario] of scenarios.entries()) {
     scenario,
     signal: new AbortController().signal,
     budgetMs: 60_000,
-    onStep: (step, at, total) => console.log(`  ${at + 1}/${total} ${step.title}: ${step.status}${step.detail ? ` — ${step.detail}` : ''}`)
+    onStep: (step, at, total) => {
+      console.log(`  ${at + 1}/${total} ${step.title}: ${step.status}${step.detail ? ` — ${step.detail}` : ''}`)
+      // Ошибки шага, а не всего прогона (круг 28): по ним видно, какое именно
+      // действие сломало страницу.
+      for (const error of step.pageErrors ?? []) console.log(`      ошибка страницы: ${error}`)
+    }
   })
   const shot = join(screenshotDir, `${runId}.png`)
   const size = existsSync(shot) ? statSync(shot).size : 0
   console.log(`${label}: ${outcome.blocked ? `ЗАБЛОКИРОВАН — ${outcome.blocked}` : outcome.steps.every((s) => s.status === 'passed') ? 'пройден' : 'ПРОВАЛЕН'}`)
   console.log(`  снимок: ${size ? `${size} байт` : 'НЕТ'}${outcome.screenshotError ? ` (ошибка: ${outcome.screenshotError})` : ''}`)
+  // Ошибки страницы этап собирает с круга 27: провалом они не считаются, но в
+  // вердикт уходят — обычно они и есть ответ на «почему шаг не прошёл».
+  console.log(`  ошибки страницы: ${outcome.pageErrors.length ? outcome.pageErrors.join(' ; ') : 'нет'}`)
   if (outcome.blocked || outcome.steps.some((s) => s.status === 'failed')) { failed = true; break }
 }
 
