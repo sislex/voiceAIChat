@@ -36,7 +36,14 @@ const clampLimit = (value: number | undefined, fallback: number): number =>
 
 export async function runInspectAction(logs: InspectLogs, page: InspectPage, action: BrowserInspectAction): Promise<BrowserInspectResult> {
   if (action.kind === 'console') {
-    const pattern = action.pattern ? new RegExp(action.pattern, 'i') : null
+    // Битое выражение прилетало исключением и уходило наружу как 422 с сырым
+    // текстом движка: модель (и человек в панели) видели «Invalid regular
+    // expression: …» вместо понятного «вот что не так с фильтром».
+    let pattern: RegExp | null = null
+    if (action.pattern) {
+      try { pattern = new RegExp(action.pattern, 'i') }
+      catch { return { ok: false, error: `Фильтр «${action.pattern}» — не регулярное выражение` } }
+    }
     const filtered = logs.console.filter((entry) =>
       (!action.level || entry.level === action.level) && (!pattern || pattern.test(entry.text)))
     // Отдаём хвост: свежие записи полезнее первых, а объём ограничен.

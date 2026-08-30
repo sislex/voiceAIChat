@@ -111,9 +111,10 @@ describe('ресурсы прогона (круг 10)', () => {
       browser: client, screenshotDir: shotDir(), screenshotUrl: () => '/shot', now: () => clock
     })
     const outcome = await runner.run({
-      // Каждая команда «стоит» 5 с, и навигация тоже: бюджета 13 с хватает на
-      // два шага, третий уже за границей.
-      runId: 'r', userId: 'alice', signal: new AbortController().signal, budgetMs: 13_000,
+      // Каждая команда «стоит» 5 с, и навигация тоже. Шаг с круга 28 — это две
+      // команды: само действие и чтение журнала консоли. Навигация 5 с + шаг
+      // 10 с = 15 с; бюджета 23 с хватает на два шага, третий уже за границей.
+      runId: 'r', userId: 'alice', signal: new AbortController().signal, budgetMs: 23_000,
       scenario: scenario([
         { id: 's1', title: 'Первый', action: { kind: 'click', selector: '#a' } },
         { id: 's2', title: 'Второй', action: { kind: 'click', selector: '#b' } },
@@ -139,11 +140,20 @@ describe('ресурсы прогона (круг 10)', () => {
   })
 })
 
+/** Журнал раннера читается с `clear`: фейк обязан вести себя так же. */
+function consoleBrowser(entries: Array<{ text: string }>): ReturnType<typeof browser> {
+  let pending = [...entries]
+  return browser({ command: vi.fn(async (_id, request) => {
+    if (request.command.type !== 'inspect') return { ok: true } as never
+    const out = pending
+    pending = []
+    return { ok: true, console: out.map((item) => ({ level: 'error', text: item.text, at: 1 })) } as never
+  }) })
+}
+
 describe('ошибки страницы', () => {
   it('собираются до остановки сессии и приходят в исходе', async () => {
-    const client = browser({ command: vi.fn(async (_id, request) => (request.command.type === 'inspect'
-      ? { ok: true, console: [{ level: 'error', text: 'Uncaught TypeError: columns is undefined', at: 1 }] }
-      : { ok: true }) as never) })
+    const client = consoleBrowser([{ text: 'Uncaught TypeError: columns is undefined' }])
     const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: mkdtempSync(join(tmpdir(), 'qa-shot-')), screenshotUrl: () => '/shot' })
     const outcome = await runner.run({
       runId: 'run-errors', userId: 'alice', signal: new AbortController().signal,
@@ -151,6 +161,8 @@ describe('ошибки страницы', () => {
     })
     expect(outcome.pageErrors).toEqual(['Uncaught TypeError: columns is undefined'])
     expect(outcome.pageErrors.join()).not.toContain('×')
+    // И у самого шага: за весь прогон было не понять, какое действие сломало страницу.
+    expect(outcome.steps[0].pageErrors).toEqual(['Uncaught TypeError: columns is undefined'])
     // Провалом сами по себе не считаются: страница может ругаться на постороннее.
     expect(outcome.blocked).toBeNull()
     expect(outcome.steps[0]).toMatchObject({ status: 'passed' })
@@ -159,13 +171,11 @@ describe('ошибки страницы', () => {
 
 describe('повтор ошибки страницы', () => {
   it('схлопывается с кратностью: одно исключение раннер видит и в console, и в pageerror', async () => {
-    const client = browser({ command: vi.fn(async (_id, request) => (request.command.type === 'inspect'
-      ? { ok: true, console: [
-          { level: 'error', text: 'Cannot read properties of undefined', at: 1 },
-          { level: 'error', text: 'Cannot read properties of undefined', at: 2 },
-          { level: 'error', text: 'Failed to load resource: 500', at: 3 }
-        ] }
-      : { ok: true }) as never) })
+    const client = consoleBrowser([
+      { text: 'Cannot read properties of undefined' },
+      { text: 'Cannot read properties of undefined' },
+      { text: 'Failed to load resource: 500' }
+    ])
     const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: mkdtempSync(join(tmpdir(), 'qa-shot-')), screenshotUrl: () => '/shot' })
     const outcome = await runner.run({
       runId: 'run-dup', userId: 'alice', signal: new AbortController().signal,

@@ -261,7 +261,13 @@ async function runScenario(
       deps.db.appendAutomatedQaLog(runId, 'err', `${label}: ошибка страницы: ${error}\n`)
     }
     // Имя сценария в названии шага: иначе в общем списке непонятно, чей он.
-    collected.push(...outcome.steps.map((step) => ({ ...step, id: `${label}/${step.id}`, title: `${label}: ${step.title}` })))
+    // Ошибки шага метятся так же, как ошибки прогона: иначе один и тот же текст
+    // с меткой и без неё не совпадает, и панель показывает его дважды — под
+    // шагом и в списке «вне шагов».
+    collected.push(...outcome.steps.map((step) => ({
+      ...step, id: `${label}/${step.id}`, title: `${label}: ${step.title}`,
+      ...(step.pageErrors?.length ? { pageErrors: step.pageErrors.map((error) => `${label}: ${error}`) } : {})
+    })))
     done += scenario.steps.length
     if (outcome.screenshotUrl) screenshotUrl = outcome.screenshotUrl
     if (outcome.blocked) { blocked = `${label}: ${outcome.blocked}`; break }
