@@ -498,3 +498,47 @@ describe('запись как черновик, который правят (к�
     expect(screen.getByRole('button', { name: /Записывается/ })).toBeInTheDocument()
   })
 })
+
+describe('прогон записанного сценария в панели (круг 17)', () => {
+  const element = { selector: '#create', stability: 'id', tag: 'button', text: 'Создать', matches: 1, rect: { x: 0, y: 0, width: 100, height: 40 } }
+
+  const bridge = (fail = false): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) => {
+      if (req.command.type === 'selector' && req.command.action?.kind === 'describe') return { ok: true, element }
+      if (req.command.type === 'selector' && req.command.action?.kind === 'click') return fail ? { ok: false, error: 'Timeout 5000ms exceeded' } : { ok: true }
+      return meta({ currentUrl: 'http://89.125.68.35:8787/' })
+    }) as never
+  })
+
+  const recordOne = async (browser: RendererBrowserBridge): Promise<void> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await screen.findByDisplayValue('Нажать «Создать»')
+  }
+
+  it('успешный прогон отмечает шаг прямо в списке', async () => {
+    await recordOne(bridge())
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать сценарий' }))
+    expect(await screen.findByText('прогон: ок')).toBeInTheDocument()
+  })
+
+  it('провал показывает причину и подсказку, а не голый текст Playwright', async () => {
+    await recordOne(bridge(true))
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать сценарий' }))
+    expect(await screen.findByText(/прогон: Timeout 5000ms exceeded/)).toBeInTheDocument()
+    expect(await screen.findByText(/уточните селектор/)).toBeInTheDocument()
+  })
+
+  it('без шагов прогон недоступен', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    // В записи только шаг-перехода, который уходит в startUrl.
+    expect(await screen.findByRole('button', { name: 'Прогнать сценарий' })).toBeDisabled()
+  })
+})
