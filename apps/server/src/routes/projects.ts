@@ -925,6 +925,48 @@ export function registerProjectRoutes(
     }
   )
 
+  // --- Дизайны карточки: связь задачи с проектом Make -------------------
+  // Источник ограничен Make-проектами, привязанными к этому же проекту: связь
+  // не должна приводить участника к дизайну, которого он не вправе открыть.
+  app.get<{ Params: { id: string; taskId: string } }>(
+    '/api/projects/:id/tasks/:taskId/designs',
+    async (req, reply) => db.listTaskDesigns(uid(req), req.params.id, req.params.taskId) ?? nf(reply)
+  )
+
+  app.post<{ Params: { id: string; taskId: string }; Body: { conversationId?: string; path?: string; label?: string } }>(
+    '/api/projects/:id/tasks/:taskId/designs',
+    async (req, reply) => {
+      const conversationId = req.body?.conversationId
+      if (!conversationId) return badReq(reply, 'conversationId required')
+      try {
+        const links = db.linkTaskDesign(uid(req), req.params.id, req.params.taskId, {
+          conversationId,
+          path: req.body?.path,
+          label: req.body?.label
+        })
+        boardHub.emit(req.params.id)
+        return links
+      } catch (error) {
+        return badReq(reply, errMessage(error))
+      }
+    }
+  )
+
+  app.delete<{ Params: { id: string; taskId: string; linkId: string } }>(
+    '/api/projects/:id/tasks/:taskId/designs/:linkId',
+    async (req, reply) => {
+      const links = db.unlinkTaskDesign(uid(req), req.params.id, req.params.taskId, req.params.linkId)
+      if (!links) return nf(reply)
+      boardHub.emit(req.params.id)
+      return links
+    }
+  )
+
+  app.get<{ Params: { id: string } }>(
+    '/api/projects/:id/design-sources',
+    async (req, reply) => db.projectDesignSources(uid(req), req.params.id) ?? nf(reply)
+  )
+
   // --- Универсальный инструментальный шлюз виджетов --------------------
   // Адаптеры перечислены кодом: запрос не может подставить URL или произвольный backend.
   const widgetIdempotency = new Map<string, unknown>()

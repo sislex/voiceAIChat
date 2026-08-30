@@ -4661,6 +4661,27 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Без капслока и с обрезкой: колонка «Создание интеграционных автотестов»
    занимала половину строки и кричала громче названия подзадачи. */
 .jmodal-child-status { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; background: var(--surface-hover); border-radius: 3px; padding: 1px 6px; color: var(--text-dim); }
+/* Дизайн карточки: связи с макетами из Make — строка «подпись · страница · действия». */
+.task-designs { display: grid; gap: 6px; margin-top: 6px; }
+.task-designs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.task-design { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-soft); border-radius: 4px; padding: 6px 8px; font-size: 13px; }
+.task-design__name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-design__path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-dim); }
+.task-design__preview { font-size: 12px; color: var(--accent); }
+.task-designs-form { display: grid; gap: 8px; border: 1px solid var(--border-soft); border-radius: 6px; padding: 10px; }
+.task-designs-form label { display: grid; gap: 3px; font-size: 13px; }
+.task-designs-actions { display: flex; gap: 8px; }
+.task-designs-error { margin: 0; font-size: 12px; color: var(--danger); }
+
+/* Панель Make: связанные карточки доски и форма связывания открытой страницы. */
+.make-task-links-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.make-task-links-list li { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-soft); border-radius: 4px; padding: 6px 8px; font-size: 13px; }
+.make-task-links__key { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
+.make-task-links__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.make-task-links__path { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+.make-task-links-form { display: grid; gap: 8px; }
+.make-task-links-form label { display: grid; gap: 3px; font-size: 13px; }
+
 .jmodal-side { flex: 0 0 240px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 /* Поля панели деталей в своей обёртке: на телефоне она сворачивается кнопкой
    «Подробности» (как в мобильной Jira), на десктопе всегда раскрыта. */

@@ -39,6 +39,7 @@ import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 import { CiReport } from '../ci/CiReport'
 import { MergePanel } from '../ci/MergePanel'
 import { TaskRunFeed } from '../ci/TaskRunFeed'
+import { TaskDesigns } from './TaskDesigns'
 import { TaskPreparationTab } from './TaskPreparationTab'
 import { TaskTimeline } from './TaskTimeline'
 import type { TaskPreparationLlmSelection, TaskPreparationRun } from '@shared/qa'
@@ -109,6 +110,8 @@ export interface TaskModalProps {
   aiAssistPrompts?: ModifierPrompt[]
   onAiAssistPromptsChange?: (next: ModifierPrompt[]) => void
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
+  /** Открыть Make-проект связанного дизайна (переход в режим Make). */
+  onOpenMake?: (conversationId: string) => void
   /** Открыть другую задачу в этой же модалке (подзадача/родитель). */
   onOpenTask: (taskId: string) => void
   onClose: () => void
@@ -892,6 +895,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           /> : criteria.trim() ? <div className="jmodal-desc-view task-criteria-view" data-testid="task-criteria-view"><Markdown>{normalizeAcceptanceCriteria(criteria)}</Markdown></div> : <button className="jmodal-desc-empty" onClick={() => setCriteriaEditing(true)}>Добавьте критерии приёмки…</button>}
           <span id="task-criteria-help" className="vc-sr-only">Enter создаёт новый критерий, Shift+Enter — перенос внутри критерия.</span>
           </section>
+          {!props.draft && <TaskDesigns projectId={task.projectId} taskId={task.id} onOpenMake={props.onOpenMake} />}
           {children.length > 0 && (
             <>
               <h3 className="jmodal-h">Подзадачи</h3>
