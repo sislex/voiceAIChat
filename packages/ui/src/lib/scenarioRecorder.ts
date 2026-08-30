@@ -107,6 +107,15 @@ export function ambiguousSteps(steps: RecordedStep[]): RecordedStep[] {
   return steps.filter((step) => typeof step.matches === 'number' && step.matches > 1)
 }
 
+/**
+ * Шаги, чей селектор не находит **ничего**. Такое бывает, когда построенный
+ * селектор невалиден (страница отдала `matches: 0`): шаг заведомо упадёт, а
+ * предупреждение до круга 19 было только про «нашлось несколько».
+ */
+export function brokenSteps(steps: RecordedStep[]): RecordedStep[] {
+  return steps.filter((step) => step.matches === 0)
+}
+
 export function recordType(steps: RecordedStep[], element: BrowserElementDescription, text: string): RecordedStep[] {
   return [...steps, {
     id: `step-${steps.length + 1}`,
@@ -138,8 +147,11 @@ export function toScenario(steps: RecordedStep[], currentUrl: string): Automated
   const rest = opensFirst ? steps.slice(1) : steps
   return {
     startUrl,
-    steps: rest.map((step, index) => ({
-      id: `step-${index + 1}`,
+    // Идентификатор сохраняется, а не назначается заново: перенумерация здесь
+    // разводила записанный шаг и сценарный, и «прогнать до этого шага» целился
+    // не туда. Уникальность обеспечивает сама запись.
+    steps: rest.map((step) => ({
+      id: step.id,
       title: step.title,
       action: step.action,
       // `pauseMs`, `stability` и `matches` в сценарий не уезжают: они нужны при

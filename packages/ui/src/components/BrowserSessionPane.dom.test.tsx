@@ -593,3 +593,51 @@ describe('сценарий как редактируемый артефакт (�
     expect(onSaveScenario).not.toHaveBeenCalled()
   })
 })
+
+describe('честные предупреждения и прогон до шага (круг 19)', () => {
+  const bridgeWithElement = (over: Record<string, unknown>): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element: { selector: '#a', stability: 'id', tag: 'button', text: 'Кнопка', matches: 1, rect: { x: 0, y: 0, width: 10, height: 10 }, ...over } }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const recordOne = async (browser: RendererBrowserBridge): Promise<HTMLElement> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 5, clientY: 5 })
+    await screen.findByDisplayValue('Нажать «Кнопка»')
+    return frame
+  }
+
+  it('селектор, не находящий ничего, предупреждает громко', async () => {
+    await recordOne(bridgeWithElement({ matches: 0 }))
+    expect(await screen.findByText(/Сломанных шагов: 1/)).toBeInTheDocument()
+  })
+
+  it('исправный шаг не вызывает предупреждений о поломке', async () => {
+    await recordOne(bridgeWithElement({}))
+    expect(screen.queryByText(/Сломанных шагов/)).not.toBeInTheDocument()
+  })
+
+  it('прогон до выбранного шага останавливается на нём', async () => {
+    const browser = bridgeWithElement({})
+    const frame = await recordOne(browser)
+    fireEvent.click(frame, { clientX: 5, clientY: 5 })
+    await waitFor(() => expect(screen.getAllByDisplayValue('Нажать «Кнопка»')).toHaveLength(2))
+    const commandsBefore = (browser.command as ReturnType<typeof vi.fn>).mock.calls.length
+    // Второй пункт списка — первый исполнимый шаг (первый пункт это переход).
+    fireEvent.click(screen.getAllByRole('button', { name: /Прогнать до шага/ })[1])
+    await waitFor(() => expect(screen.getAllByText('прогон: ок')).toHaveLength(1))
+    // Считаем именно клики по странице: их должен быть ровно один, иначе прогон
+    // ушёл дальше указанного шага.
+    const clicks = (browser.command as ReturnType<typeof vi.fn>).mock.calls
+      .slice(commandsBefore)
+      .filter(([, req]) => (req as { command: { type: string; action?: { kind?: string } } }).command.action?.kind === 'click')
+    expect(clicks).toHaveLength(1)
+  })
+})

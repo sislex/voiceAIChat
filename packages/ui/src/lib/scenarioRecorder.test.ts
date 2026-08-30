@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BrowserElementDescription } from '@shared/types'
-import { ambiguousSteps, expectOnLastStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario } from './scenarioRecorder'
+import { ambiguousSteps, brokenSteps, expectOnLastStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario } from './scenarioRecorder'
 
 const element = (over: Partial<BrowserElementDescription> = {}): BrowserElementDescription => ({
   selector: '[data-testid="create"]', stability: 'testid', tag: 'button', text: 'Создать',
@@ -36,7 +36,9 @@ describe('toScenario', () => {
     const scenario = toScenario(steps, 'http://другой')
     expect(scenario.startUrl).toBe('http://89.125.68.35:8787/')
     expect(scenario.steps).toHaveLength(1)
-    expect(scenario.steps[0]).toMatchObject({ id: 'step-1', action: { kind: 'click' } })
+    // Идентификатор записанного шага сохраняется: по нему панель сопоставляет
+    // результат прогона и целится «прогнать до этого шага».
+    expect(scenario.steps[0]).toMatchObject({ id: 'step-2', action: { kind: 'click' } })
   })
 
   it('без шага-перехода стартовым берётся текущий адрес', () => {
@@ -137,5 +139,17 @@ describe('виды кликов, прокрутка и паузы (круг 15)'
   it('служебные поля записи не уезжают в сценарий', () => {
     const steps = [{ ...recordClick([], element())[0], pauseMs: 4000, matches: 2 }]
     expect(Object.keys(toScenario(steps, 'http://x').steps[0])).toEqual(['id', 'title', 'action'])
+  })
+})
+
+describe('сломанный селектор (круг 19)', () => {
+  it('шаг, чей селектор не находит ничего, выделяется отдельно', () => {
+    const steps = recordClick([], element({ selector: '#битый', matches: 0 }))
+    expect(brokenSteps(steps)).toHaveLength(1)
+    // Это не «неоднозначный»: там несколько совпадений, здесь ни одного.
+    expect(ambiguousSteps(steps)).toHaveLength(0)
+  })
+  it('шаг без сведений о совпадениях сломанным не считается', () => {
+    expect(brokenSteps(recordClick([], element({ matches: undefined })))).toHaveLength(0)
   })
 })
