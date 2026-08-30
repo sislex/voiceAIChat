@@ -2,16 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { aliasNote, offOrigin, pushHistory } from './readerAddress'
 
 describe('aliasNote', () => {
-  it('молчит, когда адрес не подменялся', () => {
-    expect(aliasNote('http://89.125.68.35:8787/', 'http://89.125.68.35:8787/#/login')).toBeNull()
+  it('молчит, когда подмены не было', () => {
+    expect(aliasNote('http://89.125.68.35:8787/', null)).toBeNull()
+    expect(aliasNote('http://89.125.68.35:8787/', undefined)).toBeNull()
   })
-  it('объясняет подмену: иначе расхождение выглядит как «открылось не то»', () => {
-    expect(aliasNote('http://89.125.68.35:8787/', 'http://voicechat:8787/'))
+  it('объясняет подмену по факту от раннера, а не по расхождению адресов', () => {
+    expect(aliasNote('http://89.125.68.35:8787/', 'voicechat:8787'))
       .toBe('Запрошен 89.125.68.35:8787, страница загружена с voicechat:8787: адрес подменён алиасом раннера.')
   })
-  it('без загруженного адреса и на мусоре не падает', () => {
-    expect(aliasNote('http://a/', null)).toBeNull()
-    expect(aliasNote('не адрес', 'тоже не адрес')).toBeNull()
+  it('на мусоре не падает', () => {
+    expect(aliasNote('не адрес', 'voicechat:8787')).toBeNull()
   })
 })
 
