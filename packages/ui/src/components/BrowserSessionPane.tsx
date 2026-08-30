@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
-import { ambiguousSteps, expectOnLastStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
+import { ambiguousSteps, brokenSteps, expectOnLastStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
@@ -377,7 +377,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
    * этап Automated QA. Останавливаемся на первом провале: дальше идти
    * бессмысленно, страница уже не в том состоянии.
    */
-  const replay = async (): Promise<void> => {
+  const replay = async (upToId?: string): Promise<void> => {
     if (!steps.length) return
     setRunning(true)
     setStepResults({})
@@ -386,7 +386,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     const scenario = toScenario(steps, meta?.currentUrl ?? '')
     try {
       if (scenario.startUrl) await run({ type: 'navigate', url: scenario.startUrl })
-      for (const step of scenario.steps) {
+      // Прогон до выбранного шага: длинный сценарий иначе отлаживается целиком.
+      const limit = upToId ? scenario.steps.findIndex((item) => item.id === upToId) : -1
+      const planned = limit >= 0 ? scenario.steps.slice(0, limit + 1) : scenario.steps
+      for (const step of planned) {
         const outcome = await runScenarioStep(step, (command) => {
           // Мост панели не принимает `screenshot` — у него отдельный роут.
           // Сценарий его и не порождает, но тип об этом не знает.
@@ -416,6 +419,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const tabs = meta?.tabs ?? []
   const fragile = fragileSteps(steps)
   const ambiguous = ambiguousSteps(steps)
+  const broken = brokenSteps(steps)
   const runnableSteps = toScenario(steps, meta?.currentUrl ?? '').steps.length
   const alias = aliasNote(requested, meta?.currentUrl ?? null)
   const strayed = offOrigin(origin.current, meta?.currentUrl ?? null, alias !== null)
@@ -617,6 +621,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           // явного ожидания раннер нажмёт быстрее, чем появится элемент.
           <p className="playwright-reader-record__warn">Между шагами были долгие паузы: вы ждали страницу. Добавьте ожидаемый текст, иначе прогон будет нажимать раньше, чем элемент появится.</p>
         )}
+        {broken.length > 0 && (
+          // matches: 0 — построенный селектор невалиден, шаг упадёт наверняка.
+          <p className="playwright-reader-record__warn" role="alert">Сломанных шагов: {broken.length}. Их селектор не находит на странице ничего — такой шаг упадёт при первом же прогоне.</p>
+        )}
         {ambiguous.length > 0 && (
           <p className="playwright-reader-record__warn">Неоднозначных шагов: {ambiguous.length}. Их селектор находит несколько элементов, и шаг нажмёт первый.</p>
         )}
@@ -645,6 +653,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
                   value={step.title}
                   onChange={(event) => setSteps((current) => renameStep(current, step.id, event.target.value))}
                 />
+                <IconButton size="sm" aria-label={`Прогнать до шага «${step.title}»`} title="Прогнать до этого шага" disabled={running} onClick={() => void replay(step.id)}>▸</IconButton>
                 <IconButton size="sm" aria-label={`Убрать шаг «${step.title}»`} title="Убрать шаг" onClick={() => setSteps((current) => removeStep(current, step.id))}>✕</IconButton>
               </span>
               <code>{'selector' in step.action ? step.action.selector : ''}</code>

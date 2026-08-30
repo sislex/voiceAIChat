@@ -230,6 +230,9 @@ async function runScenario(
       deps.db.updateQaStageRun(runId, { progress: { current: index + 1, total, label: step.title } })
     }
   })
+  // Сбой снимка не валит этап, но попадает в лог: иначе исчезнувшие картинки
+  // никто не заметит.
+  if (outcome.screenshotError) deps.db.appendAutomatedQaLog(runId, 'err', `Снимок экрана не сделан: ${outcome.screenshotError}\n`)
   if (outcome.blocked) return { ...blockedVerdict('playwright', context.scenario.startUrl, outcome.blocked, now, startedAt), steps: outcome.steps, screenshotUrl: outcome.screenshotUrl }
   const failed = outcome.steps.filter((step) => step.status === 'failed')
   const passed = total > 0 && failed.length === 0
