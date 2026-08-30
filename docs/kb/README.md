@@ -12,7 +12,7 @@
 | [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 141 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 155 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 16 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-30 | ✓ |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-29 | ⚠ 23 коммит(ов) в areas после сверки: 27b15e3c feat(reader): из записи получается тест, а не список кликов … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 24 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения … |
@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 118 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 124 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 858 коммит(ов) в areas после сверки: 222984d1 Merge work1 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 859 коммит(ов) в areas после сверки: 2f0aaf90 docs(kb): раскладка параллельных чекаутов монорепо … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 8 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 24 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 10 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
