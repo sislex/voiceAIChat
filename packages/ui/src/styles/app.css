@@ -5177,6 +5177,19 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .ci-task-llm-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ci-task-reset { margin-top: 8px; background: none; border: none; padding: 0; font-size: 12px; color: var(--text-dim); text-decoration: underline; cursor: pointer; }
 .ci-task-reset:hover { color: var(--text); }
+
+/* Вкладка «Подготовка к разработке»: форма запуска повторяет карточку настроек —
+   подпись сверху, контрол во всю ширину ячейки. До этого селекты стояли голыми
+   в строке текста и были втрое мельче соседних. */
+.task-preparation-setup { display: grid; gap: 4px; }
+.task-preparation-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.task-preparation-field { display: grid; gap: 4px; min-width: 0; font-size: 12px; color: var(--text-dim); }
+.task-preparation-field .sel { width: 100%; min-width: 0; font-size: 13px; color: var(--text); }
+.ci-task-hint { margin: 6px 0 0; font-size: 12px; color: var(--text-dim); }
+@media (max-width: 720px) {
+  .task-preparation-grid { grid-template-columns: 1fr; }
+  .task-preparation-field .sel { font-size: 16px; min-height: 44px; }
+}
 @media (max-width: 720px) {
   .ci-task-llm { grid-template-columns: 1fr; }
   .ci-task-clarify-max .login-input { width: 100%; }
