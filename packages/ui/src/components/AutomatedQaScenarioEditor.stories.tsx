@@ -50,6 +50,28 @@ export const ManyScenarios: Story = {
 }
 
 /**
+ * Непроверяемый шаг (круг 25): страница длиннее предела чтения. Текст отказа
+ * длинный и на телефоне переносится — состояние достижимо только ответом
+ * сервера, поэтому живёт в витрине.
+ */
+export const CheckBlockedUnverifiable: Story = {
+  args: {
+    ...ManyScenarios.args,
+    onCheck: async () => ([
+      { name: 'Вход', passed: true, blocked: null, steps: [], durationMs: 1400 },
+      {
+        name: 'Доска проекта', passed: false, durationMs: 21400, steps: [],
+        blocked: 'Шаг «Открыть доску» проверить нельзя: Текст страницы прочитан не целиком (первые 20000 символов), ожидаемого текста «Задача создана» в этой части нет'
+      }
+    ])
+  },
+  play: async ({ canvasElement }) => {
+    const button = [...canvasElement.querySelectorAll('button')].find((el) => el.textContent === 'Прогнать набор сейчас')
+    button?.click()
+  }
+}
+
+/**
  * Итог разового прогона набора. Состояние приходит только ответом сервера,
  * поэтому живёт в витрине: пройденный, провалившийся и заблокированный сразу.
  */

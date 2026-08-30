@@ -116,7 +116,7 @@ export function AutomatedQaScenarioEditor(props: {
         {checkResults && checkResults.length > 0 && (
           <ul className="qa-scenario__check-list">
             {checkResults.map((result) => (
-              <li key={result.name} data-passed={result.passed}>
+              <li key={result.name} data-state={result.blocked ? 'blocked' : result.passed ? 'passed' : 'failed'}>
                 {result.name}: {result.blocked ? `заблокирован — ${result.blocked}` : result.passed ? 'пройден' : `провален на шаге «${result.steps.find((step) => step.status === 'failed')?.title ?? '?'}»`}
                 {' '}<small>{Math.round(result.durationMs / 100) / 10} с</small>
               </li>

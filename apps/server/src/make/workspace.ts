@@ -927,6 +927,23 @@ export class MakeWorkspaces {
   // ---- Публикация: непубличная ссылка /p/<token>/ без авторизации -------------
 
   /** Сырой файл публикации — с хэшем пароля; наружу (в MakePublication) хэш не уходит. */
+  /**
+   * Запись файла публикации через временный файл и `rename`.
+   *
+   * Обычный `writeFile` усекает файл и только потом пишет, а счётчик просмотров
+   * идёт фоном (`void countView(...)` в маршруте отдачи). Читатель, попавший в
+   * это окно, получал пустой или обрезанный JSON — и `publishRaw` отвечал
+   * `null`. Хуже всего это било по снятию публикации: `unpublish` на `null`
+   * ничего не удалял и возвращал успех, а ссылка оставалась живой. В гейте это
+   * же окно давало плавающий провал теста `/p/<token>/` после снятия.
+   */
+  private async writePublishRaw(conversationId: string, raw: PublishRaw): Promise<void> {
+    const file = join(this.dirOf(conversationId), PUBLISH_FILE)
+    const temporary = `${file}.${randomUUID()}.tmp`
+    await writeFile(temporary, JSON.stringify(raw), 'utf8')
+    await rename(temporary, file)
+  }
+
   private async publishRaw(conversationId: string): Promise<PublishRaw | null> {
     try {
       const raw = JSON.parse(await readFile(join(this.dirOf(conversationId), PUBLISH_FILE), 'utf8')) as PublishRaw
@@ -1004,7 +1021,7 @@ export class MakeWorkspaces {
     const last = history[history.length - 1]
     if (!existing || !last || last.snapshotId !== snapshotId) history.push({ at: Date.now(), snapshotId, snapshotLabel })
     const raw: PublishRaw = { token, publishedAt: Date.now(), snapshotId, snapshotLabel, slug, passwordHash, views: existing?.views ?? 0, history: history.slice(-30), days: existing?.days, referers: existing?.referers, allowComments: options.allowComments ?? existing?.allowComments ?? false }
-    await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8')
+    await this.writePublishRaw(conversationId, raw)
     return this.state(conversationId)
   }
 
@@ -1056,7 +1073,7 @@ export class MakeWorkspaces {
       refs[host] = (refs[host] ?? 0) + 1
       raw.referers = Object.fromEntries(Object.entries(refs).sort(([, a], [, b]) => b - a).slice(0, 20))
     }
-    await writeFile(join(this.dirOf(conversationId), PUBLISH_FILE), JSON.stringify(raw), 'utf8').catch(() => undefined)
+    await this.writePublishRaw(conversationId, raw).catch(() => undefined)
   }
 
   /**
@@ -1108,12 +1125,23 @@ export class MakeWorkspaces {
   }
 
   async unpublish(conversationId: string): Promise<MakeProjectState> {
+    const indexDir = join(this.rootDir, 'make', PUBLISHED_INDEX_DIR)
     const existing = await this.publishRaw(conversationId)
     if (existing) {
-      await rm(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `${existing.token}.json`), { force: true })
-      if (existing.slug) await rm(join(this.rootDir, 'make', PUBLISHED_INDEX_DIR, `slug-${existing.slug}.json`), { force: true })
-      await rm(join(this.dirOf(conversationId), PUBLISH_FILE), { force: true })
+      await rm(join(indexDir, `${existing.token}.json`), { force: true })
+      if (existing.slug) await rm(join(indexDir, `slug-${existing.slug}.json`), { force: true })
+    } else {
+      // Файл публикации нечитаем — токена нет, но снять публикацию человек уже
+      // попросил. Ссылки ищем обходом индекса: оставить их живыми хуже, чем
+      // прочитать десяток мелких файлов.
+      for (const name of await readdir(indexDir).catch(() => [] as string[])) {
+        const target = await readFile(join(indexDir, name), 'utf8').then((text) => (JSON.parse(text) as { conversationId?: string }).conversationId).catch(() => null)
+        if (target === conversationId) await rm(join(indexDir, name), { force: true })
+      }
     }
+    // Сам файл публикации удаляется в любом исходе: нечитаемый файл — не повод
+    // оставить проект опубликованным.
+    await rm(join(this.dirOf(conversationId), PUBLISH_FILE), { force: true })
     return this.state(conversationId)
   }
 
