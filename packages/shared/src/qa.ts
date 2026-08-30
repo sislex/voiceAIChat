@@ -795,3 +795,13 @@ export function automatedQaStartUrlProblem(raw: string): string | null {
   }
   return null
 }
+
+/** Итог разовой проверки одного сценария по требованию. */
+export interface AutomatedQaCheckResult {
+  name: string
+  passed: boolean
+  /** Заполнено, если прогон не состоялся: адрес не открылся, Chromium недоступен. */
+  blocked: string | null
+  steps: AutomatedQaStepResult[]
+  durationMs: number
+}

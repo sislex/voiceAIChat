@@ -1105,6 +1105,9 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'projects:gitAccessDiagnostics': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] }, diagnostics: { originalUrl: repositoryUrl, effectiveUrl: repositoryUrl, matchingRules: [], warnings: [] } }),
     'projects:setReposRoot': async ({ id, agentId, reposRoot }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) m.reposRoot = reposRoot; return detail(p) },
     'projects:setMachineSsh': async ({ id, agentId, sshHost, sshUser }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) Object.assign(m, { sshHost, sshUser }); return detail(p) },
+    // Разовая проверка набора: фейк отвечает пустым списком — без раннера
+    // прогонять нечего, а форма ответа для UI важнее содержимого.
+    'projects:checkAutomatedQa': async () => ({ results: [] }),
     'projects:setDefaultMachine': async ({ id, agentId }) => {
       const p = projects.find((x) => x.id === id)!
       if (p.machines.some((m) => m.agentId === agentId)) p.defaultAgentId = agentId
