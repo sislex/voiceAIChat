@@ -107,6 +107,15 @@ export function ambiguousSteps(steps: RecordedStep[]): RecordedStep[] {
   return steps.filter((step) => typeof step.matches === 'number' && step.matches > 1)
 }
 
+/**
+ * Шаги, чей селектор не находит **ничего**. Такое бывает, когда построенный
+ * селектор невалиден (страница отдала `matches: 0`): шаг заведомо упадёт, а
+ * предупреждение до круга 19 было только про «нашлось несколько».
+ */
+export function brokenSteps(steps: RecordedStep[]): RecordedStep[] {
+  return steps.filter((step) => step.matches === 0)
+}
+
 export function recordType(steps: RecordedStep[], element: BrowserElementDescription, text: string): RecordedStep[] {
   return [...steps, {
     id: `step-${steps.length + 1}`,
@@ -138,8 +147,11 @@ export function toScenario(steps: RecordedStep[], currentUrl: string): Automated
   const rest = opensFirst ? steps.slice(1) : steps
   return {
     startUrl,
-    steps: rest.map((step, index) => ({
-      id: `step-${index + 1}`,
+    // Идентификатор сохраняется, а не назначается заново: перенумерация здесь
+    // разводила записанный шаг и сценарный, и «прогнать до этого шага» целился
+    // не туда. Уникальность обеспечивает сама запись.
+    steps: rest.map((step) => ({
+      id: step.id,
       title: step.title,
       action: step.action,
       // `pauseMs`, `stability` и `matches` в сценарий не уезжают: они нужны при
@@ -153,4 +165,30 @@ export function toScenario(steps: RecordedStep[], currentUrl: string): Automated
 /** Сколько шагов опирается на ненадёжный селектор — предупреждение при записи. */
 export function fragileSteps(steps: RecordedStep[]): RecordedStep[] {
   return steps.filter((step) => step.stability === 'path')
+}
+
+/**
+ * Куда положить записанный сценарий: заменить одноимённый или добавить в конец.
+ *
+ * Сравнение по имени работает, только если имя есть. У двух безымянных оно
+ * совпадает, и второй молча заменял первый — записал два теста, остался один.
+ * Безымянный поэтому всегда добавляется и получает имя по порядку.
+ */
+export function placeScenario(
+  current: AutomatedQaScenario[],
+  scenario: AutomatedQaScenario
+): AutomatedQaScenario[] {
+  const name = (scenario.name ?? '').trim()
+  if (!name) {
+    // Имя подбирается свободное, а не по длине набора: «Сценарий 2» мог уже быть
+    // занят вручную, и сгенерированное имя создавало ровно тот дубль, ради
+    // устранения которого эта функция и появилась.
+    const taken = new Set(current.map((item) => (item.name ?? '').trim()))
+    let index = current.length + 1
+    while (taken.has(`Сценарий ${index}`)) index++
+    return [...current, { ...scenario, name: `Сценарий ${index}` }]
+  }
+  const at = current.findIndex((item) => (item.name ?? '').trim() === name)
+  const normalized = { ...scenario, name }
+  return at >= 0 ? current.map((item, index) => (index === at ? normalized : item)) : [...current, normalized]
 }

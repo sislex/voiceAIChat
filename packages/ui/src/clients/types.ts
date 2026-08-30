@@ -193,6 +193,7 @@ export type ProjectsClient = Pick<
   | 'projects:setReposRoot'
   | 'projects:setMachineSsh'
   | 'projects:setDefaultMachine'
+  | 'projects:checkAutomatedQa'
   | 'projects:setUserDefaultMachine'
   | 'board:get'
   | 'columns:create'

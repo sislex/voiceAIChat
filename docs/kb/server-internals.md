@@ -1,7 +1,7 @@
 ---
 title: Backend изнутри: сборка, маршруты, сессии и сервисы
-updated: 2026-08-28
-checked: ef7c93cb
+updated: 2026-08-30
+checked: 2d142e1a
 areas:
   - apps/server/src
 ---
@@ -61,6 +61,16 @@ ZIP — собственный писатель без сжатия (`make/zip.t
 MCP даёт `db.conversationOwner(id)`. Старый исследовательский план — `plans/figma-make-analog.md`.
 Публикация: `.publish.json` в папке проекта + индекс `make/.published/<token>.json` → маршрут
 `/p/:token/*` без auth (публикация переживает `reset`, повторный `publish` не меняет токен). Фоновая очистка (roadmap-2 п.16): `MakeWorkspaces.sweep(maxAgeMs = 30 дней)` обходит все проекты и удаляет снимки старше срока (кроме закреплённого в публикации и самого свежего) и PNG-снимки стори того же возраста; `server.ts` запускает её после старта и каждые 6 часов рядом с `GeneratedCleanupService` (не в VITEST), результат — в лог `make_sweep`.
+**`.publish.json` пишется через временный файл и `rename`.** Счётчик просмотров
+идёт фоном (`void countView(...)` в маршруте отдачи), а обычный `writeFile`
+сначала усекает файл: читатель, попавший в это окно, получал обрезанный JSON и
+`publishRaw` отвечал `null`. Хуже всего это било по `unpublish` — на `null` он
+не удалял ни индекс, ни сам файл и возвращал успех, а ссылка `/p/<token>/`
+оставалась живой. В гейте то же окно давало плавающий провал `rest.test.ts`
+(«после снятия — 404», приходило 200). Поэтому: запись атомарна, `unpublish`
+удаляет `.publish.json` в любом исходе, а при нечитаемом файле ищет записи
+индекса обходом `make/.published/` по `conversationId`.
+
 `publish(id, {snapshotId})` закрепляет публикацию за снимком (`snapshotId/snapshotLabel` в `.publish.json`):
 `publicFile()` читает файлы из `.snapshots/<id>/files`, транспиляция кэшируется по ключу `conv@snapshot`;
 `publish(id)` без снимка возвращает «живую» публикацию текущих файлов (п.26).

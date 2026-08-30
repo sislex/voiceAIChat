@@ -477,7 +477,7 @@ export interface IpcInvokeMap {
       doneRetentionDays?: number | null
       /** Режим и сценарий этапа Automated QA — их пишет и запись из Reader. */
       automatedQaMode?: import('./qa').AutomatedQaMode
-      automatedQaScenario?: import('./qa').AutomatedQaScenario
+      automatedQaScenarios?: import('./qa').AutomatedQaScenario[]
     }
     result: ProjectDetail
   }
@@ -505,6 +505,12 @@ export interface IpcInvokeMap {
   'projects:gitAccessDiagnostics': { arg: { id: string; agentId: string; repositoryUrl: string }; result: GitAccessResult & { diagnostics?: GitAccessDiagnostics } }
   /** Назначить legacy/production-машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
+  /**
+   * Разовый прогон набора сценариев Automated QA по требованию. До него набор
+   * можно было проверить только задачей на доске: записал сценарий — и жди
+   * следующего рана, чтобы узнать, работает ли он.
+   */
+  'projects:checkAutomatedQa': { arg: { id: string }; result: { results: import('./qa').AutomatedQaCheckResult[] } }
   /** Назначить персональную машину пользователя по умолчанию для проекта. */
   'projects:setUserDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */
@@ -1223,6 +1229,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:updateMemberRole',
   'projects:removeMember',
   'projects:linkMachine',
+  'projects:checkAutomatedQa',
   'projects:unlinkMachine',
   'projects:setMachineShareAccess',
   'projects:configureMachineStorage',

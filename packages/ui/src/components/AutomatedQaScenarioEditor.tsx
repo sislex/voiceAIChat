@@ -1,7 +1,10 @@
-import type { AutomatedQaScenario, AutomatedQaScenarioStep } from '@shared/qa'
+import type { AutomatedQaCheckResult, AutomatedQaScenario, AutomatedQaScenarioStep } from '@shared/qa'
 import { automatedQaStartUrlProblem } from '@shared/qa'
 import type { ProjectDetail } from '@shared/projects'
 import type { PreviewAction } from '@shared/previewActions'
+import { useState } from 'react'
+import { scenarioLabel } from '@shared/qa'
+import { scenarioSetProblems } from '@shared/scenarioStep'
 import { Button, IconButton } from '@voicechat/ui-kit'
 
 /**
@@ -39,20 +42,100 @@ function withKind(action: PreviewAction, kind: StepKind): PreviewAction {
 export function AutomatedQaScenarioEditor(props: {
   detail: ProjectDetail
   isOwner: boolean
-  onUpdate: (id: string, fields: { automatedQaScenario?: AutomatedQaScenario }) => void
+  onUpdate: (id: string, fields: { automatedQaScenarios?: AutomatedQaScenario[] }) => void
+  /**
+   * Разовый прогон набора. Без него сценарий проверялся только задачей на
+   * доске: записал — и жди следующего рана, чтобы узнать, работает ли он.
+   */
+  onCheck?: (id: string) => Promise<AutomatedQaCheckResult[]>
 }): JSX.Element {
-  const scenario: AutomatedQaScenario = props.detail.automatedQaScenario ?? { startUrl: '', steps: [] }
-  const save = (next: AutomatedQaScenario): void => props.onUpdate(props.detail.id, { automatedQaScenario: next })
+  // Набор, а не один сценарий: «много автотестов» упиралось именно в это.
+  // Правим по одному, выбранный держим локально.
+  const scenarios = props.detail.automatedQaScenarios ?? []
+  const [activeIndex, setActiveIndex] = useState(0)
+  // Новый сценарий живёт черновиком, пока у него нет адреса: в проекте пустой
+  // сценарий блокирует весь этап.
+  const [draft, setDraft] = useState(false)
+  const [draftScenario, setDraftScenario] = useState<AutomatedQaScenario>({ startUrl: '', steps: [] })
+  const index = Math.min(activeIndex, Math.max(0, scenarios.length - 1))
+  const scenario: AutomatedQaScenario = draft ? draftScenario : (scenarios[index] ?? { startUrl: '', steps: [] })
+  const saveAll = (next: AutomatedQaScenario[]): void => props.onUpdate(props.detail.id, { automatedQaScenarios: next })
+  const save = (next: AutomatedQaScenario): void => {
+    if (draft) {
+      setDraftScenario(next)
+      // В проект черновик попадает, только когда становится осмысленным.
+      if (next.startUrl.trim()) { saveAll([...scenarios, next]); setDraft(false); setActiveIndex(scenarios.length) }
+      return
+    }
+    saveAll(scenarios.length ? scenarios.map((item, at) => (at === index ? next : item)) : [next])
+  }
+  const setProblems = scenarioSetProblems(scenarios)
+  const [checking, setChecking] = useState(false)
+  const [checkResults, setCheckResults] = useState<AutomatedQaCheckResult[] | null>(null)
+  const [checkError, setCheckError] = useState('')
+  const runCheck = async (): Promise<void> => {
+    if (!props.onCheck) return
+    setChecking(true); setCheckError(''); setCheckResults(null)
+    try { setCheckResults(await props.onCheck(props.detail.id)) }
+    catch (error) { setCheckError(error instanceof Error ? error.message : 'Проверка не выполнилась') }
+    finally { setChecking(false) }
+  }
   // Адрес проверяется при вводе: раннер живёт на сервере и в localhost с
   // приватными сетями не ходит, а узнавать об этом через минуты прогона — плохо.
   const urlProblem = automatedQaStartUrlProblem(scenario.startUrl)
   const patchStep = (index: number, patch: Partial<AutomatedQaScenarioStep>): void =>
     save({ ...scenario, steps: scenario.steps.map((step, at) => (at === index ? { ...step, ...patch } : step)) })
 
-  return <fieldset className="qa-scenario" aria-label="Сценарий Automated QA">
-    <legend>Сценарий браузерной проверки</legend>
+  return <fieldset className="qa-scenario" aria-label="Сценарии Automated QA">
+    <legend>Сценарии браузерной проверки</legend>
+    <div className="qa-scenario__row">
+      <label>Сценарий
+        <select className="sel" value={draft ? scenarios.length : index} disabled={!props.isOwner || (scenarios.length < 2 && !draft)} onChange={(e) => { const next = Number(e.target.value); setDraft(next === scenarios.length && draft); setActiveIndex(next) }}>
+          {(scenarios.length ? scenarios : [scenario]).map((item, at) => <option key={at} value={at}>{scenarioLabel(item, at)}</option>)}
+          {draft && <option value={scenarios.length}>новый (не сохранён)</option>}
+        </select>
+      </label>
+      <label>Название<input className="login-input" disabled={!props.isOwner} value={scenario.name ?? ''} placeholder="Вход и доска" onChange={(e) => save({ ...scenario, name: e.target.value })} /></label>
+      {/* Черновик держится локально: пустой сценарий, попавший в проект,
+          раннер считает ненастроенным и блокирует им весь этап. */}
+      <Button size="sm" disabled={!props.isOwner || draft} onClick={() => { setDraft(true); setActiveIndex(scenarios.length) }}>Добавить сценарий</Button>
+      {scenarios.length > 1 && (
+        <IconButton size="sm" variant="danger" aria-label={`Удалить сценарий «${scenarioLabel(scenario, index)}»`} title="Удалить сценарий" disabled={!props.isOwner}
+          onClick={() => { saveAll(scenarios.filter((_, at) => at !== index)); setActiveIndex(0) }}>✕</IconButton>
+      )}
+    </div>
     <label>Стартовый адрес<input className="login-input" disabled={!props.isOwner} value={scenario.startUrl} placeholder="https://example.com" aria-describedby={urlProblem ? 'qa-scenario-url-problem' : undefined} onChange={(e) => save({ ...scenario, startUrl: e.target.value })} /></label>
     {urlProblem && <p className="qa-scenario__problem" id="qa-scenario-url-problem" role="alert">{urlProblem}</p>}
+    {props.onCheck && scenarios.length > 0 && (
+      <div className="qa-scenario__check">
+        <Button size="sm" disabled={checking || !props.isOwner} onClick={() => void runCheck()}>
+          {checking ? 'Прогоняю набор…' : 'Прогнать набор сейчас'}
+        </Button>
+        {checkError && <span className="qa-scenario__problem" role="alert">{checkError}</span>}
+        {checkResults && checkResults.length === 0 && <span className="proj-muted">Прогонять нечего.</span>}
+        {checkResults && checkResults.length > 0 && (
+          <ul className="qa-scenario__check-list">
+            {checkResults.map((result) => (
+              <li key={result.name} data-state={result.blocked ? 'blocked' : result.passed ? 'passed' : 'failed'}>
+                {result.name}: {result.blocked ? `заблокирован — ${result.blocked}` : result.passed ? 'пройден' : `провален на шаге «${result.steps.find((step) => step.status === 'failed')?.title ?? '?'}»`}
+                {' '}<small>{Math.round(result.durationMs / 100) / 10} с</small>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    )}
+    {setProblems.length > 0 && (
+      // Проверка набора целиком: поштучная её не видит — дубли имён и пустые
+      // сценарии заметны только вместе.
+      // `role="alert"` на самом <ul> перебивает роль списка, и пункты остаются
+      // без родителя — тревога живёт на обёртке, список остаётся списком.
+      <div role="alert">
+        <ul className="qa-scenario__problems">
+          {setProblems.map((problem) => <li key={problem}>{problem}</li>)}
+        </ul>
+      </div>
+    )}
     {scenario.steps.length === 0 && <p className="proj-muted">Шагов нет: этап заблокируется, пока сценарий пуст.</p>}
     <ol className="qa-scenario__steps">
       {scenario.steps.map((step, index) => {
