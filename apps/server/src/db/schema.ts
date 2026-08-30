@@ -309,7 +309,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   requests INTEGER NOT NULL DEFAULT 0,
   last_path TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(user_name, device_key);
+-- Индекс по device_key создаётся в migrate(), а не здесь: на старой базе схема
+-- выполняется до ALTER TABLE, и индекс по ещё не добавленной колонке падает.
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_name);
 
 CREATE TABLE IF NOT EXISTS session_revocations (

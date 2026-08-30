@@ -3185,6 +3185,18 @@ export class VoiceChatDb {
     return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE user_name = ? AND revoked_at IS NULL AND (? IS NULL OR sid != ?)`).run(at ?? Date.now(), user, exceptSid, exceptSid).changes
   }
 
+  /**
+   * Отзывает сессии, в которых давно не было активности. Формально они ещё живы
+   * (TTL продлевается каждым запросом), но забытый вход с чужого ноутбука —
+   * ровно та сессия, о которой владелец не вспомнит сам.
+   */
+  revokeStaleSessions(staleDays: number, at?: number): number {
+    if (staleDays <= 0) return 0
+    const now = at ?? Date.now()
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL AND last_seen < ?`)
+      .run(now, now - staleDays * 24 * 60 * 60_000).changes
+  }
+
   /** Чистка истёкших и давно отозванных сессий (вызывается на старте и раз в сутки). */
   pruneSessions(keepRevokedMs = 7 * 24 * 60 * 60_000, at?: number): number {
     const now = at ?? Date.now()

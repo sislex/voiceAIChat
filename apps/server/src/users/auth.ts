@@ -10,7 +10,7 @@ const LOGIN_LIMIT = 10
 const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
 import { REST, type SessionUser, type UserRole, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
-import { deviceKey, isNewDevice, localGeo, parseUserAgent, type GeoResolver } from '@voicechat/sessions-core'
+import { deviceKey, findTrustedDevice, isNewDevice, localGeo, overLimit, parseUserAgent, type GeoResolver } from '@voicechat/sessions-core'
 import { createGeoResolver } from './geo.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
@@ -366,10 +366,18 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       clientVersion: clientVersionOf(req),
       geo: localGeo(req.ip)
     })
+    // Лимит одновременных сессий: превышение гасит самые давно неактивные, но
+    // никогда — только что выданную. Ноль или отсутствие настройки — без лимита.
+    const limit = Number(db.getAppConfig('sessions.maxPerUser')) || 0
+    for (const victim of overLimit(db.listSessions(name), limit || null, sid)) {
+      db.revokeSessionById(victim.sid)
+      db.logSecurityEvent({ user: name, type: 'session_evicted', ip: victim.ip, userAgent: victim.userAgent, details: `лимит ${limit} сессий` })
+    }
     // Публичный адрес уточняем в фоне: вход не должен ждать внешний сервис, а
     // список сессий читают уже после — к этому моменту место обычно на месте.
     if (!localGeo(req.ip)) {
-      void geo.resolve(req.ip)
+      // Резолвер по контракту ядра может быть и синхронным — приводим к промису.
+      void Promise.resolve(geo.resolve(req.ip))
         .then((place) => { if (place) db.updateSession(sid, { geo: place }) })
         .catch(() => undefined)
     }
@@ -429,10 +437,17 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       db.resetLoginFailures(u.name)
       loginByName.forget(u.name.trim().toLowerCase())
       // 2FA (п.6): пароль верен, но сессию выдаём только после кода — клиенту уходит одноразовый тикет на 5 минут.
+      // Исключение — устройство, которое пользователь сам пометил доверенным:
+      // второй фактор защищает от входа с чужого устройства, а на своём он
+      // превращается в ежедневный налог и подталкивает выключить 2FA совсем.
       if (db.getUserTotpSecret(u.name)) {
-        const ticket = newSessionId()
-        pendingTwoFactor.set(ticket, { name: u.name, expires: Date.now() + 5 * 60_000, attempts: 0, remember })
-        return { requires2fa: true, ticket }
+        const ua = String(req.headers['user-agent'] ?? '')
+        const trusted = findTrustedDevice(db.listSessions(u.name), { userAgent: ua, ip: req.ip })
+        if (!trusted) {
+          const ticket = newSessionId()
+          pendingTwoFactor.set(ticket, { name: u.name, expires: Date.now() + 5 * 60_000, attempts: 0, remember })
+          return { requires2fa: true, ticket }
+        }
       }
       return issueSession(req, reply, u.name, u.role, remember)
     }
@@ -707,20 +722,52 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const current = sidOf(req)
     return { sessions: db.listSessions(user.name).map((s) => ({ ...s, current: s.sid === current })) }
   })
-  app.post(REST.sessionLogoutAll, async (req, reply) => {
+  app.post<{ Body: { includeCurrent?: boolean } | undefined }>(REST.sessionLogoutAll, async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
-    const revoked = db.revokeUserSessions(user.name, sidOf(req))
-    db.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}` })
+    // `includeCurrent` — «выйти везде, включая это устройство»: после кражи
+    // пароля человек хочет обнулить всё разом, а не оставлять себе исключение.
+    const includeCurrent = req.body?.includeCurrent === true
+    const revoked = db.revokeUserSessions(user.name, includeCurrent ? null : sidOf(req))
+    if (includeCurrent) {
+      const token = tokenOf(req)
+      if (token) db.revokeSession(token)
+      reply.header('set-cookie', clearSessionCookies(req))
+    }
+    db.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}${includeCurrent ? ', включая текущую' : ''}` })
     return { revoked }
   })
   app.delete<{ Params: { sid: string } }>('/api/session/:sid', async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const s = db.getSession(req.params.sid)
     if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
     db.revokeSessionById(s.sid)
+    db.logSecurityEvent({ user: user.name, type: 'session_revoked', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '' })
+    return { ok: true }
+  })
+  // Имя устройства и отметка «доверенное» — только для своей сессии.
+  app.patch<{ Params: { sid: string }; Body: { label?: string | null; trusted?: boolean } }>('/api/session/:sid', async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
+    const s = db.getSession(req.params.sid)
+    // Чужая и несуществующая сессия отвечают одинаково: по ответу не должно быть
+    // видно, существует ли сессия с таким sid у кого-то другого.
+    if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
+    const patch: { label?: string | null; trusted?: boolean } = {}
+    if (req.body?.label !== undefined) {
+      const label = typeof req.body.label === 'string' ? req.body.label.trim() : ''
+      patch.label = label || null
+    }
+    if (typeof req.body?.trusted === 'boolean') patch.trusted = req.body.trusted
+    if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'нечего менять' })
+    db.updateSession(s.sid, patch)
+    const ua = String(req.headers['user-agent'] ?? '')
+    if (patch.label !== undefined) db.logSecurityEvent({ user: user.name, type: 'session_renamed', ip: req.ip, userAgent: ua, details: patch.label ?? 'имя снято' })
+    if (patch.trusted !== undefined) db.logSecurityEvent({ user: user.name, type: patch.trusted ? 'session_trusted' : 'session_untrusted', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '' })
     return { ok: true }
   })
 }
