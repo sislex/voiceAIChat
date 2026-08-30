@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import type { MachineCommandRecord, MachineCommandSource } from '@shared/agentProtocol'
 import { Button } from '@voicechat/ui-kit'
+import { saveTextFile } from '../lib/saveFile'
 
 export interface MachineCommandLogProps {
   machineId: string
@@ -46,13 +47,7 @@ export function MachineCommandLog({ machineId, machineName, load, onOpenConversa
 
   const exportCsv = (): void => {
     if (!rows?.length) return
-    const blob = new Blob([commandsToCsv(rows)], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `commands-${machineName}.csv`
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    saveTextFile(`commands-${machineName}.csv`, commandsToCsv(rows))
   }
 
   return (
