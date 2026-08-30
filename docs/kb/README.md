@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 118 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 124 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 856 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 858 коммит(ов) в areas после сверки: 222984d1 Merge work1 … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 8 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 24 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 10 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
@@ -37,7 +37,7 @@
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-28 | ⚠ 51 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-29 | ⚠ 31 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 94 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
-| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 1 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev |
+| [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: b1ce0a93 fix(dev): порты dev-сеанса из окружения — второй чекаут поднимается рядом с первым … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-30 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 47 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-30 | ⚠ 3 коммит(ов) в areas после сверки: c1975fe6 fix(scenario): ожидания догоняют страницу; проверка сценария до сохранения … |
@@ -58,9 +58,10 @@
 
 ## Журнал сессий
 
-Всего записей: 417. Последние:
+Всего записей: 418. Последние:
 
 - [2026-08-30-alexeys-macbook-air-2-parallel-worktree.md](log/2026-08-30-alexeys-macbook-air-2-parallel-worktree.md) — parallel-worktree
+- [2026-08-30-alexeys-macbook-air-2-parallel-checkouts-3.md](log/2026-08-30-alexeys-macbook-air-2-parallel-checkouts-3.md) — parallel-checkouts-3
 - [2026-08-29-macbook-air-user-restore-chat-make-css-invariants.md](log/2026-08-29-macbook-air-user-restore-chat-make-css-invariants.md) — restore-chat-make-css-invariants
 - [2026-08-29-germany-4-8-60-task-autopilot.md](log/2026-08-29-germany-4-8-60-task-autopilot.md) — task-autopilot
 - [2026-08-29-germany-4-8-60-password-reset-email.md](log/2026-08-29-germany-4-8-60-password-reset-email.md) — password-reset-email
@@ -69,7 +70,6 @@
 - [2026-08-29-alexeys-macbook-air-2-task-card-stages.md](log/2026-08-29-alexeys-macbook-air-2-task-card-stages.md) — task-card-stages
 - [2026-08-29-alexeys-macbook-air-2-restart-reconcile.md](log/2026-08-29-alexeys-macbook-air-2-restart-reconcile.md) — restart-reconcile
 - [2026-08-29-alexeys-macbook-air-2-reader-live-actions.md](log/2026-08-29-alexeys-macbook-air-2-reader-live-actions.md) — reader-live-actions
-- [2026-08-29-alexeys-macbook-air-2-project-owner-quota.md](log/2026-08-29-alexeys-macbook-air-2-project-owner-quota.md) — project-owner-quota
 
 ## Исторические планы
 
