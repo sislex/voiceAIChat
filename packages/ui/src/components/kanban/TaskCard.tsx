@@ -20,6 +20,7 @@ import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
+import { ChatIcon } from '../icons'
 
 export interface TaskCardProps {
   task: Task
@@ -419,7 +420,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
               variant="ghost"
               size="sm"
               className="jcard-chat"
-              iconLeft={<span aria-hidden="true">💬</span>}
+              iconLeft={<ChatIcon />}
               title={task.chatId ? 'Открыть связанный чат' : 'Создать связанный чат'}
               aria-label="Связанный чат"
               onClick={(e) => {
