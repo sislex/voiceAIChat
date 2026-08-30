@@ -4,6 +4,7 @@
 import type { Meta, StoryObj } from '@storybook/react'
 import { userEvent, within } from '@storybook/test'
 import { TaskModal } from './TaskModal'
+import { Button } from '@voicechat/ui-kit'
 import { withBridges } from '../../test/storyBridges'
 import { makeBoard, makeCiSummary, makeDefaultColumns, makeMembers, makeTask } from './fixtures'
 import type { TaskImprovement } from '@shared/ci'
@@ -195,3 +196,20 @@ export const Improvements: Story = {
 
 /** Пустая лента улучшений — общий пустой экран, а не голый заголовок. */
 export const ImprovementsEmpty: Story = { play: openTab(/Улучшения/) }
+
+/**
+ * Черновик новой задачи: карточка ничего не сохраняет до подтверждения, вкладок
+ * нет, а действия создания живут в стандартном подвале окна.
+ */
+export const Draft: Story = {
+  args: {
+    draft: true,
+    task: makeTask({ id: 'draft', title: '', description: '', acceptanceCriteria: '', columnId: '', assignee: null, labels: [], skills: [], storyPoints: null, dueDate: null }),
+    board: makeBoard(columns, []),
+    ciSummary: undefined,
+    footer: <>
+      <Button>Отмена</Button>
+      <Button variant="primary">Создать задачу</Button>
+    </>
+  }
+}

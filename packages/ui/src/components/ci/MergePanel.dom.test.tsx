@@ -198,6 +198,7 @@ describe('MergePanel', () => {
     expect(screen.getByText('/repos2/chatai/CHAT-1.merge-x')).toBeInTheDocument()
     expect(screen.getByText(/merge-клон/)).toBeInTheDocument()
     expect(screen.getByText('удалён', { exact: true })).toBeInTheDocument()
-    expect(screen.getByText('Merge-ранов у задачи ещё не было.')).toBeInTheDocument()
+    // Пустота merge-вкладки — общий экран карточки, а не пунктирная рамка.
+    expect(screen.getByTestId('merge-runs-empty')).toHaveTextContent('Merge-ранов у задачи ещё не было')
   })
 })
