@@ -49,7 +49,7 @@ function declaredNames(): Set<string> {
 }
 
 /** Селекторы канбана и карточки задачи. */
-const KANBAN = /\bjmodal|\bjcard|\bjlabel|\bjcol|\bjboard|\bjswimlane|\bjfilter|\bjautomation|\bjprio|\bjavatar|\bkanban-/
+const KANBAN = /\bjmodal|\bjcard|\bjlabel|\bjcol|\bjboard|\bjswimlane|\bjlane|\bjfilter|\bjautomation|\bjprio|\bjavatar|\bjcompose|\bjquick|\bkanban-/
 
 function offendingLines(pattern: RegExp, scope?: RegExp): string[] {
   return css.split('\n')
