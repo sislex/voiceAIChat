@@ -137,3 +137,26 @@ export function FlagIcon({ filled = false }: { filled?: boolean } = {}): JSX.Ele
     </svg>
   )
 }
+
+/**
+ * Ручка захвата и меню «⋯». Раньше это были текстовые глифы `⠿` и `⋯`: их
+ * рисует системный шрифт, поэтому размер и вертикальное положение прыгали от
+ * платформы к платформе, а на части машин `⠿` (брайль) подменялся квадратом.
+ */
+export function GripIcon(): JSX.Element {
+  return (
+    <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
+      <circle cx="4" cy="3.5" r="1.3" /><circle cx="8" cy="3.5" r="1.3" />
+      <circle cx="4" cy="8" r="1.3" /><circle cx="8" cy="8" r="1.3" />
+      <circle cx="4" cy="12.5" r="1.3" /><circle cx="8" cy="12.5" r="1.3" />
+    </svg>
+  )
+}
+
+export function DotsIcon(): JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <circle cx="3.5" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="12.5" cy="8" r="1.4" />
+    </svg>
+  )
+}
