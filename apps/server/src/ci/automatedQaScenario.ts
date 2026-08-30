@@ -34,6 +34,8 @@ export interface AutomatedQaScenarioOutcome {
    * разработку — виноват не разработчик.
    */
   blocked: string | null
+  /** Почему не вышло снять экран. Пустое — снимок либо сделан, либо не нужен. */
+  screenshotError?: string
 }
 
 export interface AutomatedQaScenarioRunnerDeps {
@@ -76,6 +78,7 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         deps.browser.command(sessionId, { requestId: randomUUID(), incarnation, actor: 'assistant', command }, input.signal)
       const results: AutomatedQaStepResult[] = []
       let screenshotUrl: string | null = null
+      let screenshotError = ''
       let blocked: string | null = null
       let expiredBudget = false
       try {
@@ -114,7 +117,12 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
           mkdirSync(dirname(file), { recursive: true })
           writeFileSync(file, shot.buffer)
           screenshotUrl = deps.screenshotUrl(input.runId)
-        } catch { /* снимок — не повод завалить этап */ }
+        } catch (error) {
+          // Снимок — не повод завалить этап, но и молчать нельзя: если он
+          // перестанет получаться совсем, у вердиктов просто никогда не будет
+          // картинки, и никто не станет разбираться почему.
+          screenshotError = firstLine(error)
+        }
       } catch (error) {
         blocked = `Прогон сценария прерван: ${firstLine(error)}`
       } finally {
@@ -122,8 +130,8 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
       }
       // Исчерпанный бюджет — инфраструктура, а не дефект реализации: сценарий
       // не досмотрен, и судить по нему о работоспособности нельзя.
-      if (expiredBudget) return { steps: results, screenshotUrl, blocked: 'Исчерпан бюджет времени прогона сценария' }
-      return { steps: results, screenshotUrl, blocked }
+      if (expiredBudget) return { steps: results, screenshotUrl, blocked: 'Исчерпан бюджет времени прогона сценария', ...(screenshotError ? { screenshotError } : {}) }
+      return { steps: results, screenshotUrl, blocked, ...(screenshotError ? { screenshotError } : {}) }
     }
   }
 }
