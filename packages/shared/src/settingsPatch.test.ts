@@ -3,7 +3,7 @@
 // принятый мусорный ключ остаётся в записи навсегда.
 
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CHAT_INSTRUCTIONS, sanitizeSettingsPatch } from './types'
+import { DEFAULT_CHAT_INSTRUCTIONS, DEFAULT_SETTINGS, sanitizeSettingsPatch } from './types'
 
 describe('sanitizeSettingsPatch', () => {
   it('пропускает известные поля и приводит модель Claude к алиасу', () => {
@@ -35,5 +35,15 @@ describe('sanitizeSettingsPatch', () => {
   it('не считает патчем не-объект', () => {
     expect(sanitizeSettingsPatch(null)).toEqual({})
     expect(sanitizeSettingsPatch('theme=dark')).toEqual({})
+  })
+
+  // Страж: новое поле Settings, о котором санитайзер не знает, молча перестало
+  // бы сохраняться — настройка «есть в интерфейсе, но не переживает перезагрузку».
+  it('пропускает каждое поле контракта', () => {
+    const missing = Object.keys(DEFAULT_SETTINGS).filter((key) => {
+      const value = DEFAULT_SETTINGS[key as keyof typeof DEFAULT_SETTINGS]
+      return !(key in sanitizeSettingsPatch({ [key]: value }))
+    })
+    expect(missing).toEqual([])
   })
 })

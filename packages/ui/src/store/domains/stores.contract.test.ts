@@ -331,6 +331,27 @@ describe('settingsStore', () => {
     store.dispose()
   })
 
+  // Сигнал соседней вкладки может прийти ровно в момент нашего сохранения:
+  // ответ сервера тогда ещё не видел нашего PUT и вернул бы старое значение.
+  it('перечитывание не затирает патч, который ещё в полёте', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    let release: (value: unknown) => void = () => {}
+    vi.spyOn(api, 'settings:save').mockImplementationOnce(async (patch) => {
+      await new Promise((resolve) => { release = resolve })
+      return { ...api._state.settings, ...patch } as never
+    })
+
+    const saving = store.actions.updateSettings({ theme: 'dark' })
+    await store.actions.refreshSettings() // «соседняя вкладка» — снимок без нашей темы
+    expect(store.getState().settings.theme).toBe('dark')
+
+    release(undefined)
+    await saving
+    expect(store.getState().settings.theme).toBe('dark')
+    store.dispose()
+  })
+
   it('удалённая машина исчезает из настроек', async () => {
     const { store } = make()
     await store.actions.updateSettings({ execTarget: 'a1', defaultAgentId: 'a1' })
