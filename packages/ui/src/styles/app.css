@@ -7628,6 +7628,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .qa-verdict__steps li[data-status='skipped'] { color: var(--text-dim); }
 /* Ошибки страницы: красным их не красим — это улика, а не приговор. Провалом
    они не считаются, страница может ругаться на постороннее. */
+.qa-verdict__step-errors { list-style: disc; margin: var(--space-050) 0 0; padding-left: var(--space-150); color: var(--ci-progress); overflow-wrap: anywhere; }
 .qa-verdict__page-errors { display: flex; flex-direction: column; gap: var(--space-050); }
 .qa-verdict__page-errors h5 { margin: 0; font-size: 12px; color: var(--text-dim); font-weight: 600; }
 .qa-verdict__page-errors ul { margin: 0; padding-left: var(--space-150); display: flex; flex-direction: column; gap: var(--space-050); font-size: 12px; color: var(--ci-progress); overflow-wrap: anywhere; }
@@ -7648,6 +7649,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .qa-scenario__check-list li[data-state='blocked'] { color: var(--ci-progress); }
 /* Ошибки страницы под итогом сценария: улика, а не приговор — цвет приглушённый. */
 .qa-scenario__check-errors { list-style: disc; margin: var(--space-050) 0 0; padding-left: var(--space-150); color: var(--text-dim); overflow-wrap: anywhere; }
+/* Снимок разового прогона: маленькая улика в строке итога, полный размер — по клику. */
+.qa-scenario__check-shot { display: block; margin-top: var(--space-050); }
+.qa-scenario__check-shot img { max-width: 240px; width: 100%; border: 1px solid var(--border); border-radius: var(--radius-medium); }
 
 .qa-scenario__problems { margin: 0; padding-left: var(--space-150); color: var(--ci-progress); font-size: 0.9em; display: flex; flex-direction: column; gap: var(--space-050); }
 .qa-scenario__steps { display: flex; flex-direction: column; gap: var(--space-150); margin: 0; padding: 0; list-style: none; }
@@ -7662,7 +7666,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Заголовок шага не переносится: иначе кнопка удаления уезжает на свою строку
    и встаёт под названием, будто относится к следующему полю. */
 .qa-scenario__row--head { flex-wrap: nowrap; align-items: flex-end; }
-.qa-scenario__row--head > label { flex: 1 1 auto; min-width: 0; }
+/* Поле названия не сжимается до нечитаемого: с круга 28 в строке три кнопки
+   (вверх, вниз, удалить), и на телефоне поле схлопывалось до полутора слов. */
+.qa-scenario__row--head > label { flex: 1 1 auto; min-width: 8rem; }
 /* Кнопка без подписи в непереносимой строке сжимается флексом до 19px — ниже
    порога попадания пальцем, который сторожит scripts/mobile-shots.mts. */
 .qa-scenario__row--head > button { flex: 0 0 auto; }
@@ -7671,5 +7677,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .qa-scenario input.login-input, .qa-scenario select.sel { min-width: 0; width: 100%; box-sizing: border-box; }
 @media (max-width: 640px) {
   .qa-scenario__row > label { flex-basis: 100%; }
-  .qa-scenario__row--head > label { flex-basis: auto; }
+  /* На телефоне кнопки шага уходят под поле: втроём в одну строку с полем они
+     не помещаются, а сжимать поле нельзя — по нему шаг и узнают. */
+  .qa-scenario__row--head { flex-wrap: wrap; }
+  .qa-scenario__row--head > label { flex-basis: 100%; }
+  .qa-scenario__row--head > .vc-btn { margin-left: 0; }
+  .qa-scenario__num { align-self: flex-start; }
 }

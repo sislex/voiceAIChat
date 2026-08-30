@@ -47,7 +47,7 @@ export function AutomatedQaScenarioEditor(props: {
    * Разовый прогон набора. Без него сценарий проверялся только задачей на
    * доске: записал — и жди следующего рана, чтобы узнать, работает ли он.
    */
-  onCheck?: (id: string) => Promise<AutomatedQaCheckResult[]>
+  onCheck?: (id: string, scenarioIndex?: number) => Promise<AutomatedQaCheckResult[]>
 }): JSX.Element {
   // Набор, а не один сценарий: «много автотестов» упиралось именно в это.
   // Правим по одному, выбранный держим локально.
@@ -73,12 +73,20 @@ export function AutomatedQaScenarioEditor(props: {
   const [checking, setChecking] = useState(false)
   const [checkResults, setCheckResults] = useState<AutomatedQaCheckResult[] | null>(null)
   const [checkError, setCheckError] = useState('')
-  const runCheck = async (): Promise<void> => {
+  const runCheck = async (only?: number): Promise<void> => {
     if (!props.onCheck) return
     setChecking(true); setCheckError(''); setCheckResults(null)
-    try { setCheckResults(await props.onCheck(props.detail.id)) }
+    try { setCheckResults(await props.onCheck(props.detail.id, only)) }
     catch (error) { setCheckError(error instanceof Error ? error.message : 'Проверка не выполнилась') }
     finally { setChecking(false) }
+  }
+  /** Перестановка шага: раньше поменять порядок можно было только удалив шаг. */
+  const moveStep = (from: number, to: number): void => {
+    if (to < 0 || to >= scenario.steps.length) return
+    const steps = [...scenario.steps]
+    const [moved] = steps.splice(from, 1)
+    steps.splice(to, 0, moved)
+    save({ ...scenario, steps })
   }
   // Адрес проверяется при вводе: раннер живёт на сервере и в localhost с
   // приватными сетями не ходит, а узнавать об этом через минуты прогона — плохо.
@@ -109,14 +117,24 @@ export function AutomatedQaScenarioEditor(props: {
     {props.onCheck && scenarios.length > 0 && (
       <div className="qa-scenario__check">
         <Button size="sm" disabled={checking || !props.isOwner} onClick={() => void runCheck()}>
-          {checking ? 'Прогоняю набор…' : 'Прогнать набор сейчас'}
+          {checking ? 'Прогоняю…' : 'Прогнать набор сейчас'}
         </Button>
+        {/* Отладка записи не должна стоить прогона всего набора: чаще всего
+            правят один сценарий и хотят увидеть именно его. */}
+        {!draft && scenarios.length > 1 && (
+          <Button size="sm" variant="ghost" disabled={checking || !props.isOwner} onClick={() => void runCheck(index)}>
+            Только «{scenarioLabel(scenario, index)}»
+          </Button>
+        )}
         {checkError && <span className="qa-scenario__problem" role="alert">{checkError}</span>}
         {checkResults && checkResults.length === 0 && <span className="proj-muted">Прогонять нечего.</span>}
         {checkResults && checkResults.length > 0 && (
           <ul className="qa-scenario__check-list">
-            {checkResults.map((result) => (
-              <li key={result.name} data-state={result.blocked ? 'blocked' : result.passed ? 'passed' : 'failed'}>
+            {/* Ключ по позиции, а не по имени: имена в наборе повторяются —
+                об этом предупреждает сам редактор, — и совпавший ключ ломает
+                отрисовку списка. */}
+            {checkResults.map((result, at) => (
+              <li key={`${at}-${result.name}`} data-state={result.blocked ? 'blocked' : result.passed ? 'passed' : 'failed'}>
                 {result.name}: {result.blocked ? `заблокирован — ${result.blocked}` : result.passed ? 'пройден' : `провален на шаге «${result.steps.find((step) => step.status === 'failed')?.title ?? '?'}»`}
                 {' '}<small>{Math.round(result.durationMs / 100) / 10} с</small>
                 {/* Те же ошибки, что уходят в вердикт этапа: при разборе записи
@@ -125,6 +143,13 @@ export function AutomatedQaScenarioEditor(props: {
                   <ul className="qa-scenario__check-errors">
                     {result.pageErrors.map((error, index) => <li key={`${index}-${error.slice(0, 40)}`}>{error}</li>)}
                   </ul>
+                )}
+                {/* Снимок приходит содержимым: у разового прогона нет рана в БД,
+                    а роут снимка без рана отвечает 404. */}
+                {result.screenshot && (
+                  <a className="qa-scenario__check-shot" href={result.screenshot} target="_blank" rel="noreferrer">
+                    <img src={result.screenshot} alt={`Экран в конце сценария «${result.name}»`} />
+                  </a>
                 )}
               </li>
             ))}
@@ -153,6 +178,8 @@ export function AutomatedQaScenarioEditor(props: {
           <div className="qa-scenario__row qa-scenario__row--head">
             <span className="qa-scenario__num" aria-hidden="true">{index + 1}</span>
             <label>Название шага<input className="login-input" disabled={!props.isOwner} value={step.title} onChange={(e) => patchStep(index, { title: e.target.value })} /></label>
+            <IconButton size="sm" variant="ghost" aria-label={`Поднять шаг «${step.title}»`} title="Поднять шаг" disabled={!props.isOwner || index === 0} onClick={() => moveStep(index, index - 1)}>↑</IconButton>
+            <IconButton size="sm" variant="ghost" aria-label={`Опустить шаг «${step.title}»`} title="Опустить шаг" disabled={!props.isOwner || index === scenario.steps.length - 1} onClick={() => moveStep(index, index + 1)}>↓</IconButton>
             <IconButton size="sm" variant="danger" aria-label={`Удалить шаг «${step.title}»`} title={`Удалить шаг «${step.title}»`} disabled={!props.isOwner} onClick={() => save({ ...scenario, steps: scenario.steps.filter((_, at) => at !== index) })}>✕</IconButton>
           </div>
           <div className="qa-scenario__row">

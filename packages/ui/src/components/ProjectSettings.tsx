@@ -35,7 +35,7 @@ export interface ProjectSettingsProps {
   llmAccess?: UserLlmAccess[]
   llmEngines?: LlmEngineOption[]
   /** Разовый прогон набора сценариев Automated QA — приходит из хоста. */
-  checkAutomatedQa?: (id: string) => Promise<import('@shared/qa').AutomatedQaCheckResult[]>
+  checkAutomatedQa?: (id: string, scenarioIndex?: number) => Promise<import('@shared/qa').AutomatedQaCheckResult[]>
   onUpdate: (id: string, fields: { typeId?: string; name?: string; description?: string; gitUrl?: string | null; previewUrl?: string | null; testUsers?: ProjectTestUser[]; technologies?: string[]; skills?: string[]; defaultSkills?: Partial<WorkItemDefaultSkills>; commitPolicy?: ProjectSummary['commitPolicy']; mergeTransport?: ProjectSummary['mergeTransport']; agentPlanApprovalMode?: ProjectSummary['agentPlanApprovalMode']; testCommand?: string; automatedQaCommand?: string; automatedQaMode?: AutomatedQaMode; automatedQaScenarios?: AutomatedQaScenario[]; autoPilotRequiresManualQa?: boolean; autoPilotFixLimit?: number; productionDeployCommand?: string; productionAgentId?: string | null; productionCheckoutPath?: string; productionHealthCheckCommand?: string; ciBaseBranch?: string; ciBranchTemplate?: string; ciReuseStrategy?: 'reuse' | 'clean' | 'fail'; ciExecAuthRef?: string; ciKbContextMode?: KbContextMode; doneRetentionDays?: number | null; commandPolicy?: ProjectCommandPolicy }) => void
 
   onDelete: (id: string) => void

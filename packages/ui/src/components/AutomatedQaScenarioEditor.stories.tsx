@@ -83,7 +83,9 @@ export const CheckResults: Story = {
       {
         name: 'Доска проекта', passed: false, blocked: null, durationMs: 2600,
         steps: [{ id: 's', title: 'Создать задачу', status: 'failed' as const, detail: 'локатор не найден', durationMs: 5000 }],
-        pageErrors: ['Uncaught TypeError: Cannot read properties of undefined (reading \'columns\') at BoardView.tsx:142']
+        pageErrors: ['Uncaught TypeError: Cannot read properties of undefined (reading \'columns\') at BoardView.tsx:142'],
+        // Снимок приходит содержимым: у разового прогона нет рана в БД (круг 28).
+        screenshot: 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e9e7dd"/><text x="20" y="100" font-family="sans-serif" font-size="20" fill="#4a4a44">Экран прогона</text></svg>')
       },
       { name: 'Настройки', passed: false, blocked: 'Стартовый адрес не открылся', steps: [], durationMs: 300 }
     ])
