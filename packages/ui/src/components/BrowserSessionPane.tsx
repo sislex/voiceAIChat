@@ -5,6 +5,7 @@ import { aliasNote, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
 import type { AutomatedQaScenario } from '@shared/qa'
+import { runScenarioStep, stepHint } from '@shared/scenarioStep'
 import { Button, IconButton } from '@voicechat/ui-kit'
 
 // Панель Playwright Reader: живой изолированный Chromium разговора. В отличие от
@@ -111,6 +112,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   }
   const [steps, setSteps] = useState<RecordedStep[]>([])
   const [expectText, setExpectText] = useState('')
+  // Результат прогона записанного сценария по шагам: цикл «записал → проверил →
+  // поправил» иначе разорван — запись здесь, прогон на доске.
+  const [stepResults, setStepResults] = useState<Record<string, { ok: boolean; detail: string }>>({})
+  const [running, setRunning] = useState(false)
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
   const [frame, setFrame] = useState<string | null>(null)
   const [address, setAddress] = useState<string>('')
@@ -360,6 +365,31 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     if (login && login.ok === false) setMessage(`Поле логина не найдено: ${login.error ?? 'форма входа не распознана'}`)
   }
 
+  /**
+   * Прогон записанного сценария в этой же сессии — тем же кодом, что исполняет
+   * этап Automated QA. Останавливаемся на первом провале: дальше идти
+   * бессмысленно, страница уже не в том состоянии.
+   */
+  const replay = async (): Promise<void> => {
+    if (!steps.length) return
+    setRunning(true)
+    setStepResults({})
+    const scenario = toScenario(steps, meta?.currentUrl ?? '')
+    try {
+      if (scenario.startUrl) await run({ type: 'navigate', url: scenario.startUrl })
+      for (const step of scenario.steps) {
+        const outcome = await runScenarioStep(step, (command) => {
+          // Мост панели не принимает `screenshot` — у него отдельный роут.
+          // Сценарий его и не порождает, но тип об этом не знает.
+          if (command.type === 'screenshot') return Promise.resolve({ ok: false, error: 'Снимок в сценарии не выполняется' })
+          return run(command)
+        })
+        setStepResults((current) => ({ ...current, [step.id]: { ok: outcome.ok, detail: outcome.detail } }))
+        if (!outcome.ok) { setMessage(`${step.title}: ${outcome.detail}${stepHint(outcome.detail) ? ` — ${stepHint(outcome.detail)}` : ''}`); break }
+      }
+    } finally { setRunning(false) }
+  }
+
   /** Переход записывается отдельным шагом: с него начинается сценарий. */
   const startRecording = (): void => {
     setSteps(meta?.currentUrl ? recordNavigate([], meta.currentUrl) : [])
@@ -377,6 +407,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const tabs = meta?.tabs ?? []
   const fragile = fragileSteps(steps)
   const ambiguous = ambiguousSteps(steps)
+  const runnableSteps = toScenario(steps, meta?.currentUrl ?? '').steps.length
   const alias = aliasNote(requested, meta?.currentUrl ?? null)
   const strayed = offOrigin(origin.current, meta?.currentUrl ?? null, alias !== null)
 
@@ -533,7 +564,12 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
               catch (err) { setMessage(err instanceof Error ? err.message : 'Сценарий не сохранён') }
             })()}>Сохранить в проект</Button>
           )}
-          <Button size="sm" variant="ghost" onClick={() => { setSteps(meta?.currentUrl ? recordNavigate([], meta.currentUrl) : []); lastStepAt.current = Date.now(); setRecording(true) }}>
+          {/* Считаем исполнимые шаги, а не записанные: шаг-переход уходит в
+              startUrl, и запись из одного перехода прогонять нечем. */}
+          <Button size="sm" disabled={running || !runnableSteps} onClick={() => void replay()}>
+            {running ? 'Прогоняю…' : 'Прогнать сценарий'}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => { setSteps(meta?.currentUrl ? recordNavigate([], meta.currentUrl) : []); lastStepAt.current = Date.now(); setStepResults({}); setRecording(true) }}>
             Начать заново
           </Button>
           <Button size="sm" variant="ghost" onClick={() => void (async () => {
@@ -589,6 +625,11 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
                 <IconButton size="sm" aria-label={`Убрать шаг «${step.title}»`} title="Убрать шаг" onClick={() => setSteps((current) => removeStep(current, step.id))}>✕</IconButton>
               </span>
               <code>{'selector' in step.action ? step.action.selector : ''}</code>
+              {stepResults[step.id] && (
+                <em className={`playwright-reader-record__result playwright-reader-record__result--${stepResults[step.id].ok ? 'ok' : 'fail'}`}>
+                  {stepResults[step.id].ok ? 'прогон: ок' : `прогон: ${stepResults[step.id].detail}`}
+                </em>
+              )}
               {(step.expectText || step.expectAbsentText) && (
                 <em className="playwright-reader-record__check">{step.expectText ? `ждём «${step.expectText}»` : `не должно быть «${step.expectAbsentText}»`}</em>
               )}

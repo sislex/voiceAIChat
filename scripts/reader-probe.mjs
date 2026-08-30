@@ -6,6 +6,9 @@
 // ограничений — запрет «контейнер → публичный IP своего хоста» действует только
 // на самом прод-хосте.
 //
+// Запускается через tsx (`npm run reader:probe`): исполнитель шага общий с
+// сервером и лежит в TypeScript-исходниках shared.
+//
 // Использование:
 //   node scripts/reader-probe.mjs [url] [...селекторы]
 //   node scripts/reader-probe.mjs --scenario <файл.json>
@@ -14,6 +17,7 @@
 // проверить запись можно было только руками.
 
 import { readFileSync } from 'node:fs'
+import { runScenarioStep, stepHint } from '../packages/shared/src/scenarioStep.ts'
 
 const BASE = process.env.VC_READER_PROBE_URL ?? 'http://localhost:8892/v1'
 const TOKEN = process.env.VC_BROWSER_RUNNER_TOKEN ?? 'vc-local-reader'
@@ -50,24 +54,14 @@ try {
   const read = await command({ type: 'selector', action: { kind: 'read', limit: 400 } })
   console.log(`текст: ${short(read.text ?? read.error)}`)
 
+  // Шаг исполняет тот же код, что и этап Automated QA: до круга 17 здесь была
+  // своя реализация, и она отстала от записи (прокрутку уже не понимала).
   for (const [index, step] of (scenario?.steps ?? []).entries()) {
-    const plan = step.action
-    const result = plan.kind === 'click'
-      ? await command({ type: 'selector', action: { kind: 'click', ...(plan.selector ? { selector: plan.selector } : {}), ...(plan.text ? { text: plan.text } : {}) } })
-      : plan.kind === 'type'
-        ? await command({ type: 'selector', action: { kind: 'type', selector: plan.selector, text: plan.text, ...(plan.submit ? { submit: true } : {}) } })
-        : plan.kind === 'wait'
-          ? await command({ type: 'selector', action: { kind: 'wait', ...(plan.selector ? { selector: plan.selector } : {}), ...(plan.text ? { text: plan.text } : {}) } })
-          : { ok: false, error: `действие «${plan.kind}» проба не исполняет` }
-    let verdict = result.ok ? 'ок' : `ОШИБКА: ${short(result.error, 80)}`
-    if (result.ok && (step.expectText || step.expectAbsentText)) {
-      const page = await command({ type: 'selector', action: { kind: 'read', limit: 20_000 } })
-      const text = page.text ?? ''
-      if (step.expectText && !text.includes(step.expectText)) verdict = `ОШИБКА: нет текста «${step.expectText}»`
-      if (step.expectAbsentText && text.includes(step.expectAbsentText)) verdict = `ОШИБКА: есть текст «${step.expectAbsentText}»`
-    }
+    const outcome = await runScenarioStep(step, (browserCommand) => command(browserCommand))
+    const hint = outcome.ok ? '' : stepHint(outcome.detail)
+    const verdict = outcome.ok ? 'ок' : `ОШИБКА: ${short(outcome.detail, 100)}${hint ? ` — ${hint}` : ''}`
     console.log(`шаг ${index + 1}/${scenario.steps.length} ${step.title}: ${verdict}`)
-    if (verdict !== 'ок') { failed = true; break }
+    if (!outcome.ok) { failed = true; break }
   }
 
   for (const selector of selectors) {

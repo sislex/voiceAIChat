@@ -7586,6 +7586,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .playwright-reader-record__title { flex: 1 1 auto; min-width: 0; border: 1px solid transparent; border-radius: var(--radius-medium); padding: var(--space-050); background: transparent; color: var(--text); font: inherit; }
 .playwright-reader-record__title:hover, .playwright-reader-record__title:focus { border-color: var(--border); background: var(--surface); }
 .playwright-reader-record__check { color: var(--ci-success); font-style: normal; }
+/* Итог прогона записанного сценария — прямо у шага, а не отдельным отчётом. */
+.playwright-reader-record__result { display: block; font-style: normal; }
+.playwright-reader-record__result--ok { color: var(--ci-success); }
+.playwright-reader-record__result--fail { color: var(--danger); }
 .playwright-reader-record__expect { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-100); }
 .playwright-reader-record__expect label { flex: 1 1 14rem; display: flex; flex-direction: column; gap: var(--space-050); }
 .playwright-reader-record__expect input { min-width: 0; width: 100%; box-sizing: border-box; }
