@@ -9,38 +9,38 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 144 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 157 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 145 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 158 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-30 | ⚠ 2 коммит(ов) в areas после сверки: 451dd6eb feat(qa-stage): сквозная проверка серверного пути; DNS-сбой отличается от запрета … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-29 | ⚠ 26 коммит(ов) в areas после сверки: c77005d0 fix(reader): внутренний адрес алиаса больше не уезжает в сценарий … |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 3 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 30 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 37 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 63 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 93 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 122 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 127 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 869 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ✓ |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 29 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 14 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 62 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 132 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 4 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 31 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 38 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 64 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 94 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 123 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 128 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 870 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 30 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 15 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 63 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 133 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 8 коммит(ов) в areas после сверки: 002085de feat(gate): одна честная команда проверки; молчаливые сбои стали заметны … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 37 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 61 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 105 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 18 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 21 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-30 | ⚠ 2 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-29 | ⚠ 37 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 96 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 62 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 106 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 19 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 22 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-30 | ⚠ 3 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 6 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 97 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: b1ce0a93 fix(dev): порты dev-сеанса из окружения — второй чекаут поднимается рядом с первым … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-30 | ⚠ 4 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 49 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-30 | ⚠ 11 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-30 | ⚠ 5 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 50 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-30, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -58,18 +58,18 @@
 
 ## Журнал сессий
 
-Всего записей: 422. Последние:
+Всего записей: 433. Последние:
 
 - [2026-08-30-alexeys-macbook-air-2-ten-improvements.md](log/2026-08-30-alexeys-macbook-air-2-ten-improvements.md) — ten-improvements
+- [2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md](log/2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md) — task-card-tabs-round2
+- [2026-08-30-alexeys-macbook-air-2-task-card-feeds-round1.md](log/2026-08-30-alexeys-macbook-air-2-task-card-feeds-round1.md) — task-card-feeds-round1
+- [2026-08-30-alexeys-macbook-air-2-tablet-and-carets-round9.md](log/2026-08-30-alexeys-macbook-air-2-tablet-and-carets-round9.md) — tablet-and-carets-round9
+- [2026-08-30-alexeys-macbook-air-2-run-feed-ansi-round3.md](log/2026-08-30-alexeys-macbook-air-2-run-feed-ansi-round3.md) — run-feed-ansi-round3
+- [2026-08-30-alexeys-macbook-air-2-qa-settings-labels-round4.md](log/2026-08-30-alexeys-macbook-air-2-qa-settings-labels-round4.md) — qa-settings-labels-round4
+- [2026-08-30-alexeys-macbook-air-2-preparation-tab-round5.md](log/2026-08-30-alexeys-macbook-air-2-preparation-tab-round5.md) — preparation-tab-round5
 - [2026-08-30-alexeys-macbook-air-2-parallel-worktree.md](log/2026-08-30-alexeys-macbook-air-2-parallel-worktree.md) — parallel-worktree
 - [2026-08-30-alexeys-macbook-air-2-parallel-checkouts-3.md](log/2026-08-30-alexeys-macbook-air-2-parallel-checkouts-3.md) — parallel-checkouts-3
 - [2026-08-30-alexeys-macbook-air-2-page-errors-in-verdict.md](log/2026-08-30-alexeys-macbook-air-2-page-errors-in-verdict.md) — page-errors-in-verdict
-- [2026-08-30-alexeys-macbook-air-2-assert-read-limit.md](log/2026-08-30-alexeys-macbook-air-2-assert-read-limit.md) — assert-read-limit
-- [2026-08-30-alexeys-macbook-air-2-alias-and-idle.md](log/2026-08-30-alexeys-macbook-air-2-alias-and-idle.md) — alias-and-idle
-- [2026-08-29-macbook-air-user-restore-chat-make-css-invariants.md](log/2026-08-29-macbook-air-user-restore-chat-make-css-invariants.md) — restore-chat-make-css-invariants
-- [2026-08-29-germany-4-8-60-task-autopilot.md](log/2026-08-29-germany-4-8-60-task-autopilot.md) — task-autopilot
-- [2026-08-29-germany-4-8-60-password-reset-email.md](log/2026-08-29-germany-4-8-60-password-reset-email.md) — password-reset-email
-- [2026-08-29-germany-4-8-60-login-new-device-email.md](log/2026-08-29-germany-4-8-60-login-new-device-email.md) — login-new-device-email
 
 ## Исторические планы
 
