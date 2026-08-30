@@ -104,7 +104,10 @@ describe('разовый прогон набора (круг 24)', () => {
     const onCheck = vi.fn(async () => ([{ name: 'Вход', passed: false, blocked: 'Стартовый адрес не открылся', steps: [], durationMs: 300 }]))
     render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
     fireEvent.click(screen.getByRole('button', { name: 'Прогнать набор сейчас' }))
-    expect(await screen.findByText(/заблокирован — Стартовый адрес не открылся/)).toBeInTheDocument()
+    const line = await screen.findByText(/заблокирован — Стартовый адрес не открылся/)
+    // Заблокированный отличается от провального не только словом: красный
+    // цвет провала заставляет искать дефект там, где проверка вообще не шла.
+    expect(line.closest('li')).toHaveAttribute('data-state', 'blocked')
   })
 
   it('отказ сервера показывается, а не теряется', async () => {

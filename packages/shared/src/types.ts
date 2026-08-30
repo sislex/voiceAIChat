@@ -216,6 +216,12 @@ export interface BrowserSelectorResult {
   matches?: Array<{ selector: string; text: string; visible: boolean }>
   /** Описание элемента под точкой (`describe`). */
   element?: BrowserElementDescription
+  /**
+   * Текст отдан не целиком: страница длиннее запрошенного лимита. Признак нужен
+   * проверкам сценария — «текста нет» и «до текста не дочитали» это разные
+   * беды, и вторую нельзя выдавать за первую.
+   */
+  truncated?: boolean
   error?: string
 }
 
