@@ -25,12 +25,12 @@ describe('createSessionsStore: чтение', () => {
     await store.actions.load()
     expect(store.getState().status).toBe('ready')
     expect(store.getState().sessions).toHaveLength(4)
-    expect(store.capabilities).toEqual({ rename: true, trust: true, revokeOthers: true, revokeAll: true, ended: false, panic: false, history: false, copy: false })
+    expect(store.capabilities).toEqual({ rename: true, trust: true, revokeOthers: true, revokeAll: true, ended: false, panic: false, history: false, copy: false, untrustAll: false })
   })
 
   it('урезанный клиент (админка) объявляет только чтение и отзыв', () => {
     const store = createSessionsStore({ client: { list: async () => [], revoke: async () => undefined } })
-    expect(store.capabilities).toEqual({ rename: false, trust: false, revokeOthers: false, revokeAll: false, ended: false, panic: false, history: false, copy: false })
+    expect(store.capabilities).toEqual({ rename: false, trust: false, revokeOthers: false, revokeAll: false, ended: false, panic: false, history: false, copy: false, untrustAll: false })
   })
 
   it('ошибка чтения переводит в error и сохраняет текст для ErrorState', async () => {
@@ -376,6 +376,38 @@ describe('createSessionsStore: порядок, выбор, сводка и об�
     await store.actions.load()
     await store.actions.revoke('work')
     expect(store.getState().announcement).toBe('Сессия «Рабочий ноут» завершена')
+  })
+})
+
+describe('createSessionsStore: доверие всем, завершённые порциями', () => {
+  it('снятие доверия со всех перечитывает список и объявляет результат', async () => {
+    const untrustAll = vi.fn(async () => undefined)
+    const client = clientOf(makeSessions(), { untrustAll })
+    const store = createSessionsStore({ client })
+    await store.actions.load()
+    expect(store.capabilities.untrustAll).toBe(true)
+    expect(await store.actions.untrustAll()).toBe(true)
+    expect(untrustAll).toHaveBeenCalled()
+    expect(client.calls.filter((c) => c === 'list')).toHaveLength(2)
+    expect(store.getState().announcement).toBe('Доверие снято со всех устройств')
+  })
+
+  it('завершённые показываются порциями и ищутся по подписи', async () => {
+    const ended = Array.from({ length: 12 }, (_, i) => makeSession({
+      sid: `gone-${i}`,
+      ended: true,
+      userAgent: i === 0 ? 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) Version/17.5 Mobile Safari/604.1' : undefined
+    }))
+    const store = createSessionsStore({ client: clientOf(makeSessions(), { listEnded: async () => ended }) })
+    await store.actions.load()
+    await store.actions.loadEnded()
+    expect(store.visibleEnded()).toMatchObject({ hidden: 7 })
+    expect(store.visibleEnded().items).toHaveLength(5)
+    store.actions.showMoreEnded()
+    expect(store.visibleEnded()).toMatchObject({ hidden: 0 })
+    // Поиск идёт по тем же признакам, что и в основном списке.
+    store.actions.setEndedQuery('iOS')
+    expect(store.visibleEnded().items.map((s) => s.sid)).toEqual(['gone-0'])
   })
 })
 

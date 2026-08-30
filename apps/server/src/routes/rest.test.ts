@@ -726,6 +726,73 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
+  it('имя устройства наследуется новым входом и меняется сразу для всех его сессий', async () => {
+    db.createUser('namer', 'namer-pass-2026-okay', 'developer')
+    const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
+    const login = async () => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'namer', password: 'namer-pass-2026-okay' }, headers: { 'user-agent': ua } })).json().token as string
+    const first = await login()
+    const firstSid = db.listSessions('namer')[0]!.sid
+    await app.inject({ method: 'PATCH', url: `/api/session/${firstSid}`, payload: { label: 'Рабочий ноут' }, headers: { authorization: `Bearer ${first}` } })
+
+    // Второй вход с того же устройства получает имя сам.
+    await login()
+    expect(db.listSessions('namer').every((s) => s.label === 'Рабочий ноут')).toBe(true)
+
+    // Переименование по умолчанию меняет все входы устройства…
+    await app.inject({ method: 'PATCH', url: `/api/session/${firstSid}`, payload: { label: 'Домашний ПК' }, headers: { authorization: `Bearer ${first}` } })
+    expect(db.listSessions('namer').every((s) => s.label === 'Домашний ПК')).toBe(true)
+    // …а с scope: 'session' — только выбранную.
+    await app.inject({ method: 'PATCH', url: `/api/session/${firstSid}`, payload: { label: 'Только эта', scope: 'session' }, headers: { authorization: `Bearer ${first}` } })
+    const labels = db.listSessions('namer').map((s) => s.label).sort()
+    expect(labels).toEqual(['Домашний ПК', 'Только эта'])
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('доверенных устройств не больше лимита, а «снять доверие со всех» гасит их разом', async () => {
+    db.createUser('truster', 'truster-pass-2026-ok', 'developer')
+    const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'truster', password: 'truster-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
+    const tokens: string[] = []
+    for (let i = 0; i < 6; i++) tokens.push(await login(`Device${i}/1.0`))
+    const sids = db.listSessions('truster').map((s) => s.sid)
+    let denied = 0
+    for (const sid of sids) {
+      const res = await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { trusted: true }, headers: { authorization: `Bearer ${tokens[0]}` } })
+      if (res.statusCode === 409) denied++
+    }
+    expect(db.sessionStats('truster').trusted).toBe(5)
+    expect(denied).toBe(1)
+
+    const res = await app.inject({ method: 'POST', url: '/api/session/untrust-all', headers: { authorization: `Bearer ${tokens[0]}` } })
+    expect(res.json()).toMatchObject({ affected: 5 })
+    expect(db.sessionStats('truster').trusted).toBe(0)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('о действиях администратора над сессиями пользователь узнаёт из уведомлений', async () => {
+    db.createUser('watched', 'watched-pass-2026-ok', 'developer')
+    const login = async (ua: string) => (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'watched', password: 'watched-pass-2026-ok' }, headers: { 'user-agent': ua } })).json().token as string
+    const keep = await login('Laptop/1.0')
+    const victimToken = await login('Phone/2.0')
+    const victimSid = db.listSessions('watched').find((s) => s.userAgent === 'Phone/2.0')!.sid
+    await inj({ method: 'DELETE', url: `/api/admin/sessions/${victimSid}` })
+    const me = (await app.inject({ method: 'GET', url: '/api/session/me', headers: { authorization: `Bearer ${keep}` } })).json() as { notices: Array<{ type: string; details: string }> }
+    expect(me.notices.some((n) => n.type === 'session_revoked' && n.details.includes('администратором'))).toBe(true)
+    // Своё собственное завершение сессии в уведомления не попадает — это шум.
+    expect(victimToken).toBeTruthy()
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('админский список сессий отдаёт сводку живых и доверенных', async () => {
+    db.createUser('counted', 'counted-pass-2026-ok', 'developer')
+    const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'counted', password: 'counted-pass-2026-ok' }, headers: { 'user-agent': 'A/1' } })).json().token as string
+    await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'counted', password: 'counted-pass-2026-ok' }, headers: { 'user-agent': 'B/2' } })
+    const sid = db.listSessions('counted')[0]!.sid
+    await app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: { trusted: true }, headers: { authorization: `Bearer ${token}` } })
+    const res = (await inj({ method: 'GET', url: '/api/admin/users/counted/sessions' })).json() as { stats: { total: number; trusted: number } }
+    expect(res.stats).toEqual({ total: 2, trusted: 1 })
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
   it('cookie-сессия: login ставит HttpOnly vc_session + vc_csrf; GET по cookie проходит, мутация без CSRF → 403, с заголовком → ок; logout гасит cookie (auth-roadmap п.5)', async () => {
     db.createUser('cook', 'cookie-pass-2026', 'developer')
     const login = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'cook', password: 'cookie-pass-2026' } })

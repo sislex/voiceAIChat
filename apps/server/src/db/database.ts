@@ -2977,7 +2977,11 @@ export class VoiceChatDb {
     const r = this.db.prepare(`SELECT notices_seen_at FROM users WHERE name = ?`).get(name) as { notices_seen_at?: number } | undefined
     const since = r?.notices_seen_at ?? 0
     // Вытеснение лимитом человек тоже должен заметить: его выкинуло не само.
-    return this.listSecurityEvents({ user: name, limit: 50 }).filter((e) => (e.type === 'login_new_device' || e.type === 'session_evicted') && e.at > since)
+    // Всё, что случилось с сессиями не по воле человека, он должен увидеть:
+    // чужой вход, вытеснение лимитом и действия администратора.
+    const shown = new Set<SecurityEventType>(['login_new_device', 'session_evicted', 'session_revoked', 'session_untrusted'])
+    return this.listSecurityEvents({ user: name, limit: 50 })
+      .filter((e) => e.at > since && shown.has(e.type) && (e.type !== 'session_revoked' || e.details.includes('администратором')) && (e.type !== 'session_untrusted' || e.details.includes('администратором')))
   }
 
   markNoticesSeen(name: string): void {
@@ -3226,6 +3230,36 @@ export class VoiceChatDb {
     const now = at ?? Date.now()
     this.db.prepare(`UPDATE sessions SET last_seen = ?, expires_at = ?, requests = requests + 1, last_path = COALESCE(?, last_path)
       WHERE sid = ? AND revoked_at IS NULL AND last_seen < ?`).run(now, now + ttlMs, path ? path.slice(0, 120) : null, sid, now - 60_000)
+  }
+
+  /**
+   * Имя, которое пользователь уже дал этому устройству. Метка живёт на сессии,
+   * а человек мыслит устройством: без наследования «Рабочий ноут» пришлось бы
+   * вводить заново после каждого перелогина.
+   */
+  deviceLabel(user: string, deviceKey: string): string | null {
+    const row = this.db.prepare(`SELECT label FROM sessions WHERE user_name = ? AND device_key = ? AND label IS NOT NULL
+      ORDER BY last_seen DESC LIMIT 1`).get(user, deviceKey) as { label: string } | undefined
+    return row?.label ?? null
+  }
+
+  /** Одна метка на все живые сессии устройства: переименовывают устройство, а не вкладку. */
+  renameDevice(user: string, deviceKey: string, label: string | null): number {
+    return this.db.prepare(`UPDATE sessions SET label = ? WHERE user_name = ? AND device_key = ? AND revoked_at IS NULL`)
+      .run(label ? label.slice(0, 60) : null, user, deviceKey).changes
+  }
+
+  /** Снять доверие со всех устройств пользователя; возвращает число затронутых. */
+  untrustAllSessions(user: string): number {
+    return this.db.prepare(`UPDATE sessions SET trusted_at = NULL WHERE user_name = ? AND revoked_at IS NULL AND trusted_at IS NOT NULL`).run(user).changes
+  }
+
+  /** Сколько живых сессий и сколько из них доверенных — сводка для админки. */
+  sessionStats(user: string, at?: number): { total: number; trusted: number } {
+    const now = at ?? Date.now()
+    const row = this.db.prepare(`SELECT COUNT(*) AS total, SUM(CASE WHEN trusted_at IS NOT NULL THEN 1 ELSE 0 END) AS trusted
+      FROM sessions WHERE user_name = ? AND revoked_at IS NULL AND expires_at > ?`).get(user, now) as { total: number; trusted: number | null }
+    return { total: row.total, trusted: row.trusted ?? 0 }
   }
 
   /** Правка метки и доверия своей сессии; false — строки нет или она отозвана. */

@@ -239,7 +239,12 @@ export function registerAdminRoutes(
     if (!db.getUser(req.params.name)) return reply.code(404).send({ error: 'not found' })
     // Хеш секрета устройства — серверная деталь: админу он не нужен, а в ответе
     // стал бы способом выдать себя за доверенное устройство пользователя.
-    return { sessions: db.listSessions(req.params.name).map(({ deviceSecret: _hidden, ...rest }) => rest) }
+    return {
+      sessions: db.listSessions(req.params.name).map(({ deviceSecret: _hidden, ...rest }) => rest),
+      // Сводка отвечает на вопрос админа «сколько у него всего и сколько
+      // доверенных» без пересчёта списка на клиенте.
+      stats: db.sessionStats(req.params.name)
+    }
   })
   app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
     // Владельца берём до отзыва: после него getSession уже ничего не отдаст.
@@ -257,7 +262,7 @@ export function registerAdminRoutes(
     const session = db.getSession(req.params.sid)
     if (!session) return reply.code(404).send({ error: 'not found' })
     db.updateSession(session.sid, { trusted: false })
-    db.logSecurityEvent({ user: session.user, type: 'session_untrusted', ip: req.ip, userAgent: session.userAgent, details: 'снято администратором' })
+    db.logSecurityEvent({ user: session.user, type: 'session_untrusted', ip: req.ip, userAgent: session.userAgent, details: 'снято администратором', sid: session.sid })
     sessionHub?.emit(session.user)
     return { ok: true }
   })
