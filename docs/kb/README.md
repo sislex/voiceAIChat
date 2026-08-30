@@ -15,24 +15,24 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-30 | ⚠ 2 коммит(ов) в areas после сверки: 451dd6eb feat(qa-stage): сквозная проверка серверного пути; DNS-сбой отличается от запрета … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-29 | ⚠ 26 коммит(ов) в areas после сверки: c77005d0 fix(reader): внутренний адрес алиаса больше не уезжает в сценарий … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 3 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 45 коммит(ов) в areas после сверки: b693519b refactor(kanban): палитра доски на токенах, минус мёртвый слой, цикл 1 … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 46 коммит(ов) в areas после сверки: 58a882f6 fix(kanban): кнопка сброса фильтра и ровный верх колонок, цикл 2 … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 37 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 65 коммит(ов) в areas после сверки: 67c5d979 Merge remote-tracking branch 'origin/main' into work3 … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 93 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 124 коммит(ов) в areas после сверки: 67c5d979 Merge remote-tracking branch 'origin/main' into work3 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 135 коммит(ов) в areas после сверки: 67c5d979 Merge remote-tracking branch 'origin/main' into work3 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: c77005d0 fix(reader): внутренний адрес алиаса больше не уезжает в сценарий |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 884 коммит(ов) в areas после сверки: b693519b refactor(kanban): палитра доски на токенах, минус мёртвый слой, цикл 1 … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 15 коммит(ов) в areas после сверки: b693519b refactor(kanban): палитра доски на токенах, минус мёртвый слой, цикл 1 … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 43 коммит(ов) в areas после сверки: b693519b refactor(kanban): палитра доски на токенах, минус мёртвый слой, цикл 1 … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 15 коммит(ов) в areas после сверки: b693519b refactor(kanban): палитра доски на токенах, минус мёртвый слой, цикл 1 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 885 коммит(ов) в areas после сверки: 58a882f6 fix(kanban): кнопка сброса фильтра и ровный верх колонок, цикл 2 … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 16 коммит(ов) в areas после сверки: 58a882f6 fix(kanban): кнопка сброса фильтра и ровный верх колонок, цикл 2 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 44 коммит(ов) в areas после сверки: 58a882f6 fix(kanban): кнопка сброса фильтра и ровный верх колонок, цикл 2 … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 16 коммит(ов) в areas после сверки: 58a882f6 fix(kanban): кнопка сброса фильтра и ровный верх колонок, цикл 2 … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 66 коммит(ов) в areas после сверки: 67c5d979 Merge remote-tracking branch 'origin/main' into work3 … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 132 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 8 коммит(ов) в areas после сверки: 002085de feat(gate): одна честная команда проверки; молчаливые сбои стали заметны … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 37 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 61 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 105 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 32 коммит(ов) в areas после сверки: b693519b refactor(kanban): палитра доски на токенах, минус мёртвый слой, цикл 1 … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 33 коммит(ов) в areas после сверки: 58a882f6 fix(kanban): кнопка сброса фильтра и ровный верх колонок, цикл 2 … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 21 коммит(ов) в areas после сверки: 910fae71 feat(qa-stage): прогнать набор сценариев по требованию … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-30 | ⚠ 2 коммит(ов) в areas после сверки: 2e32878e feat(qa-stage): ошибки страницы в вердикте этапа … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 8 коммит(ов) в areas после сверки: 67c5d979 Merge remote-tracking branch 'origin/main' into work3 … |
@@ -58,7 +58,7 @@
 
 ## Журнал сессий
 
-Всего записей: 433. Последние:
+Всего записей: 434. Последние:
 
 - [2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md](log/2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md) — task-card-tabs-round2
 - [2026-08-30-alexeys-macbook-air-2-task-card-feeds-round1.md](log/2026-08-30-alexeys-macbook-air-2-task-card-feeds-round1.md) — task-card-feeds-round1

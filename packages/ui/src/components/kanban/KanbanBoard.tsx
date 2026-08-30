@@ -1557,7 +1557,8 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
                     aria-expanded={!collapsedLanes.has(lane.id)}
                     onClick={() => setCollapsedLanes(toggle(collapsedLanes, lane.id))}
                   >
-                    <span className="jlane-arrow">{collapsedLanes.has(lane.id) ? '▶' : '▼'}</span>
+                    {/* Раскрытие дорожки — общий шеврон, как у лент карточки. */}
+                    <span className="vc-feed-caret" aria-hidden="true" />
                     {lane.title}
                     <span className="jcol-count">{lane.count}</span>
                   </button>
