@@ -136,25 +136,25 @@ describe('этап Automated QA: шаг рана и настройки', () => {
     const project = db.createProject('alice', { name: 'P' })
     db.updateProject('alice', project.id, {
       automatedQaMode: 'playwright',
-      automatedQaScenario: { startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Кнопка', action: { kind: 'click', selector: '#create' } }] }
+      automatedQaScenarios: [{ startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Кнопка', action: { kind: 'click', selector: '#create' } }] }]
     })
     const detail = db.getProject('alice', project.id)!
     expect(detail.automatedQaMode).toBe('playwright')
-    expect(detail.automatedQaScenario?.steps).toHaveLength(1)
+    expect(detail.automatedQaScenarios?.[0]?.steps).toHaveLength(1)
   })
 
   it('шаг с неизвестным действием отбрасывается, а не роняет прогон', () => {
     const project = db.createProject('alice', { name: 'P' })
     db.updateProject('alice', project.id, {
-      automatedQaScenario: {
+      automatedQaScenarios: [{
         startUrl: 'http://localhost:5173',
         steps: [
           { id: 's1', title: 'Кнопка', action: { kind: 'click', selector: '#create' } },
           { id: 's2', title: 'Мусор', action: { kind: 'teleport' } as never }
         ]
-      }
+      }]
     })
-    expect(db.getProject('alice', project.id)!.automatedQaScenario?.steps.map((step) => step.id)).toEqual(['s1'])
+    expect(db.getProject('alice', project.id)!.automatedQaScenarios?.[0]?.steps.map((step) => step.id)).toEqual(['s1'])
   })
 })
 
@@ -163,7 +163,7 @@ describe('снимок сценария в ране', () => {
     const setupResult = setup(false)
     db.updateProject('alice', setupResult.projectId, {
       automatedQaMode: 'playwright',
-      automatedQaScenario: { startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Первый', action: { kind: 'click', selector: '#a' } }] }
+      automatedQaScenarios: [{ name: 'Вход', startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Первый', action: { kind: 'click', selector: '#a' } }] }]
     })
     return setupResult
   }
@@ -171,22 +171,22 @@ describe('снимок сценария в ране', () => {
   it('запуск фиксирует сценарий проекта, и правка настройки его не меняет', () => {
     const { projectId, taskId } = playwrightProject()
     const run = db.startQaStageRun('alice', projectId, taskId, 'automated_qa')
-    expect(run.scenario?.steps.map((step) => step.title)).toEqual(['Первый'])
-    db.updateProject('alice', projectId, { automatedQaScenario: { startUrl: 'http://other', steps: [] } })
-    expect(db.getQaStageRun('alice', run.id)!.scenario?.steps).toHaveLength(1)
+    expect(run.scenarios?.[0]?.steps.map((step) => step.title)).toEqual(['Первый'])
+    db.updateProject('alice', projectId, { automatedQaScenarios: [{ startUrl: 'http://other', steps: [] }] })
+    expect(db.getQaStageRun('alice', run.id)!.scenarios?.[0]?.steps).toHaveLength(1)
   })
 
   it('повтор воспроизводит снимок, а не текущую настройку', () => {
     const { projectId, taskId } = playwrightProject()
     const first = db.startQaStageRun('alice', projectId, taskId, 'automated_qa')
     db.updateQaStageRun(first.id, { status: 'failed', error: 'упало' })
-    db.updateProject('alice', projectId, { automatedQaScenario: { startUrl: 'http://other', steps: [{ id: 's2', title: 'Другой', action: { kind: 'click', selector: '#b' } }] } })
+    db.updateProject('alice', projectId, { automatedQaScenarios: [{ startUrl: 'http://other', steps: [{ id: 's2', title: 'Другой', action: { kind: 'click', selector: '#b' } }] }] })
     const retried = db.retryQaStageRun('alice', first.id)!
-    expect(retried.scenario?.steps.map((step) => step.title)).toEqual(['Первый'])
+    expect(retried.scenarios?.[0]?.steps.map((step) => step.title)).toEqual(['Первый'])
   })
 
   it('в режиме команды снимок не заводится', () => {
     const { projectId, taskId } = setup(false)
-    expect(db.startQaStageRun('alice', projectId, taskId, 'automated_qa').scenario).toBeNull()
+    expect(db.startQaStageRun('alice', projectId, taskId, 'automated_qa').scenarios).toBeNull()
   })
 })

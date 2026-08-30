@@ -2,6 +2,8 @@ import type { AutomatedQaScenario, AutomatedQaScenarioStep } from '@shared/qa'
 import { automatedQaStartUrlProblem } from '@shared/qa'
 import type { ProjectDetail } from '@shared/projects'
 import type { PreviewAction } from '@shared/previewActions'
+import { useState } from 'react'
+import { scenarioLabel } from '@shared/qa'
 import { Button, IconButton } from '@voicechat/ui-kit'
 
 /**
@@ -39,18 +41,38 @@ function withKind(action: PreviewAction, kind: StepKind): PreviewAction {
 export function AutomatedQaScenarioEditor(props: {
   detail: ProjectDetail
   isOwner: boolean
-  onUpdate: (id: string, fields: { automatedQaScenario?: AutomatedQaScenario }) => void
+  onUpdate: (id: string, fields: { automatedQaScenarios?: AutomatedQaScenario[] }) => void
 }): JSX.Element {
-  const scenario: AutomatedQaScenario = props.detail.automatedQaScenario ?? { startUrl: '', steps: [] }
-  const save = (next: AutomatedQaScenario): void => props.onUpdate(props.detail.id, { automatedQaScenario: next })
+  // Набор, а не один сценарий: «много автотестов» упиралось именно в это.
+  // Правим по одному, выбранный держим локально.
+  const scenarios = props.detail.automatedQaScenarios ?? []
+  const [activeIndex, setActiveIndex] = useState(0)
+  const index = Math.min(activeIndex, Math.max(0, scenarios.length - 1))
+  const scenario: AutomatedQaScenario = scenarios[index] ?? { startUrl: '', steps: [] }
+  const saveAll = (next: AutomatedQaScenario[]): void => props.onUpdate(props.detail.id, { automatedQaScenarios: next })
+  const save = (next: AutomatedQaScenario): void =>
+    saveAll(scenarios.length ? scenarios.map((item, at) => (at === index ? next : item)) : [next])
   // Адрес проверяется при вводе: раннер живёт на сервере и в localhost с
   // приватными сетями не ходит, а узнавать об этом через минуты прогона — плохо.
   const urlProblem = automatedQaStartUrlProblem(scenario.startUrl)
   const patchStep = (index: number, patch: Partial<AutomatedQaScenarioStep>): void =>
     save({ ...scenario, steps: scenario.steps.map((step, at) => (at === index ? { ...step, ...patch } : step)) })
 
-  return <fieldset className="qa-scenario" aria-label="Сценарий Automated QA">
-    <legend>Сценарий браузерной проверки</legend>
+  return <fieldset className="qa-scenario" aria-label="Сценарии Automated QA">
+    <legend>Сценарии браузерной проверки</legend>
+    <div className="qa-scenario__row">
+      <label>Сценарий
+        <select className="sel" value={index} disabled={!props.isOwner || scenarios.length < 2} onChange={(e) => setActiveIndex(Number(e.target.value))}>
+          {(scenarios.length ? scenarios : [scenario]).map((item, at) => <option key={at} value={at}>{scenarioLabel(item, at)}</option>)}
+        </select>
+      </label>
+      <label>Название<input className="login-input" disabled={!props.isOwner} value={scenario.name ?? ''} placeholder="Вход и доска" onChange={(e) => save({ ...scenario, name: e.target.value })} /></label>
+      <Button size="sm" disabled={!props.isOwner} onClick={() => { saveAll([...scenarios, { name: `Сценарий ${scenarios.length + 1}`, startUrl: '', steps: [] }]); setActiveIndex(scenarios.length) }}>Добавить сценарий</Button>
+      {scenarios.length > 1 && (
+        <IconButton size="sm" variant="danger" aria-label={`Удалить сценарий «${scenarioLabel(scenario, index)}»`} title="Удалить сценарий" disabled={!props.isOwner}
+          onClick={() => { saveAll(scenarios.filter((_, at) => at !== index)); setActiveIndex(0) }}>✕</IconButton>
+      )}
+    </div>
     <label>Стартовый адрес<input className="login-input" disabled={!props.isOwner} value={scenario.startUrl} placeholder="https://example.com" aria-describedby={urlProblem ? 'qa-scenario-url-problem' : undefined} onChange={(e) => save({ ...scenario, startUrl: e.target.value })} /></label>
     {urlProblem && <p className="qa-scenario__problem" id="qa-scenario-url-problem" role="alert">{urlProblem}</p>}
     {scenario.steps.length === 0 && <p className="proj-muted">Шагов нет: этап заблокируется, пока сценарий пуст.</p>}
