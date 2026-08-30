@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { isIP } from 'node:net'
 import { resolve } from 'node:path'
+import { isPrivateNetworkHost } from '@voicechat/shared'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 
 export function bearerToken(req: FastifyRequest): string | undefined {
@@ -33,21 +34,16 @@ export function profilePath(root: string, userKey: string, conversationKey: stri
   return path
 }
 
-function blockedIpv4(ip: string): boolean {
-  const parts = ip.split('.').map(Number)
-  return parts[0] === 0 || parts[0] === 10 || parts[0] === 127
-    || (parts[0] === 169 && parts[1] === 254)
-    || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
-    || (parts[0] === 192 && parts[1] === 168)
-    || (parts[0] >= 224)
-}
-
+/**
+ * Правило приватных сетей общее с редактором сценария (`isPrivateNetworkHost` в
+ * shared): пока оно было записано дважды, копии разошлись — редактор пропускал
+ * адрес, который раннер резал. Здесь остаётся только проверка «это вообще IP»:
+ * имя хоста резолвится вызывающим, и в общее правило попадает уже адрес.
+ */
 export function isBlockedAddress(address: string): boolean {
   const normalized = address.replace(/^\[|\]$/g, '').toLowerCase()
-  const version = isIP(normalized)
-  if (version === 4) return blockedIpv4(normalized)
-  if (version === 6) return normalized === '::1' || normalized === '::' || normalized.startsWith('fe80:') || normalized.startsWith('fc') || normalized.startsWith('fd')
-  return false
+  if (!isIP(normalized)) return false
+  return isPrivateNetworkHost(normalized)
 }
 
 export function validatePublicUrl(raw: string): URL {
