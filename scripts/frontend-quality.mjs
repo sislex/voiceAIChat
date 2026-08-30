@@ -8,6 +8,10 @@ const FRONTEND = [
   // Модуль сессий переносим целиком: он лежит слоем «shared», потому что его
   // берут и хост-приложение, и админка, а собственного маршрута у него нет.
   { name: '@voicechat/sessions-app', dir: 'packages/sessions-app', layer: 'shared' },
+  // Карточка человека: её показывают и админка (чужой профиль), и страница
+  // «Мой аккаунт» (свой). Слой shared — потому что product→product импорт
+  // запрещён, а общий код нужен обоим.
+  { name: '@voicechat/profile-app', dir: 'packages/profile-app', layer: 'shared' },
   { name: '@voicechat/app-shell', dir: 'packages/app-shell', layer: 'shell' },
   { name: '@voicechat/chat-app', dir: 'packages/chat-app', layer: 'product' },
   { name: '@voicechat/web-reader-app', dir: 'packages/web-reader-app', layer: 'product' },
@@ -76,7 +80,8 @@ const STORY_MATRIX = {
   'packages/projects-app/src/ProjectsApp.stories.tsx': ['Default', 'Loading', 'KanbanLongCards'],
   'packages/operations-app/src/Operations.stories.tsx': ['MachinesOnline', 'MachinesOffline', 'UtilityRestricted'],
   'packages/admin-app/src/AdminApp.stories.tsx': ['Overview', 'EmptyUsage', 'AccessMatrix'],
-  'packages/sessions-app/src/SessionsApp.stories.tsx': ['Default', 'SingleDevice', 'ReadOnly', 'LoadFailed', 'Empty']
+  'packages/sessions-app/src/SessionsApp.stories.tsx': ['Default', 'SingleDevice', 'ReadOnly', 'LoadFailed', 'Empty'],
+  'packages/profile-app/src/ProfileApp.stories.tsx': ['AdminView', 'SelfView', 'Empty', 'Mobile']
 }
 export function checkStories({ root = ROOT, matrix = STORY_MATRIX } = {}) {
   for (const [path, stories] of Object.entries(matrix)) {
