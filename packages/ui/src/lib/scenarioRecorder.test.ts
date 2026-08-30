@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BrowserElementDescription } from '@shared/types'
-import { ambiguousSteps, brokenSteps, expectOnLastStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario } from './scenarioRecorder'
+import { ambiguousSteps, brokenSteps, expectOnLastStep, placeScenario, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario } from './scenarioRecorder'
 
 const element = (over: Partial<BrowserElementDescription> = {}): BrowserElementDescription => ({
   selector: '[data-testid="create"]', stability: 'testid', tag: 'button', text: 'Создать',
@@ -151,5 +151,33 @@ describe('сломанный селектор (круг 19)', () => {
   })
   it('шаг без сведений о совпадениях сломанным не считается', () => {
     expect(brokenSteps(recordClick([], element({ matches: undefined })))).toHaveLength(0)
+  })
+})
+
+describe('placeScenario (круг 21)', () => {
+  const scenario = (name?: string) => ({ ...(name ? { name } : {}), startUrl: 'http://x/', steps: [] })
+
+  it('одноимённый заменяется, а не дублируется', () => {
+    const next = placeScenario([scenario('Вход'), scenario('Доска')], { ...scenario('Вход'), startUrl: 'http://new/' })
+    expect(next).toHaveLength(2)
+    expect(next[0].startUrl).toBe('http://new/')
+  })
+
+  it('новое имя добавляется в конец', () => {
+    expect(placeScenario([scenario('Вход')], scenario('Настройки')).map((item) => item.name)).toEqual(['Вход', 'Настройки'])
+  })
+
+  it('безымянный не затирает безымянного, а получает имя по порядку', () => {
+    // До круга 21 второй безымянный молча заменял первый: имена совпадали как ''.
+    const first = placeScenario([], scenario())
+    const second = placeScenario(first, scenario())
+    expect(second).toHaveLength(2)
+    expect(second.map((item) => item.name)).toEqual(['Сценарий 1', 'Сценарий 2'])
+  })
+
+  it('пробелы в имени не создают двойника', () => {
+    const next = placeScenario([scenario('Вход')], { ...scenario('  Вход  '), startUrl: 'http://new/' })
+    expect(next).toHaveLength(1)
+    expect(next[0].name).toBe('Вход')
   })
 })
