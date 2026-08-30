@@ -5,7 +5,7 @@ import { parseProjectsRoute } from '@voicechat/projects-app'
 import type { RendererApi } from '@shared/ipc'
 import { summarizeConversationUsage } from '@shared/usageSummary'
 import { MakeSharedView } from './components/MakeSharedView'
-import type { EditorContextPayload, LlmProvider, PermissionMode, TaskLaunchProposal } from '@shared/types'
+import type { EditorContextPayload, LlmProvider, PermissionMode, Settings, TaskLaunchProposal } from '@shared/types'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
 import { recommendedChatStoragePath, validateStorageRelativePath, type Board, type ChatStorageView, type MachineStorage, type ProjectMember, type Task } from '@shared/projects'
 import { AGENT_VERSION } from '@shared/version'
@@ -27,7 +27,8 @@ import { SignupScreen, VerifyScreen } from './components/SignupScreen'
 import { NewProjectDialog } from './components/NewProjectDialog'
 import { InviteScreen } from './components/InviteScreen'
 import { ALL_PROJECT_FEATURES } from '@shared/projectTypes'
-import { Sidebar } from './components/Sidebar'
+import { KANBAN_ASSISTANT_OPEN_KEY, PREVIEW_WIDTH_KEY, SIDEBAR_WIDTH_KEY } from './store/contracts'
+import { Sidebar, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from './components/Sidebar'
 import { ChatColumn } from './components/ChatColumn'
 import { TaskChatHeader } from './components/chat/TaskChatHeader'
 import { VoiceBar } from './components/VoiceBar'
@@ -357,12 +358,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     setMakeAskOnly(false)
     // Возврат режима без диалога подтверждения: пользователь его не менял, это откат нашего временного «Плана».
     if (activeConversation) void chatActions.setConversationExecTarget(activeConversation.id, activeConversation.execTarget ?? null, undefined, undefined, undefined, undefined, prev)
-    else void settingsActions.updateSettings({ permissionMode: prev })
+    else applySettings({ permissionMode: prev })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voice.voice])
   const makeUsage = useMemo(() => (inMake ? summarizeConversationUsage(chat.messages) : null), [inMake, chat.messages])
   const [activeProjectPreviewUrl, setActiveProjectPreviewUrl] = useState<string | null>(null)
-  const [assistantOpen, setAssistantOpen] = useState(() => globalThis.localStorage?.getItem('voicechat.kanbanAssistantOpen') === '1')
+  const [assistantOpen, setAssistantOpen] = useState(() => globalThis.localStorage?.getItem(KANBAN_ASSISTANT_OPEN_KEY) === '1')
   const [assistantConversationId, setAssistantConversationId] = useState<string | null>(null)
   const [assistantTaskId, setAssistantTaskId] = useState<string | null>(null)
   const [assistantField, setAssistantField] = useState<keyof SupportedTaskPatch | null>(null)
@@ -370,7 +371,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const [clarificationNotifications, setClarificationNotifications] = useState<PreparationClarificationNotification[]>([])
   const [clarificationErrors, setClarificationErrors] = useState<Record<string, string>>({})
   const [clarificationNavigatingId, setClarificationNavigatingId] = useState<string | null>(null)
-  const setKanbanAssistantOpen = (open: boolean): void => { setAssistantOpen(open); globalThis.localStorage?.setItem('voicechat.kanbanAssistantOpen', open ? '1' : '0') }
+  const setKanbanAssistantOpen = (open: boolean): void => { setAssistantOpen(open); globalThis.localStorage?.setItem(KANBAN_ASSISTANT_OPEN_KEY, open ? '1' : '0') }
   const rememberWidgetAction = useCallback((kind: string, label: string, targetId?: string): void => {
     setWidgetActions((items) => appendWidgetAction(items, { kind, label, ...(targetId ? { targetId } : {}) }))
   }, [])
@@ -380,7 +381,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     if (taskId) rememberWidgetAction(field ? 'field.select' : 'task.open', field ? `Выбрано поле ${field}` : 'Открыта карточка', taskId)
   }, [rememberWidgetAction])
   const [previewWidth, setPreviewWidth] = useState(() => {
-    const saved = Number(globalThis.localStorage?.getItem('voicechat.previewWidth'))
+    const saved = Number(globalThis.localStorage?.getItem(PREVIEW_WIDTH_KEY))
     return Number.isFinite(saved) && saved >= 25 && saved <= 75 ? saved : 45
   })
   useEffect(() => { setPreviewElement(null); setReaderActions([]); setReaderPageError(null) }, [chat.activeId])
@@ -485,7 +486,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       const rect = container.getBoundingClientRect()
       const next = Math.min(75, Math.max(25, ((rect.right - pointer.clientX) / rect.width) * 100))
       setPreviewWidth(next)
-      globalThis.localStorage?.setItem('voicechat.previewWidth', String(next))
+      globalThis.localStorage?.setItem(PREVIEW_WIDTH_KEY, String(next))
     }
     const stop = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop) }
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop)
@@ -748,7 +749,19 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Режим списка сайдбара: маршрут ведёт его автоматически, ручной выбор
   // (переключатель) живёт до следующей смены маршрута.
   const [sidebarMode, setSidebarMode] = useState<'chats' | 'projects'>('chats')
-  const [sidebarWidth, setSidebarWidth] = useState(264)
+  // Ширина сайдбара — настройка взгляда, как ширина превью: без сохранения она
+  // возвращалась к 264px на каждой перезагрузке (в том числе после деплоя).
+  // Сохранение настроек: ошибку показывает стор (тост), здесь она гасится —
+  // иначе каждый неудачный тумблер оставлял бы необработанный промис.
+  const applySettings = (patch: Partial<Settings>): void => { void settingsActions.updateSettings(patch).catch(() => {}) }
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = Number(globalThis.localStorage?.getItem(SIDEBAR_WIDTH_KEY))
+    return Number.isFinite(saved) && saved >= SIDEBAR_MIN_WIDTH && saved <= SIDEBAR_MAX_WIDTH ? saved : 264
+  })
+  const changeSidebarWidth = (next: number): void => {
+    setSidebarWidth(next)
+    globalThis.localStorage?.setItem(SIDEBAR_WIDTH_KEY, String(next))
+  }
   useEffect(() => { setSidebarMode(inProjects ? 'projects' : 'chats') }, [inProjects])
   useVoiceCues(voice.voice) // звуковые сигналы: старт/стоп записи, «думает»
 
@@ -854,8 +867,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       newChat: () => void chatActions.newConversation().then((id) => navigate(id ? `/chat/${id}` : '/')),
       toggleMic: () => (voice.voice === 'listening' ? voiceActions.stopVoice() : voiceActions.startVoice()),
       stopOrCancel,
-      toggleAutoSpeak: () => void settingsActions.updateSettings({ autoSpeak: !settingsState.settings.autoSpeak }),
-      toggleTheme: () => void settingsActions.updateSettings({ theme: settingsState.settings.theme === 'light' ? 'dark' : 'light' }),
+      toggleAutoSpeak: () => applySettings({ autoSpeak: !settingsState.settings.autoSpeak }),
+      toggleTheme: () => applySettings({ theme: settingsState.settings.theme === 'light' ? 'dark' : 'light' }),
       openSettings: shellActions.openSettings,
       openBoard: (projectId) => navigate(`/projects/${projectId}`),
       openMachineConsole: (agentId) =>
@@ -1691,7 +1704,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       <Sidebar
         open={sidebarOpen}
         width={sidebarWidth}
-        onWidthChange={compactChat ? undefined : setSidebarWidth}
+        onWidthChange={compactChat ? undefined : changeSidebarWidth}
         onToggleCollapse={() => shellActions.setSidebarCollapsed(true)}
         conversations={chat.conversations.filter((conversation) => conversation.assistantKind !== 'web-recorder' && !conversation.previewUrl)}
         conversationsStatus={chat.conversationsStatus}
@@ -1995,7 +2008,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             onChangePermissionMode={(mode) => void changeConversationMode(mode)}
             voiceInputEnabled={VOICE_INPUT_ENABLED}
             aiAssistPrompts={settingsState.settings.aiAssistPrompts}
-            onAiAssistPromptsChange={(next) => void settingsActions.updateSettings({ aiAssistPrompts: next })}
+            onAiAssistPromptsChange={(next) => applySettings({ aiAssistPrompts: next })}
             generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
           />
         }
@@ -2193,7 +2206,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               onAnswerPreparation={(questionId, answer) => api['tasks:answerPreparationQuestion']({ questionId, answer })}
               onExportPreparation={(runId, format) => api['tasks:exportPreparationRun']({ runId, format })}
               aiAssistPrompts={settingsState.settings.aiAssistPrompts}
-              onAiAssistPromptsChange={(next) => void settingsActions.updateSettings({ aiAssistPrompts: next })}
+              onAiAssistPromptsChange={(next) => applySettings({ aiAssistPrompts: next })}
               generateAiAssist={async ({ prompt, modifiers }) => (await api['prompt:suggest']({ prompt, modifiers })).variants}
               onAssistantSelectionChange={handleAssistantSelectionChange}
             />}
@@ -2297,7 +2310,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onOpenConversation={(conversationId) => navigate(`/chat/${conversationId}`)}
           onDeleteAgent={(id) => void operationsActions.deleteAgent(id)}
           defaultAgentId={settingsState.settings.defaultAgentId}
-          onSetDefault={(id) => void settingsActions.updateSettings({ defaultAgentId: id })}
+          onSetDefault={(id) => applySettings({ defaultAgentId: id })}
           onClose={() => navigate('/')}
         />
       )}
@@ -2590,7 +2603,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onDownloadDesktopApp={() => void operationsActions.downloadDesktopApp()}
           onDownloadAgentApp={() => void operationsActions.downloadAgentApp()}
           onDownloadAgentScript={() => void operationsActions.downloadAgentScript()}
-          onChange={settingsActions.updateSettings}
+          onChange={applySettings}
+          settingsLoaded={settingsState.settingsLoaded}
+          onRetryLoad={() => void settingsActions.load().catch(() => {})}
           onDownloadVoice={settingsActions.downloadVoice}
           onDeleteVoice={settingsActions.deleteVoice}
           onDeleteModel={settingsActions.deleteModel}

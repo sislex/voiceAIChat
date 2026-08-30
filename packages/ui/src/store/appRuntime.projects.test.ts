@@ -24,6 +24,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reje
 // иначе выбор из одного кейса протекает в следующий.
 beforeEach(() => {
   localStorage.removeItem('vc.sidebar.project')
+  localStorage.removeItem('vc.board.includeCompleted')
 })
 
 describe('voiceStore — проекты и доска', () => {
@@ -177,6 +178,22 @@ describe('voiceStore — проекты и доска', () => {
       boardLoading: false,
       boardError: null
     })
+  })
+
+  // Настройка взгляда, а не сессии: после перезагрузки страницы (и после деплоя)
+  // «Показывать завершённые» раньше всегда возвращался в выключённое состояние.
+  it('показ завершённых переживает перезапуск приложения', async () => {
+    const { store } = makeStore()
+    await store.actions.createProject({ name: 'P1' })
+    await store.actions.openBoard(store.getState().projectDetail!.id)
+    await store.actions.setBoardIncludeCompleted(true)
+    expect(localStorage.getItem('vc.board.includeCompleted')).toBe('1')
+
+    const restarted = createTestStore({ api: createFakeApi(), now: () => 1_700_000_000_000 })
+    expect(restarted.getState().boardIncludeCompleted).toBe(true)
+
+    await restarted.actions.setBoardIncludeCompleted(false)
+    expect(localStorage.getItem('vc.board.includeCompleted')).toBeNull()
   })
 
   it('ошибка смены фильтра завершает лоадер и штатный повтор снова запускает загрузку', async () => {

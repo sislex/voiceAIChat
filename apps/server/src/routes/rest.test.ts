@@ -1665,6 +1665,40 @@ describe('REST: conversations/messages/settings', () => {
     expect(saved.voice).toBe('ru_RU-dmitri-medium')
   })
 
+  // Частичное тело — патч: клиент со старой сборкой (или не догрузивший
+  // настройки) не должен стирать поля, о которых он не знает.
+  it('settings put применяет патч, а не заменяет запись целиком', async () => {
+    const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, theme: 'dark', codexModel: 'gpt-5.4', autoSpeak: true } })
+
+    const patched = (await inj({ method: 'PUT', url: '/api/settings', payload: { autoSpeak: false } })).json()
+
+    expect(patched).toMatchObject({ theme: 'dark', codexModel: 'gpt-5.4', autoSpeak: false })
+    expect((await inj({ method: 'GET', url: '/api/settings' })).json()).toMatchObject({ theme: 'dark', codexModel: 'gpt-5.4' })
+  })
+
+  it('settings put отбрасывает мусорные значения, а не сохраняет их', async () => {
+    const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, theme: 'dark' } })
+
+    const saved = (await inj({ method: 'PUT', url: '/api/settings', payload: { theme: 'неон', llmProvider: 'gemini', hack: true } })).json()
+
+    expect(saved).toMatchObject({ theme: 'dark', llmProvider: def.llmProvider })
+    expect(saved).not.toHaveProperty('hack')
+  })
+
+  // Машина могла исчезнуть мимо UI: висячий id и в чат идёт целью выполнения,
+  // и в настройках выглядит выбранной машиной по умолчанию.
+  it('settings get забывает ссылки на исчезнувшие машины', async () => {
+    const agent = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Ноутбук' } })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { defaultAgentId: agent.id, execTarget: agent.id } })
+    expect((await inj({ method: 'GET', url: '/api/settings' })).json()).toMatchObject({ defaultAgentId: agent.id })
+
+    db.deleteAgent(U, agent.id) // удаление мимо REST — как чистка или другой сеанс
+
+    expect((await inj({ method: 'GET', url: '/api/settings' })).json()).toMatchObject({ defaultAgentId: null, execTarget: null })
+  })
+
   it('нормализует персонализацию и отвергает невозможную дату', async () => {
     const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
     const invalid = await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, personalization: { ...def.personalization, birthDay: 31, birthMonth: 2 } } })
