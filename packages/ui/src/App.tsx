@@ -1963,7 +1963,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       </div>
       {inSplit && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
-      {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? { onSaveScenario: async (automatedQaScenario) => { await projectsActions.updateProject(projects.projectDetail!.id, { automatedQaScenario }) } } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.automatedQaScenario ? { savedScenario: projects.projectDetail.automatedQaScenario } : {})} />}
+      {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
+        // Записанный сценарий добавляется в набор или заменяет одноимённый:
+        // затирать чужие тесты записью одного — не то, чего ждёт человек.
+        onSaveScenario: async (scenario) => {
+          const detail = projects.projectDetail!
+          const current = detail.automatedQaScenarios ?? []
+          const at = current.findIndex((item) => (item.name ?? '') === (scenario.name ?? ''))
+          const next = at >= 0 ? current.map((item, index) => (index === at ? scenario : item)) : [...current, scenario]
+          await projectsActions.updateProject(detail.id, { automatedQaScenarios: next })
+        },
+        ...(projects.projectDetail?.automatedQaScenarios?.length ? { savedScenarios: projects.projectDetail.automatedQaScenarios } : {})
+      } : {})} />}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
       {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
       {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
