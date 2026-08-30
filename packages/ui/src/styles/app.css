@@ -7562,6 +7562,16 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Диагностика страницы в Playwright Reader: ошибки консоли и неуспешные
    запросы. Раннер копил их с круга 5, но показать было негде. */
 .playwright-reader-keys { display: inline-flex; gap: var(--space-050); }
+.playwright-reader-testusers { display: inline-flex; align-items: center; gap: var(--space-050); font-size: 12px; color: var(--text-dim); }
+.playwright-reader-actor { font-size: 11px; color: var(--text-dim); }
+.playwright-reader-actor[data-actor='assistant'] { color: var(--accent); }
+
+/* Где мы находимся: подмена адреса алиасом, уход с проверяемого сайта и история. */
+.playwright-reader-where { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); padding: var(--space-050) var(--space-150); border-bottom: 1px solid var(--border-soft); font-size: 12px; }
+.playwright-reader-where__note { color: var(--text-dim); }
+.playwright-reader-where__note[role='alert'] { color: var(--ci-progress); }
+.playwright-reader-where__history { display: inline-flex; align-items: center; gap: var(--space-050); margin-left: auto; color: var(--text-dim); }
+.playwright-reader-where__history select { max-width: 16rem; }
 
 /* Запись сценария автотеста прямо из работы руками. */
 .playwright-reader-record { display: flex; flex-direction: column; gap: var(--space-100); padding: var(--space-100) var(--space-150); border-top: 1px solid var(--border); background: var(--panel); max-height: 30vh; overflow: auto; }

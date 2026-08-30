@@ -303,3 +303,67 @@ describe('запись сценария автотеста (круг 12)', () =>
     expect(screen.queryByLabelText('Записанный сценарий')).not.toBeInTheDocument()
   })
 })
+
+describe('где мы и кто действовал (круг 13)', () => {
+  it('подмена адреса алиасом объясняется, а не выглядит как «открылось не то»', async () => {
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: null })),
+      command: vi.fn(async () => meta({ currentUrl: 'http://voicechat:8787/' }))
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    const address = screen.getByLabelText('Адрес страницы') as HTMLInputElement
+    fireEvent.change(address, { target: { value: 'http://89.125.68.35:8787/' } })
+    fireEvent.keyDown(address, { key: 'Enter' })
+    expect(await screen.findByText(/адрес подменён алиасом раннера/)).toBeInTheDocument()
+  })
+
+  it('уход с проверяемого сайта показывается тревогой', async () => {
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+      command: vi.fn(async () => meta({ currentUrl: 'https://accounts.example.com/signin' }))
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('ушла с проверяемого сайта')
+  })
+
+  it('показывает, что последнее действие сделала модель', async () => {
+    const browser = fakeBrowser({ start: vi.fn(async () => meta({ lastActor: 'assistant' })) })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    expect(await screen.findByText('последнее действие — модели')).toBeInTheDocument()
+  })
+
+  it('история адресов даёт вернуться на посещённое', async () => {
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+      command: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/#/projects' }))
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
+    const history = await screen.findByLabelText('Где были')
+    fireEvent.change(history, { target: { value: 'http://89.125.68.35:8787/' } })
+    await waitFor(() => expect(browser.command).toHaveBeenCalledWith('c1', expect.objectContaining({
+      command: { type: 'navigate', url: 'http://89.125.68.35:8787/' }
+    })))
+  })
+
+  it('тестовая учётка подставляется в форму, а нераспознанная форма объясняется', async () => {
+    const command = vi.fn(async (_id: string, req: { command: { type: string; action?: { selector?: string } } }) =>
+      req.command.action?.selector === 'input[type=password]' ? { ok: false, error: 'локатор не найден' } : meta())
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser({ command: command as never })} testUsers={[{ name: 'tester', password: 'secret', role: 'user' }]} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.change(screen.getByLabelText('Войти как'), { target: { value: 'tester' } })
+    // Эвристика по типам полей может не подойти чужой форме — тогда честный
+    // отказ, а не вид, будто вошли.
+    expect(await screen.findByText(/Поле пароля не найдено/)).toBeInTheDocument()
+  })
+
+  it('без тестовых учёток селектор входа не показывается', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={fakeBrowser()} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    expect(screen.queryByLabelText('Войти как')).not.toBeInTheDocument()
+  })
+})

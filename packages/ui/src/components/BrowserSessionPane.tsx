@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
 import { fragileSteps, recordClick, recordNavigate, toScenario, type RecordedStep } from '../lib/scenarioRecorder'
+import { aliasNote, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
+import type { ProjectTestUser } from '@shared/projects'
 import { Button, IconButton } from '@voicechat/ui-kit'
 
 // Панель Playwright Reader: живой изолированный Chromium разговора. В отличие от
@@ -43,6 +45,11 @@ export interface BrowserSessionPaneProps {
   browser?: RendererBrowserBridge
   /** Приложить кадр к сообщению чата: панель отдаёт data-URL, хост решает, что с ним делать. */
   onAttachFrame?: (dataUrl: string) => void
+  /**
+   * Тестовые учётки проекта. Без них проверять сайт можно только до экрана
+   * входа, а логин руками при каждом перезапуске сессии — главная морока.
+   */
+  testUsers?: ProjectTestUser[]
 }
 
 type Phase = 'starting' | 'ready' | 'unavailable' | 'error'
@@ -60,7 +67,7 @@ export function withScheme(raw: string): string {
   return `${hasExplicitPort ? 'http' : 'https'}://${value}`
 }
 
-export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: BrowserSessionPaneProps): JSX.Element {
+export function BrowserSessionPane({ conversationId, browser, onAttachFrame, testUsers }: BrowserSessionPaneProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>('starting')
   const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop'>('desktop')
   // Навигация занимает секунды, а кадр всё это время старый: без отметки непонятно,
@@ -79,6 +86,11 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
   // Запись сценария: ради неё Reader и делается инструментом автотестов —
   // человек проходит путь руками, а на выходе воспроизводимые шаги.
   const [recording, setRecording] = useState(false)
+  // Адрес, который человек попросил, — отдельно от того, что загрузилось: раннер
+  // мог подменить его алиасом, и молчать об этом нельзя.
+  const [requested, setRequested] = useState<string>('')
+  const [history, setHistory] = useState<string[]>([])
+  const origin = useRef<string | null>(null)
   const [steps, setSteps] = useState<RecordedStep[]>([])
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
   const [frame, setFrame] = useState<string | null>(null)
@@ -110,7 +122,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
       (started) => {
         if (generation !== alive.current) return
         incarnation.current = started.incarnation
-        setMeta(started); setAddress(started.currentUrl ?? ''); setPhase('ready')
+        applyMeta(started); setPhase('ready')
         void refreshFrame()
       },
       (err: unknown) => {
@@ -144,9 +156,14 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
     return () => { stop(); document.removeEventListener('visibilitychange', onVisibility) }
   }, [phase, refreshFrame, pollTick])
 
+  /** Единая точка приёма метаданных: и старт, и команда идут через неё —
+   *  иначе история посещённого начиналась бы со второй страницы, а сверять уход
+   *  с проверяемого сайта было бы не с чем. */
   const applyMeta = (next: BrowserSessionMetadata): void => {
     incarnation.current = next.incarnation
     setMeta(next); setAddress(next.currentUrl ?? '')
+    setHistory((current) => pushHistory(current, next.currentUrl))
+    if (!origin.current && next.currentUrl) origin.current = next.currentUrl
   }
 
   const run = useCallback(async (command: Parameters<RendererBrowserBridge['command']>[1]['command']): Promise<unknown> => {
@@ -239,7 +256,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
       .then((started) => {
         if (generation !== alive.current) return
         incarnation.current = started.incarnation
-        setMeta(started); setAddress(started.currentUrl ?? ''); setPhase('ready')
+        applyMeta(started); setPhase('ready')
         void refreshFrame()
       }, (err: unknown) => {
         if (generation !== alive.current) return
@@ -284,12 +301,30 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
   const submitAddress = (): void => {
     const url = address.trim()
     if (!url) return
-    void run({ type: 'navigate', url: withScheme(url) })
+    const full = withScheme(url)
+    setRequested(full)
+    // Происхождение первого открытого адреса — то, с чем сверяемся дальше:
+    // уход на другой хост посреди проверки почти всегда промах или редирект.
+    if (!origin.current) origin.current = full
+    void run({ type: 'navigate', url: full })
   }
 
   const submitTyping = (): void => {
     if (!typing) return
     void run({ type: 'input', action: { type: 'type', text: typing } }).then(() => setTyping(''))
+  }
+
+  /**
+   * Подстановка тестовой учётки в форму входа. Селекторы угадываются по типу
+   * поля, а не по разметке конкретного сайта: `input[type=password]` — пароль,
+   * поле перед ним — логин. Это эвристика, и если форма устроена иначе, шаг
+   * честно ответит ошибкой, а не сделает вид, что вошёл.
+   */
+  const fillLogin = async (user: ProjectTestUser): Promise<void> => {
+    const password = await run({ type: 'selector', action: { kind: 'type', selector: 'input[type=password]', text: user.password } }) as { ok?: boolean; error?: string } | undefined
+    if (password && password.ok === false) { setMessage(`Поле пароля не найдено: ${password.error ?? 'форма входа не распознана'}`); return }
+    const login = await run({ type: 'selector', action: { kind: 'type', selector: 'input:not([type=password]):not([type=checkbox]):not([type=hidden])', text: user.name, submit: true } }) as { ok?: boolean; error?: string } | undefined
+    if (login && login.ok === false) setMessage(`Поле логина не найдено: ${login.error ?? 'форма входа не распознана'}`)
   }
 
   /** Переход записывается отдельным шагом: с него начинается сценарий. */
@@ -307,6 +342,8 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
 
   const tabs = meta?.tabs ?? []
   const fragile = fragileSteps(steps)
+  const alias = aliasNote(requested, meta?.currentUrl ?? null)
+  const strayed = offOrigin(origin.current, meta?.currentUrl ?? null, alias !== null)
 
   return <section className="playwright-browser-pane" aria-label="Browser session">
     {tabs.length > 0 && (
@@ -371,6 +408,12 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
         </Button>
       )}
       {meta?.title && <span className="playwright-reader-title" title={meta.title}>{meta.title}</span>}
+      {/* Сессия одна на разговор: без этого непонятно, кто увёл страницу. */}
+      {meta?.lastActor && (
+        <span className="playwright-reader-actor" data-actor={meta.lastActor}>
+          {meta.lastActor === 'assistant' ? 'последнее действие — модели' : 'последнее действие — ваше'}
+        </span>
+      )}
       <span className="playwright-reader-state" role="status" data-status={meta?.state ?? phase}>
         {phase === 'starting' ? STATE_LABELS.starting : (STATE_LABELS[meta?.state ?? 'ready'] ?? STATE_LABELS.ready)}
       </span>
@@ -378,6 +421,17 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
         onClick={() => (recording ? setRecording(false) : startRecording())}>
         {recording ? `Записывается: ${steps.length}` : 'Записать сценарий'}
       </Button>
+      {(testUsers ?? []).length > 0 && (
+        <label className="playwright-reader-testusers">Войти как
+          <select className="sel" value="" disabled={phase !== 'ready'} onChange={(event) => {
+            const found = (testUsers ?? []).find((user) => user.name === event.target.value)
+            if (found) void fillLogin(found)
+          }}>
+            <option value="">выбрать учётку…</option>
+            {(testUsers ?? []).map((user) => <option key={user.name} value={user.name}>{user.name}{user.role ? ` · ${user.role}` : ''}</option>)}
+          </select>
+        </label>
+      )}
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void loadDiagnostics()}>Ошибки страницы</Button>
       {/* Профиль persistent, поэтому «выйти и посмотреть экран входа» иначе
           нечем: перезапуск сессии куки не трогает. */}
@@ -389,9 +443,26 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame }: B
           <Button key={key} size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => void run({ type: 'input', action: { type: 'press', key } })}>{key}</Button>
         ))}
       </span>
+      {/* Долгая навигация ничем не отличалась от зависшей: прервать её было
+          нечем, оставался только перезапуск всей сессии. */}
+      {busy && <Button size="sm" variant="ghost" onClick={() => void run({ type: 'stop' })}>Прервать</Button>}
       {/* Зависшую страницу иначе не выкинуть: stop звался только при уходе с экрана. */}
       <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={restartSession}>Перезапустить</Button>
     </div>
+    {(alias || strayed || history.length > 1) && (
+      <div className="playwright-reader-where">
+        {alias && <span className="playwright-reader-where__note">{alias}</span>}
+        {strayed && <span className="playwright-reader-where__note" role="alert">Страница ушла с проверяемого сайта на {(() => { try { return new URL(meta!.currentUrl!).host } catch { return 'другой адрес' } })()}.</span>}
+        {history.length > 1 && (
+          <label className="playwright-reader-where__history">Где были
+            <select className="sel" value="" disabled={phase !== 'ready'} onChange={(event) => { if (event.target.value) { setRequested(event.target.value); void run({ type: 'navigate', url: event.target.value }) } }}>
+              <option value="">выбрать адрес…</option>
+              {history.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+    )}
     {/* Панели записи и диагностики — ПОД кадром: появляясь сверху, они сдвигали
         изображение, и следующий клик человека попадал мимо цели. */}
     <div className="playwright-browser-viewport">
