@@ -98,7 +98,12 @@ export class BrowserSessionManager {
         if (this.allowedTargets.has(`${aliased.hostname.toLowerCase()}:${port}`) || this.allowedTargets.has(aliased.hostname.toLowerCase())) {
           return aliased.toString() === requested.toString() ? route.continue() : route.continue({ url: aliased.toString() })
         }
-        const addresses = await lookup(aliased.hostname, { all: true, verbatim: true })
+        // Несуществующий домен и запрещённый политикой — разные беды, и раньше
+        // обе давали ERR_BLOCKED_BY_CLIENT: человек думал, что его адрес в
+        // чёрном списке, хотя тот просто не резолвится.
+        let addresses
+        try { addresses = await lookup(aliased.hostname, { all: true, verbatim: true }) }
+        catch { return route.abort('namenotresolved') }
         if (addresses.some((entry) => isBlockedAddress(entry.address))) return route.abort('blockedbyclient')
         return route.continue()
       } catch {
