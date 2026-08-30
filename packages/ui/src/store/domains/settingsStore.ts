@@ -172,11 +172,45 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
     return settings
   }
 
+  /**
+   * Счётчик сохранений в полёте. Пока патч не подтверждён, ответ на чужой
+   * `refreshSettings` (сигнал соседней вкладки, реконнект) — это снимок ДО
+   * нашего изменения: применив его, мы бы вернули человеку старое значение,
+   * которое он только что поменял.
+   */
+  let savesInFlight = 0
+
+  /** Перечитывание в полёте: реконнект и `online` часто приходят парой. */
+  let refreshing: Promise<void> | null = null
+
+  /** Перечитать настройки с сервера (сигнал извне: соседняя вкладка, реконнект, сеть). */
+  async function refreshSettings(): Promise<void> {
+    if (refreshing) return refreshing
+    refreshing = (async () => {
+      try {
+        const settings = await client['settings:get']()
+        // Своё несохранённое изменение важнее чужого снимка: пока патч в
+        // полёте, ответ сервера уже устарел — он не видел нашего PUT.
+        if (savesInFlight > 0) return
+        setState({ settings, settingsLoaded: true })
+        rememberTheme(settings)
+      } catch (err) {
+        console.warn('[settings] не удалось перечитать настройки', err)
+      }
+    })()
+    try {
+      await refreshing
+    } finally {
+      refreshing = null
+    }
+  }
+
   async function updateSettings(patch: Partial<Settings>): Promise<void> {
     const base = await baseSettings()
     const optimistic = { ...base, ...patch }
     setState({ settings: optimistic, settingsLoaded: true })
     rememberTheme(optimistic)
+    savesInFlight += 1
     try {
       // На сервер уходит только патч: полный снимок этой вкладки затёр бы поля,
       // изменённые в соседней вкладке или на другом устройстве. Ответ — вся
@@ -198,6 +232,8 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
       if (deps.notify) deps.notify({ kind: 'error', text: `Настройки не сохранены: ${text}` })
       else deps.notifyError?.(text)
       throw err
+    } finally {
+      savesInFlight -= 1
     }
   }
 
@@ -376,15 +412,7 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         await refreshWhisperModels()
         await refreshModelStatus()
       },
-      async refreshSettings() {
-        try {
-          const settings = await client['settings:get']()
-          setState({ settings, settingsLoaded: true })
-          rememberTheme(settings)
-        } catch (err) {
-          console.warn('[settings] не удалось перечитать настройки', err)
-        }
-      },
+      refreshSettings,
       forgetAgent(id) {
         const { settings } = getState()
         if (settings.execTarget !== id && settings.defaultAgentId !== id) return

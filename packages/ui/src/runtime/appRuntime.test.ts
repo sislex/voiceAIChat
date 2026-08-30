@@ -255,6 +255,24 @@ describe('AppRuntime — деплой во время работы', () => {
     runtime.dispose()
   })
 
+  // Вкладка, чья загрузка пришлась на окно деплоя, не должна ждать человека:
+  // вернувшийся сервер — сам по себе повод перечитать настройки.
+  it('после возвращения сервера настройки подхватываются без участия человека', async () => {
+    const api = createFakeApi()
+    await api['settings:save']({ theme: 'dark' })
+    const { runtime } = makeRuntime({ api })
+    const get = vi.spyOn(api, 'settings:get').mockRejectedValueOnce(new Error('502'))
+    await runtime.settings.actions.load().catch(() => {})
+    expect(runtime.settings.getState().settingsLoaded).toBe(false)
+
+    get.mockRestore()
+    runtime.handlers.settingsChanged() // сервер вернулся (реконнект WS или сеть)
+
+    await vi.waitFor(() => expect(runtime.settings.getState().settingsLoaded).toBe(true))
+    expect(runtime.settings.getState().settings.theme).toBe('dark')
+    runtime.dispose()
+  })
+
   it('изменение в соседней вкладке перечитывается, а своё — рассылается', async () => {
     const api = createFakeApi()
     const { runtime } = makeRuntime({ api })

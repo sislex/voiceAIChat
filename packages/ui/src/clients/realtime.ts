@@ -21,6 +21,23 @@ export const createBrowserRealtime = (): RealtimeConnect => (handlers) => {
   window.addEventListener('storage', onSettingsStorage)
   unsubs.push(() => window.removeEventListener('storage', onSettingsStorage))
 
+  // Сервер вернулся после перезапуска (деплой) — перечитываем настройки сами.
+  // Иначе вкладка, у которой загрузка пришлась на окно недоступности, так и
+  // сидит на дефолтах с баннером, пока человек не нажмёт «Повторить».
+  const realtime = window.realtime
+  if (realtime?.onConnected) {
+    // Первое подключение — часть обычного старта, настройки грузит bootstrap;
+    // перечитываем только на переподключениях (мост не различает их сам).
+    let connectedOnce = false
+    unsubs.push(realtime.onConnected(() => {
+      if (connectedOnce) handlers.settingsChanged()
+      connectedOnce = true
+    }))
+  }
+  const onOnline = (): void => handlers.settingsChanged()
+  window.addEventListener('online', onOnline)
+  unsubs.push(() => window.removeEventListener('online', onOnline))
+
   // Другая вкладка того же пользователя правит meta сообщения.
   const onStorage = (event: StorageEvent): void => {
     if (event.key !== MESSAGE_META_UPDATE_KEY || !event.newValue) return
