@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { automatedQaRemarks, automatedQaStartUrlProblem, parseAutomatedQaVerdict, type AutomatedQaVerdict } from './qa'
+import { automatedQaRemarks, automatedQaStartUrlProblem, isPrivateNetworkHost, parseAutomatedQaVerdict, type AutomatedQaVerdict } from './qa'
 
 const verdict = (patch: Partial<AutomatedQaVerdict> = {}): AutomatedQaVerdict => ({
   mode: 'command', gatePassed: false, passed: false, summary: 'Команда автотестов завершилась с кодом 1',
@@ -19,6 +19,23 @@ describe('parseAutomatedQaVerdict', () => {
   })
   it('неизвестный режим отбрасывается', () => {
     expect(parseAutomatedQaVerdict({ mode: 'cypress', summary: 'что-то' })).toBeNull()
+  })
+})
+
+describe('isPrivateNetworkHost (круг 29)', () => {
+  it('правило одно на редактор и на SSRF-гейт раннера', () => {
+    for (const host of ['127.0.0.1', '10.0.0.5', '192.168.1.1', '172.16.0.1', '169.254.1.1', '0.0.0.0', '224.0.0.1', '::1', '::', 'fe80::1', 'fd00::1']) {
+      expect(isPrivateNetworkHost(host)).toBe(true)
+    }
+    // Публичные адреса и имена проходят: наш собственный стенд — голый IP.
+    for (const host of ['89.125.68.35', '8.8.8.8', 'example.com', '2606:4700::1111']) {
+      expect(isPrivateNetworkHost(host)).toBe(false)
+    }
+  })
+
+  it('IPv6 в скобках разбирается: раньше shared про `::` не знал вовсе', () => {
+    expect(isPrivateNetworkHost('[::1]')).toBe(true)
+    expect(automatedQaStartUrlProblem('http://[::1]:8787/')).toContain('внутренних сетей')
   })
 })
 

@@ -46,3 +46,36 @@ describe('createBrowserRunnerClient', () => {
     await expect(client.stop('c1')).rejects.toBeInstanceOf(BrowserRunnerError)
   })
 })
+
+describe('отмена и таймаут (круг 29)', () => {
+  it('отмена вызывающего не выдаётся за таймаут раннера', async () => {
+    const controller = new AbortController()
+    const client = createBrowserRunnerClient({
+      baseUrl: 'http://runner', token: 't',
+      fetchImpl: (async (_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+      })) as unknown as typeof fetch
+    })
+    const call = client.command('s', { requestId: 'r', incarnation: 'i', actor: 'assistant', command: { type: 'reload' } }, controller.signal)
+    controller.abort()
+    // «Не ответил вовремя» отправляло человека искать беду в инфраструктуре,
+    // которой нет: запрос оборвал он сам.
+    await expect(call).rejects.toMatchObject({ status: 499, message: 'Запрос к Browser Runner отменён' })
+  })
+
+  it('снимок тоже слушает сигнал: он был единственным методом без него', async () => {
+    const controller = new AbortController()
+    let seen: AbortSignal | undefined
+    const client = createBrowserRunnerClient({
+      baseUrl: 'http://runner', token: 't',
+      fetchImpl: (async (_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+        seen = init.signal ?? undefined
+        init.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+      })) as unknown as typeof fetch
+    })
+    const call = client.screenshot('s', { requestId: 'r', incarnation: 'i', actor: 'assistant', command: { type: 'screenshot', format: 'png' } }, controller.signal)
+    controller.abort()
+    await expect(call).rejects.toMatchObject({ status: 499 })
+    expect(seen?.aborted).toBe(true)
+  })
+})

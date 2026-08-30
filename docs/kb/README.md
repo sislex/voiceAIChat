@@ -15,16 +15,16 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-30 | ⚠ 2 коммит(ов) в areas после сверки: 451dd6eb feat(qa-stage): сквозная проверка серверного пути; DNS-сбой отличается от запрета … |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-30 | ⚠ 5 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 4 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 54 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 57 коммит(ов) в areas после сверки: 4c35c0ea Merge remote-tracking branch 'origin/main' into work2 … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 40 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 72 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 94 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 127 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 140 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 6 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 894 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 23 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 52 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 5 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 897 коммит(ов) в areas после сверки: 4c35c0ea Merge remote-tracking branch 'origin/main' into work2 … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 26 коммит(ов) в areas после сверки: 4c35c0ea Merge remote-tracking branch 'origin/main' into work2 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 55 коммит(ов) в areas после сверки: 4c35c0ea Merge remote-tracking branch 'origin/main' into work2 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 20 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 73 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 137 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
@@ -32,7 +32,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 42 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 68 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 110 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-30 | ⚠ 29 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-30 | ⚠ 32 коммит(ов) в areas после сверки: 4c35c0ea Merge remote-tracking branch 'origin/main' into work2 … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 26 коммит(ов) в areas после сверки: 32349f49 Merge remote-tracking branch 'origin/main' into work2 … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-30 | ⚠ 9 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 15 коммит(ов) в areas после сверки: dcc67f26 feat(settings): вернувшийся сервер подхватывается сам, патч в полёте не затирается … |
@@ -40,7 +40,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: b1ce0a93 fix(dev): порты dev-сеанса из окружения — второй чекаут поднимается рядом с первым … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-30 | ⚠ 5 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 50 коммит(ов) в areas после сверки: b55d5977 feat(qa): десять правок разового прогона, ошибок страницы и редактора … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-30 | ⚠ 9 коммит(ов) в areas после сверки: 691dee65 fix(settings): гонки ответов и висячая машина чата … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-30 | ⚠ 12 коммит(ов) в areas после сверки: 4c35c0ea Merge remote-tracking branch 'origin/main' into work2 … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-30, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -58,7 +58,7 @@
 
 ## Журнал сессий
 
-Всего записей: 436. Последние:
+Всего записей: 437. Последние:
 
 - [2026-08-30-alexeys-macbook-air-2-ten-improvements.md](log/2026-08-30-alexeys-macbook-air-2-ten-improvements.md) — ten-improvements
 - [2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md](log/2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md) — task-card-tabs-round2
@@ -66,10 +66,10 @@
 - [2026-08-30-alexeys-macbook-air-2-tablet-and-carets-round9.md](log/2026-08-30-alexeys-macbook-air-2-tablet-and-carets-round9.md) — tablet-and-carets-round9
 - [2026-08-30-alexeys-macbook-air-2-settings-survive-deploy.md](log/2026-08-30-alexeys-macbook-air-2-settings-survive-deploy.md) — Настройки пользователя после релиза и деплоя
 - [2026-08-30-alexeys-macbook-air-2-run-feed-ansi-round3.md](log/2026-08-30-alexeys-macbook-air-2-run-feed-ansi-round3.md) — run-feed-ansi-round3
+- [2026-08-30-alexeys-macbook-air-2-reader-debug-honesty.md](log/2026-08-30-alexeys-macbook-air-2-reader-debug-honesty.md) — reader-debug-honesty
 - [2026-08-30-alexeys-macbook-air-2-qa-settings-labels-round4.md](log/2026-08-30-alexeys-macbook-air-2-qa-settings-labels-round4.md) — qa-settings-labels-round4
 - [2026-08-30-alexeys-macbook-air-2-preparation-tab-round5.md](log/2026-08-30-alexeys-macbook-air-2-preparation-tab-round5.md) — preparation-tab-round5
 - [2026-08-30-alexeys-macbook-air-2-parallel-worktree.md](log/2026-08-30-alexeys-macbook-air-2-parallel-worktree.md) — parallel-worktree
-- [2026-08-30-alexeys-macbook-air-2-parallel-checkouts-3.md](log/2026-08-30-alexeys-macbook-air-2-parallel-checkouts-3.md) — parallel-checkouts-3
 
 ## Исторические планы
 

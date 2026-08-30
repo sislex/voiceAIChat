@@ -4,7 +4,7 @@
 //
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
-import { BrowserSessionManager } from './sessionManager.js'
+import { BrowserSessionManager, nextActiveTab } from './sessionManager.js'
 
 /** Подставляем внутренности вместо запуска настоящего Chromium. */
 function managerWith(sessions: Array<{ id: string; lastUsedAt: number }>): { manager: BrowserSessionManager; closed: string[] } {
@@ -53,5 +53,17 @@ describe('отметка обращения', () => {
       command: { type: 'selector', action: { kind: 'read' } }
     } as never).catch(() => undefined)
     expect(session.lastUsedAt).toBeGreaterThan(0)
+  })
+})
+
+describe('nextActiveTab', () => {
+  it('закрытая вкладка не остаётся активной — иначе каждая команда падает stale_tab', () => {
+    expect(nextActiveTab(['b', 'c'], 'a', 'a')).toBe('b')
+  })
+  it('закрытие неактивной вкладки активную не трогает', () => {
+    expect(nextActiveTab(['a', 'c'], 'a', 'b')).toBe('a')
+  })
+  it('последняя закрытая вкладка оставляет сессию без активной', () => {
+    expect(nextActiveTab([], 'a', 'a')).toBe('')
   })
 })
