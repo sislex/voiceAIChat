@@ -106,12 +106,13 @@ export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false
   }
   return (
     <div className="login-screen" data-theme={theme}>
-      <form className="login-card" onSubmit={submit}>
+      <form className="login-card" onSubmit={submit} data-testid="login-form">
         <h1 className="login-title">Вход</h1>
         <label className="login-field">
           <span>Пользователь</span>
           <input
             className="login-input"
+            data-testid="login-username"
             value={name}
             autoFocus
             autoComplete="username"
@@ -124,6 +125,7 @@ export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false
           <span className="login-password">
             <input
               className="login-input"
+              data-testid="login-password"
               type={showPassword ? 'text' : 'password'}
               value={password}
               autoComplete="current-password"
@@ -132,17 +134,18 @@ export function LoginScreen({ onLogin, error, theme = 'light', twoFactor = false
               onKeyDown={onKey}
               onKeyUp={onKey}
             />
-            <button type="button" className="login-eye" aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'} title={showPassword ? 'Скрыть пароль' : 'Показать пароль'} aria-pressed={showPassword} onClick={() => setShowPassword((v) => !v)}>{showPassword ? '🙈' : '👁'}</button>
+            <button type="button" className="login-eye" data-testid="login-toggle-password" aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'} title={showPassword ? 'Скрыть пароль' : 'Показать пароль'} aria-pressed={showPassword} onClick={() => setShowPassword((v) => !v)}>{showPassword ? '🙈' : '👁'}</button>
           </span>
           {capsLock && <span className="login-caps" role="status">Включён Caps Lock</span>}
         </label>
-        <label className="login-remember"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Запомнить меня на этом устройстве <small>(иначе сессия — до закрытия браузера)</small></label>
+        <label className="login-remember"><input type="checkbox" data-testid="login-remember" checked={remember} onChange={(e) => setRemember(e.target.checked)} /> Запомнить меня на этом устройстве <small>(иначе сессия — до закрытия браузера)</small></label>
         {error && (
-          <p className="login-error" role="alert">
+          // Сценарий обязан уметь проверить и неудачный вход, а не только успех.
+          <p className="login-error" role="alert" data-testid="login-error">
             {error}
           </p>
         )}
-        <Button variant="primary" type="submit" disabled={!name.trim()}>
+        <Button variant="primary" type="submit" disabled={!name.trim()} data-testid="login-submit">
           Войти
         </Button>
         {onSignup && <p className="login-hint">Нет учётной записи? <button type="button" className="make-link" onClick={onSignup}>Зарегистрироваться</button></p>}
