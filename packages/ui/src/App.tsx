@@ -98,6 +98,7 @@ import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
 import { REST as REST_PATHS } from '@shared/protocol'
 import { parseAdminRoute } from '@voicechat/admin-app'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
+import { placeScenario } from './lib/scenarioRecorder'
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
 
 const UsersAdmin = lazy(async () => {
@@ -1968,10 +1969,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         // затирать чужие тесты записью одного — не то, чего ждёт человек.
         onSaveScenario: async (scenario) => {
           const detail = projects.projectDetail!
-          const current = detail.automatedQaScenarios ?? []
-          const at = current.findIndex((item) => (item.name ?? '') === (scenario.name ?? ''))
-          const next = at >= 0 ? current.map((item, index) => (index === at ? scenario : item)) : [...current, scenario]
-          await projectsActions.updateProject(detail.id, { automatedQaScenarios: next })
+          await projectsActions.updateProject(detail.id, {
+            automatedQaScenarios: placeScenario(detail.automatedQaScenarios ?? [], scenario)
+          })
         },
         ...(projects.projectDetail?.automatedQaScenarios?.length ? { savedScenarios: projects.projectDetail.automatedQaScenarios } : {})
       } : {})} />}
