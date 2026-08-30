@@ -305,6 +305,59 @@ describe('запись сценария автотеста (круг 12)', () =>
   })
 })
 
+describe('отладка записи (круг 29)', () => {
+  const frameOf = async (browser: RendererBrowserBridge): Promise<HTMLImageElement> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    return await screen.findByAltText('Кадр Chromium') as HTMLImageElement
+  }
+
+  it('«прогнать до этого шага» на шаге-переходе не прогоняет весь сценарий', async () => {
+    // Шаг-перехода в сценарии нет: он уезжает в startUrl, и поиск по его id
+    // давал −1 — то есть «весь сценарий» вместо «только до перехода».
+    const sent: string[] = []
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'https://a.b/' })),
+      command: vi.fn(async (_id, request) => {
+        sent.push(request.command.type === 'selector' ? request.command.action.kind : request.command.type)
+        return meta({ currentUrl: 'https://a.b/' })
+      })
+    })
+    const frame = await frameOf(browser)
+    fireEvent.click(screen.getByText('Записать сценарий'))
+    frame.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1280, height: 800, right: 1280, bottom: 800, x: 0, y: 0, toJSON: () => ({}) })
+    fireEvent.click(frame, { clientX: 10, clientY: 10 })
+    await waitFor(() => expect(screen.getByLabelText('Название шага step-1')).toBeInTheDocument())
+    sent.length = 0
+    fireEvent.click(screen.getAllByTitle('Прогнать до этого шага')[0])
+    await waitFor(() => expect(sent).toContain('navigate'))
+    // Только переход: ни одного селекторного действия после него.
+    expect(sent.filter((item) => item !== 'navigate' && item !== 'describe')).toEqual([])
+  })
+})
+
+describe('отметки прогона (круг 29)', () => {
+  it('удаление шага уносит и его отметку: перенумерация id дарила «ок» соседу', async () => {
+    const described = { selector: '#create', stability: 'id', tag: 'button', text: 'Создать', matches: 1, rect: { x: 0, y: 0, width: 100, height: 40 } }
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'https://a.b/' })),
+      command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+        req.command.type === 'selector' && req.command.action?.kind === 'describe'
+          ? { ok: true, element: described }
+          : meta({ currentUrl: 'https://a.b/' })) as never
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    const frame = await screen.findByAltText('Кадр Chromium') as HTMLImageElement
+    fireEvent.click(screen.getByText('Записать сценарий'))
+    frame.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1280, height: 800, right: 1280, bottom: 800, x: 0, y: 0, toJSON: () => ({}) })
+    fireEvent.click(frame, { clientX: 10, clientY: 10 })
+    await waitFor(() => expect(screen.getByLabelText('Название шага step-2')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('Прогнать сценарий'))
+    await waitFor(() => expect(screen.getAllByText(/прогон:/).length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByTitle('Убрать шаг')[0])
+    expect(screen.queryAllByText(/прогон:/)).toHaveLength(0)
+  })
+})
+
 describe('где мы и кто действовал (круг 13)', () => {
   it('подмена адреса алиасом объясняется по факту от раннера, а адрес остаётся внешним', async () => {
     // Раннер отдаёт тот адрес, который назвал человек (иначе внутренний уедет в
@@ -415,7 +468,7 @@ describe('сценарий как настоящий тест (круг 14)', ()
 
   it('ожидание вешается на последний шаг и предупреждение уходит', async () => {
     await record(bridgeWith())
-    fireEvent.change(screen.getByLabelText('Ожидаемый текст после последнего шага'), { target: { value: 'Задача создана' } })
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст'), { target: { value: 'Задача создана' } })
     fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
     expect(await screen.findByText('ждём «Задача создана»')).toBeInTheDocument()
     expect(screen.queryByText(/Ни одной проверки/)).not.toBeInTheDocument()
@@ -436,7 +489,7 @@ describe('сценарий как настоящий тест (круг 14)', ()
     const onSaveScenario = vi.fn(async () => {})
     await record(bridgeWith(), { onSaveScenario })
     // С круга 18 сценарий без единой проверки в проект не уезжает.
-    fireEvent.change(screen.getByLabelText('Ожидаемый текст после последнего шага'), { target: { value: 'Задача создана' } })
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст'), { target: { value: 'Задача создана' } })
     fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
     await waitFor(() => expect(onSaveScenario).toHaveBeenCalledWith(expect.objectContaining({
@@ -448,7 +501,7 @@ describe('сценарий как настоящий тест (круг 14)', ()
 
   it('отказ сохранения показывается, а не теряется', async () => {
     await record(bridgeWith(), { onSaveScenario: vi.fn(async () => { throw new Error('Недостаточно прав') }) })
-    fireEvent.change(screen.getByLabelText('Ожидаемый текст после последнего шага'), { target: { value: 'Готово' } })
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст'), { target: { value: 'Готово' } })
     fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
     expect(await screen.findByText('Недостаточно прав')).toBeInTheDocument()

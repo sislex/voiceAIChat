@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { BrowserElementDescription } from '@shared/types'
-import { ambiguousSteps, brokenSteps, expectOnLastStep, placeScenario, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario } from './scenarioRecorder'
+import type { RecordedStep } from './scenarioRecorder'
+import { ambiguousSteps, brokenSteps, expectOnLastStep, expectOnStep, placeScenario, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario } from './scenarioRecorder'
 
 const element = (over: Partial<BrowserElementDescription> = {}): BrowserElementDescription => ({
   selector: '[data-testid="create"]', stability: 'testid', tag: 'button', text: 'Создать',
@@ -208,5 +209,26 @@ describe('подбор имени не создаёт дубля (круг 23)',
     // Начинаем с длины набора, а не с единицы: иначе безымянный занял бы
     // «Сценарий 1» и встал в конец списка под именем первого.
     expect(placeScenario([s('Сценарий 3'), s('Сценарий 4')], s()).map((item) => item.name).at(-1)).toBe('Сценарий 5')
+  })
+})
+
+describe('круг 29', () => {
+  const step = (id: string): RecordedStep => ({ id, title: `Шаг ${id}`, action: { kind: 'click', selector: `#${id}` }, stability: 'testid' })
+
+  it('прокрутка туда-обратно не оставляет шаг «на 0 px»', () => {
+    const scrolled = recordScroll(recordScroll([], 400), -400)
+    expect(scrolled).toEqual([])
+    // И одиночная нулевая прокрутка шагом не становится.
+    expect(recordScroll([], 0)).toEqual([])
+  })
+
+  it('проверка вешается на выбранный шаг, а не только на последний', () => {
+    const steps = [step('a'), step('b'), step('c')]
+    expect(expectOnStep(steps, 'b', 'Задача создана')[1].expectText).toBe('Задача создана')
+    expect(expectOnStep(steps, 'b', 'Задача создана')[2].expectText).toBeUndefined()
+    // Недопустимый текст — тем же путём.
+    expect(expectOnStep(steps, 'a', 'Ошибка', true)[0].expectAbsentText).toBe('Ошибка')
+    // Несуществующий шаг ничего не меняет: молча пометить чужой шаг хуже.
+    expect(expectOnStep(steps, 'нет', 'Текст')).toEqual(steps)
   })
 })
