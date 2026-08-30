@@ -2996,12 +2996,12 @@ button.conscmd:hover {
   gap: 2px;
   padding: 2px;
   border-radius: 10px;
-  background: var(--bg-soft, rgba(127, 127, 127, 0.12));
+  background: var(--panel);
 }
 .eng-tab {
   border: none;
   background: transparent;
-  color: var(--text-soft, inherit);
+  color: var(--text-dim);
   font: inherit;
   font-size: 13px;
   padding: 4px 12px;
@@ -3010,7 +3010,7 @@ button.conscmd:hover {
   white-space: nowrap;
 }
 .eng-tab:hover {
-  background: rgba(127, 127, 127, 0.14);
+  background: var(--surface-hover);
 }
 .eng-tab.on {
   background: var(--bg, #fff);
@@ -3025,11 +3025,11 @@ button.conscmd:hover {
   gap: 8px;
   padding: 8px 22px;
   border-bottom: 1px solid var(--border-soft);
-  background: var(--bg-soft, rgba(127, 127, 127, 0.05));
+  background: var(--panel);
   font-size: 13px;
 }
 .usagebar--empty {
-  color: var(--text-soft, rgba(127, 127, 127, 0.9));
+  color: var(--text-dim);
 }
 .usage-chip {
   display: inline-flex;
@@ -3041,7 +3041,7 @@ button.conscmd:hover {
   border: 1px solid var(--border-soft);
 }
 .usage-k {
-  color: var(--text-soft, rgba(127, 127, 127, 0.9));
+  color: var(--text-dim);
   font-size: 12px;
 }
 .usage-v {
@@ -3049,7 +3049,7 @@ button.conscmd:hover {
 }
 .usage-sub {
   font-weight: 400;
-  color: var(--text-soft, rgba(127, 127, 127, 0.9));
+  color: var(--text-dim);
   font-size: 12px;
 }
 .cc-col {
@@ -3704,7 +3704,7 @@ button.conscmd:hover {
 .convsettings-head { display: flex; gap: 16px; align-items: center; padding: 20px max(24px, calc((100vw - 900px) / 2)); border-bottom: 1px solid var(--line, #ddd); background: var(--panel, #fff); }
 .convsettings-head h1 { margin: 0; font-size: 24px; }.convsettings-head p,.convsettings-sectionhead p { margin: 4px 0 0; color: var(--muted, #737987); }
 .convsettings-back { font-size: 22px; }
-.convsettings-open { border: 0; background: transparent; cursor: pointer; font-size: 22px; color: inherit; }.convsettings-open { padding: 6px 9px; border-radius: 8px; }.convsettings-open:hover { background: var(--hover, rgba(127,127,127,.12)); }
+.convsettings-open { border: 0; background: transparent; cursor: pointer; font-size: 22px; color: inherit; }.convsettings-open { padding: 6px 9px; border-radius: 8px; }.convsettings-open:hover { background: var(--surface-hover); }
 .convsettings-body { overflow: auto; padding: 24px max(24px, calc((100vw - 900px) / 2)); }.convsettings-card { padding: 22px; margin-bottom: 18px; border: 1px solid var(--line, #ddd); border-radius: 14px; background: var(--panel, #fff); }
 .convsettings-tab-general .convsettings-llm-card,.convsettings-tab-general .context-inspector,.convsettings-tab-general .context-detail { display: none; }
 .convsettings-tab-llm .convsettings-card:not(.convsettings-llm-card),.convsettings-tab-llm .context-inspector,.convsettings-tab-llm .context-detail { display: none; }
@@ -3717,7 +3717,7 @@ button.conscmd:hover {
 .context-launch-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1px; margin: 0; background: var(--line,#eee); }.context-launch-grid div { display: grid; gap: 5px; padding: 16px 20px; background: var(--panel,#fff); }.context-launch-grid dt { color: var(--muted); font-size: 12px; }.context-launch-grid dd { margin: 0; font-weight: 700; }.context-launch-grid small { color: var(--muted); overflow-wrap: anywhere; }
 .context-problem { display: flex; justify-content: space-between; gap: 18px; align-items: center; padding: 16px 18px; border: 1px solid color-mix(in srgb,#c43838 45%,var(--line,#ddd)); border-radius: 12px; background: color-mix(in srgb,#c43838 7%,var(--panel,#fff)); }.context-problem p,.context-note { margin: 5px 0 0; color: var(--muted); }.context-note { padding: 0 20px 16px; }
 .context-section > summary { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; padding: 17px 20px; cursor: pointer; }.context-section > summary small { display: block; margin-top: 4px; color: var(--muted); font-weight: 400; }.context-section[open] > summary { border-bottom: 1px solid var(--line,#eee); }.context-count { color: var(--muted); }
-.context-items { min-width: 0; }.context-item { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 14px; align-items: center; width: 100%; padding: 16px 20px; border: 0; border-bottom: 1px solid var(--line,#eee); background: transparent; color: inherit; text-align: left; cursor: pointer; }.context-item:last-child { border-bottom: 0; }.context-item:hover { background: var(--hover,rgba(127,127,127,.08)); }.context-item:focus-visible,.context-section > summary:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.context-items { min-width: 0; }.context-item { display: grid; grid-template-columns: minmax(0,1fr) auto auto; gap: 14px; align-items: center; width: 100%; padding: 16px 20px; border: 0; border-bottom: 1px solid var(--line,#eee); background: transparent; color: inherit; text-align: left; cursor: pointer; }.context-item:last-child { border-bottom: 0; }.context-item:hover { background: var(--surface-hover); }.context-item:focus-visible,.context-section > summary:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
 .context-item-main { display: grid; gap: 4px; min-width: 0; }.context-item-main small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }.context-reason b { color: var(--text); }.context-status { width: fit-content; padding: 4px 8px; border-radius: 999px; background: color-mix(in srgb,var(--accent) 12%,transparent); color: var(--text); font-size: 11px; font-weight: 700; text-align: center; }
 .context-empty { margin: 0; padding: 16px 20px; color: var(--muted); }.context-technical { display: grid; gap: 18px; padding: 18px 20px; }.context-technical > dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 0; }.context-technical > dl div { padding: 12px; border-radius: 9px; background: var(--bg,#f6f7fb); }.context-technical dt { color: var(--muted); font-size: 12px; }.context-technical dd { margin: 5px 0 0; }.context-technical h4 { margin: 0 0 8px; }.context-tech-items { display: grid; gap: 6px; }.context-tech-items button { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line,#ddd); border-radius: 8px; background: transparent; color: inherit; text-align: left; cursor: pointer; }.context-tech-items small { color: var(--muted); }
 .context-detail header { padding: 20px 0; }.context-detail h2 { margin: 6px 0; }.context-metadata { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; margin: 0; }.context-metadata div { padding: 15px; border: 1px solid var(--line,#ddd); border-radius: 11px; background: var(--panel,#fff); overflow-wrap: anywhere; }.context-metadata dt { margin-bottom: 5px; color: var(--muted); font-size: 12px; }.context-metadata dd { margin: 0; }
@@ -4131,7 +4131,7 @@ button.conscmd:hover {
 .cc-main { flex: 1; overflow: auto; padding: 12px 16px; }
 
 .proj-detail { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
-.proj-settings-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid rgba(128,128,128,0.2); padding-bottom: 8px; }
+.proj-settings-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
 .proj-settings-tabs button { border: 0; border-radius: 4px; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit; padding: 6px 10px; }
 .proj-settings-tabs button:hover { background: var(--surface2); color: var(--text); }
 .proj-settings-tabs button.active { background: var(--surface2); color: var(--text); font-weight: 600; }
@@ -4186,11 +4186,11 @@ button.conscmd:hover {
   pointer-events: none;
 }
 .proj-field-label { font-weight: 600; margin: 8px 0 4px; opacity: 0.8; }
-.proj-section { border-top: 1px solid rgba(128,128,128,0.2); padding-top: 8px; }
+.proj-section { border-top: 1px solid var(--border); padding-top: 8px; }
 
 .proj-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .proj-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px;
-  background: rgba(128,128,128,0.18); font-size: 13px; }
+  background: var(--surface-hover); font-size: 13px; }
 .proj-chip-x { border: none; background: none; cursor: pointer; opacity: 0.6; font-size: 11px; }
 .proj-chip-x:hover { opacity: 1; }
 
@@ -4198,7 +4198,7 @@ button.conscmd:hover {
 .proj-members li { display: flex; align-items: center; justify-content: space-between; }
 .proj-machines label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .proj-add-member { margin-top: 6px; }
-.proj-danger { border-top: 1px solid rgba(128,128,128,0.2); padding-top: 10px; }
+.proj-danger { border-top: 1px solid var(--border); padding-top: 10px; }
 .proj-delete { color: #f85149; }
 
 /* ===== Jira design-system alignment (страница проекта) ===== */
@@ -4240,8 +4240,8 @@ button.conscmd:hover {
 .kanban-showcompleted { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; opacity: 0.8; white-space: nowrap; }
 .kanban-board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 12px; }
 .kanban-col { flex: 0 0 260px; display: flex; flex-direction: column; gap: 6px;
-  background: rgba(128,128,128,0.08); border-radius: 8px; padding: 8px; max-height: 78vh; }
-.kanban-col--hidden { opacity: 0.6; outline: 1px dashed rgba(128,128,128,0.4); }
+  background: var(--panel); border-radius: 8px; padding: 8px; max-height: 78vh; }
+.kanban-col--hidden { opacity: 0.6; outline: 1px dashed var(--border); }
 .kanban-col--add { background: none; }
 .kanban-col-head { display: flex; align-items: center; justify-content: space-between; gap: 6px;
   cursor: grab; padding: 2px 4px; }
@@ -4295,7 +4295,7 @@ button.conscmd:hover {
 .kbdoc-actions { display:flex; gap:8px; padding:0 0 10px; }
 .kbeditor { display:flex; flex-direction:column; gap:10px; }
 .kbeditor input, .kbeditor textarea { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--text); font-family:inherit; }
-.kbeditor textarea { resize:vertical; min-height:220px; font-family:var(--mono, monospace); font-size:13px; }
+.kbeditor textarea { resize:vertical; min-height:220px; font-family:var(--font-mono); font-size:13px; }
 .kbeditor-actions { display:flex; gap:8px; }
 .kbskel { padding:4px; }
 .kbrefresh { margin:0; padding:6px 8px; }
@@ -4438,7 +4438,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .javatar-btn:hover { transform: translateY(-2px); }
 .javatar-btn.on { border-color: var(--accent); }
 .javatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; font-weight: 600; width: 24px; height: 24px; font-size: 10px; flex: 0 0 auto; }
-.javatar--none { background: rgba(128, 128, 128, 0.35); color: var(--fg, #222); }
+.javatar--none { background: var(--ci-neutral-bg); color: var(--text); }
 /* Быстрые фильтры доски — это переключатели, и в выключенном состоянии они
    обязаны читаться как элемент управления: без рамки и заливки «С флагом» и
    «Обновлены за сутки» выглядели обычной подписью рядом с настоящими чекбоксами.
@@ -4645,7 +4645,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jlane-heads { display: flex; gap: 8px; align-items: flex-start; }
 .jlane { display: flex; flex-direction: column; margin-top: 8px; }
 .jlane-head { display: flex; align-items: center; gap: 8px; border: none; background: none; color: inherit; font-size: 13px; font-weight: 600; padding: 6px 4px; cursor: pointer; text-align: left; }
-.jlane-head:hover { background: rgba(128, 128, 128, 0.08); border-radius: 4px; }
+.jlane-head:hover { background: var(--surface-hover); border-radius: 4px; }
 .jlane-arrow { font-size: 10px; opacity: 0.6; }
 .jlane-title { display: inline-flex; align-items: center; gap: 6px; }
 .jlane-cols { display: flex; gap: 8px; align-items: flex-start; }
@@ -4800,7 +4800,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .sideswitch { display: flex; gap: 4px; padding: 4px 12px 8px; }
 .sideswitch button { flex: 0 0 auto; min-width: 0; border: none; background: transparent; color: inherit; font-size: 13px; padding: 6px 4px; border-radius: 6px; cursor: pointer; }
 .sideswitch button.on { flex: 1 1 auto; }
-.sideswitch button:hover { background: rgba(128, 128, 128, 0.22); }
+.sideswitch button:hover { background: var(--surface-hover); }
 .sideswitch button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .side-controls {
   max-height: 0;
@@ -4833,8 +4833,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .projitem-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex: 0 0 auto; min-width: 0; }
 .projitem-type { font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-dim);
   max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.projadd { display: block; width: calc(100% - 24px); margin: 0 12px 8px; border: 1px dashed rgba(128, 128, 128, 0.5); background: none; color: inherit; font-size: 13px; padding: 6px 8px; border-radius: 6px; cursor: pointer; opacity: 0.85; }
-.projadd:hover { opacity: 1; background: rgba(128, 128, 128, 0.1); }
+.projadd { display: block; width: calc(100% - 24px); margin: 0 12px 8px; border: 1px dashed var(--border); background: none; color: inherit; font-size: 13px; padding: 6px 8px; border-radius: 6px; cursor: pointer; opacity: 0.85; }
+.projadd:hover { opacity: 1; background: var(--surface-hover); }
 .projcreate { display: block; width: calc(100% - 24px); margin: 0 12px 8px; box-sizing: border-box; }
 
 /* AI-помощник формулировки: две прокручиваемые колонки внутри общего окна
@@ -5024,7 +5024,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .taskchat-sep { color: var(--text-dim); opacity: 0.6; }
 .taskchat-task { font-size: 13px; }
 .taskchat-open, .taskchat-feed-toggle { border: 1px solid var(--border-soft); background: none; color: inherit; border-radius: 6px; padding: 3px 8px; font-size: 12px; cursor: pointer; }
-.taskchat-open:hover, .taskchat-feed-toggle:hover { background: rgba(128, 128, 128, 0.12); }
+.taskchat-open:hover, .taskchat-feed-toggle:hover { background: var(--surface-hover); }
 .taskchat-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
 .taskchat-dim { font-size: 11px; color: var(--text-dim); }
 .taskchat-dir { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -5513,7 +5513,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .searchscope button {
   flex: 1;
   border: none;
-  background: rgba(128, 128, 128, 0.12);
+  background: var(--surface-hover);
   color: inherit;
   font-family: inherit;
   font-size: 12px;
@@ -5522,7 +5522,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   cursor: pointer;
 }
 .searchscope button:hover {
-  background: rgba(128, 128, 128, 0.22);
+  background: var(--surface-hover);
 }
 .searchscope button.on {
   background: color-mix(in srgb, var(--accent) 18%, transparent);
