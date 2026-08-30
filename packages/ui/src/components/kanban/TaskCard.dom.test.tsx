@@ -31,6 +31,23 @@ function mkSummary(over: Partial<CiRunSummary> = {}): CiRunSummary {
 }
 
 describe('TaskCard связанный чат', () => {
+  // Палитра эпиков яркая: как подпись такой цвет не проходит по контрасту
+  // (`#00a3bf` давал на карточке 2.6:1 при норме 4.5). Цвет носит только точка.
+  it('красит генерируемым цветом точку эпика, а не его подпись', () => {
+    const epic = mkTask({ id: 'ep1', type: 'epic', title: 'Платёжная система' })
+    render(<TaskCard {...props({ task: mkTask({ parentId: 'ep1' }), allTasks: [epic] })} />)
+
+    const chip = screen.getByTitle('Эпик: Платёжная система')
+    expect(chip.style.color).toBe('')
+    expect(chip.querySelector('.jcard-epic-dot')!.getAttribute('style')).toMatch(/background/)
+  })
+
+  // В подписи только «29 авг.» — без года; раньше подсказка говорила просто «Срок».
+  it('подсказка срока показывает полную дату', () => {
+    render(<TaskCard {...props({ task: mkTask({ dueDate: Date.UTC(2026, 7, 29, 9) }) })} />)
+    expect(screen.getByTitle(/^Срок: \d{2}\.\d{2}\.\d{4}$/)).toBeInTheDocument()
+  })
+
   it('постоянно показывает действие и открывает чат, не открывая карточку', () => {
     const onOpenChat = vi.fn()
     const onOpen = vi.fn()

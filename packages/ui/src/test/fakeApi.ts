@@ -33,7 +33,7 @@ export interface FakeApi extends RendererApi {
 }
 
 /** Открытая регистрация (админка). */
-const fakeSignup: { enabled: boolean; role: import('@shared/types').UserRole; mailConfigured: boolean; ownedProjectLimit: number } = { enabled: false, role: 'developer', mailConfigured: false, ownedProjectLimit: 5 }
+const fakeSignup: { enabled: boolean; role: import('@shared/types').UserRole; mailConfigured: boolean; ownedProjectLimit: number; sessionLimit: number } = { enabled: false, role: 'developer', mailConfigured: false, ownedProjectLimit: 5, sessionLimit: 0 }
 /** Инвайты для админки (auth-roadmap п.8). */
 const fakeInvites: Array<{ token: string; role: import('@shared/types').UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string; email: string | null; emailedAt: number | null }> = []
 /** Сессии для админки (auth-roadmap п.4) — по умолчанию одна у admin. */
@@ -770,7 +770,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'admin:invites': async () => ({ invites: [...fakeInvites] }),
     'admin:resetCode': async () => ({ code: 'ABCD1234', expiresAt: 9_999_999_999_999 }),
     'admin:signupConfig': async () => ({ ...fakeSignup }),
-    'admin:setSignupConfig': async ({ enabled, role, ownedProjectLimit }) => { if (enabled !== undefined) fakeSignup.enabled = enabled; if (role) fakeSignup.role = role; if (ownedProjectLimit) fakeSignup.ownedProjectLimit = ownedProjectLimit; return { ...fakeSignup } },
+    'admin:setSignupConfig': async ({ enabled, role, ownedProjectLimit, sessionLimit }) => { if (enabled !== undefined) fakeSignup.enabled = enabled; if (role) fakeSignup.role = role; if (ownedProjectLimit) fakeSignup.ownedProjectLimit = ownedProjectLimit; if (sessionLimit !== undefined) fakeSignup.sessionLimit = sessionLimit; return { ...fakeSignup } },
     'admin:setUserLlmLimit': async ({ name, llmLimitUsd }) => { const u = adminUsers.find((x) => x.name === name)!; Object.assign(u, { llmLimitUsd }); return { ...u } },
     'admin:inviteCreate': async ({ role, ttlHours, maxUses, note, email }) => { const inv = { token: `inv${fakeInvites.length + 1}`, role, createdBy: 'admin', createdAt: 1, expiresAt: 1 + (ttlHours ?? 72) * 3_600_000, maxUses: maxUses ?? 1, uses: 0, note: note ?? '', email: email ?? null, emailedAt: email ? 1 : null }; fakeInvites.push(inv); return inv },
     'admin:inviteDelete': async ({ token }) => { const i = fakeInvites.findIndex((x) => x.token === token); if (i >= 0) fakeInvites.splice(i, 1); return { ok: true as const } },

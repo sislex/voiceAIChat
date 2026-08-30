@@ -151,9 +151,17 @@ export const REST = {
   session2faEnable: '/api/session/2fa/enable',
   session2faDisable: '/api/session/2fa/disable',
   sessionLogoutAll: '/api/session/logout-all',
+  /** «Это не я»: гасит все сессии и требует смену пароля при следующем входе. */
+  sessionPanic: '/api/session/panic',
   sessionRevoke: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
+  /** Имя устройства и отметка «доверенное» для своей сессии. */
+  sessionUpdate: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
+  /** События безопасности, связанные с конкретным устройством. */
+  sessionHistory: (sid: string) => `/api/session/${encodeURIComponent(sid)}/history`,
   adminSessions: (user: string) => `/api/admin/users/${encodeURIComponent(user)}/sessions`,
   adminSessionRevoke: (sid: string) => `/api/admin/sessions/${encodeURIComponent(sid)}`,
+  /** Снять доверие с устройства пользователя (админ). */
+  adminSessionUntrust: (sid: string) => `/api/admin/sessions/${encodeURIComponent(sid)}/trust`,
   sessionPreview: '/api/session/preview',
   conversations: '/api/conversations',
   /** Make: состояние/файлы проекта разговора. */
@@ -642,6 +650,10 @@ export type ServerMessage =
   | { t: 'invitations.invalidate'; v: 1 }
   /** Состав участников или роль в проекте изменились — перечитать проект. */
   | { t: 'project.membership'; v: 1; projectId: string }
+  /** Список сессий пользователя устарел — перечитать (лёгкая инвалидация). */
+  | { t: 'sessions.update'; v: 1 }
+  /** Эту сессию завершили: клиент уходит на экран входа, не дожидаясь 401. */
+  | { t: 'session.revoked'; v: 1; sid: string }
   | { t: 'ci.snapshot'; runId: string; detail: CiRunDetail; log: CiLogLine[] }
   | { t: 'ci.run'; runId: string; run: CiRun }
   | { t: 'ci.step'; runId: string; step: CiRunStep }
@@ -745,6 +757,8 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'task-preparation.notifications.invalidate',
   'invitations.invalidate',
   'project.membership',
+  'sessions.update',
+  'session.revoked',
   'ci.snapshot',
   'ci.run',
   'ci.step',

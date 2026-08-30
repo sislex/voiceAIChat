@@ -19,7 +19,7 @@ import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration,
 import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { MakePane } from './components/MakePane'
-import { SessionsDialog, describeUserAgent } from './components/SessionsDialog'
+import { parseUserAgent } from '@voicechat/sessions-core'
 import { TwoFactorDialog } from './components/TwoFactorDialog'
 import { InviteRegister } from './components/InviteRegister'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog'
@@ -78,6 +78,7 @@ import {
   useProjects,
   useProjectsActions,
   useSession,
+  useSessionActions,
   useSettings,
   useSettingsActions,
   useShell,
@@ -100,7 +101,22 @@ import { REST as REST_PATHS } from '@shared/protocol'
 import { parseAdminRoute } from '@voicechat/admin-app'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 import { placeScenario } from './lib/scenarioRecorder'
+
+/** Подпись устройства для тоста о новом входе: ядро без текстов окна сессий. */
+function deviceLabel(userAgent: string): string {
+  const profile = parseUserAgent(userAgent)
+  if (profile.legacy) return 'Устройство (вход до появления списка сессий)'
+  return profile.os ? `${profile.browser} · ${profile.os}` : profile.browser
+}
+
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
+
+// Окно сессий открывают редко, а тянет оно весь модуль устройств — грузим по
+// требованию, чтобы основной бандл не рос из-за диалога в меню аккаунта.
+const SessionsDialogHost = lazy(async () => {
+  const module = await import('./components/SessionsDialogHost')
+  return { default: module.SessionsDialogHost }
+})
 
 const UsersAdmin = lazy(async () => {
   const module = await import('@voicechat/admin-app')
@@ -108,6 +124,7 @@ const UsersAdmin = lazy(async () => {
 })
 
 import './styles/app.css'
+import '@voicechat/sessions-app/styles.css'
 import '@voicechat/operations-app/styles.css'
 import '@voicechat/admin-app/styles.css'
 
@@ -254,6 +271,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const runtime = useAppRuntime()
   const shell = useShell((s) => s)
   const session = useSession((s) => s)
+  const sessionActions = useSessionActions()
   const settingsState = useSettings((s) => s)
   const chat = useChat((s) => s)
   const voice = useVoice((s) => s)
@@ -266,6 +284,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const voiceActions = useVoiceActions()
   const operationsActions = useOperationsActions()
   const adminActions = useAdminActions()
+  // Доступ к чужим сессиям для админского модуля «сессии и устройства»: список
+  // и его состояние держит сам модуль, стору админки хранить их незачем.
+  const adminSessionsClient = useMemo(() => ({
+    list: () => adminActions.loadAdminSessions(),
+    revoke: (sid: string) => adminActions.revokeAdminSession(sid)
+  }), [adminActions])
   const projectsActions = useProjectsActions()
   // Возможности типа открытого проекта. Пока detail грузится, берём их из
   // summary в списке проектов: там уже есть typeChain, и вкладка «Релизы» не
@@ -288,6 +312,21 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     void window.session.signupEnabled().then((v) => { if (alive) setSignupEnabled(v) })
     return () => { alive = false }
   }, [session.authRequired, session.currentUser])
+  // Сессию завершили с другого устройства: уходим на экран входа сразу, не
+  // дожидаясь 401 на следующем запросе — иначе интерфейс ещё выглядит рабочим.
+  useEffect(() => {
+    if (!session.currentUser || !window.session?.onSessionsChanged) return
+    return window.session.onSessionsChanged((event) => {
+      if (event.type !== 'revoked') return
+      toast.error('Вашу сессию завершили на другом устройстве')
+      setSessionsOpen(false)
+      // Гасим сессию локально, а не через logout: токен уже недействителен, и
+      // серверный выход ответит 401 — человек остался бы на мёртвом экране.
+      sessionActions.expire()
+      navigate('/')
+    })
+  }, [session.currentUser]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Уведомление о входе с нового устройства (auth-roadmap п.16): после входа/восстановления сессии показываем и отмечаем просмотренными.
   useEffect(() => {
     const name = session.currentUser?.name
@@ -295,7 +334,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     let alive = true
     void window.session.securityNotices().then((list) => {
       if (!alive || list.length === 0) return
-      for (const n of list.slice(-3)) toast.info(`Вход в ваш аккаунт с нового устройства: ${describeUserAgent(n.userAgent)} · ${n.ip || 'адрес неизвестен'} · ${new Date(n.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}. Не вы — завершите сессии в меню аккаунта.`)
+      for (const n of list.slice(-3)) toast.info(`Вход в ваш аккаунт с нового устройства: ${deviceLabel(n.userAgent)} · ${n.ip || 'адрес неизвестен'} · ${new Date(n.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}. Не вы — завершите сессии в меню аккаунта.`)
       void window.session?.securityNoticesSeen?.()
     }).catch(() => undefined)
     return () => { alive = false }
@@ -2020,7 +2059,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
       {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
       {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
-      {sessionsOpen && window.session?.sessions && window.session.logoutAll && window.session.revokeSession && <SessionsDialog load={window.session.sessions} revoke={window.session.revokeSession} logoutAll={window.session.logoutAll} onClose={() => setSessionsOpen(false)} />}
+      {sessionsOpen && (
+        <Suspense fallback={null}>
+          <SessionsDialogHost
+            onClose={() => setSessionsOpen(false)}
+            onSignedOut={() => { setSessionsOpen(false); void runtime.logout().then(() => navigate('/')).catch(() => undefined) }}
+          />
+        </Suspense>
+      )}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} />}
       {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
       </div>
@@ -2332,9 +2378,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onSetBlocked={(name, blocked) => void adminActions.setUserBlocked(name, blocked)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
-          sessions={admin.adminSessions}
-          onLoadSessions={() => void adminActions.loadAdminSessions()}
-          onRevokeSession={(sid) => void adminActions.revokeAdminSession(sid)}
+          sessionsClient={adminSessionsClient}
           security={admin.adminSecurity}
           onLoadSecurity={() => void adminActions.loadAdminSecurity()}
           invites={admin.adminInvites}

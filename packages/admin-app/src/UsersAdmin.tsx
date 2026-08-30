@@ -13,9 +13,11 @@ import type {
   UserUsageSummary,
   AdminMakeStats, AdminMachineStats, SecurityEvent, SecurityEventType, InviteInfo, SignupConfig } from '@shared/admin'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
-import type { Conversation, Message, LlmProvider, SessionInfo } from '@shared/types'
+import type { Conversation, Message, LlmProvider } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { AgentFleetUpdate } from './AgentFleetUpdate'
+import type { SessionsClient } from '@voicechat/sessions-app'
+import { AdminSessions } from './AdminSessions'
 import { RoleCommandPolicyEditor } from './RoleCommandPolicyEditor'
 import type { RoleCommandPolicies } from '@shared/commandPolicy'
 import { Button, Dialog, Skeleton, RefreshIndicator, EmptyState, ErrorState, ConfirmDialog } from '@voicechat/ui-kit'
@@ -29,7 +31,7 @@ function AdminFrame({ variant, onClose, children }: { variant: 'modal' | 'page';
 }
 
 /** Подписи событий журнала безопасности (auth-roadmap п.7). */
-const SECURITY_LABEL: Record<SecurityEventType, string> = { agent_connected: 'Агент подключился', agent_rejected: 'Агент отклонён', agent_token_rotated: 'Токен агента перевыпущен', agent_token_revoked: 'Токен агента отозван', signup_requested: 'Заявка на регистрацию', signup_verified: 'Email подтверждён', login_new_device: 'Вход с нового устройства', inactive_blocked: 'Отключён за неактивность', reset_code_issued: 'Выдан код сброса', password_reset: 'Пароль сброшен по коду', password_changed: 'Пароль изменён', invite_created: 'Создан инвайт', project_invited: 'Приглашение в проект', project_invite_accepted: 'Приглашение принято', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
+const SECURITY_LABEL: Record<SecurityEventType, string> = { agent_connected: 'Агент подключился', agent_rejected: 'Агент отклонён', agent_token_rotated: 'Токен агента перевыпущен', agent_token_revoked: 'Токен агента отозван', signup_requested: 'Заявка на регистрацию', signup_verified: 'Email подтверждён', login_new_device: 'Вход с нового устройства', inactive_blocked: 'Отключён за неактивность', reset_code_issued: 'Выдан код сброса', password_reset: 'Пароль сброшен по коду', password_changed: 'Пароль изменён', invite_created: 'Создан инвайт', project_invited: 'Приглашение в проект', project_invite_accepted: 'Приглашение принято', registered: 'Регистрация по инвайту', login: 'Вход', login_failed: 'Неверный пароль', login_locked: 'Замок после неудач', login_2fa_failed: 'Неверный код 2FA', logout: 'Выход', logout_all: 'Выход везде', session_revoked: 'Сессия отозвана', session_renamed: 'Устройство переименовано', session_trusted: 'Устройство доверено', session_untrusted: 'Доверие снято', session_evicted: 'Сессия вытеснена лимитом', session_panic: 'Тревога: «это не я»', password_set: 'Пароль установлен', twofactor_enabled: '2FA включена', twofactor_disabled: '2FA выключена', user_blocked: 'Заблокирован', user_unblocked: 'Разблокирован' }
 
 export interface UsersAdminProps {
   variant?: 'modal' | 'page'
@@ -66,10 +68,12 @@ export interface UsersAdminProps {
   onSetBlocked: (name: string, blocked: boolean) => void
   onDelete: (name: string) => void
   onLoadUsage: (unit: UsageUnit, from?: number, to?: number, conversationId?: string) => void
-  /** Сессии выбранного пользователя (auth-roadmap п.4). */
-  sessions?: SessionInfo[] | null
-  onLoadSessions?: () => void
-  onRevokeSession?: (sid: string) => void
+  /**
+   * Доступ к сессиям выбранного пользователя. Список рисует общий модуль
+   * «сессии и устройства» — тот же, что видит сам пользователь в своём меню:
+   * две разные вёрстки одного списка расходились бы в мелочах.
+   */
+  sessionsClient?: SessionsClient
   /** Журнал безопасности выбранного пользователя (auth-roadmap п.7). */
   security?: SecurityEvent[] | null
   onLoadSecurity?: () => void
@@ -83,7 +87,7 @@ export interface UsersAdminProps {
   /** Открытая регистрация с подтверждением email. */
   signup?: SignupConfig | null
   onLoadSignup?: () => void
-  onSetSignup?: (input: { enabled?: boolean; role?: import('@shared/types').UserRole; ownedProjectLimit?: number }) => void
+  onSetSignup?: (input: { enabled?: boolean; role?: import('@shared/types').UserRole; ownedProjectLimit?: number; sessionLimit?: number }) => void
   onOpenConversation: (id: string) => void
   /** Типы проекта, ожидающие утверждения; нет обработчика — секции нет. */
   pendingProjectTypes?: ProjectTypeNode[]
@@ -170,9 +174,7 @@ export function UsersAdmin({
   onSetBlocked,
   onDelete,
   onLoadUsage,
-  sessions,
-  onLoadSessions,
-  onRevokeSession,
+  sessionsClient,
   security,
   onLoadSecurity,
   invites,
@@ -324,6 +326,8 @@ export function UsersAdmin({
                   <label className="make-autosave"><input type="checkbox" aria-label="Разрешить регистрацию по email" checked={signup.enabled} onChange={(e) => onSetSignup?.({ enabled: e.target.checked })} /> разрешить регистрацию с подтверждением email</label>
                   <label>Роль новых <select aria-label="Роль новых пользователей" value={signup.role} onChange={(e) => onSetSignup?.({ role: e.target.value as import('@shared/types').UserRole })}><option value="developer">developer</option><option value="tester">tester</option><option value="observer">observer</option></select></label>
                   <label>Проектов на пользователя <input type="number" min={1} max={1000} aria-label="Квота проектов на пользователя" value={signup.ownedProjectLimit} onChange={(e) => { const value = Number(e.target.value); if (Number.isInteger(value) && value > 0) onSetSignup?.({ ownedProjectLimit: value }) }} /></label>
+                  {/* 0 — без ограничения: лимит сессий выключен по умолчанию, включать его должен человек осознанно. */}
+                  <label>Сессий на пользователя <input type="number" min={0} max={100} aria-label="Лимит одновременных сессий (0 — без ограничения)" value={signup.sessionLimit ?? 0} onChange={(e) => { const value = Number(e.target.value); if (Number.isInteger(value) && value >= 0 && value <= 100) onSetSignup?.({ sessionLimit: value }) }} /></label>
                   {!signup.mailConfigured && <span className="ublock ublock--lock" title="Задайте VC_SMTP_URL и VC_MAIL_FROM на сервере">SMTP не настроен — письма пишутся в лог сервера</span>}
                 </div>
               )}
@@ -447,21 +451,7 @@ export function UsersAdmin({
               {resetInfo && resetInfo.name === cur.name && (
                 <p className="uusage-note" role="status" data-testid="admin-reset-code">Код сброса для <b>{cur.name}</b>: <code>{resetInfo.code}</code> — действует до {new Date(resetInfo.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}; передайте лично, повторно не показывается.</p>
               )}
-              {onLoadSessions && (
-                <details className="uadmin-sessions" data-testid="admin-sessions" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) onLoadSessions() }}>
-                  <summary>Сессии{sessions ? ` (${sessions.length})` : ''}</summary>
-                  {sessions === null || sessions === undefined ? <p className="fsub">Загрузка…</p> : sessions.length === 0 ? <p className="fsub">Активных сессий нет.</p> : (
-                    <ul className="sessions-list" role="list">
-                      {sessions.map((s) => (
-                        <li key={s.sid} className="sessions-item">
-                          <div><strong>{s.userAgent || 'устройство'}</strong><small>{s.ip || 'адрес неизвестен'} · вход {new Date(s.createdAt).toLocaleString('ru-RU')} · активность {new Date(s.lastSeen).toLocaleString('ru-RU')}</small></div>
-                          {onRevokeSession && <Button size="sm" variant="ghost" onClick={() => onRevokeSession(s.sid)}>Завершить</Button>}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </details>
-              )}
+              {sessionsClient && <AdminSessions client={sessionsClient} user={cur.name} />}
               <div className="useg" role="tablist" aria-label="Статистика пользователя">
                 <button type="button" role="tab" aria-selected={tab === 'access'} className={tab === 'access' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('access')}>Доступ к моделям</button>
                 {isAdmin && <button type="button" role="tab" aria-selected={tab === 'machines'} className={tab === 'machines' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('machines')}>Машины пользователя</button>}

@@ -52,6 +52,12 @@ test('selectAffected выбирает пакеты и безопасный fallb
     assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder'])
   })
 
+  await t.test('ядро сессий тянет сервер и UI как потребителей', () => {
+    const decision = selectAffected(['packages/sessions-core/src/policy.ts'])
+    assert.equal(decision.full, false)
+    assert.deepEqual(ids(decision), ['sessions-core', 'sessions-app', 'server', 'ui', 'web', 'web-recorder'])
+  })
+
   await t.test('правка UI проверяет standalone Web Recorder как потребителя', () => {
     const decision = selectAffected(['packages/ui/src/App.tsx'])
     assert.equal(decision.full, false)
@@ -62,7 +68,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder'])
+      assert.deepEqual(ids(decision), ['shared', 'sessions-core', 'sessions-app', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -76,7 +82,7 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder'])
+    assert.deepEqual(ids(decision), ['shared', 'sessions-core', 'sessions-app', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder'])
   })
 })
 

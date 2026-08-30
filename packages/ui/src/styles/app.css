@@ -4541,8 +4541,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcard-menu-danger { color: var(--danger); }
 .jwip-input { margin: 4px 8px; width: 120px; font-size: 13px; }
 .jcard-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.jcard-flag { font-size: 11px; color: var(--ci-progress); background: var(--ci-progress-bg); border-radius: 3px; padding: 1px 6px; }
-.jcard-epic { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jcard-flag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ci-progress); background: var(--ci-progress-bg); border-radius: 3px; padding: 1px 6px; }
+.jcard-flag svg { width: 11px; height: 11px; }
+.jcard-epic { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
 .jcard-epic-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
 .jcard-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; background: var(--ci-neutral-bg); color: var(--text); border-radius: 3px; padding: 1px 6px; }
 .jcard-progress { display: flex; align-items: center; gap: 6px; }
