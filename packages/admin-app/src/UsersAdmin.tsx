@@ -13,9 +13,11 @@ import type {
   UserUsageSummary,
   AdminMakeStats, AdminMachineStats, SecurityEvent, SecurityEventType, InviteInfo, SignupConfig } from '@shared/admin'
 import { CLAUDE_MODELS, CODEX_MODELS } from '@shared/types'
-import type { Conversation, Message, LlmProvider, SessionInfo } from '@shared/types'
+import type { Conversation, Message, LlmProvider } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import { AgentFleetUpdate } from './AgentFleetUpdate'
+import type { SessionsClient } from '@voicechat/sessions-app'
+import { AdminSessions } from './AdminSessions'
 import { RoleCommandPolicyEditor } from './RoleCommandPolicyEditor'
 import type { RoleCommandPolicies } from '@shared/commandPolicy'
 import { Button, Dialog, Skeleton, RefreshIndicator, EmptyState, ErrorState, ConfirmDialog } from '@voicechat/ui-kit'
@@ -66,10 +68,12 @@ export interface UsersAdminProps {
   onSetBlocked: (name: string, blocked: boolean) => void
   onDelete: (name: string) => void
   onLoadUsage: (unit: UsageUnit, from?: number, to?: number, conversationId?: string) => void
-  /** Сессии выбранного пользователя (auth-roadmap п.4). */
-  sessions?: SessionInfo[] | null
-  onLoadSessions?: () => void
-  onRevokeSession?: (sid: string) => void
+  /**
+   * Доступ к сессиям выбранного пользователя. Список рисует общий модуль
+   * «сессии и устройства» — тот же, что видит сам пользователь в своём меню:
+   * две разные вёрстки одного списка расходились бы в мелочах.
+   */
+  sessionsClient?: SessionsClient
   /** Журнал безопасности выбранного пользователя (auth-roadmap п.7). */
   security?: SecurityEvent[] | null
   onLoadSecurity?: () => void
@@ -170,9 +174,7 @@ export function UsersAdmin({
   onSetBlocked,
   onDelete,
   onLoadUsage,
-  sessions,
-  onLoadSessions,
-  onRevokeSession,
+  sessionsClient,
   security,
   onLoadSecurity,
   invites,
@@ -447,21 +449,7 @@ export function UsersAdmin({
               {resetInfo && resetInfo.name === cur.name && (
                 <p className="uusage-note" role="status" data-testid="admin-reset-code">Код сброса для <b>{cur.name}</b>: <code>{resetInfo.code}</code> — действует до {new Date(resetInfo.expiresAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}; передайте лично, повторно не показывается.</p>
               )}
-              {onLoadSessions && (
-                <details className="uadmin-sessions" data-testid="admin-sessions" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) onLoadSessions() }}>
-                  <summary>Сессии{sessions ? ` (${sessions.length})` : ''}</summary>
-                  {sessions === null || sessions === undefined ? <p className="fsub">Загрузка…</p> : sessions.length === 0 ? <p className="fsub">Активных сессий нет.</p> : (
-                    <ul className="sessions-list" role="list">
-                      {sessions.map((s) => (
-                        <li key={s.sid} className="sessions-item">
-                          <div><strong>{s.userAgent || 'устройство'}</strong><small>{s.ip || 'адрес неизвестен'} · вход {new Date(s.createdAt).toLocaleString('ru-RU')} · активность {new Date(s.lastSeen).toLocaleString('ru-RU')}</small></div>
-                          {onRevokeSession && <Button size="sm" variant="ghost" onClick={() => onRevokeSession(s.sid)}>Завершить</Button>}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </details>
-              )}
+              {sessionsClient && <AdminSessions client={sessionsClient} user={cur.name} />}
               <div className="useg" role="tablist" aria-label="Статистика пользователя">
                 <button type="button" role="tab" aria-selected={tab === 'access'} className={tab === 'access' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('access')}>Доступ к моделям</button>
                 {isAdmin && <button type="button" role="tab" aria-selected={tab === 'machines'} className={tab === 'machines' ? 'useg-item on' : 'useg-item'} onClick={() => setTab('machines')}>Машины пользователя</button>}

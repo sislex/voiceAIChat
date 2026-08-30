@@ -19,7 +19,7 @@ import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration,
 import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { MakePane } from './components/MakePane'
-import { SessionsDialog, describeUserAgent } from './components/SessionsDialog'
+import { describeUserAgent } from '@voicechat/sessions-app'
 import { TwoFactorDialog } from './components/TwoFactorDialog'
 import { InviteRegister } from './components/InviteRegister'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog'
@@ -100,12 +100,20 @@ import { parseAdminRoute } from '@voicechat/admin-app'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
 
+// Окно сессий открывают редко, а тянет оно весь модуль устройств — грузим по
+// требованию, чтобы основной бандл не рос из-за диалога в меню аккаунта.
+const SessionsDialogHost = lazy(async () => {
+  const module = await import('./components/SessionsDialogHost')
+  return { default: module.SessionsDialogHost }
+})
+
 const UsersAdmin = lazy(async () => {
   const module = await import('@voicechat/admin-app')
   return { default: module.UsersAdmin }
 })
 
 import './styles/app.css'
+import '@voicechat/sessions-app/styles.css'
 import '@voicechat/operations-app/styles.css'
 import '@voicechat/admin-app/styles.css'
 
@@ -264,6 +272,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const voiceActions = useVoiceActions()
   const operationsActions = useOperationsActions()
   const adminActions = useAdminActions()
+  // Доступ к чужим сессиям для админского модуля «сессии и устройства»: список
+  // и его состояние держит сам модуль, стору админки хранить их незачем.
+  const adminSessionsClient = useMemo(() => ({
+    list: () => adminActions.loadAdminSessions(),
+    revoke: (sid: string) => adminActions.revokeAdminSession(sid)
+  }), [adminActions])
   const projectsActions = useProjectsActions()
   // Возможности типа открытого проекта. Пока detail грузится, берём их из
   // summary в списке проектов: там уже есть typeChain, и вкладка «Релизы» не
@@ -1967,7 +1981,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
       {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
       {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
-      {sessionsOpen && window.session?.sessions && window.session.logoutAll && window.session.revokeSession && <SessionsDialog load={window.session.sessions} revoke={window.session.revokeSession} logoutAll={window.session.logoutAll} onClose={() => setSessionsOpen(false)} />}
+      {sessionsOpen && (
+        <Suspense fallback={null}>
+          <SessionsDialogHost
+            onClose={() => setSessionsOpen(false)}
+            onSignedOut={() => { setSessionsOpen(false); void runtime.logout().then(() => navigate('/')).catch(() => undefined) }}
+          />
+        </Suspense>
+      )}
       {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} />}
       {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
       </div>
@@ -2276,9 +2297,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onSetBlocked={(name, blocked) => void adminActions.setUserBlocked(name, blocked)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
-          sessions={admin.adminSessions}
-          onLoadSessions={() => void adminActions.loadAdminSessions()}
-          onRevokeSession={(sid) => void adminActions.revokeAdminSession(sid)}
+          sessionsClient={adminSessionsClient}
           security={admin.adminSecurity}
           onLoadSecurity={() => void adminActions.loadAdminSecurity()}
           invites={admin.adminInvites}
