@@ -4588,8 +4588,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 [data-theme='dark'] .jcard-flag { color: #ffd97a; background: #4a3c12; }
 .jcard-epic { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jcard-epic-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
-.jcard-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; background: rgba(9, 30, 66, 0.08); color: inherit; border-radius: 3px; padding: 1px 6px; }
-[data-theme='dark'] .jcard-label { background: rgba(255, 255, 255, 0.12); }
+.jcard-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; background: var(--ci-neutral-bg); color: var(--text); border-radius: 3px; padding: 1px 6px; }
 .jcard-progress { display: flex; align-items: center; gap: 6px; }
 .jcard-progress-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--ci-neutral-bg); overflow: hidden; }
 .jcard-progress-fill { display: block; height: 100%; background: #36b37e; }
@@ -4620,8 +4619,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* Навыки задачи (чипы) — по образцу меток, но в «зелёном» акценте Jira */
 .jcard-skill { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; font-weight: 500;
-  background: #dcfff1; color: #216e4e; border-radius: 3px; padding: 1px 6px; }
-[data-theme='dark'] .jcard-skill { background: #133527; color: #7ee2b8; }
+  background: var(--ci-success-bg); color: var(--ci-success); border-radius: 3px; padding: 1px 6px; }
 .jmodal-skills .jcard-skill { font-weight: 500; }
 
 /* Кнопка перехода в связанный чат на карточке */
@@ -4660,6 +4658,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    Размеры перебивают .vc-dialog--lg — правило ниже него в файле. */
 .jmodal-frame { width: 1040px; height: 88vh; }
 .jmodal-frame .jmodal { flex: 1; min-height: 0; overflow: hidden; }
+/* Колонки «Общего» — внутри своей панели вкладки. `hidden` пришлось прописать
+   отдельно: у элемента с `display: flex` атрибут сам по себе ничего не скрывает. */
+.jmodal-general { display: flex; flex: 1 1 100%; gap: 24px; min-width: 0; min-height: 0; align-items: stretch; }
+.jmodal-general[hidden] { display: none; }
 .jmodal { display: flex; gap: 24px; padding: 16px 20px; align-items: stretch; }
 .jmodal-main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .jmodal-desc-wrap { position: relative; display: block; width: 100%; }
@@ -4674,7 +4676,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jmodal-title { font-size: 20px; font-weight: 600; border: 1px solid transparent; border-radius: 4px; background: none; color: inherit; resize: none; padding: 4px 6px; font-family: inherit; }
 .jmodal-title:hover { background: var(--surface-hover); }
 .jmodal-title:focus { outline: none; border-color: var(--accent); background: var(--surface); }
-.jmodal-h { font-size: 13px; font-weight: 600; margin: 8px 0 0; opacity: 0.85; }
+.jmodal-h { margin: 8px 0 0; font-size: 13px; font-weight: 600; color: var(--text); }
 .jmodal-desc { min-height: 72px; resize: vertical; font-size: 13px; }
 /* Описание: по умолчанию отрисованный маркдаун, правка — по кнопке «Изменить».
    Заголовок и кнопка стоят одной строкой, поэтому у .jmodal-h внутри неё margin
@@ -4707,8 +4709,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Поля панели деталей в своей обёртке: на телефоне она сворачивается кнопкой
    «Подробности» (как в мобильной Jira), на десктопе всегда раскрыта. */
 .jmodal-side-fields { display: flex; flex-direction: column; gap: 10px; }
-.jmodal-side-toggle { display: flex; align-items: center; gap: 8px; width: 100%; border: none; background: none; color: inherit; font: inherit; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; cursor: pointer; padding: 0; }
-.jmodal-side-caret { font-size: 10px; opacity: 0.7; }
+.jmodal-side-toggle { display: flex; align-items: center; gap: 8px; width: 100%; border: none; background: none; color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 0; }
+.jmodal-side-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.jmodal-side-toggle[aria-expanded='true'] .vc-feed-caret { transform: rotate(45deg); }
 /* Статус и исполнитель под заголовком — только мобильная раскладка. */
 .jmodal-quick { display: flex; flex-direction: column; gap: 10px; }
 /* ⋯-меню действий в шапке карточки (мобильная замена трём кнопкам). */
@@ -4735,8 +4738,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .jcard .vc-btn, .jcard .vc-btn--icon, .jcard-stage-actions button { min-width: 40px; min-height: 40px; }
 
   /* Узкий экран: колонки стопкой, один общий скролл — два вложенных конфликтуют. */
-  .jmodal { flex-direction: column; }
+  .jmodal, .jmodal-general { flex-direction: column; gap: 14px; }
   .jmodal-frame .jmodal { overflow-y: auto; }
+  .jmodal-general { min-height: auto; }
   .jmodal-main, .jmodal-side { overflow: visible; }
   .jmodal-side { flex: none; width: 100%; box-sizing: border-box; }
   .jswimlane { margin-left: 0; }
@@ -6494,8 +6498,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 }
 .task-tab { flex: 0 0 auto; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit; }
 .task-tab--active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
-.jmodal:not(.jmodal--tab-general) > .jmodal-main,
-.jmodal:not(.jmodal--tab-general) > .jmodal-side { display: none; }
 /* `.jmodal` — флексбокс, а не грид: `grid-column` в нём ничего не делал, и
    панель вкладки занимала ширину своего содержимого, оставляя половину карточки
    пустой. Лента рана обходила это инлайновым `flex` — теперь правило общее. */
