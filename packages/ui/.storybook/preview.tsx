@@ -5,6 +5,11 @@ import { useEffect, type ReactNode } from 'react'
 import type { Preview } from '@storybook/react'
 import '../src/styles/global.css'
 import '../src/styles/app.css'
+// Стили продуктовых модулей: без них сториз админки, сессий и профиля
+// рендерились в витрине без вёрстки — сверять их с макетом было бессмысленно.
+import '@voicechat/admin-app/styles.css'
+import '@voicechat/sessions-app/styles.css'
+import '@voicechat/profile-app/styles.css'
 import { UiProviders } from '@voicechat/ui-kit'
 
 // Как и в App: тема дублируется на <html>, иначе модальные окна (портал в
