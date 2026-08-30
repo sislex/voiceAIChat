@@ -20,7 +20,8 @@ import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
-import { ChatIcon, DotsIcon, GripIcon } from '../icons'
+import { ChatIcon, DotsIcon, FlagIcon, GripIcon } from '../icons'
+import { formatDate } from '../../lib/dateFormat'
 
 export interface TaskCardProps {
   task: Task
@@ -225,10 +226,13 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
 
       {!done && !stoppedStage && (task.flagged || task.autoPilot || epic || (props.columnSemanticType === 'backlog' && task.labels.length > 0) || (readyStage && task.skills.length > 0)) && (
         <div className="jcard-chips">
-          {task.flagged && <span className="jcard-flag" title="Помечена флагом">⚑ Флаг</span>}
-          {task.autoPilot && <span className="jcard-label" title="Автоматический проход конвейера">⏩ Автопроход</span>}
+          {task.flagged && <span className="jcard-flag" title="Помечена флагом"><FlagIcon filled /> Флаг</span>}
+          {task.autoPilot && <span className="jcard-label" title="Автоматический проход конвейера">Автопроход</span>}
+          {/* Цвет эпика носит только точка: как подпись он не проходит по
+              контрасту — палитра яркая, и, например, `#00a3bf` даёт на карточке
+              2.6:1 при норме 4.5. Текст красится токеном. */}
           {epic && (
-            <span className="jcard-epic" style={{ color: epicColor(epic.id) }} title={`Эпик: ${epic.title}`}>
+            <span className="jcard-epic" title={`Эпик: ${epic.title}`}>
               <span className="jcard-epic-dot" style={{ background: epicColor(epic.id) }} />
               {epic.title}
             </span>
@@ -434,8 +438,9 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
         </span>
 
         <span className="jcard-foot-right">
+          {/* В подписи только «29 авг.» — год виден лишь в подсказке. */}
           {task.dueDate != null && (
-            <span className={`jcard-due jcard-due--${dueState(task.dueDate)}`} title="Срок">
+            <span className={`jcard-due jcard-due--${dueState(task.dueDate)}`} title={`Срок: ${formatDate(task.dueDate)}`}>
               {fmtDue(task.dueDate)}
             </span>
           )}
