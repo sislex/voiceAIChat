@@ -209,15 +209,29 @@ describe('UsersAdmin — доступность', () => {
 })
 
 describe('UsersAdmin — сессии пользователя (auth-roadmap п.4)', () => {
-  it('раскрытие «Сессии» запрашивает список; «Завершить» отзывает по sid', async () => {
-    const onLoadSessions = vi.fn()
-    const onRevokeSession = vi.fn()
-    renderAdmin({ isAdmin: true, selected: 'bob', sessions: [{ sid: 's1', user: 'bob', createdAt: 1, lastSeen: 2, expiresAt: 9, ip: '10.0.0.1', userAgent: 'Chrome/1' }], onLoadSessions, onRevokeSession })
+  const chrome = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
+
+  it('список запрашивается только при раскрытии и рисуется общим модулем сессий', async () => {
+    const list = vi.fn(async () => [{ sid: 's1', user: 'bob', createdAt: 1, lastSeen: 2, expiresAt: Date.now() + 86_400_000, ip: '10.0.0.1', userAgent: chrome }])
+    const revoke = vi.fn(async () => undefined)
+    renderAdmin({ isAdmin: true, selected: 'bob', sessionsClient: { list, revoke } })
     const details = screen.getByTestId('admin-sessions')
-    await userEvent.click(within(details).getByText(/Сессии \(1\)/))
-    await waitFor(() => expect(onLoadSessions).toHaveBeenCalled())
+    // Закрытый <details> не должен дёргать сервер: у админа сотни пользователей.
+    expect(list).not.toHaveBeenCalled()
+    await userEvent.click(within(details).getByText('Сессии'))
+    await waitFor(() => expect(list).toHaveBeenCalled())
+    expect(await within(details).findByText('Chrome 128 · macOS')).toBeInTheDocument()
     await userEvent.click(within(details).getByRole('button', { name: 'Завершить' }))
-    expect(onRevokeSession).toHaveBeenCalledWith('s1')
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith('s1'))
+  })
+
+  it('чужой список — только чтение: без переименования и доверия', async () => {
+    const list = vi.fn(async () => [{ sid: 's1', user: 'bob', createdAt: 1, lastSeen: 2, expiresAt: Date.now() + 86_400_000, ip: '10.0.0.1', userAgent: chrome }])
+    renderAdmin({ isAdmin: true, selected: 'bob', sessionsClient: { list, revoke: async () => undefined, rename: async () => undefined, setTrusted: async () => undefined } })
+    await userEvent.click(within(screen.getByTestId('admin-sessions')).getByText('Сессии'))
+    expect(await screen.findByTestId('session-s1')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Переименовать' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Сделать доверенным' })).toBeNull()
   })
 })
 

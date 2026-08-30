@@ -1,5 +1,5 @@
 {
-  "name": "@voicechat/admin-app",
+  "name": "@voicechat/sessions-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,8 +14,7 @@
     "test": "vitest run --silent"
   },
   "dependencies": {
-    "@voicechat/sessions-app": "*",
-    "@voicechat/shared": "*",
+    "@voicechat/sessions-core": "*",
     "@voicechat/ui-kit": "*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
@@ -29,6 +28,7 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "axe-core": "^4.12.1",
     "jsdom": "^25.0.1",
     "typescript": "^5.7.2",
     "vite": "^5.4.11",
