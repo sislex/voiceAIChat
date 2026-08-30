@@ -14,6 +14,8 @@ Whisper, ответ озвучивается Piper. Плюс «машины» �
 |---|---|---|---|
 | `packages/shared` | `@voicechat/shared` | Типы, контракт REST/WS, чистая логика (без зависимостей) | [AGENTS](packages/shared/AGENTS.md) |
 | `packages/ui` | `@voicechat/ui` | Весь React-UI и стор; транспорт-нейтрален (мосты `window.*`) | [AGENTS](packages/ui/AGENTS.md) |
+| `packages/sessions-core` | `@voicechat/sessions-core` | Переносимое ядро «сессий и устройств»: разбор устройства, политики, порт хранилища с контрактом | [README](packages/sessions-core/README.md) |
+| `packages/sessions-app` | `@voicechat/sessions-app` | UI-модуль «Сессии и устройства» (окно аккаунта + панель в админке) | [AGENTS](packages/sessions-app/AGENTS.md) |
 | `apps/server` | `@voicechat/server` | Fastify: REST + WS, SQLite, Whisper, Piper, claude/codex CLI, реестр машин | [AGENTS](apps/server/AGENTS.md) |
 | `apps/llm-runner` | `@voicechat/llm-runner` | Исполнитель LLM: единственный, кто делает spawn claude/codex; HTTP `/v1/run` | [AGENTS](apps/llm-runner/AGENTS.md) |
 | `apps/web` | `@voicechat/web` | Тонкий браузерный клиент: `@voicechat/ui` + мосты поверх REST/WS | [AGENTS](apps/web/AGENTS.md) |
