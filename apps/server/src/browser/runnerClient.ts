@@ -6,7 +6,7 @@
 // одному владельцу — проверяется до вызова), userKey = uid, conversationKey =
 // conversationId. Раннер сверяет пару при повторном старте (identity mismatch).
 
-import type { BrowserCommandRequest, BrowserSessionMetadata, BrowserViewport } from '@voicechat/shared'
+import type { BrowserCommandRequest, BrowserInspectResult, BrowserSelectorResult, BrowserSessionMetadata, BrowserViewport } from '@voicechat/shared'
 
 export interface BrowserRunnerClientOptions {
   baseUrl: string
@@ -15,6 +15,9 @@ export interface BrowserRunnerClientOptions {
   /** Таймаут одного вызова раннера, мс (навигация внутри Chromium — до 30 с). */
   timeoutMs?: number
 }
+
+/** Что возвращает раннер на команду — зависит от её типа. */
+export type BrowserRunnerCommandResult = BrowserSessionMetadata | BrowserSelectorResult | BrowserInspectResult
 
 /** Ошибка вызова раннера с кодом, пригодным для маппинга в HTTP-статус роута. */
 export class BrowserRunnerError extends Error {
@@ -35,8 +38,14 @@ export interface BrowserStartInput {
 
 export interface BrowserRunnerClient {
   start(input: BrowserStartInput): Promise<BrowserSessionMetadata>
-  command(sessionId: string, request: BrowserCommandRequest, signal?: AbortSignal): Promise<BrowserSessionMetadata>
-  screenshot(sessionId: string, request: BrowserCommandRequest): Promise<{ buffer: Buffer; mimeType: string }>
+  /**
+   * Ответ зависит от команды: навигация и вкладки отдают метаданные сессии,
+   * `selector` — результат действия, `inspect` — журналы. Раньше тип обещал
+   * только метаданные, и все три вызова в этапе приводили ответ через
+   * `as unknown as …` — то есть тип не помогал, а мешал.
+   */
+  command(sessionId: string, request: BrowserCommandRequest, signal?: AbortSignal): Promise<BrowserRunnerCommandResult>
+  screenshot(sessionId: string, request: BrowserCommandRequest, signal?: AbortSignal): Promise<{ buffer: Buffer; mimeType: string }>
   stop(sessionId: string): Promise<boolean>
 }
 
@@ -49,9 +58,10 @@ export function createBrowserRunnerClient(opts: BrowserRunnerClientOptions): Bro
     const abort = new AbortController()
     // Отмена рана обязана обрывать запрос: шаг `wait` держит соединение до
     // своего таймаута, и без этого «Отменить» срабатывало через полминуты.
+    let cancelled = false
     if (signal) {
-      if (signal.aborted) abort.abort()
-      else signal.addEventListener('abort', () => abort.abort(), { once: true })
+      if (signal.aborted) { cancelled = true; abort.abort() }
+      else signal.addEventListener('abort', () => { cancelled = true; abort.abort() }, { once: true })
     }
     const timer = setTimeout(() => abort.abort(), timeoutMs)
     try {
@@ -65,7 +75,11 @@ export function createBrowserRunnerClient(opts: BrowserRunnerClientOptions): Bro
         signal: abort.signal
       })
     } catch (err) {
-      throw new BrowserRunnerError(502, err instanceof Error && err.name === 'AbortError' ? 'Browser Runner не ответил вовремя' : 'Browser Runner недоступен')
+      const aborted = err instanceof Error && err.name === 'AbortError'
+      // Отмену человека нельзя выдавать за таймаут раннера: по такому тексту
+      // идут искать беду в инфраструктуре, которой нет.
+      if (aborted && cancelled) throw new BrowserRunnerError(499, 'Запрос к Browser Runner отменён')
+      throw new BrowserRunnerError(502, aborted ? 'Browser Runner не ответил вовремя' : 'Browser Runner недоступен')
     } finally {
       clearTimeout(timer)
     }
@@ -92,10 +106,12 @@ export function createBrowserRunnerClient(opts: BrowserRunnerClientOptions): Bro
     async command(sessionId, request, signal) {
       const res = await call(`/v1/sessions/${encodeURIComponent(sessionId)}/commands`, 'POST', request, signal)
       if (!res.ok) throw await asError(res)
-      return res.json() as Promise<BrowserSessionMetadata>
+      return res.json() as Promise<BrowserRunnerCommandResult>
     },
-    async screenshot(sessionId, request) {
-      const res = await call(`/v1/sessions/${encodeURIComponent(sessionId)}/commands`, 'POST', request)
+    async screenshot(sessionId, request, signal) {
+      // Сигнал слушают все методы, кроме этого: после отмены снимок висел до
+      // собственного таймаута в 35 с.
+      const res = await call(`/v1/sessions/${encodeURIComponent(sessionId)}/commands`, 'POST', request, signal)
       if (!res.ok) throw await asError(res)
       const mimeType = res.headers.get('content-type') ?? 'image/png'
       const buffer = Buffer.from(await res.arrayBuffer())

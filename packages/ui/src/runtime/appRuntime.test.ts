@@ -6,6 +6,7 @@ import { createAppRuntime } from './appRuntime'
 import { buildTestClients } from '../test/appHarness'
 import { createFakeApi, type FakeApi } from '../test/fakeApi'
 import type { SessionUser } from '@shared/types'
+import { DEFAULT_SETTINGS } from '@shared/types'
 import type { StoreDiagnostics } from '../store/devtools'
 
 const USER: SessionUser = { name: 'ann', role: 'admin' }
@@ -223,5 +224,92 @@ describe('AppRuntime — истёкшая сессия', () => {
     runtime.dispose()
     // Подписка снимается: иначе она держала бы уничтоженный рантайм.
     expect(onUnauthorized).toBeNull()
+  })
+})
+
+// Полный цикл деплоя глазами открытой вкладки: сервер уходит в перезапуск,
+// человек продолжает работать, сервер возвращается. Ни в одной точке его выбор
+// не должен превратиться в дефолты.
+describe('AppRuntime — деплой во время работы', () => {
+  it('недоступность сервера не превращает настройки в дефолты', async () => {
+    const api = createFakeApi(['Первый'])
+    await api['settings:save']({ theme: 'dark', llmProvider: 'codex', defaultAgentId: 'a1' })
+    const session = makeSession(null)
+    const { runtime } = makeRuntime({ api, session })
+    await runtime.login('ann', 'x')
+    expect(runtime.settings.getState().settings.theme).toBe('dark')
+
+    // Сервер перезапускается: настройки не читаются и не пишутся.
+    const get = vi.spyOn(api, 'settings:get').mockRejectedValue(new Error('502'))
+    const save = vi.spyOn(api, 'settings:save')
+    runtime.settings.actions.reset()
+    await runtime.settings.actions.load().catch(() => {})
+    await runtime.settings.actions.updateSettings({ autoSpeak: true }).catch(() => {})
+    expect(save).not.toHaveBeenCalled()
+    expect(api._state.settings).toMatchObject({ theme: 'dark', llmProvider: 'codex' })
+
+    // Сервер вернулся: настройки на месте, изменение сохраняется поверх них.
+    get.mockRestore()
+    await runtime.settings.actions.load()
+    await runtime.settings.actions.updateSettings({ autoSpeak: true })
+    expect(api._state.settings).toMatchObject({ theme: 'dark', llmProvider: 'codex', autoSpeak: true })
+    runtime.dispose()
+  })
+
+  // Вкладка, чья загрузка пришлась на окно деплоя, не должна ждать человека:
+  // вернувшийся сервер — сам по себе повод перечитать настройки.
+  it('после возвращения сервера настройки подхватываются без участия человека', async () => {
+    const api = createFakeApi()
+    await api['settings:save']({ theme: 'dark' })
+    const { runtime } = makeRuntime({ api })
+    const get = vi.spyOn(api, 'settings:get').mockRejectedValueOnce(new Error('502'))
+    await runtime.settings.actions.load().catch(() => {})
+    expect(runtime.settings.getState().settingsLoaded).toBe(false)
+
+    get.mockRestore()
+    runtime.handlers.settingsChanged() // сервер вернулся (реконнект WS или сеть)
+
+    await vi.waitFor(() => expect(runtime.settings.getState().settingsLoaded).toBe(true))
+    expect(runtime.settings.getState().settings.theme).toBe('dark')
+    runtime.dispose()
+  })
+
+  // Один браузер, два человека подряд: настройки первого не должны просвечивать
+  // во второй сессии — ни в состоянии, ни в зеркале темы.
+  it('вход другим пользователем не оставляет чужих настроек', async () => {
+    const api = createFakeApi()
+    await api['settings:save']({ theme: 'dark', codexModel: 'gpt-5.4' })
+    const { runtime } = makeRuntime({ api })
+    await runtime.settings.actions.load()
+    expect(runtime.settings.getState().settings.theme).toBe('dark')
+
+    runtime.settings.actions.reset() // выход
+    expect(runtime.settings.getState()).toMatchObject({ settingsLoaded: false })
+    expect(runtime.settings.getState().settings.codexModel).toBe(DEFAULT_SETTINGS.codexModel)
+
+    // Второй человек: его настройки приходят с сервера, чужие не подмешиваются.
+    await api['settings:save']({ theme: 'light', codexModel: DEFAULT_SETTINGS.codexModel })
+    await runtime.settings.actions.load()
+    expect(runtime.settings.getState().settings).toMatchObject({ theme: 'light', codexModel: DEFAULT_SETTINGS.codexModel })
+    runtime.dispose()
+  })
+
+  it('изменение в соседней вкладке перечитывается, а своё — рассылается', async () => {
+    const api = createFakeApi()
+    const { runtime } = makeRuntime({ api })
+    await runtime.settings.actions.load()
+
+    await api['settings:save']({ theme: 'green' }) // «соседняя вкладка»
+    runtime.handlers.settingsChanged()
+    await vi.waitFor(() => expect(runtime.settings.getState().settings.theme).toBe('green'))
+
+    const events: string[] = []
+    window.addEventListener('storage', (event) => { if (event.key === 'vc:settings-update') events.push('signal') })
+    await runtime.settings.actions.updateSettings({ theme: 'dark' })
+    // В jsdom событие storage своей же вкладке не приходит — проверяем, что
+    // сигнальный ключ не оседает в хранилище (он пишется и сразу снимается).
+    expect(localStorage.getItem('vc:settings-update')).toBeNull()
+    expect(events).toEqual([])
+    runtime.dispose()
   })
 })

@@ -198,6 +198,227 @@ describe('settingsStore', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
+  // Деплой: сервер на секунды недоступен, `settings:get` падает — и раньше
+  // первое же изменение уносило на сервер дефолты стора, стирая тему, движок,
+  // модель и машину по умолчанию.
+  it('изменение при неудачной загрузке не затирает серверные настройки', async () => {
+    const { store, api } = make()
+    await api['settings:save']({ ...api._state.settings, theme: 'dark', llmProvider: 'codex', defaultAgentId: 'a1' })
+    vi.spyOn(api, 'settings:get').mockRejectedValueOnce(new Error('502'))
+    await expect(store.actions.load()).rejects.toThrow('502')
+    expect(store.getState().settingsLoaded).toBe(false)
+
+    await store.actions.updateSettings({ autoSpeak: true })
+
+    expect(api._state.settings).toMatchObject({ theme: 'dark', llmProvider: 'codex', defaultAgentId: 'a1', autoSpeak: true })
+    expect(store.getState().settings).toMatchObject({ theme: 'dark', autoSpeak: true })
+    store.dispose()
+  })
+
+  it('недоступный сервер не даёт сохранить настройки поверх незагруженных', async () => {
+    const { store, api } = make()
+    await api['settings:save']({ ...api._state.settings, theme: 'green' })
+    vi.spyOn(api, 'settings:get').mockRejectedValue(new Error('502'))
+    const save = vi.spyOn(api, 'settings:save')
+
+    await expect(store.actions.updateSettings({ theme: 'dark' })).rejects.toThrow('502')
+
+    expect(save).not.toHaveBeenCalled()
+    expect(api._state.settings.theme).toBe('green')
+    store.dispose()
+  })
+
+  it('отказ каталога движков не оставляет настройки дефолтными', async () => {
+    const { store, api } = make()
+    await api['settings:save']({ ...api._state.settings, theme: 'dark' })
+    vi.spyOn(api, 'llm:engines').mockRejectedValueOnce(new Error('503'))
+
+    await store.actions.load()
+
+    expect(store.getState()).toMatchObject({ settingsLoaded: true })
+    expect(store.getState().settings.theme).toBe('dark')
+    store.dispose()
+  })
+
+  // Голоса Piper поднимаются позже сервера: пропавший из списка голос не должен
+  // переписывать выбор пользователя в БД — иначе он теряется навсегда.
+  it('исчезнувший голос подменяется только для синтеза, но не сохраняется', async () => {
+    const { store, api } = make()
+    await api['settings:save']({ ...api._state.settings, voice: 'ru_RU-dmitri-medium' })
+    await store.actions.load()
+    vi.spyOn(api, 'tts:voices').mockResolvedValueOnce([{ id: 'ru_RU-ruslan-medium', label: 'Руслан' }])
+    const save = vi.spyOn(api, 'settings:save')
+
+    await store.actions.loadCatalogs()
+
+    expect(save).not.toHaveBeenCalled()
+    expect(store.getState().settings.voice).toBe('ru_RU-dmitri-medium')
+    expect(store.actions.selectEffectiveVoiceSettings().voice).toBe('ru_RU-ruslan-medium')
+    store.dispose()
+  })
+
+  // Две вкладки одного пользователя: сохранение полного снимка возвращало бы
+  // соседней вкладке её устаревшие значения.
+  it('на сервер уходит только изменённое поле', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    const save = vi.spyOn(api, 'settings:save')
+    await api['settings:save']({ theme: 'dark' }) // соседняя вкладка сменила тему
+
+    await store.actions.updateSettings({ autoSpeak: true })
+
+    expect(save).toHaveBeenLastCalledWith({ autoSpeak: true })
+    expect(api._state.settings).toMatchObject({ theme: 'dark', autoSpeak: true })
+    store.dispose()
+  })
+
+  // Оптимистичное состояние без отката врёт: экран показывает выбор, которого
+  // на сервере нет, и следующий патч «закрепил» бы его.
+  it('ошибка сохранения откатывает состояние и уведомляет', async () => {
+    const errors: string[] = []
+    const api = createFakeApi()
+    const store = createSettingsStore({
+      settings: withApi<SettingsClient>(api, {}),
+      stt: { enabled: true, inputEnabled: true },
+      tts: { enabled: true },
+      notify: (notice) => errors.push(notice.text)
+    })
+    await store.actions.load()
+    vi.spyOn(api, 'settings:save').mockRejectedValueOnce(new Error('сервер перезапускается'))
+
+    await expect(store.actions.updateSettings({ theme: 'dark' })).rejects.toThrow('сервер перезапускается')
+
+    expect(store.getState().settings.theme).toBe(DEFAULT_SETTINGS.theme)
+    // Тост, а не баннер: баннер занят загрузкой модели/голоса.
+    expect(errors).toEqual(['Настройки не сохранены: сервер перезапускается'])
+    store.dispose()
+  })
+
+  it('состоянием становится ответ сервера, а не собственный снимок', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    // Сервер применил патч поверх изменений соседней вкладки и вернул всю запись.
+    await api['settings:save']({ codexModel: 'gpt-5.4' })
+
+    await store.actions.updateSettings({ theme: 'dark' })
+
+    expect(store.getState().settings).toMatchObject({ theme: 'dark', codexModel: 'gpt-5.4' })
+    store.dispose()
+  })
+
+  it('refreshSettings подхватывает изменение соседней вкладки', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    await api['settings:save']({ theme: 'green' })
+
+    await store.actions.refreshSettings()
+
+    expect(store.getState().settings.theme).toBe('green')
+    store.dispose()
+  })
+
+  // Стенд без Piper: падение `tts:voices` уносило с собой возможности системы
+  // и список MCP — экран настроек оставался наполовину пустым.
+  it('отказ одного каталога не отменяет остальные', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    vi.spyOn(api, 'tts:voices').mockRejectedValueOnce(new Error('TTS недоступен'))
+
+    await store.actions.loadCatalogs()
+
+    expect(store.getState().capabilities).not.toBeNull()
+    expect(store.getState().whisperModels.length).toBeGreaterThan(0)
+    store.dispose()
+  })
+
+  // Сигнал соседней вкладки может прийти ровно в момент нашего сохранения:
+  // ответ сервера тогда ещё не видел нашего PUT и вернул бы старое значение.
+  it('перечитывание не затирает патч, который ещё в полёте', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    let release: (value: unknown) => void = () => {}
+    vi.spyOn(api, 'settings:save').mockImplementationOnce(async (patch) => {
+      await new Promise((resolve) => { release = resolve })
+      return { ...api._state.settings, ...patch } as never
+    })
+
+    const saving = store.actions.updateSettings({ theme: 'dark' })
+    await store.actions.refreshSettings() // «соседняя вкладка» — снимок без нашей темы
+    expect(store.getState().settings.theme).toBe('dark')
+
+    release(undefined)
+    await saving
+    expect(store.getState().settings.theme).toBe('dark')
+    store.dispose()
+  })
+
+  // Два быстрых тумблера — два PUT; ответы приходят не по порядку.
+  it('ответ обогнанного сохранения не отбрасывает экран назад', async () => {
+    const { store, api } = make()
+    await store.actions.load()
+    let releaseFirst: null | (() => void) = null
+    const letFirstThrough = (): void => { (releaseFirst as (() => void) | null)?.() }
+    const realSave = api['settings:save']
+    vi.spyOn(api, 'settings:save').mockImplementationOnce(async (patch) => {
+      // Первый PUT «застревает в сети» и доходит до сервера последним.
+      await new Promise<void>((resolve) => { releaseFirst = resolve })
+      return realSave(patch)
+    })
+
+    const first = store.actions.updateSettings({ autoSpeak: true })
+    await store.actions.updateSettings({ theme: 'dark' }) // второй ответ пришёл раньше
+    expect(store.getState().settings.theme).toBe('dark')
+
+    letFirstThrough()
+    await first
+    // Ответ обогнанного PUT не применён, а расхождение с сервером снято
+    // перечитыванием: в записи есть оба изменения — и на экране тоже.
+    expect(api._state.settings).toMatchObject({ theme: 'dark', autoSpeak: true })
+    expect(store.getState().settings).toMatchObject({ theme: 'dark', autoSpeak: true })
+    store.dispose()
+  })
+
+  // Ответ запроса прежнего пользователя не должен «воскресить» его настройки
+  // в сессии того, кто вошёл следом.
+  it('ответ, отправленный до смены пользователя, игнорируется', async () => {
+    const { store, api } = make()
+    let release: null | ((value: unknown) => void) = null
+    const letThrough = (): void => { (release as ((value: unknown) => void) | null)?.(undefined) }
+    vi.spyOn(api, 'settings:get').mockImplementationOnce(async () => {
+      await new Promise((resolve) => { release = resolve })
+      return { ...DEFAULT_SETTINGS, theme: 'green' } as never
+    })
+
+    const pending = store.actions.refreshSettings()
+    store.actions.reset() // вышел один человек, вошёл другой
+    letThrough()
+    await pending
+
+    expect(store.getState().settingsLoaded).toBe(false)
+    expect(store.getState().settings.theme).toBe(DEFAULT_SETTINGS.theme)
+    store.dispose()
+  })
+
+  // Сервер отвергает движок, недоступный роли, — экран не должен остаться с ним.
+  it('отказ сервера (403) откатывает выбор и уведомляет', async () => {
+    const errors: string[] = []
+    const api = createFakeApi()
+    const store = createSettingsStore({
+      settings: withApi<SettingsClient>(api, {}),
+      stt: { enabled: true, inputEnabled: true },
+      tts: { enabled: true },
+      notify: (notice) => errors.push(notice.text)
+    })
+    await store.actions.load()
+    vi.spyOn(api, 'settings:save').mockRejectedValueOnce(new Error('llm engine is not available for role'))
+
+    await expect(store.actions.updateSettings({ llmEngineId: 'чужой' })).rejects.toThrow()
+
+    expect(store.getState().settings.llmEngineId).toBe(DEFAULT_SETTINGS.llmEngineId)
+    expect(errors[0]).toContain('llm engine is not available for role')
+    store.dispose()
+  })
+
   it('удалённая машина исчезает из настроек', async () => {
     const { store } = make()
     await store.actions.updateSettings({ execTarget: 'a1', defaultAgentId: 'a1' })

@@ -196,6 +196,23 @@ describe('SettingsModal — тема интерфейса', () => {
   })
 })
 
+describe('SettingsModal — настройки не загружены', () => {
+  it('показывает баннер с повтором вместо молчаливых дефолтов', async () => {
+    const onRetryLoad = vi.fn()
+    renderModal('admin', { settingsLoaded: false, onRetryLoad })
+
+    const banner = screen.getByTestId('settings-not-loaded')
+    expect(banner).toHaveTextContent('Настройки не загружены')
+    await userEvent.click(within(banner).getByRole('button', { name: 'Повторить' }))
+    expect(onRetryLoad).toHaveBeenCalledTimes(1)
+  })
+
+  it('при загруженных настройках баннера нет', () => {
+    renderModal('admin')
+    expect(screen.queryByTestId('settings-not-loaded')).not.toBeInTheDocument()
+  })
+})
+
 describe('SettingsModal — машины вынесены отдельно', () => {
   it('не показывает управление машинами в настройках', () => {
     renderModal('admin')

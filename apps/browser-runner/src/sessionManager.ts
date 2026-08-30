@@ -31,6 +31,17 @@ interface Session {
 /** Держим последние записи: журнал живой страницы иначе растёт без предела. */
 const LOG_LIMIT = 500
 
+/**
+ * Какая вкладка становится активной после закрытия. Закрытая не должна
+ * оставаться активной: `activeTabId` указывал на удалённую страницу, и каждая
+ * следующая команда падала `stale_tab` — сессия становилась непригодной, хотя
+ * другие вкладки живы. Пустая строка означает «вкладок не осталось».
+ */
+export function nextActiveTab(open: string[], activeId: string, closedId: string): string {
+  if (activeId !== closedId) return activeId
+  return open.find((id) => id !== closedId) ?? ''
+}
+
 export interface StartSessionRequest {
   sessionId: string
   userKey: string
@@ -116,7 +127,10 @@ export class BrowserSessionManager {
       const id = randomUUID()
       session.pageIds.set(page, id)
       session.pages.set(id, page)
-      page.on('close', () => session.pages.delete(id))
+      page.on('close', () => {
+        session.pages.delete(id)
+        session.activeTabId = nextActiveTab([...session.pages.keys()], session.activeTabId, id)
+      })
       // Журналы собираются с момента открытия страницы: спросить их задним
       // числом нельзя, а этапу автотестов нужны именно они.
       page.on('console', (message) => {

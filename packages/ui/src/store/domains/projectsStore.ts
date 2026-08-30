@@ -28,6 +28,7 @@ import type {
   CiWorkspaceReportItem
 } from '@shared/ci'
 import { isTerminalCiStatus } from '@shared/ci'
+import { BOARD_COMPLETED_KEY } from '../contracts'
 import type { ProjectsClient } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 
@@ -226,12 +227,14 @@ export interface ProjectsChatPort {
 export interface ProjectsDeps {
   projects: ProjectsClient
   chat: ProjectsChatPort
+  /** Предпочтения вида доски (порт `prefs`): без них «Показывать завершённые» сбрасывается на каждой перезагрузке. */
+  prefs?: { get(key: string): string | null; set(key: string, value: string): void; remove(key: string): void }
   fail?: (err: unknown, retry?: () => void) => void
   notify?: (notice: { kind: 'error' | 'success' | 'info'; text: string }) => void
   now?: () => number
 }
 
-function initialState(): ProjectsState {
+function initialState(includeCompleted = false): ProjectsState {
   return {
     projectsOpen: false,
     projects: [],
@@ -251,7 +254,7 @@ function initialState(): ProjectsState {
     board: null,
     boardLoading: false,
     boardError: null,
-    boardIncludeCompleted: false,
+    boardIncludeCompleted: includeCompleted,
     ciOpen: false,
     ciCommands: [],
     ciStatus: 'loading',
@@ -270,7 +273,9 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
   const client = deps.projects
   const boardBridge = client.board
   const ciBridge = client.ci
-  const core = createStoreCore<ProjectsState>(initialState())
+  // Вид доски — настройка взгляда, а не сессии: она переживает и выход, и деплой.
+  const savedIncludeCompleted = deps.prefs?.get(BOARD_COMPLETED_KEY) === '1'
+  const core = createStoreCore<ProjectsState>(initialState(savedIncludeCompleted))
   const { getState, setState } = core
   const fail = deps.fail ?? (() => {})
   const notify = deps.notify ?? (() => {})
@@ -974,6 +979,8 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       async setBoardIncludeCompleted(include) {
         if (getState().boardIncludeCompleted === include) return
         setState({ boardIncludeCompleted: include })
+        if (include) deps.prefs?.set(BOARD_COMPLETED_KEY, '1')
+        else deps.prefs?.remove(BOARD_COMPLETED_KEY)
         await loadBoardForCompletedFilter(include)
       },
       async createColumn(name) {
@@ -1395,7 +1402,7 @@ export function createProjectsStore(deps: ProjectsDeps): ProjectsStore {
       reset() {
         if (getState().activeProjectId) boardBridge?.unsubscribe()
         mergeNoticeSeen.clear()
-        core.resetState(initialState())
+        core.resetState(initialState(deps.prefs?.get(BOARD_COMPLETED_KEY) === '1'))
       }
   }
 
