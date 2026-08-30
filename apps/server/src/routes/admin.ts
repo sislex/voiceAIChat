@@ -10,6 +10,7 @@ import type { AdminMakeStats, AdminMachineStats, AdminMachineStat, RoleCommandPo
 import { parseRoleCommandPolicies } from '@voicechat/shared'
 import { formatMakeMetrics } from '../make/metrics.js'
 import { formatMachineMetrics } from '../agents/metrics.js'
+import type { AgentRecord } from '../db/database.js'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { Mailer } from '../users/mailer.js'
 import {
@@ -335,19 +336,44 @@ export function registerAdminRoutes(
     return reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8').send(formatMakeMetrics(await makeStats()))
   })
 
-  /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
-  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null; email?: string | null } = {}): AdminUserInfo => {
-    const online = registry.onlineIds()
-    // Версия нужна админке для «обновить до актуальной» (п.16); у офлайн-машины её нет.
-    const agents = db.listAgents(name).map((a) => ({ ...a, online: online.has(a.id), ...(online.has(a.id) && registry.versionOf(a.id) ? { version: registry.versionOf(a.id) } : {}) }))
-    // Админу — все беседы пользователя: скрытие чатов завершённых задач это
-    // фильтр сайдбара их владельца, а не свойство данных.
-    return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, mustChangePassword: Boolean(lock.mustChangePassword), lastLogin: lock.lastLogin ?? null, llmLimitUsd: lock.llmLimitUsd ?? null, email: lock.email ?? null, name, role, blocked, createdAt, agents, conversationCount: db.listConversations(name, { includeCompleted: true }).length }
+  /**
+   * Общие для всех строк списка данные: кто онлайн, чьи сессии живы, сколько у
+   * кого разговоров. Собираются один раз на запрос — раньше `toInfo` спрашивал
+   * разговоры и машины на каждого пользователя, и список из двухсот учёток
+   * стоил четырёхсот запросов к базе.
+   */
+  const usersBulk = (): { online: Set<string>; agentsByUser: Map<string, AgentRecord[]>; conversations: Map<string, number>; activity: Map<string, { lastSeen: number; live: number }> } => {
+    const agentsByUser = new Map<string, AgentRecord[]>()
+    for (const agent of db.listAllAgents()) {
+      if (!agent.userId) continue
+      const list = agentsByUser.get(agent.userId)
+      if (list) list.push(agent)
+      else agentsByUser.set(agent.userId, [agent])
+    }
+    return { online: registry.onlineIds(), agentsByUser, conversations: db.conversationCounts(), activity: db.sessionActivity() }
   }
 
-  app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> =>
-    db.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u))
-  )
+  /** Собирает карточку пользователя: роль/блок + машины (с онлайн) + число разговоров. */
+  const toInfo = (name: string, role: UserRole, blocked: boolean, createdAt: number, lock: { failedLogins?: number; lockedUntil?: number | null; lockReason?: string | null; mustChangePassword?: boolean; lastLogin?: number | null; llmLimitUsd?: number | null; email?: string | null } = {}, bulk = usersBulk()): AdminUserInfo => {
+    const online = bulk.online
+    // Версия и телеметрия нужны админке для «обновить до актуальной» (п.16) и для
+    // строки «Онлайн · macOS 15.6»; у офлайн-машины ни того, ни другого нет —
+    // телеметрия живёт в памяти реестра, пока агент подключён.
+    const agents = (bulk.agentsByUser.get(name) ?? []).map((a) => {
+      const isOnline = online.has(a.id)
+      const telemetry = isOnline ? registry.telemetryOf(a.id) : undefined
+      return { ...a, online: isOnline, ...(isOnline && registry.versionOf(a.id) ? { version: registry.versionOf(a.id) } : {}), ...(telemetry ? { telemetry } : {}) }
+    })
+    const activity = bulk.activity.get(name)
+    // Админу — все беседы пользователя: скрытие чатов завершённых задач это
+    // фильтр сайдбара их владельца, а не свойство данных.
+    return { failedLogins: lock.failedLogins ?? 0, lockedUntil: lock.lockedUntil ?? null, lockReason: lock.lockReason ?? null, mustChangePassword: Boolean(lock.mustChangePassword), lastLogin: lock.lastLogin ?? null, llmLimitUsd: lock.llmLimitUsd ?? null, email: lock.email ?? null, name, role, blocked, createdAt, agents, conversationCount: bulk.conversations.get(name) ?? 0, lastSeenAt: activity?.lastSeen ?? null, liveSessions: activity?.live ?? 0 }
+  }
+
+  app.get(REST.adminUsers, guard, async (): Promise<AdminUserInfo[]> => {
+    const bulk = usersBulk()
+    return db.listUsers().map((u) => toInfo(u.name, u.role, u.blocked, u.createdAt, u, bulk))
+  })
 
   // Метрики машин (п.5): агрегаты БД + живые online/версия/телеметрия реестра.
   const machineStats = (): AdminMachineStats => {
@@ -464,7 +490,7 @@ export function registerAdminRoutes(
     }
   )
 
-  app.post<{ Params: { name: string }; Body: { blocked?: boolean } }>(
+  app.post<{ Params: { name: string }; Body: { blocked?: boolean; reason?: string } }>(
     REST.adminUserBlock(':name').replace('%3Aname', ':name'),
     guard,
     async (req, reply) => {
@@ -472,7 +498,11 @@ export function registerAdminRoutes(
       if (target === 'admin') return reply.code(400).send({ error: 'нельзя изменить admin' })
       if (!db.getUser(target)) return reply.code(404).send({ error: 'not found' })
       db.setUserBlocked(target, Boolean(req.body?.blocked))
-      db.logSecurityEvent({ user: target, type: req.body?.blocked ? 'user_blocked' : 'user_unblocked', ip: req.ip, details: `администратор ${uid(req)}` })
+      // Причина идёт в журнал событий, а не в users.lock_reason: та колонка
+      // хранит машинный повод авто-замка ('auto'/'inactive'), и человеческий
+      // текст в ней сломал бы подпись «заблокирован автоматически».
+      const reason = String(req.body?.reason ?? '').trim().slice(0, 200)
+      db.logSecurityEvent({ user: target, type: req.body?.blocked ? 'user_blocked' : 'user_unblocked', ip: req.ip, details: `администратор ${uid(req)}${reason ? ` · ${reason}` : ''}` })
       return { ok: true }
     }
   )
