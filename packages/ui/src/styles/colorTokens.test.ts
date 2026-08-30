@@ -48,10 +48,13 @@ function declaredNames(): Set<string> {
   return names
 }
 
-function offendingLines(pattern: RegExp): string[] {
+/** Селекторы канбана и карточки задачи. */
+const KANBAN = /\bjmodal|\bjcard|\bjlabel|\bjcol|\bjboard|\bjswimlane|\bjfilter|\bjautomation|\bjprio|\bjavatar|\bkanban-/
+
+function offendingLines(pattern: RegExp, scope?: RegExp): string[] {
   return css.split('\n')
     .map((line, index) => ({ line, at: index + 1 }))
-    .filter(({ line }) => pattern.test(line))
+    .filter(({ line }) => pattern.test(line) && (!scope || scope.test(line)))
     .map(({ line, at }) => `${at}: ${line.trim().slice(0, 120)}`)
 }
 
@@ -69,5 +72,17 @@ describe('цвет в app.css', () => {
 
   it('не красит серым «на глазок» вместо токенов темы', () => {
     expect(offendingLines(/rgba\(\s*12[78]\s*,\s*12[78]\s*,\s*12[78]/)).toEqual([])
+  })
+
+  // Правила канбана держали 35 hex-цветов и 22 парных `[data-theme='dark']`
+  // переопределения к ним — ровно то, что AGENTS.md пакета запрещает: «не хватает
+  // токена — добавь его в `:root` и в тёмную тему, а не хардкодь цвет в правиле».
+  // Пара «светлый hex + тёмный hex» вдобавок разъезжается: правят одну половину.
+  it('канбан и карточка задачи не хардкодят hex-цвет', () => {
+    expect(offendingLines(/#[0-9a-fA-F]{3,8}\b/, KANBAN)).toEqual([])
+  })
+
+  it('канбан и карточка задачи не переопределяют цвет под тёмную тему', () => {
+    expect(offendingLines(/data-theme/, KANBAN)).toEqual([])
   })
 })

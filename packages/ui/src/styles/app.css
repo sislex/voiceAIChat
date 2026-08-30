@@ -76,6 +76,9 @@
   /* Палитра лога. Терминал у нас тёмный в обеих темах (лог читают как лог, а не
      как страницу), поэтому значения общие и в тёмном блоке не переопределяются —
      но токены нужны, чтобы цвет ANSI правился в одном месте. */
+  /* Подпись на аватаре: фон у него — сгенерированный насыщенный цвет, поэтому
+     белый текст верен в обеих темах, но пусть это будет токен, а не `#fff`. */
+  --avatar-fg: #ffffff;
   --ansi-bg: #0b0e14;
   --ansi-fg: #d8dee9;
   --ansi-fg-black: #6b7280;
@@ -3163,7 +3166,6 @@ button.conscmd:hover {
   color: #a33a3a;
 }
 
-
 /* ==== Мобильная вёрстка ==== */
 @media (max-width: 768px) {
   .app,
@@ -3698,7 +3700,6 @@ button.conscmd:hover {
 }
 .exectarget-dot.disabled { background: #999; }
 
-
 /* Отдельная страница параметров активного разговора. */
 .convsettings { position: fixed; inset: 0; z-index: 90; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; background: var(--bg, #f6f7fb); color: var(--text, #20232b); }
 .convsettings-head { display: flex; gap: 16px; align-items: center; padding: 20px max(24px, calc((100vw - 900px) / 2)); border-bottom: 1px solid var(--line, #ddd); background: var(--panel, #fff); }
@@ -4015,7 +4016,6 @@ button.conscmd:hover {
   font-size: 12px;
 }
 
-
 /* Фактический режим разговора виден без открытия настроек. */
 .mode-badge {
   flex: none;
@@ -4220,7 +4220,6 @@ button.conscmd:hover {
 .proj-default-skills .proj-chip { background: #dcfff1; color: #216e4e; }
 [data-theme='dark'] .proj-default-skills .proj-chip { background: #133527; color: #7ee2b8; }
 
-
 /* Страница проекта: вкладки разделов в шапке — тот же вид, что у переключателя
    списка в сайдбаре (.sideswitch), только без его отступов (здесь их даёт
    .mdhead). Селектор с .mdhead — чтобы перебить .sideswitch, который в файле
@@ -4239,37 +4238,7 @@ button.conscmd:hover {
 .kanban-showhidden { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; opacity: 0.8; }
 .kanban-showcompleted { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; opacity: 0.8; white-space: nowrap; }
 .kanban-board { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding: 12px; }
-.kanban-col { flex: 0 0 260px; display: flex; flex-direction: column; gap: 6px;
-  background: var(--panel); border-radius: 8px; padding: 8px; max-height: 78vh; }
-.kanban-col--hidden { opacity: 0.6; outline: 1px dashed var(--border); }
-.kanban-col--add { background: none; }
-.kanban-col-head { display: flex; align-items: center; justify-content: space-between; gap: 6px;
-  cursor: grab; padding: 2px 4px; }
-.kanban-col-name { font-weight: 600; }
-.kanban-col-count { opacity: 0.5; font-weight: 400; margin-left: 4px; }
-.kanban-col-btns { display: inline-flex; gap: 2px; }
-.kanban-col-body { display: flex; flex-direction: column; overflow-y: auto; flex: 1; }
 
-.kanban-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-  padding: 8px; cursor: grab; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
-[data-theme='dark'] .kanban-card { background: #1c2128; }
-.kanban-card.dragging { opacity: 0.4; }
-.kanban-card-head { display: flex; align-items: center; gap: 6px; }
-.kanban-card-title { flex: 1; }
-.kanban-prio { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
-.kanban-prio--low { background: #8b949e; }
-.kanban-prio--medium { background: #58a6ff; }
-.kanban-prio--high { background: #d29922; }
-.kanban-prio--urgent { background: #f85149; }
-.kanban-assignee { font-size: 12px; opacity: 0.75; }
-.kanban-card-edit { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
-.kanban-card-edit .kanban-desc { min-height: 48px; resize: vertical; }
-.kanban-field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; opacity: 0.85; }
-.kanban-card-actions { display: flex; gap: 8px; justify-content: space-between; }
-
-.kanban-dropzone { height: 6px; border-radius: 3px; margin: 2px 0; }
-.kanban-dropzone.over { height: 22px; background: rgba(88,166,255,0.35); outline: 1px dashed #58a6ff; }
-.kanban-add-task { margin-top: 4px; }
 /* Read-only база знаний: фильтры → результаты → документ. */
 .kbtool { width: min(96vw, 1500px); height: min(92vh, 900px); }
 .kbtool .popbody, .kbtool > .popbody { min-height: 0; }
@@ -4371,11 +4340,7 @@ button.conscmd:hover {
   .app--sidebar-collapsed .burger { display: inline-flex; }
 }
 
-
 /* Work items + Feature Run */
-.kanban-type { font-size: 10px; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; }
-.kanban-card--epic { border-left: 3px solid #8b5cf6; }
-.kanban-card--story { border-left: 3px solid #3b82f6; }
 .feature-link, .feature-start, .work-children-toggle { border: 0; background: transparent; color: var(--accent); cursor: pointer; padding: 4px 0; text-align: left; font-size: 12px; }
 .work-children ul, .agent-task-list { margin: 4px 0; padding-left: 18px; }
 .work-children li, .agent-task-list li { margin: 3px 0; }
@@ -4384,7 +4349,6 @@ button.conscmd:hover {
 .feature-policy label { display: grid; gap: 4px; flex: 1 1 220px; }
 .feature-error { color: var(--danger, #dc2626); }
 .agent-task-add .login-input { flex: 1; }
-.kanban-add-task .sel { width: 92px; }
 
 .feature-composer-options { display:flex; gap:14px; padding:4px 0; font-size:12px; color:var(--muted); }
 
@@ -4437,7 +4401,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .javatar-btn { border: 2px solid transparent; background: none; padding: 0; border-radius: 50%; cursor: pointer; margin-left: -4px; transition: transform 0.1s; }
 .javatar-btn:hover { transform: translateY(-2px); }
 .javatar-btn.on { border-color: var(--accent); }
-.javatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; font-weight: 600; width: 24px; height: 24px; font-size: 10px; flex: 0 0 auto; }
+.javatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--avatar-fg); font-weight: 600; width: 24px; height: 24px; font-size: 10px; flex: 0 0 auto; }
 .javatar--none { background: var(--ci-neutral-bg); color: var(--text); }
 /* Быстрые фильтры доски — это переключатели, и в выключенном состоянии они
    обязаны читаться как элемент управления: без рамки и заливки «С флагом» и
@@ -4457,7 +4421,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jfilter[open] > summary { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .jfilter-count { display: inline-block; min-width: 16px; text-align: center; margin-left: 4px; background: var(--accent); color: var(--accent-fg); border-radius: 8px; font-size: 11px; padding: 0 4px; }
 .jfilter-menu { position: absolute; top: 100%; left: 0; z-index: 40; min-width: 180px; max-height: 260px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 16px rgba(9, 30, 66, 0.2); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
-[data-theme='dark'] .jfilter-menu { background: #1c2128; }
 .jfilter-menu label { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 6px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
 .jfilter-menu label:hover { background: var(--surface-hover); }
 .jswimlane { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; opacity: 0.9; margin-left: auto; }
@@ -4470,35 +4433,28 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    перехватывает нажатие — проверено `elementFromPoint` на 390×844. */
 .jboard { display: flex; gap: 8px; align-items: stretch; overflow-x: auto; overflow-y: auto; padding: 8px 12px calc(16px + var(--vc-toast-inset, 0px)); flex: 1; min-width: 0; min-height: 0; }
 .jboard--lanes { flex-direction: column; align-items: stretch; }
-.jcol { flex: 0 0 272px; flex-shrink: 0; width: 272px; display: flex; flex-direction: column; background: #f7f8f9; border-radius: 8px;
+.jcol { flex: 0 0 272px; flex-shrink: 0; width: 272px; display: flex; flex-direction: column; background: var(--panel); border-radius: 8px;
   min-width: 0; min-height: 100%; overflow: visible; }
-[data-theme='dark'] .jcol { background: #161b22; }
 .jcol--hidden { opacity: 0.55; outline: 1px dashed var(--border); }
 .jcol--add { background: none; gap: 6px; padding: 4px; }
 .jcol--headonly { height: auto; max-height: none; min-height: 0; overflow: visible; }
-.jcol--incell { height: auto; max-height: none; min-height: 0; overflow: visible; background: #f7f8f9; border-radius: 8px; }
-[data-theme='dark'] .jcol--incell { background: #161b22; }
+.jcol--incell { height: auto; max-height: none; min-height: 0; overflow: visible; background: var(--panel); border-radius: 8px; }
 .jcol-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 10px 10px 6px; cursor: grab; flex: none; }
-.jcol-head--over { background: #ffedeb; border-radius: 8px 8px 0 0; }
-[data-theme='dark'] .jcol-head--over { background: #42221f; }
+.jcol-head--over { background: var(--ci-removed-bg); border-radius: 8px 8px 0 0; }
 /* Перенос колонки: поднятая колонка гаснет, колонка-цель обведена. */
 .jcol--drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
 .jcol-head--drop { background: var(--accent-soft); border-radius: 8px 8px 0 0; }
 .jcol-head--lifted { opacity: 0.5; }
-.jcol-name { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: #6b778c; display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-[data-theme='dark'] .jcol-name { color: #8b949e; }
+.jcol-name { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-dim); display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .jcol-count { font-weight: 400; opacity: 0.8; text-transform: none; }
-.jcol-wip { font-weight: 600; border-radius: 3px; padding: 0 5px; background: rgba(9, 30, 66, 0.08); }
-[data-theme='dark'] .jcol-wip { background: rgba(255, 255, 255, 0.1); }
-.jcol-wip--over { background: #ffd2cc; color: #ae2a19; }
-[data-theme='dark'] .jcol-wip--over { background: #5d1f1a; color: #ff9c8f; }
+.jcol-wip { font-weight: 600; border-radius: 3px; padding: 0 5px; background: var(--ci-neutral-bg); }
+.jcol-wip--over { background: var(--ci-removed-bg); color: var(--ci-removed); }
 .jcol-hidden-mark { font-size: 12px; }
 .jcol-assignee-filter { position: relative; flex: 0 0 auto; }
 .jcol-filter-button { position: relative; color: var(--text-dim); }
 .jcol-filter-button.is-active { color: var(--accent); background: var(--accent-soft); }
-.jcol-filter-badge { position: absolute; top: -4px; right: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 9px; font-weight: 700; line-height: 15px; text-align: center; }
+.jcol-filter-badge { position: absolute; top: -4px; right: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--accent); color: var(--accent-fg); font-size: 9px; font-weight: 700; line-height: 15px; text-align: center; }
 .jcol-filter-popover { position: absolute; z-index: 60; top: calc(100% + 6px); right: 0; width: 244px; max-height: min(420px, 70vh); overflow-y: auto; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 8px 24px rgba(9, 30, 66, 0.25); cursor: default; text-transform: none; letter-spacing: normal; font-size: 13px; font-weight: 400; }
-[data-theme='dark'] .jcol-filter-popover { background: #1c2128; }
 .jcol-filter-summary { margin-bottom: 8px; font-weight: 600; overflow-wrap: anywhere; }
 .jcol-filter-global-note { margin-bottom: 8px; padding: 6px; border-radius: 4px; background: var(--accent-soft); color: var(--text-dim); font-size: 12px; }
 .jcol-filter-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
@@ -4515,7 +4471,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcol-automation-info-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .jautomation-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); background: rgba(9, 30, 66, 0.48); }
 .jautomation-dialog { display: flex; flex-direction: column; width: min(680px, 100%); max-height: min(760px, calc(100dvh - 24px)); overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); box-shadow: 0 18px 48px rgba(9, 30, 66, 0.35); cursor: default; }
-[data-theme='dark'] .jautomation-dialog { background: #1c2128; }
 .jautomation-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 20px 12px; border-bottom: 1px solid var(--border); }
 .jautomation-dialog-head h2 { margin: 2px 0 0; font-size: 20px; line-height: 1.25; }
 .jautomation-eyebrow { color: var(--text-dim); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -4544,9 +4499,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    блок-контейнером должна быть карточка, а не страница (см. .app). */
 .jcard { box-sizing: border-box; width: 100%; max-width: 272px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-medium); box-shadow: var(--shadow-sm); padding: var(--space-100) var(--space-150); cursor: pointer; display: flex; flex-direction: column; gap: var(--space-075); max-height: 420px; overflow-y: auto; position: relative; }
 .jcard--compact { max-height: 90px; padding: var(--space-050) var(--space-100); gap: 2px; overflow: hidden; }
-[data-theme='dark'] .jcard { background: #1c2128; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
-.jcard:hover { background: #f4f5f7; }
-[data-theme='dark'] .jcard:hover { background: #22272e; }
+.jcard:hover { background: var(--surface-hover); }
 /* Карточку несут указателем: на её месте стоит плейсхолдер, а сама она уехала
    в копию под пальцем — иначе колонка «росла» бы на высоту карточки. */
 .jcard.dragging { display: none; }
@@ -4563,10 +4516,8 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 /* Плейсхолдер места вставки: ровно та высота, что была у карточки. */
 .jcard-placeholder { min-height: 44px; margin: 2px 0; border: 2px dashed var(--accent); border-radius: 4px;
   background: var(--accent-soft); }
-.jcard--flagged { background: #fffae6; }
-.jcard--flagged:hover { background: #fff7d6; }
-[data-theme='dark'] .jcard--flagged { background: #332e1b; }
-[data-theme='dark'] .jcard--flagged:hover { background: #3a3423; }
+.jcard--flagged { background: var(--ci-progress-bg); }
+.jcard--flagged:hover { background: color-mix(in srgb, var(--ci-progress-bg) 80%, var(--surface-hover)); }
 .jcard-top { display: flex; align-items: flex-start; gap: 4px; }
 .jcard-key--head { flex: 0 0 auto; align-self: baseline; font-family: var(--font-mono); font-size: 10px; }
 .jcard-title { flex: 1; min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
@@ -4575,23 +4526,20 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcard-reveal { opacity: 0; }
 .jcard:hover .jcard-reveal, .jcard-reveal[aria-expanded='true'], .jcol-head .jcard-reveal { opacity: 1; }
 .jcard-menu { position: absolute; top: 100%; right: 0; z-index: 50; min-width: 170px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow-md); padding: 4px; display: flex; flex-direction: column; }
-[data-theme='dark'] .jcard-menu { background: #1c2128; }
 /* Иконка и подпись — по центру строки: svg выравнивается по базовой линии и
    без flex висел бы выше текста. */
 .jcard-menu > button { display: flex; align-items: center; gap: 8px; border: none; background: none; color: inherit; text-align: left; font-size: 13px; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
 .jcard-menu > button:hover { background: var(--surface-hover); }
 .jcard-menu-danger { color: var(--danger); }
-[data-theme='dark'] .jcard-menu-danger { color: #ff9c8f; }
 .jwip-input { margin: 4px 8px; width: 120px; font-size: 13px; }
 .jcard-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.jcard-flag { font-size: 11px; color: #974f0c; background: #fff0b3; border-radius: 3px; padding: 1px 6px; }
-[data-theme='dark'] .jcard-flag { color: #ffd97a; background: #4a3c12; }
+.jcard-flag { font-size: 11px; color: var(--ci-progress); background: var(--ci-progress-bg); border-radius: 3px; padding: 1px 6px; }
 .jcard-epic { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jcard-epic-dot { width: 8px; height: 8px; border-radius: 2px; flex: 0 0 auto; }
 .jcard-label { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; background: var(--ci-neutral-bg); color: var(--text); border-radius: 3px; padding: 1px 6px; }
 .jcard-progress { display: flex; align-items: center; gap: 6px; }
 .jcard-progress-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--ci-neutral-bg); overflow: hidden; }
-.jcard-progress-fill { display: block; height: 100%; background: #36b37e; }
+.jcard-progress-fill { display: block; height: 100%; background: var(--ci-success); }
 .jcard-progress-text { font-size: 11px; opacity: 0.7; }
 .jcard-feature { border: none; background: var(--accent-soft); color: var(--accent); font-size: 11px; border-radius: 3px; padding: 2px 6px; cursor: pointer; align-self: flex-start; }
 .jcard-feature-start { border: 1px dashed var(--accent); background: none; color: var(--accent); font-size: 11px; border-radius: 3px; padding: 2px 6px; cursor: pointer; align-self: flex-start; }
@@ -4604,17 +4552,12 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcard-foot-left { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .jcard-foot-right { display: inline-flex; align-items: center; gap: 6px; }
 .jtype { flex: 0 0 auto; display: block; }
-.jcard-key { font-size: 12px; color: #6b778c; white-space: nowrap; }
-[data-theme='dark'] .jcard-key { color: #8b949e; }
+.jcard-key { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
 .jcard-key--done { text-decoration: line-through; }
-.jcard-due { font-size: 11px; border-radius: 3px; padding: 1px 5px; background: rgba(9, 30, 66, 0.08); }
-[data-theme='dark'] .jcard-due { background: rgba(255, 255, 255, 0.12); }
-.jcard-due--overdue { background: #ffd2cc; color: #ae2a19; }
-[data-theme='dark'] .jcard-due--overdue { background: #5d1f1a; color: #ff9c8f; }
-.jcard-due--soon { background: #fff0b3; color: #974f0c; }
-[data-theme='dark'] .jcard-due--soon { background: #4a3c12; color: #ffd97a; }
+.jcard-due { font-size: 11px; border-radius: 3px; padding: 1px 5px; background: var(--ci-neutral-bg); }
+.jcard-due--overdue { background: var(--ci-removed-bg); color: var(--ci-removed); }
+.jcard-due--soon { background: var(--ci-progress-bg); color: var(--ci-progress); }
 .jcard-pts { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; border-radius: 9px; font-size: 11px; font-weight: 600; background: rgba(9, 30, 66, 0.13); padding: 0 5px; }
-[data-theme='dark'] .jcard-pts { background: rgba(255, 255, 255, 0.16); }
 .jprio { flex: 0 0 auto; }
 
 /* Навыки задачи (чипы) — по образцу меток, но в «зелёном» акценте Jira */
@@ -4639,7 +4582,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcompose-row { display: flex; gap: 4px; }
 .jcompose-row .sel { flex: 1; min-width: 0; }
 .kanban-dropzone { height: 5px; border-radius: 3px; margin: 1px 0; flex: 0 0 auto; }
-.kanban-dropzone.over { height: 40px; background: rgba(76, 154, 255, 0.18); outline: 2px dashed #4c9aff; outline-offset: -2px; }
+.kanban-dropzone.over { height: 40px; background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: -2px; }
 
 /* Свимлейны */
 .jlane-heads { display: flex; gap: 8px; align-items: flex-start; }
@@ -4870,7 +4813,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .ci-flags label { display: flex; align-items: center; gap: 6px; }
 .ci-form-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 
-
 .ci-section { border-top: 1px solid var(--border); padding-top: 14px; }
 .ci-section-title { margin: 0 0 10px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
 .ci-count-badge { background: var(--accent); color: #fff; border-radius: 10px; padding: 0 7px; font-size: 11px; line-height: 18px; }
@@ -4985,9 +4927,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .convo--ci-awaiting, .taskchat--ci-awaiting { box-shadow: 0 0 0 2px #ffab00; }
   .jcard--preview-running, .jcard--ci-running, .jcard--ci-fixing, .jcard--ci-awaiting, .jcard--ci-failed { animation: none; }
   .jcard--preview-running { box-shadow: 0 0 0 2px var(--ci-success), 0 1px 2px rgba(9, 30, 66, 0.25); }
-  .jcard--ci-running { box-shadow: 0 0 0 2px #4c9aff, 0 1px 2px rgba(9, 30, 66, 0.25); }
+  .jcard--ci-running { box-shadow: 0 0 0 2px var(--accent), var(--shadow-sm); }
   .jcard--ci-fixing, .jcard--ci-failed { box-shadow: 0 0 0 2px var(--ci-removed), 0 1px 2px rgba(9, 30, 66, 0.25); }
-  .jcard--ci-awaiting { box-shadow: 0 0 0 2px #ffab00, 0 1px 2px rgba(9, 30, 66, 0.25); }
+  .jcard--ci-awaiting { box-shadow: 0 0 0 2px var(--ci-progress), var(--shadow-sm); }
 }
 
 /* Пауза рана: вопрос модели / гейт плана в ленте */
@@ -5826,18 +5768,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcard-skel {
   border: 0;
   border-radius: 3px;
-  box-shadow: 0 1px 2px rgba(9, 30, 66, 0.25);
-}
-[data-theme='dark'] .jcard-skel {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-sm);
 }
 .jcol-empty {
-  color: #6b778c;
+  color: var(--text-dim);
 }
-[data-theme='dark'] .jcol-empty {
-  color: #8b949e;
-}
-
 /* Состояния ленты CI-рана (RunFeed). */
 .ci-steps--skel {
   padding: 8px 0;
@@ -7432,7 +7367,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .proj-type-field { display: flex; flex-direction: column; gap: var(--space-1, 4px); margin-bottom: var(--space-2, 8px); }
 .proj-type-current { margin: 0 0 var(--space-2, 8px); display: flex; flex-direction: column; gap: var(--space-1, 4px); }
 
-
 /* Приглашения в проект: форма и список ожидающих ответа. */
 .proj-invite-form { display: flex; gap: var(--space-2, 8px); align-items: flex-end; flex-wrap: wrap; }
 .proj-invite-field { display: flex; flex-direction: column; gap: var(--space-1, 4px); flex: 1 1 220px; min-width: 0; }
@@ -7538,7 +7472,6 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .projtabs button,
   .proj-settings-tabs button,
   .jfilter > summary,
-  .kanban-col-menu button,
   .proj-members .vc-btn,
   .proj-danger .vc-btn { min-height: 40px; }
 
