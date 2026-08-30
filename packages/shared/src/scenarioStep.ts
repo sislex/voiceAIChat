@@ -17,6 +17,25 @@ export interface ScenarioStepOutcome {
   detail: string
   /** Действие вообще не выражается командой раннера — это не провал проверки. */
   unsupported?: boolean
+  /**
+   * Что именно не сошлось: само действие или проверка после него. В отчёте это
+   * разные беды — «кнопка не нажалась» и «нажалась, но результат не тот».
+   */
+  failure?: 'action' | 'expectation'
+}
+
+export interface ScenarioStepOptions {
+  /**
+   * Сколько ждать, пока страница догонит действие. Ожидание проверялось
+   * мгновенно после клика, а интерфейс обновляется асинхронно: шаг мигал —
+   * иногда проходил, иногда нет. Недетерминированный тест хуже отсутствующего.
+   */
+  expectTimeoutMs?: number
+  /** Пауза между попытками чтения страницы. */
+  pollMs?: number
+  /** Инъекция сна для тестов — реальные задержки в них не нужны. */
+  sleep?: (ms: number) => Promise<void>
+  now?: () => number
 }
 
 /** Отправка команды: возвращает ответ раннера как есть. */
@@ -40,24 +59,69 @@ export function stepHint(detail: string): string {
   return ''
 }
 
-export async function runScenarioStep(step: AutomatedQaScenarioStep, send: ScenarioSend): Promise<ScenarioStepOutcome> {
+const DEFAULT_EXPECT_TIMEOUT_MS = 5_000
+const DEFAULT_POLL_MS = 250
+
+export async function runScenarioStep(
+  step: AutomatedQaScenarioStep,
+  send: ScenarioSend,
+  options: ScenarioStepOptions = {}
+): Promise<ScenarioStepOutcome> {
   const plan = planModelAction(step.action)
-  if (plan.kind === 'unsupported') return { ok: false, detail: plan.reason, unsupported: true }
+  if (plan.kind === 'unsupported') return { ok: false, detail: plan.reason, unsupported: true, failure: 'action' }
   let response: unknown
-  try { response = await send(plan.command) } catch (error) { return { ok: false, detail: firstLine(error) } }
+  try { response = await send(plan.command) } catch (error) { return { ok: false, detail: firstLine(error), failure: 'action' } }
   const selector = response as BrowserSelectorResult | null
   if (selector && typeof selector === 'object' && 'ok' in selector && selector.ok === false) {
-    return { ok: false, detail: selector.error ?? 'Действие не выполнено' }
+    return { ok: false, detail: selector.error ?? 'Действие не выполнено', failure: 'action' }
   }
   if (!step.expectText && !step.expectAbsentText) return { ok: true, detail: '' }
+
+  const now = options.now ?? Date.now
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
+  const deadline = now() + (options.expectTimeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS)
   let pageText = ''
-  try {
-    const read = await send({ type: 'selector', action: { kind: 'read' } }) as BrowserSelectorResult
-    pageText = typeof read?.text === 'string' ? read.text : ''
-  } catch (error) {
-    return { ok: false, detail: `Текст страницы не прочитан: ${firstLine(error)}` }
+  for (;;) {
+    try {
+      const read = await send({ type: 'selector', action: { kind: 'read' } }) as BrowserSelectorResult
+      pageText = typeof read?.text === 'string' ? read.text : ''
+    } catch (error) {
+      return { ok: false, detail: `Текст страницы не прочитан: ${firstLine(error)}`, failure: 'expectation' }
+    }
+    const missing = step.expectText ? !pageText.includes(step.expectText) : false
+    const present = step.expectAbsentText ? pageText.includes(step.expectAbsentText) : false
+    if (!missing && !present) return { ok: true, detail: '' }
+    if (now() >= deadline) {
+      // Показываем, что на странице всё-таки есть: «нет текста X» без этого не
+      // объясняет, куда смотреть.
+      const seen = pageText.trim().slice(0, 200)
+      const what = missing
+        ? `На странице нет ожидаемого текста «${step.expectText}»`
+        : `На странице найден недопустимый текст «${step.expectAbsentText}»`
+      return { ok: false, detail: seen ? `${what}. Видно: ${seen}` : what, failure: 'expectation' }
+    }
+    await sleep(options.pollMs ?? DEFAULT_POLL_MS)
   }
-  if (step.expectText && !pageText.includes(step.expectText)) return { ok: false, detail: `На странице нет ожидаемого текста «${step.expectText}»` }
-  if (step.expectAbsentText && pageText.includes(step.expectAbsentText)) return { ok: false, detail: `На странице найден недопустимый текст «${step.expectAbsentText}»` }
-  return { ok: true, detail: '' }
+}
+
+/**
+ * Что не так со сценарием до того, как он уедет в проект. Раньше туда попадали
+ * шаги с неисполнимым действием и пустым селектором, и узнавалось это только на
+ * прогоне — а прогон бывает через сутки, на доске, у другого человека.
+ */
+export function scenarioProblems(scenario: { startUrl: string; steps: AutomatedQaScenarioStep[] }): string[] {
+  const problems: string[] = []
+  if (!scenario.startUrl.trim()) problems.push('Не задан стартовый адрес')
+  if (!scenario.steps.length) problems.push('В сценарии нет ни одного шага')
+  scenario.steps.forEach((step, index) => {
+    const position = `Шаг ${index + 1} («${step.title}»)`
+    const plan = planModelAction(step.action)
+    if (plan.kind === 'unsupported') { problems.push(`${position}: ${plan.reason}`); return }
+    const selector = 'selector' in step.action ? step.action.selector : undefined
+    if (selector !== undefined && !String(selector).trim()) problems.push(`${position}: пустой селектор`)
+  })
+  if (!scenario.steps.some((step) => step.expectText || step.expectAbsentText)) {
+    problems.push('Ни одной проверки: сценарий пройдёт, даже если страница сломана')
+  }
+  return problems
 }

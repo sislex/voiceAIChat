@@ -416,6 +416,9 @@ describe('сценарий как настоящий тест (круг 14)', ()
   it('сохранение в проект отдаёт сценарий и сообщает об успехе', async () => {
     const onSaveScenario = vi.fn(async () => {})
     await record(bridgeWith(), { onSaveScenario })
+    // С круга 18 сценарий без единой проверки в проект не уезжает.
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст после последнего шага'), { target: { value: 'Задача создана' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
     await waitFor(() => expect(onSaveScenario).toHaveBeenCalledWith(expect.objectContaining({
       startUrl: 'http://89.125.68.35:8787/',
@@ -426,6 +429,8 @@ describe('сценарий как настоящий тест (круг 14)', ()
 
   it('отказ сохранения показывается, а не теряется', async () => {
     await record(bridgeWith(), { onSaveScenario: vi.fn(async () => { throw new Error('Недостаточно прав') }) })
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст после последнего шага'), { target: { value: 'Готово' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
     expect(await screen.findByText('Недостаточно прав')).toBeInTheDocument()
   })
@@ -484,7 +489,8 @@ describe('запись как черновик, который правят (к�
     fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
     // В записи только шаг-переход, который уходит в startUrl: шагов ноль.
     fireEvent.click(await screen.findByRole('button', { name: 'Сохранить в проект' }))
-    expect(await screen.findByText('Сценарий пуст: запишите хотя бы один шаг')).toBeInTheDocument()
+    // Круг 18: список проблем вместо одной фразы — их может быть несколько.
+    expect(await screen.findByText(/В сценарии нет ни одного шага/)).toBeInTheDocument()
     expect(onSaveScenario).not.toHaveBeenCalled()
   })
 
@@ -540,5 +546,50 @@ describe('прогон записанного сценария в панели (
     fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
     // В записи только шаг-перехода, который уходит в startUrl.
     expect(await screen.findByRole('button', { name: 'Прогнать сценарий' })).toBeDisabled()
+  })
+})
+
+describe('сценарий как редактируемый артефакт (круг 18)', () => {
+  const element = { selector: '#create', stability: 'id', tag: 'button', text: 'Создать', matches: 1, rect: { x: 0, y: 0, width: 100, height: 40 } }
+  const bridge = (): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const saved = { startUrl: 'http://89.125.68.35:8787/', steps: [{ id: 'step-1', title: 'Открыть доску', action: { kind: 'click' as const, selector: '#board' }, expectText: 'Доска' }] }
+
+  it('сохранённый сценарий подгружается и его можно править', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenario={saved} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Загрузить сценарий проекта' }))
+    expect(await screen.findByDisplayValue('Открыть доску')).toBeInTheDocument()
+    // Стартовый адрес возвращается шагом-переходом, иначе он потеряется.
+    expect(screen.getByDisplayValue('Открыть http://89.125.68.35:8787/')).toBeInTheDocument()
+  })
+
+  it('после загрузки кнопка исчезает: запись уже есть', async () => {
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenario={saved} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Загрузить сценарий проекта' }))
+    await screen.findByDisplayValue('Открыть доску')
+    expect(screen.queryByRole('button', { name: 'Загрузить сценарий проекта' })).not.toBeInTheDocument()
+  })
+
+  it('сценарий без проверок не сохраняется и объясняет почему', async () => {
+    const onSaveScenario = vi.fn(async () => {})
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} onSaveScenario={onSaveScenario} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await screen.findByDisplayValue('Нажать «Создать»')
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
+    // Одна надпись — предупреждение при записи, вторая — отказ сохранения.
+    expect(await screen.findByText(/Сценарий не сохранён:.*Ни одной проверки/)).toBeInTheDocument()
+    expect(onSaveScenario).not.toHaveBeenCalled()
   })
 })

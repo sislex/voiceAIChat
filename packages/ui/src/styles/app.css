@@ -7590,6 +7590,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .playwright-reader-record__result { display: block; font-style: normal; }
 .playwright-reader-record__result--ok { color: var(--ci-success); }
 .playwright-reader-record__result--fail { color: var(--danger); }
+.playwright-reader-record__time { color: var(--text-dim); font-size: 12px; }
 .playwright-reader-record__expect { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-100); }
 .playwright-reader-record__expect label { flex: 1 1 14rem; display: flex; flex-direction: column; gap: var(--space-050); }
 .playwright-reader-record__expect input { min-width: 0; width: 100%; box-sizing: border-box; }
