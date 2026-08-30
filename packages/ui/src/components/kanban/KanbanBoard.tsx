@@ -14,6 +14,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
+import { kanbanFilterKey } from '../../store/contracts'
 import type { ProjectFeatureSet } from '@shared/projectTypes'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
@@ -403,11 +404,15 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     }
   }, [scrollScopeId, board != null, swimlane])
   const currentUserId = props.currentUserId ?? props.currentUser ?? null
+  const legacyFilterStorageKey = useMemo(
+    () => currentUserId ? kanbanFilterKey(currentUserId, props.projectName) : null,
+    [currentUserId, props.projectName]
+  )
   const filterStorageKey = useMemo(() => {
     // Пока доска не пришла, настоящего projectId нет: ключ с именем проекта был
     // бы временным, и сохранённый под ним вид терялся бы при его подмене.
     const projectId = board?.columns[0]?.projectId ?? allTasks[0]?.projectId ?? (board ? props.projectName : null)
-    return currentUserId && projectId ? `voicechat.kanban.filters.v3.${encodeURIComponent(currentUserId)}.${encodeURIComponent(projectId)}` : null
+    return currentUserId && projectId ? kanbanFilterKey(currentUserId, projectId) : null
   }, [allTasks, board, currentUserId, props.projectName])
   useEffect(() => {
     setFiltersHydrated(false)
@@ -430,6 +435,16 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
       return
     }
     try {
+      // До круга с устойчивым ключом вид сохранялся под именем проекта. Переносим
+      // такую запись один раз, иначе у людей с настроенной доской она «сбросится».
+      const legacyKey = legacyFilterStorageKey
+      if (!localStorage.getItem(filterStorageKey) && legacyKey && legacyKey !== filterStorageKey) {
+        const legacy = localStorage.getItem(legacyKey)
+        if (legacy) {
+          localStorage.setItem(filterStorageKey, legacy)
+          localStorage.removeItem(legacyKey)
+        }
+      }
       const raw = localStorage.getItem(filterStorageKey)
       if (raw) {
         const saved = JSON.parse(raw) as { search?: string; assignees?: string[]; types?: WorkItemType[]; priorities?: TaskPriority[]; labels?: string[]; epics?: string[]; onlyMine?: boolean; flaggedOnly?: boolean; recentOnly?: boolean; columnAssigneeFilters?: Record<string, ColumnAssigneeFilter>; swimlane?: Swimlane; showHidden?: boolean }

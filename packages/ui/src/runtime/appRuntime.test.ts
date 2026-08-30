@@ -225,3 +225,52 @@ describe('AppRuntime — истёкшая сессия', () => {
     expect(onUnauthorized).toBeNull()
   })
 })
+
+// Полный цикл деплоя глазами открытой вкладки: сервер уходит в перезапуск,
+// человек продолжает работать, сервер возвращается. Ни в одной точке его выбор
+// не должен превратиться в дефолты.
+describe('AppRuntime — деплой во время работы', () => {
+  it('недоступность сервера не превращает настройки в дефолты', async () => {
+    const api = createFakeApi(['Первый'])
+    await api['settings:save']({ theme: 'dark', llmProvider: 'codex', defaultAgentId: 'a1' })
+    const session = makeSession(null)
+    const { runtime } = makeRuntime({ api, session })
+    await runtime.login('ann', 'x')
+    expect(runtime.settings.getState().settings.theme).toBe('dark')
+
+    // Сервер перезапускается: настройки не читаются и не пишутся.
+    const get = vi.spyOn(api, 'settings:get').mockRejectedValue(new Error('502'))
+    const save = vi.spyOn(api, 'settings:save')
+    runtime.settings.actions.reset()
+    await runtime.settings.actions.load().catch(() => {})
+    await runtime.settings.actions.updateSettings({ autoSpeak: true }).catch(() => {})
+    expect(save).not.toHaveBeenCalled()
+    expect(api._state.settings).toMatchObject({ theme: 'dark', llmProvider: 'codex' })
+
+    // Сервер вернулся: настройки на месте, изменение сохраняется поверх них.
+    get.mockRestore()
+    await runtime.settings.actions.load()
+    await runtime.settings.actions.updateSettings({ autoSpeak: true })
+    expect(api._state.settings).toMatchObject({ theme: 'dark', llmProvider: 'codex', autoSpeak: true })
+    runtime.dispose()
+  })
+
+  it('изменение в соседней вкладке перечитывается, а своё — рассылается', async () => {
+    const api = createFakeApi()
+    const { runtime } = makeRuntime({ api })
+    await runtime.settings.actions.load()
+
+    await api['settings:save']({ theme: 'green' }) // «соседняя вкладка»
+    runtime.handlers.settingsChanged()
+    await vi.waitFor(() => expect(runtime.settings.getState().settings.theme).toBe('green'))
+
+    const events: string[] = []
+    window.addEventListener('storage', (event) => { if (event.key === 'vc:settings-update') events.push('signal') })
+    await runtime.settings.actions.updateSettings({ theme: 'dark' })
+    // В jsdom событие storage своей же вкладке не приходит — проверяем, что
+    // сигнальный ключ не оседает в хранилище (он пишется и сразу снимается).
+    expect(localStorage.getItem('vc:settings-update')).toBeNull()
+    expect(events).toEqual([])
+    runtime.dispose()
+  })
+})

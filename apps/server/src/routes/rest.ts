@@ -19,7 +19,8 @@ import {
   type UsageUnit,
   instructionContextId,
   instructionText,
-  isContextToggleable
+  isContextToggleable,
+  sanitizeSettingsPatch
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { uid } from '../users/auth.js'
@@ -614,7 +615,23 @@ export async function registerRest(
 
   app.get(REST.llmEngines, async (req) => db.listLlmEnginesForRole(db.getUser(uid(req))?.role ?? 'developer'))
 
-  app.get(REST.settings, async (req) => db.getSettings(uid(req)))
+  /**
+   * Ссылки на машины живут в чужой таблице и могут исчезнуть мимо UI (удаление
+   * другим сеансом, чистка). Отдавать висячий id нельзя: чат берёт его целью
+   * выполнения и получает «машина не найдена», а в настройках он выглядит как
+   * выбранная машина по умолчанию. Чиним лениво — на первом же чтении.
+   */
+  const settingsWithLiveAgents = (userId: string): Settings => {
+    const settings = db.getSettings(userId)
+    const alive = new Set(db.listAgents(userId).map((agent) => agent.id))
+    const execTarget = settings.execTarget && !alive.has(settings.execTarget) ? null : settings.execTarget
+    const defaultAgentId = settings.defaultAgentId && !alive.has(settings.defaultAgentId) ? null : settings.defaultAgentId
+    if (execTarget === settings.execTarget && defaultAgentId === settings.defaultAgentId) return settings
+    const repaired = { ...settings, execTarget, defaultAgentId }
+    db.saveSettings(userId, repaired)
+    return repaired
+  }
+  app.get(REST.settings, async (req) => settingsWithLiveAgents(uid(req)))
   const myLlmAccess = async (req: Parameters<typeof uid>[0]) => db.getUserLlmAccess(uid(req))
   app.get(REST.llmAccess, myLlmAccess)
   app.get(REST.meLlmAccess, myLlmAccess)
@@ -643,14 +660,17 @@ export async function registerRest(
   // стереть чужие поля записи.
   app.put<{ Body: Partial<Settings> }>(REST.settings, async (req, reply) => {
     const role = db.getUser(uid(req))?.role ?? 'developer'
-    if (req.body.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === req.body.llmEngineId)) {
+    // Патч сначала приводится к контракту: значение не того типа или не из
+    // набора не должно осесть в записи (она мержится, и мусор остался бы навсегда).
+    const patch = sanitizeSettingsPatch(req.body)
+    if (patch.llmEngineId && !db.listLlmEnginesForRole(role).some((engine) => engine.id === patch.llmEngineId)) {
       return reply.code(403).send({ error: 'llm engine is not available for role' })
     }
-    const generatedFilesTtlDays = req.body.generatedFilesTtlDays ?? db.getSettings(uid(req)).generatedFilesTtlDays
+    const generatedFilesTtlDays = patch.generatedFilesTtlDays ?? db.getSettings(uid(req)).generatedFilesTtlDays
     if (!Number.isInteger(generatedFilesTtlDays) || generatedFilesTtlDays < 1 || generatedFilesTtlDays > 3650) {
       return reply.code(400).send({ error: 'generatedFilesTtlDays must be an integer from 1 to 3650' })
     }
-    const raw = req.body.personalization ?? db.getSettings(uid(req)).personalization
+    const raw = patch.personalization ?? db.getSettings(uid(req)).personalization
     const preferredName = raw.preferredName?.trim().replace(/\s+/g, ' ') || null
     const currentYear = new Date().getUTCFullYear()
     const validParts =
@@ -663,7 +683,7 @@ export async function registerRest(
       ['neutral', 'friendly', 'business', 'plain'].includes(raw.tone)
     if (preferredName && preferredName.length > 80) return reply.code(400).send({ error: 'preferredName is too long' })
     if (!validParts || !validDate || !validEnums) return reply.code(400).send({ error: 'invalid personalization' })
-    db.saveSettings(uid(req), { ...db.getSettings(uid(req)), ...req.body, generatedFilesTtlDays, personalization: { ...raw, preferredName } })
-    return db.getSettings(uid(req))
+    db.saveSettings(uid(req), { ...db.getSettings(uid(req)), ...patch, generatedFilesTtlDays, personalization: { ...raw, preferredName } })
+    return settingsWithLiveAgents(uid(req))
   })
 }

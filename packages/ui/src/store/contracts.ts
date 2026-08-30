@@ -12,12 +12,56 @@ export const DONE_TASK_CHATS_KEY = 'vc.sidebar.doneTaskChats'
 export const MESSAGE_META_UPDATE_KEY = 'vc:message-meta-update'
 /** Ключ предпочтений для фильтра доски «Показывать завершённые». */
 export const BOARD_COMPLETED_KEY = 'vc.board.includeCompleted'
+/** Ключ межвкладочного сигнала «настройки изменены» (значение — метка времени). */
+export const SETTINGS_UPDATE_KEY = 'vc:settings-update'
 /** Ключ предпочтений для ширины сайдбара. */
 export const SIDEBAR_WIDTH_KEY = 'vc.sidebar.width'
 /** Ключ предпочтений с последней известной темой: до ответа сервера интерфейс рисуется ею. */
 export const THEME_KEY = 'vc.theme'
 /** Ключ localStorage для свёрнутого сайдбара на десктопе. */
 export const SIDEBAR_COLLAPSED_KEY = 'vc:sidebarCollapsed'
+/** Ключ предпочтений для ширины панели превью (в процентах). */
+export const PREVIEW_WIDTH_KEY = 'voicechat.previewWidth'
+/** Ключ предпочтений «панель ассистента канбана раскрыта». */
+export const KANBAN_ASSISTANT_OPEN_KEY = 'voicechat.kanbanAssistantOpen'
+/** Ключ предпочтений с чатом ассистента конкретного проекта. */
+export const projectAssistantChatKey = (projectId: string): string => `voicechat.projectAssistantChat.${projectId}`
+/**
+ * Ключ вида и фильтров доски: он общий на пользователя и проект. Версия `v3` —
+ * часть контракта хранилища: подняв её, вы обнулите настроенный вид у всех, так
+ * что новая версия обязана идти вместе с переносом прежней записи.
+ */
+export const kanbanFilterKey = (userId: string, projectId: string): string =>
+  `voicechat.kanban.filters.v3.${encodeURIComponent(userId)}.${encodeURIComponent(projectId)}`
+
+/** Ключи предпочтений редактора Make: автосохранение, формат при сохранении и раскладка. */
+export const MAKE_AUTOSAVE_KEY = 'vc.make.autosave'
+export const MAKE_FORMAT_ON_SAVE_KEY = 'vc.make.formatOnSave'
+export const MAKE_SPLIT_KEY = 'vc.make.split'
+export const MAKE_SPLIT_PCT_KEY = 'vc.make.splitPct'
+
+/**
+ * Все ключи предпочтений интерфейса в одном месте — реестр для стража
+ * `preferenceKeys.test.ts`. Он не даёт разъехаться двум вещам: одинаковому
+ * ключу у разных фич (одна молча затирает другую) и ключу-литералу мимо этого
+ * файла (такой не найти при переименовании, и он теряется тихо).
+ */
+export const PREFERENCE_KEYS = [
+  SIDEBAR_PROJECT_KEY,
+  DONE_TASK_CHATS_KEY,
+  MESSAGE_META_UPDATE_KEY,
+  BOARD_COMPLETED_KEY,
+  SETTINGS_UPDATE_KEY,
+  SIDEBAR_WIDTH_KEY,
+  THEME_KEY,
+  SIDEBAR_COLLAPSED_KEY,
+  PREVIEW_WIDTH_KEY,
+  KANBAN_ASSISTANT_OPEN_KEY,
+  MAKE_AUTOSAVE_KEY,
+  MAKE_FORMAT_ON_SAVE_KEY,
+  MAKE_SPLIT_KEY,
+  MAKE_SPLIT_PCT_KEY
+] as const
 
 /**
  * Нормализованный голосовой срез настроек: его отдаёт settingsStore, а
