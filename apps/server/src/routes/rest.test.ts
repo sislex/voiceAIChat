@@ -51,6 +51,8 @@ beforeEach(async () => {
   sentMails.length = 0
   app = await buildServer({
     mailer: { configured: true, send: async (m) => { sentMails.push(m) } },
+    // Место входа: тесты не ходят в сеть, но проверяют, что ответ доезжает до сессии.
+    geo: { resolve: async () => ({ country: 'RU', city: 'Москва', label: 'Москва, RU' }) },
     config: loadConfig({
       PORT: '0',
       VC_DATA_DIR: dataDir,
@@ -331,6 +333,20 @@ describe('REST: аутентификация', () => {
     const touched = db.listSessions('meta')[0]!
     expect(touched.requests).toBe(1)
     expect(touched.lastPath).toBe('/api/conversations')
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('место входа с публичного адреса уточняется в фоне и попадает в список', async () => {
+    db.createUser('geo', 'geo-pass-2026-okay', 'developer')
+    await app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      payload: { name: 'geo', password: 'geo-pass-2026-okay' },
+      headers: { 'user-agent': 'Chrome/128 Mac OS X' },
+      remoteAddress: '203.0.113.7'
+    })
+    // Резолвер подменён в beforeEach: реальные тесты в сеть не ходят.
+    await vi.waitFor(() => expect(db.listSessions('geo')[0]!.geo).toMatchObject({ label: 'Москва, RU' }))
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
