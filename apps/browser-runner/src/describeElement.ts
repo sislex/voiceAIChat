@@ -18,8 +18,21 @@
 export function describeElementScript(x: number, y: number): string {
   return `(() => {
     const doc = document
-    const node = doc.elementFromPoint(${x}, ${y})
-    if (!node) return null
+    const hit = doc.elementFromPoint(${x}, ${y})
+    if (!hit) return null
+    // elementFromPoint отдаёт самый верхний узел — это <span> внутри кнопки.
+    // Кликают по кнопке, и её же обычно помечают data-testid, поэтому
+    // поднимаемся к ближайшему опознаваемому предку.
+    const interactive = 'BUTTON A INPUT SELECT TEXTAREA LABEL'.split(' ')
+    const known = (el) => Boolean(el.getAttribute('data-testid') || el.id || interactive.indexOf(el.tagName) >= 0)
+    // Ищем ближайшего опознаваемого предка. Если такого нет — остаёмся на самом
+    // узле: подъём «до упора» уводил бы к html и давал бессмысленный селектор.
+    let node = hit
+    let candidate = hit
+    for (let up = 0; up < 4 && candidate && candidate.tagName !== 'BODY'; up++) {
+      if (known(candidate)) { node = candidate; break }
+      candidate = candidate.parentElement
+    }
     const esc = (value) => (window.CSS && CSS.escape ? CSS.escape(value) : String(value).replace(/[^a-zA-Z0-9_-]/g, '\\\\$&'))
     const testid = node.getAttribute('data-testid')
     const label = node.getAttribute('aria-label')
@@ -47,9 +60,15 @@ export function describeElementScript(x: number, y: number): string {
       selector = parts.join(' > ') || node.tagName.toLowerCase()
     }
     const box = node.getBoundingClientRect()
+    // Сколько узлов отвечает этому селектору: одинаковый aria-label может
+    // встречаться десять раз, и записанный шаг молча кликнет по первому.
+    // (Обратные кавычки в этом комментарии закрыли бы шаблонную строку.)
+    let matches = 1
+    try { matches = doc.querySelectorAll(selector).length } catch { matches = 0 }
     return {
       selector,
       stability,
+      matches,
       tag: node.tagName.toLowerCase(),
       text: (node.innerText || node.value || node.getAttribute('placeholder') || '').trim().slice(0, 120),
       rect: { x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height) }

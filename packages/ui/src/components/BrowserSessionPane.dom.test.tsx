@@ -367,3 +367,65 @@ describe('где мы и кто действовал (круг 13)', () => {
     expect(screen.queryByLabelText('Войти как')).not.toBeInTheDocument()
   })
 })
+
+describe('сценарий как настоящий тест (круг 14)', () => {
+  const element = { selector: '#create', stability: 'id', tag: 'button', text: 'Создать', matches: 1, rect: { x: 0, y: 0, width: 100, height: 40 } }
+  const bridgeWith = (over: Record<string, unknown> = {}): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element: { ...element, ...over } }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const record = async (browser: RendererBrowserBridge, props: Record<string, unknown> = {}): Promise<void> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} {...props} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await screen.findByText('Нажать «Создать»')
+  }
+
+  it('предупреждает, что сценарий без проверок ничего не докажет', async () => {
+    await record(bridgeWith())
+    expect(screen.getByText(/Ни одной проверки/)).toBeInTheDocument()
+  })
+
+  it('ожидание вешается на последний шаг и предупреждение уходит', async () => {
+    await record(bridgeWith())
+    fireEvent.change(screen.getByLabelText('Ожидаемый текст после последнего шага'), { target: { value: 'Задача создана' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ждать текст' }))
+    expect(await screen.findByText('ждём «Задача создана»')).toBeInTheDocument()
+    expect(screen.queryByText(/Ни одной проверки/)).not.toBeInTheDocument()
+  })
+
+  it('неоднозначный селектор объясняется отдельно от ненадёжного', async () => {
+    await record(bridgeWith({ selector: 'button[aria-label="Закрыть"]', stability: 'label', matches: 3 }))
+    expect(screen.getByText(/Неоднозначных шагов: 1/)).toBeInTheDocument()
+  })
+
+  it('шаг можно убрать: промах мышью не стоит всей записи', async () => {
+    await record(bridgeWith())
+    fireEvent.click(screen.getByRole('button', { name: 'Убрать шаг «Нажать «Создать»»' }))
+    await waitFor(() => expect(screen.queryByText('Нажать «Создать»')).not.toBeInTheDocument())
+  })
+
+  it('сохранение в проект отдаёт сценарий и сообщает об успехе', async () => {
+    const onSaveScenario = vi.fn(async () => {})
+    await record(bridgeWith(), { onSaveScenario })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
+    await waitFor(() => expect(onSaveScenario).toHaveBeenCalledWith(expect.objectContaining({
+      startUrl: 'http://89.125.68.35:8787/',
+      steps: [expect.objectContaining({ action: { kind: 'click', selector: '#create' } })]
+    })))
+    expect(await screen.findByText('Сценарий сохранён в настройках проекта')).toBeInTheDocument()
+  })
+
+  it('отказ сохранения показывается, а не теряется', async () => {
+    await record(bridgeWith(), { onSaveScenario: vi.fn(async () => { throw new Error('Недостаточно прав') }) })
+    fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
+    expect(await screen.findByText('Недостаточно прав')).toBeInTheDocument()
+  })
+})
