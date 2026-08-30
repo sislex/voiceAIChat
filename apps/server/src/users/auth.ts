@@ -34,6 +34,8 @@ export const CSRF_COOKIE = 'vc_csrf'
  */
 export const DEVICE_COOKIE = 'vc_device'
 const DEVICE_COOKIE_MAX_AGE = 400 * 24 * 60 * 60
+/** Срок жизни сессии для ролей, которые заходят эпизодически. */
+const ROLE_SHORT_TTL_MS = 7 * 24 * 60 * 60_000
 export const CSRF_HEADER = 'x-vc-csrf'
 function secureFlag(req: FastifyRequest): string {
   const proto = String(req.headers['x-forwarded-proto'] ?? req.protocol)
@@ -254,6 +256,32 @@ function publicSession(session: SessionInfo): SessionInfo {
   return rest
 }
 
+/**
+ * Письмо о массовом закрытии входов. Такое действие необратимо и часто идёт от
+ * чужих рук: если это был не владелец, письмо — единственный канал, который у
+ * него остался, ведь все сессии уже погашены.
+ */
+async function notifyBulkRevoke(
+  deps: { mailer: Mailer; log: FastifyInstance['log']; baseUrl: string },
+  input: { user: string; email: string | null | undefined; kind: 'logout_all' | 'panic'; revoked: number; ip: string }
+): Promise<void> {
+  if (!input.email) return
+  const when = `${new Date().toLocaleString('ru-RU', { timeZone: 'UTC' })} UTC`
+  const what = input.kind === 'panic'
+    ? 'закрыты все входы и запрошена смена пароля'
+    : `завершены другие сессии (${input.revoked})`
+  try {
+    await deps.mailer.send({
+      to: input.email,
+      subject: 'Входы в ChatAI закрыты',
+      text: `В вашей учётной записи ${what}.\nКогда: ${when}\nIP: ${input.ip}\n\nЕсли это были не вы — смените пароль: ${deps.baseUrl}/#/security/password`
+    })
+  } catch (error) {
+    // Письмо — предупреждение, а не часть операции: сбой почты её не отменяет.
+    deps.log.error({ error, user: input.user }, 'auth: письмо о закрытии входов не отправлено')
+  }
+}
+
 /** Секрет устройства из cookie: голый секрет наружу не хранится, только хеш. */
 function deviceSecretOf(req: FastifyRequest): string | undefined {
   const raw = cookieOf(req, DEVICE_COOKIE)
@@ -375,17 +403,28 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
   const loginByIp = new SlidingWindowLimiter(LOGIN_IP_LIMIT, LOGIN_WINDOW_MS)
   const loginByName = new SlidingWindowLimiter(LOGIN_LIMIT, LOGIN_WINDOW_MS)
   const registerLimiter = new SlidingWindowLimiter(5, 60 * 60_000)
-  app.decorate('resetLoginLimiters', () => { loginByIp.reset(); loginByName.reset() })
+  // Изменения сессий не должны стать инструментом: перебирать чужие sid или
+  // раз за разом гасить всё подряд смысла нет, а нагрузку это создаёт.
+  const sessionOpsLimiter = new SlidingWindowLimiter(30, 5 * 60_000)
+  app.decorate('resetLoginLimiters', () => { loginByIp.reset(); loginByName.reset(); sessionOpsLimiter.reset() })
+  /** Общая проверка частоты для мутаций сессий; null — можно продолжать. */
+  const sessionOpsBlocked = (req: FastifyRequest, user: string): { retryAfterSec: number } | null => {
+    const hit = sessionOpsLimiter.hit(`${user}:${req.ip}`)
+    return hit.ok ? null : { retryAfterSec: hit.retryAfterSec }
+  }
   /** Ожидающие второго шага тикеты и незавершённые настройки 2FA — в памяти процесса, живут минуты. */
   const pendingTwoFactor = new Map<string, { name: string; expires: number; attempts: number; remember: boolean }>()
   const pendingSetup = new Map<string, { secret: string; expires: number }>()
-  const issueSession = async (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role'], remember = true): Promise<{ token: string; user: SessionUser; csrf: string }> => {
+  const issueSession = async (req: FastifyRequest, reply: FastifyReply, name: string, role: SessionUser['role'], remember = true, twoFactor = false): Promise<{ token: string; user: SessionUser; csrf: string }> => {
     const row = db.getUser(name)
     const user: SessionUser = { name, role, ...(row?.mustChangePassword ? { mustChangePassword: true } : {}) }
     const sid = newSessionId()
     const token = signToken(user, secret, sid)
     // «Запомнить меня» (п.15): 30 дней и cookie с Max-Age; иначе 12 часов и сессионная cookie (умирает с браузером).
-    const ttl = remember ? SESSION_TTL_MS : SESSION_SHORT_TTL_MS
+    // Роль укорачивает срок: наблюдатель и тестировщик заходят эпизодически, и
+    // месячная сессия у них живёт дольше, чем сам повод её открыть.
+    const roleTtl = role === 'observer' || role === 'tester' ? ROLE_SHORT_TTL_MS : SESSION_TTL_MS
+    const ttl = Math.min(remember ? roleTtl : SESSION_SHORT_TTL_MS, roleTtl)
     const ua = String(req.headers['user-agent'] ?? '')
     // Новое устройство (п.16): решает ядро модуля сессий по ключу устройства —
     // тот не меняется от обновления браузера и от соседнего адреса провайдера,
@@ -402,7 +441,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       deviceSecret: hashDeviceSecret(deviceSecret),
       platform: platformOf(ua),
       clientVersion: clientVersionOf(req),
-      geo: localGeo(req.ip)
+      geo: localGeo(req.ip),
+      twoFactor
     })
     // Лимит одновременных сессий: превышение гасит самые давно неактивные, но
     // никогда — только что выданную. Ноль или отсутствие настройки — без лимита.
@@ -488,6 +528,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
           pendingTwoFactor.set(ticket, { name: u.name, expires: Date.now() + 5 * 60_000, attempts: 0, remember })
           return { requires2fa: true, ticket }
         }
+        // Доверенное устройство однажды прошло проверку — сессия наследует признак.
+        return issueSession(req, reply, u.name, u.role, remember, true)
       }
       return issueSession(req, reply, u.name, u.role, remember)
     }
@@ -508,7 +550,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       return reply.code(401).send({ error: 'неверный код подтверждения' })
     }
     pendingTwoFactor.delete(ticket!)
-    return issueSession(req, reply, u.name, u.role, pending.remember)
+    return issueSession(req, reply, u.name, u.role, pending.remember, true)
   })
   // Настройка 2FA: setup выдаёт секрет и otpauth-ссылку (ещё не включено), enable включает после верного кода, disable — по коду.
   app.post(REST.session2faSetup, async (req, reply) => {
@@ -770,6 +812,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
+    const limited = sessionOpsBlocked(req, user.name)
+    if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
     // `includeCurrent` — «выйти везде, включая это устройство»: после кражи
     // пароля человек хочет обнулить всё разом, а не оставлять себе исключение.
     const includeCurrent = req.body?.includeCurrent === true
@@ -785,6 +829,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       reply.header('set-cookie', clearSessionCookies(req))
     }
     db.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}${includeCurrent ? ', включая текущую' : ''}` })
+    if (revoked > 0) void notifyBulkRevoke({ mailer, log: app.log, baseUrl: baseUrl(req) }, { user: user.name, email: db.getUser(user.name)?.email, kind: 'logout_all', revoked, ip: req.ip })
     for (const session of doomed) options.sessions?.emit(user.name, session.sid)
     if (doomed.length === 0) options.sessions?.emit(user.name)
     return { revoked }
@@ -799,6 +844,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
+    const limited = sessionOpsBlocked(req, user.name)
+    if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
     const doomed = db.listSessions(user.name)
     const revoked = db.revokeUserSessions(user.name, null)
     const token = tokenOf(req)
@@ -806,6 +853,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     db.setMustChangePassword(user.name, true)
     reply.header('set-cookie', [previewCookie('', 0), ...clearSessionCookies(req)])
     db.logSecurityEvent({ user: user.name, type: 'session_panic', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}, требуется смена пароля` })
+    void notifyBulkRevoke({ mailer, log: app.log, baseUrl: baseUrl(req) }, { user: user.name, email: db.getUser(user.name)?.email, kind: 'panic', revoked, ip: req.ip })
     for (const session of doomed) options.sessions?.emit(user.name, session.sid)
     return { revoked }
   })
@@ -820,11 +868,22 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     options.sessions?.emit(user.name, s.sid)
     return { ok: true }
   })
+  // История устройства: что этот вход делал. Отвечает на вопрос «а точно ли это
+  // я», когда подпись и место сами по себе ничего не проясняют.
+  app.get<{ Params: { sid: string } }>(REST.sessionHistory(':sid').replace('%3Asid', ':sid'), async (req, reply) => {
+    const user = activeUser(tokenOf(req))
+    if (!user) return reply.code(401).send({ error: 'unauthorized' })
+    const s = db.getSession(req.params.sid) ?? db.listEndedSessions(user.name, 100).find((x) => x.sid === req.params.sid)
+    if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
+    return { events: db.listSessionHistory(user.name, { userAgent: s.userAgent, ip: s.ip }) }
+  })
   // Имя устройства и отметка «доверенное» — только для своей сессии.
   app.patch<{ Params: { sid: string }; Body: { label?: string | null; trusted?: boolean } }>('/api/session/:sid', async (req, reply) => {
     const user = activeUser(tokenOf(req))
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
+    const limited = sessionOpsBlocked(req, user.name)
+    if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
     const s = db.getSession(req.params.sid)
     // Чужая и несуществующая сессия отвечают одинаково: по ответу не должно быть
     // видно, существует ли сессия с таким sid у кого-то другого.
@@ -836,6 +895,11 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     }
     if (typeof req.body?.trusted === 'boolean') patch.trusted = req.body.trusted
     if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'нечего менять' })
+    // Доверие пропускает второй фактор — значит выдавать его сессии, которая
+    // сама его не проходила, бессмысленно: так проверка обходится навсегда.
+    if (patch.trusted === true && db.getUserTotpSecret(user.name) && !s.twoFactor) {
+      return reply.code(409).send({ error: 'Сделать доверенным можно только устройство, вход с которого подтверждён кодом' })
+    }
     db.updateSession(s.sid, patch)
     const ua = String(req.headers['user-agent'] ?? '')
     if (patch.label !== undefined) db.logSecurityEvent({ user: user.name, type: 'session_renamed', ip: req.ip, userAgent: ua, details: patch.label ?? 'имя снято' })

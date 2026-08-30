@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deviceSiblings, durationOf, filterSessions, groupByDevice, otherSessions, platformsOf, sessionTitle, sortSessions, toView } from './presentation'
+import { countryFlag, deviceSiblings, durationOf, filterSessions, groupByDevice, otherSessions, platformsOf, sessionTitle, sortSessions, toView } from './presentation'
 import type { DeviceSession } from './types'
 
 const T0 = 1_700_000_000_000
@@ -115,3 +115,12 @@ describe('устройства и платформы', () => {
     expect(toView(list[0]!, T0).siblings).toBe(0)
   })
 })
+
+describe('countryFlag', () => {
+  it('переводит ISO-код в флаг и молчит на мусоре', () => {
+    expect(countryFlag('RU')).toBe('🇷🇺')
+    expect(countryFlag('de')).toBe('🇩🇪')
+    for (const bad of ['', null, undefined, 'RUS', '1A', 'локальная сеть']) expect(countryFlag(bad)).toBe('')
+  })
+})
+

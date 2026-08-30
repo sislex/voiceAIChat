@@ -156,8 +156,12 @@ export const REST = {
   sessionRevoke: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
   /** Имя устройства и отметка «доверенное» для своей сессии. */
   sessionUpdate: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
+  /** События безопасности, связанные с конкретным устройством. */
+  sessionHistory: (sid: string) => `/api/session/${encodeURIComponent(sid)}/history`,
   adminSessions: (user: string) => `/api/admin/users/${encodeURIComponent(user)}/sessions`,
   adminSessionRevoke: (sid: string) => `/api/admin/sessions/${encodeURIComponent(sid)}`,
+  /** Снять доверие с устройства пользователя (админ). */
+  adminSessionUntrust: (sid: string) => `/api/admin/sessions/${encodeURIComponent(sid)}/trust`,
   sessionPreview: '/api/session/preview',
   conversations: '/api/conversations',
   /** Make: состояние/файлы проекта разговора. */

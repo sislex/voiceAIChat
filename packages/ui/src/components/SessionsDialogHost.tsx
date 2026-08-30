@@ -27,11 +27,25 @@ export function SessionsDialogHost({ onClose, onSignedOut }: SessionsDialogHostP
       ...(bridge.renameSession ? { rename: (sid, label) => bridge.renameSession!(sid, label) } : {}),
       ...(bridge.trustSession ? { setTrusted: (sid, trusted) => bridge.trustSession!(sid, trusted) } : {}),
       ...(bridge.endedSessions ? { listEnded: () => bridge.endedSessions!() } : {}),
-      ...(bridge.panicSessions ? { panic: () => bridge.panicSessions!() } : {})
+      ...(bridge.panicSessions ? { panic: () => bridge.panicSessions!() } : {}),
+      ...(bridge.sessionHistory ? { history: (sid: string) => bridge.sessionHistory!(sid) } : {})
     }
     return createSessionsStore({
       client,
-      host: { onSignedOut },
+      host: {
+        onSignedOut,
+        // Возврат к вкладке — сигнал перечитать список. Знание про document
+        // живёт здесь, в хосте: модуль остаётся платформенно-нейтральным.
+        onVisible: (cb) => {
+          const handler = (): void => { if (document.visibilityState === 'visible') cb() }
+          document.addEventListener('visibilitychange', handler)
+          window.addEventListener('focus', handler)
+          return () => {
+            document.removeEventListener('visibilitychange', handler)
+            window.removeEventListener('focus', handler)
+          }
+        }
+      },
       // Только «список устарел»: отзыв собственной сессии обрабатывает App —
       // он должен уводить на экран входа и с закрытым окном тоже.
       ...(bridge.onSessionsChanged

@@ -44,10 +44,38 @@ export interface SessionsTexts {
   platformLabel: (platform: string) => string
   siblings: (count: number) => string
   activity: (requests: number, path: string) => string
+  twoFactorBadge: string
+  revokeDevice: (count: number) => string
+  revokeDeviceOthers: (count: number) => string
+  revokeDeviceConfirmTitle: (device: string) => string
+  revokeDeviceConfirmText: string
+  historyToggle: string
+  historyEmpty: string
+  historyEvent: (type: string) => string
+  moreHidden: (count: number) => string
   createdAt: (when: string) => string
   lastSeen: (when: string) => string
   expiresIn: (when: string) => string
   expired: string
+}
+
+/** Подписи событий журнала: в карточке нужен человеческий язык, а не коды. */
+const HISTORY_LABELS: Record<string, string> = {
+  login: 'вход',
+  login_new_device: 'вход с нового устройства',
+  login_failed: 'неверный пароль',
+  login_locked: 'замок после неудач',
+  login_2fa_failed: 'неверный код',
+  logout: 'выход',
+  logout_all: 'выход везде',
+  session_revoked: 'сессия завершена',
+  session_renamed: 'устройство переименовано',
+  session_trusted: 'устройство доверено',
+  session_untrusted: 'доверие снято',
+  session_evicted: 'вытеснена лимитом',
+  session_panic: 'тревога «это не я»',
+  password_changed: 'пароль изменён',
+  password_reset: 'пароль сброшен'
 }
 
 export const DEFAULT_TEXTS: SessionsTexts = {
@@ -90,6 +118,18 @@ export const DEFAULT_TEXTS: SessionsTexts = {
   platformAll: 'Все',
   platformLabel: (platform) => (platform === 'web' ? 'Браузер' : platform === 'desktop' ? 'Приложение' : platform === 'agent' ? 'Агент' : platform),
   siblings: (count) => `ещё ${count} ${count === 1 ? 'сессия' : count < 5 ? 'сессии' : 'сессий'} этого устройства`,
+  twoFactorBadge: 'подтверждено кодом',
+  // Коротко: длинная подпись в ряду действий выдавливает саму карточку.
+  revokeDevice: (count) => `Завершить устройство (${count})`,
+  // У текущей карточки та же кнопка гасит только соседние входы — об этом и говорим,
+  // иначе человек решит, что выбьет сам себя.
+  revokeDeviceOthers: (count) => `Завершить другие входы (${count})`,
+  revokeDeviceConfirmTitle: (device) => `Завершить все входы с «${device}»?`,
+  revokeDeviceConfirmText: 'Устройство потеряет доступ во всех вкладках и приложениях сразу.',
+  historyToggle: 'Что делало это устройство',
+  historyEmpty: 'Событий по этому устройству нет',
+  historyEvent: (type) => HISTORY_LABELS[type] ?? type,
+  moreHidden: (count) => `Показаны первые записи, ещё ${count} скрыто — уточните поиск`,
   activity: (requests, path) => {
     const hits = `${requests} ${plural(requests, 'обращение', 'обращения', 'обращений')}`
     return path ? `${hits} · ${path}` : hits

@@ -292,6 +292,7 @@ interface SessionRow {
   requests: number | null
   last_path: string | null
   device_secret: string | null
+  two_factor: number | null
 }
 
 /** Строка → контракт. Гео хранится JSON-ом: битую запись просто теряем. */
@@ -314,7 +315,8 @@ function sessionOf(r: SessionRow): SessionInfo {
     geo,
     requests: r.requests ?? 0,
     lastPath: r.last_path ?? null,
-    deviceSecret: r.device_secret ?? null
+    deviceSecret: r.device_secret ?? null,
+    twoFactor: r.two_factor === 1
   }
 }
 
@@ -925,6 +927,7 @@ export class VoiceChatDb {
       add('requests', 'requests INTEGER NOT NULL DEFAULT 0')
       add('last_path', 'last_path TEXT')
       add('device_secret', 'device_secret TEXT')
+      add('two_factor', 'two_factor INTEGER NOT NULL DEFAULT 0')
       this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(user_name, device_key)`)
     }
     // Уровень доступа предоставленной проекту машины (machines-roadmap п.18): 'full' | 'read'.
@@ -3132,13 +3135,13 @@ export class VoiceChatDb {
 
 
   /** Регистрирует сессию входа; повторный вызов для того же sid обновляет last_seen. */
-  createSession(sid: string, user: string, meta: { ip: string; userAgent: string; ttlMs: number; deviceKey?: string | null; deviceSecret?: string | null; platform?: string | null; clientVersion?: string | null; geo?: SessionGeo | null; at?: number }): void {
+  createSession(sid: string, user: string, meta: { ip: string; userAgent: string; ttlMs: number; deviceKey?: string | null; deviceSecret?: string | null; platform?: string | null; clientVersion?: string | null; geo?: SessionGeo | null; twoFactor?: boolean; at?: number }): void {
     const now = meta.at ?? Date.now()
-    this.db.prepare(`INSERT INTO sessions (sid, user_name, created_at, last_seen, expires_at, ip, user_agent, device_key, device_secret, platform, client_version, geo)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    this.db.prepare(`INSERT INTO sessions (sid, user_name, created_at, last_seen, expires_at, ip, user_agent, device_key, device_secret, platform, client_version, geo, two_factor)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(sid) DO UPDATE SET last_seen = excluded.last_seen`)
       .run(sid, user, now, now, now + meta.ttlMs, meta.ip.slice(0, 64), meta.userAgent.slice(0, 200),
-        meta.deviceKey ?? null, meta.deviceSecret ?? null, meta.platform ?? null, meta.clientVersion ?? null, meta.geo ? JSON.stringify(meta.geo) : null)
+        meta.deviceKey ?? null, meta.deviceSecret ?? null, meta.platform ?? null, meta.clientVersion ?? null, meta.geo ? JSON.stringify(meta.geo) : null, meta.twoFactor ? 1 : 0)
   }
 
   /** Есть ли запись о сессии вообще (в т.ч. отозванная) — чтобы ленивый импорт старых токенов не воскрешал отозванные. */
@@ -3178,6 +3181,17 @@ export class VoiceChatDb {
   listSessions(user: string, at?: number): SessionInfo[] {
     const rows = this.db.prepare(`SELECT * FROM sessions WHERE user_name = ? AND revoked_at IS NULL AND expires_at > ? ORDER BY last_seen DESC`).all(user, at ?? Date.now()) as SessionRow[]
     return rows.map(sessionOf)
+  }
+
+  /**
+   * События безопасности, относящиеся к устройству сессии. Ключ сопоставления —
+   * User-Agent и адрес: в журнале нет sid, а по паре видно именно тот вход,
+   * про который человек спрашивает «что это устройство делало».
+   */
+  listSessionHistory(user: string, session: { userAgent: string; ip: string }, limit = 10): SecurityEvent[] {
+    const rows = this.db.prepare(`SELECT * FROM security_events WHERE user_name = ? AND user_agent = ? AND (ip = ? OR ip = '')
+      ORDER BY id DESC LIMIT ?`).all(user, session.userAgent.slice(0, 200), session.ip.slice(0, 64), Math.min(Math.max(limit, 1), 50)) as Array<{ id: number; at: number; user_name: string; type: SecurityEventType; ip: string; user_agent: string; details: string }>
+    return rows.map((r) => ({ id: r.id, at: r.at, user: r.user_name, type: r.type, ip: r.ip, userAgent: r.user_agent, details: r.details }))
   }
 
   /**

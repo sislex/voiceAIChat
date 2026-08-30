@@ -251,6 +251,17 @@ export function registerAdminRoutes(
     }
     return { ok: true }
   })
+  // Снять доверие с устройства пользователя. Обратной операции у админа нет
+  // намеренно: доверие выдаёт только сам владелец со своего устройства.
+  app.delete<{ Params: { sid: string } }>(REST.adminSessionUntrust(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
+    const session = db.getSession(req.params.sid)
+    if (!session) return reply.code(404).send({ error: 'not found' })
+    db.updateSession(session.sid, { trusted: false })
+    db.logSecurityEvent({ user: session.user, type: 'session_untrusted', ip: req.ip, userAgent: session.userAgent, details: 'снято администратором' })
+    sessionHub?.emit(session.user)
+    return { ok: true }
+  })
+
   // Открытая регистрация и общая квота собственных проектов.
   const adminConfig = () => ({
     ...readSignupConfig(db),

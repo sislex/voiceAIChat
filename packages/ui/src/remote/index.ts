@@ -372,6 +372,11 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       setToken(null)
       ws.reconnect()
     },
+    sessionHistory: async (sid) => {
+      const res = await fetch(httpBase + REST.sessionHistory(sid), { headers: authHeaders() })
+      if (!res.ok) throw new Error('Не удалось получить историю устройства')
+      return ((await res.json()) as { events: Array<{ id: number; at: number; type: string; details: string }> }).events
+    },
     renameSession: async (sid, label) => {
       const res = await fetch(httpBase + REST.sessionUpdate(sid), {
         method: 'PATCH',

@@ -914,7 +914,10 @@ export interface RendererSessionBridge {
   onUnauthorized?(cb: () => void): () => void
   me(): Promise<SessionUser | null>
   logout(): Promise<void>
-  /** Сессии пользователя (auth-roadmap п.4); нет в desktop-мосте. */
+  /**
+   * Сессии пользователя (auth-roadmap п.4). Методы необязательные, но в обоих
+   * клиентах есть: desktop ставит те же remote-мосты поверх REST/WS, что и web.
+   */
   sessions?(): Promise<SessionInfo[]>
   /** Завершить остальные сессии; `includeCurrent` — выйти везде, включая эту. */
   logoutAll?(options?: { includeCurrent?: boolean }): Promise<void>
@@ -927,10 +930,12 @@ export interface RendererSessionBridge {
   endedSessions?(): Promise<SessionInfo[]>
   /** «Это не я»: гасит все сессии и требует смену пароля при следующем входе. */
   panicSessions?(): Promise<void>
+  /** События безопасности конкретного устройства — «что тут было». */
+  sessionHistory?(sid: string): Promise<Array<{ id: number; at: number; type: string; details: string }>>
   /**
    * Живые изменения сессий: список устарел либо эту сессию завершили с другого
    * устройства. Второе приходит адресно — иначе вкладка узнаёт о потере доступа
-   * только на следующем запросе к API. Нет в desktop-мосте.
+   * только на следующем запросе к API.
    */
   onSessionsChanged?(cb: (event: { type: 'update' } | { type: 'revoked'; sid: string }) => void): () => void
   /**

@@ -1,7 +1,7 @@
 // Карточка одного устройства. Всё, что она показывает, уже вычислено ядром
 // (SessionView): здесь только раскладка, тексты и локальный режим переименования.
 import { useEffect, useRef, useState } from 'react'
-import { deviceIcon, type SessionView } from '@voicechat/sessions-core'
+import { countryFlag, deviceIcon, type SessionView } from '@voicechat/sessions-core'
 import { Button } from '@voicechat/ui-kit'
 import { formatDuration, formatMoment } from './format'
 import type { SessionsTexts } from './texts'
@@ -16,12 +16,17 @@ export interface DeviceCardProps {
   busy: boolean
   canRename: boolean
   canTrust: boolean
+  /** История устройства: undefined — не запрашивали, null — грузится. */
+  history?: import('./contracts').SessionHistoryEvent[] | null
+  onHistory?(): void
+  /** Завершить все сессии этого устройства; нет обработчика — нет кнопки. */
+  onRevokeDevice?(): void
   onRevoke(): void
   onRename(label: string | null): void
   onTrust(trusted: boolean): void
 }
 
-export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust, onRevoke, onRename, onTrust }: DeviceCardProps): JSX.Element {
+export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust, history, onHistory, onRevokeDevice, onRevoke, onRename, onTrust }: DeviceCardProps): JSX.Element {
   const { session, profile, title, online, trusted, current } = view
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session.label ?? '')
@@ -37,7 +42,8 @@ export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust
     if (next !== (session.label ?? '')) onRename(next || null)
   }
 
-  const place = view.place || session.ip || texts.unknownPlace
+  const flag = countryFlag(session.geo?.country)
+  const place = `${flag ? `${flag} ` : ''}${view.place || session.ip || texts.unknownPlace}`
   const expiry = view.expiresInMs > 0 ? texts.expiresIn(formatDuration(view.expiresInMs)) : texts.expired
 
   return (
@@ -68,6 +74,7 @@ export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust
             {current && <span className="vcs-badge vcs-badge--current">{texts.currentBadge}</span>}
             {trusted && <span className="vcs-badge vcs-badge--trusted">{texts.trustedBadge}</span>}
             {online && !current && <span className="vcs-badge vcs-badge--online">{texts.onlineBadge}</span>}
+            {session.twoFactor && <span className="vcs-badge vcs-badge--2fa">{texts.twoFactorBadge}</span>}
           </p>
         )}
         <small className="vcs-meta">
@@ -79,6 +86,25 @@ export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust
           <small className="vcs-meta vcs-meta--dim">{texts.activity(session.requests ?? 0, session.lastPath ?? '')}</small>
         )}
         {view.siblings > 0 && <small className="vcs-meta vcs-meta--dim">{texts.siblings(view.siblings)}</small>}
+        {onHistory && (
+          <details className="vcs-history" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) onHistory() }}>
+            <summary>{texts.historyToggle}</summary>
+            {history === undefined || history === null ? (
+              <p className="vcs-note">{texts.loading}</p>
+            ) : history.length === 0 ? (
+              <p className="vcs-note">{texts.historyEmpty}</p>
+            ) : (
+              <ul className="vcs-history-list" role="list">
+                {history.map((event) => (
+                  <li key={event.id}>
+                    <span>{formatMoment(event.at, locale)}</span> — {texts.historyEvent(event.type)}
+                    {event.details && event.details !== texts.historyEvent(event.type) ? `: ${event.details}` : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </details>
+        )}
       </div>
       <div className="vcs-actions">
         {canRename && !editing && (
@@ -89,6 +115,11 @@ export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust
         )}
         {!current && (
           <Button size="sm" variant="danger" loading={busy} onClick={onRevoke}>{texts.revoke}</Button>
+        )}
+        {onRevokeDevice && view.siblings > 0 && (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={onRevokeDevice}>
+            {current ? texts.revokeDeviceOthers(view.siblings) : texts.revokeDevice(view.siblings + 1)}
+          </Button>
         )}
       </div>
     </li>
