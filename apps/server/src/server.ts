@@ -32,7 +32,11 @@ import { AgentCommandExecutor } from './ci/executor.js'
 import { createAutomatedQaRunner, createComponentQaRunner } from './ci/componentQa.js'
 import { createAutomatedQaScenarioRunner } from './ci/automatedQaScenario.js'
 import { sweepQaScreenshots } from './ci/qaScreenshots.js'
-import { automatedQaRemarks } from '@voicechat/shared'
+import { automatedQaRemarks, scenarioLabel } from '@voicechat/shared'
+import type { AutomatedQaCheckResult } from '@voicechat/shared'
+
+/** Бюджет разовой проверки набора: человек ждёт ответ, а не уходит пить чай. */
+const CHECK_BUDGET_MS = 90_000
 import { createIntegrationTestRunner } from './ci/integrationTests.js'
 import { MergeRunManager } from './merge/runManager.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
@@ -563,6 +567,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   const screenshotSweepTimer = setInterval(sweepScreenshots, 24 * 60 * 60_000)
   screenshotSweepTimer.unref?.()
   app.addHook('onClose', async () => clearInterval(screenshotSweepTimer))
+
+  // Раннер сценариев нужен и этапу, и разовой проверке набора из настроек,
+  // поэтому создаётся рядом с каталогом снимков, до регистрации роутов.
+  const automatedQaScenarioRunner = browserRunner ? createAutomatedQaScenarioRunner({
+    browser: browserRunner,
+    screenshotDir: automatedQaScreenshotDir,
+    screenshotUrl: (runId) => `/api/qa/runs/${runId}/screenshot`
+  }) : undefined
   const remoteBashMcpBaseUrl = buildPublicMcpUrl(opts.config, REMOTE_BASH_MCP_PATH, mcpSecret)
   const kbMcpBaseUrl = buildPublicMcpUrl(opts.config, KB_MCP_PATH, mcpSecret)
   const ciCommandsMcpBaseUrl = buildPublicMcpUrl(opts.config, CI_COMMANDS_MCP_PATH, mcpSecret)
@@ -1626,7 +1638,32 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
   const mergeRunManager = new MergeRunManager({ db, executor: ciExecutor, conflictFix: ciModelHooks.conflictFixForMerge, kbUpdate: ciModelHooks.kbUpdateForMerge, isOnline: (id) => agentRegistry.isOnline(id), platformOf: (id) => agentRegistry.platformOf(id), policyOf: (id) => agentRegistry.policyOf(id), fsRead: (id, path) => agentRegistry.fsRead(id, path), fsWrite: (id, path, data) => agentRegistry.fsWrite(id, path, data), fsDelete: (id, path) => agentRegistry.fsDelete(id, path), broadcast: (message, userId) => ciRunManager.publish(message, userId), boardChanged: (id) => boardHub.emit(id), repositoriesChanged: (projectId, taskId) => boardHub.emitTaskRepositories({ projectId, taskId }) })
   registerProjectTypeRoutes(app, db)
   registerInvitationRoutes(app, db, { mailer, publicUrl: opts.config.publicUrl, membershipChanged: (projectId, userId) => notificationHub.emit(projectId, userId, 'membership') })
-  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId, 'membership'), emitBoard)
+  registerProjectRoutes(app, db, boardHub, { kb, toolEnabled: opts.config.kbToolEnabled }, ciRunManager, agentRegistry, mergeRunManager, (userId, projectId, taskId, selection) => launchTaskPreparation(userId, projectId, taskId, selection), (projectId, affectedUserId) => notificationHub.emit(projectId, affectedUserId, 'membership'), emitBoard,
+    // Разовый прогон набора: тот же исполнитель, что у этапа, но без рана и
+    // воркспейса — человек проверяет сценарий сразу после записи.
+    automatedQaScenarioRunner
+      ? async (userId, projectId) => {
+          const scenarios = db.getProject(userId, projectId)?.automatedQaScenarios ?? []
+          const results: AutomatedQaCheckResult[] = []
+          for (const [index, scenario] of scenarios.entries()) {
+            const startedAt = Date.now()
+            const outcome = await automatedQaScenarioRunner.run({
+              runId: `check-${projectId}-${index}-${randomUUID().slice(0, 8)}`,
+              userId, scenario, signal: AbortSignal.timeout(CHECK_BUDGET_MS), budgetMs: CHECK_BUDGET_MS
+            })
+            results.push({
+              name: scenarioLabel(scenario, index),
+              passed: !outcome.blocked && outcome.steps.length > 0 && outcome.steps.every((step) => step.status === 'passed'),
+              blocked: outcome.blocked,
+              steps: outcome.steps,
+              durationMs: Date.now() - startedAt,
+              ...(outcome.pageErrors.length ? { pageErrors: outcome.pageErrors } : {})
+            })
+            if (outcome.blocked || outcome.steps.some((step) => step.status === 'failed')) break
+          }
+          return results
+        }
+      : undefined)
   mergeRunManager.reconcile()
   const onAutoPilotFailure = (runId: string, userId: string, stage: string, reason: string, options?: { classification?: 'implementation_defect' | 'infrastructure' | null; remarks?: string }): void => {
     const run = stage === 'component_qa' ? db.getComponentQaRun(userId, runId) : stage === 'integration_tests' ? db.getIntegrationTestRun(userId, runId) : db.getQaStageRun(userId, runId)
@@ -1653,11 +1690,6 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     if(passed){try{db.completeIntegrationTestRun(userId,run.projectId,run.taskId,runId);emitBoard(run.projectId)}catch(error){onAutoPilotFailure(runId,userId,'integration_tests',error instanceof Error?error.message:String(error))}}
     else onAutoPilotFailure(runId,userId,'integration_tests',reason)
   }})
-  const automatedQaScenarioRunner = browserRunner ? createAutomatedQaScenarioRunner({
-    browser: browserRunner,
-    screenshotDir: automatedQaScreenshotDir,
-    screenshotUrl: (runId) => `/api/qa/runs/${runId}/screenshot`
-  }) : undefined
   const automatedQaRunner=createAutomatedQaRunner({db,executor:ciExecutor,scenarioRunner:automatedQaScenarioRunner,boardChanged:emitBoard,completed:(runId,userId,passed,reason,verdict)=>{
     if(passed)return
     onAutoPilotFailure(runId,userId,'automated_qa',reason,{classification:verdict?.classification??null,remarks:verdict?automatedQaRemarks(verdict):''})

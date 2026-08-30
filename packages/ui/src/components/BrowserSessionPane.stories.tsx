@@ -163,11 +163,36 @@ export const ScenarioRecording: Story = {
  * проверяемого сайта, есть история и тестовые учётки проекта. Состояния
  * приходят ответом моста, поэтому живут в витрине.
  */
+/**
+ * Уход с проверяемого сайта на стенде с алиасом (круг 26). Раньше подмену
+ * вычисляли по расхождению хостов, поэтому любой чужой адрес объявлялся
+ * «подменой алиасом», и предупреждение не показывалось никогда.
+ */
+export const StrayedFromAliasedStand: Story = {
+  args: {
+    browser: bridge({
+      start: async () => meta({ currentUrl: 'http://89.125.68.35:8787/', aliasedHost: 'voicechat:8787', title: 'Голос·Чат' }),
+      command: async () => meta({ currentUrl: 'https://accounts.google.com/', title: 'Вход' })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const address = canvasElement.querySelector('input[type=url]') as HTMLInputElement | null
+    if (!address) return
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(address, 'https://accounts.google.com/')
+    address.dispatchEvent(new Event('input', { bubbles: true }))
+    address.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  }
+}
+
 export const WhereAmI: Story = {
   args: {
     testUsers: [{ name: 'tester', password: 'secret', role: 'user' }, { name: 'admin', password: 'secret', role: 'admin' }],
     browser: bridge({
-      start: async () => meta({ currentUrl: 'http://voicechat:8787/', lastActor: 'assistant', title: 'Голос·Чат' })
+      // Адрес наружу — тот, который назвал человек; подмену раннер сообщает
+      // полем aliasedHost (круг 26): внутреннее имя в сценарий попадать не должно.
+      start: async () => meta({ currentUrl: 'http://89.125.68.35:8787/', aliasedHost: 'voicechat:8787', lastActor: 'assistant', title: 'Голос·Чат' }),
+      command: async () => meta({ currentUrl: 'http://89.125.68.35:8787/#/projects', aliasedHost: 'voicechat:8787', lastActor: 'user', title: 'Голос·Чат' })
     })
   },
   play: async ({ canvasElement }) => {

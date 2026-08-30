@@ -22,6 +22,13 @@ export interface ScenarioStepOutcome {
    * разные беды — «кнопка не нажалась» и «нажалась, но результат не тот».
    */
   failure?: 'action' | 'expectation'
+  /**
+   * Шаг не удалось проверить: действие невыразимо командой раннера, либо текст
+   * страницы прочитан не целиком. Судить о реализации по такому шагу нельзя —
+   * иначе этап объявляет дефект реализации и возвращает задачу разработчику за
+   * беду сценария, а не кода.
+   */
+  unverifiable?: boolean
 }
 
 export interface ScenarioStepOptions {
@@ -53,6 +60,9 @@ export function firstLine(value: unknown, limit = 300): string {
  * селектор.
  */
 export function stepHint(detail: string): string {
+  if (/прочитан не целиком/.test(detail)) {
+    return 'Страница длиннее предела чтения: проверьте текст, который виден раньше, либо разбейте сценарий на экраны поменьше.'
+  }
   if (/Timeout|timeout|не найден|not found|strict mode/i.test(detail)) {
     return 'Возможно, элемент ещё не появился — добавьте ожидаемый текст к предыдущему шагу или уточните селектор.'
   }
@@ -61,6 +71,15 @@ export function stepHint(detail: string): string {
 
 const DEFAULT_EXPECT_TIMEOUT_MS = 5_000
 const DEFAULT_POLL_MS = 250
+/**
+ * Сколько текста страницы читать под проверку. Раннер по умолчанию отдаёт 4000
+ * символов — этого хватает модели, которой текст идёт в контекст, но не
+ * проверке: измерено на собственной странице настроек (5807 символов), где
+ * ожидаемый текст стоял на позиции 4488 и шаг проваливался словами «на странице
+ * нет ожидаемого текста». Ложный провал этапа возвращает задачу в разработку
+ * из-за дефекта, которого нет. Берём потолок раннера.
+ */
+const EXPECT_READ_LIMIT = 20_000
 
 export async function runScenarioStep(
   step: AutomatedQaScenarioStep,
@@ -68,7 +87,7 @@ export async function runScenarioStep(
   options: ScenarioStepOptions = {}
 ): Promise<ScenarioStepOutcome> {
   const plan = planModelAction(step.action)
-  if (plan.kind === 'unsupported') return { ok: false, detail: plan.reason, unsupported: true, failure: 'action' }
+  if (plan.kind === 'unsupported') return { ok: false, detail: plan.reason, unsupported: true, unverifiable: true, failure: 'action' }
   let response: unknown
   try { response = await send(plan.command) } catch (error) { return { ok: false, detail: firstLine(error), failure: 'action' } }
   const selector = response as BrowserSelectorResult | null
@@ -81,10 +100,12 @@ export async function runScenarioStep(
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)))
   const deadline = now() + (options.expectTimeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS)
   let pageText = ''
+  let truncated = false
   for (;;) {
     try {
-      const read = await send({ type: 'selector', action: { kind: 'read' } }) as BrowserSelectorResult
+      const read = await send({ type: 'selector', action: { kind: 'read', limit: EXPECT_READ_LIMIT } }) as BrowserSelectorResult
       pageText = typeof read?.text === 'string' ? read.text : ''
+      truncated = read?.truncated === true
     } catch (error) {
       return { ok: false, detail: `Текст страницы не прочитан: ${firstLine(error)}`, failure: 'expectation' }
     }
@@ -95,10 +116,15 @@ export async function runScenarioStep(
       // Показываем, что на странице всё-таки есть: «нет текста X» без этого не
       // объясняет, куда смотреть.
       const seen = pageText.trim().slice(0, 200)
+      // Обрезанное чтение не даёт права утверждать, что текста нет: до него
+      // просто не дочитали. Обратная проверка («текста быть не должно») от
+      // обрезки не страдает — найденное найдено.
       const what = missing
-        ? `На странице нет ожидаемого текста «${step.expectText}»`
+        ? truncated
+          ? `Текст страницы прочитан не целиком (первые ${EXPECT_READ_LIMIT} символов), ожидаемого текста «${step.expectText}» в этой части нет`
+          : `На странице нет ожидаемого текста «${step.expectText}»`
         : `На странице найден недопустимый текст «${step.expectAbsentText}»`
-      return { ok: false, detail: seen ? `${what}. Видно: ${seen}` : what, failure: 'expectation' }
+      return { ok: false, detail: seen ? `${what}. Видно: ${seen}` : what, failure: 'expectation', ...(missing && truncated ? { unverifiable: true } : {}) }
     }
     await sleep(options.pollMs ?? DEFAULT_POLL_MS)
   }
