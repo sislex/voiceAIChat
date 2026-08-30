@@ -4563,9 +4563,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jcard:hover .jcard-reveal, .jcard-reveal[aria-expanded='true'], .jcol-head .jcard-reveal { opacity: 1; }
 .jcard-menu { position: absolute; top: 100%; right: 0; z-index: 50; min-width: 170px; background: var(--card-bg, #fff); border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 6px; box-shadow: 0 8px 16px rgba(9, 30, 66, 0.25); padding: 4px; display: flex; flex-direction: column; }
 [data-theme='dark'] .jcard-menu { background: #1c2128; }
-.jcard-menu > button { border: none; background: none; color: inherit; text-align: left; font-size: 13px; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
+/* Иконка и подпись — по центру строки: svg выравнивается по базовой линии и
+   без flex висел бы выше текста. */
+.jcard-menu > button { display: flex; align-items: center; gap: 8px; border: none; background: none; color: inherit; text-align: left; font-size: 13px; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
 .jcard-menu > button:hover { background: rgba(128, 128, 128, 0.12); }
-.jcard-menu-danger { color: #ae2a19; }
+.jcard-menu-danger { color: var(--danger); }
 [data-theme='dark'] .jcard-menu-danger { color: #ff9c8f; }
 .jwip-input { margin: 4px 8px; width: 120px; font-size: 13px; }
 .jcard-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
@@ -4654,7 +4656,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
    её по вертикали (оно ниже в файле и перебивает .jmodal-ai-trigger), а в поле
    описания на 10 строк центр — это середина текста. */
 .jmodal-desc-wrap .jmodal-ai-trigger { top: 7px; transform: none; }
-.jmodal-breadcrumb { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; color: #6b778c; font-size: 12px; cursor: pointer; padding: 0; align-self: flex-start; }
+.jmodal-breadcrumb { display: inline-flex; align-items: center; gap: 6px; border: none; background: none; color: var(--text-dim); font-size: 12px; cursor: pointer; padding: 0; align-self: flex-start; }
 .jmodal-breadcrumb:hover { text-decoration: underline; }
 .jmodal-title { font-size: 20px; font-weight: 600; border: 1px solid transparent; border-radius: 4px; background: none; color: inherit; resize: none; padding: 4px 6px; font-family: inherit; }
 .jmodal-title:hover { background: rgba(128, 128, 128, 0.08); }
@@ -4678,16 +4680,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jmodal-desc-view .md h1, .jmodal-desc-view .md h2,
 .jmodal-desc-view .md h3, .jmodal-desc-view .md h4 { margin: 10px 0 6px; }
 .jmodal-desc-view .md p, .jmodal-desc-view .md ul, .jmodal-desc-view .md ol { margin-bottom: 8px; }
-.jmodal-desc-empty { align-self: flex-start; border: none; border-radius: 4px; background: none; color: #6b778c; font: inherit; font-size: 13px; text-align: left; padding: 4px 6px; cursor: pointer; }
+.jmodal-desc-empty { align-self: flex-start; border: none; border-radius: 4px; background: none; color: var(--text-dim); font: inherit; font-size: 13px; text-align: left; padding: 4px 6px; cursor: pointer; }
 .jmodal-desc-empty:hover { background: rgba(128, 128, 128, 0.08); }
 .jmodal-desc-actions { display: flex; gap: 8px; margin-top: 6px; }
 .jmodal-children { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .jmodal-child { display: flex; align-items: center; gap: 8px; width: 100%; border: none; background: rgba(128, 128, 128, 0.07); color: inherit; border-radius: 4px; padding: 6px 8px; cursor: pointer; font-size: 13px; text-align: left; }
 .jmodal-child:hover { background: rgba(128, 128, 128, 0.15); }
-.jmodal-child-key { color: #6b778c; font-size: 12px; white-space: nowrap; }
+.jmodal-child-key { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
 .jmodal-child-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.jmodal-child-status { font-size: 11px; text-transform: uppercase; background: rgba(9, 30, 66, 0.1); border-radius: 3px; padding: 1px 6px; color: #6b778c; }
-[data-theme='dark'] .jmodal-child-status { background: rgba(255, 255, 255, 0.12); color: #8b949e; }
+/* Без капслока и с обрезкой: колонка «Создание интеграционных автотестов»
+   занимала половину строки и кричала громче названия подзадачи. */
+.jmodal-child-status { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; background: var(--surface-hover); border-radius: 3px; padding: 1px 6px; color: var(--text-dim); }
 .jmodal-side { flex: 0 0 240px; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; border: 1px solid rgba(128, 128, 128, 0.25); border-radius: 8px; padding: 12px; }
 /* Поля панели деталей в своей обёртке: на телефоне она сворачивается кнопкой
    «Подробности» (как в мобильной Jira), на десктопе всегда раскрыта. */
@@ -4705,7 +4708,7 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jmodal-assignee { display: flex; align-items: center; gap: 6px; }
 .jmodal-labels { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-weight: 400; }
 .jlabel-x { border: none; background: none; cursor: pointer; color: inherit; padding: 0 2px; font-size: 12px; }
-.jlabel-input { width: 90px; font-size: 12px; padding: 2px 6px; }
+.jlabel-input { flex: 1 1 120px; min-width: 90px; font-size: 12px; padding: 2px 6px; }
 .jmodal-dates { font-size: 11px; opacity: 0.6; font-weight: 400; margin: 4px 0 0; line-height: 1.6; }
 
 /* Телефон: карточка как в мобильной Jira — один вертикальный скролл, статус и
@@ -6366,22 +6369,20 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .jmodal-field-empty { color: var(--text-dim); font-weight: 400; }
 .task-settings-stack { display: grid; gap: 16px; }
 .task-settings-stack > * { min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
-.task-model-work { width: 100%; min-width: 0; margin: 10px 0; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.task-model-work { width: 100%; min-width: 0; margin: 10px 0; overflow: hidden; }
+.task-model-work--open > .task-model-work__toggle .vc-feed-caret { transform: rotate(45deg); }
 .task-model-work__toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; width: 100%; min-width: 0; min-height: 46px; padding: 9px 10px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
 .task-model-work__toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .task-model-work__title { flex: 0 1 auto; }
 .task-model-work__status { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
-.task-model-work__status--running, .task-model-work__status--waiting { color: var(--ci-progress); font-weight: 600; }
-.task-model-work__status--success { color: var(--ci-success); }
-.task-model-work__status--failed, .task-model-work__status--timeout, .task-model-work__status--cancelled { color: var(--ci-removed); font-weight: 600; }
+/* Цвет статуса теперь несёт точка `.vc-feed-dot--*`, как в остальных лентах;
+   подпись у всех лент приглушённая, поэтому своих цветов здесь не осталось. */
 .task-model-work__bar { width: 76px; height: 5px; overflow: hidden; border-radius: 3px; background: var(--ci-neutral-bg); flex: 0 0 auto; }
 .task-model-work__bar > span { display: block; height: 100%; background: var(--accent); }
 .task-model-work__bar--indeterminate::after { content: ''; display: block; width: 42%; height: 100%; background: var(--accent); animation: task-model-work-progress 1.4s ease-in-out infinite alternate; }
 .task-model-work__percent, .task-model-work__duration, .task-model-work__stage { color: var(--text-dim); font-size: 12px; white-space: nowrap; }
 .task-model-work__stage { flex: 1 1 140px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .task-model-work__duration { margin-left: auto; }
-.task-model-work__chevron { flex: 0 0 auto; color: var(--text-dim); font-size: 15px; transition: transform .15s ease; }
-.task-model-work__toggle[aria-expanded="true"] .task-model-work__chevron { transform: rotate(180deg); }
 .task-model-work__detail { min-width: 0; max-width: 100%; overflow-x: hidden; padding: 12px; border-top: 1px solid var(--border-soft); }
 .task-model-work__detail .automation-progress { margin: 0 0 14px; }
 .task-model-work__detail pre, .task-model-work__detail code { max-width: 100%; overflow-wrap: anywhere; }
@@ -6391,11 +6392,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @media (max-width: 700px) {
   .task-model-work__toggle { align-items: center; }
   .task-model-work__title { flex: 1 1 calc(100% - 120px); }
+  .task-model-work__toggle .vc-feed-caret { order: 1; }
   .task-model-work__status { order: 2; }
   .task-model-work__bar { order: 3; width: min(96px, 28vw); }
   .task-model-work__percent { order: 4; }
   .task-model-work__duration { order: 5; margin-left: 0; }
-  .task-model-work__chevron { order: 1; }
   .task-model-work__detail { width: 100%; padding: 10px; }
 }
 .task-progress-detail, .task-progress-facts { min-width: 0; overflow-wrap: anywhere; }
