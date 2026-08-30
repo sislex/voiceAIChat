@@ -6,6 +6,7 @@ import { MergeRunFeed } from './MergeRunFeed'
 import { ciStatusLabel } from './ciFormat'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
+import { Skeleton } from '@voicechat/ui-kit'
 
 type RunChoice =
   | { kind: 'development'; id: string; createdAt: number; status: string }
@@ -129,7 +130,12 @@ export function TaskRunFeed(props: TaskRunFeedProps): JSX.Element {
     }
   }, [selectedRun?.id, selectedRun?.kind])
 
-  if (loadingChoices && choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}><p className="task-tab-empty" aria-live="polite">Загрузка технической ленты…</p></div>
+  // Ожидание — тем же скелетоном, что и во временной шкале: одинаковая по смыслу
+  // загрузка не должна выглядеть в соседних вкладках карточки по-разному.
+  if (loadingChoices && choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}>
+    <span className="vc-sr-only" aria-live="polite">Загрузка технической ленты…</span>
+    <Skeleton variant="list" count={3} item="block" height={64} gap={10} />
+  </div>
   if (choicesError && choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}><ErrorState message="Не удалось загрузить список запусков" detail={choicesError} onRetry={loadChoices} /></div>
   if (choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}><EmptyState compact icon="⏱" title="Запусков ещё нет" description="Техническая лента появится после development- или merge-запуска." /></div>
 

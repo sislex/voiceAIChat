@@ -165,6 +165,32 @@ describe('TaskModal — создание задачи из улучшения', 
     expect(screen.getAllByRole('button', { name: 'Реализовано' })).toHaveLength(1)
     expect(screen.getAllByRole('button', { name: 'Создать задачу ChatAI' })).toHaveLength(2)
   })
+
+  // Строка улучшения печатала сырые `new` и `development` — в русской карточке
+  // это читалось как отладочный вывод, а не как состояние ленты.
+  it('подписывает статус и источник по-русски и метит их тоном ленты', async () => {
+    const ci = createFakeCi()
+    ci.listTaskImprovements = vi.fn(async () => [improvement])
+    window.ci = ci
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
+    const row = (await screen.findByText('Улучшить ретраи')).closest('details')!
+    expect(within(row).getByText('Новое')).toHaveClass('vc-feed-status')
+    expect(within(row).getByText(/Разработка/)).toBeInTheDocument()
+    expect(row.querySelector('.vc-feed-dot--progress')).not.toBeNull()
+    expect(within(row).queryByText(/development/)).not.toBeInTheDocument()
+  })
+
+  it('пустой список улучшений показывает общий пустой экран карточки', async () => {
+    const ci = createFakeCi()
+    ci.listTaskImprovements = vi.fn(async () => [])
+    window.ci = ci
+    render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
+    const empty = await screen.findByTestId('task-improvements-empty')
+    expect(empty).toHaveClass('vc-state--empty')
+    expect(within(empty).getByText('Улучшений пока нет')).toBeInTheDocument()
+  })
 })
 
 describe('TaskModal — связанный чат создаётся при открытии карточки', () => {

@@ -1,9 +1,27 @@
+// Временная шкала задачи: сводка, этапы и попытки внутри них.
+//
+// Лента говорит тем же визуальным языком, что и остальные ленты карточки
+// (merge-шаги, лента релиза): у каждой строки — цветная точка статуса, шеврон
+// раскрытия и время справа. Раньше этап отличался от merge-шага всем сразу, и
+// одинаковые по смыслу события выглядели как разные сущности.
+//
+// Состояния «загрузка/ошибка/пусто» берутся из ui-kit: карточка задачи не имеет
+// права показывать пустоту иначе, чем остальной интерфейс.
 import { useEffect, useState } from 'react'
+import { EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
+import { formatDateTime } from '../../lib/dateFormat'
 import type { TaskTimeline as Timeline, TaskTimelineAttempt, TaskTimelineStage, TaskTimelineStatus } from '@shared/timeline'
 
 const STATUS: Record<TaskTimelineStatus, string> = {
   queued: 'В очереди', running: 'Выполняется', awaiting_input: 'Ждёт ответа',
   succeeded: 'Успешно', failed: 'Ошибка', cancelled: 'Отменено', skipped: 'Пропущено'
+}
+/** Тон статуса — общий для всех лент карточки: см. `.vc-feed-dot--*` в стилях. */
+export function timelineTone(status: TaskTimelineStatus): 'progress' | 'success' | 'danger' | 'muted' {
+  if (status === 'running' || status === 'queued' || status === 'awaiting_input') return 'progress'
+  if (status === 'succeeded') return 'success'
+  if (status === 'failed') return 'danger'
+  return 'muted'
 }
 export function formatTimelineDuration(ms: number | null): string {
   if (ms == null) return 'Нет данных'
@@ -16,8 +34,9 @@ export function formatTimelineDuration(ms: number | null): string {
   const days = Math.floor(hours / 24)
   return `${days} д${hours % 24 ? ` ${hours % 24} ч` : ''}`
 }
+/** Дата в ленте — тем же форматом, что и «Создано/Обновлено» в карточке. */
 export function formatTimelineDate(value: string | null): string {
-  return value == null ? 'Нет данных' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(value))
+  return value == null ? 'Нет данных' : formatDateTime(value)
 }
 function liveDuration(attempt: TaskTimelineAttempt, now: number): number | null {
   if (attempt.activeDuration == null) return null
@@ -27,9 +46,20 @@ function liveDuration(attempt: TaskTimelineAttempt, now: number): number | null 
 function Field({ label, value }: { label: string; value: string }): JSX.Element {
   return <div className="task-timeline-field"><dt>{label}</dt><dd>{value}</dd></div>
 }
+/** Точка статуса + подпись: одинаковая пара во всех лентах карточки. */
+function StatusMark({ status }: { status: TaskTimelineStatus }): JSX.Element {
+  return <span className="vc-feed-status">
+    <span className={`vc-feed-dot vc-feed-dot--${timelineTone(status)}`} aria-hidden="true" />
+    {STATUS[status]}
+  </span>
+}
 function Attempt({ attempt, now }: { attempt: TaskTimelineAttempt; now: number }): JSX.Element {
-  return <details className="task-timeline-attempt">
-    <summary>Попытка {attempt.number} · {STATUS[attempt.status]}</summary>
+  return <details className="task-timeline-attempt vc-feed-item" data-status={attempt.status}>
+    <summary>
+      <span className="vc-feed-caret" aria-hidden="true" />
+      <span>Попытка {attempt.number}</span>
+      <StatusMark status={attempt.status} />
+    </summary>
     <dl>
       <Field label="Очередь" value={formatTimelineDuration(attempt.queueDuration)} />
       <Field label="Активная работа" value={formatTimelineDuration(liveDuration(attempt, now))} />
@@ -46,9 +76,11 @@ function Attempt({ attempt, now }: { attempt: TaskTimelineAttempt; now: number }
 function Stage({ stage, now }: { stage: TaskTimelineStage; now: number }): JSX.Element {
   const live = stage.activeDuration == null ? null : stage.activeDuration + stage.attempts.reduce((sum, attempt) =>
     sum + (liveDuration(attempt, now) ?? 0) - (attempt.activeDuration ?? 0), 0)
-  return <details className="task-timeline-stage" data-stage-id={stage.id}>
+  return <details className="task-timeline-stage vc-feed-item" data-stage-id={stage.id} data-status={stage.status}>
     <summary>
-      <span>{stage.title}</span><span>{STATUS[stage.status]}</span>
+      <span className="vc-feed-caret" aria-hidden="true" />
+      <span className="task-timeline-stage__title">{stage.title}</span>
+      <StatusMark status={stage.status} />
       <span>{formatTimelineDate(stage.startedAt)}</span><span>{formatTimelineDate(stage.finishedAt)}</span>
       <span>{formatTimelineDuration(live)}</span>
     </summary>
@@ -67,6 +99,8 @@ export function TaskTimeline({ projectId, taskId }: { projectId: string; taskId:
   const [timeline, setTimeline] = useState<Timeline | null>(null)
   const [failed, setFailed] = useState(false)
   const [now, setNow] = useState(Date.now())
+  // Счётчик перезагрузок: «Повторить» в ErrorState обязан заново дёрнуть мост.
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     let live = true
     setTimeline(null); setFailed(false)
@@ -74,17 +108,20 @@ export function TaskTimeline({ projectId, taskId }: { projectId: string; taskId:
     if (!request) { setFailed(true); return () => { live = false } }
     void request.then((value) => { if (live) setTimeline(value) }).catch(() => { if (live) setFailed(true) })
     return () => { live = false }
-  }, [projectId, taskId])
+  }, [projectId, taskId, attempt])
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [])
-  if (failed) return <p role="alert">Не удалось загрузить временную шкалу.</p>
-  if (!timeline) return <p>Загрузка временной шкалы…</p>
+  if (failed) return <ErrorState message="Не удалось загрузить временную шкалу" onRetry={() => setAttempt((value) => value + 1)} />
+  if (!timeline) return <>
+    <span className="vc-sr-only" aria-live="polite">Загрузка временной шкалы…</span>
+    <Skeleton variant="list" count={3} item="block" height={64} gap={10} />
+  </>
   const age = timeline.summary.finishedAt == null ? Math.max(0, now - Date.parse(timeline.summary.createdAt)) : null
-  return <section className="task-timeline" aria-label="Временная шкала">
-    <details className="task-timeline-summary" open>
-      <summary>Сводка задачи</summary>
+  return <section className="task-timeline vc-feed" aria-label="Временная шкала">
+    <details className="task-timeline-summary vc-feed-item" open>
+      <summary><span className="vc-feed-caret" aria-hidden="true" />Сводка задачи</summary>
       <dl>
         <Field label="Создана" value={formatTimelineDate(timeline.summary.createdAt)} />
         <Field label="Первый запуск" value={formatTimelineDate(timeline.summary.firstStartedAt)} />
@@ -97,6 +134,8 @@ export function TaskTimeline({ projectId, taskId }: { projectId: string; taskId:
         <Field label="Последнее изменение" value={formatTimelineDate(timeline.summary.lastChangedAt)} />
       </dl>
     </details>
-    <div className="task-timeline-stages">{timeline.stages.map((stage) => <Stage key={stage.id} stage={stage} now={now} />)}</div>
+    {timeline.stages.length === 0
+      ? <EmptyState compact icon="⏱" title="Этапов пока нет" description="Этапы появятся, когда задача попадёт в работу." />
+      : <div className="task-timeline-stages">{timeline.stages.map((stage) => <Stage key={stage.id} stage={stage} now={now} />)}</div>}
   </section>
 }

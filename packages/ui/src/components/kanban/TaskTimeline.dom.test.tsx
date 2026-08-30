@@ -5,7 +5,7 @@ import { render } from '../../test/uiRender'
 import { expectNoViolations } from '../../test/a11y'
 import { createFakeCi } from '../../test/fakeApi'
 import type { TaskTimeline as Timeline } from '@shared/timeline'
-import { TaskTimeline, formatTimelineDuration } from './TaskTimeline'
+import { TaskTimeline, formatTimelineDate, formatTimelineDuration, timelineTone } from './TaskTimeline'
 
 const timeline: Timeline = {
   version: 1, taskId: 't1', generatedAt: '2024-01-01T00:00:10.000Z',
@@ -72,5 +72,34 @@ describe('TaskTimeline', () => {
     expect(formatTimelineDuration((2 * 60 + 15) * 60_000)).toBe('2 ч 15 мин')
     expect(formatTimelineDuration((3 * 24 + 4) * 60 * 60_000)).toBe('3 д 4 ч')
     expect(formatTimelineDuration(null)).toBe('Нет данных')
+  })
+
+  // Лента раньше печатала «Aug 30, 2026, 2:38:05 PM»: `Intl` без локали берёт её
+  // из браузера, и в русской карточке соседние даты выглядели по-разному.
+  it('печатает даты тем же русским форматом, что и остальная карточка', () => {
+    expect(formatTimelineDate('2024-01-01T00:00:00.000Z')).toMatch(/^\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/)
+    expect(formatTimelineDate(null)).toBe('Нет данных')
+  })
+
+  it('красит точку статуса тоном, общим для всех лент карточки', async () => {
+    expect(timelineTone('running')).toBe('progress')
+    expect(timelineTone('succeeded')).toBe('success')
+    expect(timelineTone('failed')).toBe('danger')
+    expect(timelineTone('skipped')).toBe('muted')
+    render(<TaskTimeline projectId="p1" taskId="t1" />)
+    const stage = (await screen.findByText('Development')).closest('details')!
+    expect(stage).toHaveAttribute('data-status', 'running')
+    expect(stage.querySelector('.vc-feed-dot--progress')).not.toBeNull()
+  })
+
+  it('ошибка чтения предлагает повторить и перезапрашивает шкалу', async () => {
+    const getTaskTimeline = vi.fn()
+      .mockRejectedValueOnce(new Error('сеть недоступна'))
+      .mockResolvedValueOnce(timeline)
+    window.ci = { ...createFakeCi(), getTaskTimeline }
+    render(<TaskTimeline projectId="p1" taskId="t1" />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Повторить' }))
+    expect(await screen.findByText('Сводка задачи')).toBeInTheDocument()
+    expect(getTaskTimeline).toHaveBeenCalledTimes(2)
   })
 })
