@@ -25,6 +25,10 @@ export interface SessionDeps {
   db: VoiceChatDb
   /** Пользователь этого соединения (изоляция данных/ходов). */
   user: SessionUser
+  /** Sid сессии этого соединения; null — токен без записи (старый клиент). */
+  sid?: string | null
+  /** Живые изменения списка сессий пользователя. */
+  sessions?: { onChange(listener: (event: { user: string; revokedSid?: string }) => void): () => void }
   /** Процесс-глобальный реестр ходов LLM (ходы переживают reconnect). */
   turns: TurnManager
   sttEngine?: SttEngine
@@ -100,6 +104,7 @@ export function createSession(deps: SessionDeps): WsHandlers {
   let unsubDownload: (() => void) | null = null
   let unsubAgents: (() => void) | null = null
   let unsubBoard: (() => void) | null = null
+  let unsubSessions: (() => void) | null = null
   let unsubPreparationRuns: (() => void) | null = null
   let unsubTaskRepositories: (() => void) | null = null
   let unsubPreparationNotifications: (() => void) | null = null
@@ -173,6 +178,15 @@ export function createSession(deps: SessionDeps): WsHandlers {
           // Адресное событие может касаться приглашения — а приглашённый ещё не
           // участник проекта, и по членству его не найти.
           if (event.userId) ctx.send({ t: 'invitations.invalidate', v: 1 })
+        })
+      }
+      if (deps.sessions) {
+        unsubSessions = deps.sessions.onChange((event) => {
+          if (event.user !== deps.user.name) return
+          // Завершили именно это соединение — говорим об этом адресно: иначе
+          // вкладка узнает о потере доступа только на следующем запросе к API.
+          if (event.revokedSid && deps.sid && event.revokedSid === deps.sid) ctx.send({ t: 'session.revoked', v: 1, sid: event.revokedSid })
+          else ctx.send({ t: 'sessions.update', v: 1 })
         })
       }
       if (deps.board) {
@@ -377,6 +391,8 @@ export function createSession(deps: SessionDeps): WsHandlers {
       unsubAgents = null
       unsubBoard?.()
       unsubBoard = null
+      unsubSessions?.()
+      unsubSessions = null
       unsubPreparationRuns?.()
       unsubPreparationRuns = null
       unsubTaskRepositories?.()

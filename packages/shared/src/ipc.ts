@@ -918,6 +918,12 @@ export interface RendererSessionBridge {
   /** Доверенное устройство не спрашивает второй фактор при следующем входе. */
   trustSession?(sid: string, trusted: boolean): Promise<void>
   /**
+   * Живые изменения сессий: список устарел либо эту сессию завершили с другого
+   * устройства. Второе приходит адресно — иначе вкладка узнаёт о потере доступа
+   * только на следующем запросе к API. Нет в desktop-мосте.
+   */
+  onSessionsChanged?(cb: (event: { type: 'update' } | { type: 'revoked'; sid: string }) => void): () => void
+  /**
    * Выпускает HttpOnly-cookie превью из действующего Bearer-токена. Нужен сессиям,
    * восстановленным без повторного login (токен из localStorage, перезапуск браузера):
    * без cookie same-origin iframe /api/preview получает 401. Нет в desktop-мосте.

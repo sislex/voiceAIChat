@@ -376,6 +376,11 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       })
       if (!res.ok) throw new Error(trusted ? 'Не удалось отметить устройство доверенным' : 'Не удалось снять доверие')
     },
+    onSessionsChanged: (cb) => {
+      const offUpdate = ws.on('sessions.update', () => cb({ type: 'update' }))
+      const offRevoked = ws.on('session.revoked', (m) => cb({ type: 'revoked', sid: m.sid }))
+      return () => { offUpdate(); offRevoked() }
+    },
     // Выпускает preview-cookie из текущего Bearer-токена: восстановленная из
     // localStorage сессия иначе остаётся без cookie и iframe превью ловит 401.
     ensurePreview: async () => {

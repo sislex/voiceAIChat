@@ -12,6 +12,7 @@ const LOGIN_WINDOW_MS = 10 * 60_000
 import { REST, type SessionUser, type UserRole, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
 import { deviceKey, findTrustedDevice, isNewDevice, localGeo, overLimit, parseUserAgent, type GeoResolver } from '@voicechat/sessions-core'
 import { createGeoResolver } from './geo.js'
+import type { SessionHub } from './sessionHub.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
 import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js'
@@ -221,6 +222,8 @@ export interface AuthOptions {
   publicUrl?: string | null
   /** Определение места входа по IP; по умолчанию офлайн — только локальная сеть. */
   geo?: GeoResolver
+  /** Куда сообщать об изменениях списка сессий (живое обновление по WS). */
+  sessions?: SessionHub
 }
 
 /** Настройка открытой регистрации хранится в app_config: `signup.enabled` ('1'/'0') и `signup.role`. */
@@ -372,6 +375,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     for (const victim of overLimit(db.listSessions(name), limit || null, sid)) {
       db.revokeSessionById(victim.sid)
       db.logSecurityEvent({ user: name, type: 'session_evicted', ip: victim.ip, userAgent: victim.userAgent, details: `лимит ${limit} сессий` })
+      options.sessions?.emit(name, victim.sid)
     }
     // Публичный адрес уточняем в фоне: вход не должен ждать внешний сервис, а
     // список сессий читают уже после — к этому моменту место обычно на месте.
@@ -383,6 +387,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     }
     db.markLogin(name)
     db.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: ua })
+    options.sessions?.emit(name)
     if (isNew) {
       const at = Date.now()
       db.logSecurityEvent({ user: name, type: 'login_new_device', ip: req.ip, userAgent: ua, details: 'вход с нового устройства' })
@@ -736,6 +741,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       reply.header('set-cookie', clearSessionCookies(req))
     }
     db.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}${includeCurrent ? ', включая текущую' : ''}` })
+    options.sessions?.emit(user.name)
     return { revoked }
   })
   app.delete<{ Params: { sid: string } }>('/api/session/:sid', async (req, reply) => {
@@ -746,6 +752,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
     db.revokeSessionById(s.sid)
     db.logSecurityEvent({ user: user.name, type: 'session_revoked', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '' })
+    options.sessions?.emit(user.name, s.sid)
     return { ok: true }
   })
   // Имя устройства и отметка «доверенное» — только для своей сессии.
@@ -768,6 +775,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const ua = String(req.headers['user-agent'] ?? '')
     if (patch.label !== undefined) db.logSecurityEvent({ user: user.name, type: 'session_renamed', ip: req.ip, userAgent: ua, details: patch.label ?? 'имя снято' })
     if (patch.trusted !== undefined) db.logSecurityEvent({ user: user.name, type: patch.trusted ? 'session_trusted' : 'session_untrusted', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '' })
+    options.sessions?.emit(user.name)
     return { ok: true }
   })
 }

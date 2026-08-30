@@ -300,6 +300,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     void window.session.signupEnabled().then((v) => { if (alive) setSignupEnabled(v) })
     return () => { alive = false }
   }, [session.authRequired, session.currentUser])
+  // Сессию завершили с другого устройства: уходим на экран входа сразу, не
+  // дожидаясь 401 на следующем запросе — иначе интерфейс ещё выглядит рабочим.
+  useEffect(() => {
+    if (!session.currentUser || !window.session?.onSessionsChanged) return
+    return window.session.onSessionsChanged((event) => {
+      if (event.type !== 'revoked') return
+      toast.error('Вашу сессию завершили на другом устройстве')
+      setSessionsOpen(false)
+      void runtime.logout().then(() => navigate('/')).catch(() => undefined)
+    })
+  }, [session.currentUser]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Уведомление о входе с нового устройства (auth-roadmap п.16): после входа/восстановления сессии показываем и отмечаем просмотренными.
   useEffect(() => {
     const name = session.currentUser?.name

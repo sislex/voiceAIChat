@@ -641,6 +641,10 @@ export type ServerMessage =
   | { t: 'invitations.invalidate'; v: 1 }
   /** Состав участников или роль в проекте изменились — перечитать проект. */
   | { t: 'project.membership'; v: 1; projectId: string }
+  /** Список сессий пользователя устарел — перечитать (лёгкая инвалидация). */
+  | { t: 'sessions.update'; v: 1 }
+  /** Эту сессию завершили: клиент уходит на экран входа, не дожидаясь 401. */
+  | { t: 'session.revoked'; v: 1; sid: string }
   | { t: 'ci.snapshot'; runId: string; detail: CiRunDetail; log: CiLogLine[] }
   | { t: 'ci.run'; runId: string; run: CiRun }
   | { t: 'ci.step'; runId: string; step: CiRunStep }
@@ -744,6 +748,8 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'task-preparation.notifications.invalidate',
   'invitations.invalidate',
   'project.membership',
+  'sessions.update',
+  'session.revoked',
   'ci.snapshot',
   'ci.run',
   'ci.step',

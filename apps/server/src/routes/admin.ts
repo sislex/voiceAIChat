@@ -33,6 +33,7 @@ import type { VoiceChatDb } from '../db/database.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { requireAdmin, uid } from '../users/auth.js'
 import { updateAgentOnMachine } from './agents.js'
+import type { SessionHub } from '../users/sessionHub.js'
 
 const UNITS: UsageUnit[] = ['hour', 'day', 'week']
 const ENGINE_KINDS: LlmEngineKind[] = ['claude', 'codex']
@@ -212,7 +213,9 @@ export function registerAdminRoutes(
   deployTrigger?: DeployTrigger,
   makeStats?: () => Promise<AdminMakeStats>,
   mailer?: Mailer,
-  publicUrl?: string | null
+  publicUrl?: string | null,
+  /** Хаб сессий: отзыв админом должен доехать до владельца так же живо, как свой. */
+  sessionHub?: SessionHub
 ): void {
   const guard = { preHandler: requireAdmin }
   const baseUrl = (req: FastifyRequest): string =>
@@ -237,7 +240,14 @@ export function registerAdminRoutes(
     return { sessions: db.listSessions(req.params.name) }
   })
   app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
-    return db.revokeSessionById(req.params.sid) ? { ok: true } : reply.code(404).send({ error: 'not found' })
+    // Владельца берём до отзыва: после него getSession уже ничего не отдаст.
+    const owner = db.getSession(req.params.sid)?.user
+    if (!db.revokeSessionById(req.params.sid)) return reply.code(404).send({ error: 'not found' })
+    if (owner) {
+      db.logSecurityEvent({ user: owner, type: 'session_revoked', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'отозвана администратором' })
+      sessionHub?.emit(owner, req.params.sid)
+    }
+    return { ok: true }
   })
   // Открытая регистрация и общая квота собственных проектов.
   const adminConfig = () => ({
