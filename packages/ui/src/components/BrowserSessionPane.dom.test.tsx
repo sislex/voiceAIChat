@@ -559,23 +559,23 @@ describe('сценарий как редактируемый артефакт (�
         : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
   })
 
-  const saved = { startUrl: 'http://89.125.68.35:8787/', steps: [{ id: 'step-1', title: 'Открыть доску', action: { kind: 'click' as const, selector: '#board' }, expectText: 'Доска' }] }
+  const saved = [{ name: 'Вход', startUrl: 'http://89.125.68.35:8787/', steps: [{ id: 'step-1', title: 'Открыть доску', action: { kind: 'click' as const, selector: '#board' }, expectText: 'Доска' }] }]
 
   it('сохранённый сценарий подгружается и его можно править', async () => {
-    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenario={saved} />)
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenarios={saved} />)
     await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Загрузить сценарий проекта' }))
+    fireEvent.change(screen.getByLabelText('Загрузить сценарий'), { target: { value: '0' } })
     expect(await screen.findByDisplayValue('Открыть доску')).toBeInTheDocument()
     // Стартовый адрес возвращается шагом-переходом, иначе он потеряется.
     expect(screen.getByDisplayValue('Открыть http://89.125.68.35:8787/')).toBeInTheDocument()
   })
 
   it('после загрузки кнопка исчезает: запись уже есть', async () => {
-    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenario={saved} />)
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenarios={saved} />)
     await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Загрузить сценарий проекта' }))
+    fireEvent.change(screen.getByLabelText('Загрузить сценарий'), { target: { value: '0' } })
     await screen.findByDisplayValue('Открыть доску')
-    expect(screen.queryByRole('button', { name: 'Загрузить сценарий проекта' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Загрузить сценарий')).not.toBeInTheDocument()
   })
 
   it('сценарий без проверок не сохраняется и объясняет почему', async () => {
