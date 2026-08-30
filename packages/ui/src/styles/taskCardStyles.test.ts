@@ -35,7 +35,9 @@ describe('стили открытой карточки задачи', () => {
     'task-model-work', 'task-settings-stack', 'task-preparation-setup', 'task-preparation-grid',
     'task-preparation-field', 'ci-task-stages', 'ci-task-hint',
     // Лог с ANSI-раскраской.
-    'ansi-bold', 'ansi-fg-green', 'ansi-fg-red', 'ansi-fg-yellow'
+    'ansi-bold', 'ansi-fg-green', 'ansi-fg-red', 'ansi-fg-yellow',
+    // Бейджи статусов вкладок QA и Merge.
+    'qa-status', 'qa-status--passed', 'qa-status--failed', 'merge-chip', 'merge-badge'
   ])('класс .%s имеет правила', (cls) => {
     expect(styled(cls)).toBe(true)
   })
@@ -50,5 +52,11 @@ describe('стили открытой карточки задачи', () => {
     // У элемента с `display: flex` атрибут `hidden` сам по себе не действует —
     // без этого правила «Общее» было бы видно на всех вкладках сразу.
     expect(css).toMatch(/\.jmodal-general\[hidden\]\s*\{[^}]*display:\s*none/)
+  })
+
+  it('разделитель ручного QA не висит сам по себе', () => {
+    // Когда секции превью нет, `.manual-qa` — первая во вкладке, и `border-top`
+    // рисовал линию, над которой ничего нет.
+    expect(css).toMatch(/\.manual-qa:first-child\s*\{[^}]*border-top:\s*none/)
   })
 })

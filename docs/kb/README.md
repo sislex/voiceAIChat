@@ -15,16 +15,16 @@
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: 002085de feat(gate): одна честная команда проверки; молчаливые сбои стали заметны |
 | [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-29 | ⚠ 24 коммит(ов) в areas после сверки: 3653d83d feat(qa-stage): набор сценариев вместо одного … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 37 коммит(ов) в areas после сверки: 525d823b Merge remote-tracking branch 'origin/main' into work3 … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 38 коммит(ов) в areas после сверки: 8f74e11e fix(kanban): черновик задачи и вкладка Merge, круг 8 … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 36 коммит(ов) в areas после сверки: 3653d83d feat(qa-stage): набор сценариев вместо одного … |
 | [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 61 коммит(ов) в areas после сверки: 26422a88 fix(scenario): набор требует дисциплины имён … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 91 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 121 коммит(ов) в areas после сверки: 9ebb21c4 feat(qa): русские статусы и общие состояния во вкладках настроек и QA, круг 4 … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 130 коммит(ов) в areas после сверки: 8a9f165e feat(kanban): панель вкладки есть и у «Общего», круг 7 … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 131 коммит(ов) в areas после сверки: 8f74e11e fix(kanban): черновик задачи и вкладка Merge, круг 8 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 5 коммит(ов) в areas после сверки: 26422a88 fix(scenario): набор требует дисциплины имён … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 873 коммит(ов) в areas после сверки: 525d823b Merge remote-tracking branch 'origin/main' into work3 … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 10 коммит(ов) в areas после сверки: 525d823b Merge remote-tracking branch 'origin/main' into work3 … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 35 коммит(ов) в areas после сверки: 525d823b Merge remote-tracking branch 'origin/main' into work3 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 874 коммит(ов) в areas после сверки: 8f74e11e fix(kanban): черновик задачи и вкладка Merge, круг 8 … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 11 коммит(ов) в areas после сверки: 8f74e11e fix(kanban): черновик задачи и вкладка Merge, круг 8 … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 36 коммит(ов) в areas после сверки: 8f74e11e fix(kanban): черновик задачи и вкладка Merge, круг 8 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 12 коммит(ов) в areas после сверки: 3653d83d feat(qa-stage): набор сценариев вместо одного … |
 | [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 63 коммит(ов) в areas после сверки: 525d823b Merge remote-tracking branch 'origin/main' into work3 … |
 | [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 128 коммит(ов) в areas после сверки: 3653d83d feat(qa-stage): набор сценариев вместо одного … |
@@ -32,7 +32,7 @@
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 36 коммит(ов) в areas после сверки: 44ad953c CHAT-376 make Reader updates live and observable … |
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 60 коммит(ов) в areas после сверки: 26422a88 fix(scenario): набор требует дисциплины имён … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 104 коммит(ов) в areas после сверки: 26422a88 fix(scenario): набор требует дисциплины имён … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 23 коммит(ов) в areas после сверки: 525d823b Merge remote-tracking branch 'origin/main' into work3 … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 24 коммит(ов) в areas после сверки: 8f74e11e fix(kanban): черновик задачи и вкладка Merge, круг 8 … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 20 коммит(ов) в areas после сверки: 3653d83d feat(qa-stage): набор сценариев вместо одного … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-28 | ⚠ 53 коммит(ов) в areas после сверки: 3653d83d feat(qa-stage): набор сценариев вместо одного … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 3 коммит(ов) в areas после сверки: 525d823b Merge remote-tracking branch 'origin/main' into work3 … |
@@ -58,10 +58,11 @@
 
 ## Журнал сессий
 
-Всего записей: 426. Последние:
+Всего записей: 427. Последние:
 
 - [2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md](log/2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md) — task-card-tabs-round2
 - [2026-08-30-alexeys-macbook-air-2-task-card-feeds-round1.md](log/2026-08-30-alexeys-macbook-air-2-task-card-feeds-round1.md) — task-card-feeds-round1
+- [2026-08-30-alexeys-macbook-air-2-tablet-and-carets-round9.md](log/2026-08-30-alexeys-macbook-air-2-tablet-and-carets-round9.md) — tablet-and-carets-round9
 - [2026-08-30-alexeys-macbook-air-2-run-feed-ansi-round3.md](log/2026-08-30-alexeys-macbook-air-2-run-feed-ansi-round3.md) — run-feed-ansi-round3
 - [2026-08-30-alexeys-macbook-air-2-qa-settings-labels-round4.md](log/2026-08-30-alexeys-macbook-air-2-qa-settings-labels-round4.md) — qa-settings-labels-round4
 - [2026-08-30-alexeys-macbook-air-2-preparation-tab-round5.md](log/2026-08-30-alexeys-macbook-air-2-preparation-tab-round5.md) — preparation-tab-round5
@@ -69,7 +70,6 @@
 - [2026-08-30-alexeys-macbook-air-2-parallel-checkouts-3.md](log/2026-08-30-alexeys-macbook-air-2-parallel-checkouts-3.md) — parallel-checkouts-3
 - [2026-08-30-alexeys-macbook-air-2-general-tabpanel-round7.md](log/2026-08-30-alexeys-macbook-air-2-general-tabpanel-round7.md) — general-tabpanel-round7
 - [2026-08-30-alexeys-macbook-air-2-draft-and-merge-round8.md](log/2026-08-30-alexeys-macbook-air-2-draft-and-merge-round8.md) — draft-and-merge-round8
-- [2026-08-30-alexeys-macbook-air-2-card-dark-theme-tokens-round6.md](log/2026-08-30-alexeys-macbook-air-2-card-dark-theme-tokens-round6.md) — card-dark-theme-tokens-round6
 
 ## Исторические планы
 

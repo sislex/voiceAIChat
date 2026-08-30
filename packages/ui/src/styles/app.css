@@ -6151,7 +6151,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .kbu-brief__line > span:not(:last-child)::before { content: '· '; color: var(--text-dim); }
 .kbu-brief__status { color: var(--success); }
 .kbu-brief__status--error { color: var(--danger); }
-.kbu-brief__chevron { margin-left: auto; font-size: 16px; }
+.kbu-brief__chevron { display: inline-flex; align-items: center; margin-left: auto; font-size: 16px; }
+/* Шеврон поворачивается при раскрытии — как у строк лент и «Работы модели». */
+.kbu-brief--disclosure.is-open .kbu-brief__chevron .vc-feed-caret,
+.kbu-run-section__head[aria-expanded='true'] .vc-feed-caret { transform: rotate(45deg); }
 .kbu-run-report { border-top: 1px solid var(--border); padding: 12px; display: grid; gap: 14px; }
 .kbu-run-report h4 { margin: 0 0 8px; font-size: 13px; }
 .kbu-run-report p { margin: 0; }
@@ -6388,6 +6391,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @media (max-width: 520px) { .feature-preview__meta { grid-template-columns: minmax(0, 1fr); } .feature-preview__actions > * { max-width: 100%; } .feature-preview__progress { grid-template-columns: auto minmax(0, 1fr); } .feature-preview__progress .vc-btn { grid-column: 1 / -1; width: 100%; } }
 
 .manual-qa { display: grid; gap: 10px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+/* Разделитель отбивает ручное QA от секции превью над ним. Когда превью нет,
+   `.manual-qa` оказывается первой во вкладке — и линия висела бы сама по себе,
+   без ничего сверху. */
+.manual-qa:first-child { margin-top: 0; padding-top: 0; border-top: none; }
 .manual-qa-summary { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 10px; border-radius: 8px; background: var(--panel); font-size: 12px; }
 .manual-qa-preparation { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .manual-qa-preparation > summary { cursor: pointer; }
@@ -6590,7 +6597,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .merge-repos table{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px}
 .merge-repos th{text-align:left;color:var(--text-dim);font-weight:600;font-size:12px;padding:4px 8px;border-bottom:1px solid var(--border)}
 .merge-repos td{padding:6px 8px;border-bottom:1px solid var(--border-soft);overflow-wrap:anywhere}
-.merge-chip{display:inline-block;padding:1px 8px;border-radius:999px;border:1px solid var(--border);font-size:12px;color:var(--text-dim);white-space:nowrap}
+/* Чип репозитория — та же форма, что у лозенгов статусов: «таблетка» 999px была
+   в карточке единственной. */
+.merge-chip{display:inline-flex;align-items:center;padding:1px 7px;border-radius:4px;border:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text-dim);white-space:nowrap}
 .merge-chip--ok{border-color:var(--ci-success);color:var(--ci-success)}
 .merge-chip--muted{opacity:.6}
 @media(max-width:720px){.merge-feed-actions{margin-left:0;flex-basis:100%}.merge-repos th:nth-child(2),.merge-repos td:nth-child(2){display:none}.merge-start{align-items:flex-start;flex-direction:column}}
@@ -7810,4 +7819,21 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 @media (max-width: 640px) {
   .qa-scenario__row > label { flex-basis: 100%; }
   .qa-scenario__row--head > label { flex-basis: auto; }
+}
+
+/* Статус Component QA-рана: класс стоял в разметке, а правил у него не было —
+   статус выглядел обычным текстом. Тона — общие с лозенгами CI. */
+.qa-status { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .3px; background: var(--ci-neutral-bg); color: var(--ci-neutral); }
+.qa-status--running, .qa-status--queued { background: var(--ci-progress-bg); color: var(--ci-progress); }
+.qa-status--passed { background: var(--ci-success-bg); color: var(--ci-success); }
+.qa-status--failed, .qa-status--blocked { background: var(--ci-removed-bg); color: var(--ci-removed); }
+.qa-status--cancelled, .qa-status--stale, .qa-status--skipped { background: var(--ci-neutral-bg); color: var(--ci-neutral); }
+
+/* Планшет: мобильная раскладка уже выключена (граница 720px), а места ещё мало —
+   поджимаем поля карточки и панель деталей, чтобы основной колонке хватило. */
+@media (min-width: 721px) and (max-width: 900px) {
+  .jmodal { gap: 16px; padding: 14px 16px; }
+  .jmodal-general { gap: 16px; }
+  .jmodal-side { flex: 0 0 210px; padding: 10px; }
+  .task-tab { padding-inline: 8px; }
 }

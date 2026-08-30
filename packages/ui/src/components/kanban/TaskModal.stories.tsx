@@ -83,6 +83,17 @@ const PHONE = {
   }
 }
 
+// Промежуточная ширина: мобильная раскладка уже выключена (граница 720px), а
+// места на две колонки и полосу вкладок ещё мало — самый узкий десктоп.
+const TABLET = {
+  viewport: {
+    viewports: {
+      tablet: { name: 'Планшет 820×1180', styles: { width: '820px', height: '1180px' }, type: 'tablet' }
+    },
+    defaultViewport: 'tablet'
+  }
+}
+
 /** Десктоп: основная колонка и правая панель деталей. */
 export const Desktop: Story = {}
 
@@ -103,6 +114,9 @@ export const DescriptionEditing: Story = {
     await userEvent.click(await within(document.body).findByTestId('task-desc-edit'))
   }
 }
+
+/** Планшет: две колонки на 820px — самая узкая десктопная раскладка. */
+export const Tablet: Story = { parameters: TABLET }
 
 /** Телефон: во весь экран, статус и исполнитель сверху, «Подробности» свёрнуты. */
 export const Phone: Story = { parameters: PHONE }
