@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 120 коммит(ов) в areas после сверки: 3653d83d feat(qa-stage): набор сценариев вместо одного … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 125 коммит(ов) в areas после сверки: 3653d83d feat(qa-stage): набор сценариев вместо одного … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 6 коммит(ов) в areas после сверки: 451dd6eb feat(qa-stage): сквозная проверка серверного пути; DNS-сбой отличается от запрета … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 864 коммит(ов) в areas после сверки: 451dd6eb feat(qa-stage): сквозная проверка серверного пути; DNS-сбой отличается от запрета … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 865 коммит(ов) в areas после сверки: 38c4bdaf fix(scenario): подбор имени не создаёт дубля; изоляция сценариев проверена … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ✓ |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 26 коммит(ов) в areas после сверки: 26422a88 fix(scenario): набор требует дисциплины имён … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 12 коммит(ов) в areas после сверки: 3653d83d feat(qa-stage): набор сценариев вместо одного … |
@@ -40,7 +40,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: b1ce0a93 fix(dev): порты dev-сеанса из окружения — второй чекаут поднимается рядом с первым … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-30 | ⚠ 3 коммит(ов) в areas после сверки: 451dd6eb feat(qa-stage): сквозная проверка серверного пути; DNS-сбой отличается от запрета … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 47 коммит(ов) в areas после сверки: 6fac734c refactor(scenario): один исполнитель шага вместо двух; прогон прямо в панели … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-30 | ⚠ 6 коммит(ов) в areas после сверки: 26422a88 fix(scenario): набор требует дисциплины имён … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-30 | ⚠ 7 коммит(ов) в areas после сверки: 38c4bdaf fix(scenario): подбор имени не создаёт дубля; изоляция сценариев проверена … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-30, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 

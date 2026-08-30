@@ -7634,6 +7634,11 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .qa-scenario > label { display: flex; flex-direction: column; gap: var(--space-050); }
 .qa-scenario__problem { margin: 0; color: var(--danger); font-size: 0.9em; }
 /* Беды набора целиком: дубли имён и пустые сценарии видны только вместе. */
+.qa-scenario__check { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-100); }
+.qa-scenario__check-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-050); font-size: 12px; flex: 1 1 100%; }
+.qa-scenario__check-list li[data-passed='true'] { color: var(--ci-success); }
+.qa-scenario__check-list li[data-passed='false'] { color: var(--danger); }
+
 .qa-scenario__problems { margin: 0; padding-left: var(--space-150); color: var(--ci-progress); font-size: 0.9em; display: flex; flex-direction: column; gap: var(--space-050); }
 .qa-scenario__steps { display: flex; flex-direction: column; gap: var(--space-150); margin: 0; padding: 0; list-style: none; }
 /* Рамка вокруг шага: на телефоне поля идут сплошной лентой, и без неё не видно,
