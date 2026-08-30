@@ -99,6 +99,7 @@ import { isConsoleReaderDiagnosticsCommand, runConsoleReaderDiagnostics } from '
 import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
 import { REST as REST_PATHS } from '@shared/protocol'
 import { parseAdminRoute } from '@voicechat/admin-app'
+import { saveTextFile } from './lib/saveFile'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 import { placeScenario } from './lib/scenarioRecorder'
 
@@ -123,8 +124,16 @@ const UsersAdmin = lazy(async () => {
   return { default: module.UsersAdmin }
 })
 
+// Страница «Мой аккаунт» ленивая по той же причине, что и админка: главный чанк
+// уже почти упёрся в бюджет сборки (frontend-quality/bundle-baseline.json).
+const AccountPage = lazy(async () => {
+  const module = await import('./components/AccountPage')
+  return { default: module.AccountPage }
+})
+
 import './styles/app.css'
 import '@voicechat/sessions-app/styles.css'
+import '@voicechat/profile-app/styles.css'
 import '@voicechat/operations-app/styles.css'
 import '@voicechat/admin-app/styles.css'
 
@@ -159,7 +168,7 @@ export function appendWidgetAction(items: WidgetUserAction[], action: WidgetActi
 }
 
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
-const HOST_UTILITY_PAGES: readonly string[] = ['users', 'personalization', 'make-shared']
+const HOST_UTILITY_PAGES: readonly string[] = ['users', 'account', 'personalization', 'make-shared']
 
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
@@ -233,7 +242,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const operationsRoute = parseOperationsRoute(path)
   const utilitySeg = operationsRoute
     ? operationsRoute.page === 'history' ? (operationsRoute.engine === 'claude' ? 'claude-code' : 'codex') : operationsRoute.page === 'knowledge' ? 'kb' : operationsRoute.page
-    : segments.length >= 1 && HOST_UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || ((segments[0] === 'users' || segments[0] === 'make-shared') && segments.length === 2)) ? segments[0] : null
+    : segments.length >= 1 && HOST_UTILITY_PAGES.includes(segments[0]) && (
+        segments.length === 1
+        // `#/users/<логин>/<вкладка>` — три сегмента: разбор адреса живёт в
+        // самой админке. Пока здесь стояла жёсткая проверка «ровно два», такой
+        // адрес не открывал раздел вовсе и человек попадал в чат.
+        || (segments[0] === 'users' && parseAdminRoute(path) !== null)
+        || (segments[0] === 'account' && segments.length === 2)
+        || (segments[0] === 'make-shared' && segments.length === 2)
+      ) ? segments[0] : null
   const routeKbDocumentId = operationsRoute?.page === 'knowledge' ? (operationsRoute.documentId ?? null) : null
   // Второй сегмент под `#/users/` — не всегда логин: `engines`, `prices` и
   // `project-types` служебные. Разбор берём у самой админки (`parseAdminRoute`),
@@ -247,6 +264,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const projectInviteToken = segments[0] === 'project-invite' ? (segments[1] ?? null) : null
   const adminRoute = segments[0] === 'users' ? parseAdminRoute(path) : null
   const routeUserName = adminRoute?.page === 'users' ? (adminRoute.userName ?? null) : null
+  // Вкладка «Моего аккаунта» живёт в адресе: на неё можно дать ссылку и вернуться
+  // назад кнопкой браузера, как и на вкладку чужого профиля в админке.
+  const ACCOUNT_TABS = ['overview', 'access', 'machines', 'usage', 'history'] as const
+  const accountTab = (segments[0] === 'account' && ACCOUNT_TABS.includes(segments[1] as never) ? segments[1] : 'overview') as (typeof ACCOUNT_TABS)[number]
   const onUtilityPage = utilitySeg !== null
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
@@ -1141,9 +1162,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg, routeUserName, admin.usersOpen, admin.adminSelected])
   // Гейты: «Пользователи» — только админ; машины/пользователи — только web.
+  // «Мой аккаунт» роль-гейта не имеет намеренно: это данные о себе, и их вправе
+  // видеть любая роль, включая observer.
   useEffect(() => {
     if (utilitySeg === 'users' && session.currentUser && session.currentUser.role !== 'admin') navigate('/')
-    if ((utilitySeg === 'users' || utilitySeg === 'machines' || utilitySeg === 'ci') && !session.authRequired) navigate('/')
+    if ((utilitySeg === 'users' || utilitySeg === 'account' || utilitySeg === 'machines' || utilitySeg === 'ci') && !session.authRequired) navigate('/')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg, routeUserName, session.currentUser, session.authRequired])
 
@@ -1789,6 +1812,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onSelectProject={(id) => void chatActions.setSidebarProject(id)}
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
+        onOpenAccount={session.authRequired && session.currentUser ? menu(() => navigate('/account')) : undefined}
         onOpenPersonalization={session.currentUser ? menu(() => navigate('/personalization')) : undefined}
         onOpenSettings={menu(shellActions.openSettings)}
         onOpenFiles={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('explorer')) : undefined}
@@ -2276,6 +2300,19 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
       {utilitySeg === 'kb' && (
         <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
+      )}
+
+      {utilitySeg === 'account' && session.currentUser && (
+        <Suspense fallback={<div role="status">Загрузка аккаунта…</div>}>
+          <AccountPage
+            api={api}
+            tab={accountTab}
+            onChangeTab={(tab) => navigate(tab === 'overview' ? '/account' : `/account/${tab}`)}
+            onClose={() => navigate('/')}
+            {...(window.session?.sessions ? { onOpenSessions: () => setSessionsOpen(true) } : {})}
+            onExportCsv={(filename, csv) => saveTextFile(filename, csv)}
+          />
+        </Suspense>
       )}
 
       {utilitySeg === 'personalization' && session.currentUser && (

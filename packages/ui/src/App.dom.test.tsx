@@ -973,6 +973,34 @@ describe('App — выход из аккаунта', () => {
     await waitFor(() => expect(llmAccess).toHaveBeenCalledWith({ name: 'admin' }))
   })
 
+  it('адрес вкладки чужого профиля открывает админку, а не роняет в чат', async () => {
+    const api = await seededApi()
+    ;(window as unknown as { session: unknown }).session = {
+      me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
+      login: vi.fn(),
+      logout: vi.fn()
+    }
+    // Три сегмента: `#/users/<логин>/<вкладка>`. Раньше здесь стояла жёсткая
+    // проверка «ровно два», и такая ссылка не открывала раздел вовсе.
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users/admin/usage`)
+    render(<App api={api} delays={SLOW} />)
+    expect(await screen.findByTestId('users-overlay')).toBeInTheDocument()
+  })
+
+  it('«Мой аккаунт» открывается не-админом: это данные о себе', async () => {
+    const api = await seededApi()
+    ;(window as unknown as { session: unknown }).session = {
+      me: vi.fn().mockResolvedValue({ name: 'marina', role: 'developer' }),
+      login: vi.fn(),
+      logout: vi.fn()
+    }
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/account`)
+    render(<App api={api} delays={SLOW} />)
+    expect(await screen.findByTestId('account-page')).toBeInTheDocument()
+    // Раздел «Пользователи» ему по-прежнему закрыт.
+    expect(screen.queryByTestId('users-overlay')).toBeNull()
+  })
+
   it('просит подтверждение, завершает сессию и закрывает защищённый маршрут экраном входа', async () => {
     const api = await seededApi()
     const logout = vi.fn().mockResolvedValue(undefined)
