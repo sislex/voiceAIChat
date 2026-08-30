@@ -225,6 +225,8 @@ export interface BrowserElementDescription {
   selector: string
   /** Насколько селектор надёжен: по testid переживает правки вёрстки, по пути — нет. */
   stability: 'testid' | 'id' | 'label' | 'role' | 'path'
+  /** Сколько узлов страницы отвечает этому селектору; больше одного — шаг кликнет по первому. */
+  matches?: number
   tag: string
   text: string
   /** Положение и размер во вьюпорте — для разбора вёрстки и целей нажатия. */

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
-import { fragileSteps, recordClick, recordNavigate, toScenario, type RecordedStep } from '../lib/scenarioRecorder'
+import { ambiguousSteps, expectOnLastStep, fragileSteps, hasAssertions, recordClick, recordNavigate, recordType, removeStep, toScenario, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
+import type { AutomatedQaScenario } from '@shared/qa'
 import { Button, IconButton } from '@voicechat/ui-kit'
 
 // Панель Playwright Reader: живой изолированный Chromium разговора. В отличие от
@@ -50,6 +51,12 @@ export interface BrowserSessionPaneProps {
    * входа, а логин руками при каждом перезапуске сессии — главная морока.
    */
   testUsers?: ProjectTestUser[]
+  /**
+   * Сохранить записанный сценарий в настройки проекта. Без этого запись живёт
+   * только в буфере обмена, и её надо переносить руками на другой экран — для
+   * «много автотестов» это главный барьер.
+   */
+  onSaveScenario?: (scenario: AutomatedQaScenario) => Promise<void>
 }
 
 type Phase = 'starting' | 'ready' | 'unavailable' | 'error'
@@ -67,7 +74,7 @@ export function withScheme(raw: string): string {
   return `${hasExplicitPort ? 'http' : 'https'}://${value}`
 }
 
-export function BrowserSessionPane({ conversationId, browser, onAttachFrame, testUsers }: BrowserSessionPaneProps): JSX.Element {
+export function BrowserSessionPane({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario }: BrowserSessionPaneProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>('starting')
   const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop'>('desktop')
   // Навигация занимает секунды, а кадр всё это время старый: без отметки непонятно,
@@ -91,7 +98,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const [requested, setRequested] = useState<string>('')
   const [history, setHistory] = useState<string[]>([])
   const origin = useRef<string | null>(null)
+  /** Последний описанный элемент — к нему привязывается записанный ввод текста. */
+  const lastElement = useRef<BrowserElementDescription | null>(null)
   const [steps, setSteps] = useState<RecordedStep[]>([])
+  const [expectText, setExpectText] = useState('')
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
   const [frame, setFrame] = useState<string | null>(null)
   const [address, setAddress] = useState<string>('')
@@ -214,7 +224,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       // вёрстки. Клик выполняется в любом случае — запись не мешает работе.
       if (recording && button === 'left') {
         const described = await run({ type: 'selector', action: { kind: 'describe', x: point.x, y: point.y } }) as { element?: BrowserElementDescription } | undefined
-        if (described?.element) setSteps((current) => recordClick(current, described.element!))
+        if (described?.element) {
+          lastElement.current = described.element
+          setSteps((current) => recordClick(current, described.element!))
+        }
       }
       await run({ type: 'input', action: { type: 'click', x: point.x, y: point.y, button, clickCount } })
     })()
@@ -311,7 +324,13 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
 
   const submitTyping = (): void => {
     if (!typing) return
-    void run({ type: 'input', action: { type: 'type', text: typing } }).then(() => setTyping(''))
+    void (async () => {
+      // Ввод тоже обязан попадать в сценарий: без этого в записи остаётся клик
+      // по полю и пустое поле — прогон такого шага ничего не проверит.
+      if (recording && lastElement.current) setSteps((current) => recordType(current, lastElement.current!, typing))
+      await run({ type: 'input', action: { type: 'type', text: typing } })
+      setTyping('')
+    })()
   }
 
   /**
@@ -342,6 +361,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
 
   const tabs = meta?.tabs ?? []
   const fragile = fragileSteps(steps)
+  const ambiguous = ambiguousSteps(steps)
   const alias = aliasNote(requested, meta?.currentUrl ?? null)
   const strayed = offOrigin(origin.current, meta?.currentUrl ?? null, alias !== null)
 
@@ -488,10 +508,38 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       <div className="playwright-reader-record" role="region" aria-label="Записанный сценарий">
         <div className="playwright-reader-record__head">
           <strong>Сценарий: {steps.length} шаг(ов)</strong>
-          <Button size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText(JSON.stringify(toScenario(steps, meta?.currentUrl ?? ''), null, 2))}>
-            Скопировать для настроек
-          </Button>
+          {onSaveScenario && (
+            <Button size="sm" variant="primary" disabled={busy} onClick={() => void (async () => {
+              try { await onSaveScenario(toScenario(steps, meta?.currentUrl ?? '')); setMessage('Сценарий сохранён в настройках проекта') }
+              catch (err) { setMessage(err instanceof Error ? err.message : 'Сценарий не сохранён') }
+            })()}>Сохранить в проект</Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => void (async () => {
+            // Буфер обмена доступен не всегда (нужен secure-контекст); раньше
+            // кнопка при отказе молча ничего не делала.
+            const text = JSON.stringify(toScenario(steps, meta?.currentUrl ?? ''), null, 2)
+            try {
+              if (!navigator.clipboard) throw new Error('Буфер обмена недоступен в этом контексте')
+              await navigator.clipboard.writeText(text)
+              setMessage('Сценарий скопирован')
+            } catch (err) { setMessage(err instanceof Error ? err.message : 'Скопировать не удалось') }
+          })()}>Скопировать</Button>
           <IconButton size="sm" aria-label="Очистить запись" title="Очистить запись" onClick={() => { setSteps([]); setRecording(false) }}>✕</IconButton>
+        </div>
+        {!hasAssertions(steps) && (
+          // Сценарий без единой проверки зелёный, пока клики попадают, — даже
+          // если страница показала ошибку. Это не тест, и молчать об этом нельзя.
+          <p className="playwright-reader-record__warn" role="status">Ни одной проверки: такой сценарий пройдёт, даже если страница сломана. Добавьте ожидаемый текст к последнему шагу.</p>
+        )}
+        {ambiguous.length > 0 && (
+          <p className="playwright-reader-record__warn">Неоднозначных шагов: {ambiguous.length}. Их селектор находит несколько элементов, и шаг нажмёт первый.</p>
+        )}
+        <div className="playwright-reader-record__expect">
+          <label>Ожидаемый текст после последнего шага
+            <input className="login-input" value={expectText} disabled={!steps.length} onChange={(event) => setExpectText(event.target.value)} />
+          </label>
+          <Button size="sm" disabled={!steps.length || !expectText.trim()} onClick={() => { setSteps((current) => expectOnLastStep(current, expectText)); setExpectText('') }}>Ждать текст</Button>
+          <Button size="sm" variant="ghost" disabled={!steps.length || !expectText.trim()} onClick={() => { setSteps((current) => expectOnLastStep(current, expectText, true)); setExpectText('') }}>Не должно быть</Button>
         </div>
         {fragile.length > 0 && (
           // Селектор по пути в дереве ломается от вставки соседнего узла —
@@ -502,7 +550,16 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
         )}
         <ol className="playwright-reader-record__list">
           {steps.map((step) => (
-            <li key={step.id} data-stability={step.stability}>{step.title}<code>{'selector' in step.action ? step.action.selector : ''}</code></li>
+            <li key={step.id} data-stability={step.stability}>
+              <span className="playwright-reader-record__row">
+                <span>{step.title}</span>
+                <IconButton size="sm" aria-label={`Убрать шаг «${step.title}»`} title="Убрать шаг" onClick={() => setSteps((current) => removeStep(current, step.id))}>✕</IconButton>
+              </span>
+              <code>{'selector' in step.action ? step.action.selector : ''}</code>
+              {(step.expectText || step.expectAbsentText) && (
+                <em className="playwright-reader-record__check">{step.expectText ? `ждём «${step.expectText}»` : `не должно быть «${step.expectAbsentText}»`}</em>
+              )}
+            </li>
           ))}
         </ol>
       </div>

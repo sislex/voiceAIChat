@@ -13,6 +13,8 @@ import type { BrowserElementDescription } from '@shared/types'
 export interface RecordedStep extends AutomatedQaScenarioStep {
   /** Насколько надёжен селектор шага — показывается человеку при записи. */
   stability: BrowserElementDescription['stability']
+  /** Сколько узлов отвечает селектору: больше одного — шаг кликнет по первому. */
+  matches?: number
 }
 
 /** Человеческое название шага: по тексту элемента, иначе по тегу и селектору. */
@@ -26,8 +28,34 @@ export function recordClick(steps: RecordedStep[], element: BrowserElementDescri
     id: `step-${steps.length + 1}`,
     title: stepTitle(element, 'click'),
     action: { kind: 'click', selector: element.selector },
-    stability: element.stability
+    stability: element.stability,
+    ...(typeof element.matches === 'number' ? { matches: element.matches } : {})
   }]
+}
+
+/**
+ * Ожидание на последнем шаге. Сценарий без единой проверки тестом не является:
+ * он зелёный, пока клики попадают, даже если страница показала ошибку.
+ */
+export function expectOnLastStep(steps: RecordedStep[], text: string, absent = false): RecordedStep[] {
+  if (!steps.length || !text.trim()) return steps
+  const key = absent ? 'expectAbsentText' : 'expectText'
+  return steps.map((step, index) => (index === steps.length - 1 ? { ...step, [key]: text.trim() } : step))
+}
+
+/** Убрать шаг: промах мышью не должен стоить всей записи. */
+export function removeStep(steps: RecordedStep[], id: string): RecordedStep[] {
+  return steps.filter((step) => step.id !== id).map((step, index) => ({ ...step, id: `step-${index + 1}` }))
+}
+
+/** Есть ли в сценарии хоть одна проверка — иначе прогон ничего не докажет. */
+export function hasAssertions(steps: RecordedStep[]): boolean {
+  return steps.some((step) => Boolean(step.expectText || step.expectAbsentText))
+}
+
+/** Шаги с неоднозначным селектором: кликнут по первому из нескольких. */
+export function ambiguousSteps(steps: RecordedStep[]): RecordedStep[] {
+  return steps.filter((step) => typeof step.matches === 'number' && step.matches > 1)
 }
 
 export function recordType(steps: RecordedStep[], element: BrowserElementDescription, text: string): RecordedStep[] {
@@ -35,7 +63,8 @@ export function recordType(steps: RecordedStep[], element: BrowserElementDescrip
     id: `step-${steps.length + 1}`,
     title: stepTitle(element, 'type'),
     action: { kind: 'type', selector: element.selector, text },
-    stability: element.stability
+    stability: element.stability,
+    ...(typeof element.matches === 'number' ? { matches: element.matches } : {})
   }]
 }
 
