@@ -94,3 +94,46 @@ export function WandIcon(): JSX.Element {
     </svg>
   )
 }
+
+/**
+ * Иконки действий карточки задачи. Раньше здесь стояли эмодзи (🗑 ✏️ 💬 ⚑): их
+ * рисует шрифт системы, поэтому размер и вес прыгали от платформы к платформе, а
+ * корзина на части машин выпадала в пустой прямоугольник. Цвет — `currentColor`,
+ * чтобы кнопка сама решала, как иконка выглядит в теме и в hover.
+ */
+export function TrashIcon(): JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2.5 4h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M6 4V2.6h4V4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M3.8 4l.6 8.4a1 1 0 0 0 1 .9h5.2a1 1 0 0 0 1-.9L12.2 4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M6.6 6.6v4.2M9.4 6.6v4.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function PencilIcon(): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M11.2 2.4 13.6 4.8 5.6 12.8 2.4 13.6l.8-3.2 8-8Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M9.8 3.8l2.4 2.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function ChatIcon(): JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M13.5 9.4a1.4 1.4 0 0 1-1.4 1.4H5.6L2.5 13.4V4a1.4 1.4 0 0 1 1.4-1.4h8.2A1.4 1.4 0 0 1 13.5 4v5.4Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+export function FlagIcon({ filled = false }: { filled?: boolean } = {}): JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4 14V2.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M4 3.2h7.4l-1.6 2.6 1.6 2.6H4V3.2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill={filled ? 'currentColor' : 'none'} />
+    </svg>
+  )
+}

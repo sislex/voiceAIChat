@@ -574,6 +574,29 @@ describe('TaskModal — вкладки и merge', () => {
     ])
   })
 
+  // `role="tablist"` без `role="tabpanel"` — полуфабрикат: скринридер видит
+  // вкладки, но не знает, что именно они открыли.
+  it('связывает вкладку с её панелью и водит по полосе стрелками', async () => {
+    render(<TaskModal {...props()} />)
+    const timeline = screen.getByRole('tab', { name: 'Временная шкала' })
+    const panel = screen.getByTestId('task-timeline-panel')
+
+    expect(panel).toHaveAttribute('role', 'tabpanel')
+    expect(timeline).toHaveAttribute('aria-controls', panel.id)
+    expect(panel).toHaveAttribute('aria-labelledby', timeline.id)
+    // Внутрь полосы Tab заводит один раз: у невыбранных вкладок tabIndex=-1.
+    expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('tabindex', '0')
+    expect(timeline).toHaveAttribute('tabindex', '-1')
+
+    screen.getByRole('tab', { name: 'Общее' }).focus()
+    await userEvent.keyboard('{ArrowRight}')
+    expect(timeline).toHaveAttribute('aria-selected', 'true')
+    await userEvent.keyboard('{End}')
+    expect(screen.getByRole('tab', { name: 'Лента рана' })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true')
+  })
+
   it('растягивает только вкладку ленты рана на ширину контентной области', () => {
     render(<TaskModal {...props()} />)
     const feedTab = screen.getByTestId('task-run-feed-tab')
