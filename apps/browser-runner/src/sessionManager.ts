@@ -24,6 +24,8 @@ interface Session {
   profileDir: string
   /** Последнее обращение — по нему сборщик находит брошенные сессии. */
   lastUsedAt: number
+  /** Кто выполнял последнюю команду: человек из панели или модель. */
+  lastActor?: 'user' | 'assistant'
 }
 
 /** Держим последние записи: журнал живой страницы иначе растёт без предела. */
@@ -167,6 +169,7 @@ export class BrowserSessionManager {
   async command(sessionId: string, request: BrowserCommandRequest): Promise<BrowserSessionMetadata | Buffer | BrowserSelectorResult | BrowserInspectResult> {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
+    session.lastActor = request.actor
     const tabId = request.tabId ?? session.activeTabId
     const page = session.pages.get(tabId)
     if (!page) throw new Error('stale_tab')
@@ -244,7 +247,8 @@ export class BrowserSessionManager {
       tabs,
       viewport: session.viewport,
       currentUrl: active?.url ?? null,
-      title: active?.title || null
+      title: active?.title || null,
+      ...(session.lastActor ? { lastActor: session.lastActor } : {})
     }
   }
 }
