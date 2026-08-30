@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
-updated: 2026-08-29
-checked: 67fc54b6
+updated: 2026-08-30
+checked: da6632d4
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -328,3 +328,16 @@ REST: `REST.makeState/makeFile/makeRename/makeSnapshots/makeRestore/makeReset/ma
 шлётся **вместе** с ним: у кадров разный смысл (список уведомлений против роли),
 и подменять один другим нельзя. Источник — `NotificationHub` с признаком
 `kind: 'membership'`; его ставит проводка `membershipChanged` в `server.ts`.
+
+**Сессии и устройства.** REST: `GET /api/session/list`, `POST /api/session/logout-all`
+(тело `{ includeCurrent?: boolean }` — гасить ли текущую вместе с остальными),
+`DELETE /api/session/:sid`, `PATCH /api/session/:sid { label?, trusted? }`
+(имя устройства и доверие; чужая сессия отвечает 404, как несуществующая), плюс
+админские `GET /api/admin/users/:name/sessions` и `DELETE /api/admin/sessions/:sid`.
+Все мутации по cookie-сессии требуют заголовок `x-vc-csrf`. WS: `sessions.update`
+(лёгкая инвалидация списка) и адресный `session.revoked { sid }` — приходит только
+тому соединению, чью сессию завершили, поэтому WS-сессия знает свой `sid`.
+Мост: `window.session.sessions/logoutAll/revokeSession/renameSession/trustSession/
+onSessionsChanged` — все необязательные, desktop их не реализует, и UI-модуль
+скрывает действия по `store.capabilities`.
+

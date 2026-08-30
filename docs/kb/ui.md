@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-30
-checked: d329b6ba
+checked: da6632d4
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -1569,3 +1569,13 @@ inspector»). `.app`/`.app--console` перешли на `var(--sidebar-width)`,
 ради них экран и существует (в остальном интерфейсе `variant="primary"` стоит в
 53 местах). Правило простое: главный путь экрана помечается явно, отказ остаётся
 `ghost` — два акцентных действия рядом сбивают выбор.
+
+**Модуль «Сессии и устройства».** Список устройств живёт не в `packages/ui`, а в
+переносимом пакете `@voicechat/sessions-app` (логика — в `@voicechat/sessions-core`).
+Хост даёт ему только порты: `SessionsClient` (собирается из моста `window.session`
+в `components/SessionsDialogHost.tsx`), необязательный `SessionsRealtime` и
+`SessionsHost` с часами. Окно грузится лениво — иначе модуль добавляет ~8.5 КБ в
+чанк `index-` и упирается в бюджет `frontend-quality --bundle`. Ту же панель в
+режиме `readOnly` показывает админка (`packages/admin-app/src/AdminSessions.tsx`),
+поэтому вторую вёрстку списка заводить не нужно. Подписи переопределяются пропом
+`texts`, часы — пропом `now`: без него «5 минут назад» плывёт между рендерами.
