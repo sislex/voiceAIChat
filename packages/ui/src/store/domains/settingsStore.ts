@@ -23,11 +23,20 @@ import type { MicDevice } from '../../audio/microphones'
 import type { SettingsClient, SttPort, TtsPort } from '../../clients/types'
 import { createStoreCore, type Store } from '../createStore'
 import type { EffectiveVoiceSettings } from '../contracts'
+import { THEME_KEY } from '../contracts'
 
 
 
 export interface SettingsState {
   settings: Settings
+  /**
+   * Настройки пришли с сервера (а не остались дефолтами стора). Пока это не так,
+   * состояние показывать можно, а строить на нём сохранение — нет: дефолты
+   * уехали бы на сервер как осознанный выбор. Ровно так настройки «сбрасывались»
+   * после деплоя: сервер на пару секунд недоступен, `settings:get` падает,
+   * а первое же изменение уносит на сервер дефолты.
+   */
+  settingsLoaded: boolean
   /** Доступные LLM-движки и их модели. */
   llmEngines: LlmEngineOption[]
   /** Персональные запреты моделей текущего пользователя; пусто = полный доступ. */
@@ -82,6 +91,8 @@ export interface SettingsActions {
   deleteModel(model: WhisperModel): Promise<void>
   /** Машину удалили: сбросить ссылки на неё в настройках. */
   forgetAgent(id: string): void
+  /** Настройки изменены снаружи (соседняя вкладка): перечитать их с сервера. */
+  refreshSettings(): Promise<void>
   reset(): void
   // --- Селекторы (нормализованный публичный вид) ---
   selectAllowedProviders(): LlmProvider[]
@@ -96,13 +107,25 @@ export interface SettingsDeps {
   settings: SettingsClient
   stt: SttPort
   tts: TtsPort
-  /** Ошибка/успех операции — тостом (владелец очереди тостов — shellStore). */
+  /**
+   * Предпочтения взгляда (порт `prefs`). Здесь живёт только зеркало темы:
+   * источник правды — сервер, но до его ответа интерфейс обязан рисоваться той
+   * же темой, а не светлой по умолчанию — иначе перезагрузка во время деплоя
+   * выглядит как сброшенные настройки.
+   */
+  prefs?: { get(key: string): string | null; set(key: string, value: string): void; remove(key: string): void }
+  /** Ошибка загрузки/скачивания — баннером экрана (владелец — shellStore). */
   notifyError?: (message: string) => void
+  /** Разовое уведомление тостом: неудачное сохранение настроек видно сразу. */
+  notify?: (notice: { kind: 'error' | 'success' | 'info'; text: string }) => void
+  /** Настройки сохранены — повод сообщить соседним вкладкам (адаптер знает как). */
+  onSettingsSaved?: (patch: Partial<Settings>) => void
 }
 
-function initialState(ttsAvailable: boolean): SettingsState {
+function initialState(ttsAvailable: boolean, theme: Settings['theme'] = DEFAULT_SETTINGS.theme): SettingsState {
   return {
-    settings: { ...DEFAULT_SETTINGS },
+    settings: { ...DEFAULT_SETTINGS, theme },
+    settingsLoaded: false,
     llmEngines: [],
     llmAccess: [],
     capabilities: null,
@@ -123,26 +146,151 @@ function initialState(ttsAvailable: boolean): SettingsState {
 
 export function createSettingsStore(deps: SettingsDeps): SettingsStore {
   const client = deps.settings
-  const core = createStoreCore<SettingsState>(initialState(deps.tts.enabled))
+  const savedTheme = (): Settings['theme'] => {
+    const value = deps.prefs?.get(THEME_KEY)
+    return value === 'dark' || value === 'light' || value === 'green' ? value : DEFAULT_SETTINGS.theme
+  }
+  const core = createStoreCore<SettingsState>(initialState(deps.tts.enabled, savedTheme()))
   const { getState, setState } = core
 
-  async function updateSettings(patch: Partial<Settings>): Promise<void> {
-    const settings = { ...getState().settings, ...patch }
-    setState({ settings })
-    await client['settings:save'](settings)
+  /** Зеркалим тему в предпочтения: следующий старт нарисует её ещё до ответа сервера. */
+  function rememberTheme(settings: Settings): void {
+    deps.prefs?.set(THEME_KEY, settings.theme)
   }
 
   /**
-   * Грузит реальные голоса TTS; если выбранный отсутствует — переключает на
-   * дефолтный голос (если он доступен), иначе на первый из списка.
+   * Эпоха домена: растёт на каждый `reset()` (выход, вход другим человеком).
+   * Ответ, отправленный до смены, применять нельзя — иначе запрос, начатый
+   * прежним пользователем, «воскресит» его настройки уже в чужой сессии.
+   */
+  let epoch = 0
+  /** Номер последнего начатого сохранения: ответы могут прийти не по порядку. */
+  let lastSave = 0
+
+  /** Ответ актуален: эпоха та же и (для сохранения) это не обгон более свежим патчем. */
+  function stillCurrent(startedAt: number, save = lastSave): boolean {
+    return startedAt === epoch && save === lastSave
+  }
+
+  /**
+   * База для сохранения — только настройки, которые сервер уже подтвердил.
+   * Если загрузка не удалась, догоняем её здесь; не вышло и это — патч не
+   * уходит вовсе (ошибка всплывает вызывающему), потому что запись дефолтов
+   * необратимо затёрла бы серверную запись.
+   */
+  async function baseSettings(): Promise<Settings> {
+    if (getState().settingsLoaded) return getState().settings
+    const startedAt = epoch
+    const settings = await client['settings:get']()
+    if (stillCurrent(startedAt)) {
+      setState({ settings, settingsLoaded: true })
+      rememberTheme(settings)
+    }
+    return settings
+  }
+
+  /**
+   * Счётчик сохранений в полёте. Пока патч не подтверждён, ответ на чужой
+   * `refreshSettings` (сигнал соседней вкладки, реконнект) — это снимок ДО
+   * нашего изменения: применив его, мы бы вернули человеку старое значение,
+   * которое он только что поменял.
+   */
+  let savesInFlight = 0
+  /**
+   * Сохранения наложились друг на друга. Ответ последнего PUT видел не все
+   * патчи (сервер мог применить их в другом порядке), поэтому после того, как
+   * очередь опустеет, состояние догоняется с сервера — иначе экран расходится
+   * с записью на один тумблер.
+   */
+  let savesOverlapped = false
+
+  /** Перечитывание в полёте: реконнект и `online` часто приходят парой. */
+  let refreshing: Promise<void> | null = null
+
+  /** Перечитать настройки с сервера (сигнал извне: соседняя вкладка, реконнект, сеть). */
+  async function refreshSettings(): Promise<void> {
+    if (refreshing) return refreshing
+    const startedAt = epoch
+    refreshing = (async () => {
+      try {
+        const settings = await client['settings:get']()
+        // Своё несохранённое изменение важнее чужого снимка: пока патч в
+        // полёте, ответ сервера уже устарел — он не видел нашего PUT.
+        if (savesInFlight > 0 || !stillCurrent(startedAt)) return
+        setState({ settings, settingsLoaded: true })
+        rememberTheme(settings)
+      } catch (err) {
+        console.warn('[settings] не удалось перечитать настройки', err)
+      }
+    })()
+    try {
+      await refreshing
+    } finally {
+      refreshing = null
+    }
+  }
+
+  async function updateSettings(patch: Partial<Settings>): Promise<void> {
+    const base = await baseSettings()
+    const optimistic = { ...base, ...patch }
+    const startedAt = epoch
+    const save = ++lastSave
+    setState({ settings: optimistic, settingsLoaded: true })
+    rememberTheme(optimistic)
+    if (savesInFlight > 0) savesOverlapped = true
+    savesInFlight += 1
+    try {
+      // На сервер уходит только патч: полный снимок этой вкладки затёр бы поля,
+      // изменённые в соседней вкладке или на другом устройстве. Ответ — вся
+      // запись, какой она стала, и она же становится состоянием.
+      const saved = await client['settings:save'](patch)
+      // Два быстрых тумблера дают два PUT, и ответы могут прийти не по порядку:
+      // применив ответ первого, экран отскочил бы к состоянию до второго.
+      if (saved && stillCurrent(startedAt, save)) {
+        setState({ settings: saved })
+        rememberTheme(saved)
+      }
+      deps.onSettingsSaved?.(patch)
+    } catch (err) {
+      // Оптимистичное состояние без отката врёт: экран показывает выбор,
+      // которого на сервере нет, и следующий патч «закрепил» бы его.
+      // Откатываем только своё изменение — если поверх уже легло более свежее
+      // (или сменился пользователь), трогать состояние нельзя.
+      if (stillCurrent(startedAt, save)) {
+        setState({ settings: base })
+        rememberTheme(base)
+      }
+      const text = err instanceof Error ? err.message : 'Не удалось сохранить настройки'
+      // Тост, а не баннер экрана: это результат конкретного действия, и он
+      // не должен затирать баннер идущей загрузки модели или голоса.
+      if (deps.notify) deps.notify({ kind: 'error', text: `Настройки не сохранены: ${text}` })
+      else deps.notifyError?.(text)
+      throw err
+    } finally {
+      savesInFlight -= 1
+      if (savesInFlight === 0 && savesOverlapped) {
+        savesOverlapped = false
+        await refreshSettings()
+      }
+    }
+  }
+
+  /**
+   * Грузит реальные голоса активного движка. Выбор пользователя при этом не
+   * переписывается: после деплоя движок TTS поднимается раньше, чем его голоса
+   * (том с голосами, догрузка Piper), и запись фолбэка в БД теряла выбранный
+   * голос навсегда. Пока голоса нет — его подменяет `selectEffectiveVoice`.
    */
   async function refreshTtsVoices(): Promise<void> {
-    const voices = await client['tts:voices']()
-    setState({ ttsVoices: voices })
-    if (voices.length > 0 && !voices.some((v) => v.id === getState().settings.voice)) {
-      const fallback = voices.find((v) => v.id === DEFAULT_SETTINGS.voice) ?? voices[0]
-      await updateSettings({ voice: fallback.id })
-    }
+    setState({ ttsVoices: await client['tts:voices']() })
+  }
+
+  /** Голос для синтеза: сохранённый, а если его сейчас нет — дефолтный или первый доступный. */
+  function selectEffectiveVoice(): string {
+    const { settings, ttsVoices } = getState()
+    if (ttsVoices.length === 0 || ttsVoices.some((v) => v.id === settings.voice)) return settings.voice
+    const fallback = ttsVoices.find((v) => v.id === DEFAULT_SETTINGS.voice) ?? ttsVoices[0]
+    return fallback.id
   }
 
   async function refreshVoiceCatalog(): Promise<void> {
@@ -211,22 +359,42 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
     dispose: core.dispose,
     actions: {
       async load() {
-        // Права и каталог движков нужны раньше любой фильтрации моделей.
+        // Права и каталог движков нужны раньше любой фильтрации моделей, но их
+        // отказ не должен оставлять настройки дефолтными: на дефолтах интерфейс
+        // выглядит «сброшенным», а сохранение уносит их на сервер.
         const [settings, llmEngines, llmAccess] = await Promise.all([
           client['settings:get'](),
-          client['llm:engines'](),
-          client['llm:access']()
+          client['llm:engines']().catch((err: unknown) => {
+            console.warn('[settings] каталог движков LLM недоступен', err)
+            return getState().llmEngines
+          }),
+          client['llm:access']().catch((err: unknown) => {
+            console.warn('[settings] права на модели недоступны', err)
+            return getState().llmAccess
+          })
         ])
-        setState({ settings, llmEngines, llmAccess })
+        setState({ settings, settingsLoaded: true, llmEngines, llmAccess })
+        rememberTheme(settings)
       },
       async loadCatalogs() {
-        await refreshMics()
-        await refreshModelStatus()
-        await refreshWhisperModels()
-        await refreshTtsVoices()
-        await refreshVoiceCatalog()
-        await refreshCapabilities()
-        await refreshMcpServers()
+        // Каталоги независимы, и отказ одного не должен отменять остальные:
+        // на стенде без Piper падение `tts:voices` уносило с собой и
+        // возможности системы, и список MCP — экран настроек оставался пустым.
+        const catalogs: Array<[string, () => Promise<void>]> = [
+          ['микрофоны', refreshMics],
+          ['статус модели', refreshModelStatus],
+          ['модели Whisper', refreshWhisperModels],
+          ['голоса TTS', refreshTtsVoices],
+          ['каталог голосов', refreshVoiceCatalog],
+          ['возможности системы', refreshCapabilities],
+          ['MCP-серверы', refreshMcpServers]
+        ]
+        const failed = (await Promise.allSettled(catalogs.map(([, load]) => load())))
+          .map((result, index) => result.status === 'rejected' ? { name: catalogs[index][0], reason: result.reason } : null)
+          .filter((item): item is { name: string; reason: unknown } => item !== null)
+        if (failed.length) {
+          console.warn('[settings] каталоги загружены не полностью:', failed.map((item) => item.name).join(', '), failed[0].reason)
+        }
       },
       updateSettings,
       async completeOnboarding() {
@@ -282,6 +450,7 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         await refreshWhisperModels()
         await refreshModelStatus()
       },
+      refreshSettings,
       forgetAgent(id) {
         const { settings } = getState()
         if (settings.execTarget !== id && settings.defaultAgentId !== id) return
@@ -294,7 +463,10 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         })
       },
       reset() {
-        core.resetState(initialState(deps.tts.enabled))
+        // Тема — настройка взгляда: она переживает выход, как и свёрнутый сайдбар.
+        // Новая эпоха: ответы запросов прежнего пользователя больше не применяются.
+        epoch += 1
+        core.resetState(initialState(deps.tts.enabled, savedTheme()))
       },
       selectAllowedProviders() {
         const access = getState().llmAccess
@@ -316,7 +488,7 @@ export function createSettingsStore(deps: SettingsDeps): SettingsStore {
         const { settings } = getState()
         return {
           micDeviceId: settings.micDeviceId,
-          voice: settings.voice,
+          voice: selectEffectiveVoice(),
           handsFree: settings.handsFree,
           bargeIn: settings.bargeIn,
           autoSpeak: settings.autoSpeak,

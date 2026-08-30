@@ -6,6 +6,7 @@ import type { Conversation, Message } from '@shared/types'
 import type { LlmEngineOption } from '@shared/admin'
 import type { RendererApi } from '@shared/ipc'
 import { browserId } from '@shared/browserId'
+import { projectAssistantChatKey } from '../store/contracts'
 import { WidgetProposalCard } from './WidgetAssistantFrame'
 import { ChatColumn } from './ChatColumn'
 import { VoiceBar } from './VoiceBar'
@@ -48,7 +49,7 @@ export function ProjectAssistantChatSelector({ projectId, api, selectedId, onSel
   const [chats, setChats] = useState<ProjectAssistantChat[]>([])
 
   const select = (id: string): void => {
-    globalThis.localStorage?.setItem(`voicechat.projectAssistantChat.${projectId}`, id)
+    globalThis.localStorage?.setItem(projectAssistantChatKey(projectId), id)
     onSelect(id)
   }
   useEffect(() => {
@@ -61,7 +62,7 @@ export function ProjectAssistantChatSelector({ projectId, api, selectedId, onSel
         .filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index)
         .map((item) => ({ id: item.id, title: item.title, source: projectAssistantChatSource(item) }))
       setChats(projectChats)
-      const saved = globalThis.localStorage?.getItem(`voicechat.projectAssistantChat.${projectId}`) ?? null
+      const saved = globalThis.localStorage?.getItem(projectAssistantChatKey(projectId)) ?? null
       select(projectChats.some((chat) => chat.id === saved) ? saved! : assistant.conversation.id)
     })
     return () => { current = false }

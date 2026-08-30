@@ -4,12 +4,39 @@
 // адресует кадры владельцу AppRuntime. Хранилища о мостах по-прежнему не знают.
 
 import type { Message } from '@shared/types'
-import { MESSAGE_META_UPDATE_KEY } from '../store/contracts'
+import { MESSAGE_META_UPDATE_KEY, SETTINGS_UPDATE_KEY } from '../store/contracts'
 import type { RealtimeConnect } from '../runtime/appRuntime'
 
 export const createBrowserRealtime = (): RealtimeConnect => (handlers) => {
   const unsubs: Array<() => void> = []
   if (typeof window === 'undefined') return () => {}
+
+  // Другая вкладка того же пользователя меняет настройки: перечитываем их с
+  // сервера, иначе эта вкладка живёт со своим устаревшим снимком и вернёт его
+  // первым же патчем — со стороны это выглядит как «настройка сбросилась».
+  const onSettingsStorage = (event: StorageEvent): void => {
+    if (event.key !== SETTINGS_UPDATE_KEY || !event.newValue) return
+    handlers.settingsChanged()
+  }
+  window.addEventListener('storage', onSettingsStorage)
+  unsubs.push(() => window.removeEventListener('storage', onSettingsStorage))
+
+  // Сервер вернулся после перезапуска (деплой) — перечитываем настройки сами.
+  // Иначе вкладка, у которой загрузка пришлась на окно недоступности, так и
+  // сидит на дефолтах с баннером, пока человек не нажмёт «Повторить».
+  const realtime = window.realtime
+  if (realtime?.onConnected) {
+    // Первое подключение — часть обычного старта, настройки грузит bootstrap;
+    // перечитываем только на переподключениях (мост не различает их сам).
+    let connectedOnce = false
+    unsubs.push(realtime.onConnected(() => {
+      if (connectedOnce) handlers.settingsChanged()
+      connectedOnce = true
+    }))
+  }
+  const onOnline = (): void => handlers.settingsChanged()
+  window.addEventListener('online', onOnline)
+  unsubs.push(() => window.removeEventListener('online', onOnline))
 
   // Другая вкладка того же пользователя правит meta сообщения.
   const onStorage = (event: StorageEvent): void => {

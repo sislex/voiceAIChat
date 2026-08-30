@@ -4,6 +4,7 @@ import type { RendererApi, RendererMakeBridge } from '@shared/ipc'
 import type { EditorContextPayload } from '@shared/types'
 import { formatUsd, type ConversationUsage } from '@shared/usageSummary'
 import { pickTokensFile } from '@shared/makeTokens'
+import { MAKE_AUTOSAVE_KEY, MAKE_FORMAT_ON_SAVE_KEY, MAKE_SPLIT_KEY, MAKE_SPLIT_PCT_KEY } from '../store/contracts'
 import { makeNextSteps } from '@shared/makeNextSteps'
 import { changedLines as diffLines } from '@shared/lineDiff'
 import type { MakeReplacePreviewLine } from '@shared/makeSearch'
@@ -190,10 +191,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
       .then((list) => { if (!cancelled) setProjectFiles(list.filter((x): x is { path: string; content: string } => x !== null)) })
     return () => { cancelled = true }
   }, [mode, state?.rev, conversationId, api, state])
-  const [autosave, setAutosave] = useState<boolean>(() => { try { return localStorage.getItem('vc.make.autosave') !== 'off' } catch { return true } })
-  const [formatOnSave, setFormatOnSave] = useState<boolean>(() => { try { return localStorage.getItem('vc.make.formatOnSave') === 'on' } catch { return false } })
-  const toggleFormatOnSave = (): void => { setFormatOnSave((v) => { const next = !v; try { localStorage.setItem('vc.make.formatOnSave', next ? 'on' : 'off') } catch { /* приватный режим */ } return next }) }
-  const toggleAutosave = (): void => { setAutosave((v) => { const next = !v; try { localStorage.setItem('vc.make.autosave', next ? 'on' : 'off') } catch { /* приватный режим */ } return next }) }
+  const [autosave, setAutosave] = useState<boolean>(() => { try { return localStorage.getItem(MAKE_AUTOSAVE_KEY) !== 'off' } catch { return true } })
+  const [formatOnSave, setFormatOnSave] = useState<boolean>(() => { try { return localStorage.getItem(MAKE_FORMAT_ON_SAVE_KEY) === 'on' } catch { return false } })
+  const toggleFormatOnSave = (): void => { setFormatOnSave((v) => { const next = !v; try { localStorage.setItem(MAKE_FORMAT_ON_SAVE_KEY, next ? 'on' : 'off') } catch { /* приватный режим */ } return next }) }
+  const toggleAutosave = (): void => { setAutosave((v) => { const next = !v; try { localStorage.setItem(MAKE_AUTOSAVE_KEY, next ? 'on' : 'off') } catch { /* приватный режим */ } return next }) }
   const [saving, setSaving] = useState(false)
   /** Превью готово к загрузке: cookie выпущена (или гейта нет). */
   const [previewReady, setPreviewReady] = useState(!ensurePreview)
@@ -233,10 +234,10 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [mockView, setMockView] = useState<'table' | 'json'>('table')
   const mockTable = useMemo(() => (selectedPath ? mockTableFor(selectedPath, content) : null), [selectedPath, content])
   /** Сплит «код | превью» и zen-режим (roadmap-4 п.16): доля редактора хранится между сессиями. */
-  const [split, setSplit] = useState<boolean>(() => { try { return localStorage.getItem('vc.make.split') === 'on' } catch { return false } })
-  const [splitPct, setSplitPct] = useState<number>(() => { try { const v = Number(localStorage.getItem('vc.make.splitPct')); return v >= 25 && v <= 80 ? v : 55 } catch { return 55 } })
+  const [split, setSplit] = useState<boolean>(() => { try { return localStorage.getItem(MAKE_SPLIT_KEY) === 'on' } catch { return false } })
+  const [splitPct, setSplitPct] = useState<number>(() => { try { const v = Number(localStorage.getItem(MAKE_SPLIT_PCT_KEY)); return v >= 25 && v <= 80 ? v : 55 } catch { return 55 } })
   const [zen, setZen] = useState(false)
-  const toggleSplit = (): void => setSplit((v) => { const next = !v; try { localStorage.setItem('vc.make.split', next ? 'on' : 'off') } catch { /* приватный режим */ } return next })
+  const toggleSplit = (): void => setSplit((v) => { const next = !v; try { localStorage.setItem(MAKE_SPLIT_KEY, next ? 'on' : 'off') } catch { /* приватный режим */ } return next })
   const splitDrag = usePointerDrag()
   const codeRef = useRef<HTMLDivElement | null>(null)
   const beginSplitDrag = (e: React.PointerEvent<HTMLElement>): void => {
@@ -253,7 +254,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         last = Math.min(80, Math.max(25, Math.round(((pt.x - box.left - tree) / Math.max(1, usable)) * 100)))
         setSplitPct(last)
       },
-      onDrop: () => { try { localStorage.setItem('vc.make.splitPct', String(last)) } catch { /* приватный режим */ } },
+      onDrop: () => { try { localStorage.setItem(MAKE_SPLIT_PCT_KEY, String(last)) } catch { /* приватный режим */ } },
       onCancel: () => undefined
     })
   }

@@ -271,7 +271,14 @@ export interface IpcInvokeMap {
   'settings:get': { arg: void; result: Settings }
   'llm:access': { arg: void; result: import('./llmAccess').UserLlmAccess[] }
   'llm:engines': { arg: void; result: LlmEngineOption[] }
-  'settings:save': { arg: Settings; result: void }
+  /**
+   * Патч настроек: сервер применяет только присланные поля. Полный объект тоже
+   * допустим, но именно патч не даёт вкладке со своим (уже устаревшим) снимком
+   * затереть то, что человек только что поменял в другой вкладке. В ответе —
+   * настройки целиком, какими они стали: клиент принимает их как истину и не
+   * расходится с сервером после конкурентного патча.
+   */
+  'settings:save': { arg: Partial<Settings>; result: Settings }
   /** Возможности системы по ресурсам контейнера (блокировка STT/TTS при нехватке памяти). */
   'system:capabilities': { arg: void; result: SystemCapabilities }
   'stt:status': { arg: void; result: SttStatus }

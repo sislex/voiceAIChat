@@ -236,9 +236,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'settings:get': () => req(REST.settings),
     'llm:access': () => req(REST.meLlmAccess),
     'llm:engines': () => req(REST.llmEngines),
-    'settings:save': async (settings) => {
-      await req(REST.settings, { method: 'PUT', body: JSON.stringify(settings) })
-    },
+    // Тело — патч; ответ сервера (вся запись) возвращается вызывающему.
+    'settings:save': (patch) => req(REST.settings, { method: 'PUT', body: JSON.stringify(patch) }),
     'system:capabilities': () => req(REST.systemCapabilities),
     'stt:status': () => req(REST.sttStatus),
     'stt:models': () => req(REST.sttModels),
