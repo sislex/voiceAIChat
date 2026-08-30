@@ -596,8 +596,11 @@ export interface ProjectSummary {
   automatedQaCommand?: string
   /** Способ исполнения этапа Automated QA; по умолчанию `command`. */
   automatedQaMode?: import('./qa').AutomatedQaMode
-  /** Сценарий браузерной проверки для режима `playwright`. */
-  automatedQaScenario?: import('./qa').AutomatedQaScenario
+  /**
+   * Сценарии браузерной проверки для режима `playwright`. Набор, а не один:
+   * «много автотестов» упиралось именно в единственный сценарий на проект.
+   */
+  automatedQaScenarios?: import('./qa').AutomatedQaScenario[]
   /** Остановить автопроход перед manual_qa. */
   autoPilotRequiresManualQa?: boolean
   /** Максимум автоматических возвратов на доработку. */
