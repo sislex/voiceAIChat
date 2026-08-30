@@ -3,7 +3,8 @@
 // изменившийся ран (loadRun), без перезапроса всего тяжёлого списка (loadRuns).
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { TaskPreparationRun } from '@shared/qa'
 import { TaskPreparationTab } from './TaskPreparationTab'
 
@@ -17,7 +18,10 @@ function stubBoard(): void {
     onPreparationRunUpdated: (cb: (e: { projectId: string; taskId: string; runId: string }) => void) => { updateCb = cb; return () => { updateCb = null } },
     onReconnect: () => () => {}
   }
-  ;(window as { ci?: unknown }).ci = { getTaskMachines: async () => ({ machines: [], effectiveAgentId: null }) }
+  ;(window as { ci?: unknown }).ci = {
+    getTaskMachines: async () => ({ machines: [], effectiveAgentId: null }),
+    getTaskPreparationLlm: async () => ({ provider: 'claude' as const, model: 'opus', llmEngineId: null })
+  }
 }
 
 afterEach(() => { cleanup(); vi.useRealTimers(); delete (window as { board?: unknown }).board; delete (window as { ci?: unknown }).ci; updateCb = null })
@@ -50,5 +54,35 @@ describe('TaskPreparationTab — REST один раз, обновления по
     updateCb?.({ projectId: 'p1', taskId: 'OTHER', runId: 'run-9' })
     await vi.advanceTimersByTimeAsync(600)
     expect(loadRun).not.toHaveBeenCalled()
+  })
+})
+
+describe('TaskPreparationTab — форма запуска', () => {
+  // Селекты стояли голыми в строке текста и были втрое мельче соседних полей
+  // карточки, а пустоту и ошибки вкладка показывала своим текстом.
+  it('одевает селекты в общий класс и показывает пустоту общим экраном', async () => {
+    stubBoard()
+    render(<TaskPreparationTab projectId="p1" taskId="t1" loadRuns={async () => []} llmAccess={[{ provider: 'claude', models: ['opus'] }] as never} />)
+
+    const provider = await screen.findByRole('combobox', { name: 'Провайдер модели' })
+    expect(provider).toHaveClass('sel')
+    expect(provider.closest('label')).toHaveClass('task-preparation-field')
+    expect(screen.getByTestId('task-preparation-no-machines')).toHaveClass('vc-state--empty')
+    expect(screen.getByTestId('task-preparation-empty-state')).toHaveTextContent('Подготовка к разработке ещё не запускалась')
+    expect(screen.queryByText('В проекте нет доступных машин.')).not.toBeInTheDocument()
+  })
+
+  it('ошибка чтения истории предлагает повторить', async () => {
+    stubBoard()
+    const loadRuns = vi.fn()
+      .mockRejectedValueOnce(new Error('сеть недоступна'))
+      .mockResolvedValueOnce([])
+    render(<TaskPreparationTab projectId="p1" taskId="t1" loadRuns={loadRuns} />)
+
+    const error = await screen.findByTestId('error-state')
+    expect(error).toHaveTextContent('Не удалось загрузить историю подготовки')
+    await userEvent.click(within(error).getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(loadRuns).toHaveBeenCalledTimes(2))
+    expect(await screen.findByTestId('task-preparation-empty-state')).toBeInTheDocument()
   })
 })

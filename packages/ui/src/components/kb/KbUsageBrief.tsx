@@ -51,7 +51,7 @@ function SectionRow({ item, recent }: { item: KbUsageSectionAggregate; recent: K
       <button className="kbu-run-section__head" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span>{label}</span>
         <span>{num(item.times)} обр. · {item.autoTimes === item.times ? 'Автоматически добавлено сервером' : item.autoTimes ? 'Авто-контекст и обращения модели' : 'Обращения модели'} · ≈{num(item.estimatedTokens)} ток.</span>
-        <span aria-hidden>{open ? '⌃' : '⌄'}</span>
+        <span className="vc-feed-caret" aria-hidden />
       </button>
       <div className="kbu-run-section__meta">
         <a className="kbu-doc" href={kbDocumentHref(item.documentId)} aria-label={`Открыть «${label}» в базе знаний`}>{item.sourcePath}</a>
@@ -95,7 +95,11 @@ export function KbUsageBrief(props: KbUsageBriefProps): JSX.Element {
           {totals.queries > 0 && <><span>{num(totals.queries)} обращений</span><span>{num(totals.documents)} разделов</span><span>≈{num(totals.estimatedTokens)} токенов</span></>}
           <span className={props.error || totals.errors ? 'kbu-brief__status kbu-brief__status--error' : 'kbu-brief__status'}>{status}</span>
         </span>
-        <span className="kbu-brief__chevron" aria-hidden>{props.loading ? '…' : props.error || totals.errors ? '⚠' : open ? '⌃' : '⌄'}</span>
+        {/* Раскрытие — общий шеврон карточки; загрузка и ошибка остаются глифами:
+            это состояния, а не направление. */}
+        <span className="kbu-brief__chevron" aria-hidden>
+          {props.loading ? '…' : props.error || totals.errors ? '⚠' : <span className="vc-feed-caret" />}
+        </span>
       </button>
       {open && (
         <div id={panelId} className="kbu-run-report" onKeyDown={onPanelKeyDown}>

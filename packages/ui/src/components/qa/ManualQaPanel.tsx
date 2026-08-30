@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, QaCriterionResult, QaResultStatus, QaSession, QaTaskState } from '@shared/qa'
 import { canCompleteQa, qaProgress } from '@shared/qa'
 import { Button } from '@voicechat/ui-kit'
+import { ErrorState, Skeleton } from '@voicechat/ui-kit'
 
 export function ManualQaPanel(props: { projectId: string; taskId: string; activeRun?: boolean; onFixStarted?: (runId: string) => void }): JSX.Element {
   const [state, setState] = useState<QaTaskState | null>(null)
@@ -108,9 +109,12 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
   }
 
   return <section className="manual-qa" aria-label="Ручное QA">
-    <h3 className="jmodal-h">Ручное QA</h3>
-    {error && <div className="err" role="alert">{error}</div>}
-    {!state ? <p>Загрузка QA…</p> : <>
+    {/* Заголовок секции не дублирует имя вкладки — оно уже стоит в полосе. */}
+    {error && <ErrorState compact message="Не удалось загрузить ручное QA" detail={error} onRetry={() => void load()} />}
+    {!state ? <>
+      <span className="vc-sr-only" aria-live="polite">Загрузка ручного QA…</span>
+      <Skeleton variant="list" count={3} item="block" height={64} gap={10} />
+    </> : <>
       {!state.preparation && <div className="manual-qa-summary"><strong>Создание сценариев не запущено</strong><span>Ожидаем завершения разработки.</span></div>}
       {state.preparation && <details className="manual-qa-preparation" open={preparationOpen} onToggle={(event) => setPreparationOpen(event.currentTarget.open)}>
         <summary><strong>{state.preparation.status === 'running' ? (state.preparation.attempt > 1 ? 'Повторное создание сценариев' : 'Создаём сценарии') : state.preparation.status === 'success' ? 'Сценарии созданы' : 'Не удалось создать сценарии'}</strong> · попытка {state.preparation.attempt} · {new Date(state.preparation.createdAt).toLocaleString()} · {formatDuration((state.preparation.finishedAt ?? Date.now()) - state.preparation.createdAt)}</summary>

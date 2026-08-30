@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { CiRunDetail, CiRunReport, CiRunStep } from '@shared/ci'
-import type { MergeRun } from '@shared/merge'
+import type { MergeRun, MergeRunStatus } from '@shared/merge'
 import { RunFeed, type RunFeedCache } from './RunFeed'
-import { MergeRunFeed } from './MergeRunFeed'
+import { MergeRunFeed, MERGE_STATUS_LABEL } from './MergeRunFeed'
 import { ciStatusLabel } from './ciFormat'
+import { formatDateTime } from '../../lib/dateFormat'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
+import { Skeleton } from '@voicechat/ui-kit'
 
+// Статус merge-рана типизирован, а не `string`: подпись берётся из карты
+// `MERGE_STATUS_LABEL`, и новый статус в контракте обязан получить перевод.
 type RunChoice =
   | { kind: 'development'; id: string; createdAt: number; status: string }
-  | { kind: 'merge'; id: string; createdAt: number; status: string }
+  | { kind: 'merge'; id: string; createdAt: number; status: MergeRunStatus }
 
 export interface TaskRunFeedProps {
   projectId: string
@@ -129,7 +133,12 @@ export function TaskRunFeed(props: TaskRunFeedProps): JSX.Element {
     }
   }, [selectedRun?.id, selectedRun?.kind])
 
-  if (loadingChoices && choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}><p className="task-tab-empty" aria-live="polite">Загрузка технической ленты…</p></div>
+  // Ожидание — тем же скелетоном, что и во временной шкале: одинаковая по смыслу
+  // загрузка не должна выглядеть в соседних вкладках карточки по-разному.
+  if (loadingChoices && choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}>
+    <span className="vc-sr-only" aria-live="polite">Загрузка технической ленты…</span>
+    <Skeleton variant="list" count={3} item="block" height={64} gap={10} />
+  </div>
   if (choicesError && choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}><ErrorState message="Не удалось загрузить список запусков" detail={choicesError} onRetry={loadChoices} /></div>
   if (choices.length === 0) return <div className="task-run-feed" style={FULL_WIDTH_FEED_STYLE}><EmptyState compact icon="⏱" title="Запусков ещё нет" description="Техническая лента появится после development- или merge-запуска." /></div>
 
@@ -138,10 +147,13 @@ export function TaskRunFeed(props: TaskRunFeedProps): JSX.Element {
       <label>Запуск
         <select aria-label="Выбранный запуск" className="sel" value={selected ?? ''} onChange={(event) => setSelected(event.target.value)}>
           <optgroup label="Development-раны">
-            {choices.filter((run) => run.kind === 'development').map((run) => <option key={run.id} value={run.id}>Development · {ciStatusLabel(run.status as never)} · {new Date(run.createdAt).toLocaleString('ru')}</option>)}
+            {choices.filter((run) => run.kind === 'development').map((run) => <option key={run.id} value={run.id}>Development · {ciStatusLabel(run.status as never)} · {formatDateTime(run.createdAt)}</option>)}
           </optgroup>
+          {/* Merge-статус тоже подписью: в списке стоял сырой `awaiting_merge`
+              рядом с русским «Успешно» у соседнего пункта. Дата — общим
+              форматом карточки, а не своим `toLocaleString`. */}
           <optgroup label="Merge-раны">
-            {choices.filter((run) => run.kind === 'merge').map((run) => <option key={run.id} value={run.id}>Merge · {run.status} · {new Date(run.createdAt).toLocaleString('ru')}</option>)}
+            {choices.filter((run) => run.kind === 'merge').map((run) => <option key={run.id} value={run.id}>Merge · {MERGE_STATUS_LABEL[run.status]} · {formatDateTime(run.createdAt)}</option>)}
           </optgroup>
         </select>
       </label>
