@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
-import { ambiguousSteps, expectOnLastStep, fragileSteps, hasAssertions, recordClick, recordNavigate, recordType, removeStep, toScenario, type RecordedStep } from '../lib/scenarioRecorder'
+import { ambiguousSteps, expectOnLastStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
@@ -100,6 +100,15 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const origin = useRef<string | null>(null)
   /** Последний описанный элемент — к нему привязывается записанный ввод текста. */
   const lastElement = useRef<BrowserElementDescription | null>(null)
+  /** Когда записан прошлый шаг: длинная пауза значит, что человек ждал страницу. */
+  const lastStepAt = useRef(0)
+  /** Проставляет паузу последнему шагу — по ней потом подсказываем ожидание. */
+  const withPause = (next: RecordedStep[]): RecordedStep[] => {
+    const now = Date.now()
+    const pauseMs = lastStepAt.current ? now - lastStepAt.current : 0
+    lastStepAt.current = now
+    return next.map((step, index) => (index === next.length - 1 ? { ...step, pauseMs } : step))
+  }
   const [steps, setSteps] = useState<RecordedStep[]>([])
   const [expectText, setExpectText] = useState('')
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
@@ -222,11 +231,12 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       // В режиме записи сначала спрашиваем, что под курсором: шаг сценария
       // обязан быть селекторным, координатная запись рассыплется от сдвига
       // вёрстки. Клик выполняется в любом случае — запись не мешает работе.
-      if (recording && button === 'left') {
+      if (recording) {
         const described = await run({ type: 'selector', action: { kind: 'describe', x: point.x, y: point.y } }) as { element?: BrowserElementDescription } | undefined
         if (described?.element) {
           lastElement.current = described.element
-          setSteps((current) => recordClick(current, described.element!))
+          const kind: ClickKind = button === 'right' ? 'right' : clickCount === 2 ? 'double' : 'left'
+          setSteps((current) => withPause(recordClick(current, described.element!, kind)))
         }
       }
       await run({ type: 'input', action: { type: 'click', x: point.x, y: point.y, button, clickCount } })
@@ -237,6 +247,9 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const onFrameWheel = (event: ReactWheelEvent<HTMLImageElement>): void => {
     if (phase !== 'ready') return
     event.preventDefault()
+    // Длинная страница без прокрутки не проверяется, поэтому она тоже шаг —
+    // слитый, а не по одному на каждый щелчок колеса.
+    if (recording) setSteps((current) => recordScroll(current, Math.round(event.deltaY)))
     void run({ type: 'input', action: { type: 'wheel', deltaX: Math.round(event.deltaX), deltaY: Math.round(event.deltaY) } })
   }
 
@@ -319,6 +332,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     // Происхождение первого открытого адреса — то, с чем сверяемся дальше:
     // уход на другой хост посреди проверки почти всегда промах или редирект.
     if (!origin.current) origin.current = full
+    if (recording) setSteps((current) => withPause(recordNavigate(current, full)))
     void run({ type: 'navigate', url: full })
   }
 
@@ -327,7 +341,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     void (async () => {
       // Ввод тоже обязан попадать в сценарий: без этого в записи остаётся клик
       // по полю и пустое поле — прогон такого шага ничего не проверит.
-      if (recording && lastElement.current) setSteps((current) => recordType(current, lastElement.current!, typing))
+      if (recording && lastElement.current) setSteps((current) => withPause(recordType(current, lastElement.current!, typing)))
       await run({ type: 'input', action: { type: 'type', text: typing } })
       setTyping('')
     })()
@@ -349,6 +363,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   /** Переход записывается отдельным шагом: с него начинается сценарий. */
   const startRecording = (): void => {
     setSteps(meta?.currentUrl ? recordNavigate([], meta.currentUrl) : [])
+    lastStepAt.current = Date.now()
     setRecording(true)
   }
 
@@ -510,10 +525,17 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           <strong>Сценарий: {steps.length} шаг(ов)</strong>
           {onSaveScenario && (
             <Button size="sm" variant="primary" disabled={busy} onClick={() => void (async () => {
-              try { await onSaveScenario(toScenario(steps, meta?.currentUrl ?? '')); setMessage('Сценарий сохранён в настройках проекта') }
+              const scenario = toScenario(steps, meta?.currentUrl ?? '')
+              // Пустой сценарий сохранялся молча, а этап потом блокировался — и
+              // узнавалось это только на прогоне.
+              if (!scenario.steps.length) { setMessage('Сценарий пуст: запишите хотя бы один шаг'); return }
+              try { await onSaveScenario(scenario); setMessage('Сценарий сохранён в настройках проекта') }
               catch (err) { setMessage(err instanceof Error ? err.message : 'Сценарий не сохранён') }
             })()}>Сохранить в проект</Button>
           )}
+          <Button size="sm" variant="ghost" onClick={() => { setSteps(meta?.currentUrl ? recordNavigate([], meta.currentUrl) : []); lastStepAt.current = Date.now(); setRecording(true) }}>
+            Начать заново
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => void (async () => {
             // Буфер обмена доступен не всегда (нужен secure-контекст); раньше
             // кнопка при отказе молча ничего не делала.
@@ -530,6 +552,11 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           // Сценарий без единой проверки зелёный, пока клики попадают, — даже
           // если страница показала ошибку. Это не тест, и молчать об этом нельзя.
           <p className="playwright-reader-record__warn" role="status">Ни одной проверки: такой сценарий пройдёт, даже если страница сломана. Добавьте ожидаемый текст к последнему шагу.</p>
+        )}
+        {needsWaitHint(steps) && (
+          // Длинная пауза почти всегда значит, что человек ждал страницу; без
+          // явного ожидания раннер нажмёт быстрее, чем появится элемент.
+          <p className="playwright-reader-record__warn">Между шагами были долгие паузы: вы ждали страницу. Добавьте ожидаемый текст, иначе прогон будет нажимать раньше, чем элемент появится.</p>
         )}
         {ambiguous.length > 0 && (
           <p className="playwright-reader-record__warn">Неоднозначных шагов: {ambiguous.length}. Их селектор находит несколько элементов, и шаг нажмёт первый.</p>
@@ -552,7 +579,13 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           {steps.map((step) => (
             <li key={step.id} data-stability={step.stability}>
               <span className="playwright-reader-record__row">
-                <span>{step.title}</span>
+                {/* Название читается в отчёте этапа — его правят чаще всего. */}
+                <input
+                  className="playwright-reader-record__title"
+                  aria-label={`Название шага ${step.id}`}
+                  value={step.title}
+                  onChange={(event) => setSteps((current) => renameStep(current, step.id, event.target.value))}
+                />
                 <IconButton size="sm" aria-label={`Убрать шаг «${step.title}»`} title="Убрать шаг" onClick={() => setSteps((current) => removeStep(current, step.id))}>✕</IconButton>
               </span>
               <code>{'selector' in step.action ? step.action.selector : ''}</code>

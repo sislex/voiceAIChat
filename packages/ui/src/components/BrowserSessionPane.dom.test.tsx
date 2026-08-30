@@ -271,10 +271,11 @@ describe('запись сценария автотеста (круг 12)', () =>
   it('клик по кадру превращается в селекторный шаг, а не в координаты', async () => {
     const frame = await startAndRecord(recordingBrowser())
     fireEvent.click(frame, { clientX: 50, clientY: 30 })
-    expect(await screen.findByText('Нажать «Создать»')).toBeInTheDocument()
+    // Названия шагов правятся на месте, поэтому это поля ввода, а не текст.
+    expect(await screen.findByDisplayValue('Нажать «Создать»')).toBeInTheDocument()
     expect(screen.getByText('[data-testid="create"]')).toBeInTheDocument()
     // Первым шагом записывается открытый адрес — с него начинается сценарий.
-    expect(screen.getByText('Открыть http://89.125.68.35:8787/')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Открыть http://89.125.68.35:8787/')).toBeInTheDocument()
   })
 
   it('клик всё равно выполняется: запись не мешает работать', async () => {
@@ -385,7 +386,7 @@ describe('сценарий как настоящий тест (круг 14)', ()
     const frame = screen.getByAltText('Кадр Chromium')
     Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
     fireEvent.click(frame, { clientX: 50, clientY: 30 })
-    await screen.findByText('Нажать «Создать»')
+    await screen.findByDisplayValue('Нажать «Создать»')
   }
 
   it('предупреждает, что сценарий без проверок ничего не докажет', async () => {
@@ -409,7 +410,7 @@ describe('сценарий как настоящий тест (круг 14)', ()
   it('шаг можно убрать: промах мышью не стоит всей записи', async () => {
     await record(bridgeWith())
     fireEvent.click(screen.getByRole('button', { name: 'Убрать шаг «Нажать «Создать»»' }))
-    await waitFor(() => expect(screen.queryByText('Нажать «Создать»')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByDisplayValue('Нажать «Создать»')).not.toBeInTheDocument())
   })
 
   it('сохранение в проект отдаёт сценарий и сообщает об успехе', async () => {
@@ -427,5 +428,73 @@ describe('сценарий как настоящий тест (круг 14)', ()
     await record(bridgeWith(), { onSaveScenario: vi.fn(async () => { throw new Error('Недостаточно прав') }) })
     fireEvent.click(screen.getByRole('button', { name: 'Сохранить в проект' }))
     expect(await screen.findByText('Недостаточно прав')).toBeInTheDocument()
+  })
+})
+
+describe('запись как черновик, который правят (круг 15)', () => {
+  const element = { selector: '#create', stability: 'id', tag: 'button', text: 'Создать', matches: 1, rect: { x: 0, y: 0, width: 100, height: 40 } }
+  const bridge = (): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const frameOf = (): HTMLElement => {
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    return frame
+  }
+
+  const start = async (browser: RendererBrowserBridge): Promise<HTMLElement> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} onSaveScenario={vi.fn(async () => {})} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    return frameOf()
+  }
+
+  it('правый клик и двойной записываются отдельными видами', async () => {
+    const frame = await start(bridge())
+    fireEvent.contextMenu(frame, { clientX: 50, clientY: 30 })
+    expect(await screen.findByDisplayValue('Нажать правой кнопкой «Создать»')).toBeInTheDocument()
+    fireEvent.doubleClick(frame, { clientX: 50, clientY: 30 })
+    expect(await screen.findByDisplayValue('Двойной клик «Создать»')).toBeInTheDocument()
+  })
+
+  it('прокрутка сливается в один шаг', async () => {
+    const frame = await start(bridge())
+    fireEvent.wheel(frame, { deltaY: 300 })
+    fireEvent.wheel(frame, { deltaY: 200 })
+    expect(await screen.findByDisplayValue('Прокрутить на 500 px')).toBeInTheDocument()
+  })
+
+  it('название шага правится на месте', async () => {
+    const frame = await start(bridge())
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    const title = await screen.findByDisplayValue('Нажать «Создать»')
+    fireEvent.change(title, { target: { value: 'Открыть карточку задачи' } })
+    expect(await screen.findByDisplayValue('Открыть карточку задачи')).toBeInTheDocument()
+  })
+
+  it('пустой сценарий не сохраняется молча', async () => {
+    const onSaveScenario = vi.fn(async () => {})
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} onSaveScenario={onSaveScenario} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    // В записи только шаг-переход, который уходит в startUrl: шагов ноль.
+    fireEvent.click(await screen.findByRole('button', { name: 'Сохранить в проект' }))
+    expect(await screen.findByText('Сценарий пуст: запишите хотя бы один шаг')).toBeInTheDocument()
+    expect(onSaveScenario).not.toHaveBeenCalled()
+  })
+
+  it('«Начать заново» оставляет запись включённой', async () => {
+    const frame = await start(bridge())
+    fireEvent.click(frame, { clientX: 50, clientY: 30 })
+    await screen.findByDisplayValue('Нажать «Создать»')
+    fireEvent.click(screen.getByRole('button', { name: 'Начать заново' }))
+    await waitFor(() => expect(screen.queryByDisplayValue('Нажать «Создать»')).not.toBeInTheDocument())
+    // Кнопка записи по-прежнему в состоянии «пишем», а не сброшена.
+    expect(screen.getByRole('button', { name: /Записывается/ })).toBeInTheDocument()
   })
 })
