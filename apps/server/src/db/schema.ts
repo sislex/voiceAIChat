@@ -277,9 +277,13 @@ CREATE TABLE IF NOT EXISTS security_events (
   type TEXT NOT NULL,
   ip TEXT NOT NULL DEFAULT '',
   user_agent TEXT NOT NULL DEFAULT '',
-  details TEXT NOT NULL DEFAULT ''
+  details TEXT NOT NULL DEFAULT '',
+  -- Сессия, к которой относится событие. По ней строится история устройства:
+  -- пара «User-Agent + адрес» рвётся при смене сети и склеивает разные входы.
+  session_sid TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_name, at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_sid ON security_events(session_sid, id DESC);
 
 CREATE TABLE IF NOT EXISTS login_device_emails (
   user_name TEXT NOT NULL,
@@ -308,6 +312,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   geo TEXT,
   requests INTEGER NOT NULL DEFAULT 0,
   last_path TEXT,
+  -- Почему сессия закончилась: revoked | evicted | panic | logout_all | admin | stale.
+  end_reason TEXT,
   -- SHA-256 секрета устройства из cookie vc_device: доверие привязано к нему, а
   -- не к угадываемым свойствам запроса (User-Agent и подсеть подделываются).
   device_secret TEXT,

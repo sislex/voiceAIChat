@@ -244,9 +244,9 @@ export function registerAdminRoutes(
   app.delete<{ Params: { sid: string } }>(REST.adminSessionRevoke(':sid').replace('%3Asid', ':sid'), guard, async (req, reply) => {
     // Владельца берём до отзыва: после него getSession уже ничего не отдаст.
     const owner = db.getSession(req.params.sid)?.user
-    if (!db.revokeSessionById(req.params.sid)) return reply.code(404).send({ error: 'not found' })
+    if (!db.revokeSessionById(req.params.sid, undefined, 'admin')) return reply.code(404).send({ error: 'not found' })
     if (owner) {
-      db.logSecurityEvent({ user: owner, type: 'session_revoked', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'отозвана администратором' })
+      db.logSecurityEvent({ user: owner, type: 'session_revoked', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: 'отозвана администратором', sid: req.params.sid })
       sessionHub?.emit(owner, req.params.sid)
     }
     return { ok: true }

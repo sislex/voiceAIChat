@@ -27,6 +27,15 @@ export function isTrusted(session: DeviceSession, now = Date.now(), policy?: Par
   return Boolean(session.trustedAt) && now - session.trustedAt! <= trustDays * 24 * 60 * 60_000
 }
 
+/**
+ * Сессия на исходе: жить осталось меньше суток. Полезно знать заранее — иначе
+ * «пропавший» вход выглядит как отзыв, хотя просто истёк срок.
+ */
+export function isExpiringSoon(session: DeviceSession, now = Date.now(), withinMs = 24 * 60 * 60_000): boolean {
+  const left = session.expiresAt - now
+  return left > 0 && left <= withinMs
+}
+
 /** Брошенная сессия: формально жива, но активности не было дольше порога. */
 export function isStale(session: DeviceSession, now = Date.now(), policy?: Partial<SessionPolicy>): boolean {
   const staleDays = { ...DEFAULT_SESSION_POLICY, ...policy }.staleDays

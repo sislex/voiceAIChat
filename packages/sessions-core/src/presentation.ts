@@ -2,7 +2,7 @@
 // ядре, а не в компоненте, потому что тот же порядок нужен и в админке, и в
 // чужом хосте с другим UI — расхождение порядка выглядит как потерянная сессия.
 import { parseUserAgent } from './device'
-import { isOnline, isTrusted } from './policy'
+import { isExpiringSoon, isOnline, isTrusted } from './policy'
 import type { DeviceSession, DeviceProfile, SessionPolicy } from './types'
 
 /** Сессия, готовая к отрисовке: разбор UA и вычисленные признаки уже сделаны. */
@@ -20,6 +20,8 @@ export interface SessionView {
   expiresInMs: number
   /** Сколько ещё живых сессий у этого же устройства. */
   siblings: number
+  /** Срок кончается в ближайшие сутки. */
+  expiringSoon: boolean
 }
 
 /** Подпись устройства для человека. Для унаследованных записей UA нет вовсе. */
@@ -40,17 +42,23 @@ export function toView(session: DeviceSession, now = Date.now(), policy?: Partia
     current: Boolean(session.current),
     place: session.geo?.label ?? '',
     expiresInMs: session.expiresAt - now,
-    siblings: deviceSiblings(all, session)
+    siblings: deviceSiblings(all, session),
+    expiringSoon: isExpiringSoon(session, now)
   }
 }
 
+/** Чем упорядочить список: свежесть активности, дата входа или подпись. */
+export type SessionOrder = 'activity' | 'created' | 'title'
+
 /**
  * Текущая сессия всегда первая — с неё пользователь начинает читать список и
- * по ней понимает, что видит именно себя; остальные по свежести активности.
+ * по ней понимает, что видит именно себя; остальные по выбранному порядку.
  */
-export function sortSessions(sessions: readonly DeviceSession[]): DeviceSession[] {
+export function sortSessions(sessions: readonly DeviceSession[], order: SessionOrder = 'activity'): DeviceSession[] {
   return [...sessions].sort((a, b) => {
     if (Boolean(a.current) !== Boolean(b.current)) return a.current ? -1 : 1
+    if (order === 'created') return b.createdAt - a.createdAt
+    if (order === 'title') return sessionTitle(a).localeCompare(sessionTitle(b), 'ru')
     return b.lastSeen - a.lastSeen
   })
 }

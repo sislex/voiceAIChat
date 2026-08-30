@@ -466,6 +466,9 @@ export interface SessionUser {
   mustChangePassword?: boolean
 }
 
+/** Почему сессия закончилась: показывается в списке недавно завершённых. */
+export type SessionEndReason = 'revoked' | 'expired' | 'evicted' | 'panic' | 'logout_all' | 'admin' | 'stale'
+
 /** Место входа по адресу: город и страна либо признак локальной сети. */
 export interface SessionGeo {
   country?: string
@@ -512,6 +515,7 @@ export interface SessionInfo {
   ended?: boolean
   /** Когда завершилась: момент отзыва либо истечения. */
   endedAt?: number
+  endReason?: SessionEndReason | null
 }
 /** Ответ логина при включённом втором факторе (auth-roadmap п.6): пароль верен, нужен код по одноразовому тикету. */
 export interface LoginChallenge { requires2fa: true; ticket: string }

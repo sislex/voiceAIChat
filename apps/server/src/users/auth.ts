@@ -448,8 +448,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     // никогда — только что выданную. Ноль или отсутствие настройки — без лимита.
     const limit = Number(db.getAppConfig('sessions.maxPerUser')) || 0
     for (const victim of overLimit(db.listSessions(name), limit || null, sid)) {
-      db.revokeSessionById(victim.sid)
-      db.logSecurityEvent({ user: name, type: 'session_evicted', ip: victim.ip, userAgent: victim.userAgent, details: `лимит ${limit} сессий` })
+      db.revokeSessionById(victim.sid, undefined, 'evicted')
+      db.logSecurityEvent({ user: name, type: 'session_evicted', ip: victim.ip, userAgent: victim.userAgent, details: `лимит ${limit} сессий`, sid: victim.sid })
       options.sessions?.emit(name, victim.sid)
     }
     // Публичный адрес уточняем в фоне: вход не должен ждать внешний сервис, а
@@ -461,11 +461,11 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
         .catch(() => undefined)
     }
     db.markLogin(name)
-    db.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: ua })
+    db.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: ua, sid })
     options.sessions?.emit(name)
     if (isNew) {
       const at = Date.now()
-      db.logSecurityEvent({ user: name, type: 'login_new_device', ip: req.ip, userAgent: ua, details: 'вход с нового устройства' })
+      db.logSecurityEvent({ user: name, type: 'login_new_device', ip: req.ip, userAgent: ua, details: 'вход с нового устройства', sid })
       const email = row?.email
       if (email && db.getSettings(name).loginNewDeviceEmails && db.reserveLoginDeviceEmail(name, req.ip, ua, at)) {
         const passwordLink = `${baseUrl(req)}/#/security/password`
@@ -822,7 +822,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     // «выйти везде» оставляет их выглядящими рабочими до следующего запроса —
     // ровно тот разрыв, который закрывает session.revoked в остальных местах.
     const doomed = db.listSessions(user.name).filter((s) => includeCurrent || s.sid !== current)
-    const revoked = db.revokeUserSessions(user.name, includeCurrent ? null : current)
+    const revoked = db.revokeUserSessions(user.name, includeCurrent ? null : current, undefined, 'logout_all')
     if (includeCurrent) {
       const token = tokenOf(req)
       if (token) db.revokeSession(token)
@@ -847,7 +847,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     const limited = sessionOpsBlocked(req, user.name)
     if (limited) return reply.code(429).header('retry-after', String(limited.retryAfterSec)).send({ error: 'Слишком много операций с сессиями — подождите', retryAfterSec: limited.retryAfterSec })
     const doomed = db.listSessions(user.name)
-    const revoked = db.revokeUserSessions(user.name, null)
+    const revoked = db.revokeUserSessions(user.name, null, undefined, 'panic')
     const token = tokenOf(req)
     if (token) db.revokeSession(token)
     db.setMustChangePassword(user.name, true)
@@ -863,8 +863,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     if (!csrfOk(req)) return reply.code(403).send({ error: 'csrf' })
     const s = db.getSession(req.params.sid)
     if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
-    db.revokeSessionById(s.sid)
-    db.logSecurityEvent({ user: user.name, type: 'session_revoked', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '' })
+    db.revokeSessionById(s.sid, undefined, 'revoked')
+    db.logSecurityEvent({ user: user.name, type: 'session_revoked', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '', sid: s.sid })
     options.sessions?.emit(user.name, s.sid)
     return { ok: true }
   })
@@ -875,7 +875,7 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     if (!user) return reply.code(401).send({ error: 'unauthorized' })
     const s = db.getSession(req.params.sid) ?? db.listEndedSessions(user.name, 100).find((x) => x.sid === req.params.sid)
     if (!s || s.user !== user.name) return reply.code(404).send({ error: 'not found' })
-    return { events: db.listSessionHistory(user.name, { userAgent: s.userAgent, ip: s.ip }) }
+    return { events: db.listSessionHistory(user.name, { sid: s.sid, userAgent: s.userAgent, ip: s.ip }) }
   })
   // Имя устройства и отметка «доверенное» — только для своей сессии.
   app.patch<{ Params: { sid: string }; Body: { label?: string | null; trusted?: boolean } }>('/api/session/:sid', async (req, reply) => {
@@ -902,8 +902,8 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     }
     db.updateSession(s.sid, patch)
     const ua = String(req.headers['user-agent'] ?? '')
-    if (patch.label !== undefined) db.logSecurityEvent({ user: user.name, type: 'session_renamed', ip: req.ip, userAgent: ua, details: patch.label ?? 'имя снято' })
-    if (patch.trusted !== undefined) db.logSecurityEvent({ user: user.name, type: patch.trusted ? 'session_trusted' : 'session_untrusted', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '' })
+    if (patch.label !== undefined) db.logSecurityEvent({ user: user.name, type: 'session_renamed', ip: req.ip, userAgent: ua, details: patch.label ?? 'имя снято', sid: s.sid })
+    if (patch.trusted !== undefined) db.logSecurityEvent({ user: user.name, type: patch.trusted ? 'session_trusted' : 'session_untrusted', ip: req.ip, userAgent: s.userAgent, details: s.label ?? '', sid: s.sid })
     options.sessions?.emit(user.name)
     return { ok: true }
   })

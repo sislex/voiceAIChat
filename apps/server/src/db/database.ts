@@ -1,4 +1,4 @@
-import type { SessionInfo, SessionGeo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
+import type { SessionInfo, SessionGeo, SessionEndReason, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
 import { parseProjectCommandPolicy, parseRoleCommandPolicies, EMPTY_AUTOMATED_QA_SCENARIO, parseAutomatedQaScenarios } from '@voicechat/shared'
 import type { AutomatedQaMode, AutomatedQaScenario, AutomatedQaScenarioStep } from '@voicechat/shared'
 import { isPreviewAction } from '@voicechat/shared'
@@ -293,6 +293,7 @@ interface SessionRow {
   last_path: string | null
   device_secret: string | null
   two_factor: number | null
+  end_reason: string | null
 }
 
 /** Строка → контракт. Гео хранится JSON-ом: битую запись просто теряем. */
@@ -316,7 +317,8 @@ function sessionOf(r: SessionRow): SessionInfo {
     requests: r.requests ?? 0,
     lastPath: r.last_path ?? null,
     deviceSecret: r.device_secret ?? null,
-    twoFactor: r.two_factor === 1
+    twoFactor: r.two_factor === 1,
+    endReason: (r.end_reason as SessionInfo['endReason']) ?? null
   }
 }
 
@@ -913,6 +915,11 @@ export class VoiceChatDb {
     if (userCols.length && !userCols.some((c) => c.name === 'llm_limit_usd')) this.db.exec(`ALTER TABLE users ADD COLUMN llm_limit_usd REAL`)
     // Метаданные устройства сессии: ставятся поверх существующей таблицы, все
     // необязательные — старые строки продолжают читаться без них.
+    const eventCols = this.db.prepare(`PRAGMA table_info(security_events)`).all() as Array<{ name: string }>
+    if (eventCols.length && !eventCols.some((c) => c.name === 'session_sid')) {
+      this.db.exec(`ALTER TABLE security_events ADD COLUMN session_sid TEXT`)
+      this.db.exec(`CREATE INDEX IF NOT EXISTS idx_security_events_sid ON security_events(session_sid, id DESC)`)
+    }
     const sessionCols = this.db.prepare(`PRAGMA table_info(sessions)`).all() as Array<{ name: string }>
     if (sessionCols.length) {
       const add = (name: string, ddl: string): void => {
@@ -928,6 +935,7 @@ export class VoiceChatDb {
       add('last_path', 'last_path TEXT')
       add('device_secret', 'device_secret TEXT')
       add('two_factor', 'two_factor INTEGER NOT NULL DEFAULT 0')
+      add('end_reason', 'end_reason TEXT')
       this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(user_name, device_key)`)
     }
     // Уровень доступа предоставленной проекту машины (machines-roadmap п.18): 'full' | 'read'.
@@ -2924,7 +2932,8 @@ export class VoiceChatDb {
   unseenSecurityNotices(name: string): SecurityEvent[] {
     const r = this.db.prepare(`SELECT notices_seen_at FROM users WHERE name = ?`).get(name) as { notices_seen_at?: number } | undefined
     const since = r?.notices_seen_at ?? 0
-    return this.listSecurityEvents({ user: name, limit: 50 }).filter((e) => e.type === 'login_new_device' && e.at > since)
+    // Вытеснение лимитом человек тоже должен заметить: его выкинуло не само.
+    return this.listSecurityEvents({ user: name, limit: 50 }).filter((e) => (e.type === 'login_new_device' || e.type === 'session_evicted') && e.at > since)
   }
 
   markNoticesSeen(name: string): void {
@@ -3120,9 +3129,9 @@ export class VoiceChatDb {
     return rows.map((r) => ({ id: r.id, machineId: r.machine_id, userId: r.user_id, source: r.source, command: r.command, exitCode: r.exit_code, timedOut: r.timed_out === 1, error: r.error, durationMs: r.duration_ms, startedAt: r.started_at, conversationId: r.conversation_id, outputExcerpt: r.output_excerpt }))
   }
 
-  logSecurityEvent(e: { user: string; type: SecurityEventType; ip?: string; userAgent?: string; details?: string }): void {
-    this.db.prepare(`INSERT INTO security_events (at, user_name, type, ip, user_agent, details) VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(Date.now(), e.user.slice(0, 80), e.type, (e.ip ?? '').slice(0, 64), (e.userAgent ?? '').slice(0, 200), (e.details ?? '').slice(0, 500))
+  logSecurityEvent(e: { user: string; type: SecurityEventType; ip?: string; userAgent?: string; details?: string; sid?: string | null }): void {
+    this.db.prepare(`INSERT INTO security_events (at, user_name, type, ip, user_agent, details, session_sid) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+      .run(Date.now(), e.user.slice(0, 80), e.type, (e.ip ?? '').slice(0, 64), (e.userAgent ?? '').slice(0, 200), (e.details ?? '').slice(0, 500), e.sid ?? null)
     // Журнал не должен расти бесконечно: держим последние 50 000 записей.
     if (Math.random() < 0.01) this.db.prepare(`DELETE FROM security_events WHERE id < (SELECT COALESCE(MAX(id), 0) - 50000 FROM security_events)`).run()
   }
@@ -3196,9 +3205,13 @@ export class VoiceChatDb {
    * User-Agent и адрес: в журнале нет sid, а по паре видно именно тот вход,
    * про который человек спрашивает «что это устройство делало».
    */
-  listSessionHistory(user: string, session: { userAgent: string; ip: string }, limit = 10): SecurityEvent[] {
-    const rows = this.db.prepare(`SELECT * FROM security_events WHERE user_name = ? AND user_agent = ? AND (ip = ? OR ip = '')
-      ORDER BY id DESC LIMIT ?`).all(user, session.userAgent.slice(0, 200), session.ip.slice(0, 64), Math.min(Math.max(limit, 1), 50)) as Array<{ id: number; at: number; user_name: string; type: SecurityEventType; ip: string; user_agent: string; details: string }>
+  listSessionHistory(user: string, session: { sid: string; userAgent: string; ip: string }, limit = 10): SecurityEvent[] {
+    // Сначала по sid — это точная привязка. Пара «UA + адрес» осталась как
+    // фолбэк для событий, записанных до появления колонки: без неё история
+    // старых сессий стала бы пустой на ровном месте.
+    const rows = this.db.prepare(`SELECT * FROM security_events
+      WHERE user_name = ? AND (session_sid = ? OR (session_sid IS NULL AND user_agent = ? AND (ip = ? OR ip = '')))
+      ORDER BY id DESC LIMIT ?`).all(user, session.sid, session.userAgent.slice(0, 200), session.ip.slice(0, 64), Math.min(Math.max(limit, 1), 50)) as Array<{ id: number; at: number; user_name: string; type: SecurityEventType; ip: string; user_agent: string; details: string }>
     return rows.map((r) => ({ id: r.id, at: r.at, user: r.user_name, type: r.type, ip: r.ip, userAgent: r.user_agent, details: r.details }))
   }
 
@@ -3211,16 +3224,22 @@ export class VoiceChatDb {
     const now = at ?? Date.now()
     const rows = this.db.prepare(`SELECT * FROM sessions WHERE user_name = ? AND (revoked_at IS NOT NULL OR expires_at <= ?)
       ORDER BY COALESCE(revoked_at, expires_at) DESC LIMIT ?`).all(user, now, Math.min(Math.max(limit, 1), 100)) as SessionRow[]
-    return rows.map((r) => ({ ...sessionOf(r), endedAt: r.revoked_at ?? r.expires_at, ended: true }))
+    return rows.map((r) => ({
+      ...sessionOf(r),
+      endedAt: r.revoked_at ?? r.expires_at,
+      ended: true,
+      // Истечение срока причины в базе не имеет: она видна по отсутствию отзыва.
+      endReason: (r.end_reason as SessionInfo['endReason']) ?? (r.revoked_at ? 'revoked' : 'expired')
+    }))
   }
 
-  revokeSessionById(sid: string, at?: number): boolean {
-    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE sid = ? AND revoked_at IS NULL`).run(at ?? Date.now(), sid).changes > 0
+  revokeSessionById(sid: string, at?: number, reason: SessionEndReason = 'revoked'): boolean {
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ?, end_reason = ? WHERE sid = ? AND revoked_at IS NULL`).run(at ?? Date.now(), reason, sid).changes > 0
   }
 
   /** «Выйти везде»: все сессии пользователя, кроме указанной (текущей). */
-  revokeUserSessions(user: string, exceptSid: string | null = null, at?: number): number {
-    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE user_name = ? AND revoked_at IS NULL AND (? IS NULL OR sid != ?)`).run(at ?? Date.now(), user, exceptSid, exceptSid).changes
+  revokeUserSessions(user: string, exceptSid: string | null = null, at?: number, reason: SessionEndReason = 'logout_all'): number {
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ?, end_reason = ? WHERE user_name = ? AND revoked_at IS NULL AND (? IS NULL OR sid != ?)`).run(at ?? Date.now(), reason, user, exceptSid, exceptSid).changes
   }
 
   /**
@@ -3231,7 +3250,7 @@ export class VoiceChatDb {
   revokeStaleSessions(staleDays: number, at?: number): number {
     if (staleDays <= 0) return 0
     const now = at ?? Date.now()
-    return this.db.prepare(`UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL AND last_seen < ?`)
+    return this.db.prepare(`UPDATE sessions SET revoked_at = ?, end_reason = 'stale' WHERE revoked_at IS NULL AND last_seen < ?`)
       .run(now, now - staleDays * 24 * 60 * 60_000).changes
   }
 

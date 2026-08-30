@@ -5,11 +5,11 @@ export type {
 export { DEFAULT_SESSION_POLICY, SESSION_TTL_MS, SESSION_SHORT_TTL_MS } from './types'
 export { parseUserAgent, deviceIcon, LEGACY_USER_AGENT } from './device'
 export { normalizeIp, localGeo, deviceKey, hash32, type NormalizedIp } from './deviceKey'
-export { ttlFor, isActive, isOnline, isTrusted, isStale, overLimit, isNewDevice, findTrustedDevice } from './policy'
+export { ttlFor, isActive, isOnline, isTrusted, isStale, isExpiringSoon, overLimit, isNewDevice, findTrustedDevice } from './policy'
 export {
   sessionTitle, toView, sortSessions, filterSessions, otherSessions, durationOf,
   deviceSiblings, groupByDevice, platformsOf, countryFlag,
-  type SessionView, type Duration
+  type SessionView, type Duration, type SessionOrder
 } from './presentation'
 export { systemClock, type Awaitable, type Clock, type GeoResolver, type PruneOptions, type SessionStore } from './ports'
 export { InMemorySessionStore, TOUCH_INTERVAL_MS, KEEP_REVOKED_MS } from './memoryStore'
