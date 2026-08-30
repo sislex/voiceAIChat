@@ -77,6 +77,7 @@ import {
   useProjects,
   useProjectsActions,
   useSession,
+  useSessionActions,
   useSettings,
   useSettingsActions,
   useShell,
@@ -260,6 +261,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const runtime = useAppRuntime()
   const shell = useShell((s) => s)
   const session = useSession((s) => s)
+  const sessionActions = useSessionActions()
   const settingsState = useSettings((s) => s)
   const chat = useChat((s) => s)
   const voice = useVoice((s) => s)
@@ -308,7 +310,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       if (event.type !== 'revoked') return
       toast.error('Вашу сессию завершили на другом устройстве')
       setSessionsOpen(false)
-      void runtime.logout().then(() => navigate('/')).catch(() => undefined)
+      // Гасим сессию локально, а не через logout: токен уже недействителен, и
+      // серверный выход ответит 401 — человек остался бы на мёртвом экране.
+      sessionActions.expire()
+      navigate('/')
     })
   }, [session.currentUser]) // eslint-disable-line react-hooks/exhaustive-deps
 

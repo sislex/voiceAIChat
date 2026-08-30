@@ -463,6 +463,43 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
+  it('сессии: повторный отзыв, чужой sid, мутации по cookie без CSRF и предельный User-Agent', async () => {
+    db.createUser('edge', 'edge-case-pass-2026', 'developer')
+    db.createUser('neighbour', 'neighbour-pass-2026', 'developer')
+    const login = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'edge', password: 'edge-case-pass-2026' }, headers: { 'user-agent': 'X'.repeat(500) } })
+    const token = login.json().token as string
+    // Длинный UA обрезается на записи, а не роняет вставку.
+    expect(db.listSessions('edge')[0]!.userAgent.length).toBe(200)
+    const sid = db.listSessions('edge')[0]!.sid
+    const auth = { authorization: `Bearer ${token}` }
+    expect((await app.inject({ method: 'DELETE', url: `/api/session/${sid}`, headers: auth })).statusCode).toBe(200)
+    // Своя сессия уже мертва: и повторный отзыв, и любой запрос по ней — как чужие.
+    expect((await app.inject({ method: 'DELETE', url: `/api/session/${sid}`, headers: auth })).statusCode).toBe(401)
+    const neighbourToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'neighbour', password: 'neighbour-pass-2026' } })).json().token as string
+    const neighbourSid = db.listSessions('neighbour')[0]!.sid
+    const freshToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'edge', password: 'edge-case-pass-2026' } })).json().token as string
+    expect((await app.inject({ method: 'DELETE', url: `/api/session/${neighbourSid}`, headers: { authorization: `Bearer ${freshToken}` } })).statusCode).toBe(404)
+    expect((await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${neighbourToken}` } })).statusCode).toBe(200)
+
+    // Cookie-сессия: мутации сессий без заголовка CSRF отвергаются, с ним — проходят.
+    const cookieLogin = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'edge', password: 'edge-case-pass-2026' } })
+    const cookies = ([] as string[]).concat(cookieLogin.headers['set-cookie'] as string[])
+    const cookieHeader = cookies.map((c) => c.split(';')[0]).join('; ')
+    const csrf = cookieLogin.json().csrf as string
+    const cookieSid = db.listSessions('edge').at(-1)!.sid
+    for (const request of [
+      { method: 'POST' as const, url: '/api/session/logout-all' },
+      { method: 'PATCH' as const, url: `/api/session/${cookieSid}`, payload: { label: 'Ноут' } },
+      { method: 'DELETE' as const, url: `/api/session/${cookieSid}` }
+    ]) {
+      const denied = await app.inject({ ...request, headers: { cookie: cookieHeader } })
+      expect(denied.statusCode, `${request.method} ${request.url}`).toBe(403)
+      expect(denied.json()).toMatchObject({ error: 'csrf' })
+    }
+    expect((await app.inject({ method: 'PATCH', url: `/api/session/${cookieSid}`, payload: { label: 'Ноут' }, headers: { cookie: cookieHeader, 'x-vc-csrf': csrf } })).statusCode).toBe(200)
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
   it('cookie-сессия: login ставит HttpOnly vc_session + vc_csrf; GET по cookie проходит, мутация без CSRF → 403, с заголовком → ок; logout гасит cookie (auth-roadmap п.5)', async () => {
     db.createUser('cook', 'cookie-pass-2026', 'developer')
     const login = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'cook', password: 'cookie-pass-2026' } })
