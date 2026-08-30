@@ -4726,12 +4726,14 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .jmodal-side { flex: none; width: 100%; box-sizing: border-box; }
   .jswimlane { margin-left: 0; }
 
-  /* Шапка переносит название и состояние, а ⋯ и ✕ всегда остаются доступны. */
-  .jmodal-frame .mdhead { padding: 8px 8px 8px 14px; gap: 8px; flex-wrap: wrap; }
-  .jmodal-frame .mdh { font-size: 14px; min-width: 0; overflow: visible; white-space: normal; }
-  .jmodal-frame .util-head-btns { margin-left: auto; }
-  .task-modal-heading__title { flex-basis: min(100%, 220px); max-height: 5.4em; }
-  .task-modal-heading__state { flex-basis: 100%; }
+  /* Шапка переносит название и состояние, а ⋯ и ✕ всегда остаются доступны.
+     Кнопки стоят в одной строке с названием, а не под ним: отдельная строка
+     съедала ~44px из 844 и уводила первую вкладку ниже сгиба. */
+  .jmodal-frame .mdhead { padding: 8px 8px 8px 14px; gap: 8px; flex-wrap: nowrap; align-items: flex-start; }
+  .jmodal-frame .mdh { flex: 1 1 auto; font-size: 14px; min-width: 0; overflow: visible; white-space: normal; }
+  .jmodal-frame .util-head-btns { flex: none; margin-left: auto; flex-wrap: nowrap; }
+  /* Правила самого заголовка — ниже, рядом с его базовым описанием: медиазапрос
+     не добавляет специфичности, и отсюда он их не перебивал. */
 
   .jmodal { gap: 14px; padding: 12px 14px 24px; }
   .jmodal-main { gap: 10px; }
@@ -6348,8 +6350,20 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-modal-heading__title:hover { background: var(--surface-hover); }
 .task-modal-heading__title:focus { border-color: var(--accent); background: var(--surface); outline: none; }
 .task-modal-heading__state { min-width: 0; overflow-wrap: anywhere; color: var(--text-dim); }
+/* Телефон: ключ и название делят первую строку, состояние — отдельной строкой
+   мелким кеглем. Раньше эти же правила стояли выше по файлу и проигрывали
+   базовым по порядку — заголовок разъезжался на три строки. */
+@media (max-width: 720px) {
+  .task-modal-heading { text-align: left; }
+  .task-modal-heading__title { flex: 1 1 140px; min-width: 100px; max-height: 5.4em; }
+  .task-modal-heading__state { flex-basis: 100%; font-size: 12px; font-weight: 500; }
+}
 .jmodal-title { width: 100%; min-height: 58px; line-height: 1.3; overflow-x: hidden; overflow-wrap: anywhere; white-space: pre-wrap; }
 .task-content-block { display: grid; gap: 8px; max-height: min(52vh, 620px); overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+/* На телефоне карточка и так один длинный скролл: собственная высота у блока
+   прятала критерии приёмки во вложенную прокрутку, о которой нечем догадаться. */
+@media (max-width: 720px) { .task-content-block { max-height: none; overflow: visible; padding-right: 0; } }
+.jmodal-field-empty { color: var(--text-dim); font-weight: 400; }
 .task-settings-stack { display: grid; gap: 16px; }
 .task-settings-stack > * { min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
 .task-model-work { width: 100%; min-width: 0; margin: 10px 0; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface); overflow: hidden; }
@@ -6389,12 +6403,30 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .task-progress-list li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; min-width: 0; }
 .task-progress-facts { display: grid; grid-template-columns: minmax(120px, .35fr) 1fr; gap: 8px 14px; }
 .task-progress-facts dd { margin: 0; }
-.task-tabs, .task-subtabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; padding: 0 0 10px; }
+/* Вкладок больше десятка, полоса скроллится. Тени у краёв показываются только
+   при реальном переполнении: «крышки» прокручиваются с содержимым (local), а
+   тени прибиты к краям блока (scroll) — на границе они перекрываются. */
+.task-tabs, .task-subtabs {
+  display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; padding: 0 0 10px;
+  scroll-padding-inline: 24px;
+  background-image:
+    linear-gradient(to right, var(--bg), transparent),
+    linear-gradient(to left, var(--bg), transparent),
+    radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, 0.16), transparent),
+    radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.16), transparent);
+  background-position: 0 0, 100% 0, 0 0, 100% 0;
+  background-repeat: no-repeat;
+  background-size: 26px calc(100% - 10px), 26px calc(100% - 10px), 12px calc(100% - 10px), 12px calc(100% - 10px);
+  background-attachment: local, local, scroll, scroll;
+}
 .task-tab { flex: 0 0 auto; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; background: transparent; color: var(--text-dim); cursor: pointer; font: inherit; }
 .task-tab--active { border-bottom-color: var(--accent); color: var(--text); font-weight: 600; }
 .jmodal:not(.jmodal--tab-general) > .jmodal-main,
 .jmodal:not(.jmodal--tab-general) > .jmodal-side { display: none; }
-.task-tab-panel { grid-column: 1 / -1; min-width: 0; overflow: auto; padding: 4px; }
+/* `.jmodal` — флексбокс, а не грид: `grid-column` в нём ничего не делал, и
+   панель вкладки занимала ширину своего содержимого, оставляя половину карточки
+   пустой. Лента рана обходила это инлайновым `flex` — теперь правило общее. */
+.task-tab-panel { flex: 1 1 100%; min-width: 0; overflow: auto; padding: 4px; }
 .task-tab-empty { padding: 18px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-dim); }
 .task-tab-warning { padding: 10px; border-radius: 8px; background: var(--warning-soft); }
 @media (max-width: 720px) {
@@ -6503,11 +6535,47 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .personalization-page input,.personalization-page select{box-sizing:border-box;width:100%;max-width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--radius-medium);background:var(--surface);color:var(--text);font:inherit}
 .personal-check{display:flex!important;align-items:center;gap:8px}.personal-check input{width:auto}.personal-date{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.field-error{margin:0;color:var(--danger)}.personal-actions{display:flex;flex-wrap:wrap;gap:10px;padding-top:20px}
 @media(max-width:720px){.personalization-page{padding:20px 16px}.personal-date{grid-template-columns:1fr}.personal-actions{align-items:stretch;flex-direction:column}.personal-actions .vc-btn{width:100%}}
-.task-timeline{display:grid;gap:10px}.task-timeline details{border:1px solid var(--border-soft);border-radius:8px;background:var(--surface)}
-.task-timeline summary{cursor:pointer;padding:10px;font-weight:600}.task-timeline-summary dl,.task-timeline-stage>dl,.task-timeline-attempt dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;margin:0;padding:0 12px 12px}
+/* ---- Общий язык лент карточки задачи ----
+   Временная шкала, улучшения и merge-шаги показывают одно и то же: событие со
+   статусом и временем. Раньше каждая лента рисовала это по-своему, поэтому
+   раскрываемая строка, точка статуса и шеврон вынесены в общие классы. */
+.vc-feed{display:grid;gap:10px;min-width:0}
+.vc-feed-item{border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);min-width:0}
+.vc-feed-item>summary{display:flex;align-items:center;gap:8px;min-width:0;padding:10px;cursor:pointer;font-weight:600;list-style:none}
+.vc-feed-item>summary::-webkit-details-marker{display:none}
+.vc-feed-item>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:8px}
+.vc-feed-caret{flex:none;width:9px;height:9px;border-right:2px solid var(--text-dim);border-bottom:2px solid var(--text-dim);transform:rotate(-45deg);transition:transform .15s ease}
+.vc-feed-item[open]>summary .vc-feed-caret{transform:rotate(45deg)}
+.vc-feed-status{display:inline-flex;flex:none;align-items:center;gap:6px;color:var(--text-dim);font-size:12px;font-weight:500;white-space:nowrap}
+.vc-feed-dot{width:9px;height:9px;border-radius:50%;background:var(--text-dim)}
+.vc-feed-dot--progress{background:var(--ci-progress)}
+.vc-feed-dot--success{background:var(--ci-success)}
+.vc-feed-dot--danger{background:var(--danger)}
+.vc-feed-dot--muted{background:var(--text-dim);opacity:.55}
+@media(prefers-reduced-motion:reduce){.vc-feed-caret{transition:none}}
+
+.task-timeline{display:grid;gap:10px}
+.task-timeline-summary dl,.task-timeline-stage>dl,.task-timeline-attempt dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;margin:0;padding:0 12px 12px}
 .task-timeline-field{min-width:0}.task-timeline-field dt{color:var(--text-dim);font-size:12px}.task-timeline-field dd{margin:2px 0 0;overflow-wrap:anywhere}
-.task-timeline-stage>summary{display:grid;grid-template-columns:minmax(150px,2fr) repeat(4,minmax(100px,1fr));gap:8px;align-items:center}.task-timeline-attempt{margin:0 12px 10px}.task-timeline-attempt p{margin:8px 12px;font-size:12px;color:var(--text-dim)}
-@media(max-width:720px){.task-timeline-stage>summary{grid-template-columns:1fr 1fr}.task-timeline-summary dl,.task-timeline-stage>dl,.task-timeline-attempt dl{grid-template-columns:1fr}}
+.task-timeline-stages{display:grid;gap:10px}
+.task-timeline-stage>summary{display:grid;grid-template-columns:auto minmax(140px,2fr) minmax(120px,auto) repeat(3,minmax(96px,1fr));gap:8px;align-items:center}
+.task-timeline-stage>summary>span:nth-child(n+4){color:var(--text-dim);font-size:12px;font-weight:400}
+.task-timeline-stage__title{min-width:0;overflow-wrap:anywhere}
+.task-timeline-attempt{margin:0 12px 10px}.task-timeline-attempt p{margin:8px 12px;font-size:12px;color:var(--text-dim)}
+@media(max-width:720px){
+  .task-timeline-stage>summary{grid-template-columns:auto 1fr;row-gap:4px}
+  .task-timeline-stage>summary>span:nth-child(n+3){grid-column:2}
+  .task-timeline-summary dl,.task-timeline-stage>dl,.task-timeline-attempt dl{grid-template-columns:1fr}
+}
+
+/* Улучшения: та же лента, поэтому оформление берётся из .vc-feed-item. */
+.task-improvements{display:grid;gap:10px}
+.task-improvement>summary{flex-wrap:wrap}
+.task-improvement__title{flex:1 1 220px;min-width:0;overflow-wrap:anywhere}
+.task-improvement__origin{flex:none;color:var(--text-dim);font-size:12px;font-weight:400}
+.task-improvement>.md{padding:0 12px}
+.task-improvement-actions{display:flex;flex-wrap:wrap;gap:8px;padding:0 12px 12px}
+@media(max-width:720px){.task-improvement-actions .vc-btn{flex:1 1 auto;min-height:44px}}
 .retouch-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.72)}
 .retouch-editor{display:grid;gap:12px;width:min(1000px,96vw);max-height:94vh;padding:16px;overflow:auto;border:1px solid var(--border);border-radius:14px;background:var(--surface);box-shadow:var(--shadow-lg)}
 .retouch-toolbar{display:flex;gap:8px;flex-wrap:wrap}.retouch-toolbar button,.retouch-editor>button{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-raised);color:var(--text);cursor:pointer}.retouch-toolbar button.active{border-color:var(--accent);color:var(--accent)}

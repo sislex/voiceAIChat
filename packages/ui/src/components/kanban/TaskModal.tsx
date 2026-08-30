@@ -19,6 +19,8 @@ import { normalizeAcceptanceCriteria, TASK_PRIORITIES } from '@shared/projects'
 import type { ModifierPrompt } from '@shared/types'
 import { Button } from '@voicechat/ui-kit'
 import { Dialog } from '@voicechat/ui-kit'
+import { EmptyState } from '@voicechat/ui-kit'
+import { ErrorState } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { Markdown } from '../Markdown'
 import { useConfirm } from '@voicechat/ui-kit'
@@ -44,7 +46,7 @@ import type { UserLlmAccess } from '@shared/llmAccess'
 import type { LlmEngineOption } from '@shared/admin'
 import { useRemoteReport } from '../../lib/useRemoteReport'
 import { ciLlmLabel, ciStageLabel, ciStatusLabel, ciTone, fmtDuration } from '../ci/ciFormat'
-import { canStartCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport, type TaskImprovement, type ImprovementStatus } from '@shared/ci'
+import { canStartCiRun, isActiveCiStatus, type AutomationProgress, type CiRunSummary, type CiTaskReport, type TaskImprovement, type ImprovementSource, type ImprovementStatus } from '@shared/ci'
 import { AutomationProgressView } from './AutomationProgressView'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
@@ -131,6 +133,20 @@ function fromDateInput(v: string): number | null {
   if (!v) return null
   const [y, m, d] = v.split('-').map(Number)
   return new Date(y, m - 1, d, 12).getTime()
+}
+
+// Улучшения — такая же лента, как временная шкала: русская подпись статуса с
+// точкой того же тона и источник словами, а не машинным идентификатором.
+const IMPROVEMENT_STATUS: Record<ImprovementStatus, string> = {
+  new: 'Новое', accepted: 'Принято', rejected: 'Отклонено', implemented: 'Реализовано'
+}
+const IMPROVEMENT_TONE: Record<ImprovementStatus, string> = {
+  new: 'progress', accepted: 'success', rejected: 'muted', implemented: 'success'
+}
+const IMPROVEMENT_SOURCE: Record<ImprovementSource, string> = {
+  development: 'Разработка', preparation: 'Подготовка', component_qa: 'Component QA',
+  integration_tests: 'Интеграционные тесты', automated_qa: 'Automated QA', merge: 'Merge',
+  system: 'Системный сбой'
 }
 
 type ModelWorkStatus = AutomationProgress['status'] | 'timeout' | undefined
@@ -332,6 +348,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // «Подробности»: на телефоне свёрнуты, на десктопе это всегда открытая колонка.
   const [detailsOpen, setDetailsOpen] = useState(!mobile)
   useEffect(() => { setDetailsOpen(!mobile) }, [mobile])
+
+  // Вкладок больше десятка, полоса скроллится. Активная вкладка по умолчанию
+  // («Лента рана» у идущего рана) оказывалась за правым краем — её не видно и
+  // непонятно, что открыто. Подтягиваем её в видимую часть полосы.
+  const tabsRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    const selected = tabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')
+    selected?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [activeTab])
 
   // ⋯-меню действий в шапке (только на телефоне).
   const [menuOpen, setMenuOpen] = useState(false)
@@ -625,7 +650,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       actions={headActions}
       footer={props.footer}
     >
-      {!props.draft && <nav className="task-tabs" role="tablist" aria-label="Разделы карточки">
+      {!props.draft && <nav className="task-tabs" role="tablist" aria-label="Разделы карточки" ref={tabsRef}>
         {([
           ['general','Общее'],['timeline','Временная шкала'],
           ...(preparationVisible && features.ci ? [['preparation','Подготовка к разработке'] as const] : []),
@@ -838,7 +863,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               {!props.draft && (
                 <div className="jmodal-field">
                   Автор
-                  <strong>{task.createdByName ?? task.createdBy ?? 'Нет данных'}</strong>
+                  {/* Пустое значение — приглушённое «—», как в остальных полях
+                      карточки: жирное «Нет данных» читалось как настоящее имя. */}
+                  {task.createdByName ?? task.createdBy
+                    ? <strong>{task.createdByName ?? task.createdBy}</strong>
+                    : <span className="jmodal-field-empty">—</span>}
                 </div>
               )}
               <div className="jmodal-field">
@@ -956,9 +985,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                 />
               </label>
               {props.detailsExtra}
+              {/* Статус здесь не повторяем: он уже стоит селектом выше и в шапке
+                  карточки — три одинаковых значения подряд только шумят. */}
               {!props.draft && <p className="jmodal-dates">
-                Статус: {column?.name ?? '—'}
-                <br />Создано: {formatDate(task.createdAt)}
+                Создано: {formatDate(task.createdAt)}
                 <br />Обновлено: {formatDate(task.updatedAt)}
               </p>}
             </div>
@@ -1030,12 +1060,22 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         {!props.draft && <>
         <section className="task-tab-panel" data-testid="task-timeline-panel" hidden={activeTab !== 'timeline'}>{activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}</section>
         <section className="task-tab-panel" data-testid="task-improvements-panel" hidden={activeTab !== 'improvements'}>
-          {improvementsError && <p role="alert" className="task-improvements-error">{improvementsError}</p>}
-          {!improvements.length ? <div className="task-improvements-empty"><h3>Улучшений пока нет</h3><p>После авто-рана здесь появятся найденные возможности сделать процесс надёжнее.</p></div> : <div className="task-improvements">
+          {improvementsError && <ErrorState compact message="Не удалось загрузить улучшения" detail={improvementsError} onRetry={loadImprovements} testId="task-improvements-error" />}
+          {!improvements.length ? <EmptyState compact icon="💡" title="Улучшений пока нет" description="После авто-рана здесь появятся найденные возможности сделать процесс надёжнее." testId="task-improvements-empty" /> : <div className="task-improvements vc-feed">
             {improvements.map((item) => {
               const pending = improvementPending === item.id
               const blocked = improvementPending !== null
-              return <details key={item.id} className="task-improvement"><summary><strong>{item.title}</strong> · {item.status} · {item.source} · {item.stepId ? `автошаг ${item.stepId}` : item.runId ? `ран ${item.runId}` : 'системный сбой'} {item.isNew && <span>Новое</span>}</summary><Markdown>{item.description}</Markdown><div className="task-improvement-actions">
+              return <details key={item.id} className="task-improvement vc-feed-item" data-status={item.status}><summary>
+                <span className="vc-feed-caret" aria-hidden="true" />
+                <strong className="task-improvement__title">{item.title}</strong>
+                <span className="vc-feed-status">
+                  <span className={`vc-feed-dot vc-feed-dot--${IMPROVEMENT_TONE[item.status]}`} aria-hidden="true" />
+                  {IMPROVEMENT_STATUS[item.status]}
+                </span>
+                {/* `isNew` на сервере — это ровно `status === 'new'`, поэтому
+                    отдельной метки «Новое» рядом со статусом больше нет. */}
+                <span className="task-improvement__origin">{IMPROVEMENT_SOURCE[item.source]} · {item.stepId ? `автошаг ${item.stepId}` : item.runId ? `ран ${item.runId}` : 'без рана'}</span>
+              </summary><Markdown>{item.description}</Markdown><div className="task-improvement-actions">
                 {item.status === 'new' && <><Button size="sm" variant="primary" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Принять</Button><Button size="sm" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'rejected')}>Отклонить</Button></>}
                 {item.suggestedAction === 'create_chatai_task' && (item.status === 'new' || item.status === 'accepted') && !item.createdTaskId && <Button size="sm" loading={pending} disabled={blocked} onClick={() => openImprovementDraft(item)}>Создать задачу ChatAI</Button>}
                 {item.suggestedAction === 'reconfigure_commands' && item.status === 'new' && <Button size="sm" disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Предложить перенастройку команд</Button>}
