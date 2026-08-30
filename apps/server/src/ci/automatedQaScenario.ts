@@ -106,7 +106,9 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
       } catch (error) {
         return { steps: [], screenshotUrl: null, pageErrors: [], blocked: `Изолированный Chromium недоступен: ${firstLine(error)}` }
       }
-      const send = async (command: Parameters<BrowserRunnerClient['command']>[1]['command']): Promise<unknown> =>
+      // Тип клиента теперь честный (`BrowserRunnerCommandResult`), поэтому
+      // приведение осталось одно — к общей форме отправителя шага.
+      const send: ScenarioSend = (command) =>
         deps.browser.command(sessionId, { requestId: randomUUID(), incarnation, actor: 'assistant', command }, input.signal)
       const results: AutomatedQaStepResult[] = []
       let screenshotUrl: string | null = null
@@ -137,7 +139,7 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
             continue
           }
           const startedAt = now()
-          const outcome = await runScenarioStep(step, send as ScenarioSend)
+          const outcome = await runScenarioStep(step, send)
           // Журнал читается с очисткой: следующий шаг увидит только свои
           // ошибки. Иначе одна поломка тянулась бы по всем шагам подряд, а за
           // весь прогон (как в круге 27) непонятно, какое действие её вызвало.
