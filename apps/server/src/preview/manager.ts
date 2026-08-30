@@ -114,7 +114,10 @@ export class FeaturePreviewManager {
   }
   private save(): void {
     mkdirSync(dirname(this.deps.storePath), { recursive: true })
-    const temp = `${this.deps.storePath}.tmp`
+    // Имя временного файла уникально: с общим `<store>.tmp` две записи подряд
+    // затирали файл друг друга, и второй `rename` падал ENOENT — на общем
+    // хранилище это ловилось прямо в гейте. Та же беда была у `.publish.json`.
+    const temp = `${this.deps.storePath}.${randomUUID()}.tmp`
     writeFileSync(temp, JSON.stringify(this.data, null, 2))
     renameSync(temp, this.deps.storePath)
   }

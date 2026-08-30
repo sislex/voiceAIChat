@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { formatDateTime } from '../../lib/dateFormat'
 import type { AnyQaStageRun, QaRunStage } from '@shared/qa'
 import { Button } from '@voicechat/ui-kit'
-import { parseAutomatedQaVerdict, scenarioLabel } from '@shared/qa'
+import { parseAutomatedQaVerdict, scenarioLabel, QA_RUN_STATUS_LABELS, QA_STAGE_RUN_STATUS_LABELS, QA_STEP_STATUS_LABELS } from '@shared/qa'
+import { Skeleton } from '@voicechat/ui-kit'
 
 const CLASSIFICATION_LABEL = {
   implementation_defect: 'Дефект реализации — задача уходит на доработку',
@@ -18,6 +19,8 @@ const STEP_LABEL = { passed: 'пройден', failed: 'провален', skipp
 function AutomatedQaVerdictView(props: { result: Record<string, unknown> }): JSX.Element {
   const verdict = parseAutomatedQaVerdict(props.result)
   if (!verdict) return <section><h4>Результат</h4><pre>{JSON.stringify(props.result, null, 2)}</pre></section>
+  const shownAtSteps = new Set(verdict.steps.flatMap((step) => step.pageErrors ?? []))
+  const restPageErrors = (verdict.pageErrors ?? []).filter((item) => !shownAtSteps.has(item))
   return <section className="qa-verdict" data-testid="qa-verdict">
     <h4>Вердикт</h4>
     <p className={`qa-verdict__summary qa-verdict__summary--${verdict.passed ? 'passed' : 'failed'}`}>{verdict.summary}</p>
@@ -28,7 +31,27 @@ function AutomatedQaVerdictView(props: { result: Record<string, unknown> }): JSX
       {verdict.exitCode !== null && <><dt>Код выхода</dt><dd>{verdict.exitCode}</dd></>}
       <dt>Длительность</dt><dd>{Math.round(verdict.durationMs / 1000)} с</dd>
     </dl>
-    {verdict.steps.length > 0 && <ol className="qa-verdict__steps">{verdict.steps.map((step) => <li key={step.id} data-status={step.status}>{step.title} — {STEP_LABEL[step.status]}{step.detail && <>: {step.detail}</>}</li>)}</ol>}
+    {verdict.steps.length > 0 && <ol className="qa-verdict__steps">{verdict.steps.map((step) => (
+      <li key={step.id} data-status={step.status}>
+        {step.title} — {STEP_LABEL[step.status]}{step.detail && <>: {step.detail}</>}
+        {/* Ошибки, появившиеся именно на этом шаге: за весь прогон было не
+            понять, какое действие сломало страницу. */}
+        {step.pageErrors && step.pageErrors.length > 0 && (
+          <ul className="qa-verdict__step-errors">{step.pageErrors.map((item, at) => <li key={`${at}-${item.slice(0, 40)}`}>{item}</li>)}</ul>
+        )}
+      </li>
+    ))}</ol>}
+    {/* Ошибки страницы стоят перед снимком: обычно они и есть ответ, а снимок
+        только подтверждает. Провалом сами по себе не считаются — страница может
+        ругаться на постороннее. */}
+    {/* Остаток: ошибки, не привязанные ни к одному шагу (прилетели после
+        последнего) или пришедшие из старого рана без разбивки по шагам. */}
+    {restPageErrors.length > 0 && (
+      <div className="qa-verdict__page-errors">
+        <h5>{verdict.steps.some((step) => step.pageErrors?.length) ? 'Ошибки вне шагов' : 'Ошибки на странице'}</h5>
+        <ul>{restPageErrors.map((item, index) => <li key={`${index}-${item.slice(0, 40)}`}>{item}</li>)}</ul>
+      </div>
+    )}
     {verdict.screenshotUrl && <a className="qa-verdict__shot" href={verdict.screenshotUrl} target="_blank" rel="noreferrer"><img src={verdict.screenshotUrl} alt="Снимок экрана в момент вердикта" /></a>}
     {verdict.logTail && <details><summary>Хвост вывода</summary><pre>{verdict.logTail}</pre></details>}
   </section>
@@ -47,23 +70,26 @@ function IntegrationTestPanel(props:{projectId:string;taskId:string}):JSX.Elemen
   useEffect(()=>{void load()},[load])
   useEffect(()=>{if(!state?.activeRun)return;const timer=window.setInterval(()=>void load(),2000);return()=>window.clearInterval(timer)},[state?.activeRun?.id,load])
   if(!window.qa?.getIntegration)return <section>Стадия недоступна</section>
-  if(!state)return <section>Загрузка интеграционных автотестов…</section>
+  if(!state)return <section>
+    <span className="vc-sr-only" aria-live="polite">Загрузка интеграционных автотестов…</span>
+    <Skeleton variant="list" count={3} item="block" height={64} gap={10} />
+  </section>
   const run=state.latestRun
   const act=async(fn:()=>Promise<unknown>)=>{setBusy(true);try{await fn();await load()}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}}
-  return <section aria-label="Интеграционные автотесты"><header><h3>Интеграционные автотесты</h3>{run&&<span>{run.status}</span>}</header>
+  return <section aria-label="Интеграционные автотесты"><header><h3>Интеграционные автотесты</h3>{run&&<span className="vc-feed-status">{QA_RUN_STATUS_LABELS[run.status]}</span>}</header>
     {error&&<p role="alert">{error}</p>}
     {state.launchReasons.length>0&&<div><strong>Запуск недоступен</strong><ul>{state.launchReasons.map((reason)=><li key={reason}>{reason}</li>)}</ul></div>}
     {run&&<><dl><dt>Ветка</dt><dd>{run.branch}</dd><dt>SHA</dt><dd><code>{run.commitSha}</code></dd><dt>Попытка</dt><dd>{run.attempt}</dd></dl>
       {run.blockerReasons.length>0&&<ul>{run.blockerReasons.map((reason)=><li key={reason}>{reason}</li>)}</ul>}
       <h4>Тест-кейсы</h4><ul>{run.testCases.map((item)=><li key={item.id}>{item.title} — {item.automatable?'автоматизируемый':'исключён'} {item.automationLinks.filter((link)=>link.commitSha===run.commitSha).map((link)=><a key={link.testId+link.path} href={link.path}>{link.path}</a>)}</li>)}</ul>
-      <h4>Команды</h4>{run.commands.map((command)=><details key={command.commandId}><summary>{command.name} — {command.status}, exit {command.exitCode??'—'}, {command.durationMs} ms</summary><code>{command.command}</code><pre>{command.stdout}{command.stderr}</pre></details>)}
+      <h4>Команды</h4>{run.commands.map((command)=><details key={command.commandId}><summary>{command.name} — {QA_STEP_STATUS_LABELS[command.status]}, exit {command.exitCode??'—'}, {command.durationMs} ms</summary><code>{command.command}</code><pre>{command.stdout}{command.stderr}</pre></details>)}
       {run.log&&<details open={run.status==='running'}><summary>Потоковый лог</summary><pre>{run.log}</pre></details>}{run.summary&&<p><strong>Итог:</strong> {run.summary}</p>}</>}
     <div><Button size="sm" disabled={busy||!state.canStart} onClick={()=>void act(()=>window.qa!.startIntegration!(props.projectId,props.taskId))}>Запустить</Button>
       {state.activeRun&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.cancelIntegration!(props.projectId,props.taskId,state.activeRun!.id))}>Отменить</Button>}
       {run?.canRetry&&<Button size="sm" disabled={busy||!!state.activeRun} onClick={()=>void act(()=>window.qa!.startIntegration!(props.projectId,props.taskId))}>Повторить</Button>}
       {run&&['failed','blocked'].includes(run.status)&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.fixIntegration!(props.projectId,props.taskId,run.id))}>Отправить на доработку</Button>}
       {run&&<Button size="sm" disabled={busy||!state.canComplete} onClick={()=>void act(()=>window.qa!.completeIntegration!(props.projectId,props.taskId,run.id))}>Перейти к Automated QA</Button>}</div>
-    {state.runs.length>0&&<section><h4>История попыток</h4><ol>{state.runs.map((item)=><li key={item.id}>#{item.attempt} · {item.status}</li>)}</ol></section>}
+    {state.runs.length>0&&<section><h4>История попыток</h4><ol>{state.runs.map((item)=><li key={item.id}>#{item.attempt} · {QA_RUN_STATUS_LABELS[item.status]}</li>)}</ol></section>}
   </section>
 }
 
@@ -118,7 +144,7 @@ function GenericQaStageRunPanel(props: { projectId: string; taskId: string; stag
       <section><h4>Потоковая лента</h4><div className="ci-log">{run.log.map((line) => <div key={line.seq}>{line.text}</div>)}</div></section>
       {run.status === 'awaiting_input' && props.stage === 'integration_tests' && window.qa?.answerStageRun && <form onSubmit={(event) => { event.preventDefault(); void act(async () => { await window.qa!.answerStageRun!(run.id, answer); setAnswer('') }) }}><label>Ответ модели<textarea value={answer} onChange={(event) => setAnswer(event.target.value)} /></label><Button size="sm" type="submit" disabled={busy || !answer.trim()}>Отправить</Button></form>}
     </>}
-    {runs.length > 0 && <section><h4>История попыток</h4><ol>{runs.map((item) => <li key={item.id}>#{item.attempt} · {item.status} · {formatDateTime(item.createdAt)}</li>)}</ol></section>}
+    {runs.length > 0 && <section><h4>История попыток</h4><ol>{runs.map((item) => <li key={item.id}>#{item.attempt} · {QA_STAGE_RUN_STATUS_LABELS[item.status]} · {formatDateTime(item.createdAt)}</li>)}</ol></section>}
   </div>
 }
 export function QaStageRunPanel(props:{projectId:string;taskId:string;stage:QaRunStage}):JSX.Element {

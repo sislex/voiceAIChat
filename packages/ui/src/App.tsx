@@ -2062,7 +2062,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 llmAccess={settingsState.llmAccess}
                 llmEngines={settingsState.llmEngines}
                 onUpdate={(id, fields) => void projectsActions.updateProject(id, fields)}
-                checkAutomatedQa={async (id) => (await api['projects:checkAutomatedQa']({ id })).results}
+                checkAutomatedQa={async (id, scenarioIndex) => (await api['projects:checkAutomatedQa']({ id, ...(scenarioIndex === undefined ? {} : { scenarioIndex }) })).results}
                 onDelete={(id) => {
                   // Удалили проект — уводим на другой доступный, а если их не
                   // осталось, в пустое состояние (#/projects без id).

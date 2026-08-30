@@ -229,6 +229,29 @@ export function isActiveQaStageRun(status: QaStageRunStatus): boolean {
   return status === 'queued' || status === 'running' || status === 'awaiting_input'
 }
 export type ComponentQaRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'blocked' | 'cancelled' | 'stale' | 'skipped'
+/**
+ * Русские подписи статусов QA. Панели печатали сырые `queued`/`passed`/
+ * `gate_failed` вперемешку с русским текстом — читалось как отладочный вывод.
+ * Карты полные по типу: новый статус контракта не соберётся без перевода.
+ */
+export const QA_STAGE_RUN_STATUS_LABELS: Record<QaStageRunStatus, string> = {
+  queued: 'В очереди', running: 'Выполняется', awaiting_input: 'Ждёт ответа', success: 'Успешно',
+  gate_failed: 'Не прошёл gate', failed: 'Ошибка', cancelled: 'Отменён', interrupted: 'Прерван'
+}
+
+/** `ComponentQaRunStatus` и `IntegrationTestRunStatus` — один и тот же набор. */
+export const QA_RUN_STATUS_LABELS: Record<ComponentQaRunStatus & IntegrationTestRunStatus, string> = {
+  queued: 'В очереди', running: 'Выполняется', passed: 'Пройден', failed: 'Ошибка',
+  blocked: 'Заблокирован', cancelled: 'Отменён', stale: 'Устарел', skipped: 'Пропущен'
+}
+
+/** Статус отдельной команды или сценария внутри QA-рана. */
+export type QaStepStatus = 'pending' | 'running' | 'passed' | 'failed' | 'blocked' | 'cancelled'
+export const QA_STEP_STATUS_LABELS: Record<QaStepStatus, string> = {
+  pending: 'Ожидает', running: 'Выполняется', passed: 'Пройден', failed: 'Ошибка',
+  blocked: 'Заблокирован', cancelled: 'Отменён'
+}
+
 export type ComponentQaFailureClassification = 'implementation_defect' | 'infrastructure'
 export type ComponentQaScenarioStatus = 'pending' | 'passed' | 'failed' | 'blocked' | 'not_applicable'
 export interface ComponentQaScenarioSnapshot {
@@ -705,6 +728,11 @@ export interface AutomatedQaStepResult {
   /** Причина провала или короткий итог действия. */
   detail: string
   durationMs: number
+  /**
+   * Ошибки консоли, появившиеся **на этом шаге**. Круг 27 собирал их за весь
+   * прогон, и при десяти шагах было не понять, какое действие сломало страницу.
+   */
+  pageErrors?: string[]
 }
 
 /**
@@ -731,6 +759,14 @@ export interface AutomatedQaVerdict {
   steps: AutomatedQaStepResult[]
   /** Ссылка на снимок экрана, если он снят (режим `playwright`). */
   screenshotUrl: string | null
+  /**
+   * Ошибки консоли страницы за прогон. Провалом сами по себе не считаются:
+   * страница может ругаться на постороннее (сбитая аналитика, расширение), и
+   * объявлять из-за этого дефект — тот же ложный возврат задачи, от которого
+   * ушли в круге 25. Но в вердикте они обязаны быть: при разборе провалившегося
+   * шага «Uncaught TypeError …» отвечает на вопрос быстрее снимка экрана.
+   */
+  pageErrors?: string[]
 }
 
 /** Разбор `QaStageRun.result` в вердикт. Старые раны хранят там `{gatePassed}` —
@@ -750,7 +786,8 @@ export function parseAutomatedQaVerdict(result: Record<string, unknown> | null):
     durationMs: typeof result.durationMs === 'number' ? result.durationMs : 0,
     logTail: typeof result.logTail === 'string' ? result.logTail : '',
     steps,
-    screenshotUrl: typeof result.screenshotUrl === 'string' ? result.screenshotUrl : null
+    screenshotUrl: typeof result.screenshotUrl === 'string' ? result.screenshotUrl : null,
+    ...(Array.isArray(result.pageErrors) ? { pageErrors: (result.pageErrors as unknown[]).filter((item): item is string => typeof item === 'string') } : {})
   }
 }
 
@@ -762,6 +799,7 @@ export function automatedQaRemarks(verdict: AutomatedQaVerdict): string {
   else lines.push(`Стартовый адрес: ${verdict.command}`)
   const failed = verdict.steps.filter((step) => step.status === 'failed')
   if (failed.length) lines.push('Провалившиеся шаги:', ...failed.map((step) => `- ${step.title}: ${step.detail}`))
+  if (verdict.pageErrors?.length) lines.push('Ошибки на странице:', ...verdict.pageErrors.map((item) => `- ${item}`))
   if (verdict.logTail) lines.push('Хвост вывода:', verdict.logTail)
   return lines.filter(Boolean).join('\n')
 }
@@ -804,4 +842,12 @@ export interface AutomatedQaCheckResult {
   blocked: string | null
   steps: AutomatedQaStepResult[]
   durationMs: number
+  /** Ошибки консоли страницы — те же, что уходят в вердикт этапа (круг 27). */
+  pageErrors?: string[]
+  /**
+   * Снимок экрана как data-URL. У разового прогона нет рана в БД, а
+   * `GET /api/qa/runs/:id/screenshot` без рана отвечает 404 — файл на диске
+   * был недостижим и удалялся сборщиком как осиротевший. Отдаём содержимым.
+   */
+  screenshot?: string
 }

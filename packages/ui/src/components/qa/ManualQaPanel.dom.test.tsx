@@ -22,6 +22,27 @@ describe('ManualQaPanel', () => {
     expect(screen.getByRole('link', { name:'Открыть preview' })).toHaveAttribute('href','https://preview')
     expect(screen.getByLabelText('Скриншоты')).toHaveAttribute('multiple')
   })
+  // Ожидание и ошибка показывались строкой «Загрузка QA…» и голым `.err` —
+  // четвёртый и пятый вариант состояния на соседних вкладках карточки.
+  it('ждёт скелетоном и показывает ошибку общим экраном с повтором', async () => {
+    let resolveState: (value: QaTaskState) => void = () => {}
+    const get = vi.fn()
+      .mockRejectedValueOnce(new Error('сеть недоступна'))
+      .mockImplementationOnce(() => new Promise<QaTaskState>((resolve) => { resolveState = resolve }))
+    window.qa = { get, saveResult:vi.fn(),addAttachment:vi.fn(),complete:vi.fn(),completePreparation:vi.fn(),createCriterion:vi.fn(),reviseCriterion:vi.fn(),startSession:vi.fn(),requestFix:vi.fn() }
+    render(<ManualQaPanel projectId="p1" taskId="t1" />)
+
+    const error = await screen.findByTestId('error-state')
+    expect(error).toHaveTextContent('Не удалось загрузить ручное QA')
+    expect(screen.getByTestId('skeleton-list')).toBeInTheDocument()
+    expect(screen.queryByText('Загрузка QA…')).not.toBeInTheDocument()
+
+    fireEvent.click(within(error).getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2))
+    resolveState(qaState())
+    expect(await screen.findByText(/Проверено 0\/1/)).toBeTruthy()
+  })
+
   it('renders per-scenario controls and saves success with optimistic revision', async () => {
     const saved = { ...qaState('passed').activeSession!.results[0], revision: 2 }
     const saveResult=vi.fn().mockResolvedValue(saved)

@@ -7,6 +7,8 @@ import type { CiLogLine } from '@shared/ci'
 import { copyText } from '../../lib/clipboard'
 import { Button } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
+import { AnsiText } from './AnsiText'
+import { stripAnsi } from '@shared/ansi'
 
 const EDIT_LIMIT_MS = 5 * 60 * 1000
 
@@ -28,8 +30,11 @@ export function CiConsole(props: { runId: string; onClose: () => void }): JSX.El
   }, [edit])
   useEffect(() => { outRef.current?.scrollTo(0, outRef.current.scrollHeight) }, [out])
 
-  const filtered = search ? log.filter((l) => l.chunk.includes(search)) : log
-  const logText = (): string => log.map((l) => l.chunk).join('')
+  // Поиск и копирование работают по видимому тексту: строка `Test Files` в
+  // логе vitest на самом деле начинается с `ESC[33m`, и подстрока, попавшая на
+  // границу последовательности, не находилась.
+  const filtered = search ? log.filter((l) => stripAnsi(l.chunk).includes(search)) : log
+  const logText = (): string => log.map((l) => stripAnsi(l.chunk)).join('')
   // Кнопка «Копировать лог» ничем себя не выдавала — ни успехом, ни отказом.
   const copy = (): void => {
     void copyText(logText()).then((ok) => (ok ? toast.success('Скопировано') : toast.error('Не удалось скопировать лог')))
@@ -52,7 +57,7 @@ export function CiConsole(props: { runId: string; onClose: () => void }): JSX.El
         <Button onClick={() => setEdit((v) => !v)}>{edit ? 'Выйти из редактирования' : 'Режим редактирования'}</Button>
         <Button onClick={props.onClose}>Закрыть</Button>
       </div>
-      <pre className="ci-console-log">{filtered.map((l) => l.chunk).join('')}</pre>
+      <pre className="ci-console-log"><AnsiText>{filtered.map((l) => l.chunk).join('')}</AnsiText></pre>
       <div className="ci-console-out" ref={outRef}>
         {out.map((o, i) => (
           <div key={i} className={`ci-console-entry${o.rejected ? ' rejected' : ''}`}>

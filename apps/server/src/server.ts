@@ -38,6 +38,7 @@ import type { AutomatedQaCheckResult } from '@voicechat/shared'
 /** Бюджет разовой проверки набора: человек ждёт ответ, а не уходит пить чай. */
 const CHECK_BUDGET_MS = 90_000
 import { createIntegrationTestRunner } from './ci/integrationTests.js'
+import { createAutomatedQaCheck } from './ci/automatedQaCheck.js'
 import { MergeRunManager } from './merge/runManager.js'
 import { createCiModelHooks } from './ci/modelHooks.js'
 import { registerCiCommandsMcp, CI_COMMANDS_MCP_PATH } from './ci/ciCommandsMcp.js'
@@ -1642,26 +1643,11 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     // Разовый прогон набора: тот же исполнитель, что у этапа, но без рана и
     // воркспейса — человек проверяет сценарий сразу после записи.
     automatedQaScenarioRunner
-      ? async (userId, projectId) => {
-          const scenarios = db.getProject(userId, projectId)?.automatedQaScenarios ?? []
-          const results: AutomatedQaCheckResult[] = []
-          for (const [index, scenario] of scenarios.entries()) {
-            const startedAt = Date.now()
-            const outcome = await automatedQaScenarioRunner.run({
-              runId: `check-${projectId}-${index}-${randomUUID().slice(0, 8)}`,
-              userId, scenario, signal: AbortSignal.timeout(CHECK_BUDGET_MS), budgetMs: CHECK_BUDGET_MS
-            })
-            results.push({
-              name: scenarioLabel(scenario, index),
-              passed: !outcome.blocked && outcome.steps.length > 0 && outcome.steps.every((step) => step.status === 'passed'),
-              blocked: outcome.blocked,
-              steps: outcome.steps,
-              durationMs: Date.now() - startedAt
-            })
-            if (outcome.blocked || outcome.steps.some((step) => step.status === 'failed')) break
-          }
-          return results
-        }
+      ? createAutomatedQaCheck({
+          scenariosOf: (userId, projectId) => db.getProject(userId, projectId)?.automatedQaScenarios ?? [],
+          runner: automatedQaScenarioRunner,
+          budgetMs: CHECK_BUDGET_MS
+        })
       : undefined)
   mergeRunManager.reconcile()
   const onAutoPilotFailure = (runId: string, userId: string, stage: string, reason: string, options?: { classification?: 'implementation_defect' | 'infrastructure' | null; remarks?: string }): void => {
