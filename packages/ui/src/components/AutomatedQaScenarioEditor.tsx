@@ -119,6 +119,13 @@ export function AutomatedQaScenarioEditor(props: {
               <li key={result.name} data-state={result.blocked ? 'blocked' : result.passed ? 'passed' : 'failed'}>
                 {result.name}: {result.blocked ? `заблокирован — ${result.blocked}` : result.passed ? 'пройден' : `провален на шаге «${result.steps.find((step) => step.status === 'failed')?.title ?? '?'}»`}
                 {' '}<small>{Math.round(result.durationMs / 100) / 10} с</small>
+                {/* Те же ошибки, что уходят в вердикт этапа: при разборе записи
+                    они отвечают быстрее, чем повторный прогон. */}
+                {result.pageErrors && result.pageErrors.length > 0 && (
+                  <ul className="qa-scenario__check-errors">
+                    {result.pageErrors.map((error, index) => <li key={`${index}-${error.slice(0, 40)}`}>{error}</li>)}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>
