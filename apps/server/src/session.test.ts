@@ -116,6 +116,29 @@ describe('WS: живые изменения списка сессий', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
+  it('«выйти везде» адресно гасит каждую убитую вкладку', async () => {
+    db.createUser('bulk', 'bulk-user-pass-2026', 'developer')
+    const login = async (ua: string): Promise<string> =>
+      (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'bulk', password: 'bulk-user-pass-2026' }, headers: { 'user-agent': ua } })).json().token as string
+    const phoneToken = await login('Phone/1.0')
+    const laptopToken = await login('Laptop/2.0')
+    const phone = await connect(port, phoneToken)
+    const laptop = await connect(port, laptopToken)
+    const phoneFrames = collect(phone)
+    const laptopFrames = collect(laptop)
+    const phoneSid = db.listSessions('bulk').find((s) => s.userAgent === 'Phone/1.0')!.sid
+
+    // «Выйти на других» с ноутбука: телефон мёртв и должен узнать это сразу.
+    await app.inject({ method: 'POST', url: '/api/session/logout-all', headers: { authorization: `Bearer ${laptopToken}` } })
+    await settle()
+    expect(phoneFrames).toEqual([{ t: 'session.revoked', v: 1, sid: phoneSid }])
+    // Оставшемуся ноутбуку тот же кадр приходит как обычная инвалидация списка.
+    expect(laptopFrames).toEqual([{ t: 'sessions.update', v: 1 }])
+    phone.close()
+    laptop.close()
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
   it('чужому пользователю кадры не приходят', async () => {
     db.createUser('mine', 'mine-user-pass-2026', 'developer')
     db.createUser('other', 'other-user-pass-2026', 'developer')

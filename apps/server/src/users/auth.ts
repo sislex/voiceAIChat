@@ -734,14 +734,20 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     // `includeCurrent` — «выйти везде, включая это устройство»: после кражи
     // пароля человек хочет обнулить всё разом, а не оставлять себе исключение.
     const includeCurrent = req.body?.includeCurrent === true
-    const revoked = db.revokeUserSessions(user.name, includeCurrent ? null : sidOf(req))
+    const current = sidOf(req)
+    // Список берём до отзыва: каждой убитой вкладке нужен адресный кадр, иначе
+    // «выйти везде» оставляет их выглядящими рабочими до следующего запроса —
+    // ровно тот разрыв, который закрывает session.revoked в остальных местах.
+    const doomed = db.listSessions(user.name).filter((s) => includeCurrent || s.sid !== current)
+    const revoked = db.revokeUserSessions(user.name, includeCurrent ? null : current)
     if (includeCurrent) {
       const token = tokenOf(req)
       if (token) db.revokeSession(token)
       reply.header('set-cookie', clearSessionCookies(req))
     }
     db.logSecurityEvent({ user: user.name, type: 'logout_all', ip: req.ip, userAgent: String(req.headers['user-agent'] ?? ''), details: `отозвано сессий: ${revoked}${includeCurrent ? ', включая текущую' : ''}` })
-    options.sessions?.emit(user.name)
+    for (const session of doomed) options.sessions?.emit(user.name, session.sid)
+    if (doomed.length === 0) options.sessions?.emit(user.name)
     return { revoked }
   })
   app.delete<{ Params: { sid: string } }>('/api/session/:sid', async (req, reply) => {
