@@ -472,7 +472,7 @@ export interface IpcInvokeMap {
       doneRetentionDays?: number | null
       /** Режим и сценарий этапа Automated QA — их пишет и запись из Reader. */
       automatedQaMode?: import('./qa').AutomatedQaMode
-      automatedQaScenario?: import('./qa').AutomatedQaScenario
+      automatedQaScenarios?: import('./qa').AutomatedQaScenario[]
     }
     result: ProjectDetail
   }

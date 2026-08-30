@@ -5,7 +5,7 @@ import type { AutomatedQaScenario } from '@shared/qa'
 import { AutomatedQaScenarioEditor } from './AutomatedQaScenarioEditor'
 
 const detail = (scenario?: AutomatedQaScenario): ProjectDetail =>
-  ({ id: 'p1', automatedQaScenario: scenario } as unknown as ProjectDetail)
+  ({ id: 'p1', automatedQaScenarios: scenario ? [scenario] : [] } as unknown as ProjectDetail)
 
 describe('AutomatedQaScenarioEditor', () => {
   it('пустой сценарий предупреждает, что этап заблокируется', () => {
@@ -17,9 +17,10 @@ describe('AutomatedQaScenarioEditor', () => {
     const onUpdate = vi.fn()
     render(<AutomatedQaScenarioEditor detail={detail()} isOwner onUpdate={onUpdate} />)
     fireEvent.change(screen.getByLabelText('Стартовый адрес'), { target: { value: 'http://localhost:5173' } })
-    expect(onUpdate).toHaveBeenCalledWith('p1', { automatedQaScenario: { startUrl: 'http://localhost:5173', steps: [] } })
+    // Сохранение всегда отдаёт весь набор — сценариев у проекта может быть много.
+    expect(onUpdate).toHaveBeenCalledWith('p1', { automatedQaScenarios: [{ startUrl: 'http://localhost:5173', steps: [] }] })
     fireEvent.click(screen.getByRole('button', { name: 'Добавить шаг' }))
-    expect(onUpdate.mock.calls.at(-1)?.[1].automatedQaScenario.steps).toHaveLength(1)
+    expect(onUpdate.mock.calls.at(-1)?.[1].automatedQaScenarios[0].steps).toHaveLength(1)
   })
 
   it('смена вида действия переносит селектор, а не теряет его', () => {
@@ -27,7 +28,7 @@ describe('AutomatedQaScenarioEditor', () => {
     const scenario: AutomatedQaScenario = { startUrl: 'http://x', steps: [{ id: 's1', title: 'Кнопка', action: { kind: 'click', selector: '#create' } }] }
     render(<AutomatedQaScenarioEditor detail={detail(scenario)} isOwner onUpdate={onUpdate} />)
     fireEvent.change(screen.getByLabelText('Действие'), { target: { value: 'wait' } })
-    expect(onUpdate.mock.calls.at(-1)?.[1].automatedQaScenario.steps[0].action).toEqual({ kind: 'wait', selector: '#create' })
+    expect(onUpdate.mock.calls.at(-1)?.[1].automatedQaScenarios[0].steps[0].action).toEqual({ kind: 'wait', selector: '#create' })
   })
 
   it('участнику проекта поля недоступны', () => {
