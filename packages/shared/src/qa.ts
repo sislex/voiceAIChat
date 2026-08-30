@@ -229,6 +229,29 @@ export function isActiveQaStageRun(status: QaStageRunStatus): boolean {
   return status === 'queued' || status === 'running' || status === 'awaiting_input'
 }
 export type ComponentQaRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'blocked' | 'cancelled' | 'stale' | 'skipped'
+/**
+ * Русские подписи статусов QA. Панели печатали сырые `queued`/`passed`/
+ * `gate_failed` вперемешку с русским текстом — читалось как отладочный вывод.
+ * Карты полные по типу: новый статус контракта не соберётся без перевода.
+ */
+export const QA_STAGE_RUN_STATUS_LABELS: Record<QaStageRunStatus, string> = {
+  queued: 'В очереди', running: 'Выполняется', awaiting_input: 'Ждёт ответа', success: 'Успешно',
+  gate_failed: 'Не прошёл gate', failed: 'Ошибка', cancelled: 'Отменён', interrupted: 'Прерван'
+}
+
+/** `ComponentQaRunStatus` и `IntegrationTestRunStatus` — один и тот же набор. */
+export const QA_RUN_STATUS_LABELS: Record<ComponentQaRunStatus & IntegrationTestRunStatus, string> = {
+  queued: 'В очереди', running: 'Выполняется', passed: 'Пройден', failed: 'Ошибка',
+  blocked: 'Заблокирован', cancelled: 'Отменён', stale: 'Устарел', skipped: 'Пропущен'
+}
+
+/** Статус отдельной команды или сценария внутри QA-рана. */
+export type QaStepStatus = 'pending' | 'running' | 'passed' | 'failed' | 'blocked' | 'cancelled'
+export const QA_STEP_STATUS_LABELS: Record<QaStepStatus, string> = {
+  pending: 'Ожидает', running: 'Выполняется', passed: 'Пройден', failed: 'Ошибка',
+  blocked: 'Заблокирован', cancelled: 'Отменён'
+}
+
 export type ComponentQaFailureClassification = 'implementation_defect' | 'infrastructure'
 export type ComponentQaScenarioStatus = 'pending' | 'passed' | 'failed' | 'blocked' | 'not_applicable'
 export interface ComponentQaScenarioSnapshot {
