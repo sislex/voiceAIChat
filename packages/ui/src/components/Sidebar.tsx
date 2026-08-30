@@ -584,7 +584,7 @@ export function Sidebar({
         ) : onCreateProject && (
           // Форму создания рисует App: там выбирается тип проекта, и окно с
           // селектами нельзя закрывать по onBlur, как прежнее инлайн-поле.
-          <Button fullWidth onClick={() => onCreateProject()}>+ Новый проект</Button>
+          <Button fullWidth onClick={() => onCreateProject()} data-testid="create-project">+ Новый проект</Button>
         )}
       </div>
       {onModeChange && (
@@ -611,7 +611,7 @@ export function Sidebar({
           </div>
           <div className="sidesearch">
             <div className="sidesearch-row">
-              <input className="searchinput" type="search" value={searchQuery} placeholder="Поиск по разговорам…" aria-label="Поиск по разговорам" onChange={(event) => onSearch(event.target.value)} />
+              <input className="searchinput" type="search" data-testid="search-conversations" value={searchQuery} placeholder="Поиск по разговорам…" aria-label="Поиск по разговорам" onChange={(event) => onSearch(event.target.value)} />
               {onShowDoneTaskChatsChange && (
                 <IconButton className={showDoneTaskChats ? 'convo-filter on' : 'convo-filter'} aria-label="Показывать чаты завершённых задач" aria-pressed={showDoneTaskChats} title="Показывать чаты завершённых задач" onClick={() => onShowDoneTaskChatsChange(!showDoneTaskChats)}>
                   <FilterIcon />
@@ -627,7 +627,7 @@ export function Sidebar({
         </>) : (
           <div className="sidesearch">
             <div className="sidesearch-row">
-              <input className="searchinput" type="search" value={projectQuery} placeholder="Поиск по проектам…" aria-label="Поиск по проектам" onChange={(event) => setProjectQuery(event.target.value)} />
+              <input className="searchinput" type="search" data-testid="search-projects" value={projectQuery} placeholder="Поиск по проектам…" aria-label="Поиск по проектам" onChange={(event) => setProjectQuery(event.target.value)} />
             </div>
           </div>
         )}
@@ -778,6 +778,7 @@ export function Sidebar({
             <button
               key={p.id}
               className={p.id === activeProjectId ? 'convo projitem on' : 'convo projitem'}
+              data-testid="project-item"
               onClick={() => onPickProject?.(p.id)}
             >
               <span className="ctitle">{p.name}</span>
