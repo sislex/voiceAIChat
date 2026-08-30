@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BrowserElementDescription } from '@shared/types'
-import { ambiguousSteps, expectOnLastStep, fragileSteps, hasAssertions, recordClick, recordNavigate, recordType, removeStep, toScenario } from './scenarioRecorder'
+import { ambiguousSteps, expectOnLastStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario } from './scenarioRecorder'
 
 const element = (over: Partial<BrowserElementDescription> = {}): BrowserElementDescription => ({
   selector: '[data-testid="create"]', stability: 'testid', tag: 'button', text: 'Создать',
@@ -92,5 +92,50 @@ describe('проверки в сценарии (круг 14)', () => {
     const steps = recordClick([], element({ selector: 'button[aria-label="Закрыть"]', stability: 'label', matches: 3 }))
     expect(ambiguousSteps(steps)).toHaveLength(1)
     expect(fragileSteps(steps)).toHaveLength(0)
+  })
+})
+
+describe('виды кликов, прокрутка и паузы (круг 15)', () => {
+  it('правый и двойной клик записываются по-разному', () => {
+    expect(recordClick([], element(), 'right')[0]).toMatchObject({
+      title: 'Нажать правой кнопкой «Создать»', action: { kind: 'click', button: 'right' }
+    })
+    expect(recordClick([], element(), 'double')[0]).toMatchObject({
+      title: 'Двойной клик «Создать»', action: { kind: 'click', dblclick: true }
+    })
+    // Обычный клик остаётся без лишних полей — иначе сценарий читается хуже.
+    expect(recordClick([], element())[0].action).toEqual({ kind: 'click', selector: '[data-testid="create"]' })
+  })
+
+  it('прокрутка сливается в один шаг, а не плодит их на каждый щелчок', () => {
+    const steps = recordScroll(recordScroll(recordScroll([], 300), 300), 200)
+    expect(steps).toHaveLength(1)
+    expect(steps[0]).toMatchObject({ title: 'Прокрутить на 800 px', action: { kind: 'scroll', dy: 800 } })
+  })
+
+  it('прокрутка после клика — отдельный шаг', () => {
+    const steps = recordScroll(recordClick([], element()), 300)
+    expect(steps).toHaveLength(2)
+    expect(steps[1].action).toEqual({ kind: 'scroll', dy: 300 })
+  })
+
+  it('переименование меняет только нужный шаг и не принимает пустое', () => {
+    const steps = recordClick(recordClick([], element()), element({ selector: '#b' }))
+    const renamed = renameStep(steps, 'step-2', 'Открыть карточку')
+    expect(renamed.map((s) => s.title)).toEqual(['Нажать «Создать»', 'Открыть карточку'])
+    expect(renameStep(steps, 'step-2', '   ')).toBe(steps)
+  })
+
+  it('долгая пауза без проверки — повод подсказать ожидание', () => {
+    const slow = [{ ...recordClick([], element())[0], pauseMs: 4000 }]
+    expect(needsWaitHint(slow)).toBe(true)
+    // С проверкой подсказка не нужна: ожидание уже задано явно.
+    expect(needsWaitHint(expectOnLastStep(slow, 'Готово'))).toBe(false)
+    expect(needsWaitHint([{ ...slow[0], pauseMs: 300 }])).toBe(false)
+  })
+
+  it('служебные поля записи не уезжают в сценарий', () => {
+    const steps = [{ ...recordClick([], element())[0], pauseMs: 4000, matches: 2 }]
+    expect(Object.keys(toScenario(steps, 'http://x').steps[0])).toEqual(['id', 'title', 'action'])
   })
 })
