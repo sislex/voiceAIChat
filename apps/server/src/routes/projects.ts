@@ -91,7 +91,7 @@ export function registerProjectRoutes(
    * только задачей на доске: записал сценарий — и жди следующего рана, чтобы
    * узнать, работает ли он вообще.
    */
-  checkAutomatedQa?: (userId: string, projectId: string) => Promise<AutomatedQaCheckResult[]>
+  checkAutomatedQa?: (userId: string, projectId: string, scenarioIndex?: number) => Promise<AutomatedQaCheckResult[]>
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = (project: ProjectDetail | null, userId: string): ProjectDetail | null => {
@@ -433,13 +433,21 @@ export function registerProjectRoutes(
   // явное действие человека, который ждёт результат, а не фоновая работа —
   // заводить ради него сущность рана значило бы усложнить путь «записал →
   // проверил → поправил» ровно там, где он должен быть коротким.
-  app.post<{ Params: { id: string } }>('/api/projects/:id/automated-qa/check', async (req, reply) => {
+  app.post<{ Params: { id: string }; Body: { scenarioIndex?: number } | undefined }>('/api/projects/:id/automated-qa/check', async (req, reply) => {
     const p = member(req, req.params.id)
     if (!p) return nf(reply)
     if (!checkAutomatedQa) return reply.code(501).send({ error: 'browser_runner_unavailable', message: 'Изолированный Chromium не настроен на сервере' })
+    const at = req.body?.scenarioIndex
+    if (at !== undefined && (!Number.isInteger(at) || at < 0)) return badReq(reply, 'Номер сценария должен быть целым неотрицательным числом')
     try {
-      return { results: await checkAutomatedQa(uid(req), req.params.id) }
+      return { results: await checkAutomatedQa(uid(req), req.params.id, at) }
     } catch (err) {
+      // Параллельный прогон того же проекта — не ошибка ввода: человек нажал
+      // дважды или зашёл со второй вкладки, и ему надо сказать «уже идёт», а не
+      // поднимать второй Chromium на тот же набор.
+      if (errMessage(err) === 'check_already_running') {
+        return reply.code(409).send({ error: 'check_already_running', message: 'Прогон набора уже идёт — дождитесь результата' })
+      }
       return badReq(reply, errMessage(err))
     }
   })

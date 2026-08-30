@@ -193,7 +193,10 @@ export class BrowserSessionManager {
       const created = await session.context.newPage()
       const id = session.pageIds.get(created) ?? randomUUID()
       session.pageIds.set(created, id); session.pages.set(id, created); session.activeTabId = id
-      if (command.url) await created.goto(validatePublicUrl(command.url).toString())
+      // Тот же путь, что у navigate: без подстановки алиаса новая вкладка шла
+      // на внешний адрес, до которого контейнер не достаёт, и держалась на нём
+      // только благодаря перехватчику маршрутов — то есть по случайности.
+      if (command.url) await created.goto(applyHostAlias(validatePublicUrl(command.url), this.hostAliases).toString())
     } else if (command.type === 'selectTab') session.activeTabId = command.tabId
     else if (command.type === 'closeTab') await session.pages.get(command.tabId)?.close()
     else if (command.type === 'resize') {

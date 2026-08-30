@@ -265,6 +265,30 @@ describe('createAutomatedQaRunner', () => {
     expect(verdict.logTail).toContain('локатор не найден')
   })
 
+  it('ошибки шага метятся именем сценария так же, как названия шагов', async () => {
+    // Иначе один и тот же текст с меткой (в списке прогона) и без неё (у шага)
+    // не совпадает, и панель показывает его дважды.
+    const completed = vi.fn()
+    const runner = createAutomatedQaRunner({
+      db: {
+        automatedQaExecutionContext: () => context({ mode: 'playwright', scenarios: [{ name: 'Доска', startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Создать', action: { kind: 'click', selector: '#create' } }] }] }),
+        getQaStageRun: () => ({ projectId: 'project', status: 'queued' }),
+        markAutomatedQaRunning: vi.fn(), appendAutomatedQaLog: vi.fn(), completeQaStageRun: vi.fn(), updateQaStageRun: vi.fn()
+      },
+      executor: { run: vi.fn() },
+      scenarioRunner: { run: async () => ({
+        steps: [{ id: 's1', title: 'Создать', status: 'failed', detail: 'не найден', durationMs: 12, pageErrors: ['TypeError: x is not a function'] }],
+        screenshotUrl: null, pageErrors: ['TypeError: x is not a function'], blocked: null
+      }) },
+      completed
+    })
+    runner.launch('run', 'owner')
+    await vi.waitFor(() => expect(completed).toHaveBeenCalled())
+    const verdict = completed.mock.calls[0][4] as AutomatedQaVerdict
+    expect(verdict.steps[0].pageErrors).toEqual(['Доска: TypeError: x is not a function'])
+    expect(verdict.pageErrors).toEqual(['Доска: TypeError: x is not a function'])
+  })
+
   it('без настроенного Chromium режим playwright блокируется, а не валит задачу', async () => {
     const completed = vi.fn()
     const runner = createAutomatedQaRunner({
