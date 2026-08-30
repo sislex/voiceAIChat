@@ -517,6 +517,10 @@ export interface IpcInvokeMap {
   'projects:setUserDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /** Снапшот доски (колонки + задачи); includeCompleted — вместе со скрытыми завершёнными. */
   'board:get': { arg: { id: string; includeCompleted?: boolean }; result: Board }
+  /** Вид доски человека в проекте (фильтры и раскладка) — хранится на сервере. */
+  'board:getView': { arg: { id: string }; result: import('./projects').BoardView }
+  /** Патч вида доски: присланные поля поверх сохранённых, в ответе — весь вид. */
+  'board:saveView': { arg: { id: string; view: Partial<import('./projects').BoardView> }; result: import('./projects').BoardView }
   'columns:create': { arg: { projectId: string; name: string }; result: KanbanColumn }
   'columns:rename': { arg: { projectId: string; columnId: string; name?: string; wipLimit?: number | null }; result: void }
   'columns:setHidden': { arg: { projectId: string; columnId: string; hidden: boolean }; result: void }
@@ -1247,6 +1251,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:setDefaultMachine',
   'projects:setUserDefaultMachine',
   'board:get',
+  'board:getView',
+  'board:saveView',
   'columns:create',
   'columns:rename',
   'columns:setHidden',

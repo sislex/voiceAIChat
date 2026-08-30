@@ -1,5 +1,6 @@
 import type { SessionInfo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
 import { parseProjectCommandPolicy, parseRoleCommandPolicies, EMPTY_AUTOMATED_QA_SCENARIO, parseAutomatedQaScenarios } from '@voicechat/shared'
+import { DEFAULT_BOARD_VIEW, sanitizeBoardView, type BoardView } from '@voicechat/shared'
 import type { AutomatedQaMode, AutomatedQaScenario, AutomatedQaScenarioStep } from '@voicechat/shared'
 import { isPreviewAction } from '@voicechat/shared'
 
@@ -2338,7 +2339,29 @@ export class VoiceChatDb {
     return { engineId, provider, model }
   }
 
+  /**
+   * Читает настройки и **фиксирует** дефолты полей, которых в записи ещё не
+   * было. Без этого «поле появилось в релизе» и «человек выбрал такое
+   * значение» неотличимы: смена дефолта в следующем релизе молча переезжала бы
+   * всем, кто ничего не менял. Дозаполнение — разовая запись на пользователя.
+   */
   getSettings(userId: string): Settings {
+    const settings = this.readSettings(userId)
+    const stored = this.db.prepare(`SELECT value FROM settings WHERE key = ?`).get(settingsKey(userId)) as { value: string } | undefined
+    if (!stored) return settings
+    try {
+      const parsed = JSON.parse(stored.value) as Partial<Settings>
+      const missing = (Object.keys(DEFAULT_SETTINGS) as Array<keyof Settings>).filter((key) => parsed[key] === undefined)
+      if (missing.length) this.saveSettings(userId, settings)
+    } catch {
+      // Повреждённую запись переписываем дефолтами: читать её всё равно нечем.
+      this.saveSettings(userId, settings)
+    }
+    return settings
+  }
+
+  /** Чистое чтение записи с мержем дефолтов — без побочной записи в БД. */
+  private readSettings(userId: string): Settings {
     const row = this.db
       .prepare(`SELECT value FROM settings WHERE key = ?`)
       .get(settingsKey(userId)) as { value: string } | undefined
@@ -2628,6 +2651,27 @@ export class VoiceChatDb {
        WHERE share.project_id = ? AND share.agent_id = ? AND share.shared = 1
          AND member.username = ? AND u.blocked = 0`
     ).get(projectId, agentId, userId))
+  }
+
+  /** Вид доски человека в проекте; отсутствующая запись — вид по умолчанию. */
+  getBoardView(userId: string, projectId: string): BoardView {
+    const row = this.db.prepare(`SELECT value FROM board_views WHERE username = ? AND project_id = ?`).get(userId, projectId) as { value: string } | undefined
+    if (!row) return { ...DEFAULT_BOARD_VIEW }
+    try {
+      return { ...DEFAULT_BOARD_VIEW, ...sanitizeBoardView(JSON.parse(row.value)) }
+    } catch {
+      return { ...DEFAULT_BOARD_VIEW }
+    }
+  }
+
+  /** Патч вида: как у настроек — присланные поля поверх сохранённых. */
+  saveBoardView(userId: string, projectId: string, patch: Partial<BoardView>): BoardView {
+    const next = { ...this.getBoardView(userId, projectId), ...sanitizeBoardView(patch) }
+    this.db.prepare(
+      `INSERT INTO board_views (username, project_id, value, updated_at) VALUES (?,?,?,?)
+       ON CONFLICT(username, project_id) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+    ).run(userId, projectId, JSON.stringify(next), this.now())
+    return next
   }
 
   getUserProjectDefaultMachine(userId: string, projectId: string): string | null {

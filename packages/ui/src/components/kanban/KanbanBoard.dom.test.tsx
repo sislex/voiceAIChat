@@ -6,6 +6,7 @@ import { render } from '../../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { KanbanBoard, type KanbanBoardProps } from './KanbanBoard'
 import type { Board, Task } from '@shared/projects'
+import { DEFAULT_BOARD_VIEW } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import type { GenerateParams } from '../prompt-builder/PromptBuilder'
 import { DRAG_HOLD_MS } from '../../lib/dnd'
@@ -888,6 +889,37 @@ describe('KanbanBoard — фильтры исполнителей', () => {
 
     await waitFor(() => expect(screen.getByLabelText<HTMLSelectElement>('Свимлейны').value).toBe('assignee'))
     expect(screen.getByRole('checkbox', { name: 'скрытые' })).toBeChecked()
+  })
+
+  // Вид доски переехал на сервер: доска, настроенная на одном компьютере,
+  // обязана открыться такой же на другом — браузер больше не источник истины.
+  it('серверный вид применяется, а изменения уходят наверх патчем', async () => {
+    const onViewChange = vi.fn()
+    const props = { board: filteredBoard, currentUserId: 'view-server', members: [{ username: 'alice', role: 'member' as const, addedAt: 1 }] }
+    render(<KanbanBoardHarness {...props} view={{ ...DEFAULT_BOARD_VIEW, swimlane: 'assignee', onlyMine: true }} onViewChange={onViewChange} />)
+
+    await waitFor(() => expect(screen.getByLabelText<HTMLSelectElement>('Свимлейны').value).toBe('assignee'))
+    expect(screen.getByRole('checkbox', { name: 'Показывать только мои задачи' })).toBeChecked()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'скрытые' }))
+
+    await waitFor(() => expect(onViewChange).toHaveBeenCalled())
+    expect(onViewChange.mock.calls.at(-1)?.[0]).toMatchObject({ showHidden: true, swimlane: 'assignee', onlyMine: true })
+    // В браузере вид больше не оседает: источник — сервер.
+    expect(localStorage.getItem('voicechat.kanban.filters.v3.view-server.p1')).toBeNull()
+  })
+
+  it('прежний вид из браузера переносится на сервер один раз', async () => {
+    const onViewChange = vi.fn()
+    const props = { board: filteredBoard, currentUserId: 'migrate-user', members: [{ username: 'alice', role: 'member' as const, addedAt: 1 }] }
+    const key = 'voicechat.kanban.filters.v3.migrate-user.p1'
+    localStorage.setItem(key, JSON.stringify({ onlyMine: true, swimlane: 'epic', showHidden: true }))
+
+    render(<KanbanBoardHarness {...props} view={{ ...DEFAULT_BOARD_VIEW }} onViewChange={onViewChange} />)
+
+    await waitFor(() => expect(onViewChange).toHaveBeenCalled())
+    expect(onViewChange.mock.calls[0]?.[0]).toMatchObject({ onlyMine: true, swimlane: 'epic', showHidden: true })
+    expect(localStorage.getItem(key)).toBeNull() // перенесли — и убрали, чтобы не переносить снова
   })
 
   // У людей с настроенной доской запись уже лежит под старым ключом (с именем

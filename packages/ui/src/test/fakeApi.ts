@@ -14,7 +14,7 @@ import type { AgentInfo } from '@shared/agentProtocol'
 import { DEFAULT_AGENT_POLICY } from '@shared/agentProtocol'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import type { Board, KanbanColumn, ProjectDetail, ProjectMachine, ProjectMember, ProjectSummary, Task, WorkItemDefaultSkills } from '@shared/projects'
-import { compareTasksInColumn, issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS } from '@shared/projects'
+import { compareTasksInColumn, issueKey, isCompletedHidden, DEFAULT_DONE_RETENTION_DAYS, DEFAULT_BOARD_VIEW, sanitizeBoardView, type BoardView } from '@shared/projects'
 
 
 export interface FakeApi extends RendererApi {
@@ -39,6 +39,8 @@ const fakeInvites: Array<{ token: string; role: import('@shared/types').UserRole
 /** Сессии для админки (auth-roadmap п.4) — по умолчанию одна у admin. */
 const adminSessions: Array<{ sid: string; user: string; createdAt: number; lastSeen: number; expiresAt: number; ip: string; userAgent: string }> = [{ sid: 's-admin-1', user: 'admin', createdAt: 1, lastSeen: 2, expiresAt: 9_999_999_999_999, ip: '127.0.0.1', userAgent: 'Test/1.0' }]
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
+  /** Вид доски на «сервере»: по проекту, как в таблице board_views. */
+  const boardViews = new Map<string, BoardView>()
   const makeStore = new Map<string, Map<string, string>>()
   const makeSnapStore = new Map<string, Array<{ id: string; createdAt: number; label: string; files: number }>>()
   /** Содержимое файлов на момент снимка — для diff и восстановления одного файла. */
@@ -1123,6 +1125,13 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       return result
     },
     'board:get': async ({ id, includeCompleted }) => boardOf(id, includeCompleted),
+    'board:getView': async ({ id }) => ({ ...DEFAULT_BOARD_VIEW, ...(boardViews.get(id) ?? {}) }),
+    'board:saveView': async ({ id, view }) => {
+      // Как на сервере: патч поверх сохранённого, в ответе — весь вид.
+      const next = { ...DEFAULT_BOARD_VIEW, ...(boardViews.get(id) ?? {}), ...sanitizeBoardView(view) }
+      boardViews.set(id, next)
+      return next
+    },
     'columns:create': async ({ projectId, name }) => {
       const ts = tick()
       const max = Math.max(0, ...columns.filter((c) => c.projectId === projectId).map((c) => c.position))

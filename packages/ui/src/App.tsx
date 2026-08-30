@@ -56,7 +56,7 @@ import type { ConsoleHistoryStore, MachineOps } from './components/machine'
 import { ConversationSettings } from './components/ConversationSettings'
 import { PopupFrame } from './components/PopupFrame'
 import { UiProviders } from '@voicechat/ui-kit'
-import { Button } from '@voicechat/ui-kit'
+import { Button, IconButton } from '@voicechat/ui-kit'
 import { Skeleton } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
@@ -456,6 +456,28 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     let active = true
     void api['app:ping']().then((value) => { if (active) setRelease(value) }).catch(() => undefined)
     return () => { active = false }
+  }, [api])
+  /**
+   * Сервер пересобрали, пока вкладка была открыта: у неё старый бандл, и новые
+   * поля контракта сервер уже не понимает (или наоборот). Проверяем версию на
+   * каждом переподключении — это и есть момент деплоя — и предлагаем обновиться.
+   */
+  const [staleBuild, setStaleBuild] = useState(false)
+  const releaseIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    const current = release ? `${release.version ?? ''}@${release.commit ?? ''}` : null
+    if (current && !releaseIdRef.current) releaseIdRef.current = current
+  }, [release])
+  useEffect(() => {
+    const realtime = window.realtime
+    if (!realtime?.onConnected) return
+    return realtime.onConnected(() => {
+      void api['app:ping']().then((value) => {
+        const next = `${value.version ?? ''}@${value.commit ?? ''}`
+        setRelease(value)
+        if (releaseIdRef.current && next !== releaseIdRef.current) setStaleBuild(true)
+      }).catch(() => undefined)
+    })
   }, [api])
   const toast = useToast()
   // Долгая команда машины завершилась: тост с переходом к логу/журналу; во вкладке в фоне — системное уведомление, если разрешено.
@@ -1611,6 +1633,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       data-theme={settingsState.settings.theme}
       style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
     >
+      {staleBuild && (
+        <div className="stale-build" role="status" data-testid="stale-build">
+          <span>Вышла новая версия приложения — обновите страницу, чтобы она заработала целиком.</span>
+          <Button size="sm" variant="primary" onClick={() => window.location.reload()}>Обновить</Button>
+          <IconButton size="sm" aria-label="Скрыть сообщение о новой версии" title="Скрыть" onClick={() => setStaleBuild(false)}>✕</IconButton>
+        </div>
+      )}
       {release?.version && (() => {
         const details = [
           `выпущена: ${new Date(release.releasedAt).toLocaleString()}`,
@@ -2127,6 +2156,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
               onRetry={() => void projectsActions.openBoard(routeProjectId)}
               showCompleted={projects.boardIncludeCompleted}
               onShowCompletedChange={(show) => void projectsActions.setBoardIncludeCompleted(show)}
+              view={projects.boardView}
+              onViewChange={(patch) => void projectsActions.saveBoardView(patch)}
               showDoneTaskChats={chat.showDoneTaskChats}
               onShowDoneTaskChatsChange={(show) => void chatActions.setShowDoneTaskChats(show)}
               members={projects.projectDetail?.members ?? []}

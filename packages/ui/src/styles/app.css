@@ -7807,3 +7807,25 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .jmodal-side { flex: 0 0 210px; padding: 10px; }
   .task-tab { padding-inline: 8px; }
 }
+
+/* Сообщение «вышла новая версия»: узкая полоса поверх шапки, не сдвигает
+   раскладку — деплой не должен дёргать интерфейс под руками у человека. */
+.stale-build {
+  position: fixed;
+  /* Внизу справа, как тост: сообщение о релизе не срочное и не должно
+     перекрывать ни шапку проекта, ни панель фильтров, которыми человек
+     пользуется прямо сейчас. */
+  bottom: var(--space-4);
+  right: var(--space-4);
+  z-index: 40;
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  max-width: min(92vw, 640px);
+}

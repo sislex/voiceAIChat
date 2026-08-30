@@ -843,3 +843,26 @@ describe('обслуживание учёток (auth-roadmap п.18)', () => {
     db.close()
   })
 })
+
+// «Поле появилось в релизе» и «человек выбрал такое значение» должны быть
+// различимы: иначе смена дефолта в следующем релизе молча переедет всем, кто
+// ничего не менял. Поэтому чтение дозаполняет запись один раз.
+describe('VoiceChatDb — дефолты настроек фиксируются в записи', () => {
+  it('дозаполняет отсутствующие поля и не трогает выбранные', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vc-settings-defaults-'))
+    const file = join(dir, 'settings.db')
+    const db = new VoiceChatDb(file)
+    const raw = new Database(file)
+    // Запись «старого релиза»: только тема, остальных полей ещё не существовало.
+    raw.prepare(`INSERT INTO settings (key, value) VALUES (?, ?)`).run('app:ann', JSON.stringify({ theme: 'dark' }))
+
+    const read = db.getSettings('ann')
+
+    expect(read.theme).toBe('dark')
+    const stored = JSON.parse((raw.prepare(`SELECT value FROM settings WHERE key = ?`).get('app:ann') as { value: string }).value)
+    expect(stored).toMatchObject({ theme: 'dark', llmProvider: 'claude', permissionMode: 'bypassPermissions' })
+    raw.close()
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
