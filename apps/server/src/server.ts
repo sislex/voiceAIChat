@@ -303,7 +303,15 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   await registerRest(app, db, opts.config.dataDir, {
     runnerFs: runnerFs ?? undefined,
     authStatus,
-    isAgentOnline: (agentId) => agentRegistry.isOnline(agentId)
+    isAgentOnline: (agentId) => agentRegistry.isOnline(agentId),
+    // Свои машины на странице «Мой аккаунт» показываются с тем же живым статусом,
+    // что и в разделе «Машины»: реестр знает версию и телеметрию только пока агент подключён.
+    liveAgents: (agents) => agents.map((agent) => ({
+      ...agent,
+      online: agentRegistry.isOnline(agent.id),
+      version: agentRegistry.versionOf(agent.id),
+      telemetry: agentRegistry.telemetryOf(agent.id)
+    }))
   })
   registerPreviewProxy(app, {
     machines: {

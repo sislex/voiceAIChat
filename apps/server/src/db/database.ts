@@ -3254,6 +3254,31 @@ export class VoiceChatDb {
     return this.db.prepare(`UPDATE sessions SET trusted_at = NULL WHERE user_name = ? AND revoked_at IS NULL AND trusted_at IS NOT NULL`).run(user).changes
   }
 
+  /**
+   * Последняя активность и число живых сессий сразу по всем пользователям.
+   * Список админки строится одним проходом: спрашивать `sessionStats` на каждого
+   * — это N запросов ради двух чисел в строке таблицы.
+   */
+  sessionActivity(at?: number): Map<string, { lastSeen: number; live: number }> {
+    const now = at ?? Date.now()
+    const rows = this.db.prepare(`SELECT user_name AS user, MAX(last_seen) AS lastSeen, COUNT(*) AS live
+      FROM sessions WHERE revoked_at IS NULL AND expires_at > ? GROUP BY user_name`).all(now) as { user: string; lastSeen: number; live: number }[]
+    return new Map(rows.map((row) => [row.user, { lastSeen: row.lastSeen, live: row.live }]))
+  }
+
+  /**
+   * Число разговоров у каждого пользователя одним запросом. Админу показываются
+   * все беседы, включая чаты завершённых задач: их скрытие — фильтр сайдбара
+   * владельца, а не свойство данных.
+   */
+  conversationCounts(): Map<string, number> {
+    const rows = this.db.prepare(`SELECT c.user_id AS user, COUNT(*) AS total FROM conversations c
+      WHERE (c.assistant_kind IS NULL OR c.assistant_kind IN ('web-recorder', 'playwright-reader', 'console-reader', 'make'))
+        AND ${NOT_CANCELLED_TASK_CHAT}
+      GROUP BY c.user_id`).all() as { user: string; total: number }[]
+    return new Map(rows.map((row) => [row.user, row.total]))
+  }
+
   /** Сколько живых сессий и сколько из них доверенных — сводка для админки. */
   sessionStats(user: string, at?: number): { total: number; trusted: number } {
     const now = at ?? Date.now()
@@ -3532,6 +3557,7 @@ export class VoiceChatDb {
       COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
       COALESCE(SUM(json_extract(m.meta,'$.costUsd')),0) AS costUsd,
       COALESCE(SUM(${estimatedCost}),0) AS costFromPrices,
+      COALESCE(SUM(CASE WHEN json_extract(m.meta,'$.interrupted') THEN 1 ELSE 0 END),0) AS interrupted,
       MAX(CASE WHEN json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
     const dateWhere = `${from !== undefined ? 'AND m.created_at >= @from' : ''}
       ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
@@ -3573,18 +3599,21 @@ export class VoiceChatDb {
       COALESCE(SUM(json_extract(m.meta,'$.cacheReadTokens')),0) AS cacheReadTokens,
       COALESCE(SUM(json_extract(m.meta,'$.costUsd')),0) AS costUsd,
       COALESCE(SUM(${estimatedCost}),0) AS costFromPrices,
+      COALESCE(SUM(CASE WHEN json_extract(m.meta,'$.interrupted') THEN 1 ELSE 0 END),0) AS interrupted,
       MAX(CASE WHEN json_extract(m.meta,'$.costUsd') IS NULL AND mp.model IS NULL THEN 1 ELSE 0 END) AS costIncomplete`
     const where = `m.role = 'ai' AND m.meta IS NOT NULL ${from !== undefined ? 'AND m.created_at >= @from' : ''} ${to !== undefined ? 'AND m.created_at <= @to' : ''}`
     const bind = { ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}) }
     const joins = `FROM messages m JOIN conversations c ON m.conversation_id = c.id
       LEFT JOIN model_prices mp ON mp.provider = m.engine AND mp.model = COALESCE(json_extract(m.meta,'$.model'), c.llm_model)`
     type Row = UsageTotals & { name: string; model?: string; costIncomplete?: number }
-    const complete = (row: Row): UsageTotals => ({ inputTokens: row.inputTokens, outputTokens: row.outputTokens, cacheReadTokens: row.cacheReadTokens, costUsd: row.costUsd, costFromPrices: row.costFromPrices, messages: row.messages, costIncomplete: Boolean(row.costIncomplete) })
+    const complete = (row: Row): UsageTotals => ({ inputTokens: row.inputTokens, outputTokens: row.outputTokens, cacheReadTokens: row.cacheReadTokens, costUsd: row.costUsd, costFromPrices: row.costFromPrices, messages: row.messages, interrupted: row.interrupted ?? 0, costIncomplete: Boolean(row.costIncomplete) })
     const totals = this.db.prepare(`SELECT c.user_id AS name, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id`).all(bind) as Row[]
     const models = this.db.prepare(`SELECT c.user_id AS name, COALESCE(json_extract(m.meta,'$.model'), c.llm_model, '?') AS model, ${sums} ${joins} WHERE ${where} GROUP BY c.user_id, model ORDER BY outputTokens DESC`).all(bind) as Row[]
     const byName = new Map<string, import('@voicechat/shared').UserUsageSummary>()
-    for (const user of this.listUsers()) byName.set(user.name, { name: user.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, costFromPrices: 0, messages: 0, costIncomplete: false }, byModel: [] })
-    for (const row of totals) byName.get(row.name)!.totals = complete(row)
+    for (const user of this.listUsers()) byName.set(user.name, { name: user.name, totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, costFromPrices: 0, messages: 0, interrupted: 0, costIncomplete: false }, byModel: [] })
+    // Строка расхода без учётки в users — след удалённого пользователя; такую
+    // сводку показывать некому, но и падать на ней сводке дашборда нельзя.
+    for (const row of totals) { const summary = byName.get(row.name); if (summary) summary.totals = complete(row) }
     for (const row of models) byName.get(row.name)?.byModel.push({ model: row.model ?? '?', ...complete(row) })
     return [...byName.values()]
   }
