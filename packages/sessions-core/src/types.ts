@@ -52,7 +52,7 @@ export interface DeviceSession {
   platform?: string | null
   clientVersion?: string | null
   geo?: GeoInfo | null
-  /** Сколько запросов сделала сессия — грубая мера активности. */
+  /** Сколько раз отмечалась активность (реализация вправе экономить записи). */
   requests?: number
   lastPath?: string | null
 }

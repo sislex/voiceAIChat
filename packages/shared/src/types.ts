@@ -454,7 +454,21 @@ export interface SessionUser {
   mustChangePassword?: boolean
 }
 
-/** Сессия пользователя (auth-roadmap п.4): устройство, адрес, активность; `current` — та, с которой сделан запрос. */
+/** Место входа по адресу: город и страна либо признак локальной сети. */
+export interface SessionGeo {
+  country?: string
+  city?: string
+  local?: boolean
+  /** Готовая подпись для показа — считает её сервер, клиент не собирает сам. */
+  label: string
+}
+
+/**
+ * Сессия пользователя (auth-roadmap п.4): устройство, адрес, активность;
+ * `current` — та, с которой сделан запрос. Зеркало `DeviceSession` из
+ * @voicechat/sessions-core: совместимость проверяет `sessions.test.ts`, все
+ * поля сверх базовых — необязательные, чтобы старые записи читались как есть.
+ */
 export interface SessionInfo {
   sid: string
   user: string
@@ -464,6 +478,17 @@ export interface SessionInfo {
   ip: string
   userAgent: string
   current?: boolean
+  /** Имя устройства, заданное пользователем. */
+  label?: string | null
+  /** Ключ устройства: на нём держатся доверие и распознавание нового входа. */
+  deviceKey?: string | null
+  trustedAt?: number | null
+  platform?: string | null
+  clientVersion?: string | null
+  geo?: SessionGeo | null
+  /** Сколько раз отмечалась активность (не чаще раза в минуту) — грубая мера. */
+  requests?: number
+  lastPath?: string | null
 }
 /** Ответ логина при включённом втором факторе (auth-roadmap п.6): пароль верен, нужен код по одноразовому тикету. */
 export interface LoginChallenge { requires2fa: true; ticket: string }

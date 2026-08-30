@@ -307,6 +307,65 @@ describe('REST: аутентификация', () => {
     ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
   })
 
+  it('сессия запоминает устройство: ключ, платформу, версию клиента, локальную сеть и активность', async () => {
+    db.createUser('meta', 'meta-pass-2026-ok', 'developer')
+    const chrome = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/session/login',
+      payload: { name: 'meta', password: 'meta-pass-2026-ok' },
+      headers: { 'user-agent': chrome, 'x-vc-client-version': '0.1.200' }
+    })
+    const token = login.json().token as string
+    const one = db.listSessions('meta')[0]!
+    expect(one.deviceKey).toMatch(/^[0-9a-f]{8}$/)
+    expect(one.platform).toBe('web')
+    expect(one.clientVersion).toBe('0.1.200')
+    // Тесты ходят с loopback: место известно без внешних сервисов.
+    expect(one.geo).toMatchObject({ local: true, label: 'локальная сеть' })
+    expect(one.requests).toBe(0)
+    // Отметка активности не чаще раза в минуту: серия запросов подряд её не двигает.
+    await app.inject({ method: 'GET', url: '/api/conversations', headers: { authorization: `Bearer ${token}` } })
+    expect(db.listSessions('meta')[0]!.requests).toBe(0)
+    db.touchSession(one.sid, 60_000, '/api/conversations', Date.now() + 120_000)
+    const touched = db.listSessions('meta')[0]!
+    expect(touched.requests).toBe(1)
+    expect(touched.lastPath).toBe('/api/conversations')
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('электронная оболочка и агент опознаются как отдельные платформы', async () => {
+    db.createUser('plat', 'platform-pass-2026', 'developer')
+    const login = async (ua: string): Promise<void> => {
+      await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'plat', password: 'platform-pass-2026' }, headers: { 'user-agent': ua } })
+    }
+    await login('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Electron/33.0.0 Chrome/130.0.0.0 Safari/537.36')
+    await login('VoiceChatAgent/1.4.2 (darwin)')
+    expect(db.listSessions('plat').map((s) => s.platform).sort()).toEqual(['agent', 'desktop'])
+    ;(app as unknown as { resetLoginLimiters: () => void }).resetLoginLimiters()
+  })
+
+  it('старая база без колонок устройства мигрирует и продолжает читать прежние сессии', async () => {
+    const legacyDb = new VoiceChatDb(':memory:')
+    // Воспроизводим таблицу такой, какой она была до метаданных устройства.
+    ;(legacyDb as unknown as { db: { exec(sql: string): void } }).db.exec(`
+      DROP TABLE sessions;
+      CREATE TABLE sessions (sid TEXT PRIMARY KEY, user_name TEXT NOT NULL, created_at INTEGER NOT NULL, last_seen INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL, ip TEXT NOT NULL DEFAULT '', user_agent TEXT NOT NULL DEFAULT '', revoked_at INTEGER);
+      INSERT INTO sessions (sid, user_name, created_at, last_seen, expires_at, ip, user_agent)
+        VALUES ('old', 'someone', 1, 2, ${Date.now() + 86_400_000}, '10.0.0.1', 'legacy');
+    `)
+    ;(legacyDb as unknown as { migrate(): void }).migrate()
+    const rows = legacyDb.listSessions('someone')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ sid: 'old', userAgent: 'legacy', label: null, deviceKey: null, trustedAt: null, geo: null, requests: 0 })
+    // Новые колонки пишутся уже после миграции — старая строка этому не мешает.
+    expect(legacyDb.updateSession('old', { label: 'Старый вход', trusted: true })).toBe(true)
+    expect(legacyDb.listSessions('someone')[0]).toMatchObject({ label: 'Старый вход' })
+    expect(legacyDb.listSessions('someone')[0]!.trustedAt).toBeGreaterThan(0)
+    legacyDb.close()
+  })
+
   it('cookie-сессия: login ставит HttpOnly vc_session + vc_csrf; GET по cookie проходит, мутация без CSRF → 403, с заголовком → ок; logout гасит cookie (auth-roadmap п.5)', async () => {
     db.createUser('cook', 'cookie-pass-2026', 'developer')
     const login = await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'cook', password: 'cookie-pass-2026' } })

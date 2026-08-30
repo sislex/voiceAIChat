@@ -297,8 +297,19 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at INTEGER NOT NULL,
   ip TEXT NOT NULL DEFAULT '',
   user_agent TEXT NOT NULL DEFAULT '',
-  revoked_at INTEGER
+  revoked_at INTEGER,
+  -- Метаданные устройства: имя от пользователя, ключ устройства (доверие и
+  -- распознавание нового входа), место по адресу и грубая мера активности.
+  label TEXT,
+  device_key TEXT,
+  trusted_at INTEGER,
+  platform TEXT,
+  client_version TEXT,
+  geo TEXT,
+  requests INTEGER NOT NULL DEFAULT 0,
+  last_path TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(user_name, device_key);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_name);
 
 CREATE TABLE IF NOT EXISTS session_revocations (
