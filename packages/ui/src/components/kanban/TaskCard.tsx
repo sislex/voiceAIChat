@@ -20,7 +20,7 @@ import { Button } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
-import { ChatIcon } from '../icons'
+import { ChatIcon, DotsIcon, GripIcon } from '../icons'
 
 export interface TaskCardProps {
   task: Task
@@ -166,7 +166,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
             if (cardRef.current) props.onGrab?.(e, cardRef.current, true)
           }}
         >
-          ⠿
+          <GripIcon />
         </span>
         <span className="jcard-key jcard-key--head">{key}</span>
         <span className="jcard-title" title={task.title}>{task.title}</span>
@@ -182,7 +182,7 @@ export function TaskCard(props: TaskCardProps): JSX.Element {
               setMenuOpen((v) => !v)
             }}
           >
-            ⋯
+            <DotsIcon />
           </IconButton>
           {menuOpen && (
             <div className="jcard-menu" onClick={(e) => e.stopPropagation()}>
