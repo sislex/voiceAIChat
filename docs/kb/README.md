@@ -9,39 +9,39 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 137 коммит(ов) в areas после сверки: 44ad953c CHAT-376 make Reader updates live and observable … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 138 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 154 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev … |
-| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 14 коммит(ов) в areas после сверки: 7ab9be3b test(projects): сквозной e2e фичи в реальном Chromium … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-29 | ⚠ 19 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
+| [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-01 | ⚠ 15 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-29 | ⚠ 20 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ✓ |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 16 коммит(ов) в areas после сверки: 8db7809b feat(browser-runner): алиасы адресов — Playwright Reader открывает собственный стенд … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 17 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 35 коммит(ов) в areas после сверки: 6beb884a feat(browser-runner): доверять внутреннему CA стенда — Playwright Reader открывает наш сайт … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 54 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 55 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 90 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 117 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 123 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ✓ |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 846 коммит(ов) в areas после сверки: e72e795f docs(kb): алиас адресов не годится для https — Caddy получает чужой SNI … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 17 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 847 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 2 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 18 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 9 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 53 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 122 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 54 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 123 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 7 коммит(ов) в areas после сверки: c4449b30 docs(kb): прод-чекаут — не target.path, и состояние почты на проде … |
 | [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 36 коммит(ов) в areas после сверки: 44ad953c CHAT-376 make Reader updates live and observable … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 54 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
-| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 98 коммит(ов) в areas после сверки: 44ad953c CHAT-376 make Reader updates live and observable … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 5 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 17 коммит(ов) в areas после сверки: ff916430 feat(automated-qa): вердикт этапа, классификация провала и Playwright-режим … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 55 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
+| [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 99 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 6 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-29 | ⚠ 18 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-28 | ⚠ 49 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-29 | ⚠ 25 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-29 | ⚠ 26 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 92 коммит(ов) в areas после сверки: 8db7809b feat(browser-runner): алиасы адресов — Playwright Reader открывает собственный стенд … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 1 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-29 | ⚠ 7 коммит(ов) в areas после сверки: 8db7809b feat(browser-runner): алиасы адресов — Playwright Reader открывает собственный стенд … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-29 | ⚠ 8 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 45 коммит(ов) в areas после сверки: 8db7809b feat(browser-runner): алиасы адресов — Playwright Reader открывает собственный стенд … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-29 | ⚠ 2 коммит(ов) в areas после сверки: 6d7dc143 feat(qa-stage): бюджет прогона, отмена, уборка сессий и снимков … |
-| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-29, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-29 | ⚠ 3 коммит(ов) в areas после сверки: facc8755 feat(reader): локальный раннер, диагностика страницы и адрес по http … |
+| [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-30, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
 ## Инструкции по пакетам
