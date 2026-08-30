@@ -157,3 +157,25 @@ export const ScenarioRecording: Story = {
     }
   }
 }
+
+/**
+ * Где мы находимся: адрес подменён алиасом раннера, страница ушла с
+ * проверяемого сайта, есть история и тестовые учётки проекта. Состояния
+ * приходят ответом моста, поэтому живут в витрине.
+ */
+export const WhereAmI: Story = {
+  args: {
+    testUsers: [{ name: 'tester', password: 'secret', role: 'user' }, { name: 'admin', password: 'secret', role: 'admin' }],
+    browser: bridge({
+      start: async () => meta({ currentUrl: 'http://voicechat:8787/', lastActor: 'assistant', title: 'Голос·Чат' })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const address = canvasElement.querySelector('input[type=url]') as HTMLInputElement | null
+    if (!address) return
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(address, 'http://89.125.68.35:8787/')
+    address.dispatchEvent(new Event('input', { bubbles: true }))
+    address.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  }
+}
