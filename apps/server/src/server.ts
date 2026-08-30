@@ -1656,7 +1656,8 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
               passed: !outcome.blocked && outcome.steps.length > 0 && outcome.steps.every((step) => step.status === 'passed'),
               blocked: outcome.blocked,
               steps: outcome.steps,
-              durationMs: Date.now() - startedAt
+              durationMs: Date.now() - startedAt,
+              ...(outcome.pageErrors.length ? { pageErrors: outcome.pageErrors } : {})
             })
             if (outcome.blocked || outcome.steps.some((step) => step.status === 'failed')) break
           }

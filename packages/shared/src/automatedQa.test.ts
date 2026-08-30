@@ -22,6 +22,22 @@ describe('parseAutomatedQaVerdict', () => {
   })
 })
 
+describe('ошибки страницы в вердикте', () => {
+  it('разбираются и уходят в замечания: без них разработчик видит шаг, но не причину', () => {
+    const parsed = parseAutomatedQaVerdict(verdict({
+      mode: 'playwright', pageErrors: ['Uncaught TypeError: columns is undefined']
+    }) as unknown as Record<string, unknown>)
+    expect(parsed?.pageErrors).toEqual(['Uncaught TypeError: columns is undefined'])
+    expect(automatedQaRemarks(parsed!)).toContain('Uncaught TypeError: columns is undefined')
+  })
+
+  it('мусор вместо списка не ломает разбор старого рана', () => {
+    const parsed = parseAutomatedQaVerdict({ ...verdict(), pageErrors: [1, 'ошибка', null] } as unknown as Record<string, unknown>)
+    expect(parsed?.pageErrors).toEqual(['ошибка'])
+    expect(parseAutomatedQaVerdict(verdict() as unknown as Record<string, unknown>)?.pageErrors).toBeUndefined()
+  })
+})
+
 describe('automatedQaRemarks', () => {
   it('в замечания уходит команда, код и хвост вывода', () => {
     const text = automatedQaRemarks(verdict())

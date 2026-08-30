@@ -29,6 +29,15 @@ function AutomatedQaVerdictView(props: { result: Record<string, unknown> }): JSX
       <dt>Длительность</dt><dd>{Math.round(verdict.durationMs / 1000)} с</dd>
     </dl>
     {verdict.steps.length > 0 && <ol className="qa-verdict__steps">{verdict.steps.map((step) => <li key={step.id} data-status={step.status}>{step.title} — {STEP_LABEL[step.status]}{step.detail && <>: {step.detail}</>}</li>)}</ol>}
+    {/* Ошибки страницы стоят перед снимком: обычно они и есть ответ, а снимок
+        только подтверждает. Провалом сами по себе не считаются — страница может
+        ругаться на постороннее. */}
+    {verdict.pageErrors && verdict.pageErrors.length > 0 && (
+      <div className="qa-verdict__page-errors">
+        <h5>Ошибки на странице</h5>
+        <ul>{verdict.pageErrors.map((item, index) => <li key={`${index}-${item.slice(0, 40)}`}>{item}</li>)}</ul>
+      </div>
+    )}
     {verdict.screenshotUrl && <a className="qa-verdict__shot" href={verdict.screenshotUrl} target="_blank" rel="noreferrer"><img src={verdict.screenshotUrl} alt="Снимок экрана в момент вердикта" /></a>}
     {verdict.logTail && <details><summary>Хвост вывода</summary><pre>{verdict.logTail}</pre></details>}
   </section>

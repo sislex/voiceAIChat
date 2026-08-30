@@ -731,6 +731,14 @@ export interface AutomatedQaVerdict {
   steps: AutomatedQaStepResult[]
   /** Ссылка на снимок экрана, если он снят (режим `playwright`). */
   screenshotUrl: string | null
+  /**
+   * Ошибки консоли страницы за прогон. Провалом сами по себе не считаются:
+   * страница может ругаться на постороннее (сбитая аналитика, расширение), и
+   * объявлять из-за этого дефект — тот же ложный возврат задачи, от которого
+   * ушли в круге 25. Но в вердикте они обязаны быть: при разборе провалившегося
+   * шага «Uncaught TypeError …» отвечает на вопрос быстрее снимка экрана.
+   */
+  pageErrors?: string[]
 }
 
 /** Разбор `QaStageRun.result` в вердикт. Старые раны хранят там `{gatePassed}` —
@@ -750,7 +758,8 @@ export function parseAutomatedQaVerdict(result: Record<string, unknown> | null):
     durationMs: typeof result.durationMs === 'number' ? result.durationMs : 0,
     logTail: typeof result.logTail === 'string' ? result.logTail : '',
     steps,
-    screenshotUrl: typeof result.screenshotUrl === 'string' ? result.screenshotUrl : null
+    screenshotUrl: typeof result.screenshotUrl === 'string' ? result.screenshotUrl : null,
+    ...(Array.isArray(result.pageErrors) ? { pageErrors: (result.pageErrors as unknown[]).filter((item): item is string => typeof item === 'string') } : {})
   }
 }
 
@@ -762,6 +771,7 @@ export function automatedQaRemarks(verdict: AutomatedQaVerdict): string {
   else lines.push(`Стартовый адрес: ${verdict.command}`)
   const failed = verdict.steps.filter((step) => step.status === 'failed')
   if (failed.length) lines.push('Провалившиеся шаги:', ...failed.map((step) => `- ${step.title}: ${step.detail}`))
+  if (verdict.pageErrors?.length) lines.push('Ошибки на странице:', ...verdict.pageErrors.map((item) => `- ${item}`))
   if (verdict.logTail) lines.push('Хвост вывода:', verdict.logTail)
   return lines.filter(Boolean).join('\n')
 }
@@ -804,4 +814,6 @@ export interface AutomatedQaCheckResult {
   blocked: string | null
   steps: AutomatedQaStepResult[]
   durationMs: number
+  /** Ошибки консоли страницы — те же, что уходят в вердикт этапа (круг 27). */
+  pageErrors?: string[]
 }
