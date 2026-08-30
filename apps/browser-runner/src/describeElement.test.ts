@@ -8,7 +8,8 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { describeElementScript, scrollToScript } from './describeElement.js'
 
 const HTML = `<!doctype html><html><body style="margin:0">
-  <button data-testid="create" style="position:absolute;left:10px;top:10px;width:100px;height:40px">Создать</button>
+  <button data-testid="create" style="position:absolute;left:10px;top:10px;width:100px;height:40px"><span>Создать</span></button>
+  <button aria-label="Закрыть" style="position:absolute;left:200px;top:10px;width:40px;height:40px">✕</button>
   <button id="save" style="position:absolute;left:10px;top:60px;width:100px;height:40px">Сохранить</button>
   <button aria-label="Закрыть" style="position:absolute;left:10px;top:110px;width:100px;height:40px">✕</button>
   <div style="position:absolute;left:10px;top:160px"><span>раз</span><span>два</span></div>
@@ -24,7 +25,7 @@ beforeAll(async () => {
 })
 afterAll(async () => { await browser?.close() })
 
-const at = (x: number, y: number) => page.evaluate(describeElementScript(x, y)) as Promise<{ selector: string; stability: string; tag: string; text: string; rect: { width: number; height: number } } | null>
+const at = (x: number, y: number) => page.evaluate(describeElementScript(x, y)) as Promise<{ selector: string; stability: string; tag: string; text: string; matches?: number; rect: { width: number; height: number } } | null>
 
 describe('describeElementScript', () => {
   it('data-testid предпочитается всему — он и ставится ради тестов', async () => {
@@ -64,5 +65,31 @@ describe('scrollToScript', () => {
   })
   it('несуществующий селектор — false, а не исключение', async () => {
     expect(await page.evaluate(scrollToScript('#нет-такого'))).toBe(false)
+  })
+})
+
+describe('устойчивость селектора (круг 14)', () => {
+  // Предыдущий блок прокрутил страницу к #far — координаты кнопок без возврата
+  // наверх указывали бы в пустоту.
+  beforeAll(async () => { await page.evaluate('window.scrollTo(0, 0)') })
+
+  it('клик по тексту внутри кнопки даёт селектор кнопки, а не вложенного span', async () => {
+    // elementFromPoint отдаёт самый верхний узел; data-testid при этом стоит на
+    // кнопке, и без подъёма получался бы путь от span.
+    expect(await at(50, 30)).toMatchObject({ selector: '[data-testid="create"]', tag: 'button' })
+  })
+
+  it('сообщает, сколько узлов отвечает селектору', async () => {
+    expect((await at(50, 30))?.matches).toBe(1)
+    // В разметке уже две кнопки с aria-label="Закрыть"; добавляем третью.
+    // Записанный шаг кликнет по первой, и знать об этом надо при записи, а не
+    // когда сценарий однажды нажмёт не ту кнопку.
+    expect((await at(220, 30))?.matches).toBe(2)
+    await page.evaluate(() => {
+      const extra = document.createElement('button')
+      extra.setAttribute('aria-label', 'Закрыть')
+      document.body.appendChild(extra)
+    })
+    expect((await at(220, 30))?.matches).toBe(3)
   })
 })
