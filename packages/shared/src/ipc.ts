@@ -958,6 +958,8 @@ export interface RendererSessionBridge {
   panicSessions?(): Promise<void>
   /** События безопасности конкретного устройства — «что тут было». */
   sessionHistory?(sid: string): Promise<Array<{ id: number; at: number; type: string; details: string }>>
+  /** Снять доверие со всех своих устройств. */
+  untrustAllSessions?(): Promise<void>
   /**
    * Живые изменения сессий: список устарел либо эту сессию завершили с другого
    * устройства. Второе приходит адресно — иначе вкладка узнаёт о потере доступа

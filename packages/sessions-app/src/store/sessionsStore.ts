@@ -26,6 +26,10 @@ export interface SessionsState {
   loadedAt: number | null
   /** Отмеченные карточки для массового завершения. */
   selected: string[]
+  /** Поиск по завершённым сессиям — их бывает много. */
+  endedQuery: string
+  /** Сколько завершённых показывать: список раскрывается по требованию. */
+  endedShown: number
   /** Последнее сообщение о результате действия — его читает скринридер. */
   announcement: string | null
   /** Недавно завершённые сессии; null — ещё не запрашивали. */
@@ -49,6 +53,9 @@ export interface SessionsActions {
   revokeSelected(): Promise<boolean>
   copySummary(): Promise<boolean>
   loadEnded(): Promise<void>
+  setEndedQuery(query: string): void
+  showMoreEnded(step?: number): void
+  untrustAll(): Promise<boolean>
   panic(): Promise<boolean>
   loadHistory(sid: string): Promise<void>
   /** Завершить все сессии этого устройства разом. */
@@ -71,6 +78,7 @@ export interface SessionsCapabilities {
   panic: boolean
   history: boolean
   copy: boolean
+  untrustAll: boolean
 }
 
 export interface SessionsStore {
@@ -82,6 +90,8 @@ export interface SessionsStore {
   visible(): SessionView[]
   /** Платформы, встреченные в списке: из них строится фильтр. */
   platforms(): string[]
+  /** Завершённые после поиска и с учётом «показать ещё». */
+  visibleEnded(): { items: DeviceSession[]; hidden: number }
   /** Подписка на «экран снова видно» от хоста; нет хоста — нет подписки. */
   onVisible?(cb: () => void): () => void
   /** Сколько сессий кроме текущей — от этого зависит массовая кнопка. */
@@ -98,7 +108,7 @@ export interface SessionsStoreOptions {
 
 const initial = (): SessionsState => ({
   status: 'idle', sessions: [], error: null, query: '', platform: null, order: 'activity',
-  loadedAt: null, selected: [], announcement: null, ended: null, history: {}, busySid: null, busyAll: false
+  loadedAt: null, selected: [], endedQuery: '', endedShown: 5, announcement: null, ended: null, history: {}, busySid: null, busyAll: false
 })
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
@@ -166,7 +176,8 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
       ended: typeof client.listEnded === 'function',
       panic: typeof client.panic === 'function',
       history: typeof client.history === 'function',
-      copy: typeof host?.copy === 'function'
+      copy: typeof host?.copy === 'function',
+      untrustAll: typeof client.untrustAll === 'function'
     },
     getState: () => state,
     subscribe(listener) {
@@ -179,6 +190,10 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
     },
     platforms() {
       return platformsOf(state.sessions)
+    },
+    visibleEnded() {
+      const all = filterSessions(state.ended ?? [], state.endedQuery)
+      return { items: all.slice(0, state.endedShown), hidden: Math.max(0, all.length - state.endedShown) }
     },
     ...(host?.onVisible ? { onVisible: (cb: () => void) => host.onVisible!(cb) } : {}),
     otherCount() {
@@ -231,6 +246,25 @@ export function createSessionsStore(options: SessionsStoreOptions): SessionsStor
           if (!disposed) set({ announcement: 'Сводка сессий скопирована' })
           return true
         } catch (error) {
+          return fail(error)
+        }
+      },
+      setEndedQuery(query) {
+        set({ endedQuery: query })
+      },
+      showMoreEnded(step = 10) {
+        set({ endedShown: state.endedShown + step })
+      },
+      async untrustAll() {
+        if (!client.untrustAll) return false
+        set({ busyAll: true })
+        try {
+          await client.untrustAll()
+          if (!disposed) set({ busyAll: false, announcement: 'Доверие снято со всех устройств' })
+          await read()
+          return true
+        } catch (error) {
+          if (!disposed) set({ busyAll: false })
           return fail(error)
         }
       },

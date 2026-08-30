@@ -200,6 +200,24 @@ export const sessionStoreContract: StoreContractCase[] = [
     }
   },
   {
+    name: 'конкурентные мутации не воскрешают и не теряют записи',
+    async run({ store, clock }) {
+      await store.create(session('a'))
+      await store.create(session('b'))
+      clock.advance(HOUR)
+      // Отзыв и правка приходят одновременно: победить должен отзыв, потому что
+      // после него сессии не существует — иначе правка «воскресит» её.
+      const [revoked, updated] = await Promise.all([store.revoke('a'), store.update('a', { label: 'Гонка' })])
+      equal(revoked, true, 'отзыв прошёл')
+      equal(await store.get('a'), null, 'отозванная сессия не воскресает правкой')
+      if (updated) equal(await store.has('a'), true, 'строка на месте, даже если правка успела раньше')
+      // Два параллельных отзыва: успешным считается только один.
+      const results = await Promise.all([store.revoke('b'), store.revoke('b')])
+      equal(results.filter(Boolean).length, 1, 'ровно один успешный отзыв')
+      equal((await store.list('u')).length, 0, 'живых сессий не осталось')
+    }
+  },
+  {
     name: 'сохраняет метаданные устройства, переданные при входе',
     async run({ store }) {
       await store.create(session('a', { deviceKey: 'abc12345', platform: 'web', clientVersion: '1.2.3', geo: { country: 'RU', city: 'Москва', label: 'Москва, RU' } }))

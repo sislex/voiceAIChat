@@ -64,7 +64,10 @@ export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust
       <div className="vcs-main">
         {editing ? (
           <div className="vcs-rename">
-            <label className="vcs-rename-label" htmlFor={`rename-${session.sid}`}>{texts.renameLabel}</label>
+            <label className="vcs-rename-label" htmlFor={`rename-${session.sid}`}>
+              {texts.renameLabel}
+              {view.siblings > 0 && <span className="vcs-note"> — {texts.renameScopeHint}</span>}
+            </label>
             <input
               id={`rename-${session.sid}`}
               ref={inputRef}
@@ -84,7 +87,11 @@ export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust
           <p className="vcs-head">
             <strong className="vcs-title">{title}</strong>
             {current && <span className="vcs-badge vcs-badge--current">{texts.currentBadge}</span>}
-            {trusted && <span className="vcs-badge vcs-badge--trusted">{texts.trustedBadge}</span>}
+            {trusted && (
+              <span className="vcs-badge vcs-badge--trusted" title={view.trustLeftMs > 0 ? texts.trustLeft(formatDuration(view.trustLeftMs)) : undefined}>
+                {texts.trustedBadge}
+              </span>
+            )}
             {online && !current && <span className="vcs-badge vcs-badge--online">{texts.onlineBadge}</span>}
             {session.twoFactor && <span className="vcs-badge vcs-badge--2fa">{texts.twoFactorBadge}</span>}
             {view.expiringSoon && <span className="vcs-badge vcs-badge--soon">{texts.expiringSoon}</span>}
@@ -99,6 +106,7 @@ export function DeviceCard({ view, texts, locale, now, busy, canRename, canTrust
           <small className="vcs-meta vcs-meta--dim">{texts.activity(session.requests ?? 0, session.lastPath ?? '')}</small>
         )}
         {view.siblings > 0 && <small className="vcs-meta vcs-meta--dim">{texts.siblings(view.siblings)}</small>}
+        {trusted && view.trustLeftMs > 0 && <small className="vcs-meta vcs-meta--dim">{texts.trustLeft(formatDuration(view.trustLeftMs))}</small>}
         {onHistory && (
           <details className="vcs-history" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) onHistory() }}>
             <summary>{texts.historyToggle}</summary>
