@@ -10,8 +10,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { AutomatedQaScenario, AutomatedQaStepResult, BrowserSelectorResult } from '@voicechat/shared'
-import { planModelAction } from '../browser/modelActions.js'
+import type { AutomatedQaScenario, AutomatedQaStepResult } from '@voicechat/shared'
+import { firstLine, runScenarioStep, type ScenarioSend } from '@voicechat/shared'
 import type { BrowserRunnerClient } from '../browser/runnerClient.js'
 
 export interface AutomatedQaScenarioInput {
@@ -51,12 +51,6 @@ export interface AutomatedQaScenarioRunner {
 /** Бюджет всего Playwright-прогона по умолчанию. */
 const DEFAULT_BUDGET_MS = 10 * 60_000
 
-/** Текст ошибки Playwright длинный и многострочный; в вердикт идёт первая строка. */
-function shortError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.split('\n')[0].slice(0, 300)
-}
-
 export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerDeps): AutomatedQaScenarioRunner {
   const now = deps.now ?? Date.now
   return {
@@ -76,7 +70,7 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         const session = await deps.browser.start({ sessionId, userKey: input.userId, conversationKey: input.runId })
         incarnation = session.incarnation
       } catch (error) {
-        return { steps: [], screenshotUrl: null, blocked: `Изолированный Chromium недоступен: ${shortError(error)}` }
+        return { steps: [], screenshotUrl: null, blocked: `Изолированный Chromium недоступен: ${firstLine(error)}` }
       }
       const send = async (command: Parameters<BrowserRunnerClient['command']>[1]['command']): Promise<unknown> =>
         deps.browser.command(sessionId, { requestId: randomUUID(), incarnation, actor: 'assistant', command }, input.signal)
@@ -88,7 +82,7 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         try {
           await send({ type: 'navigate', url: input.scenario.startUrl })
         } catch (error) {
-          return { steps: [], screenshotUrl: null, blocked: `Стартовый адрес не открылся: ${shortError(error)}` }
+          return { steps: [], screenshotUrl: null, blocked: `Стартовый адрес не открылся: ${firstLine(error)}` }
         }
         let failed = false
         let expired = false
@@ -105,7 +99,7 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
             continue
           }
           const startedAt = now()
-          const outcome = await runStep(step, send)
+          const outcome = await runScenarioStep(step, send as ScenarioSend)
           const result: AutomatedQaStepResult = { id: step.id, title: step.title, status: outcome.ok ? 'passed' : 'failed', detail: outcome.detail, durationMs: now() - startedAt }
           results.push(result)
           input.onStep?.(result, index, steps.length)
@@ -122,7 +116,7 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
           screenshotUrl = deps.screenshotUrl(input.runId)
         } catch { /* снимок — не повод завалить этап */ }
       } catch (error) {
-        blocked = `Прогон сценария прерван: ${shortError(error)}`
+        blocked = `Прогон сценария прерван: ${firstLine(error)}`
       } finally {
         await deps.browser.stop(sessionId).catch(() => undefined)
       }
@@ -132,33 +126,4 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
       return { steps: results, screenshotUrl, blocked }
     }
   }
-}
-
-async function runStep(
-  step: AutomatedQaScenario['steps'][number],
-  send: (command: Parameters<BrowserRunnerClient['command']>[1]['command']) => Promise<unknown>
-): Promise<{ ok: boolean; detail: string }> {
-  const plan = planModelAction(step.action)
-  if (plan.kind === 'unsupported') return { ok: false, detail: plan.reason }
-  let response: unknown
-  try {
-    response = await send(plan.command)
-  } catch (error) {
-    return { ok: false, detail: shortError(error) }
-  }
-  const selector = response as BrowserSelectorResult | null
-  if (selector && typeof selector === 'object' && 'ok' in selector && selector.ok === false) {
-    return { ok: false, detail: selector.error ?? 'Действие не выполнено' }
-  }
-  if (!step.expectText && !step.expectAbsentText) return { ok: true, detail: '' }
-  let pageText = ''
-  try {
-    const read = await send({ type: 'selector', action: { kind: 'read' } }) as BrowserSelectorResult
-    pageText = typeof read?.text === 'string' ? read.text : ''
-  } catch (error) {
-    return { ok: false, detail: `Текст страницы не прочитан: ${shortError(error)}` }
-  }
-  if (step.expectText && !pageText.includes(step.expectText)) return { ok: false, detail: `На странице нет ожидаемого текста «${step.expectText}»` }
-  if (step.expectAbsentText && pageText.includes(step.expectAbsentText)) return { ok: false, detail: `На странице найден недопустимый текст «${step.expectAbsentText}»` }
-  return { ok: true, detail: '' }
 }

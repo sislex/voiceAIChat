@@ -1,4 +1,12 @@
-// Мост между инструментами модели и изолированным Chromium.
+// Перевод действия в команду изолированного Chromium.
+//
+// Живёт в shared, потому что нужен трём сторонам: этапу Automated QA на сервере,
+// панели Playwright Reader и пробе `scripts/reader-probe.mjs`. Пока перевод
+// лежал в `apps/server`, проба разбирала шаги своим кодом — и отстала: круг 15
+// научил записывать прокрутку, этап её исполнял, а проба отвечала «действие не
+// исполняет». Один сценарий обязан исполняться одинаково везде.
+//
+// Изначальное назначение — мост между инструментами модели и Chromium:
 //
 // Инструменты `mcp__browser__*` описаны в терминах `PreviewAction` (селекторы и
 // текст) и по умолчанию исполняются в браузере пользователя через
@@ -7,8 +15,8 @@
 // `BrowserCommand` и выполняются сервером. Без этого моста модель Playwright
 // Reader не видела вовсе: до неё доходил только пользовательский REST-путь.
 
-import type { PreviewAction } from '@voicechat/shared'
-import type { BrowserCommand } from '@voicechat/shared'
+import type { PreviewAction } from './previewActions'
+import type { BrowserCommand } from './types'
 
 /** Вьюпорт раннера по умолчанию: модель просит только ширину. */
 const DEFAULT_VIEWPORT = { width: 1280, height: 800, deviceScaleFactor: 1 }
