@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
-import { ambiguousSteps, expectOnLastStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
+import { ambiguousSteps, brokenSteps, expectOnLastStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
 import type { AutomatedQaScenario } from '@shared/qa'
+import { scenarioLabel } from '@shared/qa'
 import { runScenarioStep, scenarioProblems, stepHint } from '@shared/scenarioStep'
 import { Button, IconButton } from '@voicechat/ui-kit'
 
@@ -59,10 +60,10 @@ export interface BrowserSessionPaneProps {
    */
   onSaveScenario?: (scenario: AutomatedQaScenario) => Promise<void>
   /**
-   * Сценарий, уже сохранённый в проекте. Без него существующий сценарий нельзя
+   * Сценарии, уже сохранённые в проекте. Без них существующий сценарий нельзя
    * поправить — только записать заново.
    */
-  savedScenario?: AutomatedQaScenario
+  savedScenarios?: AutomatedQaScenario[]
 }
 
 type Phase = 'starting' | 'ready' | 'unavailable' | 'error'
@@ -80,7 +81,7 @@ export function withScheme(raw: string): string {
   return `${hasExplicitPort ? 'http' : 'https'}://${value}`
 }
 
-export function BrowserSessionPane({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario, savedScenario }: BrowserSessionPaneProps): JSX.Element {
+export function BrowserSessionPane({ conversationId, browser, onAttachFrame, testUsers, onSaveScenario, savedScenarios }: BrowserSessionPaneProps): JSX.Element {
   const [phase, setPhase] = useState<Phase>('starting')
   const [viewportId, setViewportId] = useState<'phone' | 'tablet' | 'desktop'>('desktop')
   // Навигация занимает секунды, а кадр всё это время старый: без отметки непонятно,
@@ -99,9 +100,6 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   // Запись сценария: ради неё Reader и делается инструментом автотестов —
   // человек проходит путь руками, а на выходе воспроизводимые шаги.
   const [recording, setRecording] = useState(false)
-  // Адрес, который человек попросил, — отдельно от того, что загрузилось: раннер
-  // мог подменить его алиасом, и молчать об этом нельзя.
-  const [requested, setRequested] = useState<string>('')
   const [history, setHistory] = useState<string[]>([])
   const origin = useRef<string | null>(null)
   /** Последний описанный элемент — к нему привязывается записанный ввод текста. */
@@ -123,6 +121,8 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const [running, setRunning] = useState(false)
   /** Длительность последнего прогона: по ней прикидывают бюджет этапа. */
   const [replayMs, setReplayMs] = useState<number | null>(null)
+  /** Имя записываемого сценария: в наборе их нечем различать. */
+  const [scenarioName, setScenarioName] = useState('')
   const [meta, setMeta] = useState<BrowserSessionMetadata | null>(null)
   const [frame, setFrame] = useState<string | null>(null)
   const [address, setAddress] = useState<string>('')
@@ -340,7 +340,6 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     const url = address.trim()
     if (!url) return
     const full = withScheme(url)
-    setRequested(full)
     // Происхождение первого открытого адреса — то, с чем сверяемся дальше:
     // уход на другой хост посреди проверки почти всегда промах или редирект.
     if (!origin.current) origin.current = full
@@ -377,7 +376,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
    * этап Automated QA. Останавливаемся на первом провале: дальше идти
    * бессмысленно, страница уже не в том состоянии.
    */
-  const replay = async (): Promise<void> => {
+  const replay = async (upToId?: string): Promise<void> => {
     if (!steps.length) return
     setRunning(true)
     setStepResults({})
@@ -386,7 +385,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     const scenario = toScenario(steps, meta?.currentUrl ?? '')
     try {
       if (scenario.startUrl) await run({ type: 'navigate', url: scenario.startUrl })
-      for (const step of scenario.steps) {
+      // Прогон до выбранного шага: длинный сценарий иначе отлаживается целиком.
+      const limit = upToId ? scenario.steps.findIndex((item) => item.id === upToId) : -1
+      const planned = limit >= 0 ? scenario.steps.slice(0, limit + 1) : scenario.steps
+      for (const step of planned) {
         const outcome = await runScenarioStep(step, (command) => {
           // Мост панели не принимает `screenshot` — у него отдельный роут.
           // Сценарий его и не порождает, но тип об этом не знает.
@@ -416,8 +418,12 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   const tabs = meta?.tabs ?? []
   const fragile = fragileSteps(steps)
   const ambiguous = ambiguousSteps(steps)
+  const broken = brokenSteps(steps)
   const runnableSteps = toScenario(steps, meta?.currentUrl ?? '').steps.length
-  const alias = aliasNote(requested, meta?.currentUrl ?? null)
+  // Оба поля берутся из одного ответа раннера: пока запрошенный адрес держали
+  // отдельным состоянием, между нажатием Enter и ответом подсказка описывала
+  // старую страницу новым адресом — и врала.
+  const alias = aliasNote(meta?.currentUrl ?? '', meta?.aliasedHost ?? null)
   const strayed = offOrigin(origin.current, meta?.currentUrl ?? null, alias !== null)
 
   return <section className="playwright-browser-pane" aria-label="Browser session">
@@ -494,14 +500,22 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
       </span>
       {/* Кнопка живёт в ряду инструментов, а не в панели записи: та появляется
           только при непустой записи, и загрузить туда было бы нечем. */}
-      {savedScenario && savedScenario.steps.length > 0 && steps.length === 0 && (
-        <Button size="sm" variant="ghost" disabled={phase !== 'ready'} onClick={() => {
-          setSteps([
-            ...(savedScenario.startUrl ? recordNavigate([], savedScenario.startUrl) : []),
-            ...savedScenario.steps.map((step) => ({ ...step, stability: 'testid' as const }))
-          ])
-          setStepResults({})
-        }}>Загрузить сценарий проекта</Button>
+      {(savedScenarios ?? []).length > 0 && steps.length === 0 && (
+        <label className="playwright-reader-testusers">Загрузить сценарий
+          <select className="sel" value="" disabled={phase !== 'ready'} onChange={(event) => {
+            const found = (savedScenarios ?? [])[Number(event.target.value)]
+            if (!found) return
+            setScenarioName(found.name ?? '')
+            setSteps([
+              ...(found.startUrl ? recordNavigate([], found.startUrl) : []),
+              ...found.steps.map((step) => ({ ...step, stability: 'testid' as const }))
+            ])
+            setStepResults({})
+          }}>
+            <option value="">выбрать…</option>
+            {(savedScenarios ?? []).map((item, index) => <option key={index} value={index}>{scenarioLabel(item, index)}</option>)}
+          </select>
+        </label>
       )}
       <Button size="sm" variant={recording ? 'primary' : 'ghost'} aria-pressed={recording} disabled={phase !== 'ready'}
         onClick={() => (recording ? setRecording(false) : startRecording())}>
@@ -541,7 +555,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
         {strayed && <span className="playwright-reader-where__note" role="alert">Страница ушла с проверяемого сайта на {(() => { try { return new URL(meta!.currentUrl!).host } catch { return 'другой адрес' } })()}.</span>}
         {history.length > 1 && (
           <label className="playwright-reader-where__history">Где были
-            <select className="sel" value="" disabled={phase !== 'ready'} onChange={(event) => { if (event.target.value) { setRequested(event.target.value); void run({ type: 'navigate', url: event.target.value }) } }}>
+            <select className="sel" value="" disabled={phase !== 'ready'} onChange={(event) => { if (event.target.value) void run({ type: 'navigate', url: event.target.value }) }}>
               <option value="">выбрать адрес…</option>
               {history.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
@@ -576,7 +590,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           <strong>Сценарий: {steps.length} шаг(ов)</strong>
           {onSaveScenario && (
             <Button size="sm" variant="primary" disabled={busy} onClick={() => void (async () => {
-              const scenario = toScenario(steps, meta?.currentUrl ?? '')
+              const scenario = { ...toScenario(steps, meta?.currentUrl ?? ''), ...(scenarioName.trim() ? { name: scenarioName.trim() } : {}) }
               // Раньше в проект уезжали шаги с неисполнимым действием и пустым
               // селектором, и узнавалось это только на прогоне — через сутки, на
               // доске, у другого человека.
@@ -588,6 +602,9 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           )}
           {/* Считаем исполнимые шаги, а не записанные: шаг-переход уходит в
               startUrl, и запись из одного перехода прогонять нечем. */}
+          <label className="playwright-reader-record__name">Название сценария
+            <input className="login-input" value={scenarioName} placeholder="Вход и доска" onChange={(event) => setScenarioName(event.target.value)} />
+          </label>
           <Button size="sm" disabled={running || !runnableSteps} onClick={() => void replay()}>
             {running ? 'Прогоняю…' : 'Прогнать сценарий'}
           </Button>
@@ -617,6 +634,10 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           // явного ожидания раннер нажмёт быстрее, чем появится элемент.
           <p className="playwright-reader-record__warn">Между шагами были долгие паузы: вы ждали страницу. Добавьте ожидаемый текст, иначе прогон будет нажимать раньше, чем элемент появится.</p>
         )}
+        {broken.length > 0 && (
+          // matches: 0 — построенный селектор невалиден, шаг упадёт наверняка.
+          <p className="playwright-reader-record__warn" role="alert">Сломанных шагов: {broken.length}. Их селектор не находит на странице ничего — такой шаг упадёт при первом же прогоне.</p>
+        )}
         {ambiguous.length > 0 && (
           <p className="playwright-reader-record__warn">Неоднозначных шагов: {ambiguous.length}. Их селектор находит несколько элементов, и шаг нажмёт первый.</p>
         )}
@@ -645,6 +666,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
                   value={step.title}
                   onChange={(event) => setSteps((current) => renameStep(current, step.id, event.target.value))}
                 />
+                <IconButton size="sm" aria-label={`Прогнать до шага «${step.title}»`} title="Прогнать до этого шага" disabled={running} onClick={() => void replay(step.id)}>▸</IconButton>
                 <IconButton size="sm" aria-label={`Убрать шаг «${step.title}»`} title="Убрать шаг" onClick={() => setSteps((current) => removeStep(current, step.id))}>✕</IconButton>
               </span>
               <code>{'selector' in step.action ? step.action.selector : ''}</code>

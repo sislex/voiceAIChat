@@ -3,7 +3,7 @@ import { lookup } from 'node:dns/promises'
 import { randomUUID } from 'node:crypto'
 import { chromium, type BrowserContext, type Locator, type Page } from 'playwright'
 import type { BrowserCommandRequest, BrowserConsoleEntry, BrowserInspectResult, BrowserNetworkEntry, BrowserSelectorResult, BrowserSessionMetadata, BrowserTab, BrowserViewport } from '@voicechat/shared'
-import { aliasTargets, applyHostAlias, isBlockedAddress, profilePath, validatePublicUrl, type HostAliases } from './security.js'
+import { aliasTargets, applyHostAlias, isBlockedAddress, profilePath, restoreHostAlias, validatePublicUrl, type HostAliases } from './security.js'
 import { runSelectorAction } from './selectorActions.js'
 import { runInspectAction } from './inspectActions.js'
 
@@ -98,7 +98,12 @@ export class BrowserSessionManager {
         if (this.allowedTargets.has(`${aliased.hostname.toLowerCase()}:${port}`) || this.allowedTargets.has(aliased.hostname.toLowerCase())) {
           return aliased.toString() === requested.toString() ? route.continue() : route.continue({ url: aliased.toString() })
         }
-        const addresses = await lookup(aliased.hostname, { all: true, verbatim: true })
+        // Несуществующий домен и запрещённый политикой — разные беды, и раньше
+        // обе давали ERR_BLOCKED_BY_CLIENT: человек думал, что его адрес в
+        // чёрном списке, хотя тот просто не резолвится.
+        let addresses
+        try { addresses = await lookup(aliased.hostname, { all: true, verbatim: true }) }
+        catch { return route.abort('namenotresolved') }
         if (addresses.some((entry) => isBlockedAddress(entry.address))) return route.abort('blockedbyclient')
         return route.continue()
       } catch {
@@ -170,6 +175,11 @@ export class BrowserSessionManager {
     const session = await this.require(sessionId)
     if (request.incarnation !== session.incarnation) throw new Error('stale_incarnation')
     session.lastActor = request.actor
+    // Отметка обращения ставится здесь, а не в `metadata`: селекторные команды,
+    // разбор журналов и снимок экрана возвращаются раньше метаданных, а именно
+    // из них состоит прогон сценария. Сборщик считал такую сессию брошенной и
+    // закрывал Chromium посреди работы.
+    session.lastUsedAt = Date.now()
     const tabId = request.tabId ?? session.activeTabId
     const page = session.pages.get(tabId)
     if (!page) throw new Error('stale_tab')
@@ -214,6 +224,19 @@ export class BrowserSessionManager {
     return await this.metadata(session)
   }
 
+  /**
+   * Адрес наружу: алиас оператора разворачивается обратно. Иначе внутреннее имя
+   * сети compose уезжает в панель и в `startUrl` записанного сценария, а такой
+   * сценарий не открывается нигде, кроме этого же контейнера.
+   */
+  private publicUrl(raw: string): string {
+    try { return restoreHostAlias(new URL(raw), this.hostAliases).toString() } catch { return raw }
+  }
+
+  private hostOf(raw: string): string {
+    try { return new URL(raw).host } catch { return '' }
+  }
+
   count(): number { return this.sessions.size }
 
   async close(): Promise<void> {
@@ -235,9 +258,12 @@ export class BrowserSessionManager {
   private async metadata(session: Session): Promise<BrowserSessionMetadata> {
     session.lastUsedAt = Date.now()
     const tabs: BrowserTab[] = await Promise.all([...session.pages].map(async ([id, page]) => ({
-      id, url: page.url(), title: await page.title().catch(() => ''), active: id === session.activeTabId
+      id, url: this.publicUrl(page.url()), title: await page.title().catch(() => ''), active: id === session.activeTabId
     })))
     const active = tabs.find((tab) => tab.active)
+    const activePage = session.pages.get(session.activeTabId)
+    const rawActive = activePage?.url() ?? ''
+    const aliasedHost = rawActive && this.publicUrl(rawActive) !== rawActive ? this.hostOf(rawActive) : ''
     return {
       id: session.id,
       conversationId: session.conversationKey,
@@ -248,7 +274,8 @@ export class BrowserSessionManager {
       viewport: session.viewport,
       currentUrl: active?.url ?? null,
       title: active?.title || null,
-      ...(session.lastActor ? { lastActor: session.lastActor } : {})
+      ...(session.lastActor ? { lastActor: session.lastActor } : {}),
+      ...(aliasedHost ? { aliasedHost } : {})
     }
   }
 }

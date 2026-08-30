@@ -306,17 +306,36 @@ describe('запись сценария автотеста (круг 12)', () =>
 })
 
 describe('где мы и кто действовал (круг 13)', () => {
-  it('подмена адреса алиасом объясняется, а не выглядит как «открылось не то»', async () => {
+  it('подмена адреса алиасом объясняется по факту от раннера, а адрес остаётся внешним', async () => {
+    // Раннер отдаёт тот адрес, который назвал человек (иначе внутренний уедет в
+    // startUrl записанного сценария), а подмену сообщает отдельным полем.
     const browser = fakeBrowser({
       start: vi.fn(async () => meta({ currentUrl: null })),
-      command: vi.fn(async () => meta({ currentUrl: 'http://voicechat:8787/' }))
+      command: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/', aliasedHost: 'voicechat:8787' }))
     })
     render(<BrowserSessionPane conversationId="c1" browser={browser} />)
     await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
     const address = screen.getByLabelText('Адрес страницы') as HTMLInputElement
     fireEvent.change(address, { target: { value: 'http://89.125.68.35:8787/' } })
     fireEvent.keyDown(address, { key: 'Enter' })
-    expect(await screen.findByText(/адрес подменён алиасом раннера/)).toBeInTheDocument()
+    expect(await screen.findByText(/страница загружена с voicechat:8787/)).toBeInTheDocument()
+    expect((screen.getByLabelText('Адрес страницы') as HTMLInputElement).value).toBe('http://89.125.68.35:8787/')
+  })
+
+  it('уход с проверяемого сайта виден и на стенде с алиасом', async () => {
+    // Раньше подмену вычисляли по расхождению хостов, и на стенде с алиасом
+    // предупреждение «ушли с сайта» не показывалось никогда: любой чужой адрес
+    // тоже объявлялся «подменой алиасом».
+    const browser = fakeBrowser({
+      start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/', aliasedHost: 'voicechat:8787' })),
+      command: vi.fn(async () => meta({ currentUrl: 'https://accounts.google.com/', aliasedHost: undefined }))
+    })
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    const address = screen.getByLabelText('Адрес страницы') as HTMLInputElement
+    fireEvent.change(address, { target: { value: 'https://accounts.google.com/' } })
+    fireEvent.keyDown(address, { key: 'Enter' })
+    expect(await screen.findByText(/ушла с проверяемого сайта/)).toBeInTheDocument()
   })
 
   it('уход с проверяемого сайта показывается тревогой', async () => {
@@ -559,23 +578,23 @@ describe('сценарий как редактируемый артефакт (�
         : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
   })
 
-  const saved = { startUrl: 'http://89.125.68.35:8787/', steps: [{ id: 'step-1', title: 'Открыть доску', action: { kind: 'click' as const, selector: '#board' }, expectText: 'Доска' }] }
+  const saved = [{ name: 'Вход', startUrl: 'http://89.125.68.35:8787/', steps: [{ id: 'step-1', title: 'Открыть доску', action: { kind: 'click' as const, selector: '#board' }, expectText: 'Доска' }] }]
 
   it('сохранённый сценарий подгружается и его можно править', async () => {
-    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenario={saved} />)
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenarios={saved} />)
     await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Загрузить сценарий проекта' }))
+    fireEvent.change(screen.getByLabelText('Загрузить сценарий'), { target: { value: '0' } })
     expect(await screen.findByDisplayValue('Открыть доску')).toBeInTheDocument()
     // Стартовый адрес возвращается шагом-переходом, иначе он потеряется.
     expect(screen.getByDisplayValue('Открыть http://89.125.68.35:8787/')).toBeInTheDocument()
   })
 
   it('после загрузки кнопка исчезает: запись уже есть', async () => {
-    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenario={saved} />)
+    render(<BrowserSessionPane conversationId="c1" browser={bridge()} savedScenarios={saved} />)
     await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: 'Загрузить сценарий проекта' }))
+    fireEvent.change(screen.getByLabelText('Загрузить сценарий'), { target: { value: '0' } })
     await screen.findByDisplayValue('Открыть доску')
-    expect(screen.queryByRole('button', { name: 'Загрузить сценарий проекта' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Загрузить сценарий')).not.toBeInTheDocument()
   })
 
   it('сценарий без проверок не сохраняется и объясняет почему', async () => {
@@ -591,5 +610,53 @@ describe('сценарий как редактируемый артефакт (�
     // Одна надпись — предупреждение при записи, вторая — отказ сохранения.
     expect(await screen.findByText(/Сценарий не сохранён:.*Ни одной проверки/)).toBeInTheDocument()
     expect(onSaveScenario).not.toHaveBeenCalled()
+  })
+})
+
+describe('честные предупреждения и прогон до шага (круг 19)', () => {
+  const bridgeWithElement = (over: Record<string, unknown>): RendererBrowserBridge => fakeBrowser({
+    start: vi.fn(async () => meta({ currentUrl: 'http://89.125.68.35:8787/' })),
+    command: vi.fn(async (_id: string, req: { command: { type: string; action?: { kind?: string } } }) =>
+      req.command.type === 'selector' && req.command.action?.kind === 'describe'
+        ? { ok: true, element: { selector: '#a', stability: 'id', tag: 'button', text: 'Кнопка', matches: 1, rect: { x: 0, y: 0, width: 10, height: 10 }, ...over } }
+        : meta({ currentUrl: 'http://89.125.68.35:8787/' })) as never
+  })
+
+  const recordOne = async (browser: RendererBrowserBridge): Promise<HTMLElement> => {
+    render(<BrowserSessionPane conversationId="c1" browser={browser} />)
+    await waitFor(() => expect(screen.getByAltText('Кадр Chromium')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Записать сценарий' }))
+    const frame = screen.getByAltText('Кадр Chromium')
+    Object.defineProperty(frame, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 1280, height: 800 }) })
+    fireEvent.click(frame, { clientX: 5, clientY: 5 })
+    await screen.findByDisplayValue('Нажать «Кнопка»')
+    return frame
+  }
+
+  it('селектор, не находящий ничего, предупреждает громко', async () => {
+    await recordOne(bridgeWithElement({ matches: 0 }))
+    expect(await screen.findByText(/Сломанных шагов: 1/)).toBeInTheDocument()
+  })
+
+  it('исправный шаг не вызывает предупреждений о поломке', async () => {
+    await recordOne(bridgeWithElement({}))
+    expect(screen.queryByText(/Сломанных шагов/)).not.toBeInTheDocument()
+  })
+
+  it('прогон до выбранного шага останавливается на нём', async () => {
+    const browser = bridgeWithElement({})
+    const frame = await recordOne(browser)
+    fireEvent.click(frame, { clientX: 5, clientY: 5 })
+    await waitFor(() => expect(screen.getAllByDisplayValue('Нажать «Кнопка»')).toHaveLength(2))
+    const commandsBefore = (browser.command as ReturnType<typeof vi.fn>).mock.calls.length
+    // Второй пункт списка — первый исполнимый шаг (первый пункт это переход).
+    fireEvent.click(screen.getAllByRole('button', { name: /Прогнать до шага/ })[1])
+    await waitFor(() => expect(screen.getAllByText('прогон: ок')).toHaveLength(1))
+    // Считаем именно клики по странице: их должен быть ровно один, иначе прогон
+    // ушёл дальше указанного шага.
+    const clicks = (browser.command as ReturnType<typeof vi.fn>).mock.calls
+      .slice(commandsBefore)
+      .filter(([, req]) => (req as { command: { type: string; action?: { kind?: string } } }).command.action?.kind === 'click')
+    expect(clicks).toHaveLength(1)
   })
 })

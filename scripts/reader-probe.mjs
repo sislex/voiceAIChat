@@ -18,14 +18,16 @@
 
 import { readFileSync } from 'node:fs'
 import { runScenarioStep, stepHint } from '../packages/shared/src/scenarioStep.ts'
+import { parseAutomatedQaScenarios, scenarioLabel } from '../packages/shared/src/qa.ts'
 
 const BASE = process.env.VC_READER_PROBE_URL ?? 'http://localhost:8892/v1'
 const TOKEN = process.env.VC_BROWSER_RUNNER_TOKEN ?? 'vc-local-reader'
 const scenarioFlag = process.argv.indexOf('--scenario')
 const scenarioFile = scenarioFlag >= 0 ? process.argv[scenarioFlag + 1] : null
-const scenario = scenarioFile ? JSON.parse(readFileSync(scenarioFile, 'utf8')) : null
-const target = scenario ? scenario.startUrl : (process.argv[2] ?? 'http://89.125.68.35:8787/')
-const selectors = scenario ? [] : process.argv.slice(3)
+// Файл может содержать один сценарий или набор — как и настройки проекта.
+const scenarios = scenarioFile ? parseAutomatedQaScenarios(JSON.parse(readFileSync(scenarioFile, 'utf8'))) : []
+const target = scenarios[0]?.startUrl ?? (process.argv[2] ?? 'http://89.125.68.35:8787/')
+const selectors = scenarios.length ? [] : process.argv.slice(3)
 
 const headers = { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' }
 const post = (path, body) => fetch(BASE + path, { method: 'POST', headers, body: JSON.stringify(body) })
@@ -56,12 +58,18 @@ try {
 
   // Шаг исполняет тот же код, что и этап Automated QA: до круга 17 здесь была
   // своя реализация, и она отстала от записи (прокрутку уже не понимала).
-  for (const [index, step] of (scenario?.steps ?? []).entries()) {
-    const outcome = await runScenarioStep(step, (browserCommand) => command(browserCommand))
-    const hint = outcome.ok ? '' : stepHint(outcome.detail)
-    const verdict = outcome.ok ? 'ок' : `ОШИБКА: ${short(outcome.detail, 100)}${hint ? ` — ${hint}` : ''}`
-    console.log(`шаг ${index + 1}/${scenario.steps.length} ${step.title}: ${verdict}`)
-    if (!outcome.ok) { failed = true; break }
+  for (const [scenarioIndex, scenario] of scenarios.entries()) {
+    const label = scenarioLabel(scenario, scenarioIndex)
+    if (scenarios.length > 1) console.log(`--- ${label}`)
+    if (scenarioIndex > 0) await command({ type: 'navigate', url: scenario.startUrl })
+    for (const [index, step] of scenario.steps.entries()) {
+      const outcome = await runScenarioStep(step, (browserCommand) => command(browserCommand))
+      const hint = outcome.ok ? '' : stepHint(outcome.detail)
+      const verdict = outcome.ok ? 'ок' : `ОШИБКА: ${short(outcome.detail, 100)}${hint ? ` — ${hint}` : ''}`
+      console.log(`шаг ${index + 1}/${scenario.steps.length} ${step.title}: ${verdict}`)
+      if (!outcome.ok) { failed = true; break }
+    }
+    if (failed) break
   }
 
   for (const selector of selectors) {

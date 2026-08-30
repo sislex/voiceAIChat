@@ -85,11 +85,10 @@ describe('устойчивость селектора (круг 14)', () => {
     // Записанный шаг кликнет по первой, и знать об этом надо при записи, а не
     // когда сценарий однажды нажмёт не ту кнопку.
     expect((await at(220, 30))?.matches).toBe(2)
-    await page.evaluate(() => {
-      const extra = document.createElement('button')
-      extra.setAttribute('aria-label', 'Закрыть')
-      document.body.appendChild(extra)
-    })
+    // Код строкой, а не замыканием: у пакета нет библиотеки DOM (это
+    // Node-сервис), и `document` в замыкании не проходит typecheck. Замыкание
+    // здесь молча ломало гейт пять кругов подряд.
+    await page.evaluate('(() => { const extra = document.createElement("button"); extra.setAttribute("aria-label", "Закрыть"); document.body.appendChild(extra) })()')
     expect((await at(220, 30))?.matches).toBe(3)
   })
 })

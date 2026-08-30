@@ -39,3 +39,19 @@ describe('sweepIdle', () => {
     expect(closed).toEqual([])
   })
 })
+
+describe('отметка обращения', () => {
+  it('ставится на любой команде, а не только на той, что вернёт метаданные', async () => {
+    // Прогон сценария — это подряд селекторные команды: они возвращаются
+    // раньше метаданных, и сессия выглядела брошенной, пока в ней работали.
+    const manager = new BrowserSessionManager('/tmp/vc-browser-profiles-test')
+    const map = (manager as unknown as { sessions: Map<string, Promise<unknown>> }).sessions
+    const session = { id: 'живая', incarnation: 'inc', lastUsedAt: 0, activeTabId: 'tab', pages: new Map([['tab', {}]]) }
+    map.set('живая', Promise.resolve(session))
+    await manager.command('живая', {
+      requestId: 'r1', incarnation: 'inc', actor: 'assistant',
+      command: { type: 'selector', action: { kind: 'read' } }
+    } as never).catch(() => undefined)
+    expect(session.lastUsedAt).toBeGreaterThan(0)
+  })
+})
