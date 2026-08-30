@@ -82,3 +82,40 @@ describe('дисциплина набора (круг 21)', () => {
     expect(onUpdate).toHaveBeenCalledWith('p1', { automatedQaScenarios: expect.arrayContaining([expect.objectContaining({ startUrl: 'https://example.com' })]) })
   })
 })
+
+describe('разовый прогон набора (круг 24)', () => {
+  const detailWith = (...items: AutomatedQaScenario[]): ProjectDetail =>
+    ({ id: 'p1', automatedQaScenarios: items } as unknown as ProjectDetail)
+  const scenario = { name: 'Вход', startUrl: 'http://a/', steps: [{ id: 's', title: 'ш', action: { kind: 'click' as const, selector: '#a' } }] }
+
+  it('показывает исход каждого сценария', async () => {
+    const onCheck = vi.fn(async () => ([
+      { name: 'Вход', passed: true, blocked: null, steps: [], durationMs: 1200 },
+      { name: 'Доска', passed: false, blocked: null, durationMs: 800, steps: [{ id: 's', title: 'Создать', status: 'failed' as const, detail: 'не найден', durationMs: 5 }] }
+    ]))
+    render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать набор сейчас' }))
+    expect(await screen.findByText(/Вход: пройден/)).toBeInTheDocument()
+    // Провалившийся шаг назван: без этого «провален» не подсказывает, куда смотреть.
+    expect(screen.getByText(/Доска: провален на шаге «Создать»/)).toBeInTheDocument()
+  })
+
+  it('заблокированный прогон объясняет причину', async () => {
+    const onCheck = vi.fn(async () => ([{ name: 'Вход', passed: false, blocked: 'Стартовый адрес не открылся', steps: [], durationMs: 300 }]))
+    render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать набор сейчас' }))
+    expect(await screen.findByText(/заблокирован — Стартовый адрес не открылся/)).toBeInTheDocument()
+  })
+
+  it('отказ сервера показывается, а не теряется', async () => {
+    const onCheck = vi.fn(async () => { throw new Error('Изолированный Chromium не настроен') })
+    render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать набор сейчас' }))
+    expect(await screen.findByText('Изолированный Chromium не настроен')).toBeInTheDocument()
+  })
+
+  it('без обработчика кнопки нет — сервер может не уметь прогон', () => {
+    render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: 'Прогнать набор сейчас' })).not.toBeInTheDocument()
+  })
+})

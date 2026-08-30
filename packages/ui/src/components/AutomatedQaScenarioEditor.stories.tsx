@@ -48,3 +48,22 @@ export const ManyScenarios: Story = {
     )
   }
 }
+
+/**
+ * Итог разового прогона набора. Состояние приходит только ответом сервера,
+ * поэтому живёт в витрине: пройденный, провалившийся и заблокированный сразу.
+ */
+export const CheckResults: Story = {
+  args: {
+    ...ManyScenarios.args,
+    onCheck: async () => ([
+      { name: 'Вход', passed: true, blocked: null, steps: [], durationMs: 1400 },
+      { name: 'Доска проекта', passed: false, blocked: null, durationMs: 2600, steps: [{ id: 's', title: 'Создать задачу', status: 'failed' as const, detail: 'локатор не найден', durationMs: 5000 }] },
+      { name: 'Настройки', passed: false, blocked: 'Стартовый адрес не открылся', steps: [], durationMs: 300 }
+    ])
+  },
+  play: async ({ canvasElement }) => {
+    const button = [...canvasElement.querySelectorAll('button')].find((el) => el.textContent === 'Прогнать набор сейчас')
+    button?.click()
+  }
+}
