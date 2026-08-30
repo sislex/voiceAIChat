@@ -235,6 +235,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'images:retouch': (body) => req(REST.imageRetouch, { method: 'POST', body: JSON.stringify(body) }),
     'settings:get': () => req(REST.settings),
     'llm:access': () => req(REST.meLlmAccess),
+    'me:profile': () => req(REST.meProfile),
+    'me:security': ({ limit }) => req(limit ? `${REST.meSecurity}?limit=${limit}` : REST.meSecurity),
     'llm:engines': () => req(REST.llmEngines),
     // Тело — патч; ответ сервера (вся запись) возвращается вызывающему.
     'settings:save': (patch) => req(REST.settings, { method: 'PUT', body: JSON.stringify(patch) }),
@@ -326,8 +328,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.adminUsers, { method: 'POST', body: JSON.stringify(b) }),
     'admin:updateUserRole': ({ name, role }) =>
       req(REST.adminUser(name), { method: 'PATCH', body: JSON.stringify({ role }) }),
-    'admin:setBlocked': async ({ name, blocked }) => {
-      await req(REST.adminUserBlock(name), { method: 'POST', body: JSON.stringify({ blocked }) })
+    'admin:setBlocked': async ({ name, blocked, reason }) => {
+      await req(REST.adminUserBlock(name), { method: 'POST', body: JSON.stringify({ blocked, ...(reason ? { reason } : {}) }) })
     },
     'admin:deleteUser': async ({ name }) => {
       await req(REST.adminUser(name), { method: 'DELETE' })

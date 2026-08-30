@@ -4,8 +4,12 @@ import type { AgentInfo } from './agentProtocol'
 import type { UserRole } from './types'
 import type { LlmRunKind, LlmRunnerHealth } from './llm'
 
-/** Пользователь в списке администрирования (+ его машины и счётчик разговоров). */
-export interface AdminUserInfo {
+/**
+ * Профиль одного человека: то, что он вправе знать о себе сам. Админский
+ * `AdminUserInfo` — это он же плюс поля надзора, поэтому одна и та же карточка
+ * рисует и чужой профиль в админке, и свой на странице «Мой аккаунт».
+ */
+export interface UserProfileInfo {
   name: string
   role: UserRole
   blocked: boolean
@@ -17,13 +21,37 @@ export interface AdminUserInfo {
   /** Последний вход (п.18) и месячный лимит расхода LLM (п.17). */
   lastLogin?: number | null
   llmLimitUsd?: number | null
+  conversationCount: number
+  /** Машины-агенты пользователя с онлайн-статусом. */
+  agents: AgentInfo[]
+  /**
+   * Последняя активность живой сессии и их число. «Последний вход» для этого не
+   * годится: человек, вошедший неделю назад и работающий прямо сейчас, по нему
+   * выглядит неактивным.
+   */
+  lastSeenAt?: number | null
+  liveSessions?: number
+}
+
+/** Пользователь в списке администрирования: профиль + состояние замков. */
+export interface AdminUserInfo extends UserProfileInfo {
   /** Авто-блокировка после неудачных входов (auth-roadmap п.3). */
   failedLogins?: number
   lockedUntil?: number | null
   lockReason?: string | null
-  conversationCount: number
-  /** Машины-агенты пользователя с онлайн-статусом. */
-  agents: AgentInfo[]
+}
+
+/**
+ * Окно, внутри которого сессия считается активной «сейчас». Пять минут, а не
+ * минута: `touchSession` обновляет `last_seen` не чаще раза в минуту, поэтому
+ * узкое окно показывало бы работающего человека офлайн. Константа общая для
+ * сервера и UI, чтобы список и метрика не расходились в трактовке.
+ */
+export const ACTIVE_WINDOW_MS = 5 * 60_000
+
+/** Активен ли человек прямо сейчас по последней активности его сессий. */
+export function isActiveNow(lastSeenAt: number | null | undefined, now: number): boolean {
+  return lastSeenAt !== null && lastSeenAt !== undefined && now - lastSeenAt <= ACTIVE_WINDOW_MS
 }
 
 /** Единица бакета в отчёте по токенам. */
@@ -46,6 +74,13 @@ export interface UsageTotals {
   costIncomplete?: boolean
   /** Число ответов модели (ai-сообщений) в выборке. */
   messages: number
+  /**
+   * Сколько из них человек прервал (`TurnMeta.interrupted`). Доли «успешных»
+   * ходов в системе нет и быть не может: неудавшийся ход сообщения не создаёт
+   * вовсе, поэтому знаменателя не существует. Прерывание — единственный
+   * зафиксированный признак незавершённого ответа.
+   */
+  interrupted?: number
 }
 
 /** Метрики за временной бакет (напр. день/час/неделя, ключ — строка бакета). */
@@ -104,6 +139,33 @@ export interface UserUsageSummary {
   name: string
   totals: UsageTotals
   byModel: UsageByModel[]
+}
+
+/**
+ * Потрачено по выборке. Codex часто не сообщает стоимость сам, а прайс покрывает
+ * не все модели, поэтому берётся большая из двух оценок — та же формула, по
+ * которой сервер проверяет месячный лимит (`turns.ts`). Держим её здесь, чтобы
+ * UI и проверка лимита не разъехались в трактовке «сколько человек потратил».
+ */
+export function spendUsd(totals: Pick<UsageTotals, 'costUsd' | 'costFromPrices'>): number {
+  return Math.max(totals.costUsd, totals.costFromPrices ?? 0)
+}
+
+/** Начало текущего календарного месяца в местном времени — граница «расхода за месяц». */
+export function monthStart(now: number = Date.now()): number {
+  const date = new Date(now)
+  date.setDate(1)
+  date.setHours(0, 0, 0, 0)
+  return date.getTime()
+}
+
+/**
+ * Доля израсходованного лимита (0..1+) или `null`, когда лимита нет. Проценту
+ * бюджета неоткуда взяться без лимита: общего бюджета в системе не существует,
+ * и рисовать «78%» от несуществующей величины нельзя.
+ */
+export function budgetShare(spent: number, limitUsd: number | null | undefined): number | null {
+  return limitUsd === null || limitUsd === undefined || limitUsd <= 0 ? null : spent / limitUsd
 }
 
 

@@ -38,6 +38,7 @@ import type {
   AdminLlmEngineInput,
   LlmEngineOption,
   AdminUserInfo,
+  UserProfileInfo,
   UsageReport,
   UsageUnit, SecurityEvent, InviteInfo, SignupConfig } from './admin'
 import type { McpServer } from './mcp'
@@ -270,6 +271,9 @@ export interface IpcInvokeMap {
   'images:retouch': { arg: import('./imageRetouch').ImageRetouchRequest; result: import('./imageRetouch').ImageRetouchResult }
   'settings:get': { arg: void; result: Settings }
   'llm:access': { arg: void; result: import('./llmAccess').UserLlmAccess[] }
+  /** Свой профиль и свой журнал безопасности: те же данные, что видит админ, но только о себе. */
+  'me:profile': { arg: void; result: UserProfileInfo }
+  'me:security': { arg: { limit?: number }; result: SecurityEvent[] }
   'llm:engines': { arg: void; result: LlmEngineOption[] }
   /**
    * Патч настроек: сервер применяет только присланные поля. Полный объект тоже
@@ -379,7 +383,7 @@ export interface IpcInvokeMap {
   /** Открытая регистрация: настройка. */
   'admin:signupConfig': { arg: void; result: SignupConfig }
   'admin:setSignupConfig': { arg: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }; result: SignupConfig }
-  'admin:setBlocked': { arg: { name: string; blocked: boolean }; result: void }
+  'admin:setBlocked': { arg: { name: string; blocked: boolean; reason?: string }; result: void }
   'admin:deleteUser': { arg: { name: string }; result: void }
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
   /** Личный расход текущей сессии; userId намеренно не передаётся. */
@@ -1162,6 +1166,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'uploads:add',
   'settings:get',
   'llm:access',
+  'me:profile',
+  'me:security',
   'settings:save',
   'system:capabilities',
   'stt:status',
