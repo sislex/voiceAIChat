@@ -152,6 +152,8 @@ export const REST = {
   session2faDisable: '/api/session/2fa/disable',
   sessionLogoutAll: '/api/session/logout-all',
   sessionRevoke: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
+  /** Имя устройства и отметка «доверенное» для своей сессии. */
+  sessionUpdate: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
   adminSessions: (user: string) => `/api/admin/users/${encodeURIComponent(user)}/sessions`,
   adminSessionRevoke: (sid: string) => `/api/admin/sessions/${encodeURIComponent(sid)}`,
   sessionPreview: '/api/session/preview',

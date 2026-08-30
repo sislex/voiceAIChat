@@ -756,10 +756,14 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     const inactiveDays = Number(process.env.VC_INACTIVE_DAYS ?? 180)
     const accountsSweep = (): void => {
       try {
+        // Брошенные сессии сначала гасим, потом чистим: порядок важен, иначе
+        // только что отозванная строка ждала бы неделю до следующего прохода.
+        const staleDays = Number(process.env.VC_SESSION_STALE_DAYS ?? 90)
+        const stale = db.revokeStaleSessions(Number.isFinite(staleDays) ? staleDays : 0)
         const sessions = db.pruneSessions(), invites = db.pruneInvites()
         const blocked = inactiveDays > 0 ? db.blockInactiveUsers(inactiveDays) : []
         for (const name of blocked) db.logSecurityEvent({ user: name, type: 'inactive_blocked', details: `нет входов ${inactiveDays} дн.` })
-        if (sessions || invites || blocked.length) app.log.info({ event: 'accounts_sweep', sessions, invites, blocked }, 'accounts sweep')
+        if (sessions || invites || stale || blocked.length) app.log.info({ event: 'accounts_sweep', sessions, invites, stale, blocked }, 'accounts sweep')
       } catch (error) { app.log.warn({ error }, 'accounts sweep failed') }
     }
     accountsSweep()

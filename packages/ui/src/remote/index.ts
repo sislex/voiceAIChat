@@ -347,13 +347,34 @@ export function makeSessionBridge(httpBase: string, ws: WsClient): RendererSessi
       if (!res.ok) throw new Error('Не удалось получить список сессий')
       return ((await res.json()) as { sessions: SessionInfo[] }).sessions
     },
-    logoutAll: async () => {
-      const res = await fetch(httpBase + REST.sessionLogoutAll, { method: 'POST', headers: authHeaders() })
-      if (!res.ok) throw new Error('Не удалось завершить другие сессии')
+    logoutAll: async (options) => {
+      const res = await fetch(httpBase + REST.sessionLogoutAll, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'content-type': 'application/json' },
+        body: JSON.stringify({ includeCurrent: options?.includeCurrent === true })
+      })
+      if (!res.ok) throw new Error(options?.includeCurrent ? 'Не удалось выйти на всех устройствах' : 'Не удалось завершить другие сессии')
+      if (options?.includeCurrent) { setToken(null); ws.reconnect() }
     },
     revokeSession: async (sid) => {
       const res = await fetch(httpBase + REST.sessionRevoke(sid), { method: 'DELETE', headers: authHeaders() })
       if (!res.ok) throw new Error('Не удалось завершить сессию')
+    },
+    renameSession: async (sid, label) => {
+      const res = await fetch(httpBase + REST.sessionUpdate(sid), {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'content-type': 'application/json' },
+        body: JSON.stringify({ label })
+      })
+      if (!res.ok) throw new Error('Не удалось переименовать устройство')
+    },
+    trustSession: async (sid, trusted) => {
+      const res = await fetch(httpBase + REST.sessionUpdate(sid), {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'content-type': 'application/json' },
+        body: JSON.stringify({ trusted })
+      })
+      if (!res.ok) throw new Error(trusted ? 'Не удалось отметить устройство доверенным' : 'Не удалось снять доверие')
     },
     // Выпускает preview-cookie из текущего Bearer-токена: восстановленная из
     // localStorage сессия иначе остаётся без cookie и iframe превью ловит 401.

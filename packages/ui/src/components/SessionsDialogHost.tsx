@@ -21,7 +21,11 @@ export function SessionsDialogHost({ onClose, onSignedOut }: SessionsDialogHostP
     const client: SessionsClient = {
       list: () => bridge.sessions!(),
       revoke: (sid) => bridge.revokeSession!(sid),
-      ...(bridge.logoutAll ? { revokeOthers: () => bridge.logoutAll!() } : {})
+      ...(bridge.logoutAll
+        ? { revokeOthers: () => bridge.logoutAll!(), revokeAll: () => bridge.logoutAll!({ includeCurrent: true }) }
+        : {}),
+      ...(bridge.renameSession ? { rename: (sid, label) => bridge.renameSession!(sid, label) } : {}),
+      ...(bridge.trustSession ? { setTrusted: (sid, trusted) => bridge.trustSession!(sid, trusted) } : {})
     }
     return createSessionsStore({
       client,

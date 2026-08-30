@@ -30,12 +30,12 @@ describe('createGeoResolver', () => {
   })
 
   it('спрашивает провайдера один раз на подсеть', async () => {
-    const fetchImpl = vi.fn(async () => ok({ country_code: 'RU', city: 'Москва' }))
+    const fetchImpl = vi.fn(async (_url: string | URL | Request) => ok({ country_code: 'RU', city: 'Москва' }))
     const geo = createGeoResolver({ url: 'https://example.test/{ip}', fetchImpl: fetchImpl as unknown as typeof fetch })
     expect(await geo.resolve('203.0.113.7')).toMatchObject({ label: 'Москва, RU' })
     expect(await geo.resolve('203.0.113.250')).toMatchObject({ label: 'Москва, RU' })
     expect(fetchImpl).toHaveBeenCalledTimes(1)
-    expect(fetchImpl.mock.calls[0]![0]).toBe('https://example.test/203.0.113.7')
+    expect(String(fetchImpl.mock.calls[0]![0])).toBe('https://example.test/203.0.113.7')
     // Другая сеть — новый запрос.
     await geo.resolve('198.51.100.1')
     expect(fetchImpl).toHaveBeenCalledTimes(2)

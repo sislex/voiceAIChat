@@ -910,8 +910,13 @@ export interface RendererSessionBridge {
   logout(): Promise<void>
   /** Сессии пользователя (auth-roadmap п.4); нет в desktop-мосте. */
   sessions?(): Promise<SessionInfo[]>
-  logoutAll?(): Promise<void>
+  /** Завершить остальные сессии; `includeCurrent` — выйти везде, включая эту. */
+  logoutAll?(options?: { includeCurrent?: boolean }): Promise<void>
   revokeSession?(sid: string): Promise<void>
+  /** Имя устройства от пользователя; null возвращает автоматическую подпись. */
+  renameSession?(sid: string, label: string | null): Promise<void>
+  /** Доверенное устройство не спрашивает второй фактор при следующем входе. */
+  trustSession?(sid: string, trusted: boolean): Promise<void>
   /**
    * Выпускает HttpOnly-cookie превью из действующего Bearer-токена. Нужен сессиям,
    * восстановленным без повторного login (токен из localStorage, перезапуск браузера):
