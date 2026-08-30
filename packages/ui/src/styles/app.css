@@ -4781,12 +4781,10 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
   .jmodal-child { min-height: 44px; padding: 8px 10px; flex-wrap: wrap; }
   .jmodal-child-title { white-space: normal; overflow: visible; text-overflow: clip; }
 
-  /* CI остаётся видимым, но в одну колонку и с крупными кнопками. */
+  /* CI остаётся видимым и с крупными кнопками. Правила самих настроек CI —
+     ниже, рядом с их базовыми описаниями: медиазапрос не добавляет
+     специфичности, и отсюда они базовые правила не перебивали. */
   .jmodal-ci-actions button { flex: 1 1 auto; min-height: 44px; }
-  .ci-task-llm { grid-template-columns: 1fr; }
-  .ci-task-clarify-max .login-input { width: 100%; }
-  .ci-task .sel, .ci-task .login-input { font-size: 16px; min-height: 44px; }
-  .ci-task-save, .ci-task-reset { min-height: 44px; }
 }
 
 /* ===== Сайдбар: переключатель «Чаты | Проекты» и список проектов ========= */
@@ -5161,8 +5159,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 
 /* ==================== CI-раннер: настройки задачи/проекта, консоль ==================== */
 .ci-task { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
-.ci-task-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.ci-task-title { font-weight: 600; font-size: 13px; color: var(--text); }
+.ci-task-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+/* Вторая и следующие секции внутри карточки настроек отбиваются от предыдущей:
+   без этого «Команды воркфлоу» прилипали к чекбоксам этапов. */
+.ci-task-head:not(:first-child) { margin-top: 18px; }
+.ci-task-title { margin: 0; font-weight: 600; font-size: 13px; color: var(--text); }
+
+/* Этапы процесса: у блока не было ни одного правила, и чекбоксы стояли
+   вплотную друг к другу и к следующему заголовку. */
+.ci-task-stages { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.ci-task-stages label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.ci-task-stages input { margin: 0; }
 .ci-task-save, .ci-defaults .vc-btn { margin-top: var(--space-100); }
 .ci-task-llm-head { margin-top: 14px; }
 .ci-task-llm { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -5170,6 +5177,13 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .ci-task-llm-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ci-task-reset { margin-top: 8px; background: none; border: none; padding: 0; font-size: 12px; color: var(--text-dim); text-decoration: underline; cursor: pointer; }
 .ci-task-reset:hover { color: var(--text); }
+@media (max-width: 720px) {
+  .ci-task-llm { grid-template-columns: 1fr; }
+  .ci-task-clarify-max .login-input { width: 100%; }
+  .ci-task .sel, .ci-task .login-input { font-size: 16px; min-height: 44px; }
+  .ci-task-save, .ci-task-reset { min-height: 44px; }
+  .ci-task-stages label { min-height: 40px; }
+}
 .lozenge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; background: var(--panel); color: var(--text-dim); }
 .lozenge-neutral { background: var(--panel); color: var(--text-dim); }
 .lozenge-progress { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
@@ -5183,7 +5197,9 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .ci-slot-actions button { background: transparent; border: none; color: var(--text-dim); cursor: pointer; padding: 0 3px; }
 .ci-slot-actions button:disabled { opacity: .3; cursor: default; }
 .ci-slot-add { margin-top: 6px; }
-.ci-warn { margin-top: 6px; font-size: 12px; color: var(--text); background: color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 6px; padding: 6px 8px; }
+/* Предупреждение красится предупреждающими токенами: подложка из `--accent`
+   читалась как подсказка или выделение, а не как «что-то не так». */
+.ci-warn { margin-top: 6px; font-size: 12px; color: var(--text); background: var(--warning-soft); border-left: 3px solid var(--warning); border-radius: 6px; padding: 6px 10px; }
 .ci-defaults-wrap { margin-top: 10px; }
 .ci-console { position: fixed; inset: 0; z-index: 1000; background: var(--bg); display: flex; flex-direction: column; }
 .ci-console-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
@@ -6514,11 +6530,13 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .merge-sha--merge{border-color:var(--accent);color:var(--accent)}
 .merge-feed-meta{color:var(--text-dim);font-size:12px}
 .merge-feed-actions{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
-.merge-badge{padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
-.merge-badge--ok{background:var(--ci-success);color:#fff}
-.merge-badge--err{background:var(--danger);color:#fff}
-.merge-badge--warn{background:var(--warning,#b58900);color:#fff}
-.merge-badge--run{background:var(--ci-progress);color:#fff}
+/* Бейдж merge-рана — тот же лозенг, что у CI: залитый цветом бейдж с белым
+   текстом был единственным в интерфейсе и в тёмной теме бил по глазам. */
+.merge-badge{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.merge-badge--ok{background:var(--ci-success-bg);color:var(--ci-success)}
+.merge-badge--err{background:var(--ci-removed-bg);color:var(--ci-removed)}
+.merge-badge--warn{background:var(--ci-progress-bg);color:var(--ci-progress)}
+.merge-badge--run{background:var(--ci-progress-bg);color:var(--ci-progress)}
 .merge-alert{padding:10px 12px;border:1px solid var(--danger);border-radius:10px;background:var(--danger-soft);color:var(--text)}
 .merge-alert-hint{margin-top:4px;color:var(--text-dim)}
 .merge-alert-conflicts{margin:6px 0 0;padding-left:18px}
