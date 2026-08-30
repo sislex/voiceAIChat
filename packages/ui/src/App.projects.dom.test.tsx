@@ -23,6 +23,9 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reje
 afterEach(() => {
   window.location.hash = ''
   delete (window as { session?: unknown }).session
+  // Вид доски («Показывать завершённые», фильтры канбана) переживает перезапуск
+  // приложения — между тестами его надо снимать явно.
+  localStorage.clear()
 })
 
 async function renderApp(): Promise<FakeApi> {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type WheelEvent as ReactWheelEvent } from 'react'
 import { isBrowserSessionMetadata, scaleBrowserCoordinates, type BrowserConsoleEntry, type BrowserElementDescription, type BrowserInspectResult, type BrowserNetworkEntry, type BrowserSessionMetadata, type BrowserViewport } from '@shared/types'
-import { ambiguousSteps, brokenSteps, expectOnLastStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
+import { ambiguousSteps, brokenSteps, expectOnStep, fragileSteps, hasAssertions, needsWaitHint, recordClick, recordNavigate, recordScroll, recordType, removeStep, renameStep, toScenario, type ClickKind, type RecordedStep } from '../lib/scenarioRecorder'
 import { aliasNote, offOrigin, pushHistory } from '../lib/readerAddress'
 import type { RendererBrowserBridge } from '@shared/ipc'
 import type { ProjectTestUser } from '@shared/projects'
@@ -115,6 +115,8 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
   }
   const [steps, setSteps] = useState<RecordedStep[]>([])
   const [expectText, setExpectText] = useState('')
+  /** Шаг, к которому привяжется проверка; пусто — последний. */
+  const [expectStepId, setExpectStepId] = useState('')
   // Результат прогона записанного сценария по шагам: цикл «записал → проверил →
   // поправил» иначе разорван — запись здесь, прогон на доске.
   const [stepResults, setStepResults] = useState<Record<string, { ok: boolean; detail: string }>>({})
@@ -383,11 +385,16 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
     setReplayMs(null)
     const startedAt = Date.now()
     const scenario = toScenario(steps, meta?.currentUrl ?? '')
+    // Отметки прошлого прогона стираются: иначе на экране смесь свежих и старых,
+    // и «ок» стоит у шага, который в этот раз не выполнялся.
+    setStepResults({})
     try {
       if (scenario.startUrl) await run({ type: 'navigate', url: scenario.startUrl })
       // Прогон до выбранного шага: длинный сценарий иначе отлаживается целиком.
+      // Шаг-переход в сценарий не попадает (он уезжает в startUrl), и `findIndex`
+      // по его id давал −1 — то есть «весь сценарий» вместо «только переход».
       const limit = upToId ? scenario.steps.findIndex((item) => item.id === upToId) : -1
-      const planned = limit >= 0 ? scenario.steps.slice(0, limit + 1) : scenario.steps
+      const planned = upToId && limit < 0 ? [] : limit >= 0 ? scenario.steps.slice(0, limit + 1) : scenario.steps
       for (const step of planned) {
         const outcome = await runScenarioStep(step, (command) => {
           // Мост панели не принимает `screenshot` — у него отдельный роут.
@@ -627,7 +634,7 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
         {!hasAssertions(steps) && (
           // Сценарий без единой проверки зелёный, пока клики попадают, — даже
           // если страница показала ошибку. Это не тест, и молчать об этом нельзя.
-          <p className="playwright-reader-record__warn" role="status">Ни одной проверки: такой сценарий пройдёт, даже если страница сломана. Добавьте ожидаемый текст к последнему шагу.</p>
+          <p className="playwright-reader-record__warn" role="status">Ни одной проверки: такой сценарий пройдёт, даже если страница сломана. Добавьте ожидаемый текст к любому шагу.</p>
         )}
         {needsWaitHint(steps) && (
           // Длинная пауза почти всегда значит, что человек ждал страницу; без
@@ -642,11 +649,19 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
           <p className="playwright-reader-record__warn">Неоднозначных шагов: {ambiguous.length}. Их селектор находит несколько элементов, и шаг нажмёт первый.</p>
         )}
         <div className="playwright-reader-record__expect">
-          <label>Ожидаемый текст после последнего шага
+          {/* Шаг выбирается, а не всегда последний: понял на середине записи,
+              что нужна проверка, — раньше приходилось переписывать сценарий. */}
+          <label>Шаг для проверки
+            <select className="sel" value={expectStepId || (steps.at(-1)?.id ?? '')} disabled={!steps.length}
+              onChange={(event) => setExpectStepId(event.target.value)}>
+              {steps.map((step, at) => <option key={step.id} value={step.id}>{at + 1}. {step.title.slice(0, 40)}</option>)}
+            </select>
+          </label>
+          <label>Ожидаемый текст
             <input className="login-input" value={expectText} disabled={!steps.length} onChange={(event) => setExpectText(event.target.value)} />
           </label>
-          <Button size="sm" disabled={!steps.length || !expectText.trim()} onClick={() => { setSteps((current) => expectOnLastStep(current, expectText)); setExpectText('') }}>Ждать текст</Button>
-          <Button size="sm" variant="ghost" disabled={!steps.length || !expectText.trim()} onClick={() => { setSteps((current) => expectOnLastStep(current, expectText, true)); setExpectText('') }}>Не должно быть</Button>
+          <Button size="sm" disabled={!steps.length || !expectText.trim()} onClick={() => { setSteps((current) => expectOnStep(current, expectStepId || (current.at(-1)?.id ?? ''), expectText)); setExpectText('') }}>Ждать текст</Button>
+          <Button size="sm" variant="ghost" disabled={!steps.length || !expectText.trim()} onClick={() => { setSteps((current) => expectOnStep(current, expectStepId || (current.at(-1)?.id ?? ''), expectText, true)); setExpectText('') }}>Не должно быть</Button>
         </div>
         {fragile.length > 0 && (
           // Селектор по пути в дереве ломается от вставки соседнего узла —
@@ -667,7 +682,12 @@ export function BrowserSessionPane({ conversationId, browser, onAttachFrame, tes
                   onChange={(event) => setSteps((current) => renameStep(current, step.id, event.target.value))}
                 />
                 <IconButton size="sm" aria-label={`Прогнать до шага «${step.title}»`} title="Прогнать до этого шага" disabled={running} onClick={() => void replay(step.id)}>▸</IconButton>
-                <IconButton size="sm" aria-label={`Убрать шаг «${step.title}»`} title="Убрать шаг" onClick={() => setSteps((current) => removeStep(current, step.id))}>✕</IconButton>
+                <IconButton size="sm" aria-label={`Убрать шаг «${step.title}»`} title="Убрать шаг" onClick={() => {
+                // Отметки прогона ключуются по id, а `removeStep` перенумеровывает:
+                // без сброса «ок» удалённого шага доставался следующему.
+                setSteps((current) => removeStep(current, step.id))
+                setStepResults({})
+              }}>✕</IconButton>
               </span>
               <code>{'selector' in step.action ? step.action.selector : ''}</code>
               {stepResults[step.id] && (

@@ -874,6 +874,36 @@ describe('KanbanBoard — фильтры исполнителей', () => {
     expect(screen.getByText('Чужая')).toBeInTheDocument()
   })
 
+  // Вид доски раньше жил только в памяти: после перезагрузки (а на проде — после
+  // каждого деплоя) свимлейны и «скрытые» возвращались к исходным.
+  it('свимлейны и показ скрытых колонок переживают перезагрузку', async () => {
+    const props = { board: filteredBoard, currentUserId: 'view-user', members: [{ username: 'alice', role: 'member' as const, addedAt: 1 }] }
+    const view = render(<KanbanBoardHarness {...props} />)
+    await userEvent.selectOptions(screen.getByLabelText('Свимлейны'), 'assignee')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'скрытые' }))
+    await waitFor(() => expect(localStorage.getItem('voicechat.kanban.filters.v3.view-user.p1')).toContain('"swimlane":"assignee"'))
+    view.unmount()
+
+    render(<KanbanBoardHarness {...props} />)
+
+    await waitFor(() => expect(screen.getByLabelText<HTMLSelectElement>('Свимлейны').value).toBe('assignee'))
+    expect(screen.getByRole('checkbox', { name: 'скрытые' })).toBeChecked()
+  })
+
+  // У людей с настроенной доской запись уже лежит под старым ключом (с именем
+  // проекта): без переноса переход на устойчивый ключ выглядел бы как сброс.
+  it('переносит вид, сохранённый под прежним ключом с именем проекта', async () => {
+    const props = { board: filteredBoard, currentUserId: 'legacy-user', members: [{ username: 'alice', role: 'member' as const, addedAt: 1 }] }
+    const legacyKey = 'voicechat.kanban.filters.v3.legacy-user.' + encodeURIComponent('Проект')
+    localStorage.setItem(legacyKey, JSON.stringify({ onlyMine: true, swimlane: 'epic' }))
+
+    render(<KanbanBoardHarness {...props} projectName="Проект" />)
+
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Показывать только мои задачи' })).toBeChecked())
+    expect(localStorage.getItem('voicechat.kanban.filters.v3.legacy-user.p1')).toContain('"swimlane":"epic"')
+    expect(localStorage.getItem(legacyKey)).toBeNull()
+  })
+
   it('восстанавливает массив после перезагрузки и реагирует на обновление назначения', async () => {
     const members = [{ username: 'alice', role: 'member' as const, addedAt: 1 }, { username: 'bob', role: 'member' as const, addedAt: 1 }]
     const props = { board: filteredBoard, currentUserId: 'persist-user', members }

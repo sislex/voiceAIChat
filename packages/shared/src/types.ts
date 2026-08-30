@@ -1020,6 +1020,46 @@ export const DEFAULT_SETTINGS: Settings = {
   loginNewDeviceEmails: true
 }
 
+/**
+ * Приводит присланный патч настроек к контракту: неизвестные ключи выбрасывает,
+ * значения не того типа и не из набора — тоже. Настройки сохраняются одной
+ * JSON-записью и мержатся с прежними, поэтому один мусорный ключ («theme»:
+ * «нечто») иначе оседал бы в записи навсегда и ломал экран при каждом чтении.
+ * Общая для клиента и сервера: границу проверяет тот, кто пишет.
+ */
+export function sanitizeSettingsPatch(raw: unknown): Partial<Settings> {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const input = raw as Record<string, unknown>
+  const patch: Record<string, unknown> = {}
+  const bool = (key: keyof Settings): void => { if (typeof input[key] === 'boolean') patch[key] = input[key] }
+  const oneOf = <T extends string>(key: keyof Settings, values: readonly T[]): void => {
+    if (typeof input[key] === 'string' && (values as readonly string[]).includes(input[key] as string)) patch[key] = input[key]
+  }
+  const text = (key: keyof Settings): void => { if (typeof input[key] === 'string') patch[key] = input[key] }
+  const nullableText = (key: keyof Settings): void => {
+    if (input[key] === null || typeof input[key] === 'string') patch[key] = input[key]
+  }
+
+  if (typeof input.model === 'string') patch.model = normalizeClaudeModel(input.model)
+  oneOf('whisperModel', WHISPER_MODELS)
+  oneOf('theme', ['light', 'dark', 'green'] as const)
+  oneOf('permissionMode', PERMISSION_MODES.map((mode) => mode.id))
+  oneOf('llmProvider', ['claude', 'codex'] as const)
+  oneOf('aiAssistProvider', ['claude', 'codex'] as const)
+  for (const key of ['diarization', 'autoSpeak', 'showConsole', 'onboarded', 'bargeIn', 'handsFree', 'loginNewDeviceEmails'] as const) bool(key)
+  for (const key of ['voice', 'codexModel', 'aiAssistModel'] as const) text(key)
+  for (const key of ['micDeviceId', 'workdir', 'execTarget', 'llmEngineId', 'defaultAgentId'] as const) nullableText(key)
+  if (Number.isInteger(input.generatedFilesTtlDays)) patch.generatedFilesTtlDays = input.generatedFilesTtlDays
+  if (Array.isArray(input.aiAssistPrompts)) {
+    patch.aiAssistPrompts = (input.aiAssistPrompts as unknown[])
+      .filter((item): item is ModifierPrompt => typeof item === 'object' && item !== null && typeof (item as ModifierPrompt).id === 'string')
+      .map((item) => ({ ...item, title: String(item.title ?? ''), text: String(item.text ?? ''), enabled: item.enabled !== false }))
+  }
+  if (input.chatInstructions !== undefined) patch.chatInstructions = normalizeChatInstructions(input.chatInstructions)
+  if (typeof input.personalization === 'object' && input.personalization !== null) patch.personalization = input.personalization
+  return patch as Partial<Settings>
+}
+
 /** Один сегмент распознанной речи (speakerId=1 до диаризации). */
 export interface SttSegment {
   speakerId: number
