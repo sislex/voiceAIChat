@@ -446,7 +446,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(REST.projectMachine(id, agentId), { method: 'PATCH', body: JSON.stringify({ sshHost, sshUser }) }),
     'projects:setDefaultMachine': ({ id, agentId }) =>
       req(REST.projectDefaultMachine(id), { method: 'POST', body: JSON.stringify({ agentId }) }),
-    'projects:checkAutomatedQa': ({ id }) => req(REST.projectAutomatedQaCheck(id), { method: 'POST' }),
+    'projects:checkAutomatedQa': ({ id, scenarioIndex }) => req(REST.projectAutomatedQaCheck(id), { method: 'POST', body: JSON.stringify(scenarioIndex === undefined ? {} : { scenarioIndex }) }),
     'projects:setUserDefaultMachine': ({ id, agentId }) =>
       req(REST.projectUserDefaultMachine(id), { method: 'PUT', body: JSON.stringify({ agentId }) }),
     'board:get': ({ id, includeCompleted }) => req(REST.projectBoard(id, includeCompleted)),

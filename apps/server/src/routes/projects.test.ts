@@ -44,6 +44,19 @@ async function createProject(name = 'P1'): Promise<ProjectDetail> {
   return res.json() as ProjectDetail
 }
 
+describe('разовый прогон набора Automated QA', () => {
+  it('без браузерного раннера отвечает 501 человеческим текстом, чужому проекту — 404', async () => {
+    const project = await createProject('QA')
+    const mine = await inj(adminTok, { method: 'POST', url: `/api/projects/${project.id}/automated-qa/check`, payload: {} })
+    expect(mine.statusCode).toBe(501)
+    expect(mine.json()).toMatchObject({ error: 'browser_runner_unavailable' })
+    expect(String((mine.json() as { message: string }).message)).toContain('Chromium')
+    // Не участник не должен даже узнавать, что проект существует.
+    const alien = await inj(bobTok, { method: 'POST', url: `/api/projects/${project.id}/automated-qa/check`, payload: {} })
+    expect(alien.statusCode).toBe(404)
+  })
+})
+
 describe('conversation preview URL REST', () => {
   it('хранит override, очищает его и принимает только http/https', async () => {
     const conv = db.createConversation('admin', 'Preview')
