@@ -10,6 +10,7 @@ const LOGIN_LIMIT = 10
 const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
 import { REST, type SessionUser, type UserRole, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
+import { deviceKey, isNewDevice, localGeo, parseUserAgent } from '@voicechat/sessions-core'
 import type { VoiceChatDb } from '../db/database.js'
 import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
 import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js'
@@ -225,19 +226,37 @@ export function readSignupConfig(db: VoiceChatDb): { enabled: boolean; role: Use
   return { enabled: db.getAppConfig('signup.enabled') === '1', role: role === 'admin' || role === 'developer' || role === 'tester' || role === 'observer' ? role : 'developer' }
 }
 
+/**
+ * Откуда вошли. Отдельного заголовка у клиентов нет, поэтому смотрим на UA:
+ * Electron-оболочка и компаньон-агент представляются явно, всё прочее — веб.
+ */
+function platformOf(ua: string): string {
+  if (/Electron/i.test(ua)) return 'desktop'
+  if (/VoiceChatAgent/i.test(ua)) return 'agent'
+  const profile = parseUserAgent(ua)
+  return profile.legacy ? 'unknown' : 'web'
+}
+
+/** Версия клиента, если он её сообщает: помогает отличить залипший старый бандл. */
+function clientVersionOf(req: FastifyRequest): string | null {
+  const raw = req.headers['x-vc-client-version']
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return value ? String(value).slice(0, 32) : null
+}
+
 export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string, options: AuthOptions = {}): void {
   const mailer = options.mailer ?? createMailer({}, (m, extra) => app.log.warn(extra ?? {}, m))
   const baseUrl = (req: FastifyRequest): string => (options.publicUrl ?? `${String(req.headers['x-forwarded-proto'] ?? req.protocol)}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`).replace(/\/$/, '')
   app.decorateRequest('user', null)
   // Сессии (auth-roadmap п.4): токен действителен, пока есть живая запись в `sessions` (не отозвана, не истекла).
   // Токены без записи (выданы до таблицы) регистрируются лениво — так старые входы не рвутся при обновлении.
-  const activeUser = (token: string | undefined): SessionUser | null => {
+  const activeUser = (token: string | undefined, path?: string): SessionUser | null => {
     if (!token || db.isSessionRevoked(token)) return null
     const parsed = verifyToken(token, secret)
     if (!parsed) return null
     if (parsed.sid) {
       const s = db.getSession(parsed.sid)
-      if (s) { if (s.expiresAt < Date.now()) return null; db.touchSession(parsed.sid, Math.max(SESSION_SHORT_TTL_MS, s.expiresAt - s.lastSeen)) }
+      if (s) { if (s.expiresAt < Date.now()) return null; db.touchSession(parsed.sid, Math.max(SESSION_SHORT_TTL_MS, s.expiresAt - s.lastSeen), path) }
       else if (db.hasSessionRow(parsed.sid)) return null // отозвана или истекла
       else if (db.getUser(parsed.name)) db.createSession(parsed.sid, parsed.name, { ip: '', userAgent: 'legacy', ttlMs: SESSION_TTL_MS })
     }
@@ -259,7 +278,9 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     let viaCookie = false
     if (!token) { token = cookieOf(req, SESSION_COOKIE); viaCookie = Boolean(token) }
     if (!token) token = previewSession(req, url)
-    const user = activeUser(token)
+    // Путь запоминаем в сессии: в списке устройств он отвечает на вопрос «а что
+    // это устройство вообще делает», когда вход выглядит подозрительно.
+    const user = activeUser(token, url)
     if (!user) {
       await reply.code(401).send({ error: 'unauthorized' })
       return reply
@@ -324,10 +345,20 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
     // «Запомнить меня» (п.15): 30 дней и cookie с Max-Age; иначе 12 часов и сессионная cookie (умирает с браузером).
     const ttl = remember ? SESSION_TTL_MS : SESSION_SHORT_TTL_MS
     const ua = String(req.headers['user-agent'] ?? '')
-    // Новое устройство (п.16): среди живых сессий нет ни одной с таким же User-Agent и IP — событие + уведомление в другие сессии.
+    // Новое устройство (п.16): решает ядро модуля сессий по ключу устройства —
+    // тот не меняется от обновления браузера и от соседнего адреса провайдера,
+    // поэтому предупреждение приходит на смену устройства, а не на смену версии.
     const known = db.listSessions(name)
-    const isNew = known.length > 0 && !known.some((s) => s.userAgent === ua && s.ip === req.ip) && !known.every((s) => s.userAgent === 'legacy')
-    db.createSession(sid, name, { ip: req.ip, userAgent: ua, ttlMs: ttl })
+    const isNew = isNewDevice(known, { userAgent: ua, ip: req.ip })
+    db.createSession(sid, name, {
+      ip: req.ip,
+      userAgent: ua,
+      ttlMs: ttl,
+      deviceKey: deviceKey({ userAgent: ua, ip: req.ip }),
+      platform: platformOf(ua),
+      clientVersion: clientVersionOf(req),
+      geo: localGeo(req.ip)
+    })
     db.markLogin(name)
     db.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: ua })
     if (isNew) {
