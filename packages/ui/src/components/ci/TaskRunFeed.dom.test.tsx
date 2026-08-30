@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { createFakeCi } from '../../test/fakeApi'
 import { TaskRunFeed } from './TaskRunFeed'
@@ -35,6 +35,24 @@ describe('TaskRunFeed', () => {
       getRun: vi.fn(async (id) => detail(id)),
       getRunLog: vi.fn(async () => [])
     }
+  })
+
+  // В списке рядом стояли русское «Успешно» и сырое `awaiting_merge`, а даты
+  // печатались двумя разными форматами.
+  it('подписывает merge-раны по-русски и общим форматом даты', async () => {
+    window.ci = {
+      ...window.ci!,
+      listMergeRuns: vi.fn(async () => [
+        { id: 'merge-1', projectId: 'p1', taskId: 't1', status: 'production_checks', createdAt: Date.UTC(2024, 0, 2, 9, 5) }
+      ] as never)
+    }
+    render(<TaskRunFeed projectId="p1" taskId="t1" />)
+    const select = await screen.findByRole('combobox', { name: 'Выбранный запуск' })
+    const merge = within(select).getByRole('option', { name: /^Merge/ })
+
+    expect(merge).toHaveTextContent('проверки прода')
+    expect(merge).not.toHaveTextContent('production_checks')
+    expect(merge.textContent).toMatch(/\d{2}\.\d{2}\.\d{4}, \d{2}:\d{2}$/)
   })
 
   it('сразу загружает и показывает активный development-ран внутри вкладки', async () => {

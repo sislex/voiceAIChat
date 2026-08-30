@@ -9,6 +9,7 @@ import { createFakeCi } from '../../test/fakeApi'
 import type { KbRunUsageReport } from '@shared/kb'
 import {
   NOW,
+  makeAnsiLog,
   makeInteraction as mkInteraction,
   makeFixAttempt,
   makeLogLine as mkLog,
@@ -42,6 +43,20 @@ describe('RunFeed', () => {
     // running-шаг раскрыт автоматически → виден лог
     expect(screen.getByText('installing deps…')).toBeInTheDocument()
     expect(screen.getByText('выполняется')).toBeInTheDocument()
+  })
+
+  // Лог печатали как есть, и каждая строка vitest начиналась с «[1m[32m✓[0m».
+  it('раскрашивает ANSI в логе и не показывает сами escape-последовательности', () => {
+    const log = makeAnsiLog(mkStep().id)
+    const cache: RunFeedCache = { detail: { run: mkRun(), steps: [mkStep()], fixAttempts: [], interactions: [] }, log, conclusion: null }
+    render(<RunFeed {...baseProps(cache)} />)
+
+    const area = screen.getByRole('log', { name: 'Вывод шага' })
+    expect(area).toHaveAttribute('tabindex', '0')
+    expect(area.textContent).not.toMatch(/\u001b|\[32m|\[0m/)
+    // Галочек две — по одной на пройденный файл тестов.
+    expect(within(area).getAllByText('✓')[0]).toHaveClass('ansi-fg-green')
+    expect(within(area).getByText('Test Files')).toHaveClass('ansi-fg-yellow')
   })
 
   it('вместо пустого списка показывает причину падения до первого шага', () => {
