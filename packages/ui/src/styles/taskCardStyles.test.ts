@@ -37,7 +37,10 @@ describe('стили открытой карточки задачи', () => {
     // Лог с ANSI-раскраской.
     'ansi-bold', 'ansi-fg-green', 'ansi-fg-red', 'ansi-fg-yellow',
     // Бейджи статусов вкладок QA и Merge.
-    'qa-status', 'qa-status--passed', 'qa-status--failed', 'merge-chip', 'merge-badge'
+    'qa-status', 'qa-status--passed', 'qa-status--failed', 'merge-chip', 'merge-badge',
+    // Карточка на доске и шапка колонки.
+    'jcard-epic', 'jcard-epic-dot', 'jcard-flag', 'jcard-due', 'jcard-pts',
+    'jcard-stage-actions', 'jcol-head', 'jcol-name-text', 'jcol-hidden-mark', 'jcompose-open'
   ])('класс .%s имеет правила', (cls) => {
     expect(styled(cls)).toBe(true)
   })
