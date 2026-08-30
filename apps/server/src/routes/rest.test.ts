@@ -406,7 +406,8 @@ describe('REST: аутентификация', () => {
     const token = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'named', password: 'named-pass-2026-ok' } })).json().token as string
     const alienToken = (await app.inject({ method: 'POST', url: '/api/session/login', payload: { name: 'alien', password: 'alien-pass-2026-ok' } })).json().token as string
     const sid = db.listSessions('named')[0]!.sid
-    const patch = async (body: unknown, bearer = token) => app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: body, headers: { authorization: `Bearer ${bearer}` } })
+    const patch = (body: Record<string, unknown>, bearer = token) =>
+      app.inject({ method: 'PATCH', url: `/api/session/${sid}`, payload: body, headers: { authorization: `Bearer ${bearer}` } })
     expect((await patch({ label: '  Рабочий ноут  ' })).statusCode).toBe(200)
     expect(db.listSessions('named')[0]!.label).toBe('Рабочий ноут')
     expect((await patch({ label: '' })).statusCode).toBe(200)

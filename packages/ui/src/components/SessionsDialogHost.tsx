@@ -7,7 +7,7 @@ import { SessionsDialog, createSessionsStore, type SessionsClient } from '@voice
 
 export interface SessionsDialogHostProps {
   onClose: () => void
-  /** Текущую сессию завершили: увести на экран входа. */
+  /** Пользователь вышел на всех устройствах, включая это: увести на экран входа. */
   onSignedOut: () => void
 }
 
@@ -30,6 +30,11 @@ export function SessionsDialogHost({ onClose, onSignedOut }: SessionsDialogHostP
     return createSessionsStore({
       client,
       host: { onSignedOut },
+      // Только «список устарел»: отзыв собственной сессии обрабатывает App —
+      // он должен уводить на экран входа и с закрытым окном тоже.
+      ...(bridge.onSessionsChanged
+        ? { realtime: { subscribe: (listener) => bridge.onSessionsChanged!((event) => { if (event.type === 'update') listener({ type: 'sessions.update' }) }) } }
+        : {}),
       notify: { success: (message) => toast.success(message), error: (message) => toast.error(message) }
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps

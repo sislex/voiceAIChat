@@ -45,6 +45,7 @@ import { createAgentWatchdog } from './agents/watchdog.js'
 import { createCommandGate } from './agents/commandGate.js'
 import { createMailer, type Mailer } from './users/mailer.js'
 import type { GeoResolver } from '@voicechat/sessions-core'
+import { SessionHub } from './users/sessionHub.js'
 
 /** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
 function cookieToken(header: string | undefined): string | undefined {
@@ -52,7 +53,7 @@ function cookieToken(header: string | undefined): string | undefined {
   for (const item of header.split(';')) { const [k, ...rest] = item.trim().split('='); if (k === 'vc_session') return rest.join('=') }
   return undefined
 }
-import { loadOrCreateSecret } from './users/accounts.js'
+import { loadOrCreateSecret, verifyToken } from './users/accounts.js'
 import type { SessionUser } from '@voicechat/shared'
 import { AgentRegistry } from './agents/registry.js'
 import { attachAgentWs } from './agents/wsAgent.js'
@@ -265,7 +266,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // приглашения в проект. Без VC_SMTP_URL это «консольный» мейлер — письмо
   // уходит в лог, и оба потока остаются проверяемыми на стенде.
   const mailer = opts.mailer ?? createMailer({ smtpUrl: opts.config.smtpUrl, mailFrom: opts.config.mailFrom }, (m, extra) => app.log.warn(extra ?? {}, m))
-  registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, ...(opts.geo ? { geo: opts.geo } : {}) })
+  // Хаб сессий один на процесс: его слушают WS-соединения, а публикуют в него
+  // и сессионные роуты, и админский отзыв чужой сессии.
+  const sessionHub = new SessionHub()
+  registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, sessions: sessionHub, ...(opts.geo ? { geo: opts.geo } : {}) })
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     ok: true,
@@ -589,7 +593,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   )
 
   // Админ-страница пользователей (роуты под guard requireAdmin).
-  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats((id) => db.conversationOwner(id)), mailer, opts.config.publicUrl)
+  registerAdminRoutes(app, db, agentRegistry, deployTrigger, () => makeWorkspaces.adminStats((id) => db.conversationOwner(id)), mailer, opts.config.publicUrl, sessionHub)
 
   // Проекты + канбан-доска (членство в проекте) + живой board.changed по WS.
   const boardHub = new BoardHub()
@@ -1712,11 +1716,15 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     turnManager.flushInterrupted()
   })
 
-  const makeHandlers = (user: SessionUser): WsHandlers =>
+  const makeHandlers = (user: SessionUser, sid: string | null): WsHandlers =>
     createSession({
       db,
       turns: turnManager,
       user,
+      // Свой sid нужен, чтобы отличить «завершили эту вкладку» от «завершили
+      // соседнюю»: первой полагается уйти на экран входа, второй — обновить список.
+      sid,
+      sessions: sessionHub,
       sttEngine,
       sttClient,
       getWhisperModel: machineWhisperModel,
@@ -1790,7 +1798,7 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
         socket.close()
         return
       }
-      attachWs(socket, makeHandlers(user))
+      attachWs(socket, makeHandlers(user, verifyToken(token, sessionSecret)?.sid ?? null))
     })
     scoped.get('/agent', { websocket: true }, (socket, request) => {
       const fwd = String(request.headers['x-forwarded-for'] ?? '').split(',')[0].trim()
