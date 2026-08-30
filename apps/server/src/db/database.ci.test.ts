@@ -156,6 +156,20 @@ describe('ci: движок и модель', () => {
     expect(db.resolveTaskLlmConfig(p.id, task.id)).toEqual({ provider: 'claude', model: 'haiku', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })
   })
 
+  // Движок мог быть удалён админом уже после настройки CI. Ссылку мы намеренно
+  // не стираем (её может «оживить» новый движок с тем же id при восстановлении
+  // из бэкапа), но ран обязан пойти на доступном исполнителе, а не упасть.
+  it('удалённый движок в конфигурации подменяется доступным, а не ломает ран', () => {
+    const engine = db.createLlmEngine({ name: 'Временный', kind: 'claude', baseUrl: 'http://runner:8790', token: '', enabled: true, allowedRoles: ['admin', 'developer'], isDefault: true })
+    db.setCiLlmConfig('project', 'p-engine-gone', { provider: 'claude', model: 'sonnet', mode: 'development', clarifyLevel: 'few', clarifyMax: 3, llmEngineId: engine.id })
+    db.deleteLlmEngine(engine.id)
+
+    const resolved = db.resolveLlmEngine(db.getCiLlmConfig('project', 'p-engine-gone')?.llmEngineId ?? null, 'claude', 'admin')
+
+    expect(resolved.engine?.id).not.toBe(engine.id)
+    expect(resolved.substituted).toBe(true)
+  })
+
   it('этап наследует поля задача → проект → модель проекта → fallback', () => {
     const { p, task } = project()
     db.setCiLlmConfig('project', p.id, { llmEngineId: 'project-engine', provider: 'claude', model: 'opus', mode: 'development', clarifyLevel: 'few', clarifyMax: 3 })

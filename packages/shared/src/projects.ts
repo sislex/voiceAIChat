@@ -1058,3 +1058,76 @@ export interface Board {
   /** Сводки CI-ранов по задачам проекта (последний ран на задачу). */
   ciRuns?: CiRunSummary[]
 }
+
+/**
+ * Вид доски конкретного человека в конкретном проекте: фильтры и раскладка.
+ * Живёт на сервере, а не в браузере, — иначе настроенная доска «сбрасывается»
+ * на другом компьютере или в очищенном профиле.
+ */
+export interface BoardView {
+  search: string
+  assignees: string[]
+  types: WorkItemType[]
+  priorities: TaskPriority[]
+  labels: string[]
+  epics: string[]
+  onlyMine: boolean
+  flaggedOnly: boolean
+  recentOnly: boolean
+  /** Фильтр исполнителей по колонкам: id колонки → выбор. */
+  columnAssignees: Record<string, { assigneeIds: string[]; unassigned: boolean }>
+  swimlane: 'none' | 'epic' | 'assignee'
+  showHidden: boolean
+  showCompleted: boolean
+}
+
+export const DEFAULT_BOARD_VIEW: BoardView = {
+  search: '',
+  assignees: [],
+  types: [],
+  priorities: [],
+  labels: [],
+  epics: [],
+  onlyMine: false,
+  flaggedOnly: false,
+  recentOnly: false,
+  columnAssignees: {},
+  swimlane: 'none',
+  showHidden: false,
+  showCompleted: false
+}
+
+/**
+ * Приводит присланный вид к контракту: как и у настроек, мусорное значение не
+ * должно осесть в записи — она хранится одной JSON-строкой и мержится.
+ */
+export function sanitizeBoardView(raw: unknown): Partial<BoardView> {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const input = raw as Record<string, unknown>
+  const view: Record<string, unknown> = {}
+  if (typeof input.search === 'string') view.search = input.search.slice(0, 200)
+  const strings = (value: unknown): string[] | null =>
+    Array.isArray(value) && value.every((item) => typeof item === 'string') ? (value as string[]).slice(0, 200) : null
+  for (const key of ['assignees', 'labels', 'epics'] as const) {
+    const list = strings(input[key])
+    if (list) view[key] = list
+  }
+  const types = strings(input.types)?.filter((item): item is WorkItemType => (WORK_ITEM_TYPES as readonly string[]).includes(item))
+  if (types) view.types = types
+  const priorities = strings(input.priorities)?.filter((item): item is TaskPriority => (TASK_PRIORITIES as readonly string[]).includes(item))
+  if (priorities) view.priorities = priorities
+  for (const key of ['onlyMine', 'flaggedOnly', 'recentOnly', 'showHidden', 'showCompleted'] as const) {
+    if (typeof input[key] === 'boolean') view[key] = input[key]
+  }
+  if (input.swimlane === 'none' || input.swimlane === 'epic' || input.swimlane === 'assignee') view.swimlane = input.swimlane
+  if (typeof input.columnAssignees === 'object' && input.columnAssignees !== null) {
+    const entries = Object.entries(input.columnAssignees as Record<string, unknown>).flatMap(([columnId, value]) => {
+      if (typeof value !== 'object' || value === null) return []
+      const filter = value as { assigneeIds?: unknown; unassigned?: unknown }
+      const assigneeIds = strings(filter.assigneeIds) ?? []
+      return [[columnId, { assigneeIds, unassigned: filter.unassigned === true }]] as const
+    })
+    view.columnAssignees = Object.fromEntries(entries)
+  }
+  return view as Partial<BoardView>
+}

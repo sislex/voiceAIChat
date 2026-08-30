@@ -449,6 +449,8 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'projects:setUserDefaultMachine': ({ id, agentId }) =>
       req(REST.projectUserDefaultMachine(id), { method: 'PUT', body: JSON.stringify({ agentId }) }),
     'board:get': ({ id, includeCompleted }) => req(REST.projectBoard(id, includeCompleted)),
+    'board:getView': ({ id }) => req(REST.projectBoardView(id)),
+    'board:saveView': ({ id, view }) => req(REST.projectBoardView(id), { method: 'PUT', body: JSON.stringify(view) }),
     'columns:create': ({ projectId, name }) =>
       req(REST.projectColumns(projectId), { method: 'POST', body: JSON.stringify({ name }) }),
     'columns:rename': async ({ projectId, columnId, name, wipLimit }) => {

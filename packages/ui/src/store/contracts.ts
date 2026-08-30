@@ -16,8 +16,17 @@ export const BOARD_COMPLETED_KEY = 'vc.board.includeCompleted'
 export const SETTINGS_UPDATE_KEY = 'vc:settings-update'
 /** Ключ предпочтений для ширины сайдбара. */
 export const SIDEBAR_WIDTH_KEY = 'vc.sidebar.width'
-/** Ключ предпочтений с последней известной темой: до ответа сервера интерфейс рисуется ею. */
+/**
+ * Последняя тема этого браузера: ею рисуется экран входа и старт до ответа
+ * сервера, когда неизвестно, кто именно войдёт.
+ */
 export const THEME_KEY = 'vc.theme'
+/**
+ * Тема конкретного человека. Общего ключа мало: на одном компьютере работают
+ * несколько человек, и после чужого сеанса интерфейс мигал чужой темой, пока
+ * не придут настройки с сервера.
+ */
+export const userThemeKey = (login: string): string => `vc.theme.${encodeURIComponent(login)}`
 /** Ключ localStorage для свёрнутого сайдбара на десктопе. */
 export const SIDEBAR_COLLAPSED_KEY = 'vc:sidebarCollapsed'
 /** Ключ предпочтений для ширины панели превью (в процентах). */

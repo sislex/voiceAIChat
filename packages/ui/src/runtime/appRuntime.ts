@@ -138,6 +138,7 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
     stt: clients.stt,
     tts: clients.tts,
     prefs: clients.prefs,
+    currentUser: () => session.getState().currentUser?.name ?? null,
     notifyError: (message) => shell.actions.setError(message),
     notify: (notice) => shell.actions.notify(notice),
     // Сигнал соседним вкладкам: ключ пишется и сразу снимается — важен сам факт
@@ -347,6 +348,9 @@ export function createAppRuntime(deps: AppRuntimeDeps): AppRuntime {
   })
 
   session.actions.onEvent((event) => {
+    // Человек известен — до ответа сервера рисуем интерфейс его темой, а не
+    // темой того, кто работал в этом браузере до него.
+    if (event.type === 'session.authenticated' && event.user) settings.actions.hydrateThemeFor(event.user.name)
     if (event.type === 'session.userChanged') {
       // Вход другим пользователем в той же вкладке: чужих данных остаться не должно.
       clearUserDomains()
