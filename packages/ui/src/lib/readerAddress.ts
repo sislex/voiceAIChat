@@ -6,17 +6,17 @@
 
 /**
  * Подмена адреса алиасом. Раннер переписывает внешний `host:port` на внутренний,
- * чтобы достучаться до собственного стенда; человек при этом видит в поле одно,
- * а страница загружена с другого адреса. Молчать об этом нельзя — расхождение
- * выглядит как «открылось не то».
+ * чтобы достучаться до собственного стенда. Раньше подмену вычисляли по
+ * расхождению хостов, потому что наружу приезжал внутренний адрес — а вместе с
+ * ним он уезжал и в `startUrl` записанного сценария. Теперь адрес наружу тот,
+ * который назвал человек, а факт подмены раннер сообщает полем `aliasedHost`:
+ * догадка заменена фактом. Молчать о подмене всё равно нельзя — иначе непонятно,
+ * почему страница пришла не оттуда, куда смотрит браузер человека.
  */
-export function aliasNote(requested: string, actual: string | null): string | null {
-  if (!actual) return null
+export function aliasNote(loaded: string, aliasedHost: string | null | undefined): string | null {
+  if (!aliasedHost) return null
   try {
-    const from = new URL(requested)
-    const to = new URL(actual)
-    if (from.host === to.host) return null
-    return `Запрошен ${from.host}, страница загружена с ${to.host}: адрес подменён алиасом раннера.`
+    return `Запрошен ${new URL(loaded).host}, страница загружена с ${aliasedHost}: адрес подменён алиасом раннера.`
   } catch { return null }
 }
 

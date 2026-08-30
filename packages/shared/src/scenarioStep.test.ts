@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runScenarioStep, scenarioProblems, stepHint, type ScenarioSend, type ScenarioStepOptions } from './scenarioStep'
+import { runScenarioStep, scenarioProblems, scenarioSetProblems, stepHint, type ScenarioSend, type ScenarioStepOptions } from './scenarioStep'
 
 // Ожидания повторяются до таймаута, поэтому в тестах сон мгновенный, а часы
 // двигаются сами: иначе каждая проверка стоила бы пять секунд.
@@ -127,5 +127,79 @@ describe('scenarioProblems', () => {
   it('отсутствие проверок — тоже проблема сценария, а не мелочь', () => {
     expect(scenarioProblems({ ...ok, steps: [{ id: 's1', title: 'Нажать', action: { kind: 'click', selector: '#a' } }] }))
       .toContain('Ни одной проверки: сценарий пройдёт, даже если страница сломана')
+  })
+})
+
+describe('scenarioSetProblems (круг 21)', () => {
+  const s = (name: string, steps = 1) => ({ name, startUrl: 'http://x/', steps: Array.from({ length: steps }, () => ({})) })
+
+  it('исправный набор молчит', () => {
+    expect(scenarioSetProblems([s('Вход'), s('Доска')])).toEqual([])
+  })
+
+  it('пустой набор объясняет, что запускать нечем', () => {
+    expect(scenarioSetProblems([])).toEqual(['Ни одного сценария: этап Playwright запускать нечем'])
+  })
+
+  it('безымянные в наборе — проблема: их нечем различить', () => {
+    // Ровно этот случай приводил к тому, что второй сценарий затирал первый.
+    const problems = scenarioSetProblems([{ startUrl: 'http://a/', steps: [{}] }, { startUrl: 'http://b/', steps: [{}] }])
+    expect(problems[0]).toContain('Без названия: 2 из 2')
+  })
+
+  it('единственный безымянный сценарий проблемой не считается', () => {
+    expect(scenarioSetProblems([{ startUrl: 'http://a/', steps: [{}] }])).toEqual([])
+  })
+
+  it('повтор названия называет оба места', () => {
+    expect(scenarioSetProblems([s('Вход'), s('Вход')])[0]).toBe('Название «Вход» повторяется (сценарии 1 и 2)')
+  })
+
+  it('пустой стартовый адрес назван как блокирующий весь этап', () => {
+    expect(scenarioSetProblems([s('Вход'), { name: 'Пустой', startUrl: '  ', steps: [] }])[0])
+      .toContain('заблокирует весь этап')
+  })
+
+  it('сценарий без шагов тоже называется', () => {
+    expect(scenarioSetProblems([{ name: 'Пусто', startUrl: 'http://a/', steps: [] }])).toEqual(['«Пусто»: нет ни одного шага'])
+  })
+})
+
+describe('чтение страницы под проверку', () => {
+  it('просит у раннера потолок, а не 4000 по умолчанию: измеренная страница настроек длиннее', async () => {
+    const reads: unknown[] = []
+    const send: ScenarioSend = vi.fn(async (command) => {
+      if (command.type === 'selector' && command.action.kind === 'read') { reads.push(command.action); return { ok: true, text: 'Задача создана' } }
+      return { ok: true }
+    })
+    await runScenarioStep(step({ expectText: 'Задача создана' }), send, fast)
+    expect(reads[0]).toMatchObject({ kind: 'read', limit: 20_000 })
+  })
+
+  it('непроверяемый шаг помечен: этап не должен звать это дефектом реализации', async () => {
+    const send: ScenarioSend = vi.fn(async () => ({ ok: true, text: 'начало…', truncated: true }))
+    expect((await runScenarioStep(step({ expectText: 'подвал' }), send, fast)).unverifiable).toBe(true)
+    expect((await runScenarioStep(step({ action: { kind: 'edits' } }), vi.fn())).unverifiable).toBe(true)
+    const honest: ScenarioSend = vi.fn(async () => ({ ok: true, text: 'начало' }))
+    expect((await runScenarioStep(step({ expectText: 'подвал' }), honest, fast)).unverifiable).toBeUndefined()
+  })
+
+  it('обрезанное чтение не выдаётся за отсутствие текста', async () => {
+    const send: ScenarioSend = vi.fn(async (command) =>
+      command.type === 'selector' && command.action.kind === 'read'
+        ? { ok: true, text: 'начало страницы…', truncated: true }
+        : { ok: true })
+    const result = await runScenarioStep(step({ expectText: 'подвал' }), send, fast)
+    expect(result.detail).toContain('прочитан не целиком')
+    expect(result.detail).not.toContain('На странице нет')
+    expect(stepHint(result.detail)).toContain('длиннее предела чтения')
+  })
+
+  it('недопустимый текст найден — обрезка ничего не меняет', async () => {
+    const send: ScenarioSend = vi.fn(async (command) =>
+      command.type === 'selector' && command.action.kind === 'read'
+        ? { ok: true, text: 'Ошибка сервера…', truncated: true }
+        : { ok: true })
+    expect((await runScenarioStep(step({ expectAbsentText: 'Ошибка' }), send, fast)).detail).toContain('недопустимый текст')
   })
 })

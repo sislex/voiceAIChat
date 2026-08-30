@@ -138,3 +138,21 @@ describe('ресурсы прогона (круг 10)', () => {
     expect(seen.every((signal) => signal === controller.signal)).toBe(true)
   })
 })
+
+describe('шаг, который нельзя проверить', () => {
+  it('блокирует прогон вместо провала: судить о реализации по нему нельзя', async () => {
+    // Страница длиннее предела чтения: текст мог быть за обрезом.
+    const client = browser({ command: vi.fn(async (_id, request) => (request.command.type === 'selector' && request.command.action.kind === 'read'
+      ? { ok: true, text: 'начало страницы…', truncated: true }
+      : { ok: true }) as never) })
+    const runner = createAutomatedQaScenarioRunner({ browser: client, screenshotDir: mkdtempSync(join(tmpdir(), 'qa-shot-')), screenshotUrl: () => '/shot' })
+    const outcome = await runner.run({
+      runId: 'run-unverifiable', userId: 'alice', signal: new AbortController().signal,
+      scenario: scenario([{ id: 's1', title: 'Открыть доску', action: { kind: 'click', selector: '#board' }, expectText: 'подвал' }])
+    })
+    expect(outcome.blocked).toContain('проверить нельзя')
+    expect(outcome.steps[0]).toMatchObject({ id: 's1', status: 'failed' })
+    // Снимок всё равно нужен: по нему видно, что было на странице.
+    expect(outcome.screenshotUrl).toBe('/shot')
+  })
+})

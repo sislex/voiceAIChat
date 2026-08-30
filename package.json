@@ -36,6 +36,7 @@
     "//test:storybook": "Фолбэк Component QA при пустой настройке test_command: смоук-сборка Storybook.",
     "test:storybook": "npm run build:storybook",
     "verify": "npm run typecheck && npm run test && npm run build && npm run build:storybook && npm run typecheck:desktop && npm run test:desktop && npm --prefix apps/desktop run build && npm run typecheck:agent-tray && npm run test:agent-tray",
+    "gate": "npm run typecheck && npm run test && npm run -w @voicechat/web build && npm run build:storybook",
     "typecheck:desktop": "npm --prefix apps/desktop run typecheck",
     "test:desktop": "npm --prefix apps/desktop run test",
     "typecheck:agent-tray": "npm --prefix apps/agent-tray run typecheck",
@@ -53,6 +54,7 @@
     "e2e:sessions": "vitest run --config e2e/vitest.config.ts e2e/sessions.e2e.test.ts",
     "browser-runner:local": "bash scripts/browser-runner-local.sh up",
     "browser-runner:stop": "bash scripts/browser-runner-local.sh down",
-    "reader:probe": "tsx scripts/reader-probe.mjs"
+    "reader:probe": "tsx scripts/reader-probe.mjs",
+    "qa-stage:check": "tsx scripts/qa-stage-check.mjs"
   }
 }
