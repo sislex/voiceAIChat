@@ -9,38 +9,38 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 153 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 164 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 154 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 165 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-30 | ⚠ 5 коммит(ов) в areas после сверки: d9eba6b9 Merge remote-tracking branch 'origin/main' into work1 … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-30 | ✓ |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 12 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 60 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 44 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 77 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 13 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 61 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 45 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 78 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 99 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 133 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 144 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 10 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 892 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 25 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 57 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 26 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 78 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 140 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 134 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 145 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 10 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 893 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 26 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 58 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 27 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 79 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 141 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 10 коммит(ов) в areas после сверки: d9eba6b9 Merge remote-tracking branch 'origin/main' into work1 … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 41 коммит(ов) в areas после сверки: f9d0894a feat(sessions): десять улучшений — доверие по секрету, тревога, история входов … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 72 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 42 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 73 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 112 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 45 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-30 | ✓ |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-30 | ⚠ 13 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 17 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-29 | ⚠ 46 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-30 | ⚠ 1 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-30 | ⚠ 14 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 18 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 102 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: b1ce0a93 fix(dev): порты dev-сеанса из окружения — второй чекаут поднимается рядом с первым … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-30 | ⚠ 7 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 55 коммит(ов) в areas после сверки: 7a588999 Merge remote-tracking branch 'origin/main' into work1 … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-30 | ✓ |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-30 | ⚠ 15 коммит(ов) в areas после сверки: d7f98d19 feat(sessions): цикл 3 — второй фактор в списке, история устройства, дисциплина отзыва … |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-30, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -60,7 +60,7 @@
 
 ## Журнал сессий
 
-Всего записей: 437. Последние:
+Всего записей: 439. Последние:
 
 - [2026-08-30-alexeys-macbook-air-2-ten-improvements.md](log/2026-08-30-alexeys-macbook-air-2-ten-improvements.md) — ten-improvements
 - [2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md](log/2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md) — task-card-tabs-round2
@@ -70,8 +70,8 @@
 - [2026-08-30-alexeys-macbook-air-2-sessions-cycle3.md](log/2026-08-30-alexeys-macbook-air-2-sessions-cycle3.md) — sessions-cycle3
 - [2026-08-30-alexeys-macbook-air-2-sessions-cycle2.md](log/2026-08-30-alexeys-macbook-air-2-sessions-cycle2.md) — sessions-cycle2
 - [2026-08-30-alexeys-macbook-air-2-run-feed-ansi-round3.md](log/2026-08-30-alexeys-macbook-air-2-run-feed-ansi-round3.md) — run-feed-ansi-round3
+- [2026-08-30-alexeys-macbook-air-2-reader-debug-honesty.md](log/2026-08-30-alexeys-macbook-air-2-reader-debug-honesty.md) — reader-debug-honesty
 - [2026-08-30-alexeys-macbook-air-2-qa-settings-labels-round4.md](log/2026-08-30-alexeys-macbook-air-2-qa-settings-labels-round4.md) — qa-settings-labels-round4
-- [2026-08-30-alexeys-macbook-air-2-preparation-tab-round5.md](log/2026-08-30-alexeys-macbook-air-2-preparation-tab-round5.md) — preparation-tab-round5
 
 ## Исторические планы
 
