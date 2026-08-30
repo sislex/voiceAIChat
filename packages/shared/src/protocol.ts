@@ -153,6 +153,8 @@ export const REST = {
   sessionLogoutAll: '/api/session/logout-all',
   /** «Это не я»: гасит все сессии и требует смену пароля при следующем входе. */
   sessionPanic: '/api/session/panic',
+  /** Снять доверие со всех своих устройств. */
+  sessionUntrustAll: '/api/session/untrust-all',
   sessionRevoke: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
   /** Имя устройства и отметка «доверенное» для своей сессии. */
   sessionUpdate: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,

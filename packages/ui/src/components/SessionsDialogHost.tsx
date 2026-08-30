@@ -28,7 +28,8 @@ export function SessionsDialogHost({ onClose, onSignedOut }: SessionsDialogHostP
       ...(bridge.trustSession ? { setTrusted: (sid, trusted) => bridge.trustSession!(sid, trusted) } : {}),
       ...(bridge.endedSessions ? { listEnded: () => bridge.endedSessions!() } : {}),
       ...(bridge.panicSessions ? { panic: () => bridge.panicSessions!() } : {}),
-      ...(bridge.sessionHistory ? { history: (sid: string) => bridge.sessionHistory!(sid) } : {})
+      ...(bridge.sessionHistory ? { history: (sid: string) => bridge.sessionHistory!(sid) } : {}),
+      ...(bridge.untrustAllSessions ? { untrustAll: () => bridge.untrustAllSessions!() } : {})
     }
     return createSessionsStore({
       client,

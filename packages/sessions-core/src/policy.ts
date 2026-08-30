@@ -36,6 +36,13 @@ export function isExpiringSoon(session: DeviceSession, now = Date.now(), withinM
   return left > 0 && left <= withinMs
 }
 
+/** Сколько миллисекунд осталось доверию; 0 — доверия нет или оно истекло. */
+export function trustLeftMs(session: DeviceSession, now = Date.now(), policy?: Partial<SessionPolicy>): number {
+  if (!session.trustedAt) return 0
+  const trustDays = { ...DEFAULT_SESSION_POLICY, ...policy }.trustDays
+  return Math.max(0, session.trustedAt + trustDays * 24 * 60 * 60_000 - now)
+}
+
 /** Брошенная сессия: формально жива, но активности не было дольше порога. */
 export function isStale(session: DeviceSession, now = Date.now(), policy?: Partial<SessionPolicy>): boolean {
   const staleDays = { ...DEFAULT_SESSION_POLICY, ...policy }.staleDays

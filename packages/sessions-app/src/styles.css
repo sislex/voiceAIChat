@@ -273,3 +273,19 @@
   }
 }
 
+.vcs-more {
+  margin-top: var(--space-100);
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.vcs-more:hover {
+  background: var(--surface-hover);
+}
+
