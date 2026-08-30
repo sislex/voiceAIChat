@@ -3,7 +3,7 @@ import type { ProjectDetail } from '@shared/projects'
 import type { AutomatedQaScenario } from '@shared/qa'
 import { AutomatedQaScenarioEditor } from './AutomatedQaScenarioEditor'
 
-const detail = (scenario?: AutomatedQaScenario): ProjectDetail => ({ id: 'p1', automatedQaScenario: scenario } as unknown as ProjectDetail)
+const detail = (...scenarios: AutomatedQaScenario[]): ProjectDetail => ({ id: 'p1', automatedQaScenarios: scenarios } as unknown as ProjectDetail)
 
 const meta = {
   title: 'Projects/Automated QA scenario',
@@ -17,6 +17,7 @@ export const Empty: Story = {}
 export const Filled: Story = {
   args: {
     detail: detail({
+      name: 'Вход и доска',
       startUrl: 'https://staging.example.com/#/projects/p1',
       steps: [
         { id: 's1', title: 'Открыть доску', action: { kind: 'wait', selector: '.jboard' } },
@@ -34,5 +35,57 @@ export const ReadOnlyMember: Story = { args: { ...Filled.args, isOwner: false } 
  * сервере, и `localhost` с приватными сетями режет SSRF-гейт `validatePublicUrl`.
  */
 export const InvalidStartUrl: Story = {
-  args: { detail: detail({ startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Открыть доску', action: { kind: 'wait', selector: '.jboard' } }] }) }
+  args: { detail: detail({ name: 'Локальный стенд', startUrl: 'http://localhost:5173', steps: [{ id: 's1', title: 'Открыть доску', action: { kind: 'wait', selector: '.jboard' } }] }) }
+}
+
+/** Набор из нескольких сценариев: ради него круг 20 и делался. */
+export const ManyScenarios: Story = {
+  args: {
+    detail: detail(
+      { name: 'Вход', startUrl: 'https://staging.example.com/', steps: [{ id: 's1', title: 'Ввести логин', action: { kind: 'type', selector: '[data-testid="login-username"]', text: 'tester' }, expectText: 'Вход' }] },
+      { name: 'Доска проекта', startUrl: 'https://staging.example.com/#/projects/p1', steps: [{ id: 's1', title: 'Создать задачу', action: { kind: 'click', selector: '[data-testid="create-task"]' }, expectText: 'Новая задача' }] },
+      { name: 'Настройки', startUrl: 'https://staging.example.com/#/projects/p1/settings', steps: [{ id: 's1', title: 'Открыть вкладку', action: { kind: 'click', selector: '[data-testid="settings-tab"]' }, expectText: 'Общее' }] }
+    )
+  }
+}
+
+/**
+ * Непроверяемый шаг (круг 25): страница длиннее предела чтения. Текст отказа
+ * длинный и на телефоне переносится — состояние достижимо только ответом
+ * сервера, поэтому живёт в витрине.
+ */
+export const CheckBlockedUnverifiable: Story = {
+  args: {
+    ...ManyScenarios.args,
+    onCheck: async () => ([
+      { name: 'Вход', passed: true, blocked: null, steps: [], durationMs: 1400 },
+      {
+        name: 'Доска проекта', passed: false, durationMs: 21400, steps: [],
+        blocked: 'Шаг «Открыть доску» проверить нельзя: Текст страницы прочитан не целиком (первые 20000 символов), ожидаемого текста «Задача создана» в этой части нет'
+      }
+    ])
+  },
+  play: async ({ canvasElement }) => {
+    const button = [...canvasElement.querySelectorAll('button')].find((el) => el.textContent === 'Прогнать набор сейчас')
+    button?.click()
+  }
+}
+
+/**
+ * Итог разового прогона набора. Состояние приходит только ответом сервера,
+ * поэтому живёт в витрине: пройденный, провалившийся и заблокированный сразу.
+ */
+export const CheckResults: Story = {
+  args: {
+    ...ManyScenarios.args,
+    onCheck: async () => ([
+      { name: 'Вход', passed: true, blocked: null, steps: [], durationMs: 1400 },
+      { name: 'Доска проекта', passed: false, blocked: null, durationMs: 2600, steps: [{ id: 's', title: 'Создать задачу', status: 'failed' as const, detail: 'локатор не найден', durationMs: 5000 }] },
+      { name: 'Настройки', passed: false, blocked: 'Стартовый адрес не открылся', steps: [], durationMs: 300 }
+    ])
+  },
+  play: async ({ canvasElement }) => {
+    const button = [...canvasElement.querySelectorAll('button')].find((el) => el.textContent === 'Прогнать набор сейчас')
+    button?.click()
+  }
 }

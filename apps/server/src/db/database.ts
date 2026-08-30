@@ -1,5 +1,5 @@
 import type { SessionInfo, SessionGeo, SecurityEvent, SecurityEventType, InviteInfo, MachineCommandRecord, MachineCommandSource, ProjectCommandPolicy, RoleCommandPolicies, MachineShareAccess, MachineAccessLevel } from '@voicechat/shared'
-import { parseProjectCommandPolicy, parseRoleCommandPolicies, EMPTY_AUTOMATED_QA_SCENARIO } from '@voicechat/shared'
+import { parseProjectCommandPolicy, parseRoleCommandPolicies, EMPTY_AUTOMATED_QA_SCENARIO, parseAutomatedQaScenarios } from '@voicechat/shared'
 import type { AutomatedQaMode, AutomatedQaScenario, AutomatedQaScenarioStep } from '@voicechat/shared'
 import { isPreviewAction } from '@voicechat/shared'
 
@@ -7,6 +7,7 @@ import { isPreviewAction } from '@voicechat/shared'
  *  неизвестным действием, иначе раннер упадёт на середине прогона. */
 function normalizeAutomatedQaScenario(value: AutomatedQaScenario | null | undefined): AutomatedQaScenario {
   if (!value || typeof value.startUrl !== 'string') return EMPTY_AUTOMATED_QA_SCENARIO
+  const name = typeof value.name === 'string' && value.name.trim() ? { name: value.name.trim() } : {}
   const steps: AutomatedQaScenarioStep[] = (Array.isArray(value.steps) ? value.steps : [])
     .filter((step) => step && typeof step.id === 'string' && isPreviewAction(step.action))
     .slice(0, 100)
@@ -15,7 +16,7 @@ function normalizeAutomatedQaScenario(value: AutomatedQaScenario | null | undefi
       ...(typeof step.expectText === 'string' && step.expectText ? { expectText: step.expectText } : {}),
       ...(typeof step.expectAbsentText === 'string' && step.expectAbsentText ? { expectAbsentText: step.expectAbsentText } : {})
     }))
-  return { startUrl: value.startUrl.trim(), steps }
+  return { ...name, startUrl: value.startUrl.trim(), steps }
 }
 import {
   BUILTIN_PROJECT_TYPES,
@@ -4101,7 +4102,7 @@ export class VoiceChatDb {
       testCommand: r.test_command || undefined,
       automatedQaCommand: r.automated_qa_command || 'npm test',
       automatedQaMode: r.automated_qa_mode === 'playwright' ? 'playwright' : 'command',
-      automatedQaScenario: parseJsonValue<AutomatedQaScenario>(r.automated_qa_scenario_json, EMPTY_AUTOMATED_QA_SCENARIO),
+      automatedQaScenarios: parseAutomatedQaScenarios(parseJsonValue<unknown>(r.automated_qa_scenario_json, [])),
       autoPilotRequiresManualQa: r.autopilot_requires_manual_qa !== 0,
       autoPilotFixLimit: Number.isInteger(r.autopilot_fix_limit) && r.autopilot_fix_limit >= 0 ? r.autopilot_fix_limit : 3,
       commandPolicy: parseProjectCommandPolicy(r.command_policy),
@@ -4351,7 +4352,7 @@ export class VoiceChatDb {
       testCommand?: string
       automatedQaCommand?: string
       automatedQaMode?: AutomatedQaMode
-      automatedQaScenario?: AutomatedQaScenario
+      automatedQaScenarios?: AutomatedQaScenario[]
       autoPilotRequiresManualQa?: boolean
       autoPilotFixLimit?: number
       commandPolicy?: import('@voicechat/shared').ProjectCommandPolicy
@@ -4425,7 +4426,7 @@ export class VoiceChatDb {
     if (fields.testCommand !== undefined) { set.push('test_command = ?'); vals.push(fields.testCommand) }
     if (fields.automatedQaCommand !== undefined) { set.push('automated_qa_command = ?'); vals.push(fields.automatedQaCommand.trim() || 'npm test') }
     if (fields.automatedQaMode !== undefined) { set.push('automated_qa_mode = ?'); vals.push(fields.automatedQaMode === 'playwright' ? 'playwright' : 'command') }
-    if (fields.automatedQaScenario !== undefined) { set.push('automated_qa_scenario_json = ?'); vals.push(JSON.stringify(normalizeAutomatedQaScenario(fields.automatedQaScenario))) }
+    if (fields.automatedQaScenarios !== undefined) { set.push('automated_qa_scenario_json = ?'); vals.push(JSON.stringify(fields.automatedQaScenarios.map(normalizeAutomatedQaScenario))) }
     if (fields.autoPilotRequiresManualQa !== undefined) { set.push('autopilot_requires_manual_qa = ?'); vals.push(fields.autoPilotRequiresManualQa ? 1 : 0) }
     if (fields.autoPilotFixLimit !== undefined) {
       if (!Number.isInteger(fields.autoPilotFixLimit) || fields.autoPilotFixLimit < 0) throw new Error('autoPilotFixLimit must be a non-negative integer')
@@ -7996,7 +7997,7 @@ export class VoiceChatDb {
       llmModel: String(row.llm_model ?? ''), currentStep: String(row.current_step ?? ''),
       progress: parseJsonValue(String(row.progress_json ?? '{}'), { current: 0, total: 0, label: '' }),
       log: parseJsonValue(String(row.log_json ?? '[]'), []), result: row.result_json ? parseJsonValue(String(row.result_json), {}) : null,
-      scenario: row.scenario_json ? parseJsonValue<AutomatedQaScenario>(String(row.scenario_json), EMPTY_AUTOMATED_QA_SCENARIO) : null,
+      scenarios: row.scenario_json ? parseAutomatedQaScenarios(parseJsonValue<unknown>(String(row.scenario_json), [])) : null,
       gateReasons: parseStringArray(String(row.gate_reasons_json ?? '[]')), error: row.error as string | null,
       createdAt: Number(row.created_at), startedAt: row.started_at == null ? null : Number(row.started_at),
       finishedAt: row.finished_at == null ? null : Number(row.finished_at),
@@ -8090,7 +8091,7 @@ export class VoiceChatDb {
    * именно он. `scenario` передаёт повтор — он воспроизводит упавший прогон, а
    * не читает настройку заново.
    */
-  startQaStageRun(userId: string, projectId: string, taskId: string, stage: QaRunStage, scenario?: AutomatedQaScenario | null): AnyQaStageRun {
+  startQaStageRun(userId: string, projectId: string, taskId: string, stage: QaRunStage, scenarios?: AutomatedQaScenario[] | null): AnyQaStageRun {
     if (!this.isProjectMember(userId, projectId)) throw new Error('Проект недоступен')
     const task = this.getTask(projectId, taskId)
     if (!task || task.type !== 'task') throw new Error('Задача не найдена')
@@ -8102,7 +8103,7 @@ export class VoiceChatDb {
     const id = this.newId(), now = this.now()
     const project = stage === 'automated_qa' ? this.db.prepare(`SELECT automated_qa_mode,automated_qa_scenario_json FROM projects WHERE id=?`).get(projectId) as { automated_qa_mode: string | null; automated_qa_scenario_json: string | null } | undefined : undefined
     const snapshot = stage === 'automated_qa' && project?.automated_qa_mode === 'playwright'
-      ? normalizeAutomatedQaScenario(scenario ?? parseJsonValue<AutomatedQaScenario>(project.automated_qa_scenario_json ?? '', EMPTY_AUTOMATED_QA_SCENARIO))
+      ? (scenarios ?? parseAutomatedQaScenarios(parseJsonValue<unknown>(project.automated_qa_scenario_json ?? '', []))).map(normalizeAutomatedQaScenario)
       : null
     this.db.prepare(`INSERT INTO qa_stage_runs
       (id,project_id,task_id,stage,status,attempt,triggered_by,branch,commit_sha,current_step,scenario_json,created_at,started_at)
@@ -8120,7 +8121,7 @@ export class VoiceChatDb {
       mode: row.automated_qa_mode === 'playwright' ? 'playwright' : 'command',
       // Снимок рана важнее настройки проекта: пока ран шёл, её могли поправить.
       // Фолбэк на проект — для ранов, заведённых до появления снимка.
-      scenario: normalizeAutomatedQaScenario(parseJsonValue<AutomatedQaScenario>(row.scenario_json || row.automated_qa_scenario_json || '', EMPTY_AUTOMATED_QA_SCENARIO))
+      scenarios: parseAutomatedQaScenarios(parseJsonValue<unknown>(row.scenario_json || row.automated_qa_scenario_json || '', [])).map(normalizeAutomatedQaScenario)
     }
   }
 
@@ -8196,7 +8197,7 @@ export class VoiceChatDb {
     if (!run.canRetry) throw new Error('Повтор этого рана недоступен')
     // Повтор воспроизводит упавший прогон: берётся снимок сценария того рана, а
     // не текущая настройка проекта. Иначе повторяется не то, что упало.
-    return this.startQaStageRun(userId, run.projectId, run.taskId, run.stage, run.scenario)
+    return this.startQaStageRun(userId, run.projectId, run.taskId, run.stage, run.scenarios)
   }
 
   answerQaStageRun(userId: string, runId: string, answer: string): AnyQaStageRun | null {
@@ -9020,5 +9021,6 @@ export interface AutomatedQaExecutionContext {
   workdir: string
   command: string
   mode: AutomatedQaMode
-  scenario: AutomatedQaScenario
+  /** Все сценарии проекта: этап прогоняет набор, а не один. */
+  scenarios: AutomatedQaScenario[]
 }

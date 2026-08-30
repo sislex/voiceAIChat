@@ -3,6 +3,7 @@
 // После мутаций доски зовём boardHub.emit → живой board.changed подписчикам.
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { AutomatedQaCheckResult } from '@voicechat/shared'
 import {
   REST,
   type Board,
@@ -84,7 +85,13 @@ export function registerProjectRoutes(
   merge?: MergeRunManager,
   startTaskPreparation?: (userId: string, projectId: string, taskId: string, selection?: TaskPreparationLlmSelection) => TaskPreparationRun,
   membershipChanged?: (projectId: string, affectedUserId?: string) => void,
-  autoPilotChanged?: (projectId: string) => void
+  autoPilotChanged?: (projectId: string) => void,
+  /**
+   * Разовый прогон набора сценариев Automated QA. Без него набор проверялся
+   * только задачей на доске: записал сценарий — и жди следующего рана, чтобы
+   * узнать, работает ли он вообще.
+   */
+  checkAutomatedQa?: (userId: string, projectId: string) => Promise<AutomatedQaCheckResult[]>
 ): void {
   // Гейт участника: проект есть и текущий пользователь — участник; иначе null.
   const withMachineStatus = (project: ProjectDetail | null, userId: string): ProjectDetail | null => {
@@ -421,6 +428,21 @@ export function registerProjectRoutes(
       } catch (err) { return badReq(reply, errMessage(err)) }
     }
   )
+
+  // Разовая проверка набора сценариев. Синхронный ответ с жёстким бюджетом: это
+  // явное действие человека, который ждёт результат, а не фоновая работа —
+  // заводить ради него сущность рана значило бы усложнить путь «записал →
+  // проверил → поправил» ровно там, где он должен быть коротким.
+  app.post<{ Params: { id: string } }>('/api/projects/:id/automated-qa/check', async (req, reply) => {
+    const p = member(req, req.params.id)
+    if (!p) return nf(reply)
+    if (!checkAutomatedQa) return reply.code(501).send({ error: 'browser_runner_unavailable', message: 'Изолированный Chromium не настроен на сервере' })
+    try {
+      return { results: await checkAutomatedQa(uid(req), req.params.id) }
+    } catch (err) {
+      return badReq(reply, errMessage(err))
+    }
+  })
 
   // Машина проекта по умолчанию.
   app.post<{ Params: { id: string }; Body: { agentId?: string } }>(

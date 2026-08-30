@@ -1,6 +1,7 @@
 import type { ComponentQaCommandResult, ComponentQaRun, ComponentQaScenarioSnapshot } from '@voicechat/shared'
 import type { CommandExecutor } from './types.js'
-import type { AutomatedQaVerdict } from '@voicechat/shared'
+import type { AutomatedQaStepResult, AutomatedQaVerdict } from '@voicechat/shared'
+import { scenarioLabel } from '@voicechat/shared'
 import type { AutomatedQaExecutionContext } from '../db/database.js'
 import type { AutomatedQaScenarioRunner } from './automatedQaScenario.js'
 
@@ -160,7 +161,7 @@ export function createAutomatedQaRunner(deps: AutomatedQaRunnerDeps): ComponentQ
       const done = (): void => { controllers.delete(runId); deps.boardChanged?.(run.projectId) }
       if (context.mode === 'playwright') {
         void runScenario(deps, { runId, userId, context, controller, startedAt, now }).then(finish).catch((error) => {
-          finish(blockedVerdict('playwright', context.scenario.startUrl, error instanceof Error ? error.message : String(error), now, startedAt))
+          finish(blockedVerdict('playwright', context.scenarios[0]?.startUrl ?? '', error instanceof Error ? error.message : String(error), now, startedAt))
         }).finally(done)
         return
       }
@@ -212,33 +213,68 @@ function blockedVerdict(mode: AutomatedQaVerdict['mode'], command: string, summa
   return { mode, gatePassed: false, passed: false, summary, classification: 'infrastructure', command, exitCode: null, durationMs: startedAt ? now() - startedAt : 0, logTail, steps: [], screenshotUrl: null }
 }
 
+/**
+ * Прогон набора сценариев. Один сценарий на проект был потолком задачи «много
+ * автотестов»: этап теперь идёт по всем и объединяет результат. Первый
+ * провалившийся сценарий останавливает набор — дальше идти незачем, а какой
+ * именно упал, видно по названию шага.
+ */
 async function runScenario(
   deps: AutomatedQaRunnerDeps,
   args: { runId: string; userId: string; context: AutomatedQaExecutionContext; controller: AbortController; startedAt: number; now: () => number }
 ): Promise<AutomatedQaVerdict> {
   const { runId, userId, context, controller, startedAt, now } = args
-  if (!deps.scenarioRunner) return blockedVerdict('playwright', context.scenario.startUrl, 'Изолированный Chromium не настроен: этап Playwright запустить негде', now, startedAt)
-  const total = context.scenario.steps.length
-  deps.db.appendAutomatedQaLog(runId, 'system', `Playwright: ${context.scenario.startUrl}, шагов ${total}\n`)
-  deps.db.updateQaStageRun(runId, { currentStep: 'scenario', progress: { current: 0, total, label: context.scenario.startUrl } })
-  const outcome = await deps.scenarioRunner.run({
-    runId, userId, scenario: context.scenario, signal: controller.signal,
-    // Тот же бюджет, что у командного режима: до круга 10 у сценария его не было.
-    ...(deps.timeoutMs ? { budgetMs: deps.timeoutMs } : {}),
-    onStep: (step, index) => {
-      deps.db.appendAutomatedQaLog(runId, step.status === 'failed' ? 'err' : 'out', `${index + 1}/${total} ${step.title} — ${step.status}${step.detail ? `: ${step.detail}` : ''}\n`)
-      deps.db.updateQaStageRun(runId, { progress: { current: index + 1, total, label: step.title } })
-    }
-  })
-  if (outcome.blocked) return { ...blockedVerdict('playwright', context.scenario.startUrl, outcome.blocked, now, startedAt), steps: outcome.steps, screenshotUrl: outcome.screenshotUrl }
-  const failed = outcome.steps.filter((step) => step.status === 'failed')
-  const passed = total > 0 && failed.length === 0
+  const scenarios = context.scenarios
+  const first = scenarios[0]?.startUrl ?? ''
+  if (!deps.scenarioRunner) return blockedVerdict('playwright', first, 'Изолированный Chromium не настроен: этап Playwright запустить негде', now, startedAt)
+  if (!scenarios.length) return blockedVerdict('playwright', '', 'Сценарии Automated QA не настроены: проверять нечего', now, startedAt)
+
+  const totalSteps = scenarios.reduce((sum, item) => sum + item.steps.length, 0)
+  deps.db.appendAutomatedQaLog(runId, 'system', `Playwright: сценариев ${scenarios.length}, шагов ${totalSteps}\n`)
+  deps.db.updateQaStageRun(runId, { currentStep: 'scenario', progress: { current: 0, total: totalSteps, label: scenarioLabel(scenarios[0]) } })
+
+  const collected: AutomatedQaStepResult[] = []
+  let done = 0
+  let blocked: string | null = null
+  let screenshotUrl: string | null = null
+  let failedScenario: string | null = null
+
+  for (const [index, scenario] of scenarios.entries()) {
+    if (controller.signal.aborted) break
+    const label = scenarioLabel(scenario, index)
+    // Бюджет делится на оставшиеся сценарии: один длинный иначе съедал бы весь.
+    const remaining = scenarios.length - index
+    const budget = deps.timeoutMs ? Math.max(30_000, Math.floor(deps.timeoutMs / remaining)) : undefined
+    const outcome = await deps.scenarioRunner.run({
+      runId, userId, scenario, signal: controller.signal,
+      ...(budget ? { budgetMs: budget } : {}),
+      onStep: (step, stepIndex) => {
+        deps.db.appendAutomatedQaLog(runId, step.status === 'failed' ? 'err' : 'out', `${label}: ${stepIndex + 1} ${step.title} — ${step.status}${step.detail ? `: ${step.detail}` : ''}\n`)
+        deps.db.updateQaStageRun(runId, { progress: { current: done + stepIndex + 1, total: totalSteps, label: `${label}: ${step.title}` } })
+      }
+    })
+    if (outcome.screenshotError) deps.db.appendAutomatedQaLog(runId, 'err', `${label}: снимок экрана не сделан: ${outcome.screenshotError}\n`)
+    // Имя сценария в названии шага: иначе в общем списке непонятно, чей он.
+    collected.push(...outcome.steps.map((step) => ({ ...step, id: `${label}/${step.id}`, title: `${label}: ${step.title}` })))
+    done += scenario.steps.length
+    if (outcome.screenshotUrl) screenshotUrl = outcome.screenshotUrl
+    if (outcome.blocked) { blocked = `${label}: ${outcome.blocked}`; break }
+    if (outcome.steps.some((step) => step.status === 'failed')) { failedScenario = label; break }
+  }
+
+  if (blocked) return { ...blockedVerdict('playwright', first, blocked, now, startedAt), steps: collected, screenshotUrl }
+  const failed = collected.filter((step) => step.status === 'failed')
+  const passed = totalSteps > 0 && failed.length === 0
   return {
     mode: 'playwright', gatePassed: passed, passed,
-    summary: total === 0 ? 'Сценарий Automated QA пуст: проверять нечего' : passed ? `Сценарий пройден: ${total} шаг(ов)` : `Сценарий провален на шаге «${failed[0].title}»`,
-    classification: passed ? null : total === 0 ? 'infrastructure' : 'implementation_defect',
-    command: context.scenario.startUrl, exitCode: null, durationMs: now() - startedAt,
-    logTail: outcome.steps.filter((step) => step.status !== 'skipped').map((step) => `${step.title} — ${step.status}${step.detail ? `: ${step.detail}` : ''}`).join('\n').slice(-LOG_TAIL_LIMIT),
-    steps: outcome.steps, screenshotUrl: outcome.screenshotUrl
+    summary: totalSteps === 0
+      ? 'Сценарии Automated QA пусты: проверять нечего'
+      : passed
+        ? `Пройдено сценариев: ${scenarios.length}, шагов ${totalSteps}`
+        : `Сценарий «${failedScenario ?? '?'}» провален на шаге «${failed[0]?.title ?? '?'}»`,
+    classification: passed ? null : totalSteps === 0 ? 'infrastructure' : 'implementation_defect',
+    command: first, exitCode: null, durationMs: now() - startedAt,
+    logTail: collected.filter((step) => step.status !== 'skipped').map((step) => `${step.title} — ${step.status}${step.detail ? `: ${step.detail}` : ''}`).join('\n').slice(-LOG_TAIL_LIMIT),
+    steps: collected, screenshotUrl
   }
 }

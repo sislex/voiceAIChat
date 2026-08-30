@@ -5,7 +5,7 @@ import type { AutomatedQaScenario } from '@shared/qa'
 import { AutomatedQaScenarioEditor } from './AutomatedQaScenarioEditor'
 
 const detail = (scenario?: AutomatedQaScenario): ProjectDetail =>
-  ({ id: 'p1', automatedQaScenario: scenario } as unknown as ProjectDetail)
+  ({ id: 'p1', automatedQaScenarios: scenario ? [scenario] : [] } as unknown as ProjectDetail)
 
 describe('AutomatedQaScenarioEditor', () => {
   it('пустой сценарий предупреждает, что этап заблокируется', () => {
@@ -17,9 +17,10 @@ describe('AutomatedQaScenarioEditor', () => {
     const onUpdate = vi.fn()
     render(<AutomatedQaScenarioEditor detail={detail()} isOwner onUpdate={onUpdate} />)
     fireEvent.change(screen.getByLabelText('Стартовый адрес'), { target: { value: 'http://localhost:5173' } })
-    expect(onUpdate).toHaveBeenCalledWith('p1', { automatedQaScenario: { startUrl: 'http://localhost:5173', steps: [] } })
+    // Сохранение всегда отдаёт весь набор — сценариев у проекта может быть много.
+    expect(onUpdate).toHaveBeenCalledWith('p1', { automatedQaScenarios: [{ startUrl: 'http://localhost:5173', steps: [] }] })
     fireEvent.click(screen.getByRole('button', { name: 'Добавить шаг' }))
-    expect(onUpdate.mock.calls.at(-1)?.[1].automatedQaScenario.steps).toHaveLength(1)
+    expect(onUpdate.mock.calls.at(-1)?.[1].automatedQaScenarios[0].steps).toHaveLength(1)
   })
 
   it('смена вида действия переносит селектор, а не теряет его', () => {
@@ -27,7 +28,7 @@ describe('AutomatedQaScenarioEditor', () => {
     const scenario: AutomatedQaScenario = { startUrl: 'http://x', steps: [{ id: 's1', title: 'Кнопка', action: { kind: 'click', selector: '#create' } }] }
     render(<AutomatedQaScenarioEditor detail={detail(scenario)} isOwner onUpdate={onUpdate} />)
     fireEvent.change(screen.getByLabelText('Действие'), { target: { value: 'wait' } })
-    expect(onUpdate.mock.calls.at(-1)?.[1].automatedQaScenario.steps[0].action).toEqual({ kind: 'wait', selector: '#create' })
+    expect(onUpdate.mock.calls.at(-1)?.[1].automatedQaScenarios[0].steps[0].action).toEqual({ kind: 'wait', selector: '#create' })
   })
 
   it('участнику проекта поля недоступны', () => {
@@ -39,13 +40,85 @@ describe('AutomatedQaScenarioEditor', () => {
 })
 
 describe('проверка стартового адреса (круг 10)', () => {
+  // На экране может быть несколько тревог (беды набора целиком), поэтому
+  // проверяем именно ту, что относится к адресу.
+  const urlProblem = (): HTMLElement | null => document.getElementById('qa-scenario-url-problem')
+
   it('localhost объясняется сразу, а не через минуты прогона', () => {
     const scenario: AutomatedQaScenario = { startUrl: 'http://localhost:5173', steps: [] }
     render(<AutomatedQaScenarioEditor detail={detail(scenario)} isOwner onUpdate={vi.fn()} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('не ходит в localhost')
+    expect(urlProblem()).toHaveTextContent('не ходит в localhost')
   })
   it('внешний адрес не ругается', () => {
     render(<AutomatedQaScenarioEditor detail={detail({ startUrl: 'https://example.com', steps: [] })} isOwner onUpdate={vi.fn()} />)
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(urlProblem()).toBeNull()
+  })
+})
+
+describe('дисциплина набора (круг 21)', () => {
+  const withScenarios = (...items: AutomatedQaScenario[]): ProjectDetail =>
+    ({ id: 'p1', automatedQaScenarios: items } as unknown as ProjectDetail)
+
+  it('повтор названия и пустой адрес названы прямо', () => {
+    render(<AutomatedQaScenarioEditor
+      detail={withScenarios(
+        { name: 'Вход', startUrl: 'http://a/', steps: [{ id: 's', title: 'ш', action: { kind: 'click', selector: '#a' } }] },
+        { name: 'Вход', startUrl: '', steps: [] }
+      )}
+      isOwner onUpdate={vi.fn()} />)
+    expect(screen.getByText(/Название «Вход» повторяется/)).toBeInTheDocument()
+    expect(screen.getByText(/заблокирует весь этап/)).toBeInTheDocument()
+  })
+
+  it('новый сценарий не уезжает в проект, пока у него нет адреса', () => {
+    const onUpdate = vi.fn()
+    render(<AutomatedQaScenarioEditor
+      detail={withScenarios({ name: 'Вход', startUrl: 'http://a/', steps: [{ id: 's', title: 'ш', action: { kind: 'click', selector: '#a' } }] })}
+      isOwner onUpdate={onUpdate} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Добавить сценарий' }))
+    // Пустой сценарий в проекте заблокировал бы весь этап, поэтому он черновик.
+    expect(onUpdate).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText('Стартовый адрес'), { target: { value: 'https://example.com' } })
+    expect(onUpdate).toHaveBeenCalledWith('p1', { automatedQaScenarios: expect.arrayContaining([expect.objectContaining({ startUrl: 'https://example.com' })]) })
+  })
+})
+
+describe('разовый прогон набора (круг 24)', () => {
+  const detailWith = (...items: AutomatedQaScenario[]): ProjectDetail =>
+    ({ id: 'p1', automatedQaScenarios: items } as unknown as ProjectDetail)
+  const scenario = { name: 'Вход', startUrl: 'http://a/', steps: [{ id: 's', title: 'ш', action: { kind: 'click' as const, selector: '#a' } }] }
+
+  it('показывает исход каждого сценария', async () => {
+    const onCheck = vi.fn(async () => ([
+      { name: 'Вход', passed: true, blocked: null, steps: [], durationMs: 1200 },
+      { name: 'Доска', passed: false, blocked: null, durationMs: 800, steps: [{ id: 's', title: 'Создать', status: 'failed' as const, detail: 'не найден', durationMs: 5 }] }
+    ]))
+    render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать набор сейчас' }))
+    expect(await screen.findByText(/Вход: пройден/)).toBeInTheDocument()
+    // Провалившийся шаг назван: без этого «провален» не подсказывает, куда смотреть.
+    expect(screen.getByText(/Доска: провален на шаге «Создать»/)).toBeInTheDocument()
+  })
+
+  it('заблокированный прогон объясняет причину', async () => {
+    const onCheck = vi.fn(async () => ([{ name: 'Вход', passed: false, blocked: 'Стартовый адрес не открылся', steps: [], durationMs: 300 }]))
+    render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать набор сейчас' }))
+    const line = await screen.findByText(/заблокирован — Стартовый адрес не открылся/)
+    // Заблокированный отличается от провального не только словом: красный
+    // цвет провала заставляет искать дефект там, где проверка вообще не шла.
+    expect(line.closest('li')).toHaveAttribute('data-state', 'blocked')
+  })
+
+  it('отказ сервера показывается, а не теряется', async () => {
+    const onCheck = vi.fn(async () => { throw new Error('Изолированный Chromium не настроен') })
+    render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} onCheck={onCheck} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Прогнать набор сейчас' }))
+    expect(await screen.findByText('Изолированный Chromium не настроен')).toBeInTheDocument()
+  })
+
+  it('без обработчика кнопки нет — сервер может не уметь прогон', () => {
+    render(<AutomatedQaScenarioEditor detail={detailWith(scenario)} isOwner onUpdate={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: 'Прогнать набор сейчас' })).not.toBeInTheDocument()
   })
 })

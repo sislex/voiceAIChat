@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +13,35 @@ async function fresh(): Promise<MakeWorkspaces> {
 }
 
 describe('MakeWorkspaces', () => {
+  it('снятая публикация не оживает от фонового счётчика просмотров', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const token = (await ws.publish(CONV)).published!.token
+    // Счётчик идёт фоном: маршрут отдачи зовёт его через `void`. Раньше он
+    // усекал файл публикации на месте, и попавший в это окно `publishRaw`
+    // возвращал null — снятие публикации тогда молча не срабатывало.
+    const views = Array.from({ length: 40 }, () => ws.countView(CONV, null))
+    const reads = Array.from({ length: 40 }, () => ws.publication(CONV))
+    await Promise.all(views)
+    expect((await Promise.all(reads)).every((item) => item !== null)).toBe(true)
+    await ws.unpublish(CONV)
+    expect(await ws.publishedTarget(token)).toBeNull()
+    expect((await ws.state(CONV)).published).toBeFalsy()
+  })
+
+  it('нечитаемый файл публикации всё равно снимается', async () => {
+    const ws = await fresh()
+    await ws.ensure(CONV)
+    const token = (await ws.publish(CONV)).published!.token
+    const root = (ws as unknown as { rootDir: string }).rootDir
+    await writeFile(join((ws as unknown as { dirOf(id: string): string }).dirOf(CONV), '.publish.json'), '{битый', 'utf8')
+    await ws.unpublish(CONV)
+    expect(await ws.publishedTarget(token)).toBeNull()
+    // И запись индекса тоже уходит: иначе ссылка оживёт от любой следующей
+    // записи файла публикации.
+    expect(existsSync(join(root, 'make', '.published', `${token}.json`))).toBe(false)
+  })
+
   it('ensure создаёт заготовку один раз; повторный ensure не трогает файлы', async () => {
     const ws = await fresh()
     await ws.ensure(CONV)

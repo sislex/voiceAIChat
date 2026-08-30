@@ -34,6 +34,8 @@ export interface AutomatedQaScenarioOutcome {
    * разработку — виноват не разработчик.
    */
   blocked: string | null
+  /** Почему не вышло снять экран. Пустое — снимок либо сделан, либо не нужен. */
+  screenshotError?: string
 }
 
 export interface AutomatedQaScenarioRunnerDeps {
@@ -76,6 +78,7 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         deps.browser.command(sessionId, { requestId: randomUUID(), incarnation, actor: 'assistant', command }, input.signal)
       const results: AutomatedQaStepResult[] = []
       let screenshotUrl: string | null = null
+      let screenshotError = ''
       let blocked: string | null = null
       let expiredBudget = false
       try {
@@ -86,6 +89,7 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
         }
         let failed = false
         let expired = false
+        let unverifiable: string | null = null
         for (let index = 0; index < steps.length; index++) {
           const step = steps[index]
           if (input.signal.aborted) break
@@ -103,9 +107,15 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
           const result: AutomatedQaStepResult = { id: step.id, title: step.title, status: outcome.ok ? 'passed' : 'failed', detail: outcome.detail, durationMs: now() - startedAt }
           results.push(result)
           input.onStep?.(result, index, steps.length)
+          // Шаг, который нельзя проверить (действие невыразимо, страница длиннее
+          // предела чтения), — беда сценария, а не кода. Раньше он приходил
+          // обычным провалом, этап объявлял дефект реализации и возвращал задачу
+          // разработчику за то, чего тот не ломал.
+          if (outcome.unverifiable) { unverifiable = `Шаг «${step.title}» проверить нельзя: ${outcome.detail}`; failed = true; continue }
           if (!outcome.ok) failed = true
         }
         expiredBudget = expired
+        if (unverifiable) blocked = unverifiable
         // Снимок делается в любом исходе: на провале он объясняет причину, на
         // успехе служит доказательством, что проверялась именно та страница.
         try {
@@ -114,7 +124,12 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
           mkdirSync(dirname(file), { recursive: true })
           writeFileSync(file, shot.buffer)
           screenshotUrl = deps.screenshotUrl(input.runId)
-        } catch { /* снимок — не повод завалить этап */ }
+        } catch (error) {
+          // Снимок — не повод завалить этап, но и молчать нельзя: если он
+          // перестанет получаться совсем, у вердиктов просто никогда не будет
+          // картинки, и никто не станет разбираться почему.
+          screenshotError = firstLine(error)
+        }
       } catch (error) {
         blocked = `Прогон сценария прерван: ${firstLine(error)}`
       } finally {
@@ -122,8 +137,8 @@ export function createAutomatedQaScenarioRunner(deps: AutomatedQaScenarioRunnerD
       }
       // Исчерпанный бюджет — инфраструктура, а не дефект реализации: сценарий
       // не досмотрен, и судить по нему о работоспособности нельзя.
-      if (expiredBudget) return { steps: results, screenshotUrl, blocked: 'Исчерпан бюджет времени прогона сценария' }
-      return { steps: results, screenshotUrl, blocked }
+      if (expiredBudget) return { steps: results, screenshotUrl, blocked: 'Исчерпан бюджет времени прогона сценария', ...(screenshotError ? { screenshotError } : {}) }
+      return { steps: results, screenshotUrl, blocked, ...(screenshotError ? { screenshotError } : {}) }
     }
   }
 }

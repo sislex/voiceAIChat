@@ -71,6 +71,11 @@ describe('селекторные действия раннера', () => {
     expect(result.ok).toBe(true)
     expect(result.text).toHaveLength(101)
     expect(result.text?.endsWith('…')).toBe(true)
+    // Признак обрезки — не украшение: по нему проверка сценария отличает
+    // «текста нет» от «до текста не дочитали».
+    expect(result.truncated).toBe(true)
+    const whole = await runSelectorAction(page(locator({ innerText: async () => 'коротко' })), { kind: 'read' })
+    expect(whole.truncated).toBeUndefined()
   })
 
   it('поиск возвращает совпадения с текстом и видимостью', async () => {
@@ -130,6 +135,7 @@ describe('действия, которых у раннера не было (кр
     expect(short).toEqual({ ok: true, text: '- button "Создать"' })
     const long = await runSelectorAction(page(locator({ ariaSnapshot: async () => 'x'.repeat(500) })), { kind: 'a11y', limit: 100 })
     expect(long.text).toHaveLength(101)
+    expect(long.truncated).toBe(true)
   })
 
   it('ошибка Playwright возвращается значением, а не исключением', async () => {

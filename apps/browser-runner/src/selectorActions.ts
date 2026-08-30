@@ -60,7 +60,9 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       const target = action.selector ? page.locator(action.selector).first() : page.locator('body')
       const text = (await target.innerText({ timeout })).trim()
       const limit = Math.min(Math.max(action.limit ?? 4000, 100), 20_000)
-      return { ok: true, text: text.length > limit ? `${text.slice(0, limit)}…` : text }
+      // Обрезка сообщается признаком, а не только многоточием в конце: по
+      // многоточию не отличить усечение от текста, который сам им кончается.
+      return text.length > limit ? { ok: true, text: `${text.slice(0, limit)}…`, truncated: true } : { ok: true, text }
     }
     if (action.kind === 'hover') {
       const target = locate(action.selector, action.text)
@@ -106,7 +108,7 @@ export async function runSelectorAction(page: SelectorPage, action: BrowserSelec
       const target = action.selector ? page.locator(action.selector).first() : page.locator('body')
       const snapshot = await target.ariaSnapshot({ timeout })
       const limit = Math.min(Math.max(action.limit ?? 4000, 100), 20_000)
-      return { ok: true, text: snapshot.length > limit ? `${snapshot.slice(0, limit)}…` : snapshot }
+      return snapshot.length > limit ? { ok: true, text: `${snapshot.slice(0, limit)}…`, truncated: true } : { ok: true, text: snapshot }
     }
     if (action.kind === 'find') {
       const target = locate(action.selector, action.text)

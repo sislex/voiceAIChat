@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { aliasTargets, applyHostAlias, parseHostAliases } from './security.js'
+import { aliasTargets, applyHostAlias, parseHostAliases, restoreHostAlias } from './security.js'
 
 describe('parseHostAliases', () => {
   it('разбирает список пар и не спотыкается о пробелы', () => {
@@ -49,5 +49,28 @@ describe('aliasTargets', () => {
   })
   it('пустая карта не разрешает ничего — гейт остаётся закрытым', () => {
     expect(aliasTargets(parseHostAliases('')).size).toBe(0)
+  })
+})
+
+describe('restoreHostAlias', () => {
+  const aliases = parseHostAliases('89.125.68.35:8787=voicechat:8787,89.125.68.35:443=caddy')
+
+  it('возвращает адрес, который назвал человек: внутренний в сценарий попадать не должен', () => {
+    expect(restoreHostAlias(new URL('http://voicechat:8787/#/projects'), aliases).toString())
+      .toBe('http://89.125.68.35:8787/#/projects')
+  })
+
+  it('умолчательный порт не приписывается к адресу', () => {
+    expect(restoreHostAlias(new URL('https://caddy/#/login'), aliases).toString()).toBe('https://89.125.68.35/#/login')
+  })
+
+  it('чужой адрес не трогает — подмены не было', () => {
+    expect(restoreHostAlias(new URL('https://example.com/'), aliases).toString()).toBe('https://example.com/')
+    expect(restoreHostAlias(new URL('http://voicechat:9999/'), aliases).toString()).toBe('http://voicechat:9999/')
+  })
+
+  it('подстановка и обратная подстановка возвращают исходный адрес', () => {
+    const original = new URL('http://89.125.68.35:8787/#/board')
+    expect(restoreHostAlias(applyHostAlias(original, aliases), aliases).toString()).toBe(original.toString())
   })
 })

@@ -99,6 +99,8 @@ import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
 import { REST as REST_PATHS } from '@shared/protocol'
 import { parseAdminRoute } from '@voicechat/admin-app'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
+import { placeScenario } from './lib/scenarioRecorder'
+
 /** Подпись устройства для тоста о новом входе: ядро без текстов окна сессий. */
 function deviceLabel(userAgent: string): string {
   const profile = parseUserAgent(userAgent)
@@ -2001,7 +2003,17 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       </div>
       {inSplit && readerSurfaceReady && <div className="chat-split-divider" role="region" aria-label="Изменение ширины панелей" onPointerDown={resizePreview}><div role="separator" aria-label="Изменить ширину панелей" aria-orientation="vertical" /></div>}
       {/* Playwright Reader — живой изолированный Chromium (browser-runner); Web Reader — iframe поверх /api/preview; Консоль — живой PTY-терминал. */}
-      {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? { onSaveScenario: async (automatedQaScenario) => { await projectsActions.updateProject(projects.projectDetail!.id, { automatedQaScenario }) } } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.automatedQaScenario ? { savedScenario: projects.projectDetail.automatedQaScenario } : {})} />}
+      {inPlaywrightReader && readerSurfaceReady && chat.activeId && <BrowserSessionPane key={chat.activeId} conversationId={chat.activeId} browser={window.browser} {...(projects.projectDetail?.id === activeConversation?.projectId && projects.projectDetail?.testUsers?.length ? { testUsers: projects.projectDetail.testUsers } : {})} {...(projects.projectDetail?.id === activeConversation?.projectId ? {
+        // Записанный сценарий добавляется в набор или заменяет одноимённый:
+        // затирать чужие тесты записью одного — не то, чего ждёт человек.
+        onSaveScenario: async (scenario) => {
+          const detail = projects.projectDetail!
+          await projectsActions.updateProject(detail.id, {
+            automatedQaScenarios: placeScenario(detail.automatedQaScenarios ?? [], scenario)
+          })
+        },
+        ...(projects.projectDetail?.automatedQaScenarios?.length ? { savedScenarios: projects.projectDetail.automatedQaScenarios } : {})
+      } : {})} />}
       {inConsoleReader && readerSurfaceReady && chat.activeId && <ConsoleSessionPane key={chat.activeId} conversationId={chat.activeId} agents={operations.agents} pty={window.pty} initialAgentId={activeConversation?.execTarget ?? settingsState.settings.defaultAgentId ?? null} {...(activeConversation?.projectId ? { projectId: activeConversation.projectId } : {})} />}
       {(changePasswordOpen || session.currentUser?.mustChangePassword) && window.session?.changePassword && session.currentUser && <ChangePasswordDialog userName={session.currentUser.name} change={window.session.changePassword} forced={Boolean(session.currentUser.mustChangePassword)} onDone={() => { setChangePasswordOpen(false); void runtime.refreshUser() }} onClose={() => setChangePasswordOpen(false)} onLogout={() => void runtime.logout()} />}
       {twoFactorOpen && window.session?.twoFactor && <TwoFactorDialog api={window.session.twoFactor} onClose={() => setTwoFactorOpen(false)} />}
@@ -2083,6 +2095,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 llmAccess={settingsState.llmAccess}
                 llmEngines={settingsState.llmEngines}
                 onUpdate={(id, fields) => void projectsActions.updateProject(id, fields)}
+                checkAutomatedQa={async (id) => (await api['projects:checkAutomatedQa']({ id })).results}
                 onDelete={(id) => {
                   // Удалили проект — уводим на другой доступный, а если их не
                   // осталось, в пустое состояние (#/projects без id).
