@@ -10,7 +10,8 @@ const LOGIN_LIMIT = 10
 const LOGIN_IP_LIMIT = 30
 const LOGIN_WINDOW_MS = 10 * 60_000
 import { REST, type SessionUser, type UserRole, SESSION_SHORT_TTL_MS, SESSION_TTL_MS, checkPasswordPolicy } from '@voicechat/shared'
-import { deviceKey, isNewDevice, localGeo, parseUserAgent } from '@voicechat/sessions-core'
+import { deviceKey, isNewDevice, localGeo, parseUserAgent, type GeoResolver } from '@voicechat/sessions-core'
+import { createGeoResolver } from './geo.js'
 import type { VoiceChatDb } from '../db/database.js'
 import { newSessionId, signToken, verifyToken, verifyTokenName } from './accounts.js'
 import { newTotpSecret, otpauthUrl, verifyTotp } from './totp.js'
@@ -218,6 +219,8 @@ export interface AuthOptions {
   mailer?: Mailer
   /** Публичный адрес приложения для ссылок в письмах; иначе берём Origin/Host запроса. */
   publicUrl?: string | null
+  /** Определение места входа по IP; по умолчанию офлайн — только локальная сеть. */
+  geo?: GeoResolver
 }
 
 /** Настройка открытой регистрации хранится в app_config: `signup.enabled` ('1'/'0') и `signup.role`. */
@@ -246,6 +249,10 @@ function clientVersionOf(req: FastifyRequest): string | null {
 
 export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: string, options: AuthOptions = {}): void {
   const mailer = options.mailer ?? createMailer({}, (m, extra) => app.log.warn(extra ?? {}, m))
+  const geo = options.geo ?? createGeoResolver({
+    url: process.env.VC_GEOIP_URL ?? null,
+    onError: (message) => app.log.warn({ err: message }, 'geoip: место входа определить не удалось')
+  })
   const baseUrl = (req: FastifyRequest): string => (options.publicUrl ?? `${String(req.headers['x-forwarded-proto'] ?? req.protocol)}://${String(req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost')}`).replace(/\/$/, '')
   app.decorateRequest('user', null)
   // Сессии (auth-roadmap п.4): токен действителен, пока есть живая запись в `sessions` (не отозвана, не истекла).
@@ -359,6 +366,13 @@ export function registerAuth(app: FastifyInstance, db: VoiceChatDb, secret: stri
       clientVersion: clientVersionOf(req),
       geo: localGeo(req.ip)
     })
+    // Публичный адрес уточняем в фоне: вход не должен ждать внешний сервис, а
+    // список сессий читают уже после — к этому моменту место обычно на месте.
+    if (!localGeo(req.ip)) {
+      void geo.resolve(req.ip)
+        .then((place) => { if (place) db.updateSession(sid, { geo: place }) })
+        .catch(() => undefined)
+    }
     db.markLogin(name)
     db.logSecurityEvent({ user: name, type: 'login', ip: req.ip, userAgent: ua })
     if (isNew) {

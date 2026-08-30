@@ -44,6 +44,7 @@ import { ensureDefaultChatBinding, ensureDefaultStorage } from './agents/default
 import { createAgentWatchdog } from './agents/watchdog.js'
 import { createCommandGate } from './agents/commandGate.js'
 import { createMailer, type Mailer } from './users/mailer.js'
+import type { GeoResolver } from '@voicechat/sessions-core'
 
 /** Токен сессии из заголовка Cookie при WS-upgrade (auth-roadmap п.5). */
 function cookieToken(header: string | undefined): string | undefined {
@@ -138,6 +139,8 @@ export interface BuildOptions {
   sessionSecret?: string
   /** Мейлер регистрации (для тестов — фейк). Иначе SMTP из config или консольный. */
   mailer?: Mailer
+  /** Определение места входа по IP; в тестах подменяется, по умолчанию офлайн. */
+  geo?: GeoResolver
   /** Реестр машин (для маршрутных тестов с фейковыми fs-ответами). */
   agentRegistry?: AgentRegistry
   /** Исполнитель CI-команд (в тестах — мок). По умолчанию поверх AgentRegistry. */
@@ -262,7 +265,7 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
   // приглашения в проект. Без VC_SMTP_URL это «консольный» мейлер — письмо
   // уходит в лог, и оба потока остаются проверяемыми на стенде.
   const mailer = opts.mailer ?? createMailer({ smtpUrl: opts.config.smtpUrl, mailFrom: opts.config.mailFrom }, (m, extra) => app.log.warn(extra ?? {}, m))
-  registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl })
+  registerAuth(app, db, sessionSecret, { mailer, publicUrl: opts.config.publicUrl, ...(opts.geo ? { geo: opts.geo } : {}) })
 
   app.get(REST.health, async (): Promise<HealthResponse> => ({
     ok: true,
