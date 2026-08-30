@@ -204,10 +204,10 @@ export interface QaStageRun {
   log: QaStageLogEntry[]
   result: Record<string, unknown> | null
   /**
-   * Снимок сценария Playwright-этапа на момент запуска (`null` в режиме
-   * команды и у ранов, заведённых до круга 8). Повтор воспроизводит именно его.
+   * Снимок сценариев Playwright-этапа на момент запуска (`null` в режиме
+   * команды и у ранов, заведённых до круга 8). Повтор воспроизводит именно их.
    */
-  scenario: import('./qa').AutomatedQaScenario | null
+  scenarios: import('./qa').AutomatedQaScenario[] | null
   gateReasons: string[]
   error: string | null
   createdAt: number
@@ -673,9 +673,27 @@ export interface AutomatedQaScenarioStep {
 /** Сценарий этапа — настройка проекта, а не артефакт рана: он обязан быть
  *  одинаковым от попытки к попытке, иначе сравнивать прогоны не с чем. */
 export interface AutomatedQaScenario {
+  /** Имя набора: в списке сценарии нечем различать, а вердикт обязан сказать, какой упал. */
+  name?: string
   /** Стартовый адрес; пустой означает «сценарий не настроен». */
   startUrl: string
   steps: AutomatedQaScenarioStep[]
+}
+
+/**
+ * Чтение сценариев проекта. Принимает обе формы: список (нынешняя) и одиночный
+ * объект (как хранилось до набора сценариев) — иначе миграция потеряла бы то,
+ * что уже записано.
+ */
+export function parseAutomatedQaScenarios(value: unknown): AutomatedQaScenario[] {
+  if (Array.isArray(value)) return value.filter((item): item is AutomatedQaScenario => Boolean(item) && typeof item === 'object')
+  if (value && typeof value === 'object' && 'steps' in value) return [value as AutomatedQaScenario]
+  return []
+}
+
+/** Имя для показа: у безымянного сценария — его стартовый адрес. */
+export function scenarioLabel(scenario: AutomatedQaScenario, index = 0): string {
+  return scenario.name?.trim() || scenario.startUrl || `Сценарий ${index + 1}`
 }
 
 export const EMPTY_AUTOMATED_QA_SCENARIO: AutomatedQaScenario = { startUrl: '', steps: [] }
