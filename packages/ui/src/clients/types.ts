@@ -196,6 +196,8 @@ export type ProjectsClient = Pick<
   | 'projects:checkAutomatedQa'
   | 'projects:setUserDefaultMachine'
   | 'board:get'
+  | 'board:getView'
+  | 'board:saveView'
   | 'columns:create'
   | 'columns:rename'
   | 'columns:setHidden'

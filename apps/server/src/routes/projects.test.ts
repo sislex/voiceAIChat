@@ -722,3 +722,31 @@ describe('widget tool gateway', () => {
     expect((await inj(adminTok, { method: 'POST', url: '/api/widget-tools/action', payload: { ...payload, idempotencyKey: 'stale' } })).statusCode).toBe(409)
   })
 })
+
+describe('вид доски (личная настройка участника)', () => {
+  it('пустой по умолчанию, патч мержится, мусор отбрасывается', async () => {
+    const project = (await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name: 'Вид' } })).json()
+
+    expect((await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board/view` })).json())
+      .toMatchObject({ swimlane: 'none', showHidden: false, onlyMine: false, assignees: [] })
+
+    await inj(adminTok, { method: 'PUT', url: `/api/projects/${project.id}/board/view`, payload: { swimlane: 'assignee', onlyMine: true } })
+    const patched = (await inj(adminTok, { method: 'PUT', url: `/api/projects/${project.id}/board/view`, payload: { showHidden: true, swimlane: 'мусор', hack: 1 } })).json()
+
+    // Патч не сбрасывает соседние поля, а значение не из набора не сохраняется.
+    expect(patched).toMatchObject({ swimlane: 'assignee', onlyMine: true, showHidden: true })
+    expect(patched).not.toHaveProperty('hack')
+  })
+
+  it('вид у каждого свой и чужому проекту не отдаётся', async () => {
+    const project = (await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name: 'Чужой вид' } })).json()
+    await inj(adminTok, { method: 'PUT', url: `/api/projects/${project.id}/board/view`, payload: { onlyMine: true } })
+    db.createUser('outsider', 'password-outsider', 'developer')
+    const outsiderTok = signToken({ name: 'outsider', role: 'developer' }, SECRET)
+
+    const foreign = await inj(outsiderTok, { method: 'GET', url: `/api/projects/${project.id}/board/view` })
+
+    expect(foreign.statusCode).toBe(404)
+    expect((await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board/view` })).json().onlyMine).toBe(true)
+  })
+})

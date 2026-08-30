@@ -376,6 +376,8 @@ export const REST = {
   /** Снапшот доски; includeCompleted=1 добавляет давно завершённые задачи. */
   projectBoard: (id: string, includeCompleted?: boolean) =>
     `/api/projects/${encodeURIComponent(id)}/board${includeCompleted ? '?includeCompleted=1' : ''}`,
+  /** Вид доски текущего человека в проекте: фильтры, свимлейны, показ скрытых. */
+  projectBoardView: (id: string) => `/api/projects/${encodeURIComponent(id)}/board/view`,
   projectColumns: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns`,
   projectColumnsReorder: (id: string) => `/api/projects/${encodeURIComponent(id)}/columns/reorder`,
   projectColumn: (id: string, columnId: string) =>

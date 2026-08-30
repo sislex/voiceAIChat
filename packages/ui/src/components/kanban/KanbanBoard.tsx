@@ -17,7 +17,8 @@ import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
 import { kanbanFilterKey } from '../../store/contracts'
 import type { ProjectFeatureSet } from '@shared/projectTypes'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
-import type { Board, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
+import type { Board, BoardView, KanbanColumn, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
+import { DEFAULT_BOARD_VIEW, sanitizeBoardView } from '@shared/projects'
 import { compareTasksInColumn, TASK_PRIORITIES, WORK_ITEM_TYPES } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
 import type { ModifierPrompt } from '@shared/types'
@@ -188,6 +189,15 @@ export interface KanbanBoardProps {
   onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
   /** Стартовое значение селекта «Свимлейны». */
   defaultSwimlane?: Swimlane
+  /**
+   * Вид доски с сервера (фильтры, свимлейны, показ скрытых). Он — источник
+   * истины: доска, настроенная на одном компьютере, обязана открыться такой же
+   * на другом. `null` — вид ещё грузится, `undefined` — вызывающий его не ведёт
+   * (сториз, тесты), и тогда вид живёт в предпочтениях браузера, как раньше.
+   */
+  view?: BoardView | null
+  /** Патч вида: доска не хранит его сама, а сообщает об изменении наверх. */
+  onViewChange?: (patch: Partial<BoardView>) => void
   /**
    * Приходят ли с сервера давно завершённые задачи. Фильтрация серверная, так
    * что переключатель — это запрос доски заново (onShowCompletedChange); без
@@ -405,6 +415,35 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     }
   }, [scrollScopeId, board != null, swimlane])
   const currentUserId = props.currentUserId ?? props.currentUser ?? null
+  /** Прежняя запись вида в предпочтениях браузера — источник разового переноса. */
+  const readLocalView = (key: string): Partial<BoardView> | null => {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return null
+      const saved = JSON.parse(raw) as Record<string, unknown>
+      const view = sanitizeBoardView({ ...saved, columnAssignees: Object.fromEntries(Object.entries((saved.columnAssigneeFilters ?? {}) as Record<string, { assigneeIds?: string[]; includeUnassigned?: boolean }>).map(([columnId, filter]) => [columnId, { assigneeIds: filter.assigneeIds ?? [], unassigned: filter.includeUnassigned === true }])) })
+      return Object.keys(view).length ? view : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Разложить вид (серверный или локальный) по состояниям панели фильтров. */
+  const applyView = (view: BoardView): void => {
+    setSearch(view.search)
+    setAssignees(new Set(view.assignees))
+    setTypes(new Set(view.types))
+    setPriorities(new Set(view.priorities))
+    setLabels(new Set(view.labels))
+    setEpics(new Set(view.epics))
+    setOnlyMine(view.onlyMine)
+    setFlaggedOnly(view.flaggedOnly)
+    setRecentOnly(view.recentOnly)
+    setColumnAssigneeFilters(Object.fromEntries(Object.entries(view.columnAssignees).map(([columnId, filter]) => [columnId, { assigneeIds: filter.assigneeIds, includeUnassigned: filter.unassigned }])))
+    setSwimlane(view.swimlane)
+    setShowHidden(view.showHidden)
+  }
+
   const legacyFilterStorageKey = useMemo(
     () => currentUserId ? kanbanFilterKey(currentUserId, props.projectName) : null,
     [currentUserId, props.projectName]
@@ -432,6 +471,22 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setSwimlane(props.defaultSwimlane ?? 'none')
     setShowHidden(false)
     if (!filterStorageKey) {
+      setFiltersHydrated(true)
+      return
+    }
+    // Вид пришёл с сервера — он и есть истина. Единственное исключение: у
+    // человека уже была настроенная доска в этом браузере, а на сервере пусто —
+    // тогда переносим локальную запись один раз и удаляем её.
+    if (props.view) {
+      const local = filterStorageKey ? readLocalView(filterStorageKey) : null
+      const serverEmpty = JSON.stringify({ ...props.view, showCompleted: false }) === JSON.stringify({ ...DEFAULT_BOARD_VIEW, showCompleted: false })
+      if (local && serverEmpty) {
+        applyView({ ...props.view, ...local })
+        props.onViewChange?.({ ...props.view, ...local })
+        try { localStorage.removeItem(filterStorageKey!) } catch { /* предпочтения недоступны */ }
+      } else {
+        applyView(props.view)
+      }
       setFiltersHydrated(true)
       return
     }
@@ -468,10 +523,35 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
     setFiltersHydrated(true)
   }, [filterStorageKey])
   useEffect(() => {
-    if (!filtersHydrated || !filterStorageKey) return
+    if (!filtersHydrated) return
+    const current: BoardView = {
+      search,
+      assignees: [...assignees],
+      types: [...types],
+      priorities: [...priorities],
+      labels: [...labels],
+      epics: [...epics],
+      onlyMine,
+      flaggedOnly,
+      recentOnly,
+      columnAssignees: Object.fromEntries(Object.entries(columnAssigneeFilters).map(([columnId, filter]) => [columnId, { assigneeIds: [...filter.assigneeIds], unassigned: filter.includeUnassigned }])),
+      swimlane,
+      showHidden,
+      showCompleted: props.showCompleted ?? false
+    }
+    // Вид ведёт вызывающий (сервер) — отправляем изменение ему; иначе, как
+    // раньше, храним в предпочтениях браузера.
+    if (props.onViewChange) {
+      const saved = props.view
+      const changed = !saved || JSON.stringify({ ...saved, showCompleted: current.showCompleted }) !== JSON.stringify(current)
+      if (changed) props.onViewChange(current)
+      return
+    }
+    if (!filterStorageKey) return
     try {
       localStorage.setItem(filterStorageKey, JSON.stringify({ search, assignees: [...assignees], types: [...types], priorities: [...priorities], labels: [...labels], epics: [...epics], onlyMine, flaggedOnly, recentOnly, columnAssigneeFilters, swimlane, showHidden }))
-    } catch { /* localStorage недоступен */ }
+    } catch { /* предпочтения браузера недоступны */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignees, columnAssigneeFilters, epics, filterStorageKey, filtersHydrated, flaggedOnly, labels, onlyMine, priorities, recentOnly, search, showHidden, swimlane, types])
   useEffect(() => {
     const allowed = new Set(members.filter((member) => member.active !== false).map((member) => member.username))
