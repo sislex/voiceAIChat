@@ -1,0 +1,111 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { VoiceChatDb } from './database.js'
+
+let db: VoiceChatDb
+
+beforeEach(() => {
+  let id = 0
+  let clock = 1000
+  db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
+  db.createUser('alice', '', 'developer')
+  db.createUser('bob', '', 'developer')
+  db.createUser('carol', '', 'developer')
+})
+
+afterEach(() => db.close())
+
+/** Проект с одной задачей и Make-чатом, привязанным к этому же проекту. */
+function scene(): { projectId: string; taskId: string; makeId: string } {
+  const project = db.createProject('alice', { name: 'Piara' })
+  db.addMember('alice', project.id, 'bob')
+  const column = db.getBoard('alice', project.id)!.columns[0]
+  const task = db.createTask('alice', project.id, { columnId: column.id, title: 'Экран оплаты' })!
+  const make = db.createConversation('alice', 'Проект 1', 'make')
+  db.setConversationProject('alice', make.id, project.id)
+  return { projectId: project.id, taskId: task.id, makeId: make.id }
+}
+
+describe('дизайны карточки', () => {
+  it('связывает задачу со страницей Make-проекта и отдаёт имя проекта вместе со связью', () => {
+    const { projectId, taskId, makeId } = scene()
+    const links = db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: 'pay.html', label: 'Оплата' })
+    expect(links).toHaveLength(1)
+    expect(links[0]).toMatchObject({ conversationId: makeId, conversationTitle: 'Проект 1', conversationOwner: 'alice', path: 'pay.html', label: 'Оплата' })
+    expect(db.getTaskDetail('alice', projectId, taskId)!.designs).toHaveLength(1)
+    // CI-ран получает те же связи: макет — часть постановки для модели.
+    expect(db.getCiTask('alice', projectId, taskId)!.designs).toHaveLength(1)
+  })
+
+  it('повторная связь той же страницы не плодит дублей, а только обновляет подпись', () => {
+    const { projectId, taskId, makeId } = scene()
+    db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: 'pay.html' })
+    const links = db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: 'pay.html', label: 'Оплата' })
+    expect(links).toHaveLength(1)
+    expect(links[0].label).toBe('Оплата')
+  })
+
+  it('источником может быть только Make-проект этого же проекта', () => {
+    const { projectId, taskId } = scene()
+    const plain = db.createConversation('alice', 'Обычный чат')
+    db.setConversationProject('alice', plain.id, projectId)
+    expect(() => db.linkTaskDesign('alice', projectId, taskId, { conversationId: plain.id })).toThrow('Make')
+
+    const foreign = db.createConversation('alice', 'Чужой макет', 'make')
+    expect(() => db.linkTaskDesign('alice', projectId, taskId, { conversationId: foreign.id })).toThrow('не привязан')
+  })
+
+  it('путь страницы проверяется правилами Make, пустой путь означает проект целиком', () => {
+    const { projectId, taskId, makeId } = scene()
+    expect(() => db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: '../secrets' })).toThrow()
+    expect(db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: '  ' })[0].path).toBe('')
+  })
+
+  it('связь видна другому участнику проекта, а посторонний не получает ни списка, ни привязки', () => {
+    const { projectId, taskId, makeId } = scene()
+    db.linkTaskDesign('bob', projectId, taskId, { conversationId: makeId, path: 'index.html' })
+    expect(db.listTaskDesigns('bob', projectId, taskId)).toHaveLength(1)
+    expect(db.listTaskDesigns('carol', projectId, taskId)).toBeNull()
+    expect(() => db.linkTaskDesign('carol', projectId, taskId, { conversationId: makeId })).toThrow()
+  })
+
+  it('снятие связи убирает её у задачи', () => {
+    const { projectId, taskId, makeId } = scene()
+    const [link] = db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: 'index.html' })
+    expect(db.unlinkTaskDesign('alice', projectId, taskId, link.id)).toEqual([])
+  })
+
+  it('обратное направление: панель Make видит задачи своей страницы и умеет фильтровать по ней', () => {
+    const { projectId, taskId, makeId } = scene()
+    db.linkTaskDesign('alice', projectId, taskId, { conversationId: makeId, path: 'pay.html' })
+    const column = db.getBoard('alice', projectId)!.columns[0]
+    const other = db.createTask('alice', projectId, { columnId: column.id, title: 'Главная' })!
+    db.linkTaskDesign('alice', projectId, other.id, { conversationId: makeId, path: 'index.html' })
+
+    expect(db.makeTaskLinks(makeId)).toHaveLength(2)
+    const onPage = db.makeTaskLinks(makeId, 'pay.html')
+    expect(onPage).toHaveLength(1)
+    expect(onPage[0]).toMatchObject({ taskId, taskKey: 'PIAR-1', taskTitle: 'Экран оплаты' })
+  })
+
+  it('панель Make предлагает карточки своего проекта только участнику', () => {
+    const { makeId } = scene()
+    expect(db.makeLinkableTasks('bob', makeId).map((t) => t.title)).toEqual(['Экран оплаты'])
+    expect(db.makeLinkableTasks('carol', makeId)).toEqual([])
+  })
+
+  it('источники дизайна проекта — его Make-чаты, включая чужие', () => {
+    const { projectId, makeId } = scene()
+    const sources = db.projectDesignSources('bob', projectId)!
+    expect(sources).toHaveLength(1)
+    expect(sources[0]).toMatchObject({ conversationId: makeId, title: 'Проект 1', owner: 'alice', own: false })
+    expect(db.projectDesignSources('carol', projectId)).toBeNull()
+  })
+
+  it('участник проекта читает привязанный к проекту Make-проект, посторонний — нет', () => {
+    const { makeId } = scene()
+    expect(db.isMakeProjectViewer('bob', makeId)).toBe(true)
+    expect(db.isMakeProjectViewer('carol', makeId)).toBe(false)
+    const personal = db.createConversation('alice', 'Личный макет', 'make')
+    expect(db.isMakeProjectViewer('bob', personal.id)).toBe(false)
+  })
+})

@@ -26,6 +26,7 @@ import { MakeTokensDialog } from './MakeTokensDialog'
 import { MakeUsageDialog } from './MakeUsageDialog'
 import { MakeCommentsPanel } from './MakeCommentsPanel'
 import { MakeNotesDialog } from './MakeNotesDialog'
+import { MakeTaskLinksDialog } from './MakeTaskLinksDialog'
 import { MakeStylePanel, cssRule, type StyleValues } from './MakeStylePanel'
 import { MakeControlField, type ArgType } from './MakeControls'
 import { captureIframeScreenshot } from '../lib/makeScreenshot'
@@ -56,7 +57,7 @@ export interface MakeSelectedElement {
 
 export interface MakePaneProps {
   conversationId: string
-  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests' | 'make:notes' | 'make:setNotes'>
+  api: Pick<RendererApi, 'make:state' | 'make:read' | 'make:write' | 'make:delete' | 'make:rename' | 'make:snapshot' | 'make:restore' | 'make:reset' | 'make:publish' | 'make:unpublish' | 'make:check' | 'make:template' | 'make:upload' | 'make:search' | 'make:stories' | 'make:snapshotDiff' | 'make:restoreFile' | 'make:import' | 'make:importUrl' | 'make:snapshotFile' | 'make:replace' | 'make:shots' | 'make:shot' | 'make:library' | 'make:libraryExport' | 'make:libraryInsert' | 'make:libraryRemove' | 'make:usage' | 'make:cleanup' | 'make:comments' | 'make:commentAdd' | 'make:commentUpdate' | 'make:commentRemove' | 'make:share' | 'make:unshare' | 'make:shareGrant' | 'make:presence' | 'make:tests' | 'make:notes' | 'make:setNotes' | 'make:taskLinks' | 'make:linkTask' | 'make:linkableTasks'>
   make?: RendererMakeBridge
   /** Вставить текст в поле ввода чата (просьба ассистенту про выбранный элемент). */
   onInsertToChat?: (text: string) => void
@@ -82,6 +83,8 @@ export interface MakePaneProps {
    * сервер выпускает preview-cookie (`session:ensurePreview`, как у Web Reader).
    */
   ensurePreview?: () => Promise<boolean>
+  /** Открыть карточку связанной задачи на доске (диалог «Задачи проекта»). */
+  onOpenTask?: (projectId: string, taskId: string) => void
   /** Задержка автосохранения; тесты уменьшают. */
   autosaveDelayMs?: number
 }
@@ -113,7 +116,7 @@ function groupFiles(files: MakeFileInfo[]): Array<{ dir: string; files: MakeFile
   return [...groups.entries()].sort(([a], [b]) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b, 'ru'))).map(([dir, list]) => ({ dir, files: list }))
 }
 
-export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, askOnly = false, onAskOnlyChange, lastRequest = null, previewBase, ensurePreview, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
+export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssistant, onAttachImage, onEditorContext, usage, turnActive = false, askOnly = false, onAskOnlyChange, lastRequest = null, previewBase, ensurePreview, onOpenTask, autosaveDelayMs = 1500 }: MakePaneProps): JSX.Element {
   const toast = useToast()
   const confirm = useConfirm()
   const [mode, setMode] = useState<Mode>('preview')
@@ -228,6 +231,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
   const [tokensOpen, setTokensOpen] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
+  const [taskLinksOpen, setTaskLinksOpen] = useState(false)
   /** Строки открытого файла, изменённые последней записью ассистента (roadmap-4 п.9). */
   const [changedLines, setChangedLines] = useState<number[]>([])
   /** Таблица коллекции моков (roadmap-4 п.29): для mock/*.json с массивом объектов — вид «Таблица» по умолчанию. */
@@ -1329,6 +1333,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
               <hr />
             </>}
             {item('🧠 Память проекта', () => setNotesOpen(true), { ariaLabel: 'Память проекта', title: 'Заметки для ассистента и режим «дизайнер / разработчик»' })}
+            {item('🗂 Задачи проекта', () => setTaskLinksOpen(true), { ariaLabel: 'Задачи проекта', title: 'Связать открытую страницу с карточкой доски и увидеть уже связанные' })}
             {onInsertToChat && item('✦ Идеи для старта', () => setIdeasOpen(true), { ariaLabel: 'Идеи для старта' })}
             {item('▤ Шаблоны проекта', () => setTemplatesOpen(true), { ariaLabel: 'Шаблоны проекта' })}
             {item('⇪ Импорт проекта', () => setImportOpen(true), { ariaLabel: 'Импорт проекта', title: 'Импорт: ZIP, страница по URL или репозиторий GitHub' })}
@@ -1901,6 +1906,7 @@ export function MakePane({ conversationId, api, make, onInsertToChat, onAskAssis
         </Dialog>
       )}
       {notesOpen && <MakeNotesDialog conversationId={conversationId} api={api} onClose={() => setNotesOpen(false)} />}
+      {taskLinksOpen && <MakeTaskLinksDialog conversationId={conversationId} currentPath={selectedPath ?? ''} api={api} onOpenTask={onOpenTask} onClose={() => setTaskLinksOpen(false)} />}
       {usageOpen && <MakeUsageDialog conversationId={conversationId} api={api} onClose={() => setUsageOpen(false)} onChanged={(next) => { setState(next); setPreviewRev(next.rev) }} />}
       {diffOpen && turnDiff && (
         <Dialog className="make-dialog" padded title="До и после" ariaLabel="До и после" size="lg" onClose={() => setDiffOpen(false)} testId="make-turn-diff-dialog">

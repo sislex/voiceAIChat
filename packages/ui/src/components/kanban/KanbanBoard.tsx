@@ -223,6 +223,8 @@ export interface KanbanBoardProps {
   onDeleteTask: (taskId: string) => void
   /** Открыть связанный с задачей чат (кнопка на карточке и в модалке). */
   onOpenChat?: (taskId: string) => void
+  /** Открыть Make-проект связанного дизайна (секция «Дизайн» карточки). */
+  onOpenMake?: (conversationId: string) => void
   /** Создать связанный чат при первом открытии карточки, не уходя с доски. */
   onEnsureChat?: (taskId: string) => void
   /** Сводки CI-ранов по taskId. */
@@ -1735,6 +1737,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onDelete={props.onDeleteTask}
           onMoveToColumn={(taskId, columnId) => props.onMoveTask(taskId, columnId, null, null)}
           onOpenChat={props.onOpenChat}
+          onOpenMake={props.onOpenMake}
           onEnsureChat={props.onEnsureChat}
           ciSummary={props.ciSummaries?.[openTask.id]}
           onStartCi={props.onStartCi}
