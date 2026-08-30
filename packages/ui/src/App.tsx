@@ -19,7 +19,7 @@ import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration,
 import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
 import { MakePane } from './components/MakePane'
-import { describeUserAgent } from '@voicechat/sessions-app'
+import { parseUserAgent } from '@voicechat/sessions-core'
 import { TwoFactorDialog } from './components/TwoFactorDialog'
 import { InviteRegister } from './components/InviteRegister'
 import { ChangePasswordDialog } from './components/ChangePasswordDialog'
@@ -99,6 +99,13 @@ import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
 import { REST as REST_PATHS } from '@shared/protocol'
 import { parseAdminRoute } from '@voicechat/admin-app'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
+/** Подпись устройства для тоста о новом входе: ядро без текстов окна сессий. */
+function deviceLabel(userAgent: string): string {
+  const profile = parseUserAgent(userAgent)
+  if (profile.legacy) return 'Устройство (вход до появления списка сессий)'
+  return profile.os ? `${profile.browser} · ${profile.os}` : profile.browser
+}
+
 const PREVIEW_ACTIVE_REGISTRATION_KEY = 'voicechat:web-reader-active-registration:v1'
 
 // Окно сессий открывают редко, а тянет оно весь модуль устройств — грузим по
@@ -324,7 +331,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     let alive = true
     void window.session.securityNotices().then((list) => {
       if (!alive || list.length === 0) return
-      for (const n of list.slice(-3)) toast.info(`Вход в ваш аккаунт с нового устройства: ${describeUserAgent(n.userAgent)} · ${n.ip || 'адрес неизвестен'} · ${new Date(n.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}. Не вы — завершите сессии в меню аккаунта.`)
+      for (const n of list.slice(-3)) toast.info(`Вход в ваш аккаунт с нового устройства: ${deviceLabel(n.userAgent)} · ${n.ip || 'адрес неизвестен'} · ${new Date(n.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}. Не вы — завершите сессии в меню аккаунта.`)
       void window.session?.securityNoticesSeen?.()
     }).catch(() => undefined)
     return () => { alive = false }
