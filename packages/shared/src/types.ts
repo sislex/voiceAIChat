@@ -193,6 +193,14 @@ export type BrowserSelectorAction =
   | { kind: 'a11y'; selector?: string; limit?: number }
   /** Загрузка файла в input[type=file]: содержимое приходит base64 от модели. */
   | { kind: 'upload'; selector: string; name: string; mimeType?: string; base64: string }
+  /**
+   * Что за элемент в точке кадра. Нужен записи сценария: клик по кадру
+   * координатный, а шаг сценария обязан быть селекторным — иначе запись
+   * рассыплется от любого сдвига вёрстки.
+   */
+  | { kind: 'describe'; x: number; y: number }
+  /** Прокрутить к элементу: вслепую колесом до него можно не добраться. */
+  | { kind: 'scrollTo'; selector: string }
 
 /** Результат селекторного действия: чтение и поиск возвращают данные, остальные — только факт. */
 export interface BrowserSelectorResult {
@@ -201,7 +209,21 @@ export interface BrowserSelectorResult {
   text?: string
   /** Совпадения для `find`: селектор, видимый текст и признак видимости. */
   matches?: Array<{ selector: string; text: string; visible: boolean }>
+  /** Описание элемента под точкой (`describe`). */
+  element?: BrowserElementDescription
   error?: string
+}
+
+/** Элемент кадра, пригодный для шага сценария и для разбора вёрстки. */
+export interface BrowserElementDescription {
+  /** Устойчивый селектор: data-testid → id → aria-label → роль → путь по тегам. */
+  selector: string
+  /** Насколько селектор надёжен: по testid переживает правки вёрстки, по пути — нет. */
+  stability: 'testid' | 'id' | 'label' | 'role' | 'path'
+  tag: string
+  text: string
+  /** Положение и размер во вьюпорте — для разбора вёрстки и целей нажатия. */
+  rect: { x: number; y: number; width: number; height: number }
 }
 
 /**
