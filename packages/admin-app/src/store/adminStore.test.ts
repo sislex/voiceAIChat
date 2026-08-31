@@ -33,4 +33,39 @@ describe('adminStore', () => {
     store.dispose()
     expect(store.getState().adminUsers).toEqual([])
   })
+
+  it('открытие раздела грузит только список людей, служебные страницы — по заходу', async () => {
+    const listUsers = vi.fn(async () => [])
+    const usageSummary = vi.fn(async () => [])
+    const listLlmEngines = vi.fn(async () => [])
+    const listModelPrices = vi.fn(async () => [])
+    const makeStats = vi.fn(async () => ({ projects: 0, bytes: 0, filesBytes: 0, snapshotsBytes: 0, shotsBytes: 0, published: 0, shared: 0, views: 0, limitBytes: 0, userLimitBytes: 0, byUser: [], top: [] }))
+    const client = {
+      listUsers, usageSummary, listLlmEngines, listModelPrices, makeStats,
+      machineStats: vi.fn(async () => ({ generatedAt: 1, machines: [], totals: { machines: 0, online: 0, commands24h: 0, errors24h: 0 } })),
+      userUsage: vi.fn(async () => ({ unit: 'day', totals: {}, byBucket: [], byModel: [], byConversation: [] })),
+      userConversations: vi.fn(async () => []),
+      getUserLlmAccess: vi.fn(async () => [])
+    } as unknown as AdminClient
+    const store = createAdminStore({
+      client,
+      session: { currentUser: () => ({ name: 'root', role: 'admin' }), refreshSession: async () => ({ name: 'root', role: 'admin' }), refreshOwnLlmAccess: async () => {} }
+    })
+
+    await store.actions.openUsers()
+    expect(listUsers).toHaveBeenCalledTimes(1)
+    // Реестр, цены и обход диска ради метрик Make на этом экране не нужны.
+    expect(listLlmEngines).not.toHaveBeenCalled()
+    expect(listModelPrices).not.toHaveBeenCalled()
+    expect(makeStats).not.toHaveBeenCalled()
+    // Сводка расхода — за текущий месяц, а не за всё время: та же цифра стоит в карточке.
+    expect(usageSummary.mock.calls[0][0].from).toBeLessThanOrEqual(Date.now())
+    expect(usageSummary.mock.calls[0][0].from).toBeGreaterThan(Date.now() - 32 * 86_400_000)
+
+    await store.actions.openAdminPage('engines')
+    expect(listLlmEngines).toHaveBeenCalledTimes(1)
+    await store.actions.openAdminPage('system')
+    expect(makeStats).toHaveBeenCalledTimes(1)
+    store.dispose()
+  })
 })

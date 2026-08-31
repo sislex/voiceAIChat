@@ -1156,6 +1156,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg, session.currentUser?.role])
+  // Данные служебной страницы админки грузятся при заходе на неё: реестр
+  // исполнителей и таблица цен не нужны тому, кто открыл список людей.
+  useEffect(() => {
+    if (utilitySeg !== 'users' || !admin.usersOpen) return
+    const page = adminRoute?.page
+    if (page === 'engines' || page === 'prices' || page === 'system') void adminActions.openAdminPage(page)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [utilitySeg, adminRoute?.page, admin.usersOpen])
   useEffect(() => {
     if (utilitySeg !== 'users' || !routeUserName || !admin.usersOpen || admin.adminSelected === routeUserName) return
     void adminActions.selectAdminUser(routeUserName)
