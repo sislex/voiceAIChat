@@ -26,7 +26,17 @@ export default defineConfig({
        */
       thresholds: {
         'src/path.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
-        'src/redaction.ts': { statements: 100, branches: 100, functions: 100, lines: 100 }
+        'src/redaction.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
+        'src/navigation.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
+        'src/routes.ts': { statements: 88, branches: 87, functions: 100, lines: 88 },
+        // Ядро стора закрыто целиком: охрана `disposed` в `setState` — вторая
+        // линия обороны, и до неё не доходит ни один тест самого стора (раньше
+        // срабатывает охрана контроллера). Проверять её можно только здесь.
+        'src/store/core.ts': { statements: 100, branches: 100, functions: 100, lines: 100 },
+        // У самого стора функций много (каждое действие — своя), а покрыты
+        // те, где есть логика: гонки, жизненный цикл терминала, вычистка секретов.
+        'src/store/operationsStore.ts': { statements: 100, branches: 86, functions: 48, lines: 100 },
+        'src/controllers/createController.ts': { statements: 100, branches: 80, functions: 100, lines: 100 }
       }
     }
   }
