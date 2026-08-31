@@ -37,7 +37,7 @@ async function scene(): Promise<Scene> {
   const task = await api['tasks:create']({ projectId: project.id, columnId: work.id, title: 'Скролл' })
   const chat = await api['tasks:openChat']({ projectId: project.id, taskId: task.id })
   await store.actions.init()
-  await store.actions.setSidebarProject(project.id)
+  await store.actions.setSidebarProjects([project.id])
   return {
     store,
     api,
@@ -243,7 +243,8 @@ describe('voiceStore — список reader-чатов и гонка выбор
     const legacy = await api['conversations:create']({ title: 'Старый ридер' })
     await api['conversations:setPreviewUrl']({ id: legacy.id, previewUrl: 'https://example.com' })
 
-    await store.actions.setSidebarProject(project.id)
+    await store.actions.syncSidebarProjects([project.id, 'other-project'])
+    await store.actions.setSidebarProjects([project.id])
 
     // Сайдбар сужен проектом: reader-чаты без проекта из него ушли…
     expect(store.getState().conversations.map((c) => c.id)).not.toContain(readerId)

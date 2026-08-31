@@ -66,7 +66,7 @@ describe('voiceStore — поиск по сообщениям', () => {
     await vi.advanceTimersByTimeAsync(DEBOUNCE)
 
     expect(spy).toHaveBeenCalledTimes(1)
-    expect(spy.mock.calls[0][0]).toMatchObject({ query: 'миграция', projectId: undefined })
+    expect(spy.mock.calls[0][0]).toMatchObject({ query: 'миграция' })
     expect(store.getState().messageSearch).toMatchObject({
       query: 'миграция',
       status: 'ready',
@@ -174,17 +174,24 @@ describe('voiceStore — поиск по сообщениям', () => {
     expect(spy).toHaveBeenCalledTimes(2)
   })
 
-  it('фильтр проекта сайдбара уходит в запрос', async () => {
-    const spy = vi.spyOn(api, 'messages:search').mockResolvedValue(page(['m1']))
+  it('фильтр проектов применяется к глобальному ответу поиска на клиенте', async () => {
     const project = await api['projects:create']({ name: 'Проект' })
+    const other = await api['projects:create']({ name: 'Другой' })
+    const matching = { ...hit('m1'), projectId: project.id }
+    const hidden = { ...hit('m2'), projectId: other.id }
+    const spy = vi.spyOn(api, 'messages:search').mockResolvedValue({
+      hits: [matching, hidden],
+      nextCursor: null,
+      match: '"q"*'
+    })
+    await store.actions.syncSidebarProjects([project.id, other.id])
+    await store.actions.setSidebarProjects([project.id])
     await store.actions.setSearchScope('messages')
     await store.actions.setSearchQuery('миграция')
     await vi.advanceTimersByTimeAsync(DEBOUNCE)
 
-    await store.actions.setSidebarProject(project.id)
-    await vi.advanceTimersByTimeAsync(DEBOUNCE)
-
-    expect(spy.mock.calls.at(-1)?.[0]).toMatchObject({ query: 'миграция', projectId: project.id })
+    expect(spy.mock.calls.at(-1)?.[0]).toMatchObject({ query: 'миграция' })
+    expect(store.getState().messageSearch.hits).toEqual([matching])
   })
 
   it('подсветка найденного сообщения ставится и снимается', () => {

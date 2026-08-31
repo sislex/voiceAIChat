@@ -11,7 +11,6 @@ import {
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { ProjectInvitationForUser, ProjectSummary, TaskChatBadge } from '@shared/projects'
 import type { CiRunSummary } from '@shared/ci'
-import type { SidebarProjectFilter } from '@voicechat/chat-app'
 import { ciCardPulse, ciSummaryForTask } from '@shared/ci'
 import { TypeIcon } from './kanban/kanbanMeta'
 import { ciStatusLabel, ciTone } from './ci/ciFormat'
@@ -240,12 +239,11 @@ export interface SidebarProps {
    */
   showDoneTaskChats?: boolean
   onShowDoneTaskChatsChange?: (show: boolean) => void
-  /** Проекты пользователя для селекта над поиском. */
+  /** Проекты пользователя для мультифильтра над поиском. */
   projects?: ProjectSummary[]
-  /** Область чатов: undefined — «Все», null — «Без проекта», строка — проект. */
-  selectedProjectId?: SidebarProjectFilter
-  /** Сменить область списка и поиска чатов. */
-  onSelectProject?: (id: SidebarProjectFilter) => void
+  selectedProjectIds?: string[]
+  /** Немедленно применить полный набор выбранных проектов. */
+  onSelectedProjectsChange?: (ids: string[]) => void
   onOpenObserver: () => void
   onOpenKnowledgeBase?: () => void
   /** Открыть отдельную страницу персонализации текущего пользователя. */
@@ -340,8 +338,8 @@ export function Sidebar({
   showDoneTaskChats = false,
   onShowDoneTaskChatsChange,
   projects = [],
-  selectedProjectId = undefined,
-  onSelectProject,
+  selectedProjectIds = [],
+  onSelectedProjectsChange,
   onOpenObserver,
   onOpenKnowledgeBase,
   onOpenPersonalization,
@@ -384,6 +382,7 @@ export function Sidebar({
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   // Открыто ли меню аккаунта (Машины/Пользователи/Настройки/Выйти).
   const [acctOpen, setAcctOpen] = useState(false)
+  const [projectFilterOpen, setProjectFilterOpen] = useState(false)
   // Инлайн-форма создания проекта в списке проектов.
   const [projectQuery, setProjectQuery] = useState('')
   const [controlsOpen, setControlsOpen] = useState<Record<SidebarMode, boolean>>({ chats: false, projects: false })
@@ -392,6 +391,7 @@ export function Sidebar({
   // Состояние намеренно локальное: remount снова сворачивает старую секцию.
   const [olderOpen, setOlderOpen] = useState(false)
   const acctRef = useRef<HTMLDivElement | null>(null)
+  const projectFilterRef = useRef<HTMLDivElement | null>(null)
   const workingSet = new Set(workingIds)
   const weekStart = localWeekStart(now)
   const currentWeekConversations = conversations.filter((conversation) => conversation.updatedAt >= weekStart)
@@ -403,6 +403,17 @@ export function Sidebar({
   const chats = loadView(conversationsStatus, conversations.length > 0)
   // Поиск идёт и по типу: «покажи все веб-проекты» — обычный запрос, а по имени
   // тип не найдёшь.
+  const selectedProjectSet = new Set(selectedProjectIds)
+  const allProjectsSelected = projects.every((project) => selectedProjectSet.has(project.id)) &&
+    selectedProjectIds.every((id) => projects.some((project) => project.id === id))
+  const selectedProjectCount = projects.filter((project) => selectedProjectSet.has(project.id)).length
+  const selectedProjectLabel = allProjectsSelected
+    ? 'Все чаты'
+    : selectedProjectCount === 0
+      ? 'Ничего не выбрано'
+      : selectedProjectCount === 1
+        ? projects.find((project) => selectedProjectSet.has(project.id))?.name ?? 'Один проект'
+        : `Выбрано проектов: ${selectedProjectCount}`
   const visibleProjects = projects.filter((project) => {
     const needle = projectQuery.trim().toLocaleLowerCase()
     if (!needle) return true
@@ -456,6 +467,24 @@ export function Sidebar({
       document.removeEventListener('keydown', onKey)
     }
   }, [acctOpen])
+
+  useEffect(() => {
+    if (!projectFilterOpen) return
+    const onDoc = (event: MouseEvent): void => {
+      if (projectFilterRef.current && !projectFilterRef.current.contains(event.target as Node)) {
+        setProjectFilterOpen(false)
+      }
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setProjectFilterOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [projectFilterOpen])
 
   // Пункт меню аккаунта: закрыть меню и выполнить действие.
   const acct = (fn: () => void) => (): void => {
@@ -598,19 +627,48 @@ export function Sidebar({
       )}
       <div className={controlsOpen[mode] ? 'side-controls side-controls--open' : 'side-controls'} aria-hidden={!controlsOpen[mode]}>
         {mode === 'chats' ? (<>
-          <div className="sideproject">
-            <select
-              className="projectselect"
-              aria-label="Проект"
-              value={selectedProjectId === undefined ? '__all__' : selectedProjectId ?? '__none__'}
-              onChange={(event) => onSelectProject?.(
-                event.target.value === '__all__' ? undefined : event.target.value === '__none__' ? null : event.target.value
-              )}
+          <div className="sideproject projectfilter" ref={projectFilterRef}>
+            <button
+              type="button"
+              className="projectselect projectfilter-trigger"
+              aria-label={`Фильтр проектов: ${selectedProjectLabel}`}
+              aria-haspopup="true"
+              aria-expanded={projectFilterOpen}
+              onClick={() => setProjectFilterOpen((open) => !open)}
             >
-              <option value="__all__">Все</option>
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-              <option value="__none__">Без проекта</option>
-            </select>
+              <span>{selectedProjectLabel}</span><span aria-hidden>▾</span>
+            </button>
+            {projectFilterOpen && (
+              <div className="projectfilter-menu" role="group" aria-label="Выбор проектов">
+                {projects.length > 0 ? (<>
+                  <button
+                    type="button"
+                    className="projectfilter-all"
+                    onClick={() => onSelectedProjectsChange?.(allProjectsSelected ? [] : projects.map((project) => project.id))}
+                  >
+                    {allProjectsSelected ? 'Снять все' : 'Выбрать все'}
+                  </button>
+                  <div className="projectfilter-options">
+                    {projects.map((project) => (
+                      <label className="projectfilter-option" key={project.id}>
+                        <input
+                          type="checkbox"
+                          checked={selectedProjectSet.has(project.id)}
+                          onChange={() => onSelectedProjectsChange?.(
+                            selectedProjectSet.has(project.id)
+                              ? selectedProjectIds.filter((id) => id !== project.id)
+                              : [...selectedProjectIds, project.id]
+                          )}
+                        />
+                        <span>{project.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </>) : (
+                  <p className="projectfilter-empty">Проектов пока нет</p>
+                )}
+              </div>
+            )}
           </div>
           <div className="sidesearch">
             <div className="sidesearch-row">
@@ -660,7 +718,14 @@ export function Sidebar({
           />
         )}
         {chats.state === 'empty' &&
-          (searchQuery.trim() !== '' ? (
+          (selectedProjectCount === 0 && projects.length > 0 ? (
+            <EmptyState
+              compact
+              icon="☐"
+              title="Проекты не выбраны"
+              description="Выберите один или несколько проектов в фильтре над поиском."
+            />
+          ) : searchQuery.trim() !== '' ? (
             <EmptyState
               compact
               icon="🔍"
