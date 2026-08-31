@@ -1,3 +1,6 @@
+// Окружение jsdom вопреки имени файла (без `.dom.`): компоненты здесь не
+// рендерятся, но хук слушает события документа.
+// @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, fireEvent } from '@testing-library/react'
 import { useHotkeys, type HotkeyBinding, type HotkeyHandlers } from './useHotkeys'

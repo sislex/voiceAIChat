@@ -1,3 +1,6 @@
+// Окружение jsdom вопреки имени файла (без `.dom.`): компоненты здесь не
+// рендерятся, но буфер обмена — это navigator.clipboard и fallback через document.
+// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { copyText } from './clipboard'
 
