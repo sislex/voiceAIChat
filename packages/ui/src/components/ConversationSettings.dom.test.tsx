@@ -27,6 +27,7 @@ function contextSnapshot(options: {
   warnings?: Array<{ itemId: string | null; level: 'notice' | 'problem'; text: string }>
   changes?: Array<{ at: number; actor: string; itemId: string; enabled: boolean }>
   turnSizes?: Array<{ at: string; model: string; chars: number; approxTokens: number; resumed: boolean; costUsd: number | null }>
+  disallowedTools?: string[]
 }): ConversationContextSnapshot {
   const on = options.personalizationEnabled ?? true
   const size = { chars: PREVIEW_TEXT.length, approxTokens: Math.ceil(PREVIEW_TEXT.length / 4) }
@@ -50,6 +51,7 @@ function contextSnapshot(options: {
     },
     turnSizes: options.turnSizes ?? [],
     changes: options.changes ?? [],
+    disallowedTools: options.disallowedTools ?? [],
     warnings: options.warnings ?? [],
     promptPreview: on
       ? { blocks: [{ itemIds: ['personalization'], title: 'Персонализация', text: PREVIEW_TEXT, ...size }], text: PREVIEW_TEXT, ...size, omitted: ['Правила платформы и приложения добавляет CLI движка.'], costUsd: null }
@@ -296,6 +298,7 @@ describe('ConversationSettings', () => {
       lastTurn: null,
       turnSizes: [],
       changes: [],
+      disallowedTools: [],
       warnings: [],
       promptPreview: emptyPreview
     }) } as never
@@ -330,6 +333,7 @@ describe('ConversationSettings', () => {
       lastTurn: null,
       turnSizes: [],
       changes: [],
+      disallowedTools: [],
       warnings: [],
       promptPreview: emptyPreview
     }) } as never
@@ -342,7 +346,7 @@ describe('ConversationSettings', () => {
   })
 
   it('показывает контролируемое состояние неизвестной карточки и сохраняет канонический URL', async () => {
-    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [], viewerRole: 'admin' as const, lastTurn: null, turnSizes: [], changes: [], warnings: [], promptPreview: emptyPreview }) } as never
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null), 'conversations:contextSnapshot': vi.fn().mockResolvedValue({ schemaVersion: 1 as const, conversationId: 'c1', generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовое предупреждение.', summary: { provider: 'claude' as const, model: 'default', permissionMode: { value: 'plan' as const, displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto' as const, displayName: 'Автоматически', explanation: 'Тест' } }, groups: [], viewerRole: 'admin' as const, lastTurn: null, turnSizes: [], changes: [], disallowedTools: [], warnings: [], promptPreview: emptyPreview }) } as never
     window.location.hash = '#/chat/c1/context/disappeared'
     render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getByRole('tab', { name: 'Контекст и инструкции' })).toHaveAttribute('aria-selected', 'true')
@@ -781,6 +785,71 @@ describe('ConversationSettings', () => {
     expect(preview).not.toHaveTextContent('1. Персонализация')
     fireEvent.click(screen.getByRole('button', { name: 'Показать границы блоков' }))
     expect(screen.getByTestId('context-prompt-preview')).toHaveTextContent('1. Персонализация')
+  })
+
+  it('сравнение с другим разговором показывает отличия и ничего не меняет', async () => {
+    const contextDiff = vi.fn().mockResolvedValue({
+      otherId: 'c2', otherTitle: 'Рабочий чат',
+      onlyHere: [{ itemId: 'personalization', title: 'Предпочтения ответа' }],
+      onlyThere: [{ itemId: 'knowledge-mode', title: 'Автоматически' }],
+      settings: [{ label: 'Модель', here: 'opus', there: 'sonnet' }]
+    })
+    const setContextItem = vi.fn()
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})), 'conversations:contextDiff': contextDiff, 'conversations:setContextItem': setContextItem } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      otherConversations={[{ id: 'c2', title: 'Рабочий чат' }]}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Сравнить контекст с разговором' }), { target: { value: 'c2' } })
+    const card = await screen.findByTestId('context-diff')
+    expect(card).toHaveTextContent('Отличия от «Рабочий чат»')
+    expect(card).toHaveTextContent('здесь «opus», там «sonnet»')
+    expect(card).toHaveTextContent('Выключено только здесь: Предпочтения ответа')
+    expect(card).toHaveTextContent('Выключено только там: Автоматически')
+    // Фраза не должна разрываться на узлы: иначе перед двоеточием пробел.
+    expect(within(card).getByText('Выключено только здесь:')).toBeInTheDocument()
+    // Сравнение ничего не меняет: тумблеры сервер не трогали.
+    expect(setContextItem).not.toHaveBeenCalled()
+
+    fireEvent.click(within(card).getByRole('button', { name: 'Закрыть сравнение' }))
+    expect(screen.queryByTestId('context-diff')).not.toBeInTheDocument()
+  })
+
+  it('пресет переименовывается на месте, выключенные инструменты названы прямо', async () => {
+    const onSavePresets = vi.fn().mockResolvedValue(undefined)
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({ disallowedTools: ['mcp__remote__bash', 'mcp__kb__search'] })) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={onSavePresets}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    // Ответ на «почему модель не читает файлы» — списком, а не поиском по пунктам.
+    expect(await screen.findByTestId('context-disallowed')).toHaveTextContent('mcp__remote__bash, mcp__kb__search')
+
+    const presets = screen.getByTestId('context-presets')
+    fireEvent.click(within(presets).getByText('Пресеты контекста'))
+    fireEvent.click(within(presets).getByRole('button', { name: 'Переименовать' }))
+    const field = within(presets).getByRole('textbox', { name: 'Новое название пресета «Минимальный»' })
+    fireEvent.change(field, { target: { value: 'Только безопасность' } })
+    fireEvent.click(within(presets).getByRole('button', { name: 'Сохранить' }))
+    await waitFor(() => expect(onSavePresets).toHaveBeenCalledWith([{ id: 'p1', name: 'Только безопасность', disabled: ['personalization'] }]))
+  })
+
+  it('Esc в поиске очищает строку, а не закрывает окно настроек', async () => {
+    const onClose = vi.fn()
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={onClose} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const search = await screen.findByRole('searchbox', { name: 'Поиск по источникам контекста' })
+    fireEvent.change(search, { target: { value: 'платформ' } })
+    fireEvent.keyDown(search, { key: 'Escape' })
+    expect(search).toHaveValue('')
+    expect(onClose).not.toHaveBeenCalled()
   })
 
 })

@@ -1030,6 +1030,11 @@ export interface ContextSnapshotGroup {
   title: string
   description: string
   items: ContextSnapshotItem[]
+  /**
+   * Вклад группы в постоянную часть промпта. Ответ на «какая часть настроек
+   * съедает место»: у пункта размер уже есть, но складывать их глазами — работа.
+   */
+  size?: { chars: number; approxTokens: number } | null
 }
 
 export interface ConversationContextSnapshot {
@@ -1054,6 +1059,12 @@ export interface ConversationContextSnapshot {
   lastTurn: ContextLastTurn | null
   /** Журнал изменений контекста этого разговора, новые сверху. */
   changes: ContextChangeEvent[]
+  /**
+   * Инструменты, которые уйдут в `--disallowedTools`: человек выключил их
+   * тумблером, и модель не сможет их вызвать. Прямой ответ на «что она НЕ
+   * сможет» — по списку доступных возможностей этого не увидеть.
+   */
+  disallowedTools: string[]
   /** Несогласованности конфигурации (порядок: problem раньше notice). */
   warnings: ContextWarning[]
   /**
@@ -1173,6 +1184,22 @@ export interface ContextWarning {
   /** `notice` — стоит знать, `problem` — почти наверняка не то, что нужно. */
   level: 'notice' | 'problem'
   text: string
+}
+
+/**
+ * Чем контекст двух разговоров отличается. Отвечает на вопрос «почему там
+ * работает, а здесь нет» до того, как человек что-то перезапишет копированием.
+ */
+export interface ContextDiff {
+  /** Разговор-образец: id и название. */
+  otherId: string
+  otherTitle: string
+  /** Выключено там, включено здесь (id пунктов с заголовками). */
+  onlyThere: Array<{ itemId: string; title: string }>
+  /** Выключено здесь, включено там. */
+  onlyHere: Array<{ itemId: string; title: string }>
+  /** Настройки, которые различаются: движок, модель, режимы. */
+  settings: Array<{ label: string; here: string; there: string }>
 }
 
 /** Именованный набор выключенных источников контекста. */

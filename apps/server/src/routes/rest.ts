@@ -27,6 +27,7 @@ import {
   resumeSessionIdFor,
   contextLockReason,
   isContextToggleable,
+  toolNameForContextId,
   sanitizeSettingsPatch
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
@@ -35,7 +36,7 @@ import { readUserFile } from '../serverFiles.js'
 import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
-import type { AgentsChainFile, AgentsChainResult, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
+import type { AgentsChainFile, AgentsChainResult, ContextDiff, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
@@ -336,7 +337,15 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   // именно занимает место» задают про пункт, а итог берётся из предпросмотра.
   const sizeByItem = new Map(previewBlocks.flatMap((block) => block.itemIds.map((id) => [id, { chars: block.chars, approxTokens: block.approxTokens }] as const)))
   // Размер из предпросмотра, а если пункт посчитал свой сам (история) — его.
-  const withSizes = groups.map((group) => ({ ...group, items: group.items.map((item) => ({ ...item, size: sizeByItem.get(item.id) ?? item.size ?? null })) }))
+  const withSizes = groups.map((group) => {
+    const items = group.items.map((item) => ({ ...item, size: sizeByItem.get(item.id) ?? item.size ?? null }))
+    // Итог группы считаем по блокам предпросмотра, а не суммой размеров пунктов:
+    // склеенная подсказка принадлежит двум пунктам, и сумма её удвоила бы.
+    const chars = previewBlocks
+      .filter((block) => block.itemIds.some((id) => items.some((item) => item.id === id)))
+      .reduce((total, block) => total + block.chars, 0)
+    return { ...group, items, size: chars > 0 ? { chars, approxTokens: approxTokens(chars) } : null }
+  })
   return {
     schemaVersion: 1,
     conversationId,
@@ -348,6 +357,8 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     turnSizes,
     lastTurn,
     changes: db.listConversationContextEvents(userId, conversationId, 20),
+    // Тот же список, что уйдёт исполнителю (`turns.ts` → LlmRequest.disallowedTools).
+    disallowedTools: [...disabled].map(toolNameForContextId).filter((tool): tool is string => tool !== null).sort(),
     warnings,
     promptPreview: {
       blocks: previewBlocks,
@@ -538,6 +549,43 @@ export async function registerRest(
     if (!updated) return reply.code(404).send({ error: 'not found' })
     const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline)
     return snapshot ?? reply.code(404).send({ error: 'not found' })
+  })
+
+  /**
+   * Чем контекст этого разговора отличается от другого. Только чтение: вопрос
+   * «почему там работает, а здесь нет» задают до того, как что-то перезаписать
+   * копированием. Оба снимка строятся тем же `contextSnapshot`, поэтому
+   * сравниваются ровно те значения, которые видит человек.
+   */
+  app.get<{ Params: { id: string; otherId: string } }>('/api/conversations/:id/context-diff/:otherId', async (req, reply) => {
+    const userId = uid(req)
+    const here = contextSnapshot(db, userId, req.params.id, opts.isAgentOnline)
+    const there = contextSnapshot(db, userId, req.params.otherId, opts.isAgentOnline)
+    const otherConversation = db.getConversation(userId, req.params.otherId)
+    if (!here || !there || !otherConversation) return reply.code(404).send({ error: 'not found' })
+    const itemsOf = (snapshot: ConversationContextSnapshot): Map<string, ContextSnapshotItem> =>
+      new Map(snapshot.groups.flatMap((group) => group.items).map((item) => [item.id, item]))
+    const hereItems = itemsOf(here)
+    const thereItems = itemsOf(there)
+    const disabledOnly = (from: Map<string, ContextSnapshotItem>, other: Map<string, ContextSnapshotItem>) =>
+      [...from.values()]
+        .filter((item) => item.toggleable && !item.enabled && other.get(item.id)?.enabled !== false)
+        .map((item) => ({ itemId: item.id, title: item.title }))
+    const settings: ContextDiff['settings'] = []
+    const compare = (label: string, hereValue: string, thereValue: string): void => {
+      if (hereValue !== thereValue) settings.push({ label, here: hereValue, there: thereValue })
+    }
+    compare('Движок', here.summary.provider, there.summary.provider)
+    compare('Модель', here.summary.model || 'из конфигурации CLI', there.summary.model || 'из конфигурации CLI')
+    compare('Режим доступа', here.summary.permissionMode.displayName, there.summary.permissionMode.displayName)
+    compare('База знаний', here.summary.kbMode.displayName, there.summary.kbMode.displayName)
+    return {
+      otherId: otherConversation.id,
+      otherTitle: otherConversation.title,
+      onlyThere: disabledOnly(thereItems, hereItems),
+      onlyHere: disabledOnly(hereItems, thereItems),
+      settings
+    } satisfies ContextDiff
   })
 
   /**
