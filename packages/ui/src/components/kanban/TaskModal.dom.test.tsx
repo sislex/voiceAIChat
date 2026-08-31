@@ -48,7 +48,7 @@ describe('TaskModal — синхронизация полных данных з�
 
   it('не перезаписывает черновик изменённого поля и независимо синхронизирует второе', async () => {
     const { rerender } = render(<TaskModal {...props()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить описание' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать описание' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Описание задачи' }), { target: { value: 'Локальный черновик' } })
 
     rerender(<TaskModal {...props({
@@ -61,7 +61,7 @@ describe('TaskModal — синхронизация полных данных з�
 
   it('сохраняет черновик критериев и независимо синхронизирует описание', async () => {
     const { rerender } = render(<TaskModal {...props()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Критерии приёмки' }), { target: { value: 'Локальный критерий' } })
 
     rerender(<TaskModal {...props({
@@ -76,11 +76,11 @@ describe('TaskModal — синхронизация полных данных з�
     const onUpdate = vi.fn()
     const view = render(<TaskModal {...props({ onUpdate })} />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить описание' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать описание' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Описание задачи' }), { target: { value: 'Сохранённое описание' } })
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
 
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     const criteriaField = screen.getByRole('textbox', { name: 'Критерии приёмки' })
     fireEvent.change(criteriaField, { target: { value: 'Сохранённый критерий' } })
     fireEvent.blur(criteriaField)
@@ -99,9 +99,9 @@ describe('TaskModal — синхронизация полных данных з�
 
   it('полностью переинициализирует поля и режимы редактирования при смене task.id', async () => {
     const { rerender } = render(<TaskModal {...props()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить описание' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать описание' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Описание задачи' }), { target: { value: 'Черновик старой задачи' } })
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Критерии приёмки' }), { target: { value: 'Черновик критерия' } })
 
     rerender(<TaskModal {...props({
@@ -265,6 +265,71 @@ describe('TaskModal — вложенное окно AI-помощника', () =
   })
 })
 
+describe('TaskModal — подзадачи и активность на «Общем»', () => {
+  const parentBoard: Board = {
+    columns: [
+      { id: 'c0', projectId: 'p1', name: 'Бэклог', semanticType: 'backlog', position: 512, hidden: false, wipLimit: null, createdAt: 1 },
+      board.columns[0]!,
+      { id: 'c9', projectId: 'p1', name: 'Готово', semanticType: 'done', position: 4096, hidden: false, wipLimit: null, createdAt: 1 }
+    ],
+    tasks: [
+      mkTask({ id: 'k1', parentId: 'e1', title: 'Первая', columnId: 'c9', seq: 2 }),
+      mkTask({ id: 'k2', parentId: 'e1', title: 'Вторая', columnId: 'c1', seq: 3 })
+    ]
+  }
+  const epic = mkTask({ id: 'e1', type: 'epic', title: 'Эпик' })
+
+  it('показывает готовность подзадач полосой прогресса', () => {
+    render(<TaskModal {...props({ task: epic, board: parentBoard })} />)
+
+    expect(screen.getByText('1 из 2')).toBeInTheDocument()
+    const bar = screen.getByRole('progressbar', { name: 'Готовность подзадач' })
+    expect(bar).toHaveAttribute('aria-valuenow', '1')
+    expect(bar).toHaveAttribute('aria-valuemax', '2')
+  })
+
+  it('добавляет подзадачу в первую видимую колонку с типом потомка', async () => {
+    // У эпика потомок — стори, у стори — задача: тип задан моделью, а не выбором.
+    const onCreateSubtask = vi.fn()
+    render(<TaskModal {...props({ task: epic, board: parentBoard, onCreateSubtask })} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Добавить подзадачу/ }))
+    await userEvent.type(screen.getByLabelText('Название подзадачи'), 'Новая часть')
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить' }))
+
+    expect(onCreateSubtask).toHaveBeenCalledWith('c0', { title: 'Новая часть', type: 'story', parentId: 'e1' })
+    // Форма закрылась — повторный ввод начинается с чистого листа.
+    expect(screen.queryByLabelText('Название подзадачи')).not.toBeInTheDocument()
+  })
+
+  it('у обычной задачи подзадачу завести нельзя — потомков в модели нет', () => {
+    render(<TaskModal {...props({ board: parentBoard, onCreateSubtask: vi.fn() })} />)
+    expect(screen.queryByRole('button', { name: /Добавить подзадачу/ })).not.toBeInTheDocument()
+  })
+
+  it('без onCreateSubtask кнопки нет: во вложенной карточке создавать некуда', () => {
+    render(<TaskModal {...props({ task: epic, board: parentBoard })} />)
+    expect(screen.queryByRole('button', { name: /Добавить подзадачу/ })).not.toBeInTheDocument()
+  })
+
+  it('активность собирается из уже загруженных полей, без нового запроса', () => {
+    // window.ci здесь не задан: если бы лента ходила в сеть, тест бы упал.
+    render(<TaskModal {...props({
+      task: mkTask({ createdAt: Date.parse('2026-08-28T10:00:00Z'), latestRunResult: { id: 'r1', kind: 'merge', status: 'finished', outcome: 'failure', createdAt: Date.parse('2026-08-29T10:00:00Z'), finishedAt: Date.parse('2026-08-29T10:05:00Z') } })
+    })} />)
+
+    const feed = screen.getByTestId('task-activity')
+    expect(feed).toHaveTextContent('Merge: ошибка')
+    expect(feed).toHaveTextContent('Задача создана')
+    expect(feed.querySelector('.vc-feed-dot--danger')).not.toBeNull()
+  })
+
+  it('в черновике активности нет: событий у несозданной задачи не бывает', () => {
+    render(<TaskModal {...props({ draft: true })} />)
+    expect(screen.queryByTestId('task-activity')).not.toBeInTheDocument()
+  })
+})
+
 describe('TaskModal — название и текущее состояние в шапке', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
@@ -272,20 +337,21 @@ describe('TaskModal — название и текущее состояние в
     render(<TaskModal {...props()} />)
 
     const heading = screen.getByTestId('task-modal-heading')
-    expect(heading).toHaveTextContent('PROJ-1 ·')
+    // Ключ и этап — надстрочной строкой, название — крупным полем под ней.
+    expect(heading).toHaveTextContent('PROJ-1')
     expect(within(heading).getByLabelText('Заголовок задачи')).toHaveValue('Задача A')
-    expect(heading).toHaveTextContent('(Разработка)')
-    expect(screen.getAllByText('PROJ-1 ·', { exact: true })).toHaveLength(1)
+    expect(heading).toHaveTextContent('Разработка')
+    expect(screen.getAllByText('PROJ-1', { exact: true })).toHaveLength(1)
     expect(screen.getAllByLabelText('Заголовок задачи')).toHaveLength(1)
     expect(screen.queryByText(/Последний запуск:/)).not.toBeInTheDocument()
   })
 
   it('добавляет фазу активного development-рана и обновляется по новым props', () => {
     const { rerender } = render(<TaskModal {...props()} />)
-    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Разработка)')
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('Разработка')
 
     rerender(<TaskModal {...props({ ciSummary: mkSummary() })} />)
-    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Разработка · Модель работает)')
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('Разработка · Модель работает')
   })
 
   it('после успешного рана показывает только новый этап', () => {
@@ -295,7 +361,7 @@ describe('TaskModal — название и текущее состояние в
       ciSummary: mkSummary({ status: 'success', modelActive: false, slotProgress: { done: 4, total: 4, phase: 'Готово' } })
     })} />)
 
-    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Ручное QA)')
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('Ручное QA')
     expect(screen.getByTestId('task-modal-heading')).not.toHaveTextContent('Готово')
   })
 
@@ -306,12 +372,24 @@ describe('TaskModal — название и текущее состояние в
       ciSummary: mkSummary({ status: 'failed', modelActive: false, slotProgress: { done: 2, total: 4, phase: 'Проверки не пройдены' } })
     })} />)
 
-    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Ошибка · Проверки не пройдены)')
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('Ошибка · Проверки не пройдены')
   })
 
-  it('активный merge отображается в тех же скобках', () => {
+  it('активный merge отображается той же надстрочной строкой', () => {
     render(<TaskModal {...props({ task: mkTask({ activeMergeRunId: 'merge-1' }) })} />)
-    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Разработка · Мерж выполняется)')
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('Разработка · Мерж выполняется')
+  })
+
+  it('точка состояния берёт тон у рана и не заменяет собой текст этапа', () => {
+    // Цветом одним состояние не сообщают: точка стоит рядом с подписью этапа и
+    // скрыта от скринридера, который читает саму подпись.
+    const { rerender } = render(<TaskModal {...props()} />)
+    const dot = (): Element | null => screen.getByTestId('task-modal-heading').querySelector('.task-modal-heading__dot')
+    expect(dot()).toHaveClass('task-modal-heading__dot--neutral')
+    expect(dot()).toHaveAttribute('aria-hidden', 'true')
+
+    rerender(<TaskModal {...props({ ciSummary: mkSummary({ status: 'failed' }) })} />)
+    expect(dot()).toHaveClass('task-modal-heading__dot--removed')
   })
 })
 
@@ -437,12 +515,14 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
     setMobile(true)
     render(<TaskModal {...props({ onUpdate, onOpenChat })} />)
 
-    // В шапке из подписанных кнопок — только ⋯ и закрытие.
-    expect(screen.queryByLabelText('Удалить задачу')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Открыть чат|Создать чат/ })).not.toBeInTheDocument()
+    // В шапке из подписанных кнопок — только ⋯ и закрытие. Проверяем именно
+    // шапку: чат теперь есть и в секции «Активность» на вкладке «Общее».
+    const head = document.querySelector('.mdhead') as HTMLElement
+    expect(within(head).queryByLabelText('Удалить задачу')).not.toBeInTheDocument()
+    expect(within(head).queryByRole('button', { name: /Открыть чат|Создать чат/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByLabelText('Действия с задачей'))
-    fireEvent.click(screen.getByRole('button', { name: /Создать чат/ }))
+    fireEvent.click(within(document.querySelector('.jmodal-menu') as HTMLElement).getByRole('button', { name: /Создать чат/ }))
     expect(onOpenChat).toHaveBeenCalledWith('t1')
 
     fireEvent.click(screen.getByLabelText('Действия с задачей'))
@@ -493,16 +573,21 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
     expect(screen.getByRole('button', { name: 'Лента рана' })).toBeInTheDocument()
   })
 
-  it('на десктопе — правая панель раскрыта, кнопки в шапке, без ⋯', () => {
+  it('на десктопе — правая панель раскрыта, действия в том же ⋯-меню', () => {
+    // По макету в шапке стоят только «ещё» и крестик: три подписанные кнопки
+    // ломали её на три строки при длинном названии.
     render(<TaskModal {...props({ onOpenChat: vi.fn() })} />)
 
     expect(screen.getByTestId('task-modal-details')).toBeInTheDocument()
     expect(screen.getByLabelText('Приоритет')).toBeInTheDocument()
     expect(screen.getByLabelText('Статус')).toBeInTheDocument()
     expect(screen.queryByTestId('task-modal-quick')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Удалить задачу')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Действия с задачей')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Удалить задачу')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Действия с задачей')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Подробности/ })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Действия с задачей'))
+    expect(screen.getByRole('button', { name: /Удалить задачу/ })).toBeInTheDocument()
   })
 })
 
@@ -674,7 +759,7 @@ describe('TaskModal — вкладки и merge', () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
     expect(screen.getAllByRole('tab')).toHaveLength(8)
-    fireEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'черновик' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
@@ -725,7 +810,7 @@ describe('TaskModal — критерии приёмки', () => {
   it('Enter создаёт пункт, Shift+Enter — внутренний перенос, а blur сохраняет нормализованный Markdown', async () => {
     const onUpdate = vi.fn()
     render(<TaskModal {...props({ task: mkTask({ acceptanceCriteria: 'Первый' }), onUpdate })} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     const field = screen.getByRole('textbox', { name: 'Критерии приёмки' }) as HTMLTextAreaElement
     expect(field.value).toBe('1. Первый')
 
@@ -1141,7 +1226,8 @@ describe('TaskModal — подготовка к разработке', () => {
       loadPreparationRuns: async () => [run('running', { provider: 'codex', model: 'gpt-5.6-sol' })]
     })} />)
     expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toHaveAttribute('aria-selected', 'true')
-    expect(await screen.findByText('LLM: codex · gpt-5.6-sol')).toBeInTheDocument()
+    // Модель попытки теперь стоит подписанной строкой сводки, а не лозенгой.
+    expect(await within(await screen.findByTestId('task-preparation-summary')).findByText('codex · gpt-5.6-sol')).toBeInTheDocument()
     expect(await screen.findByTestId('task-preparation-feed')).toHaveTextContent('Уточняю критерии')
   })
 
@@ -1179,7 +1265,7 @@ describe('TaskModal — подготовка к разработке', () => {
       onStartCi: vi.fn(),
       onStartCiParallel: vi.fn()
     })} />)
-    expect(await screen.findByText(`Статус: ${label}`)).toBeInTheDocument()
+    expect(await screen.findByTestId('status-pill')).toHaveTextContent(label)
     if (status === 'running') {
       expect(screen.getByRole('button', { name: 'Отменить' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Повторить подготовку' })).not.toBeInTheDocument()
@@ -1235,10 +1321,10 @@ describe('TaskModal — подготовка к разработке', () => {
       task: mkTask({ id: 't2', taskPreparationRunId: 'prep-new', taskPreparationStatus: 'success' }),
       loadPreparationRuns: load
     })} />)
-    expect(await screen.findByText('Статус: успешно')).toBeInTheDocument()
+    expect(await screen.findByTestId('status-pill')).toHaveTextContent('успешно')
     await act(async () => { resolveOld([run('failed', { id: 'prep-old' })]); await oldRequest })
-    expect(screen.getByText('Статус: успешно')).toBeInTheDocument()
-    expect(screen.queryByText('Статус: ошибка')).not.toBeInTheDocument()
+    expect(screen.getByTestId('status-pill')).toHaveTextContent('успешно')
+    expect(screen.getByTestId('status-pill')).not.toHaveTextContent('ошибка')
   })
 
   it('обновляет историю адресно с debounce, синхронизируется один раз после reconnect и очищает обработчики', async () => {
@@ -1263,7 +1349,7 @@ describe('TaskModal — подготовка к разработке', () => {
       loadPreparationRuns: load,
       loadPreparationRun: loadOne
     })} />)
-    await screen.findByText('Статус: ожидает ответа')
+    await waitFor(() => expect(screen.getByTestId('status-pill')).toHaveTextContent('ожидает ответа'))
     expect(load).toHaveBeenCalledTimes(1) // список — один раз при открытии
     expect(loadOne).not.toHaveBeenCalled()
 

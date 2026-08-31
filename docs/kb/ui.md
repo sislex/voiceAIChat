@@ -1,7 +1,7 @@
 ---
 title: Интерфейс: React, store, remote-мосты и голосовой UX
 updated: 2026-08-31
-checked: 20992d1c
+checked: 03c4c588
 areas:
   - packages/app-shell
   - packages/ui/src
@@ -1277,6 +1277,31 @@ viewport. На десктопе тест может сразу обращать�
 Свои гейты у пакета собственные: `npm run -w @voicechat/ui-kit typecheck` (`tsc --noEmit`, строгий, сториз исключены) и `npm run -w @voicechat/ui-kit test` (vitest, jsdom, `src/test/setup.ts` с полифилами matchMedia/PointerEvent — 8 файлов, 49 тестов, ~18 с). Корневые `npm run typecheck`/`npm run test` подхватывают пакет автоматически через `--workspaces`. А вот `scripts/affected-check.mjs` про `packages/ui-kit` не знает: пути пакета не совпадают ни с одной записью `PACKAGES`, поэтому любой файл из него распознаётся как «нераспознанный критичный путь» и включает **полный** гейт по всем пакетам. Проверка не теряется, но точечного прогона у ui-kit нет — при добавлении пакета в карту это нужно учесть.
 
 Разрешение имени `@voicechat/ui-kit` — обычный симлинк npm-workspaces в `node_modules/@voicechat/`. Он создаётся установкой, а не переключением ветки: после `git checkout` без `npm install` `npm run -w @voicechat/ui typecheck` падает `TS2307: Cannot find module '@voicechat/ui-kit'` (первым — на `src/test/uiRender.tsx`). Запись в `package-lock.json` и зависимость `"@voicechat/ui-kit": "*"` в `packages/ui/package.json` уже есть; отдельных правок vite-конфигов `apps/web`, Electron renderer и Web Recorder перенос не потребовал — Vite транспилирует исходники пакета как обычный workspace-исходник.
+
+### Язык панелей рана (ui-kit)
+
+`StatusPill`, `PanelHeading`, `MetricGrid`, `StepList`, `ProgressTrack`/`ProgressRing`,
+`FeedItem`/`FeedLog`, `SubTabs`, `LiveIndicator` — восемь презентационных примитивов,
+из которых собраны все панели вкладок карточки задачи. До них десять вкладок рисовали
+одно и то же (состояние этапа, шаги, сводку) каждая по-своему: подготовка — пятью
+одинаковыми `.ci-lozenge` подряд, QA — своим `.qa-status`, merge — `.merge-chip`.
+
+Правила, которые легко нарушить:
+- **Тон семантический, а не цвет**: `StatusTone = neutral | running | success | warning | danger`.
+  Перевод из тонов CI (`ciTone` даёт `progress`/`removed`) делает `pillTone` в `TaskModal`.
+- **У прогресса `label` обязателен** — безымянный `role="progressbar"` читалке бесполезен.
+  Заполнение уходит CSS-переменной `--vc-progress`, а не классом: значение непрерывное.
+- **Состояние шага читается словом.** Значок в `StepList` скрыт `aria-hidden` («✓»
+  читалка произносит как «галочка»), рядом стоит невидимая подпись состояния.
+  У ожидающего шага в кружке — его номер.
+- **`SubTabs` — не вложенный `tablist`.** Полоса вкладок карточки уже `tablist`, а
+  вложенный требует своих `tabpanel` с `aria-controls`; здесь это `role="group"` с
+  `aria-pressed` у кнопок.
+- Классы `.vc-feed-*` **переехали** из `app.css` в `packages/ui-kit/src/styles.css`
+  вместе с `FeedItem`. Сторож `packages/ui/src/styles/taskCardStyles.test.ts` теперь
+  читает оба файла — иначе переезд класса читался бы как его пропажа.
+
+Сториз — `packages/ui/src/components/ui/RunPanels.stories.tsx` (`UI/Run panels`).
 
 Новый примитив добавляют так: файл в `packages/ui-kit/src`, явный экспорт в `src/index.ts`, стили — в `src/styles.css` на семантических токенах (и, пока копии не удалены, зеркально в `app.css`), DOM-тест рядом. Story живёт в общей витрине `packages/ui` (`src/components/ui/*.stories.tsx`) и обязана импортировать компонент через публичный `@voicechat/ui-kit` — отдельного Storybook у пакета нет и пока не планируется. Инвентаризация, снятая перед переносом (зависимости, CSS-классы, тесты и сториз по каждому элементу), — `packages/ui-kit/docs/inventory.md`.
 

@@ -12,7 +12,15 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const css = readFileSync(fileURLToPath(new URL('./app.css', import.meta.url)), 'utf8')
+// Стили карточки живут в двух файлах: язык панелей рана (`.vc-*`) — в ui-kit
+// рядом с примитивами, всё предметное — в app.css. Сторож смотрит на оба, иначе
+// переезд класса между ними читался бы как его пропажа.
+const css = [
+  new URL('./app.css', import.meta.url),
+  new URL('../../../ui-kit/src/styles.css', import.meta.url)
+]
+  .map((url) => readFileSync(fileURLToPath(url), 'utf8'))
+  .join('\n')
   .replace(/\/\*[\s\S]*?\*\//g, '')
 const styled = (cls: string): boolean => new RegExp(`\\.${cls}(?![\\w-])`).test(css)
 /** Тело первого правила с этим селектором — для проверки конкретных свойств. */
@@ -25,12 +33,30 @@ describe('стили открытой карточки задачи', () => {
     // Общий язык лент: раскрываемая строка, шеврон, точка статуса.
     'vc-feed', 'vc-feed-item', 'vc-feed-caret', 'vc-feed-status', 'vc-feed-dot',
     'vc-feed-dot--progress', 'vc-feed-dot--success', 'vc-feed-dot--danger', 'vc-feed-dot--muted',
+    'vc-feed-item__title', 'vc-feed-log',
+    // Язык панелей рана: лозенга, шапка, сводка, шаги, прогресс, подразделы, Live.
+    'vc-pill', 'vc-pill--success', 'vc-pill--running', 'vc-pill--warning', 'vc-pill--danger', 'vc-pill--neutral',
+    'vc-panel-head', 'vc-panel-head__kicker', 'vc-panel-head__title', 'vc-panel-head__desc', 'vc-panel-head__actions',
+    'vc-metrics', 'vc-metric', 'vc-metric__label', 'vc-metric__value',
+    'vc-steps', 'vc-step', 'vc-step__mark', 'vc-step__title', 'vc-step__detail',
+    'vc-step--done', 'vc-step--running', 'vc-step--failed',
+    'vc-track', 'vc-track__fill', 'vc-ring', 'vc-ring__caption',
+    'vc-subtabs', 'vc-subtab', 'vc-subtab--active', 'vc-subtab__count', 'vc-live', 'vc-live__dot',
     // Полоса вкладок и панели.
-    'task-tabs', 'task-tab', 'task-tab--active', 'task-tab-panel', 'task-tab-empty',
+    'task-tabs', 'task-tab', 'task-tab--active', 'task-tab-count', 'task-tab-panel', 'task-tab-empty',
+    // Шапка: надстрочная строка «ключ · состояние» и крупное название.
+    'task-modal-heading', 'task-modal-heading__eyebrow', 'task-modal-heading__key',
+    'task-modal-heading__dot', 'task-modal-heading__state', 'task-modal-heading__title',
     // Раскладка карточки.
-    'jmodal', 'jmodal-general', 'jmodal-main', 'jmodal-side', 'jmodal-side-fields',
+    'jmodal', 'jmodal-panels', 'jmodal-general', 'jmodal-main', 'jmodal-side', 'jmodal-side-fields',
     'jmodal-child', 'jmodal-desc-view', 'jmodal-desc-empty', 'task-content-block',
+    // Колонка свойств: заголовок, строка «подпись | значение», проект, даты.
+    'jmodal-side-title', 'jmodal-field', 'jmodal-field-label', 'jmodal-field--wide',
+    'jmodal-project', 'jmodal-project-mark', 'jmodal-dates',
     // Содержимое вкладок.
+    // Секции вкладки «Общее»: описание, подзадачи, активность.
+    'task-section', 'task-section-head', 'task-section-meta', 'task-section-action',
+    'task-subtask-form', 'task-activity', 'task-activity__item', 'task-activity__time',
     'task-timeline', 'task-timeline-stage', 'task-improvements', 'task-improvement',
     'task-model-work', 'task-settings-stack', 'task-preparation-setup', 'task-preparation-grid',
     'task-preparation-field', 'ci-task-stages', 'ci-task-hint',
