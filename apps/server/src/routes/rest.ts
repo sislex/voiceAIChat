@@ -161,7 +161,15 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       title: item.title, description: item.description || (item.kind ? 'Стандартная подсказка.' : 'Текст пользователя.'),
       explanation: item.enabled ? 'Включена в настройках; тумблер справа выключает её только в этом разговоре.' : 'Выключена в настройках пользователя — в ход не попадает независимо от тумблера.',
       configured: item.enabled, available: true, includedInNextTurn: item.enabled,
-      details: { 'Вид': item.kind ?? 'своя', 'Текст': instructionText(item) }
+      details: {
+        'Вид': item.kind ?? 'своя',
+        // Где выключено: в общих настройках (тогда её нет во всех чатах) или
+        // тумблером этого разговора. Раньше оба случая выглядели одинаково.
+        'Где выключена': item.enabled ? (disabled.has(instructionContextId(item.id)) ? 'только в этом разговоре' : '—') : 'в общих настройках (во всех чатах)',
+        'Порядок в промпте': `${settings.chatInstructions.indexOf(item) + 1} из ${settings.chatInstructions.length}`,
+        'Символов в тексте': instructionText(item).length,
+        'Текст': instructionText(item)
+      }
     })) },
     { id: 'project', order: 3, title: 'Проект, директория и AGENTS.md', description: 'Эффективная рабочая область следующего хода.', items: [
       contextItem({ id: 'project-binding', type: 'Проект', source: 'Настройки разговора', scope: project?.name ?? 'Без проекта', priority: '4 · проект', title: project?.name ?? 'Проект не выбран', description: project ? 'Проект доступен пользователю.' : 'Привязка отсутствует.', explanation: project ? 'Явная привязка разговора.' : 'Проектный контекст не включён.', configured: Boolean(conversation.projectId), available: Boolean(project), includedInNextTurn: Boolean(project), details: projectDetails }),
@@ -247,6 +255,19 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   }
   if (disabled.has('knowledge-mode') && conversation.kbContextMode !== 'off') {
     warnings.push({ itemId: 'knowledge-mode', level: 'notice', text: 'База знаний выключена тумблером инспектора, хотя в настройках разговора режим другой: тумблер сильнее.' })
+  }
+  // Одинаковый текст в двух инструкциях модель получает дважды: это не ошибка
+  // конфигурации, но и не то, чего человек хотел — чаще след копирования.
+  const instructionTexts = new Map<string, string[]>()
+  for (const entry of settings.chatInstructions.filter((item) => item.enabled)) {
+    const text = instructionText(entry).trim()
+    if (!text) continue
+    instructionTexts.set(text, [...(instructionTexts.get(text) ?? []), entry.title])
+  }
+  for (const [, titles] of instructionTexts) {
+    if (titles.length > 1) {
+      warnings.push({ itemId: null, level: 'notice', text: `Одинаковый текст в инструкциях: ${titles.join(', ')}. Модель получит его дважды.` })
+    }
   }
   const disabledInstructions = settings.chatInstructions.filter((entry) => entry.enabled && disabled.has(instructionContextId(entry.id)))
   if (disabledInstructions.length) {

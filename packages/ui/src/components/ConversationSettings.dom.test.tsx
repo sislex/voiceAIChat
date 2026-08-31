@@ -723,4 +723,64 @@ describe('ConversationSettings', () => {
     expect(screen.getByTestId('context-permission-readonly')).toBeInTheDocument()
   })
 
+  it('пресеты можно удалить и импортировать файлом, импорт добавляет к существующим', async () => {
+    const onSavePresets = vi.fn().mockResolvedValue(undefined)
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      contextPresets={[{ id: 'p1', name: 'Минимальный', disabled: ['personalization'] }]} onSavePresets={onSavePresets}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const list = await screen.findByTestId('context-presets')
+    fireEvent.click(within(list).getByText('Пресеты контекста'))
+    expect(within(list).getByText(/выключено источников: 1/)).toBeInTheDocument()
+
+    // Удаление спрашивает подтверждение: список пресетов — данные человека.
+    fireEvent.click(within(list).getByRole('button', { name: 'Удалить' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Удалить пресет?' })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Удалить' }))
+    await waitFor(() => expect(onSavePresets).toHaveBeenCalledWith([]))
+
+    // Импорт добавляет к существующим, а не затирает чужую работу.
+    const file = new File([JSON.stringify([{ name: 'Из файла', disabled: ['knowledge-mode'] }])], 'presets.json', { type: 'application/json' })
+    const input = screen.getByLabelText('Импортировать пресеты контекста из файла')
+    fireEvent.change(input, { target: { files: [file] } })
+    await waitFor(() => expect(onSavePresets).toHaveBeenCalledWith([
+      { id: 'p1', name: 'Минимальный', disabled: ['personalization'] },
+      expect.objectContaining({ name: 'Из файла', disabled: ['knowledge-mode'] })
+    ]))
+  })
+
+  it('своя инструкция добавляется из инспектора, размер видно сразу', async () => {
+    const onAddInstruction = vi.fn().mockResolvedValue(undefined)
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]}
+      chatInstructions={[]} onSaveInstruction={vi.fn()} onAddInstruction={onAddInstruction}
+      fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const add = await screen.findByRole('button', { name: 'Добавить инструкцию' })
+    expect(add).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Название новой инструкции' }), { target: { value: 'Только факты' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Текст новой инструкции' }), { target: { value: 'Без вступлений.' } })
+    // Размер постоянной подсказки видно до сохранения: она уходит каждым ходом.
+    expect(screen.getByText(/15 символов, ≈4 токенов в каждом ходе/)).toBeInTheDocument()
+    fireEvent.click(add)
+    await waitFor(() => expect(onAddInstruction).toHaveBeenCalledWith('Только факты', 'Без вступлений.'))
+  })
+
+  it('границы блоков в предпросмотре включаются переключателем', async () => {
+    window.api = { ...window.api, 'agents:listStorages': vi.fn().mockResolvedValue([]), 'conversations:getStorage': vi.fn().mockResolvedValue(null),
+      'conversations:contextSnapshot': vi.fn().mockResolvedValue(contextSnapshot({})) } as never
+    render(<ConversationSettings conversation={conversation} agents={[agent]} role="admin" settings={settings} projects={[]} fetchProjectDetail={vi.fn().mockResolvedValue(null)} onSave={vi.fn()} onAddSkill={vi.fn()} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Контекст и инструкции' }))
+
+    const preview = await screen.findByTestId('context-prompt-preview')
+    expect(preview).not.toHaveTextContent('1. Персонализация')
+    fireEvent.click(screen.getByRole('button', { name: 'Показать границы блоков' }))
+    expect(screen.getByTestId('context-prompt-preview')).toHaveTextContent('1. Персонализация')
+  })
+
 })

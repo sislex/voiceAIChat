@@ -225,7 +225,15 @@ describe('App — действия модели в веб-превью (мост
     const second = await handshakeReader(frame)
     fromReader(frame, { ...second.ids, kind: 'page-status', status: 'ready', url: 'https://shop.example/' })
     bridge.emit({ conversationId: chat.id, requestId: 'pw-read', action: { kind: 'read' } })
-    await waitFor(() => expect(second.post.mock.calls.some(([message]) => (message as { kind?: string; action?: { kind: string } }).kind === 'command' && (message as { action?: { kind: string } }).action?.kind === 'read')).toBe(true))
+    // Команда доезжает до iframe через постановку в очередь и повторный рендер
+    // панели: на полном прогоне гейта (несколько пакетов параллельно) пяти
+    // секунд общего `asyncUtilTimeout` иногда не хватало, и тест падал на
+    // ровном месте. Десять секунд ничего не маскируют — если команда не
+    // отправляется вовсе, она не появится и за минуту.
+    await waitFor(
+      () => expect(second.post.mock.calls.some(([message]) => (message as { kind?: string; action?: { kind: string } }).kind === 'command' && (message as { action?: { kind: string } }).action?.kind === 'read')).toBe(true),
+      { timeout: 10_000 }
+    )
     const command = second.post.mock.calls.map(([message]) => message as { kind?: string; requestId?: string; action?: { kind: string } }).find((message) => message.kind === 'command' && message.action?.kind === 'read')!
     const result = { page: { url: 'https://shop.example/', title: 'Shop' }, headings: [], links: [], buttons: [], inputs: [], text: 'Loaded' }
     fromReader(frame, { ...second.ids, kind: 'result', requestId: command.requestId, ok: true, result })

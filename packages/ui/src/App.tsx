@@ -2829,6 +2829,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           // которое ещё не отправлено, и в серверный снимок попасть не могут.
           draftAttachments={chat.attachments.map((entry) => ({ name: entry.upload?.name ?? entry.file.name, status: entry.status }))}
           chatInstructions={settingsState.settings.chatInstructions}
+          onAddInstruction={async (title, text) => {
+            // Своя инструкция без `kind`: стандартного ответного блока у неё нет,
+            // это просто текст, который уходит модели каждым ходом.
+            await settingsActions.updateSettings({
+              chatInstructions: [...settingsState.settings.chatInstructions, {
+                id: `own-${Date.now()}`, title, description: 'Текст пользователя.', enabled: true, text
+              }]
+            })
+          }}
           onSaveInstruction={async (id, text) => {
             // Текст инструкции — общая настройка: правим весь список, сохраняя
             // порядок и остальные поля. Инспектор об этом предупреждает.

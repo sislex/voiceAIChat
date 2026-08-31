@@ -36,6 +36,8 @@ export interface ContextInspectorProps {
   chatInstructions?: ChatInstruction[]
   /** Сохранить правку текста инструкции (общие настройки пользователя). */
   onSaveInstruction?: (id: string, text: string) => Promise<void>
+  /** Добавить свою инструкцию чата в общие настройки пользователя. */
+  onAddInstruction?: (title: string, text: string) => Promise<void>
 }
 
 const dynamicIds = new Set(['current-message', 'knowledge-mode'])
@@ -95,6 +97,20 @@ function kbEmptyText(preview: ContextKbPreview): string {
     default: return 'Для такого сообщения подходящих разделов не нашлось — автоматический контекст не добавится.'
   }
 }
+/**
+ * Текст файла. `Blob.text()` есть в браузерах, но не в jsdom (тесты пакета
+ * идут на нём), поэтому при его отсутствии читаем `FileReader` — он есть везде.
+ */
+function readTextFile(file: File): Promise<string> {
+  if (typeof file.text === 'function') return file.text()
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error ?? new Error('Не удалось прочитать файл'))
+    reader.readAsText(file)
+  })
+}
+
 /** Одна строка о контексте: движок, размер, стоимость и что выключено. */
 function summaryLine(value: ConversationContextSnapshot): string {
   const disabled = value.groups.flatMap((group) => group.items).filter((item) => item.toggleable && !item.enabled)
@@ -151,6 +167,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const [asDeveloper, setAsDeveloper] = useState(false)
   /** Имя нового пресета: поле рядом с кнопкой, а не системный prompt. */
   const [presetName, setPresetName] = useState('')
+  /** Показывать в предпросмотре границы блоков с их размером. */
+  const [showBlockMarks, setShowBlockMarks] = useState(false)
+  /** Черновик новой инструкции чата: название и текст. */
+  const [newInstructionTitle, setNewInstructionTitle] = useState('')
+  const [newInstructionText, setNewInstructionText] = useState('')
   /** Идут ли изменения тумблера/быстрой правки — на это время контролы блокируются. */
   const [busy, setBusy] = useState(false)
   /** Черновик сообщения и подбор базы знаний по нему (по кнопке, не на каждый ввод). */
@@ -355,6 +376,74 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     }
   }
 
+  /**
+   * Импорт пресетов из файла. Разбираем и приводим к контракту здесь же: файл
+   * пришёл извне, и доверять его форме нельзя. Существующие пресеты остаются —
+   * импорт добавляет, а не затирает чужую работу.
+   */
+  const importPresets = async (file: File): Promise<void> => {
+    if (!props.onSavePresets) return
+    setBusy(true)
+    try {
+      const parsed = JSON.parse(await readTextFile(file)) as unknown
+      const incoming = (Array.isArray(parsed) ? parsed : [])
+        .filter((entry): entry is ContextPreset => typeof entry === 'object' && entry !== null && typeof (entry as ContextPreset).name === 'string')
+        .map((entry, index) => ({
+          id: `imported-${Date.now()}-${index}`,
+          name: String(entry.name).trim().slice(0, 60) || 'Без названия',
+          disabled: Array.isArray(entry.disabled) ? entry.disabled.filter((item): item is string => typeof item === 'string') : []
+        }))
+      if (!incoming.length) {
+        toast.error('В файле нет пресетов в понятном формате')
+        return
+      }
+      await props.onSavePresets([...(props.contextPresets ?? []), ...incoming])
+      toast.success(`Импортировано пресетов: ${incoming.length}`)
+    } catch (error) {
+      toast.error(error instanceof Error ? `Не удалось прочитать файл: ${error.message}` : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Удалить пресет: список у человека свой, и чистить его он должен сам. */
+  const deletePreset = async (presetId: string): Promise<void> => {
+    if (!props.onSavePresets) return
+    const preset = props.contextPresets?.find((entry) => entry.id === presetId)
+    if (!preset) return
+    if (!(await confirm({ title: 'Удалить пресет?', message: `Пресет «${preset.name}» будет удалён. Настройки разговоров не изменятся.`, confirmLabel: 'Удалить', variant: 'danger' }))) return
+    setBusy(true)
+    try {
+      await props.onSavePresets((props.contextPresets ?? []).filter((entry) => entry.id !== presetId))
+      toast.success('Пресет удалён')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Добавить свою инструкцию чата. Пропс `onAddInstruction` отсутствует —
+   * пользуемся тем же `onSaveInstruction`, но для нового id: хост сам решает,
+   * как положить её в общие настройки.
+   */
+  const addInstruction = async (): Promise<void> => {
+    if (!props.onAddInstruction || !newInstructionTitle.trim() || !newInstructionText.trim()) return
+    setBusy(true)
+    try {
+      await props.onAddInstruction(newInstructionTitle.trim(), newInstructionText.trim())
+      setNewInstructionTitle('')
+      setNewInstructionText('')
+      setReload((value) => value + 1)
+      toast.success('Инструкция добавлена')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   /** Полный сброс: все источники включены и переопределения сняты. */
   const resetAll = async (): Promise<void> => {
     if (disabledToggleable.length) await toggleMany(disabledToggleable, true)
@@ -490,9 +579,16 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           <label>
             <span>Текст, который получает модель</span>
             <textarea rows={6} value={draftText} aria-label="Текст инструкции" onChange={(event) => setInstructionDraft(event.target.value)} />
+            {/* Размер тут же: инструкция уходит в КАЖДОМ ходе, и «немного
+                допишу» превращается в постоянную наценку на весь чат. */}
+            <small data-testid="context-instruction-size">
+              {draftText.length} символов, ≈{Math.ceil(draftText.length / 4)} токенов в каждом ходе
+              {draftText.length > 2000 ? ' — это много для постоянной подсказки' : ''}
+              {draftText.trim() ? '' : ' · пустой текст сохранять нечего'}
+            </small>
           </label>
           <div className="context-actions">
-            <Button size="sm" disabled={busy || draftText === baseText} onClick={() => void saveInstruction()}>Сохранить текст</Button>
+            <Button size="sm" disabled={busy || draftText === baseText || !draftText.trim()} onClick={() => void saveInstruction()}>Сохранить текст</Button>
             <Button size="sm" variant="ghost" disabled={draftText === baseText} onClick={() => setInstructionDraft(null)}>Вернуть как было</Button>
           </div>
         </div>
@@ -653,6 +749,9 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           {/* Одна строка для задачи или переписки: «что уходит и сколько это
               стоит» без вложения файлов и без пересказа руками. */}
           <Button size="sm" variant="ghost" onClick={() => void copy(summaryLine(snapshot), 'Сводка')}>Скопировать сводку</Button>
+          {/* Разметка блоков: без неё непонятно, где кончается одна подсказка и
+              начинается другая — в промпте они склеены пустой строкой. */}
+          <Button size="sm" variant={showBlockMarks ? 'primary' : 'ghost'} aria-pressed={showBlockMarks} onClick={() => setShowBlockMarks((value) => !value)}>Показать границы блоков</Button>
         </div>
       </div>
       {preview.text
@@ -665,7 +764,9 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
                   ? <pre className="context-prompt" data-testid="context-prompt-preview">{found.map((block) => `— ${block.title} —\n${block.text}`).join('\n\n')}</pre>
                   : <p className="context-empty" data-testid="context-prompt-preview">В блоках промпта «{query.trim()}» не встречается.</p>
               })()
-            : <pre className="context-prompt" data-testid="context-prompt-preview">{preview.text}</pre>)
+            : <pre className="context-prompt" data-testid="context-prompt-preview">{showBlockMarks
+                ? preview.blocks.map((block, index) => `— ${index + 1}. ${block.title} (≈${block.approxTokens} токенов) —\n${block.text}`).join('\n\n')
+                : preview.text}</pre>)
         : <p className="context-empty">Своих блоков сервер не добавляет: в ход уйдут только история разговора и ваше сообщение.</p>}
       {/* Вложения черновика знает только клиент: снимок описывает сохранённое
           состояние, а файлы приложены к неотправленному сообщению. */}
@@ -782,6 +883,13 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
               onChange={(event) => setPresetName(event.target.value)}
             />
             <Button size="sm" variant="ghost" disabled={busy || !presetName.trim()} onClick={() => void savePreset()}>Сохранить текущий</Button>
+            {/* Управление и перенос между инсталляциями: пресет — это данные
+                пользователя, и увезти их файлом должно быть можно. */}
+            {(props.contextPresets?.length ?? 0) > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => download('context-presets.json', JSON.stringify(props.contextPresets ?? [], null, 2), 'application/json')}>Экспорт</Button>}
+            <label className="context-import">
+              <span>Импорт</span>
+              <input type="file" accept="application/json,.json" aria-label="Импортировать пресеты контекста из файла" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importPresets(file); event.target.value = '' }} />
+            </label>
           </label>}
           {(props.otherConversations?.length ?? 0) > 0 && <label className="context-copyfrom">
             <span>Скопировать из</span>
@@ -794,9 +902,35 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       </div>
       {itemList(ordered(knowledgeItems), 'Под фильтр и поиск ничего не подошло.')}
     </section>
+    {props.onAddInstruction && <section className="context-card" aria-labelledby="context-newinstruction">
+      <h3 id="context-newinstruction">Своя инструкция чата</h3>
+      <p className="context-note">Текст уйдёт модели в каждом ходе всех ваших разговоров. Выключить в отдельном чате можно тумблером в списке ниже.</p>
+      <div className="context-kbdraft">
+        <label>
+          <span>Название</span>
+          <input type="text" value={newInstructionTitle} aria-label="Название новой инструкции" onChange={(event) => setNewInstructionTitle(event.target.value)} />
+        </label>
+        <label>
+          <span>Текст</span>
+          <textarea rows={3} value={newInstructionText} aria-label="Текст новой инструкции" onChange={(event) => setNewInstructionText(event.target.value)} />
+          <small>{newInstructionText.length} символов, ≈{Math.ceil(newInstructionText.length / 4)} токенов в каждом ходе</small>
+        </label>
+        <div className="context-actions">
+          <Button size="sm" disabled={busy || !newInstructionTitle.trim() || !newInstructionText.trim()} onClick={() => void addInstruction()}>Добавить инструкцию</Button>
+        </div>
+      </div>
+    </section>}
     {instructionItems.length > 0 && <details className="context-section" open><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(ordered(instructionItems), 'Под фильтр и поиск ничего не подошло.')}</details>}
     <details className="context-section" data-testid="context-excluded"><summary><span><b>Не попадёт в следующий ход</b><small>Выключенное вами, ненастроенное и недоступное — с причиной</small></span><span className="context-count">{excludedItems.length}</span></summary>{itemList(excludedItems, 'Всё найденное попадёт в следующий ход.', false)}</details>
     <details className="context-section"><summary><span><b>Дополнительные возможности</b><small>Навыки, MCP, приложения, плагины, машины и AGENTS.md</small></span><span className="context-count">{additionalItems.length}</span></summary>{itemList(ordered(additionalItems), 'Дополнительные возможности не обнаружены.')}</details>
+    {(props.contextPresets?.length ?? 0) > 0 && <details className="context-section" data-testid="context-presets">
+      <summary><span><b>Пресеты контекста</b><small>Наборы выключений: применить, экспортировать или удалить</small></span><span className="context-count">{props.contextPresets!.length}</span></summary>
+      <ul className="context-changelog">{props.contextPresets!.map((preset) => <li key={preset.id}>
+        <b>{preset.name}</b> · выключено источников: {preset.disabled.length}
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void applyPreset(preset.id)}>Применить</Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void deletePreset(preset.id)}>Удалить</Button>
+      </li>)}</ul>
+    </details>}
     {snapshot.changes.length > 0 && <details className="context-section" data-testid="context-changes"><summary><span><b>Журнал изменений контекста</b><small>Кто и когда выключал или возвращал источники этого разговора</small></span><span className="context-count">{snapshot.changes.length}</span></summary>
       <ul className="context-changelog">{snapshot.changes.map((event) => <li key={`${event.at}-${event.itemId}-${String(event.enabled)}`}>
         <b>{new Date(event.at).toLocaleString('ru-RU')}</b> · {event.actor} · {event.enabled ? 'вернул' : 'выключил'}: {byId(event.itemId)?.title ?? event.itemId}
