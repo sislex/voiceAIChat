@@ -2423,6 +2423,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           usage={admin.adminUsage}
           usageLoading={admin.adminUsageLoading}
           tabError={admin.adminTabError}
+          createError={admin.adminCreateError}
+          userMachines={admin.adminUserMachines}
+          onLoadUserMachines={() => void adminActions.loadAdminUserMachines()}
           conversations={admin.adminConversations}
           messages={admin.adminMessages}
           conversationId={admin.adminConversationId}

@@ -139,7 +139,7 @@ export function ProfilePanel({
         items={[
           { id: 'overview', label: TAB_LABEL.overview },
           { id: 'access', label: TAB_LABEL.access },
-          { id: 'machines', label: TAB_LABEL.machines, count: user.machines.length },
+          { id: 'machines', label: TAB_LABEL.machines, count: user.machinesTotal ?? user.machines.length },
           { id: 'usage', label: TAB_LABEL.usage },
           { id: 'history', label: TAB_LABEL.history }
         ]}

@@ -114,9 +114,59 @@ describe('UsersAdmin — список и метрики', () => {
     expect(screen.getByTestId('user-detail')).toHaveAttribute('tabindex', '-1')
   })
 
+  it('стрелки ходят по списку, не открывая чужие карточки', async () => {
+    const p = renderAdmin({ selected: null })
+    const rows = screen.getAllByTestId('user-item')
+    rows[0]!.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(rows[1])
+    // Движение по списку — не выбор: карточка чужого человека не грузится.
+    expect(p.onSelect).not.toHaveBeenCalled()
+    await userEvent.keyboard('{End}')
+    expect(document.activeElement).toBe(rows[rows.length - 1])
+    await userEvent.keyboard('{Enter}')
+    expect(p.onSelect).toHaveBeenCalledTimes(1)
+  })
+
   it('без выбранного человека карточка объясняет, что делать', () => {
     renderAdmin()
     expect(screen.getByTestId('user-detail')).toHaveTextContent('Выберите человека')
+  })
+})
+
+describe('UsersAdmin — масштаб', () => {
+  it('тысяча учёток рисуется страницей: на экране не больше предела списка', () => {
+    const many: AdminUserInfo[] = Array.from({ length: 1000 }, (_, index) => ({
+      name: `user-${String(index).padStart(4, '0')}`,
+      role: 'developer' as const,
+      blocked: false,
+      createdAt: 1,
+      conversationCount: 0,
+      machinesTotal: 0,
+      machinesOnline: 0,
+      lastSeenAt: NOW - index * 1000,
+      liveSessions: 0
+    }))
+    const started = Date.now()
+    renderAdmin({ users: many })
+    // Предел списка держит DOM в разумных границах, а не рисует тысячу строк.
+    expect(screen.getAllByTestId('user-item')).toHaveLength(200)
+    expect(screen.getByTestId('users-count')).toHaveTextContent('1000')
+    // Порог намеренно щедрый: он ловит возврат к отрисовке всего списка, а не
+    // соревнуется с производительностью машины.
+    expect(Date.now() - started).toBeLessThan(4000)
+  })
+
+  it('«показать ещё» догружает следующую страницу и сообщает остаток', async () => {
+    const many: AdminUserInfo[] = Array.from({ length: 260 }, (_, index) => ({
+      name: `user-${index}`, role: 'developer' as const, blocked: false, createdAt: 1,
+      conversationCount: 0, machinesTotal: 0, machinesOnline: 0, lastSeenAt: NOW - index, liveSessions: 0
+    }))
+    renderAdmin({ users: many })
+    expect(screen.getByRole('button', { name: /Показать ещё 60 из 60/ })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Показать ещё/ }))
+    expect(screen.getAllByTestId('user-item')).toHaveLength(260)
+    expect(screen.queryByRole('button', { name: /Показать ещё/ })).toBeNull()
   })
 })
 

@@ -32,6 +32,9 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
   const [shown, setShown] = useState(LIST_PAGE)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => setQuery(filter.query), [filter.query])
+  // Смена фильтра начинает список заново: иначе после сужения выборки кнопка
+  // «показать ещё» исчезала, а после расширения — показывала чужой хвост.
+  useEffect(() => setShown(LIST_PAGE), [filter.query, filter.role, filter.state, filter.sort])
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
   const onQuery = (next: string): void => {
     setQuery(next)
@@ -39,6 +42,17 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
     // Пустой запрос применяется сразу: очистка поля должна возвращать список мгновенно.
     timer.current = setTimeout(() => onFilter({ ...filter, query: next }), next === '' ? 0 : 200)
   }
+
+  // Лента на телефоне прокручивается к выбранному человеку: после перехода по
+  // ссылке `#/users/<логин>` он мог оказаться далеко за краем экрана.
+  const listRef = useRef<HTMLUListElement>(null)
+  useEffect(() => {
+    if (!selected) return
+    const row = listRef.current?.querySelector<HTMLElement>(`[data-user="${CSS.escape(selected)}"]`)
+    // Метод есть не везде (jsdom, старые WebView): его отсутствие не должно
+    // ронять рендер списка — прокрутка тут удобство, а не условие работы.
+    row?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [selected])
 
   const found = useMemo(() => filterUsers(users, filter, now, usageSummary), [users, filter, now, usageSummary])
   const { visible, rest } = pageUsers(found, shown)
@@ -93,15 +107,29 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
         <EmptyState compact icon="⌕" title="Никто не найден" description="Смягчите фильтры или очистите поиск." />
       )}
 
-      <ul className="ua-list__items" role="list">
+      <ul className="ua-list__items" role="list" ref={listRef}>
         {visible.map((user) => (
           <li key={user.name}>
             <button
               type="button"
               className={user.name === selected ? 'ua-row ua-row--on' : 'ua-row'}
               onClick={() => onSelect(user.name)}
-              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(user.name, true) } }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(user.name, true); return }
+                // Стрелки ходят по списку, не выбирая: выбор — отдельное решение
+                // человека, иначе каждое движение вниз грузило бы чужую карточку.
+                if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return
+                event.preventDefault()
+                const rows = [...(event.currentTarget.closest('.ua-list__items')?.querySelectorAll<HTMLButtonElement>('[data-testid="user-item"]') ?? [])]
+                const index = rows.indexOf(event.currentTarget)
+                const next = event.key === 'Home' ? 0
+                  : event.key === 'End' ? rows.length - 1
+                  : event.key === 'ArrowDown' ? Math.min(index + 1, rows.length - 1)
+                  : Math.max(index - 1, 0)
+                rows[next]?.focus()
+              }}
               data-testid="user-item"
+              data-user={user.name}
               aria-current={user.name === selected}
             >
               <Avatar username={user.name} size={38} />
@@ -124,7 +152,9 @@ export function UsersList({ users, usageSummary, selected, filter, onFilter, onS
       </ul>
       {rest > 0 && (
         <p className="ua-list__more">
-          <Button size="sm" variant="ghost" onClick={() => setShown((value) => value + LIST_PAGE)}>Показать ещё {Math.min(rest, LIST_PAGE)}</Button>
+          <Button size="sm" variant="ghost" onClick={() => setShown((value) => value + LIST_PAGE)}>
+            Показать ещё {Math.min(rest, LIST_PAGE)} из {rest}
+          </Button>
         </p>
       )}
     </nav>

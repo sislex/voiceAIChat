@@ -245,4 +245,18 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-deflist--inline .vc-deflist__row{display:flex;gap:5px;align-items:baseline}
 @media (max-width: 640px) { .vc-deflist__row { grid-template-columns:1fr } }
 
+
+/* Шапка страницы. */
+.vc-pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.vc-pagehead__title{min-width:0}
+.vc-pagehead__eyebrow{margin:0 0 4px;color:var(--text-dim);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em}
+.vc-pagehead h1{margin:0;font-size:26px;letter-spacing:-.03em;overflow-wrap:anywhere}
+.vc-pagehead h2{margin:0;font-size:22px;letter-spacing:-.02em;overflow-wrap:anywhere}
+.vc-pagehead__actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Полоса метрик: четыре в ряд, две на планшете, одна на телефоне. */
+.vc-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width: 1050px) { .vc-metrics { grid-template-columns:repeat(2,minmax(0,1fr)) } }
+@media (max-width: 480px) { .vc-metrics { grid-template-columns:1fr } .vc-pagehead h1 { font-size:22px } .vc-pagehead__actions .vc-btn { min-height:40px } }
+
 @media(prefers-reduced-motion:reduce){.vc-btn__spinner,.vc-skel,.vc-refresh__spinner,.vc-dialog,.vc-dialog-overlay,.vc-toast{animation:none}.vc-actionbar,.vc-switch,.vc-switch__knob{transition:none}}

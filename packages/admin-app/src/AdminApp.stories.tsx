@@ -87,6 +87,59 @@ export const History: Story = { args: { route: { page: 'users', userName: 'alex'
 /** Пустая установка: ни одного человека, кроме встроенного администратора. */
 export const Empty: Story = { args: { users: [], selected: null, route: { page: 'users' }, usageSummary: [] } }
 
+/** Сотни учёток: список показывает первую страницу и предлагает догрузить. */
+export const ManyUsers: Story = {
+  args: {
+    route: { page: 'users' },
+    selected: null,
+    users: Array.from({ length: 420 }, (_, index) => ({
+      name: `user-${String(index).padStart(3, '0')}`,
+      role: (['developer', 'tester', 'observer'] as const)[index % 3]!,
+      blocked: index % 37 === 0,
+      createdAt: 1,
+      conversationCount: index % 11,
+      machinesTotal: index % 3,
+      machinesOnline: index % 2,
+      lastSeenAt: NOW - index * 60_000,
+      liveSessions: index % 2
+    }))
+  }
+}
+
+/** Длинные имя и почта: шапка карточки переносит их, а не выдавливает кнопки. */
+export const LongNames: Story = {
+  args: {
+    selected: 'константин-александрович-разумовский-тестировщик',
+    route: { page: 'users', userName: 'константин-александрович-разумовский-тестировщик', tab: 'overview' },
+    users: [{
+      name: 'константин-александрович-разумовский-тестировщик',
+      role: 'tester' as const,
+      blocked: false,
+      createdAt: 1,
+      email: 'konstantin.alexandrovich.razumovsky@very-long-corporate-domain.example',
+      conversationCount: 3,
+      machinesTotal: 0,
+      machinesOnline: 0,
+      lastSeenAt: NOW - 120_000,
+      liveSessions: 1
+    }]
+  }
+}
+
+/** Ошибка загрузки вкладки: видна внутри карточки, а не только в исчезнувшем тосте. */
+export const TabError: Story = {
+  args: { route: { page: 'users', userName: 'alex', tab: 'usage' }, usage: null, tabError: 'HTTP 503: сервис отчётов недоступен' }
+}
+
+/** Тёмная тема страницы целиком. */
+export const Dark: Story = {
+  decorators: [(Story) => (
+    <div data-theme="dark" style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh' }}>
+      <Story />
+    </div>
+  )]
+}
+
 /** Телефон 390×844: список превращается в ленту, карточка занимает экран. */
 export const Mobile: Story = {
   args: { route: { page: 'users', userName: 'alex', tab: 'overview' } },

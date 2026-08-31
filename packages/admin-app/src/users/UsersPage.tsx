@@ -6,7 +6,7 @@
 // заметить труднее всего.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, EmptyState } from '@voicechat/ui-kit'
+import { Button, EmptyState, PageHeader } from '@voicechat/ui-kit'
 import {
   FULL_ACCESS,
   ProfilePanel,
@@ -29,8 +29,8 @@ import type { LoadStatus } from '../loadState'
 import { UsersList } from './UsersList'
 import { UserMetrics } from './UserMetrics'
 import { CreateUserDialog } from './CreateUserDialog'
-import { DEFAULT_FILTER, usersMetrics, type UsersFilter } from './usersModel'
-import type { AdminRoute } from '../routes'
+import { usersMetrics, type UsersFilter } from './usersModel'
+import type { AdminRoute, AdminUsersQuery } from '../routes'
 
 const PROVIDERS: ProfileProvider[] = [
   { id: 'claude', label: 'Anthropic Claude', models: CLAUDE_MODELS.map((model) => ({ id: model.id, label: model.label })) },
@@ -38,7 +38,7 @@ const PROVIDERS: ProfileProvider[] = [
 ]
 
 /** Карточка человека из админских данных: те же поля, что отдаёт `/api/me/profile`. */
-export function toProfileUser(user: AdminUserInfo): ProfileUser {
+export function toProfileUser(user: AdminUserInfo, machines: readonly import('@shared/admin').AdminAgentInfo[] | null = null): ProfileUser {
   return {
     name: user.name,
     role: user.role,
@@ -51,7 +51,9 @@ export function toProfileUser(user: AdminUserInfo): ProfileUser {
     llmLimitUsd: user.llmLimitUsd ?? null,
     conversationCount: user.conversationCount,
     ...(user.mustChangePassword ? { mustChangePassword: true } : {}),
-    machines: user.agents.map((agent) => ({
+    ...(user.machinesTotal !== undefined ? { machinesTotal: user.machinesTotal } : {}),
+    ...(user.machinesOnline !== undefined ? { machinesOnline: user.machinesOnline } : {}),
+    machines: (machines ?? user.agents ?? []).map((agent) => ({
       id: agent.id,
       name: agent.name,
       online: agent.online,
@@ -101,9 +103,13 @@ export interface UsersPageProps {
   usageSummary: readonly UserUsageSummary[]
   selected: string | null
   tab: ProfileTab
+  /** Что показано в списке: живёт в адресе, чтобы ссылкой можно было поделиться. */
+  list?: AdminUsersQuery
   period?: ProfilePeriod
   onSelectPeriod?: (period: ProfilePeriod) => void
   usage: UsageReport | null
+  /** Машины выбранного человека грузятся отдельно от списка. */
+  userMachines?: import('@shared/admin').AdminAgentInfo[] | null
   /** Расход выбранного человека ещё грузится — карточка покажет скелетон. */
   usageLoading?: boolean
   security?: SecurityEvent[] | null
@@ -114,6 +120,8 @@ export interface UsersPageProps {
   error?: string | null
   /** Ошибка загрузки данных выбранной вкладки — видна внутри карточки. */
   tabError?: string | null
+  /** Ошибка последней попытки создания — показывается в форме. */
+  createError?: string | null
   onRetryTab?: () => void
   latestAgentVersion?: string
   now?: number
@@ -140,9 +148,11 @@ export function UsersPage({
   usageSummary,
   selected,
   tab,
+  list,
   period = 'month',
   onSelectPeriod,
   usage,
+  userMachines = null,
   usageLoading = false,
   security,
   llmAccess,
@@ -151,6 +161,7 @@ export function UsersPage({
   status = 'ready',
   error = null,
   tabError = null,
+  createError = null,
   onRetryTab,
   latestAgentVersion,
   now = Date.now(),
@@ -169,8 +180,35 @@ export function UsersPage({
   onResetCode,
   onExportCsv
 }: UsersPageProps): JSX.Element {
-  const [filter, setFilter] = useState<UsersFilter>(DEFAULT_FILTER)
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState<string | null>(null)
+  // Форма закрывается, когда учётка появилась в списке: это и есть признак,
+  // что сервер её принял. Отказ по политике пароля оставляет форму открытой
+  // вместе с введёнными данными.
+  useEffect(() => {
+    if (creating && creating !== '' && users.some((user) => user.name === creating)) setCreating(null)
+  }, [creating, users])
+  // Источник истины — адрес: возврат «назад» и ссылка коллеге показывают ту же
+  // выборку, а не сбрасывают её к полному списку.
+  const filter: UsersFilter = {
+    query: list?.query ?? '',
+    role: list?.role ?? 'all',
+    state: list?.state ?? 'all',
+    sort: list?.sort ?? 'activity',
+    descending: !list?.asc
+  }
+  const setFilter = (next: UsersFilter): void => {
+    onNavigate({
+      page: 'users',
+      ...(selected ? { userName: selected, tab } : {}),
+      list: {
+        ...(next.query ? { query: next.query } : {}),
+        ...(next.role !== 'all' ? { role: next.role } : {}),
+        ...(next.state !== 'all' ? { state: next.state } : {}),
+        ...(next.sort !== 'activity' ? { sort: next.sort } : {}),
+        ...(next.descending ? {} : { asc: true })
+      }
+    })
+  }
   // Выбор человека с клавиатуры оставлял фокус в списке: следующий Tab уходил к
   // соседней строке, а не в карточку, которую человек только что открыл.
   const detailRef = useRef<HTMLDivElement>(null)
@@ -191,18 +229,12 @@ export function UsersPage({
 
   return (
     <div className="ua" data-testid="users-page">
-      <header className="ua-top">
-        <div>
-          <p className="ua-top__eyebrow">Администрирование</p>
-          <h1>Пользователи</h1>
-        </div>
-        <div className="ua-top__actions">
-          <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'prices' })}>Цены моделей</Button>
-          <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'engines' })}>Движки</Button>
-          <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'system' })}>Система</Button>
-          {isAdmin && <Button size="sm" variant="primary" onClick={() => setCreating(true)}>＋ Добавить</Button>}
-        </div>
-      </header>
+      <PageHeader eyebrow="Администрирование" title="Пользователи" className="ua-top" testId="users-header">
+        <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'prices' })}>Цены моделей</Button>
+        <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'engines' })}>Движки</Button>
+        <Button size="sm" variant="ghost" onClick={() => onNavigate({ page: 'system' })}>Система</Button>
+        {isAdmin && <Button size="sm" variant="primary" onClick={() => setCreating('')}>＋ Добавить</Button>}
+      </PageHeader>
 
       <UserMetrics metrics={metrics} periodLabel="месяц" />
 
@@ -226,7 +258,7 @@ export function UsersPage({
             : (
               <ProfilePanel
                 key={current.name}
-                user={toProfileUser(current)}
+                user={toProfileUser(current, userMachines)}
                 capabilities={capabilities}
                 providers={PROVIDERS}
                 denied={llmAccess.map((entry) => ({ provider: entry.provider, modelId: entry.modelId }))}
@@ -242,7 +274,7 @@ export function UsersPage({
                 now={now}
                 {...(sessionsSlot ? { sessionsSlot } : {})}
                 {...(historySlot ? { historySlot } : {})}
-                onChangeTab={(next) => onNavigate({ page: 'users', userName: current.name, tab: next })}
+                onChangeTab={(next) => onNavigate({ page: 'users', userName: current.name, tab: next, ...(list ? { list } : {}) })}
                 {...(isAdmin && manageable && onUpdateRole ? { onChangeRole: (role: UserRole) => onUpdateRole(current.name, role) } : {})}
                 {...(isAdmin && manageable ? { onSetBlocked: (blocked: boolean, reason: string) => onSetBlocked(current.name, blocked, reason) } : {})}
                 {...(isAdmin && manageable ? { onDelete: () => onDelete(current.name) } : {})}
@@ -256,7 +288,13 @@ export function UsersPage({
       </div>
 
       {invitesSlot}
-      {creating && <CreateUserDialog onCreate={onCreate} onClose={() => setCreating(false)} />}
+      {creating !== null && (
+        <CreateUserDialog
+          onCreate={(name, password, role, temp) => { setCreating(name); onCreate(name, password, role, temp) }}
+          onClose={() => setCreating(null)}
+          error={createError}
+        />
+      )}
     </div>
   )
 }

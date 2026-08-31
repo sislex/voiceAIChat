@@ -10,9 +10,14 @@ import { Button, Dialog } from '@voicechat/ui-kit'
 export interface CreateUserDialogProps {
   onCreate: (name: string, password: string, role: UserRole, mustChangePassword?: boolean) => void
   onClose: () => void
+  /**
+   * Ошибка сервера по последней попытке. Показывается в форме, а не тостом:
+   * тост исчезает через пару секунд, а исправлять пароль человек будет здесь.
+   */
+  error?: string | null
 }
 
-export function CreateUserDialog({ onCreate, onClose }: CreateUserDialogProps): JSX.Element {
+export function CreateUserDialog({ onCreate, onClose, error = null }: CreateUserDialogProps): JSX.Element {
   const [newName, setNewName] = useState('')
   const [newPass, setNewPass] = useState('')
   const [newRole, setNewRole] = useState<UserRole>('developer')
@@ -22,12 +27,14 @@ export function CreateUserDialog({ onCreate, onClose }: CreateUserDialogProps): 
     const n = newName.trim()
     if (!n) return
     onCreate(n, newPass, newRole, newTemp)
-    onClose()
+    // Окно закрывается только когда сервер принял: иначе человек с отказом по
+    // политике пароля терял и форму, и введённые данные.
   }
 
   return (
     <Dialog title="Создать пользователя" size="sm" onClose={onClose} testId="create-user-dialog">
       <div className="ucreate">
+        {error && <p className="ucreate-error" role="alert">{error}</p>}
         
         <input className="login-input" placeholder="Логин" aria-label="Логин нового пользователя" value={newName} onChange={(e) => setNewName(e.target.value)} />
         <input className="login-input" type="password" placeholder="Пароль — не короче 10 символов" aria-label="Пароль нового пользователя" value={newPass} onChange={(e) => setNewPass(e.target.value)} />

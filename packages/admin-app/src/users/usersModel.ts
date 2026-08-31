@@ -71,7 +71,9 @@ export function usersMetrics(
   now: number,
   monthStartAt: number
 ): UsersMetrics {
-  const machines = users.flatMap((user) => user.agents)
+  // Список людей отдаёт только счётчики машин: полный набор грузит карточка.
+  const machinesTotal = users.reduce((sum, user) => sum + (user.machinesTotal ?? user.agents?.length ?? 0), 0)
+  const machinesOnline = users.reduce((sum, user) => sum + (user.machinesOnline ?? user.agents?.filter((agent) => agent.online).length ?? 0), 0)
   const spent = summary.reduce((sum, item) => sum + spendUsd(item.totals), 0)
   const limited = users.filter((user) => user.llmLimitUsd != null && user.llmLimitUsd > 0)
   const limitTotal = limited.reduce((sum, user) => sum + (user.llmLimitUsd ?? 0), 0)
@@ -80,8 +82,8 @@ export function usersMetrics(
     total: users.length,
     createdThisMonth: users.filter((user) => user.createdAt >= monthStartAt).length,
     activeNow: users.filter((user) => isActive(user, now)).length,
-    machinesOnline: machines.filter((machine) => machine.online).length,
-    machinesTotal: machines.length,
+    machinesOnline,
+    machinesTotal,
     spendUsd: spent,
     spendIncomplete: summary.some((item) => item.totals.costIncomplete),
     limitedUsers: limited.length,

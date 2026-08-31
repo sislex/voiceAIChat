@@ -3,6 +3,8 @@
 .admin-head,.uadmin-head,.uusage-heading,.uadmin-actions{display:flex;align-items:center;justify-content:space-between;gap:.75rem}
 /* Рамка без собственного заголовка: страница рисует его сама, здесь — только выход. */
 .admin-head--bare{padding-bottom:0;border:0}
+/* Заголовок служебной страницы — h1 раздела: размер тот же, что был у h2. */
+.admin-head h1{margin:0;font-size:1.5rem}
 .ccobs-body{display:grid;grid-template-columns:minmax(14rem,20rem) minmax(0,1fr);min-height:0;flex:1}
 .cc-col{min-width:0;overflow:auto;padding:1rem}.cc-projects{border-right:1px solid var(--line)}
 .cc-item{display:block;width:100%;padding:.65rem;border:0;border-radius:.5rem;background:transparent;color:inherit;text-align:left}.cc-item:hover,.cc-item.on{background:var(--surface-hover)}
@@ -30,13 +32,8 @@
 /* Страница «Пользователи»: шапка, полоса метрик, список слева и карточка справа.
    Раскладка макета; цвета — только токены, чтобы страница жила в обеих темах. */
 .ua { display: flex; flex-direction: column; min-height: 0; padding: 20px 24px 28px; gap: 14px; overflow: auto; }
-.ua-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.ua-top h1 { margin: 0; font-size: 26px; letter-spacing: -0.03em; }
-.ua-top__eyebrow { margin: 0 0 4px; color: var(--text-dim); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; }
-.ua-top__actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .ua-back { margin: 0 0 8px; }
 
-.ua-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 
 .ua-grid { display: grid; grid-template-columns: 314px minmax(0, 1fr); min-height: 560px; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--surface); overflow: hidden; }
 .ua-list { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); background: var(--panel); }
@@ -56,7 +53,6 @@
 .ua-invites { display: grid; gap: 8px; }
 
 @media (max-width: 1050px) {
-  .ua-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ua-grid { grid-template-columns: 260px minmax(0, 1fr); }
 }
 
@@ -65,7 +61,7 @@
   /* Порог попадания пальцем: кнопки шапки и порядка списка живут в плотных
      строках и по умолчанию имеют высоту 25px — вдвое ниже порога, который
      сторожит scripts/mobile-shots.mts. */
-  .ua-top__actions .vc-btn,
+  .vc-pagehead__actions .vc-btn,
   .ua-list__meta .vc-btn,
   .ua-invites .vc-btn,
   .fleet-actions .vc-btn,
@@ -78,14 +74,12 @@
   .ua-list__items { display: flex; gap: 8px; overflow-x: auto; padding: 0 12px 12px; }
   .ua-list__items > li { flex: 0 0 auto; }
   .ua-row { width: 232px; }
-  .ua-top h1 { font-size: 22px; }
 }
 
 @media (max-width: 480px) {
-  /* Две метрики в ряд на 390px дают по 170px на карточку: значение переносится
-     на вторую строку и перестаёт читаться как число. */
-  .ua-metrics { grid-template-columns: 1fr; }
   .ua-list__filters { grid-template-columns: 1fr; }
 }
 
 .ua-list__more { margin: 0; padding: 0 12px 12px; }
+
+.ucreate-error { margin: 0; padding: 8px 10px; border-radius: var(--radius-medium); background: var(--danger-soft); color: var(--danger); font-size: 12px; }

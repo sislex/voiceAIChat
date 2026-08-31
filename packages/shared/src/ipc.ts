@@ -384,6 +384,8 @@ export interface IpcInvokeMap {
   'admin:signupConfig': { arg: void; result: SignupConfig }
   'admin:setSignupConfig': { arg: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }; result: SignupConfig }
   'admin:setBlocked': { arg: { name: string; blocked: boolean; reason?: string }; result: void }
+  /** Машины одного человека: список людей их не содержит. */
+  'admin:userMachines': { arg: { name: string }; result: import('./admin').AdminAgentInfo[] }
   'admin:deleteUser': { arg: { name: string }; result: void }
   'admin:usage': { arg: { name: string; unit: UsageUnit; from?: number; to?: number; conversationId?: string }; result: UsageReport }
   /** Личный расход текущей сессии; userId намеренно не передаётся. */
@@ -1233,6 +1235,7 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'admin:saveLlmAccess',
   'admin:createUser',
   'admin:setBlocked',
+  'admin:userMachines',
   'admin:deleteUser',
   'admin:usage',
   'usage:report',

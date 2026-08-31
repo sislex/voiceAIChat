@@ -1,6 +1,6 @@
 // Полоса метрик над списком: люди, активность, машины, деньги.
 
-import { StatCard } from '@voicechat/ui-kit'
+import { MetricsRow, StatCard } from '@voicechat/ui-kit'
 import { formatUsd } from '@voicechat/profile-app'
 import type { UsersMetrics } from './usersModel'
 
@@ -11,7 +11,7 @@ export interface UserMetricsProps {
 
 export function UserMetrics({ metrics, periodLabel }: UserMetricsProps): JSX.Element {
   return (
-    <section className="ua-metrics" aria-label="Сводка" data-testid="users-metrics">
+    <MetricsRow label="Сводка" className="ua-metrics" testId="users-metrics">
       <StatCard label="Всего пользователей" value={metrics.total} hint={metrics.createdThisMonth > 0 ? `+${metrics.createdThisMonth} за месяц` : undefined} />
       <StatCard label="Активны сейчас" value={metrics.activeNow} hint="по живым сессиям" tone={metrics.activeNow > 0 ? 'positive' : 'neutral'} />
       <StatCard
@@ -27,6 +27,6 @@ export function UserMetrics({ metrics, periodLabel }: UserMetricsProps): JSX.Ele
         hint={metrics.limitShare === null ? (metrics.spendIncomplete ? 'часть ответов без тарифа' : undefined) : `${Math.round(metrics.limitShare * 100)}% лимитов (${metrics.limitedUsers})`}
         tone={metrics.limitShare !== null && metrics.limitShare >= 0.8 ? 'warning' : 'neutral'}
       />
-    </section>
+    </MetricsRow>
   )
 }
