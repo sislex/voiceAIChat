@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { screen, within } from '@testing-library/react'
 import { render } from '../test/uiRender'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -86,5 +86,44 @@ describe('WidgetAssistantFrame', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Отмена' }))
     expect(cancel).toHaveBeenCalledOnce()
     expect(confirm).not.toHaveBeenCalled()
+  })
+
+  it('показывает прогресс плана работ и позволяет его остановить', async () => {
+    const api = createFakeApi()
+    const conversation = (await api['kanbanAssistant:get']({ projectId: 'p1' })).conversation
+    const plan = {
+      id: 'plan-1', projectId: 'p1', conversationId: conversation.id, owner: 'ann', title: 'Серия задач',
+      status: 'running', error: null, createdAt: 1, updatedAt: 1,
+      items: [
+        { id: 'i0', position: 0, kind: 'create_task', title: 'Завести карточку', taskId: 't1', dependsOn: [], payload: {}, status: 'done', runId: null, error: null, startedAt: null, finishedAt: null },
+        { id: 'i1', position: 1, kind: 'run_ci', title: 'Разработка', taskId: 't1', dependsOn: [0], payload: {}, status: 'running', runId: 'r1', error: null, startedAt: null, finishedAt: null }
+      ]
+    }
+    api['orchestrations:list'] = vi.fn(async () => [plan]) as any
+    const cancel = vi.fn(async () => ({ ...plan, status: 'cancelled' }))
+    api['orchestrations:cancel'] = cancel as any
+    const transport = { send: vi.fn(), onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn(() => () => {}) } as any
+    render(<KanbanAssistant projectId="p1" context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={vi.fn()} />)
+
+    const panel = await screen.findByRole('region', { name: 'План работ: Серия задач' })
+    expect(panel).toHaveTextContent('1/2')
+    expect(panel).toHaveTextContent('Разработка')
+    await userEvent.click(within(panel).getByRole('button', { name: 'Остановить' }))
+    expect(cancel).toHaveBeenCalledWith({ planId: 'plan-1' })
+    // Остановленный план из панели исчезает: она показывает только идущие.
+    await vi.waitFor(() => expect(screen.queryByRole('region', { name: /План работ/ })).not.toBeInTheDocument())
+  })
+
+  it('тумблер «Автопилот» переключает режим применения изменений', async () => {
+    const api = createFakeApi()
+    await api['kanbanAssistant:get']({ projectId: 'p1' })
+    const transport = { send: vi.fn(), onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn(() => () => {}) } as any
+    render(<KanbanAssistant projectId="p1" context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={vi.fn()} />)
+
+    const toggle = await screen.findByRole('checkbox', { name: /Автопилот/ })
+    expect(toggle).toBeChecked()
+    await userEvent.click(toggle)
+    await vi.waitFor(() => expect(toggle).not.toBeChecked())
+    expect(screen.getByText('каждое изменение — с подтверждением')).toBeInTheDocument()
   })
 })

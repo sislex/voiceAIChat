@@ -9,9 +9,74 @@ export interface WidgetAssistantContext<TSelection = unknown> {
    *  предлагает действия выключенных подсистем. */
   project: Pick<ProjectSummary, 'id' | 'name' | 'description' | 'technologies' | 'skills' | 'typeChain'> | null
   selection: TSelection | null
+  /** Что сейчас открыто на экране: без этого ассистент рассуждает о доске,
+   *  когда пользователь смотрит настройки или релизы. */
+  surface?: WidgetSurfaceSnapshot | null
   /** Результат read-only шлюза для текущей реплики; не сохраняется в истории. */
   toolResults?: { query?: WidgetToolQueryResult }
   recentActions: WidgetUserAction[]
+}
+
+/** Раздел страницы проекта. Совпадает с секциями `ProjectPage` плюс page-ассистент. */
+export type WidgetSurfaceSection = 'board' | 'settings' | 'releases' | 'assistant'
+
+/** Кнопка, которую можно нажать прямо сейчас: пункт реестра командной палитры. */
+export interface WidgetSurfaceCommand {
+  id: string
+  title: string
+  section: string
+  hint?: string
+}
+
+/** Снимок экрана пользователя: адрес, раздел, открытая карточка и доступные кнопки. */
+export interface WidgetSurfaceSnapshot {
+  /** Полный hash-маршрут без «#», например `/projects/p1/task/t2/preparation`. */
+  route: string
+  section: WidgetSurfaceSection
+  openTaskId: string | null
+  /** Вкладка открытой карточки (`preparation`, `chat`, …) или null. */
+  openTaskTab: string | null
+  /** Настройки просмотра доски — по ним видно, почему карточки не видно на экране. */
+  boardView: { showCompleted: boolean; swimlaneBy: string | null; search: string | null } | null
+  commands: WidgetSurfaceCommand[]
+}
+
+/** Действие ассистента в интерфейсе пользователя (мост «сервер → браузер → результат»). */
+export type WidgetUiAction =
+  | { kind: 'read-state' }
+  | { kind: 'navigate'; route: string }
+  | { kind: 'run-command'; commandId: string }
+  | { kind: 'open-task'; taskId: string; tab?: string }
+  | { kind: 'close-task' }
+  /** Спросить пользователя перед необратимым действием; ответ — `confirmed`. */
+  | { kind: 'confirm'; title: string; note?: string; rows: Array<{ field: string; before?: unknown; after?: unknown }> }
+
+export interface WidgetUiActionResult {
+  surface: WidgetSurfaceSnapshot | null
+  note?: string
+  confirmed?: boolean
+}
+
+export type WidgetUiActionOutcome =
+  | { ok: true; result?: WidgetUiActionResult }
+  | { ok: false; error: string }
+
+/** Режим применения мутаций: `auto` — сразу, `confirm` — через карточку подтверждения. */
+export type WidgetAssistantAutonomy = 'auto' | 'confirm'
+
+/** Разделы вне проекта, куда ассистенту можно уводить пользователя. */
+const SHARED_ROUTE_PREFIXES = ['/kb']
+
+/**
+ * Навигация ограничена своим проектом и общей базой знаний: иначе ассистент
+ * одного проекта уводил бы пользователя в чужие данные и в админку.
+ */
+export function isAllowedWidgetRoute(route: string, projectId: string): boolean {
+  const clean = route.replace(/^#/, '')
+  if (!clean.startsWith('/') || clean.includes('..')) return false
+  const own = `/projects/${projectId}`
+  if (clean === own || clean.startsWith(`${own}/`)) return true
+  return SHARED_ROUTE_PREFIXES.some((prefix) => clean === prefix || clean.startsWith(`${prefix}/`))
 }
 
 export interface WidgetUserAction {

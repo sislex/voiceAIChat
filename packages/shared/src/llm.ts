@@ -84,6 +84,12 @@ export interface LlmRequest {
    * превью которого открыто у пользователя справа.
    */
   makeMcpUrl?: string
+  /**
+   * URL MCP-эндпоинта канбана (инструменты mcp__kanban__*) с секретом и `conv`.
+   * Есть только у хода канбан-ассистента: инструменты читают и меняют проект,
+   * доску которого пользователь видит слева, и управляют его интерфейсом.
+   */
+  kanbanMcpUrl?: string
   remote?: {
     /** URL MCP-эндпоинта с agent id и секретом в query. */
     mcpUrl: string
@@ -227,3 +233,61 @@ export const MAKE_ASSISTANT_HINT =
   'сборки нет, поэтому в импортах всегда указывай расширение (./App.jsx или ./App.tsx) и не добавляй npm-пакеты, кроме доступных через import map. Если проект на TSX — пиши типизированные пропсы (interface Props) и сториз *.stories.tsx. ' +
   'Компоненты клади в src/components/<Имя>.jsx, рядом — <Имя>.stories.jsx в формате CSF (default { title, component, args }, именованные экспорты — стори с args/render): ' +
   'они появляются во вкладке «Компоненты» панели. Тесты компонента — рядом в <Имя>.test.tsx: глобальные test(name, async (t) => { await t.render(<Button label=\"Ок\"/>); expect(t.find(\"button\")).toHaveTextContent(\"Ок\"); await t.click(t.find(\"button\")) }) и expect(...).toBe/toEqual/toContain/toHaveTextContent; запускаются во вкладке «Компоненты» кнопкой «Тесты». Если пользователь пишет, что работает над одним компонентом, меняй только его файл и его сториз. Отвечай на языке пользователя. '
+
+/**
+ * Инструменты канбан-ассистента. Список объявлен один раз: по нему строится
+ * allow-list claude-CLI и проверяется, что MCP-сервер зарегистрировал ровно их —
+ * иначе разрешённый инструмент тихо расходится с существующим.
+ */
+export const KANBAN_TOOLS = [
+  'kanban_context',
+  'kanban_board',
+  'kanban_task_get',
+  'kanban_search_tasks',
+  'project_info',
+  'project_api_get',
+  'kanban_find_similar',
+  'machines_load',
+  'kanban_task_create',
+  'kanban_task_update',
+  'kanban_task_move',
+  'kanban_column_create',
+  'kanban_column_update',
+  'project_settings_update',
+  'run_ci_start',
+  'run_ci_cancel',
+  'run_merge_start',
+  'run_qa_start',
+  'preview_start',
+  'orchestration_plan',
+  'orchestration_start',
+  'orchestration_status',
+  'orchestration_cancel',
+  'ui_state',
+  'ui_navigate',
+  'ui_run_command',
+  'ui_open_task',
+  'ui_close_task'
+] as const
+export type KanbanTool = (typeof KANBAN_TOOLS)[number]
+
+/**
+ * Системный хинт канбан-ассистента — один текст для claude и codex, чтобы
+ * поведение не расходилось между движками. Главное в нём: начинать с текущего
+ * экрана и менять проект инструментами, а не советом пользователю нажать кнопку.
+ */
+export const KANBAN_ASSISTANT_HINT =
+  'Инструмент «Канбан»: слева у пользователя открыта страница проекта — доска задач, настройки или релизы. ' +
+  'Ты полноценный участник этого проекта и работаешь ТОЛЬКО инструментами kanban_*/project_*: ' +
+  'сначала kanban_context (что именно открыто сейчас), затем kanban_board, kanban_task_get, kanban_search_tasks и project_info по необходимости; ' +
+  'остальное проектное API читается через project_api_get по ключу. ' +
+  'Менять доску можно инструментами kanban_task_create/update/move и kanban_column_*; настройки проекта — project_settings_update. ' +
+  'Перед созданием задачи ВСЕГДА проверяй пересечения (kanban_find_similar): дубликат хуже, чем лишний вопрос. Если есть незавершённая пересекающаяся работа (in_progress, awaiting_merge, done_not_merged) — скажи об этом и предложи дождаться merge, а не заводи вторую задачу про то же. ' +
+  'Перед запуском работы смотри machines_load и распределяй нагрузку, а не отправляй всё на одну машину. ' +
+  'Работу запускают run_ci_start (разработка), run_qa_start (проверки), preview_start (тестовое окружение фичи), run_merge_start (слияние в основную ветку); отменяет ран run_ci_cancel. ' +
+  'Задачи, которые трогают один и тот же код, не запускай одновременно: дождись merge предыдущей. ' +
+  'Серию работ («сделай эти пять задач по очереди») веди планом: orchestration_plan показывает его пользователю, orchestration_start отдаёт исполнение серверу — он переживает закрытие вкладки, — orchestration_status показывает прогресс, orchestration_cancel останавливает. ' +
+  'Шаг wait_merge в плане и есть способ не начинать пересекающуюся задачу раньше времени. ' +
+  'Интерфейсом пользователя управляй сам: ui_state (что на экране и какие кнопки доступны), ui_navigate (открыть ссылку проекта), ui_run_command (нажать кнопку по id), ui_open_task/ui_close_task. ' +
+  'Не пересказывай пользователю, куда ему нажать, если можешь сделать это сам. ' +
+  'Отвечай кратко и по делу, на языке пользователя; задачи называй ключами вида PRJ-42, а не внутренними id.'

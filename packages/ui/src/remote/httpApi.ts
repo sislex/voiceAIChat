@@ -150,6 +150,10 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:createDraft': (body) =>
       req(REST.conversationDraft, { method: 'POST', body: JSON.stringify(body) }),
     'kanbanAssistant:get': ({ projectId, conversationId }) => req(`/api/projects/${encodeURIComponent(projectId)}/kanban-assistant${conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : ''}`),
+    'orchestrations:list': ({ projectId }) => req(`/api/projects/${encodeURIComponent(projectId)}/orchestrations`),
+    'orchestrations:cancel': ({ planId }) => req(`/api/orchestrations/${encodeURIComponent(planId)}/cancel`, { method: 'POST' }),
+    'kanbanAssistant:setAutonomy': ({ conversationId, autonomy }) =>
+      req(`/api/conversations/${encodeURIComponent(conversationId)}/assistant-autonomy`, { method: 'POST', body: JSON.stringify({ autonomy }) }),
     'widget:describe': (body) => req('/api/widget-tools/describe', { method: 'POST', body: JSON.stringify(body) }),
     'widget:query': (body) => req('/api/widget-tools/query', { method: 'POST', body: JSON.stringify(body) }),
     'widget:get': (body) => req('/api/widget-tools/get', { method: 'POST', body: JSON.stringify(body) }),

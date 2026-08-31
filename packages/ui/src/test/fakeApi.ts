@@ -266,6 +266,14 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       }
       return { conversation: withCounts(conversation), messages: messages.filter((item) => item.conversationId === conversation!.id), effectiveLlm: { llmEngineId: null, provider: 'claude', model: 'opus', inherited: true } }
     },
+    'orchestrations:list': async () => [],
+    'orchestrations:cancel': async () => null,
+    'kanbanAssistant:setAutonomy': async ({ conversationId, autonomy }) => {
+      const conversation = conversations.find((item) => item.id === conversationId)
+      if (!conversation) throw new Error('conversation not found')
+      conversation.assistantAutonomy = autonomy
+      return withCounts(conversation)
+    },
     'widget:describe': async () => ({ version: 1, widgetKind: 'kanban', capabilities: [{ operation: 'query', name: 'kanban.items.query', confirmation: 'never' }, { operation: 'get', name: 'kanban.item.get', confirmation: 'never' }, { operation: 'action', name: 'kanban.task.update', confirmation: 'required' }] }),
     'widget:query': async ({ ui, text, kinds, limit }) => {
       const { queryWidgetItems } = await import('@shared/widgetAssistant')
