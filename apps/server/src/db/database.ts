@@ -61,6 +61,7 @@ import {
   type AgentCreated,
   type AgentPolicy,
   type Conversation,
+  type ContextChangeEvent,
   type ConversationStatus,
   DEFAULT_CONVERSATION_STATUS,
   type DesktopMigrationBundle,
@@ -1854,14 +1855,38 @@ export class VoiceChatDb {
    * нельзя (тихо игнорируем). Выключенные id хранятся в disabled_context_json и
    * применяются при сборке хода (turns.ts).
    */
-  setConversationContextEnabled(userId: string, id: string, itemId: string, enabled: boolean): Conversation | null {
+  /**
+   * Тумблер пункта контекста. `actor` пишется в журнал: обычно это владелец, но
+   * админ правит и чужие чаты, и «почему этот чат ведёт себя иначе» без имени
+   * не ответить. Повторное выставление того же значения событие не пишет —
+   * журнал должен показывать изменения, а не нажатия.
+   */
+  setConversationContextEnabled(userId: string, id: string, itemId: string, enabled: boolean, actor = userId): Conversation | null {
     const conversation = this.getConversation(userId, id)
     if (!conversation) return null
     if (!isContextToggleable(itemId)) return conversation // безопасность/информация не выключается
     const disabled = new Set(conversation.disabledContext ?? [])
+    const was = !disabled.has(itemId)
     if (enabled) disabled.delete(itemId); else disabled.add(itemId)
     this.db.prepare(`UPDATE conversations SET disabled_context_json = ? WHERE id = ? AND user_id = ?`).run(JSON.stringify([...disabled]), id, userId)
+    if (was !== enabled) {
+      this.db
+        .prepare(`INSERT INTO conversation_context_events (at, conversation_id, user_id, actor, item_id, enabled) VALUES (?, ?, ?, ?, ?, ?)`)
+        .run(this.now(), id, userId, actor, itemId, enabled ? 1 : 0)
+    }
     return this.getConversation(userId, id)
+  }
+
+  /**
+   * Журнал изменений контекста разговора, новые сверху. Читается через scope
+   * владельца: чужой разговор просто не найдётся и журнал будет пуст.
+   */
+  listConversationContextEvents(userId: string, id: string, limit = 50): ContextChangeEvent[] {
+    if (!this.getConversation(userId, id)) return []
+    const rows = this.db
+      .prepare(`SELECT at, actor, item_id, enabled FROM conversation_context_events WHERE conversation_id = ? ORDER BY id DESC LIMIT ?`)
+      .all(id, Math.max(1, Math.min(limit, 200))) as Array<{ at: number; actor: string; item_id: string; enabled: number }>
+    return rows.map((row) => ({ at: row.at, actor: row.actor, itemId: row.item_id, enabled: row.enabled === 1 }))
   }
 
   setConversationPreviewUrl(userId: string, id: string, previewUrl: string | null): Conversation | null {

@@ -13,7 +13,7 @@
 | [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 193 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 5 коммит(ов) в areas после сверки: 491eaaa7 Merge remote-tracking branch 'origin/main' into work3 … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: 2c62de0a perf(gate): гейт шага — инкрементальный typecheck, related-тесты, разрезка REST-набора |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-31 | ⚠ 13 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-31 | ✓ |
 | [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 32 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 134 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 67 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 173 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 189 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 67 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 966 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 967 коммит(ов) в areas после сверки: de2cd726 fix(ui-tests): findBy* ждёт ленивый чанк 5 секунд, а не одну … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 87 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 123 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 59 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
@@ -41,7 +41,7 @@
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 3 коммит(ов) в areas после сверки: 2c62de0a perf(gate): гейт шага — инкрементальный typecheck, related-тесты, разрезка REST-набора … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-31 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 68 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ⚠ 5 коммит(ов) в areas после сверки: 1ef1f9e1 Merge branch 'feat/context-inspector-improvements': три круга улучшений «Контекста и инструкций» … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-31, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -61,7 +61,7 @@
 
 ## Журнал сессий
 
-Всего записей: 471. Последние:
+Всего записей: 472. Последние:
 
 - [2026-08-31-macbook-air-user-sidebar-console-make.md](log/2026-08-31-macbook-air-user-sidebar-console-make.md) — sidebar-console-make
 - [2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md](log/2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md) — pending-submit-realtime-confirmation

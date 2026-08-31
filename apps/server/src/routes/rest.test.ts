@@ -1522,6 +1522,51 @@ describe('REST: conversations/messages/settings', () => {
     expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
   })
 
+  it('журнал контекста пишет изменения (не нажатия) и попадает в снимок', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Журнал' } })).json()
+    const changes = async (): Promise<Array<{ actor: string; itemId: string; enabled: boolean }>> =>
+      (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json().changes
+
+    expect(await changes()).toEqual([])
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/personalization`, payload: { enabled: false } })
+    expect(await changes()).toMatchObject([{ actor: U, itemId: 'personalization', enabled: false }])
+
+    // Повторное то же значение — не изменение: журнал не должен пухнуть от кликов.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/personalization`, payload: { enabled: false } })
+    expect(await changes()).toHaveLength(1)
+
+    // Возврат пишется отдельной записью, новые сверху.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/personalization`, payload: { enabled: true } })
+    const list = await changes()
+    expect(list).toHaveLength(2)
+    expect(list[0]).toMatchObject({ itemId: 'personalization', enabled: true })
+
+    // Пункт безопасности выключить нельзя — и в журнал он не попадает.
+    await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/platform-instructions`, payload: { enabled: false } })
+    expect(await changes()).toHaveLength(2)
+  })
+
+  it('крупная постоянная часть промпта даёт замечание о размере', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Размер' } })).json()
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const size = async (): Promise<{ approxTokens: number; warnings: Array<{ text: string }> }> => {
+      const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+      return { approxTokens: snapshot.promptPreview.approxTokens, warnings: snapshot.warnings }
+    }
+    // Штатный набор инструкций — без замечания.
+    const before = await size()
+    expect(before.approxTokens).toBeLessThan(4000)
+    expect(before.warnings.some((entry) => entry.text.includes('токенов — это много'))).toBe(false)
+
+    await inj({ method: 'PUT', url: '/api/settings', payload: {
+      ...settings,
+      chatInstructions: [...settings.chatInstructions, { id: 'huge', title: 'Огромная', description: '', enabled: true, text: 'т'.repeat(20_000) }]
+    } })
+    const after = await size()
+    expect(after.approxTokens).toBeGreaterThan(4000)
+    expect(after.warnings.some((entry) => entry.text.includes('токенов — это много'))).toBe(true)
+  })
+
   it('Make: REST проекта, превью через cookie-путь, публикация /p/<token>/ без авторизации, чужой проект — 404', async () => {
     const conv = db.createConversation(U, 'Проект', 'make')
     const state = (await inj({ method: 'GET', url: `/api/make/${conv.id}` })).json() as { files: Array<{ path: string }>; published: unknown }
