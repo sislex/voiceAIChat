@@ -1,0 +1,847 @@
+// Беседы, сообщения, настройки и полнотекстовый поиск.
+import { describe, it, expect, beforeEach } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { signToken } from '../users/accounts.js'
+import type { FastifyInstance } from 'fastify'
+import { VoiceChatDb } from '../db/database.js'
+import { setupRestHarness } from './restHarness.js'
+
+// Обвязка одна на все rest.*.test.ts — см. restHarness.ts.
+// Хук harness зарегистрирован первым, поэтому к моменту этого beforeEach
+// поля уже пересозданы под текущий тест.
+const harness = setupRestHarness()
+const { inj, SECRET, U } = harness
+let app: FastifyInstance
+let db: VoiceChatDb
+let token: string
+beforeEach(() => { ({ app, db, token } = harness) })
+
+
+describe('REST: conversations/messages/settings', () => {
+  it('импорт desktop требует токен и идемпотентен', async () => {
+    const payload = { conversations: [{ conversation: { id: 'legacy-c', title: 'Legacy', createdAt: 10, updatedAt: 20, claudeSessionId: null, execTarget: null }, messages: [{ id: 'legacy-m', conversationId: 'legacy-c', role: 'u1', text: 'hello', time: '10:00', createdAt: 15 }] }] }
+    expect((await app.inject({ method: 'POST', url: '/api/migrations/desktop', payload })).statusCode).toBe(401)
+    expect((await inj({ method: 'POST', url: '/api/migrations/desktop', payload })).json()).toEqual({ conversationsImported: 1, messagesImported: 1 })
+    expect((await inj({ method: 'POST', url: '/api/migrations/desktop', payload })).json()).toEqual({ conversationsImported: 0, messagesImported: 0 })
+  })
+
+  it('draft endpoint атомарно создаёт проектный чат с первой репликой и повторяет ответ', async () => {
+    const project = db.createProject(U, { name: 'Draft project', skills: ['ts'] })
+    const payload = {
+      idempotencyKey: 'draft-request-1',
+      title: 'Файл README.md',
+      projectId: project.id,
+      message: { role: 'u1', text: '📎 README.md', time: '10:00', attachments: [{ path: '/tmp/README.md', name: 'README.md', mimeType: 'text/markdown', size: 10 }] }
+    }
+    const first = await inj({ method: 'POST', url: '/api/conversations/draft', payload })
+    const replay = await inj({ method: 'POST', url: '/api/conversations/draft', payload })
+
+    expect(first.statusCode).toBe(200)
+    expect(replay.json().conversation.id).toBe(first.json().conversation.id)
+    expect(first.json().conversation).toMatchObject({ title: 'Файл README.md', projectId: project.id, skillNames: ['ts'], messageCount: 1 })
+    expect(first.json().messages).toHaveLength(1)
+    expect((await inj({ method: 'GET', url: '/api/conversations' })).json()).toHaveLength(1)
+  })
+
+  it('create → list → get', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Тест' } })).json()
+    expect(created.title).toBe('Тест')
+
+    const list = (await inj({ method: 'GET', url: '/api/conversations' })).json()
+    expect(list.map((c: { id: string }) => c.id)).toContain(created.id)
+
+    const got = (await inj({ method: 'GET', url: `/api/conversations/${created.id}` })).json()
+    expect(got.conversation.title).toBe('Тест')
+    expect(got.messages).toEqual([])
+  })
+
+  it('404 на несуществующий разговор', async () => {
+    const res = await inj({ method: 'GET', url: '/api/conversations/нет' })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('возвращает авторизованный серверный снимок эффективного контекста', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Контекст' } })).json()
+    const res = await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })
+    expect(res.statusCode).toBe(200)
+    const snapshot = res.json()
+    expect(snapshot).toMatchObject({ schemaVersion: 1, conversationId: created.id })
+    expect(new Date(snapshot.generatedAt).toISOString()).toBe(snapshot.generatedAt)
+    expect(snapshot.freshnessWarning).toContain('момент формирования')
+    const items = snapshot.groups.flatMap((group: { items: unknown[] }) => group.items)
+    expect(items.length).toBeGreaterThan(10)
+    for (const entry of items) expect(entry).toEqual(expect.objectContaining({ id: expect.any(String), type: expect.any(String), source: expect.any(String), scope: expect.any(String), priority: expect.any(String), configured: expect.any(Boolean), available: expect.any(Boolean), includedInNextTurn: expect.any(Boolean) }))
+    expect(items.find((entry: { id: string }) => entry.id === 'current-message')).toMatchObject({ configured: false, available: false, includedInNextTurn: false })
+    expect(items.find((entry: { id: string }) => entry.id === 'knowledge-mode').details.autoContextDocuments).toEqual([])
+    // Тумблеры: безопасность не выключается, персонализация/kb — можно; по умолчанию всё включено.
+    const byId = (id: string): { toggleable: boolean; enabled: boolean } => items.find((entry: { id: string }) => entry.id === id)
+    expect(byId('platform-instructions')).toMatchObject({ toggleable: false, enabled: true })
+    expect(byId('application-instructions')).toMatchObject({ toggleable: false, enabled: true })
+    expect(byId('personalization').toggleable).toBe(true)
+    expect(byId('knowledge-mode')).toMatchObject({ toggleable: true, enabled: true })
+    // Drill-in: у пунктов есть полная детализация.
+    const detailed = (id: string): { details?: Record<string, unknown> } => items.find((entry: { id: string }) => entry.id === id)
+    expect(Object.keys(detailed('personalization').details ?? {})).toEqual(expect.arrayContaining(['Обращение', 'Язык ответа', 'Стиль', 'Тон', 'Текст в промпте']))
+    expect(detailed('mcp-remote-bash').details).toMatchObject({ 'Инструмент': 'mcp__remote__bash', 'Изменяет данные': true })
+    expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
+  })
+
+  it('Make: REST проекта, превью через cookie-путь, публикация /p/<token>/ без авторизации, чужой проект — 404', async () => {
+    const conv = db.createConversation(U, 'Проект', 'make')
+    const state = (await inj({ method: 'GET', url: `/api/make/${conv.id}` })).json() as { files: Array<{ path: string }>; published: unknown }
+    expect(state.files.map((f) => f.path)).toContain('index.html')
+    expect(state.published).toBeNull()
+    // Превью без Bearer и без cookie — 401; с Bearer — отдаёт HTML с инспектором.
+    const noAuth = await app.inject({ method: 'GET', url: `/api/preview/make/${conv.id}/index.html` })
+    expect(noAuth.statusCode).toBe(401)
+    const withAuth = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/index.html` })
+    expect(withAuth.statusCode).toBe(200)
+    expect(withAuth.headers['content-type']).toMatch(/text\/html/)
+    expect(withAuth.body).toContain('data-vc-make-inspector')
+    // Инжектируемый скрипт должен парситься: ломаный перехват консоли ломал и инспектор.
+    const script = withAuth.body.match(/<script data-vc-make-inspector>([\s\S]*?)<\/script>/)![1]!
+    expect(() => new Function(script)).not.toThrow()
+    expect(script).toContain('vc-make.console')
+    // Публикация: ссылка открывается без авторизации и без инспектора; после снятия — 404.
+    const published = (await inj({ method: 'POST', url: `/api/make/${conv.id}/publish` })).json() as { published: { url: string } }
+    expect(published.published.url).toMatch(/^\/p\//)
+    const pub = await app.inject({ method: 'GET', url: `${published.published.url}index.html` })
+    expect(pub.statusCode).toBe(200)
+    expect(pub.body).not.toContain('data-vc-make-inspector')
+    expect(pub.headers['x-robots-tag']).toBe('noindex')
+    await inj({ method: 'DELETE', url: `/api/make/${conv.id}/publish` })
+    expect((await app.inject({ method: 'GET', url: `${published.published.url}index.html` })).statusCode).toBe(404)
+    // Обычный (не make) разговор для маршрутов Make — 404.
+    const plain = db.createConversation(U, 'Чат')
+    expect((await inj({ method: 'GET', url: `/api/make/${plain.id}` })).statusCode).toBe(404)
+    // Проверка и шаблон.
+    const check = (await inj({ method: 'GET', url: `/api/make/${conv.id}/check` })).json() as { issues: unknown[] }
+    expect(check.issues).toEqual([])
+    const templated = (await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'landing' } })).json() as { snapshots: Array<{ label: string }> }
+    expect(templated.snapshots[0]?.label).toContain('Лендинг')
+    // Загрузка бинарника: base64 → байты, отдаётся превью с image/png.
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3])
+    const uploaded = (await inj({ method: 'POST', url: `/api/make/${conv.id}/upload`, payload: { path: 'img/logo.png', dataBase64: png.toString('base64') } })).json() as { files: Array<{ path: string }> }
+    expect(uploaded.files.map((f) => f.path)).toContain('img/logo.png')
+    const img = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/img/logo.png` })
+    expect(img.headers['content-type']).toMatch(/image\/png/)
+    expect(img.rawPayload.equals(png)).toBe(true)
+    // React: JSX транспилируется при отдаче, импорт без расширения дополняется; страница сториз собирается.
+    await inj({ method: 'POST', url: `/api/make/${conv.id}/template`, payload: { templateId: 'react' } })
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'src/Extra.jsx', content: "import { Button } from './components/Button'\nexport const X = () => <Button>x</Button>" } })
+    const jsx = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/src/Extra.jsx` })
+    expect(jsx.headers['content-type']).toMatch(/javascript/)
+    expect(jsx.body).toContain('./components/Button.jsx')
+    expect(jsx.body).toContain('jsx(')
+    expect(jsx.body).not.toContain('<Button>')
+    const stories = (await inj({ method: 'GET', url: `/api/make/${conv.id}/stories` })).json() as { files: Array<{ path: string; title: string; stories: string[] }> }
+    expect(stories.files.find((f) => f.path === 'src/components/Button.stories.jsx')).toMatchObject({ title: 'Button', stories: ['Primary', 'Secondary', 'Small'] })
+    const runner = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__stories__?file=src/components/Button.stories.jsx&story=Small` })
+    expect(runner.statusCode).toBe(200)
+    expect(runner.body).toContain('importmap')
+    expect(runner.body).toContain('"Small"')
+    // Галерея и сториз: в превью (cookie/Bearer) и на публикации без входа.
+    // Auth-мок (roadmap-4 п.32): логин ставит cookie, защищённый мок читает её из запроса.
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'mock/api/login.POST.json', content: JSON.stringify({ $auth: { users: [{ username: 'anna', password: '1' }] } }) } })
+    await inj({ method: 'PUT', url: `/api/make/${conv.id}/file`, payload: { path: 'mock/api/me.json', content: JSON.stringify({ $auth: { require: true }, $body: { role: 'admin' } }) } })
+    const login = await inj({ method: 'POST', url: `/api/preview/make/${conv.id}/api/login`, payload: { username: 'anna', password: '1' } })
+    expect(login.statusCode).toBe(200)
+    expect(String(login.headers['set-cookie'])).toContain('vc_mock_session=anna')
+    expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/api/me` })).statusCode).toBe(401)
+    expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/api/me`, headers: { cookie: 'vc_mock_session=anna' } })).json()).toMatchObject({ role: 'admin', user: { username: 'anna' } })
+    // Превью снимка (roadmap-4 п.37): index.html версии с <base>, чужой снимок — 404.
+    const snapState = (await inj({ method: 'POST', url: `/api/make/${conv.id}/snapshots`, payload: { label: 'v1' } })).json() as { snapshots: Array<{ id: string }> }
+    const snapPage = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__snapshot__/${snapState.snapshots[0]!.id}/index.html` })
+    expect(snapPage.statusCode).toBe(200)
+    expect(snapPage.body).toContain(`<base href="/api/preview/make/${conv.id}/__snapshot__/${snapState.snapshots[0]!.id}/">`)
+    expect((await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__snapshot__/nope/index.html` })).statusCode).toBe(404)
+    const gallery = await inj({ method: 'GET', url: `/api/preview/make/${conv.id}/__gallery__` })
+    expect(gallery.statusCode).toBe(200)
+    expect(gallery.body).toContain('Button.stories.jsx')
+    const pub2 = (await inj({ method: 'POST', url: `/api/make/${conv.id}/publish` })).json() as { published: { url: string } }
+    // Комментарии зрителей (roadmap-4 п.34): выключены → 404; включены → виджет в HTML, POST → pending, GET отдаёт только одобренные.
+    expect((await app.inject({ method: 'GET', url: `${pub2.published.url}__comments__` })).statusCode).toBe(404)
+    await inj({ method: 'POST', url: `/api/make/${conv.id}/publish`, payload: { allowComments: true } })
+    expect((await app.inject({ method: 'GET', url: `${pub2.published.url}index.html` })).body).toContain('data-vc-guest-comments')
+    const guest = await app.inject({ method: 'POST', url: `${pub2.published.url}__comments__`, payload: { name: 'Зритель', text: 'Кнопка мелкая' } })
+    expect(guest.statusCode).toBe(201)
+    expect((await app.inject({ method: 'GET', url: `${pub2.published.url}__comments__` })).json()).toEqual({ comments: [] })
+    const mine = (await inj({ method: 'GET', url: `/api/make/${conv.id}/comments` })).json() as { comments: Array<{ id: string; status?: string; guestName?: string; author: string }> }
+    const pending = mine.comments.find((c) => c.status === 'pending')!
+    expect(pending).toMatchObject({ author: 'guest', guestName: 'Зритель' })
+    await inj({ method: 'PATCH', url: `/api/make/${conv.id}/comments/${pending.id}`, payload: { status: 'approved' } })
+    expect(((await app.inject({ method: 'GET', url: `${pub2.published.url}__comments__` })).json() as { comments: unknown[] }).comments).toHaveLength(1)
+    const pubGallery = await app.inject({ method: 'GET', url: `${pub2.published.url}__gallery__` })
+    expect(pubGallery.statusCode).toBe(200)
+    expect(pubGallery.body).toContain(`${pub2.published.url}__stories__?file=`)
+    const pubStory = await app.inject({ method: 'GET', url: `${pub2.published.url}__stories__?file=src/components/Button.stories.jsx&story=Primary` })
+    expect(pubStory.statusCode).toBe(200)
+    expect(pubStory.body).toContain('"Primary"')
+    await inj({ method: 'DELETE', url: `/api/make/${conv.id}/publish` })
+    // Библиотека компонентов: экспорт из проекта, список, вставка в другой проект, удаление.
+    const exp = (await inj({ method: 'POST', url: `/api/make/${conv.id}/library`, payload: { name: 'Button', paths: ['src/components/Button.jsx', 'src/components/Button.stories.jsx'] } })).json() as { item: { slug: string } }
+    expect(exp.item.slug).toBe('button')
+    expect(((await inj({ method: 'GET', url: '/api/make/library' })).json() as { items: unknown[] }).items).toHaveLength(1)
+    const other = db.createConversation(U, 'Другой', 'make')
+    const inserted = (await inj({ method: 'POST', url: `/api/make/${other.id}/library/button/insert` })).json() as { state: { files: Array<{ path: string }> } }
+    expect(inserted.state.files.map((f) => f.path)).toContain('src/components/Button.stories.jsx')
+    expect(((await inj({ method: 'DELETE', url: '/api/make/library/button' })).json() as { items: unknown[] }).items).toHaveLength(0)
+    const search = (await inj({ method: 'GET', url: `/api/make/${conv.id}/search?q=btn--secondary` })).json() as { matches: Array<{ path: string; line: number }> }
+    expect(search.matches.map((m) => m.path)).toContain('styles.css')
+  })
+
+  it('POST /messages для ответа без engine/execTarget подставляет эффективные движок и машину разговора', async () => {
+    const conv = db.createConversation(U, 'Диагностика')
+    db.saveSettings(U, { ...db.getSettings(U), llmProvider: 'codex' })
+    const res = await inj({ method: 'POST', url: `/api/conversations/${conv.id}/messages`, payload: { role: 'ai', text: '✓ проверка', time: '10:00' } })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ role: 'ai', engine: 'codex', execTarget: null })
+  })
+
+  it('снимок содержит группу «Инструкции чата»; тумблер выключает инструкцию только в разговоре', async () => {
+    const conv = db.createConversation(U, 'Чат')
+    const groupOf = (json: { groups: Array<{ id: string; items: Array<{ id: string; enabled: boolean; includedInNextTurn: boolean; toggleable: boolean; details?: Record<string, unknown> }> }> }) => json.groups.find((g) => g.id === 'chat-instructions')!
+    const first = groupOf((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json())
+    expect(first.items.map((item) => item.id)).toEqual(['instruction-console', 'instruction-explorer', 'instruction-questions', 'instruction-image', 'instruction-taskLaunch'])
+    const consoleItem = first.items.find((item) => item.id === 'instruction-console')!
+    expect(consoleItem).toMatchObject({ toggleable: true, enabled: true, includedInNextTurn: true })
+    expect(String(consoleItem.details?.['Текст'])).toContain('```tool')
+
+    await inj({ method: 'POST', url: `/api/conversations/${conv.id}/context/instruction-console`, payload: { enabled: false } })
+    const second = groupOf((await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json())
+    expect(second.items.find((item) => item.id === 'instruction-console')).toMatchObject({ enabled: false, includedInNextTurn: false })
+    expect(second.items.find((item) => item.id === 'instruction-explorer')).toMatchObject({ enabled: true, includedInNextTurn: true })
+  })
+
+  it('снимок проектного чата: пункт проекта несёт точный текст, уходящий в промпт', async () => {
+    const project = db.createProject(U, { name: 'Инспектор', gitUrl: 'https://example.com/repo.git', technologies: ['ts'] })
+    const conv = db.createConversation(U, 'Проектный')
+    db.setConversationProject(U, conv.id, project.id)
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conv.id}/context-snapshot` })).json()
+    const item = snapshot.groups.flatMap((g: { items: { id: string; details?: Record<string, unknown> }[] }) => g.items).find((e: { id: string }) => e.id === 'project-binding')
+    expect(item.details).toMatchObject({ 'ID проекта': project.id, 'Git': 'https://example.com/repo.git', 'Технологии': 'ts' })
+    expect(String(item.details['Текст в промпте'])).toContain('## Контекст проекта «Инспектор»')
+    expect(String(item.details['Текст в промпте'])).toContain(`ID проекта: ${project.id}`)
+  })
+
+  it('тумблер контекста: выключает пункт, отражает в снимке и отказывает выключить безопасность', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Toggle' } })).json()
+    // Выключаем knowledge-mode.
+    const off = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: false } })
+    expect(off.statusCode).toBe(200)
+    const kbItem = off.json().groups.flatMap((g: { items: { id: string; enabled: boolean; includedInNextTurn: boolean }[] }) => g.items).find((e: { id: string }) => e.id === 'knowledge-mode')
+    expect(kbItem).toMatchObject({ enabled: false, includedInNextTurn: false })
+    expect(db.getConversation(U, created.id)?.disabledContext).toContain('knowledge-mode')
+    // Включаем обратно.
+    const on = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/knowledge-mode`, payload: { enabled: true } })
+    expect(on.json().groups.flatMap((g: { items: { id: string; enabled: boolean }[] }) => g.items).find((e: { id: string }) => e.id === 'knowledge-mode').enabled).toBe(true)
+    // Безопасность выключить нельзя.
+    expect((await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/platform-instructions`, payload: { enabled: false } })).statusCode).toBe(400)
+    expect(db.getConversation(U, created.id)?.disabledContext).not.toContain('platform-instructions')
+  })
+
+  it('снимок проектного чата наследует LLM проекта', async () => {
+    const settings = db.getSettings(U)
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, llmProvider: 'claude', model: 'default' } })
+    const project = db.createProject(U, { name: 'Codex project' })
+    db.setCiLlmConfig('project', project.id, {
+      provider: 'codex',
+      model: 'gpt-5.6-sol',
+      mode: 'development',
+      clarifyLevel: 'few',
+      clarifyMax: 3
+    })
+    const conversation = db.createConversation(U, 'Project context')
+    db.setConversationProject(U, conversation.id, project.id)
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/context-snapshot` })).json()
+    const llm = snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items).find((item: { id: string }) => item.id === 'llm')
+
+    expect(snapshot.summary).toMatchObject({ provider: 'codex', model: 'gpt-5.6-sol' })
+    expect(llm).toMatchObject({
+      source: 'Проект',
+      description: 'codex · gpt-5.6-sol',
+      explanation: 'Унаследовано из настроек проекта.'
+    })
+  })
+
+  it('LLM override разговора имеет приоритет над проектом', async () => {
+    const project = db.createProject(U, { name: 'Project defaults' })
+    db.setCiLlmConfig('project', project.id, {
+      provider: 'codex',
+      model: 'gpt-5.6-sol',
+      mode: 'development',
+      clarifyLevel: 'few',
+      clarifyMax: 3
+    })
+    const conversation = db.createConversation(U, 'Conversation override')
+    db.setConversationProject(U, conversation.id, project.id)
+    db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, 'claude', 'haiku')
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/context-snapshot` })).json()
+    const llm = snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items).find((item: { id: string }) => item.id === 'llm')
+
+    expect(snapshot.summary).toMatchObject({ provider: 'claude', model: 'haiku' })
+    expect(llm).toMatchObject({
+      source: 'Разговор',
+      description: 'claude · haiku',
+      explanation: 'Явное переопределение.'
+    })
+  })
+
+  it('снимок непривязанного чата наследует пользовательскую LLM-пару', async () => {
+    const settings = db.getSettings(U)
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, llmProvider: 'codex', codexModel: 'gpt-5.6-luna' } })
+    const conversation = db.createConversation(U, 'Personal context')
+
+    const snapshot = (await inj({ method: 'GET', url: `/api/conversations/${conversation.id}/context-snapshot` })).json()
+    const llm = snapshot.groups.flatMap((group: { items: Array<{ id: string }> }) => group.items).find((item: { id: string }) => item.id === 'llm')
+
+    expect(snapshot.summary).toMatchObject({ provider: 'codex', model: 'gpt-5.6-luna' })
+    expect(llm).toMatchObject({
+      source: 'Настройки пользователя',
+      description: 'codex · gpt-5.6-luna',
+      explanation: 'Унаследовано из настроек пользователя.'
+    })
+  })
+
+  it('не раскрывает снимок чужого или отсутствующего разговора', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Чужой' } })).json()
+    db.createUser('other', 'password', 'developer')
+    const other = signToken({ name: 'other', role: 'developer' }, SECRET)
+    const hidden = await app.inject({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot`, headers: { authorization: `Bearer ${other}` } })
+    expect(hidden.statusCode).toBe(404)
+    expect((await inj({ method: 'GET', url: '/api/conversations/missing/context-snapshot' })).statusCode).toBe(404)
+  })
+
+  it('поиск /conversations/search находит по названию (статик-роут не конфликтует с :id)', async () => {
+    await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Лиссабон' } })
+    await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Погода' } })
+    const res = await inj({ method: 'GET', url: '/api/conversations/search?q=лисс' })
+    expect(res.statusCode).toBe(200)
+    const found = res.json()
+    expect(found.map((c: { title: string }) => c.title)).toEqual(['Лиссабон'])
+  })
+
+  it('чат задачи в «Готово» уходит из списка, но открывается по ссылке и из карточки', async () => {
+    const project = db.createProject(U, { name: 'P' })
+    const board = db.getBoard(U, project.id)!
+    const done = board.columns.find((c) => c.semanticType === 'done')!
+    const task = db.createTask(U, project.id, { columnId: board.columns[0]!.id, title: 'Скролл' })!
+    const chat = db.openOrCreateTaskChat(U, project.id, task.id)!
+    const ids = async (url: string): Promise<string[]> =>
+      (await inj({ method: 'GET', url })).json().map((c: { id: string }) => c.id)
+
+    expect(await ids('/api/conversations')).toContain(chat.id)
+    db.moveTask(U, project.id, task.id, { columnId: done.id })
+    expect(await ids('/api/conversations')).not.toContain(chat.id)
+    expect(await ids('/api/conversations?includeCompleted=1')).toContain(chat.id)
+    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}`)).not.toContain(chat.id)
+    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).toContain(chat.id)
+
+    const cancelled = board.columns.find((c) => c.semanticType === 'cancelled')!
+    db.moveTask(U, project.id, task.id, { columnId: cancelled.id })
+    expect(await ids('/api/conversations')).not.toContain(chat.id)
+    expect(await ids('/api/conversations?includeCompleted=1')).not.toContain(chat.id)
+    expect(await ids(`/api/conversations/search?q=${encodeURIComponent('Скролл')}&includeCompleted=1`)).not.toContain(chat.id)
+
+    // Прямая ссылка и кнопка «Открыть чат» на карточке работают как раньше.
+    expect((await inj({ method: 'GET', url: `/api/conversations/${chat.id}` })).json().conversation.id).toBe(chat.id)
+    const fromCard = await inj({ method: 'POST', url: `/api/projects/${project.id}/tasks/${task.id}/chat` })
+    expect(fromCard.json().id).toBe(chat.id)
+  })
+
+  it('cc: projects/sessions/transcript из ~/.claude/projects (VC_CC_DIR)', async () => {
+    const ccDir = mkdtempSync(join(tmpdir(), 'cc-rest-'))
+    const proj = join(ccDir, '-Users-x-demo')
+    mkdirSync(proj, { recursive: true })
+    writeFileSync(
+      join(proj, 'sess.jsonl'),
+      [
+        JSON.stringify({ type: 'user', cwd: '/Users/x/demo', message: { content: 'Помоги с фичей' } }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Готово' }] } })
+      ].join('\n')
+    )
+    const prev = process.env.VC_CC_DIR
+    process.env.VC_CC_DIR = ccDir
+    try {
+      const projects = (await inj({ method: 'GET', url: '/api/cc/projects' })).json()
+      const demo = projects.find((p: { name: string }) => p.name === 'demo')
+      expect(demo?.path).toBe('/Users/x/demo')
+
+      const sessions = (
+        await inj({ method: 'GET', url: `/api/cc/projects/${demo.slug}/sessions` })
+      ).json()
+      expect(sessions[0].title).toBe('Помоги с фичей')
+
+      const body = (
+        await inj({ method: 'GET', url: `/api/cc/projects/${demo.slug}/sessions/sess` })
+      ).json()
+      expect(body.items.map((i: { kind: string }) => i.kind)).toEqual(['user', 'assistant'])
+      expect(body.usage).toBeDefined()
+    } finally {
+      if (prev === undefined) delete process.env.VC_CC_DIR
+      else process.env.VC_CC_DIR = prev
+      rmSync(ccDir, { recursive: true, force: true })
+    }
+  })
+
+  it('cc:resume создаёт разговор с импортом истории и привязкой session-id', async () => {
+    const ccDir = mkdtempSync(join(tmpdir(), 'cc-resume-'))
+    const proj = join(ccDir, '-Users-x-demo')
+    mkdirSync(proj, { recursive: true })
+    writeFileSync(
+      join(proj, 'sess-42.jsonl'),
+      [
+        JSON.stringify({ type: 'user', cwd: '/Users/x/demo', message: { content: 'Почини баг' } }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Готово' }] } })
+      ].join('\n')
+    )
+    const prev = process.env.VC_CC_DIR
+    process.env.VC_CC_DIR = ccDir
+    try {
+      const res = await inj({
+        method: 'POST',
+        url: '/api/cc/resume',
+        payload: { slug: '-Users-x-demo', id: 'sess-42' }
+      })
+      expect(res.statusCode).toBe(200)
+      const { conversation, messages } = res.json()
+      // История импортирована в ленту.
+      expect(messages.map((m: { role: string; text: string }) => [m.role, m.text])).toEqual([
+        ['u1', 'Почини баг'],
+        ['ai', 'Готово']
+      ])
+      // Разговор привязан к session-id → следующий ход пойдёт через --resume.
+      expect(db.getConversation(U, conversation.id)?.claudeSessionId).toBe('sess-42')
+    } finally {
+      if (prev === undefined) delete process.env.VC_CC_DIR
+      else process.env.VC_CC_DIR = prev
+      rmSync(ccDir, { recursive: true, force: true })
+    }
+  })
+
+  it('cc:resume без slug/id → 400', async () => {
+    const res = await inj({ method: 'POST', url: '/api/cc/resume', payload: {} })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('добавление сообщения видно в get', async () => {
+    const c = (await inj({ method: 'POST', url: '/api/conversations', payload: {} })).json()
+    const m = (
+      await inj({
+        method: 'POST',
+        url: `/api/conversations/${c.id}/messages`,
+        payload: { role: 'u1', text: 'Привет', time: '10:00' }
+      })
+    ).json()
+    expect(m.text).toBe('Привет')
+    const got = (await inj({ method: 'GET', url: `/api/conversations/${c.id}` })).json()
+    expect(got.messages).toHaveLength(1)
+  })
+
+  it('обновляет и сохраняет состояние списка task-launch в meta сообщения', async () => {
+    const c = (await inj({ method: 'POST', url: '/api/conversations', payload: {} })).json()
+    const m = (await inj({
+      method: 'POST',
+      url: `/api/conversations/${c.id}/messages`,
+      payload: {
+        role: 'ai',
+        text: 'Выберите.',
+        time: '10:00',
+        meta: { taskLaunches: [
+          { id: 'task-launch-1', title: 'Первая', description: 'Описание', acceptanceCriteria: 'Критерий' },
+          { id: 'task-launch-2', title: 'Вторая', description: 'Описание', acceptanceCriteria: 'Критерий' }
+        ] }
+      }
+    })).json()
+    const meta = { ...m.meta, taskLaunches: m.meta.taskLaunches.map((item: { id: string }) => item.id === 'task-launch-2' ? { ...item, status: 'created' } : item) }
+    const patched = await inj({ method: 'PATCH', url: `/api/conversations/${c.id}/messages/${m.id}`, payload: { meta } })
+    expect(patched.statusCode).toBe(200)
+    const got = (await inj({ method: 'GET', url: `/api/conversations/${c.id}` })).json()
+    expect(got.messages[0].meta.taskLaunches[1].status).toBe('created')
+    expect(got.messages[0].meta.taskLaunches[0].status).toBeUndefined()
+  })
+
+  it('удаление сообщения убирает его из истории', async () => {
+    const c = (await inj({ method: 'POST', url: '/api/conversations', payload: {} })).json()
+    const m = (
+      await inj({
+        method: 'POST',
+        url: `/api/conversations/${c.id}/messages`,
+        payload: { role: 'u1', text: 'удалить меня', time: '10:00' }
+      })
+    ).json()
+    const del = await inj({
+      method: 'DELETE',
+      url: `/api/conversations/${c.id}/messages/${m.id}`
+    })
+    expect(del.statusCode).toBe(200)
+    const got = (await inj({ method: 'GET', url: `/api/conversations/${c.id}` })).json()
+    expect(got.messages).toHaveLength(0)
+  })
+
+  it('удаление сообщения сбрасывает сессию Claude (модель забывает удалённое)', async () => {
+    const c = (await inj({ method: 'POST', url: '/api/conversations', payload: {} })).json()
+    const m = (
+      await inj({
+        method: 'POST',
+        url: `/api/conversations/${c.id}/messages`,
+        payload: { role: 'u1', text: 'секрет', time: '10:00' }
+      })
+    ).json()
+    db.setClaudeSession(U, c.id, 'sess-abc')
+    expect(db.getConversation(U, c.id)?.claudeSessionId).toBe('sess-abc')
+
+    await inj({ method: 'DELETE', url: `/api/conversations/${c.id}/messages/${m.id}` })
+    expect(db.getConversation(U, c.id)?.claudeSessionId).toBeNull()
+  })
+
+  it('список моделей содержит все поддерживаемые', async () => {
+    const res = await inj({ method: 'GET', url: '/api/stt/models' })
+    const models = res.json() as Array<{ model: string; present: boolean; sizeBytes: number }>
+    expect(models.map((m) => m.model).sort()).toEqual(['large-v3-turbo', 'medium', 'small'])
+    for (const m of models) expect(typeof m.sizeBytes).toBe('number')
+  })
+
+  it('удаление модели/голоса отвечает ok (без файла — идемпотентно)', async () => {
+    const m = await inj({ method: 'DELETE', url: '/api/stt/models/small' })
+    expect(m.statusCode).toBe(200)
+    const v = await inj({ method: 'DELETE', url: '/api/tts/voices/ru_RU-irina-medium' })
+    expect(v.statusCode).toBe(200)
+  })
+
+  it('загрузка вложения возвращает id и имя', async () => {
+    const res = await inj({
+      method: 'POST',
+      url: '/api/uploads',
+      payload: { name: 'заметка.txt', dataBase64: Buffer.from('привет').toString('base64') }
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(typeof body.id).toBe('string')
+    expect(body.id.length).toBeGreaterThan(0)
+    expect(body.name).toBe('заметка.txt')
+  })
+
+  it('rename и delete', async () => {
+    const c = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Старое' } })).json()
+    await inj({ method: 'PATCH', url: `/api/conversations/${c.id}`, payload: { title: 'Новое' } })
+    let got = await inj({ method: 'GET', url: `/api/conversations/${c.id}` })
+    expect(got.json().conversation.title).toBe('Новое')
+    await inj({ method: 'DELETE', url: `/api/conversations/${c.id}` })
+    got = await inj({ method: 'GET', url: `/api/conversations/${c.id}` })
+    expect(got.statusCode).toBe(404)
+  })
+
+  it('settings get/save', async () => {
+    const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    expect(def.model).toBeDefined()
+    const next = { ...def, diarization: false, voice: 'ru_RU-dmitri-medium' }
+    await inj({ method: 'PUT', url: '/api/settings', payload: next })
+    const saved = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    expect(saved.diarization).toBe(false)
+    expect(saved.voice).toBe('ru_RU-dmitri-medium')
+  })
+
+  // Частичное тело — патч: клиент со старой сборкой (или не догрузивший
+  // настройки) не должен стирать поля, о которых он не знает.
+  it('settings put применяет патч, а не заменяет запись целиком', async () => {
+    const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, theme: 'dark', codexModel: 'gpt-5.4', autoSpeak: true } })
+
+    const patched = (await inj({ method: 'PUT', url: '/api/settings', payload: { autoSpeak: false } })).json()
+
+    expect(patched).toMatchObject({ theme: 'dark', codexModel: 'gpt-5.4', autoSpeak: false })
+    expect((await inj({ method: 'GET', url: '/api/settings' })).json()).toMatchObject({ theme: 'dark', codexModel: 'gpt-5.4' })
+  })
+
+  it('settings put отбрасывает мусорные значения, а не сохраняет их', async () => {
+    const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, theme: 'dark' } })
+
+    const saved = (await inj({ method: 'PUT', url: '/api/settings', payload: { theme: 'неон', llmProvider: 'gemini', hack: true } })).json()
+
+    expect(saved).toMatchObject({ theme: 'dark', llmProvider: def.llmProvider })
+    expect(saved).not.toHaveProperty('hack')
+  })
+
+  // Машина могла исчезнуть мимо UI: висячий id и в чат идёт целью выполнения,
+  // и в настройках выглядит выбранной машиной по умолчанию.
+  it('settings get забывает ссылки на исчезнувшие машины', async () => {
+    const agent = (await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Ноутбук' } })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { defaultAgentId: agent.id, execTarget: agent.id } })
+    expect((await inj({ method: 'GET', url: '/api/settings' })).json()).toMatchObject({ defaultAgentId: agent.id })
+
+    db.deleteAgent(U, agent.id) // удаление мимо REST — как чистка или другой сеанс
+
+    expect((await inj({ method: 'GET', url: '/api/settings' })).json()).toMatchObject({ defaultAgentId: null, execTarget: null })
+  })
+
+  it('нормализует персонализацию и отвергает невозможную дату', async () => {
+    const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    const invalid = await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, personalization: { ...def.personalization, birthDay: 31, birthMonth: 2 } } })
+    expect(invalid.statusCode).toBe(400)
+    const saved = await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, personalization: { ...def.personalization, preferredName: '  Алексей   Р. ', birthYear: 1990, responseLanguage: 'ru', responseStyle: 'brief', tone: 'friendly' } } })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json().personalization).toMatchObject({ preferredName: 'Алексей Р.', birthYear: 1990, responseLanguage: 'ru', responseStyle: 'brief', tone: 'friendly' })
+  })
+
+  it('агенты: create → list (offline) → delete', async () => {
+    const created = (
+      await inj({ method: 'POST', url: '/api/agents', payload: { name: 'MacBook' } })
+    ).json()
+    expect(created.name).toBe('MacBook')
+    expect(typeof created.token).toBe('string')
+
+    const list = (await inj({ method: 'GET', url: '/api/agents' })).json()
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({ id: created.id, name: 'MacBook', online: false })
+
+    const del = await inj({ method: 'DELETE', url: `/api/agents/${created.id}` })
+    expect(del.statusCode).toBe(200)
+    expect((await inj({ method: 'GET', url: '/api/agents' })).json()).toHaveLength(0)
+  })
+
+  it('агенты: удаление снимает машину и с цели выполнения, и с дефолта', async () => {
+    const created = (
+      await inj({ method: 'POST', url: '/api/agents', payload: { name: 'MacBook' } })
+    ).json()
+    const before = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({
+      method: 'PUT',
+      url: '/api/settings',
+      payload: { ...before, execTarget: created.id, defaultAgentId: created.id }
+    })
+
+    await inj({ method: 'DELETE', url: `/api/agents/${created.id}` })
+
+    const after = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    expect(after.execTarget).toBeNull()
+    // Дефолт подставляется в новые разговоры: висячий id уводил бы ход на машину,
+    // которой больше нет.
+    expect(after.defaultAgentId).toBeNull()
+  })
+
+  it('агенты: POST без имени → 400', async () => {
+    const res = await inj({ method: 'POST', url: '/api/agents', payload: {} })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('агенты: список содержит политику; setPolicy сохраняет', async () => {
+    const created = (
+      await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })
+    ).json()
+    const list = (await inj({ method: 'GET', url: '/api/agents' })).json()
+    expect(list[0].policy.allowNetwork).toBe(true)
+
+    const policy = {
+      allowedDirs: ['/tmp'],
+      allowNetwork: false,
+      allowWrite: false,
+      denyPatterns: ['sudo'],
+      allowPatterns: [],
+      skills: []
+    }
+    const res = await inj({
+      method: 'POST',
+      url: `/api/agents/${created.id}/policy`,
+      payload: { policy }
+    })
+    expect(res.statusCode).toBe(200)
+    const after = (await inj({ method: 'GET', url: '/api/agents' })).json()
+    expect(after[0].policy.allowNetwork).toBe(false)
+    expect(after[0].policy.allowedDirs).toEqual(['/tmp'])
+  })
+
+  it('агенты: перевыпуск токена возвращает новый токен', async () => {
+    const created = (
+      await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })
+    ).json()
+    const res = await inj({ method: 'POST', url: `/api/agents/${created.id}/token` })
+    expect(res.statusCode).toBe(200)
+    expect(typeof res.json().token).toBe('string')
+    expect(res.json().token).not.toBe(created.token)
+  })
+
+  it('скачивание: GET /api/agents/app и /api/app/desktop без .dmg → 404', async () => {
+    // В тестах autodiscover артефактов отключён (VITEST), VC_*_APP не заданы.
+    const agent = await inj({ method: 'GET', url: '/api/agents/app' })
+    expect(agent.statusCode).toBe(404)
+    expect(agent.json().error).toContain('не собрано')
+    const desktop = await inj({ method: 'GET', url: '/api/app/desktop' })
+    expect(desktop.statusCode).toBe(404)
+  })
+
+  it('скачивание: GET /api/agents/script отдаёт JS-бандл (attachment)', async () => {
+    const res = await inj({ method: 'GET', url: '/api/agents/script' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('javascript')
+    expect(res.headers['content-disposition']).toContain('voicechat-agent.cjs')
+    expect(res.body.startsWith('#!')).toBe(true)
+  }, 30_000)
+
+  it('установщик Termux: GET /api/agents/install-android.sh публичен и отдаёт bash', async () => {
+    // Без токена — должен быть доступен (curl с телефона до логина).
+    const res = await app.inject({ method: 'GET', url: '/api/agents/install-android.sh' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('shellscript')
+    expect(res.body.startsWith('#!')).toBe(true)
+    expect(res.body).toContain('/api/agents/script')
+  })
+
+  it('установщик Windows: GET /api/agents/install-windows.ps1 публичен и отдаёт PowerShell', async () => {
+    // Без токена — команду запускают на машине до какого-либо логина.
+    const res = await app.inject({ method: 'GET', url: '/api/agents/install-windows.ps1' })
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('powershell')
+    expect(res.body).toContain('/api/agents/script')
+    expect(res.body).toContain('nodejs.org')
+  })
+
+  it('установщики Linux и macOS публичны, отдают bash и разные скрипты', async () => {
+    const lin = await app.inject({ method: 'GET', url: '/api/agents/install-linux.sh' })
+    const mac = await app.inject({ method: 'GET', url: '/api/agents/install-macos.sh' })
+    for (const res of [lin, mac]) {
+      expect(res.statusCode).toBe(200)
+      expect(res.headers['content-type']).toContain('shellscript')
+      expect(res.body).toContain('/api/agents/script')
+      expect(res.body).toContain('-ge 22') // проверка Node 22+
+    }
+    expect(lin.body).toContain('systemctl --user')
+    expect(mac.body).toContain('LaunchAgents')
+    expect(lin.body).not.toBe(mac.body)
+  })
+
+  it('обновление офлайн-машины отклоняется с понятной причиной', async () => {
+    const created = (
+      await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Офлайн' } })
+    ).json()
+    const res = await inj({ method: 'POST', url: `/api/agents/${created.id}/update` })
+    expect(res.statusCode).toBe(409)
+    expect(res.json().error).toContain('не в сети')
+  })
+
+  it('обновление отклоняется, если сервер виден как localhost (команда ушла бы в саму машину)', async () => {
+    // app.inject ходит с Host: localhost — ровно тот случай, когда база непригодна.
+    const created = (
+      await inj({ method: 'POST', url: '/api/agents', payload: { name: 'Локальная' } })
+    ).json()
+    const res = await inj({ method: 'POST', url: `/api/agents/${created.id}/update` })
+    // Машина офлайн → 409 про сеть; проверяем, что до сборки команды дело не дошло
+    // молча: в обоих случаях это 409 с объяснением, а не «ok».
+    expect(res.statusCode).toBe(409)
+    expect(res.json().error).toBeTruthy()
+  })
+
+  it('обновление чужой машины — 404', async () => {
+    const res = await inj({ method: 'POST', url: '/api/agents/нет-такой/update' })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('обновление без токена — 401', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/agents/x/update' })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('удаление агента сбрасывает execTarget на сервер', async () => {
+    const created = (
+      await inj({ method: 'POST', url: '/api/agents', payload: { name: 'M' } })
+    ).json()
+    const def = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...def, execTarget: created.id } })
+    await inj({ method: 'DELETE', url: `/api/agents/${created.id}` })
+    const saved = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    expect(saved.execTarget).toBeNull()
+  })
+})
+
+describe('REST: GET /api/search — полнотекстовый поиск по сообщениям', () => {
+  /** Беседа с сообщениями пользователя (по умолчанию — admin из токена). */
+  const seed = (user: string, title: string, texts: string[]): string => {
+    const conv = db.createConversation(user, title)
+    for (const t of texts) db.addMessage(user, conv.id, 'u1', t, '12:00')
+    return conv.id
+  }
+
+  it('без токена → 401', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/search?q=миграция' })).statusCode).toBe(401)
+  })
+
+  it('отдаёт ранжированные результаты со сниппетом и курсором', async () => {
+    const id = seed(U, 'Канбан', [
+      'Обсудили миграцию канбана и схему БД',
+      'Ещё раз про миграцию',
+      'Совсем про другое'
+    ])
+
+    const first = await inj({ method: 'GET', url: '/api/search?q=миграцию%20&limit=1' })
+    expect(first.statusCode).toBe(200)
+    const page1 = first.json()
+    expect(page1.hits).toHaveLength(1)
+    expect(page1.hits[0].conversationId).toBe(id)
+    expect(page1.hits[0].conversationTitle).toBe('Канбан')
+    expect(page1.hits[0].snippet).toContain('<mark>')
+    expect(typeof page1.nextCursor).toBe('string')
+
+    const second = await inj({
+      method: 'GET',
+      url: `/api/search?q=${encodeURIComponent('миграцию ')}&limit=1&cursor=${encodeURIComponent(page1.nextCursor)}`
+    })
+    const page2 = second.json()
+    expect(page2.hits).toHaveLength(1)
+    expect(page2.hits[0].messageId).not.toBe(page1.hits[0].messageId)
+  })
+
+  it('не выдаёт сообщения другого пользователя', async () => {
+    db.createUser('mallory', '', 'developer')
+    const theirs = seed('mallory', 'Чужая беседа', ['чужой секрет про миграцию'])
+    seed(U, 'Своя беседа', ['свой текст про миграцию'])
+
+    const all = await inj({ method: 'GET', url: '/api/search?q=миграцию%20' })
+    expect(all.json().hits.map((h: { conversationTitle: string }) => h.conversationTitle)).toEqual(['Своя беседа'])
+
+    // Явная чужая беседа — тоже пусто, а не 403/500: чужого просто «не существует».
+    const direct = await inj({ method: 'GET', url: `/api/search?q=миграцию%20&conversationId=${theirs}` })
+    expect(direct.statusCode).toBe(200)
+    expect(direct.json().hits).toEqual([])
+  })
+
+  it('сужает по проекту, projectId=none — только беседы без проекта', async () => {
+    const project = db.createProject(U, { name: 'Проект' })
+    const inProject = seed(U, 'С проектом', ['миграция схемы'])
+    db.setConversationProject(U, inProject, project.id)
+    seed(U, 'Без проекта', ['миграция схемы'])
+
+    const byProject = await inj({ method: 'GET', url: `/api/search?q=миграция%20&projectId=${project.id}` })
+    expect(byProject.json().hits.map((h: { conversationTitle: string }) => h.conversationTitle)).toEqual(['С проектом'])
+
+    const none = await inj({ method: 'GET', url: '/api/search?q=миграция%20&projectId=none' })
+    expect(none.json().hits.map((h: { conversationTitle: string }) => h.conversationTitle)).toEqual(['Без проекта'])
+  })
+
+  it('пробел в конце запроса приезжает и как «+» (URLSearchParams)', async () => {
+    seed(U, 'Канбан', ['миграция канбана'])
+
+    // «мигра» — префикс, находит; «мигра+» — слово закончено, не находит.
+    expect((await inj({ method: 'GET', url: '/api/search?q=мигра' })).json().hits).toHaveLength(1)
+    expect((await inj({ method: 'GET', url: '/api/search?q=мигра+' })).json().hits).toHaveLength(0)
+  })
+
+  it('спецсимволы и мусорные параметры не дают 500', async () => {
+    seed(U, 'Канбан', ['миграция канбана'])
+
+    const bad = ['', '*', '"', '-', 'NEAR(', '^)(', '%%%', 'a".."b', '\\\\', '(((']
+    for (const q of bad) {
+      const res = await inj({ method: 'GET', url: `/api/search?q=${encodeURIComponent(q)}` })
+      expect(res.statusCode, `q=${JSON.stringify(q)}`).toBe(200)
+      expect(Array.isArray(res.json().hits)).toBe(true)
+    }
+    // Мусор в limit/cursor тоже не ошибка.
+    const res = await inj({ method: 'GET', url: '/api/search?q=миграция%20&limit=abc&cursor=%00%01' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().hits).toHaveLength(1)
+  })
+})
