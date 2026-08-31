@@ -4,6 +4,7 @@
 // при монтировании, отписка при закрытии; REST-подгрузка как фолбэк.
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { usePolling } from '../../lib/usePolling'
 import { createPortal } from 'react-dom'
 import type { CiRunDetail, CiRunStep, CiLogLine, CiRunConclusion, CiInteraction, CiInteractionAnswer } from '@shared/ci'
 import { DEFAULT_CI_CLAUDE_MODEL, isTerminalCiStatus } from '@shared/ci'
@@ -151,11 +152,9 @@ export function RunFeed(props: RunFeedProps): JSX.Element {
   const executionDiffersFromBase = executionLlm?.source === 'stage'
     && (executionLlm.provider !== baseLlm?.provider || executionLlm.model !== baseLlm?.model)
 
-  useEffect(() => {
-    if (!running) return
-    const timer = window.setInterval(() => setClockTick((tick) => tick + 1), 1_000)
-    return () => window.clearInterval(timer)
-  }, [running])
+  // Часы активного рана тикают только на видимой вкладке браузера: лента,
+  // оставленная открытой в фоне, перерисовывалась каждую секунду впустую.
+  usePolling(() => setClockTick((tick) => tick + 1), { enabled: running, intervalMs: 1_000 })
 
   // Отчёт по БЗ читаем один раз на ран и ещё раз, когда ран завершился: пока он
   // идёт, обращения копятся, и промежуточные цифры быстро устаревают.

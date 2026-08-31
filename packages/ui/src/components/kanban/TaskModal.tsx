@@ -54,6 +54,7 @@ import { AutomationProgressView } from './AutomationProgressView'
 import { canStartMerge, isCurrentMergeSourceMerged } from '@shared/merge'
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/mediaQuery'
 import { useAutoGrow } from '../../lib/autoGrow'
+import { usePolling } from '../../lib/usePolling'
 
 export interface TaskUpdateFields {
   title?: string
@@ -227,11 +228,8 @@ function ModelWorkDisclosure({
   const percent = progress?.percent ?? fallbackPercent
   const active = status === 'running' || status === 'queued' || status === 'waiting'
 
-  useEffect(() => {
-    if (!active || progress?.startedAt == null) return
-    const timer = setInterval(() => setTick((value) => value + 1), 1000)
-    return () => clearInterval(timer)
-  }, [active, progress?.startedAt])
+  // Секундные часы «работает столько-то» — только на видимой вкладке браузера.
+  usePolling(() => setTick((value) => value + 1), { enabled: active && progress?.startedAt != null, intervalMs: 1000 })
 
   void tick
   const durationMs = progress
@@ -382,8 +380,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     finally { setImprovementPending(null) }
   }
   const [qaStageRuns, setQaStageRuns] = useState<Partial<Record<QaRunStage, AnyQaStageRun[]>>>({})
+  // Три запроса (по одному на QA-этап) уходили при каждом открытии любой задачи —
+  // даже в проекте без QA и у карточки, которая ни разу не запускалась. QA-раны
+  // создаёт сам этап, поэтому «не было ни одного рана» означает и «нет QA-ранов».
   useEffect(() => {
-    if (props.draft || task.type !== 'task' || !window.qa?.listStageRuns) return
+    if (props.draft || task.type !== 'task' || !features.qa || !hadRun || !window.qa?.listStageRuns) return
     let live = true
     void Promise.all((['component_qa','integration_tests','automated_qa'] as QaRunStage[]).map(async (stage) => [stage, await window.qa!.listStageRuns!(task.projectId, task.id, stage)] as const)).then((entries) => {
       if (!live) return
@@ -393,7 +394,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       if (active) setActiveTab(active[0])
     }).catch(() => {})
     return () => { live = false }
-  }, [task.id])
+  }, [task.id, features.qa, hadRun])
   // Описание: просмотр (маркдаун) ↔ правка (textarea на 10 строк по кнопке).
   const [descEditing, setDescEditing] = useState(false)
   const [criteriaEditing, setCriteriaEditing] = useState(false)
