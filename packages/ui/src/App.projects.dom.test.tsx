@@ -323,9 +323,10 @@ describe('App — чаты завершённых задач в сайдбаре
     return { api, projectId: p.id, taskId: task.id, chatId: chat.id }
   }
 
-  /** Область секций сайдбара, суженная проектом (может пока не содержать списков). */
+  /** Область секций сайдбара после загрузки проектного фильтра. */
   async function chatList(): Promise<HTMLElement> {
-    await userEvent.selectOptions(await screen.findByLabelText('Проект'), 'Мой проект')
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
+    await screen.findByRole('button', { name: 'Фильтр проектов: Все чаты' })
     await waitFor(() => expect(document.querySelector('.convo-groups')).not.toBeNull())
     return document.querySelector('.convo-groups') as HTMLElement
   }

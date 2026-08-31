@@ -243,7 +243,8 @@ describe('voiceStore — список reader-чатов и гонка выбор
     const legacy = await api['conversations:create']({ title: 'Старый ридер' })
     await api['conversations:setPreviewUrl']({ id: legacy.id, previewUrl: 'https://example.com' })
 
-    await store.actions.setSidebarProject(project.id)
+    await store.actions.syncSidebarProjects([project.id, 'another-project'])
+    await store.actions.setSidebarProjectIds([project.id])
 
     // Сайдбар сужен проектом: reader-чаты без проекта из него ушли…
     expect(store.getState().conversations.map((c) => c.id)).not.toContain(readerId)
