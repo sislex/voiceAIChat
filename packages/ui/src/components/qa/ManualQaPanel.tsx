@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AcceptanceCriterion, AcceptanceCriterionSnapshot, QaCriterionResult, QaResultStatus, QaSession, QaTaskState } from '@shared/qa'
 import { canCompleteQa, qaProgress } from '@shared/qa'
-import { Button } from '@voicechat/ui-kit'
+import { Button, QaScore } from '@voicechat/ui-kit'
 import { ErrorState, Skeleton } from '@voicechat/ui-kit'
 
 export function ManualQaPanel(props: { projectId: string; taskId: string; activeRun?: boolean; onFixStarted?: (runId: string) => void }): JSX.Element {
@@ -133,6 +133,13 @@ export function ManualQaPanel(props: { projectId: string; taskId: string; active
           finally { setBusy(false) }
         }}>Повторить создание сценариев</Button>
       </div>}
+      {session && progress && <QaScore
+        testId="manual-qa-score"
+        passed={progress.passed}
+        total={progress.total}
+        unit="сценариев"
+        tone={session.status === 'failed' ? 'danger' : session.status === 'stale' ? 'warning' : undefined}
+      />}
       {session && progress && <div className="manual-qa-summary">
         <strong>{session.status === 'stale' ? 'QA-сессия устарела' : session.status === 'passed' ? 'QA завершено успешно' : session.status === 'failed' ? 'Задача отправлена на доработку' : `Проверено ${progress.passed + progress.failed + progress.blocked + progress.notApplicable}/${progress.total}`}</strong>
         <span>SHA {session.commitSha.slice(0, 8)}</span>

@@ -18,7 +18,6 @@ import type { PreviewAction } from '@shared/previewActions'
 import { WebReaderFrame, type PreviewActionOutcome, type ReaderHostRegistration, type WebRecorderAreaScreenshot } from '@voicechat/web-reader-app'
 import { BrowserSessionPane } from './components/BrowserSessionPane'
 import { ConsoleSessionPane } from './components/ConsoleSessionPane'
-import { MakePane } from './components/MakePane'
 import { parseUserAgent } from '@voicechat/sessions-core'
 import { TwoFactorDialog } from './components/TwoFactorDialog'
 import { InviteRegister } from './components/InviteRegister'
@@ -34,7 +33,6 @@ import { TaskChatHeader } from './components/chat/TaskChatHeader'
 import { VoiceBar } from './components/VoiceBar'
 import { VOICE_INPUT_ENABLED } from './lib/featureFlags'
 import { CHAT_COMPOSER_QUERY, useMediaQuery } from './lib/mediaQuery'
-import { SettingsModal } from './components/SettingsModal'
 import { ConsolePanel } from './components/ConsolePanel'
 import { OnboardingModal } from './components/OnboardingModal'
 import { LoginScreen, ResetPasswordScreen } from './components/LoginScreen'
@@ -58,6 +56,7 @@ import { PopupFrame } from './components/PopupFrame'
 import { UiProviders } from '@voicechat/ui-kit'
 import { Button, IconButton } from '@voicechat/ui-kit'
 import { Skeleton } from '@voicechat/ui-kit'
+import { PropertyRow } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { KnowledgeBase } from './components/KnowledgeBase'
@@ -98,7 +97,8 @@ import { isPlaywrightReaderDiagnosticsCommand, runPlaywrightReaderDiagnostics } 
 import { isConsoleReaderDiagnosticsCommand, runConsoleReaderDiagnostics } from './consoleReaderDiagnostics'
 import { isMakeDiagnosticsCommand, runMakeDiagnostics } from './makeDiagnostics'
 import { REST as REST_PATHS } from '@shared/protocol'
-import { parseAdminRoute } from '@voicechat/admin-app'
+import { buildAdminRoute, parseAdminRoute } from '@voicechat/admin-app'
+import { saveTextFile } from './lib/saveFile'
 import { consolePtyId, isBrowserSessionMetadata } from '@shared/types'
 import { placeScenario } from './lib/scenarioRecorder'
 
@@ -123,8 +123,31 @@ const UsersAdmin = lazy(async () => {
   return { default: module.UsersAdmin }
 })
 
+// Страница «Мой аккаунт» ленивая по той же причине, что и админка: главный чанк
+// уже почти упёрся в бюджет сборки (frontend-quality/bundle-baseline.json).
+const AccountPage = lazy(async () => {
+  const module = await import('./components/AccountPage')
+  return { default: module.AccountPage }
+})
+
+// Настройки открывают из меню аккаунта, и это семь разделов со своими экранами:
+// в главном чанке они лежат мёртвым весом до первого открытия.
+const SettingsModal = lazy(async () => {
+  const module = await import('./components/SettingsModal')
+  return { default: module.SettingsModal }
+})
+
+// Панель Make — самый большой экран приложения (две тысячи строк, редактор,
+// история снимков, комментарии) и нужна только в Make-режиме чата. В главном
+// чанке ей делать нечего.
+const MakePane = lazy(async () => {
+  const module = await import('./components/MakePane')
+  return { default: module.MakePane }
+})
+
 import './styles/app.css'
 import '@voicechat/sessions-app/styles.css'
+import '@voicechat/profile-app/styles.css'
 import '@voicechat/operations-app/styles.css'
 import '@voicechat/admin-app/styles.css'
 
@@ -159,7 +182,7 @@ export function appendWidgetAction(items: WidgetUserAction[], action: WidgetActi
 }
 
 // Разделы-страницы утилит в контентной колонке (как «Проекты»).
-const HOST_UTILITY_PAGES: readonly string[] = ['users', 'personalization', 'make-shared']
+const HOST_UTILITY_PAGES: readonly string[] = ['users', 'account', 'personalization', 'make-shared']
 
 // Запуск задачи предлагает только явный структурированный сигнал ассистента.
 
@@ -233,7 +256,15 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const operationsRoute = parseOperationsRoute(path)
   const utilitySeg = operationsRoute
     ? operationsRoute.page === 'history' ? (operationsRoute.engine === 'claude' ? 'claude-code' : 'codex') : operationsRoute.page === 'knowledge' ? 'kb' : operationsRoute.page
-    : segments.length >= 1 && HOST_UTILITY_PAGES.includes(segments[0]) && (segments.length === 1 || ((segments[0] === 'users' || segments[0] === 'make-shared') && segments.length === 2)) ? segments[0] : null
+    : segments.length >= 1 && HOST_UTILITY_PAGES.includes(segments[0]) && (
+        segments.length === 1
+        // `#/users/<логин>/<вкладка>` — три сегмента: разбор адреса живёт в
+        // самой админке. Пока здесь стояла жёсткая проверка «ровно два», такой
+        // адрес не открывал раздел вовсе и человек попадал в чат.
+        || (segments[0] === 'users' && parseAdminRoute(path) !== null)
+        || (segments[0] === 'account' && segments.length === 2)
+        || (segments[0] === 'make-shared' && segments.length === 2)
+      ) ? segments[0] : null
   const routeKbDocumentId = operationsRoute?.page === 'knowledge' ? (operationsRoute.documentId ?? null) : null
   // Второй сегмент под `#/users/` — не всегда логин: `engines`, `prices` и
   // `project-types` служебные. Разбор берём у самой админки (`parseAdminRoute`),
@@ -247,6 +278,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const projectInviteToken = segments[0] === 'project-invite' ? (segments[1] ?? null) : null
   const adminRoute = segments[0] === 'users' ? parseAdminRoute(path) : null
   const routeUserName = adminRoute?.page === 'users' ? (adminRoute.userName ?? null) : null
+  // Вкладка «Моего аккаунта» живёт в адресе: на неё можно дать ссылку и вернуться
+  // назад кнопкой браузера, как и на вкладку чужого профиля в админке.
+  const ACCOUNT_TABS = ['overview', 'access', 'machines', 'usage', 'history'] as const
+  const accountTab = (segments[0] === 'account' && ACCOUNT_TABS.includes(segments[1] as never) ? segments[1] : 'overview') as (typeof ACCOUNT_TABS)[number]
   const onUtilityPage = utilitySeg !== null
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
@@ -1135,15 +1170,25 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg, session.currentUser?.role])
+  // Данные служебной страницы админки грузятся при заходе на неё: реестр
+  // исполнителей и таблица цен не нужны тому, кто открыл список людей.
+  useEffect(() => {
+    if (utilitySeg !== 'users' || !admin.usersOpen) return
+    const page = adminRoute?.page
+    if (page === 'engines' || page === 'prices' || page === 'system') void adminActions.openAdminPage(page)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [utilitySeg, adminRoute?.page, admin.usersOpen])
   useEffect(() => {
     if (utilitySeg !== 'users' || !routeUserName || !admin.usersOpen || admin.adminSelected === routeUserName) return
     void adminActions.selectAdminUser(routeUserName)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg, routeUserName, admin.usersOpen, admin.adminSelected])
   // Гейты: «Пользователи» — только админ; машины/пользователи — только web.
+  // «Мой аккаунт» роль-гейта не имеет намеренно: это данные о себе, и их вправе
+  // видеть любая роль, включая observer.
   useEffect(() => {
     if (utilitySeg === 'users' && session.currentUser && session.currentUser.role !== 'admin') navigate('/')
-    if ((utilitySeg === 'users' || utilitySeg === 'machines' || utilitySeg === 'ci') && !session.authRequired) navigate('/')
+    if ((utilitySeg === 'users' || utilitySeg === 'account' || utilitySeg === 'machines' || utilitySeg === 'ci') && !session.authRequired) navigate('/')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [utilitySeg, routeUserName, session.currentUser, session.authRequired])
 
@@ -1789,6 +1834,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         onSelectProject={(id) => void chatActions.setSidebarProject(id)}
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
+        onOpenAccount={session.authRequired && session.currentUser ? menu(() => navigate('/account')) : undefined}
         onOpenPersonalization={session.currentUser ? menu(() => navigate('/personalization')) : undefined}
         onOpenSettings={menu(shellActions.openSettings)}
         onOpenFiles={session.authRequired ? menu(() => operationsActions.openUtilityForActiveChat('explorer')) : undefined}
@@ -2073,7 +2119,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           />
         </Suspense>
       )}
-      {inMake && readerSurfaceReady && chat.activeId && window.api && <MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} />}
+      {inMake && readerSurfaceReady && chat.activeId && window.api && <Suspense fallback={<div className="make-pane" role="status">Загрузка панели Make…</div>}><MakePane key={chat.activeId} conversationId={chat.activeId} api={window.api} make={window.make} ensurePreview={window.session?.ensurePreview} onInsertToChat={(text) => chatActions.setDraft(chat.draft.trim() ? `${chat.draft.trimEnd()} ${text}` : text)} onAskAssistant={(text) => { chatActions.setDraft(text); void chatActions.submitText() }} onAttachImage={(file) => void chatActions.addAttachment(file)} onEditorContext={setMakeEditorContext} onOpenTask={(projectId, taskId) => navigate(`/projects/${projectId}/task/${taskId}`)} usage={makeUsage} turnActive={voice.voice === 'thinking'} askOnly={makeAskOnly} onAskOnlyChange={setMakeAskOnly} lastRequest={[...chat.messages].reverse().find((m) => m.role !== 'ai')?.text ?? null} /></Suspense>}
       {inReader && readerSurfaceReady && chat.activeId && <WebReaderFrame key={chat.activeId + ':' + readerRevision} actions={readerActions} onRepeatAction={(action) => { void previewRunnerRef.current?.run(action) }} pageError={readerPageError} onAskError={(error) => { chatActions.setDraft(`Исправь ошибку страницы: ${error}`); void chatActions.submitText() }} conversationId={chat.activeId} platform={readerPlatform} conversationUrl={activeConversation?.previewUrl ?? null} projectUrl={inReader ? (activeProjectPreviewUrl ?? activeConversation?.projectPreviewUrl ?? null) : null} ensurePreview={window.session?.ensurePreview} onSave={async (previewUrl) => { if (activeConversation) await chatActions.setConversationPreviewUrl(activeConversation.id, previewUrl); setPreviewElement(null) }} onSelectElement={setPreviewElement} onAreaScreenshot={attachAreaScreenshot} onRegisterHost={registerReaderHost} />}
       </div>
       )}
@@ -2279,6 +2325,19 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <KnowledgeBase api={api} variant="page" documentId={routeKbDocumentId} onClose={() => navigate('/')} />
       )}
 
+      {utilitySeg === 'account' && session.currentUser && (
+        <Suspense fallback={<div role="status">Загрузка аккаунта…</div>}>
+          <AccountPage
+            api={api}
+            tab={accountTab}
+            onChangeTab={(tab) => navigate(tab === 'overview' ? '/account' : `/account/${tab}`)}
+            onClose={() => navigate('/')}
+            {...(window.session?.sessions ? { onOpenSessions: () => setSessionsOpen(true) } : {})}
+            onExportCsv={(filename, csv) => saveTextFile(filename, csv)}
+          />
+        </Suspense>
+      )}
+
       {utilitySeg === 'personalization' && session.currentUser && (
         <PersonalizationPage user={session.currentUser} value={settingsState.settings.personalization} onSave={async (personalization) => { await settingsActions.updateSettings({ personalization }); navigate('/') }} onCancel={() => navigate('/')} />
       )}
@@ -2359,6 +2418,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {utilitySeg === 'users' && admin.usersOpen && (
         <Suspense fallback={<div role="status">Загрузка Administration…</div>}><UsersAdmin
           variant="page"
+          route={adminRoute}
+          onNavigate={(route) => navigate(buildAdminRoute(route).replace(/^#/, ''))}
+          onExportCsv={(filename, csv) => saveTextFile(filename, csv)}
           users={admin.adminUsers}
           latestAgentVersion={AGENT_VERSION}
           onUpdateMachine={async (id) => { try { await window.api!['admin:updateMachine']({ id }); return null } catch (err) { return err instanceof Error ? err.message : String(err) } }}
@@ -2373,6 +2435,11 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onRetry={() => void runtime.openAdmin()}
           selected={routeUserName ?? admin.adminSelected}
           usage={admin.adminUsage}
+          usageLoading={admin.adminUsageLoading}
+          tabError={admin.adminTabError}
+          createError={admin.adminCreateError}
+          userMachines={admin.adminUserMachines}
+          onLoadUserMachines={() => void adminActions.loadAdminUserMachines()}
           conversations={admin.adminConversations}
           messages={admin.adminMessages}
           conversationId={admin.adminConversationId}
@@ -2382,12 +2449,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onResetCode={(name) => adminActions.issueResetCode(name)}
           onSetLlmLimit={(name, usd) => void adminActions.setUserLlmLimit(name, usd)}
           onUpdateRole={(name, role) => void adminActions.updateUserRole(name, role)}
-          onSetBlocked={(name, blocked) => void adminActions.setUserBlocked(name, blocked)}
+          onSetBlocked={(name, blocked, reason) => void adminActions.setUserBlocked(name, blocked, reason)}
           onDelete={(name) => void adminActions.deleteUserAccount(name)}
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
           sessionsClient={adminSessionsClient}
           security={admin.adminSecurity}
-          onLoadSecurity={() => void adminActions.loadAdminSecurity()}
+          onLoadSecurity={(limit, group) => void adminActions.loadAdminSecurity(limit, group)}
           invites={admin.adminInvites}
           onLoadInvites={() => void adminActions.loadAdminInvites()}
           onCreateInvite={(input) => void adminActions.createAdminInvite(input)}
@@ -2452,7 +2519,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onOpenTask={() => undefined}
           onClose={() => { if (!taskLaunchPending) setTaskProposal(null) }}
           detailsExtra={<>
-            <label className="jmodal-field">Движок
+            <PropertyRow as="label" label="Движок">
               <select className="sel" aria-label="Движок" value={taskProposal.provider} onChange={(event) => {
                 const provider = event.target.value as LlmProvider
                 const models = provider === 'codex' ? allowedCodexModels : allowedClaudeModels
@@ -2461,13 +2528,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 {allowedProviders.includes('claude') && <option value="claude">Claude</option>}
                 {allowedProviders.includes('codex') && <option value="codex">Codex</option>}
               </select>
-            </label>
-            <label className="jmodal-field">Модель
+            </PropertyRow>
+            <PropertyRow as="label" label="Модель">
               <select className="sel" aria-label="Модель" value={taskProposal.model} onChange={(event) => setTaskProposal({ ...taskProposal, model: event.target.value })}>
                 {!proposalModels.some((model) => model.id === taskProposal.model) && <option value={taskProposal.model}>{taskProposal.model || 'По умолчанию'}</option>}
                 {proposalModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
               </select>
-            </label>
+            </PropertyRow>
           </>}
           footer={<>
             {taskLaunchPending && <span role="status">Создаём и запускаем подготовку…</span>}
@@ -2610,7 +2677,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       <HotkeysCheatSheet open={cheatSheetOpen} onClose={() => setCheatSheetOpen(false)} />
 
       {shell.settingsOpen && (
-        <SettingsModal
+        <Suspense fallback={<div role="status">Загрузка настроек…</div>}><SettingsModal
           projectTypes={projects.projectTypes}
           projectTypesStatus={projects.projectTypesStatus}
           projectTypesError={projects.projectTypesError}
@@ -2651,7 +2718,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           llmAccess={settingsState.llmAccess}
           voiceInputEnabled={VOICE_INPUT_ENABLED}
           onClose={shellActions.closeSettings}
-        />
+        /></Suspense>
       )}
     </div>
   )

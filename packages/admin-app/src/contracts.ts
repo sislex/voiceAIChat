@@ -16,7 +16,7 @@ export interface AdminClient {
   userSessions?(input: { name: string }): Promise<SessionInfo[]>
   revokeSession?(input: { sid: string }): Promise<void>
   /** Журнал безопасности (auth-roadmap п.7). */
-  securityEvents?(input: { user?: string; limit?: number }): Promise<SecurityEvent[]>
+  securityEvents?(input: { user?: string; limit?: number; group?: string }): Promise<SecurityEvent[]>
   /** Инвайты на саморегистрацию (auth-roadmap п.8). */
   listInvites?(): Promise<InviteInfo[]>
   createInvite?(input: { role: UserRole; ttlHours?: number; maxUses?: number; note?: string; email?: string }): Promise<InviteInfo>
@@ -30,7 +30,10 @@ export interface AdminClient {
   signupConfig?(): Promise<SignupConfig>
   setSignupConfig?(input: { enabled?: boolean; role?: UserRole; ownedProjectLimit?: number; sessionLimit?: number }): Promise<SignupConfig>
   updateUserRole(input: { name: string; role: UserRole }): Promise<AdminUserInfo>
-  setUserBlocked(input: { name: string; blocked: boolean }): Promise<void>
+  /** Машины одного человека: карточка грузит их сама, список людей не содержит. */
+  userMachines?(input: { name: string }): Promise<import('@shared/admin').AdminAgentInfo[]>
+  /** Причина уходит в журнал безопасности: через месяц «почему заблокирован» спросит другой администратор. */
+  setUserBlocked(input: { name: string; blocked: boolean; reason?: string }): Promise<void>
   deleteUser(input: { name: string }): Promise<void>
   getUserLlmAccess(input: { name: string }): Promise<UserLlmAccess[]>
   replaceUserLlmAccess(input: { name: string; access: UserLlmAccess[] }): Promise<UserLlmAccess[]>

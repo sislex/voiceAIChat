@@ -35,6 +35,8 @@ export const CONTRAST_PAIRS: ContrastPair[] = [
   { fg: '--text-dim', bg: '--panel', usage: 'мета в сайдбаре (.cmeta)' },
   { fg: '--text-dim', bg: '--surface-hover', usage: 'подпись под курсором' },
   { fg: '--text-dim', bg: '--surface-selected', usage: 'мета выбранной беседы (.convo.on .cmeta)' },
+  { fg: '--text', bg: '--surface-sunken', usage: 'значения свойств в колонке карточки задачи' },
+  { fg: '--text-dim', bg: '--surface-sunken', usage: 'подписи свойств в колонке карточки задачи' },
   { fg: '--accent', bg: '--bg', usage: 'ссылки и активные подписи' },
   { fg: '--accent', bg: '--surface', usage: 'акцентная подпись в карточке' },
   { fg: '--accent', bg: '--accent-soft', usage: 'акцент на своей подложке (чипы, вкладки)' },

@@ -31,6 +31,9 @@ describe('матрица проектных полномочий', () => {
       ['POST', '/api/projects/p1/tasks/t1/merge', 'task:merge'],
       ['POST', '/api/projects/p1/tasks/t1/ci/run', 'workflow:start'],
       ['POST', '/api/admin/users', 'users:manage'],
+      // Свои данные не админские: человек вправе знать о себе то же, что знает о нём админ.
+      ['GET', '/api/me/profile', null],
+      ['GET', '/api/me/security', null],
       ['GET', '/api/projects/p1/machines/available', 'project:settings']
     ]
     for (const [method, url, expected] of cases) {

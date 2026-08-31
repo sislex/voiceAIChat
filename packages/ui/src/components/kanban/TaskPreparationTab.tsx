@@ -5,7 +5,7 @@ import type { LlmEngineOption } from '@shared/admin'
 import type { CiTaskMachines } from '@shared/ci'
 import { DEFAULT_CI_LLM_CONFIG } from '@shared/ci'
 import { allowedModels, isProviderAllowed } from '@shared/llmAccess'
-import { Button } from '@voicechat/ui-kit'
+import { Button, MetricGrid, PanelHeading, StatusPill, type StatusTone } from '@voicechat/ui-kit'
 import { PreparationRunSteps } from '../ci/RunFeed'
 import { EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
 import { formatDateTime } from '../../lib/dateFormat'
@@ -37,6 +37,18 @@ const STATUS_LABEL: Record<TaskPreparationRun['status'], string> = {
   failed: 'ошибка',
   cancelled: 'отменён',
   blocked: 'заблокирован'
+}
+/** Тон лозенги попытки: те же четыре состояния, что у остальных панелей рана. */
+const STATUS_TONE: Record<TaskPreparationRun['status'], StatusTone> = {
+  queued: 'neutral',
+  running: 'running',
+  waiting_for_answer: 'warning',
+  validating: 'running',
+  completed: 'success',
+  success: 'success',
+  failed: 'danger',
+  cancelled: 'neutral',
+  blocked: 'danger'
 }
 
 export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element {
@@ -283,14 +295,23 @@ export function TaskPreparationTab(props: TaskPreparationTabProps): JSX.Element 
         </div>
       </section>}
       {selected && <>
-      <div className="jmodal-ci-head">
-        <span className="ci-task-title">Подготовка к разработке</span>
-        <span className="ci-lozenge">Статус: {STATUS_LABEL[selected.status]}</span>
-        <span className="ci-lozenge">Фаза: {selected.phase ?? 'initialization'}</span>
-        <span className="ci-lozenge">Машина: {selected.machineName ?? (selected.machineId ? selected.machineId : 'legacy: снимок отсутствует')}</span>
-        <span className="ci-lozenge">LLM: {selected.provider ?? 'claude'} · {selected.model || 'по умолчанию'}</span>
-        <span className="ci-lozenge">Длительность: {Math.round((selected.durationMs ?? 0) / 1000)} с</span>
-      </div>
+      {/* Раньше здесь стояло пять одинаковых лозенг подряд, и статус терялся
+          среди машины, модели и длительности. Статус — лозенга, остальное —
+          подписанная сводка, как у прочих панелей рана. */}
+      <PanelHeading
+        kicker={`Попытка ${selected.attempt}`}
+        title="Подготовка к разработке"
+        description={`Фаза: ${selected.phase ?? 'initialization'}`}
+        actions={<StatusPill tone={STATUS_TONE[selected.status]}>{STATUS_LABEL[selected.status]}</StatusPill>}
+      />
+      <MetricGrid
+        testId="task-preparation-summary"
+        items={[
+          { label: 'Длительность', value: `${Math.round((selected.durationMs ?? 0) / 1000)} с` },
+          { label: 'Машина', value: selected.machineName ?? (selected.machineId ? selected.machineId : 'legacy: снимок отсутствует') },
+          { label: 'Модель', value: `${selected.provider ?? 'claude'} · ${selected.model || 'по умолчанию'}` }
+        ]}
+      />
       {(selected.status === 'failed' || selected.status === 'blocked') && selected.error && <p role="alert">Причина остановки: {selected.error}</p>}
       {(selected.questions ?? []).filter((question) => question.status === 'open').map((question) => (
         <section key={question.questionId} data-testid="task-preparation-question">

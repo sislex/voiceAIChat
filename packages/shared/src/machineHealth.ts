@@ -22,6 +22,9 @@ export const LOW_MEMORY_RATIO = 0.95
 export const STALE_TELEMETRY_MS = 3 * 60_000
 
 export function formatBytes(n: number): string {
+  // Терабайты нужны разделу «Система»: на диске проекта свободные 55 798,6 МБ
+  // читались как случайное число, хотя это 54,5 ГБ.
+  if (n >= 1024 ** 4) return `${(n / 1024 ** 4).toFixed(1)} ТБ`
   if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} ГБ`
   if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} МБ`
   if (n >= 1024) return `${Math.round(n / 1024)} КБ`

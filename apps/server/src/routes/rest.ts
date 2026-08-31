@@ -17,6 +17,9 @@ import {
   type DesktopMigrationBundle,
   type Settings,
   type UsageUnit,
+  type UserProfileInfo,
+  type SecurityEvent,
+  type AgentInfo,
   instructionContextId,
   instructionText,
   isContextToggleable,
@@ -179,7 +182,13 @@ export async function registerRest(
   app: FastifyInstance,
   db: VoiceChatDb,
   dataDir: string,
-  opts: { runnerFs?: RunnerFsClient; authStatus?: AuthStatusState; isAgentOnline?: (agentId: string) => boolean } = {}
+  opts: {
+    runnerFs?: RunnerFsClient
+    authStatus?: AuthStatusState
+    isAgentOnline?: (agentId: string) => boolean
+    /** Живой статус машин (online, версия, телеметрия): реестр агентов живёт в server.ts. */
+    liveAgents?: (agents: ReturnType<VoiceChatDb['listAgents']>) => AgentInfo[]
+  } = {}
 ): Promise<void> {
   const profile = (req: Parameters<typeof uid>[0]) => ensureCliProfile(dataDir, uid(req))
   const ccDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CC_DIR ?? profile(req).ccProjects
@@ -653,6 +662,35 @@ export async function registerRest(
   }
   app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.usage, async (req, reply) => usageForMe(uid(req), req.query, reply))
   app.get<{ Querystring: { unit?: string; from?: string; to?: string; conversationId?: string } }>(REST.meUsage, async (req, reply) => usageForMe(uid(req), req.query, reply))
+
+  // Свой профиль и свой журнал безопасности. Те же сведения, что админ видит о
+  // человеке, но только о себе: имени в пути нет, оно берётся из сессии, поэтому
+  // подставить чужое некуда. Роуты живут вне /api/admin/ — тот префикс целиком
+  // закрыт привилегией users:manage.
+  app.get(REST.meProfile, async (req): Promise<UserProfileInfo> => {
+    const name = uid(req)
+    const user = db.getUser(name)
+    const agents = opts.liveAgents ? opts.liveAgents(db.listAgents(name)) : db.listAgents(name).map((agent) => ({ ...agent, online: opts.isAgentOnline?.(agent.id) ?? false }))
+    const activity = db.sessionActivity().get(name)
+    return {
+      name,
+      role: user?.role ?? 'observer',
+      blocked: Boolean(user?.blocked),
+      createdAt: user?.createdAt ?? 0,
+      mustChangePassword: Boolean(user?.mustChangePassword),
+      email: user?.email ?? null,
+      lastLogin: user?.lastLogin ?? null,
+      llmLimitUsd: user?.llmLimitUsd ?? null,
+      conversationCount: db.conversationCounts().get(name) ?? 0,
+      agents,
+      lastSeenAt: activity?.lastSeen ?? null,
+      liveSessions: activity?.live ?? 0
+    }
+  })
+  app.get<{ Querystring: { limit?: string } }>(REST.meSecurity, async (req): Promise<SecurityEvent[]> => {
+    const limit = Number(req.query.limit)
+    return db.listSecurityEvents({ user: uid(req), limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 500) : 200 })
+  })
 
   // Тело — патч, а не полная замена: неизвестные серверу поля не приходят, а
   // отсутствующие сохраняют прежнее значение. Это граница сохранности настроек —

@@ -564,6 +564,24 @@ describe('VoiceChatDb — пользователи и админ-данные', 
     expect(db.getSettings('bob').model).toBe(DEFAULT_SETTINGS.model)
   })
 
+  it('usageReport считает прерванные ходы: доли «успешных» в системе нет', () => {
+    db.createUser('bob', '', 'developer')
+    const c = db.createConversation('bob', 'Чат')
+    db.addMessage('bob', c.id, 'ai', 'ответ', '10:01', 'claude', { inputTokens: 10, outputTokens: 2, model: 'opus' })
+    db.addMessage('bob', c.id, 'ai', 'обрыв', '10:02', 'claude', { inputTokens: 5, outputTokens: 1, model: 'opus', interrupted: true })
+    expect(db.usageReport('bob', 'day').totals.messages).toBe(2)
+    expect(db.usageReport('bob', 'day').totals.interrupted).toBe(1)
+    expect(db.usageSummary().find((u) => u.name === 'bob')?.totals.interrupted).toBe(1)
+  })
+
+  it('sessionActivity и conversationCounts отдают агрегаты одним проходом', () => {
+    db.createConversation('bob', 'Первый')
+    db.createConversation('bob', 'Второй')
+    expect(db.conversationCounts().get('bob')).toBe(2)
+    // Без живых сессий пользователя в карте активности нет — «активен сейчас» ложным не станет.
+    expect(db.sessionActivity().get('bob')).toBeUndefined()
+  })
+
   it('usageReport суммирует токены ai-сообщений по моделям', () => {
     const c = db.createConversation('bob', 'Чат')
     const meta = (model: string, inTok: number, outTok: number) => ({

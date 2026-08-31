@@ -1,0 +1,373 @@
+// Витрина языка панелей рана: лозенга состояния, шапка панели, сводка, шаги,
+// прогресс, лента события и подразделы.
+//
+// Все десять вкладок карточки задачи собраны из этих семи примитивов — сториз
+// показывает их по отдельности и «как это выглядит вместе», чтобы расхождение
+// между вкладками было видно в витрине, а не в проде.
+import { useState } from 'react'
+import type { Meta, StoryObj } from '@storybook/react'
+import {
+  AttemptHistory,
+  BranchFlow,
+  FeedItem,
+  FeedLog,
+  LiveIndicator,
+  MetricGrid,
+  PanelHeading,
+  ProgressRing,
+  ProgressTrack,
+  GateList,
+  QaScore,
+  ResultTable,
+  StatusPill,
+  StepList,
+  SubTabs,
+  type StatusTone
+} from '@voicechat/ui-kit'
+
+const TONES: StatusTone[] = ['neutral', 'accent', 'running', 'success', 'warning', 'danger']
+const TONE_LABEL: Record<StatusTone, string> = {
+  neutral: 'Не запускалось',
+  accent: 'Выделено',
+  running: 'Выполняется',
+  success: 'Успешно',
+  warning: 'Требует внимания',
+  danger: 'Не пройдено'
+}
+
+/** Телефон: у addon-viewport свой набор, поэтому объявляем нужный размер здесь. */
+const PHONE = {
+  viewport: {
+    viewports: { phone: { name: 'Телефон 390×844', styles: { width: '390px', height: '844px' }, type: 'mobile' } },
+    defaultViewport: 'phone'
+  }
+}
+
+const meta: Meta = {
+  title: 'UI/Run panels',
+  parameters: {
+    docs: {
+      description: {
+        component:
+          'Язык панелей рана. Тон — семантический (`running`/`warning`), а не цвет: ' +
+          'правило «жёлтый» пришлось бы помнить на месте вызова, а `warning` переживает ' +
+          'смену палитры и тёмную тему. Прогресс всегда объявляет себя скринридеру — ' +
+          'у ProgressTrack и ProgressRing поле label обязательное.'
+      }
+    }
+  }
+}
+export default meta
+type Story = StoryObj
+
+export const Tones: Story = {
+  name: 'Лозенги состояния',
+  render: () => (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {TONES.map((tone) => (
+        <StatusPill key={tone} tone={tone}>{TONE_LABEL[tone]}</StatusPill>
+      ))}
+    </div>
+  )
+}
+
+export const Heading: Story = {
+  name: 'Шапка панели',
+  render: () => (
+    <div style={{ display: 'grid', gap: 24, maxWidth: 760 }}>
+      <PanelHeading
+        kicker="Попытка 2"
+        title="Подготовка к разработке"
+        description="Анализ требований и подготовка рабочего окружения."
+        actions={<StatusPill tone="success">Успешно</StatusPill>}
+      />
+      <PanelHeading
+        kicker="Development run #12"
+        title="Ход выполнения"
+        description="Запуск активен · работает 08:24"
+        actions={<LiveIndicator />}
+      />
+      <PanelHeading title="Слияние изменений" description="task/CHAT-248 → main" />
+    </div>
+  )
+}
+
+export const Summary: Story = {
+  name: 'Сводка рана',
+  render: () => (
+    <div style={{ maxWidth: 760 }}>
+      <MetricGrid
+        items={[
+          { label: 'Длительность', value: '4 мин 18 сек' },
+          { label: 'Машина', value: 'MacBook · online' },
+          { label: 'Модель', value: 'Codex / GPT-5' }
+        ]}
+      />
+    </div>
+  )
+}
+
+export const Steps: Story = {
+  name: 'Шаги этапа',
+  render: () => (
+    <div style={{ maxWidth: 620, border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
+      <StepList
+        steps={[
+          { title: 'Исследование кода', detail: 'Завершено за 2:12', state: 'done' },
+          { title: 'Реализация', detail: 'Изменено 6 файлов · +284 −31', state: 'running' },
+          { title: 'Проверки', detail: 'Ожидает' },
+          { title: 'Доставка', detail: 'Ожидает' }
+        ]}
+      />
+    </div>
+  )
+}
+
+export const FailedStep: Story = {
+  name: 'Шаги: упавший этап',
+  render: () => (
+    <div style={{ maxWidth: 620 }}>
+      <StepList
+        steps={[
+          { title: 'TypeScript', detail: 'Ошибок нет', state: 'done' },
+          { title: 'Lint', detail: '0 предупреждений', state: 'done' },
+          { title: 'Coverage', detail: '76% при пороге 80%', state: 'failed' }
+        ]}
+      />
+    </div>
+  )
+}
+
+export const Progress: Story = {
+  name: 'Прогресс: полоса и кольцо',
+  render: () => (
+    <div style={{ display: 'grid', gap: 24, maxWidth: 520 }}>
+      <ProgressTrack value={2} max={3} label="Подзадачи" />
+      <ProgressTrack value={7} max={9} label="Сценарии интеграционных тестов" tone="success" />
+      <ProgressTrack value={76} max={100} label="Покрытие изменённых строк" tone="warning" compact />
+      <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
+        <ProgressRing value={68} label="Ход выполнения" />
+        <ProgressRing value={12} max={12} label="Сценарии Component QA" caption="12/12" tone="success" />
+        <ProgressRing value={0} label="Ещё не начиналось" tone="neutral" />
+      </div>
+    </div>
+  )
+}
+
+export const Feed: Story = {
+  name: 'Лента рана',
+  render: () => (
+    <div className="vc-feed" style={{ maxWidth: 620 }}>
+      <FeedItem title="Реализация API поиска" tone="success" meta="11:24" defaultOpen>
+        <FeedLog label="Лог шага">
+          {'Updated apps/server/src/routes/conversations.ts\nAdded FTS query with ranked results\n✓ typecheck passed'}
+        </FeedLog>
+      </FeedItem>
+      <FeedItem title="Исследование кодовой базы" tone="running" meta="11:17">
+        <p style={{ margin: 0, padding: '0 14px 14px', color: 'var(--text-dim)', fontSize: 12 }}>
+          Найдены точки интеграции UI, store и серверного маршрута.
+        </p>
+      </FeedItem>
+      <FeedItem title="Запуск создан" meta="11:15" />
+      <FeedItem title="Автопроверка упала" tone="danger" meta="11:31">
+        <FeedLog label="Лог проверки">{'coverage 76% < threshold 80%'}</FeedLog>
+      </FeedItem>
+    </div>
+  )
+}
+
+export const Subtabs: Story = {
+  name: 'Подразделы панели',
+  render: function SubtabsStory() {
+    const [value, setValue] = useState('overview')
+    return (
+      <div style={{ maxWidth: 620 }}>
+        <SubTabs
+          ariaLabel="Разделы хода выполнения"
+          value={value}
+          onChange={setValue}
+          items={[
+            { id: 'overview', label: 'Обзор' },
+            { id: 'model', label: 'Работа модели' },
+            { id: 'checks', label: 'Проверки', count: 3 },
+            { id: 'changes', label: 'Изменения' },
+            { id: 'kb', label: 'База знаний' },
+            { id: 'delivery', label: 'Доставка' }
+          ]}
+        />
+        <p style={{ marginTop: 16, fontSize: 13, color: 'var(--text-dim)' }}>Выбрано: {value}</p>
+      </div>
+    )
+  }
+}
+
+export const Together: Story = {
+  name: 'Панель целиком',
+  render: () => (
+    <div style={{ maxWidth: 760 }}>
+      <PanelHeading
+        kicker="Automated QA · попытка 1"
+        title="Quality gate"
+        description="Автоматическая итоговая проверка изменений."
+        actions={<StatusPill tone="warning">Требует внимания</StatusPill>}
+      />
+      <MetricGrid
+        items={[
+          { label: 'Длительность', value: '1 мин 04 сек' },
+          { label: 'Машина', value: 'MacBook · online' },
+          { label: 'Проверок', value: '3' }
+        ]}
+      />
+      <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 20 }}>
+        <StepList
+          steps={[
+            { title: 'TypeScript', detail: 'Ошибок нет', state: 'done' },
+            { title: 'Lint', detail: '0 предупреждений', state: 'done' },
+            { title: 'Coverage', detail: '76% при пороге 80%', state: 'failed' }
+          ]}
+        />
+      </div>
+      <div className="vc-feed" style={{ marginTop: 16 }}>
+        <FeedItem title="Отчёт гейта" meta="38 строк">
+          <FeedLog>{'$ npm run gate\n✗ coverage 76% < 80%'}</FeedLog>
+        </FeedItem>
+      </div>
+    </div>
+  )
+}
+
+export const Score: Story = {
+  name: 'Счёт проверок',
+  render: () => (
+    <div style={{ display: 'grid', gap: 28, maxWidth: 520 }}>
+      <QaScore passed={12} total={12} />
+      <QaScore passed={7} total={9} />
+      <QaScore passed={0} total={4} />
+      <QaScore passed={0} total={0} unit="проверок" />
+    </div>
+  )
+}
+
+export const Results: Story = {
+  name: 'Таблица результатов',
+  render: () => (
+    <div style={{ maxWidth: 620 }}>
+      <ResultTable
+        caption="Сценарии Component QA"
+        rows={[
+          { id: '1', name: 'Поиск по заголовку диалога', result: 'Пройден', tone: 'success' },
+          { id: '2', name: 'Поиск по содержимому сообщения', result: 'Пройден', tone: 'success' },
+          { id: '3', name: 'Навигация с клавиатуры', result: 'Выполняется', tone: 'running', detail: 'шаг 3 из 4' },
+          { id: '4', name: 'Пустое состояние без результатов', result: 'Ошибка', tone: 'danger', detail: 'подсказка не показана' },
+          { id: '5', name: 'Печать страницы', result: 'Не применим', tone: 'neutral' }
+        ]}
+      />
+    </div>
+  )
+}
+
+export const Gates: Story = {
+  name: 'Проверки гейта',
+  render: () => (
+    <div style={{ maxWidth: 620 }}>
+      <GateList
+        ariaLabel="Проверки Automated QA"
+        checks={[
+          { id: 'ts', name: 'TypeScript', detail: 'Ошибок нет', verdict: 'Пройдено', tone: 'success' },
+          { id: 'lint', name: 'Lint', detail: '0 предупреждений', verdict: 'Пройдено', tone: 'success' },
+          { id: 'cov', name: 'Coverage', detail: '76% при пороге 80%', verdict: 'Не пройдено', tone: 'danger' },
+          { id: 'perf', name: 'Бюджет чанков', detail: 'считается', verdict: 'Выполняется', tone: 'running' },
+          { id: 'e2e', name: 'E2E', verdict: 'Ожидает' }
+        ]}
+      />
+    </div>
+  )
+}
+
+export const Branches: Story = {
+  name: 'Поток ветки',
+  render: () => (
+    <div style={{ display: 'grid', gap: 16, maxWidth: 620 }}>
+      <BranchFlow from="task/CHAT-248" note="6 файлов изменено · +284 −31" />
+      <BranchFlow from="fix/very-long-branch-name-that-does-not-fit-in-one-line" to="release/1.2" />
+    </div>
+  )
+}
+
+export const ResultsPhone: Story = {
+  name: 'Таблица результатов на телефоне',
+  parameters: PHONE,
+  render: () => (
+    <ResultTable
+      caption="Сценарии Component QA"
+      rows={[
+        { id: '1', name: 'Поиск по содержимому сообщения в длинном диалоге', result: 'Пройден', tone: 'success' },
+        { id: '2', name: 'Навигация с клавиатуры', result: 'Выполняется', tone: 'running', detail: 'шаг 3 из 4' },
+        { id: '3', name: 'Пустое состояние без результатов', result: 'Ошибка', tone: 'danger', detail: 'подсказка не показана' }
+      ]}
+    />
+  )
+}
+
+export const Attempts: Story = {
+  name: 'История попыток',
+  render: function AttemptsStory() {
+    const [selected, setSelected] = useState('a3')
+    return (
+      <div style={{ display: 'grid', gap: 28, maxWidth: 520 }}>
+        <AttemptHistory
+          attempts={[
+            { id: 'a3', attempt: 3, status: 'Успешно', tone: 'success', at: 'сегодня, 11:24' },
+            { id: 'a2', attempt: 2, status: 'Не прошёл gate', tone: 'danger', at: 'сегодня, 10:58', note: 'codex · gpt-5' },
+            { id: 'a1', attempt: 1, status: 'Отменён', at: 'вчера, 19:02' }
+          ]}
+          selectedId={selected}
+          onSelect={setSelected}
+        />
+        <AttemptHistory
+          title="Попытки merge"
+          attempts={[{ id: 'm1', attempt: 1, status: 'Выполняется', tone: 'running', at: 'сейчас' }]}
+        />
+      </div>
+    )
+  }
+}
+
+export const AutomatedQa: Story = {
+  name: 'Automated QA целиком',
+  render: () => (
+    <div style={{ maxWidth: 760 }}>
+      <PanelHeading
+        kicker="Попытка 1"
+        title="Automated QA"
+        description="Проверка сценариев в браузере"
+        actions={<StatusPill tone="danger">Не прошёл gate</StatusPill>}
+      />
+      <MetricGrid
+        items={[
+          { label: 'Ветка', value: 'task/CHAT-248' },
+          { label: 'SHA', value: 'a8f31c27' },
+          { label: 'Шаг', value: '4/4 сценарии' }
+        ]}
+      />
+      <ProgressTrack value={4} max={4} label="Прогресс этапа: сценарии" tone="danger" />
+      <div style={{ marginTop: 16 }}>
+        <GateList
+          ariaLabel="Непройденные условия quality gate"
+          checks={[
+            { id: 'cov', name: 'coverage_below_threshold', verdict: 'Не пройдено', tone: 'danger' },
+            { id: 'flaky', name: 'flaky_scenario_detected', verdict: 'Не пройдено', tone: 'danger' }
+          ]}
+        />
+      </div>
+      <div className="vc-feed" style={{ marginTop: 16 }}>
+        <FeedItem tone="danger" title="Потоковая лента" defaultOpen>
+          <FeedLog label="Потоковая лента Automated QA">{'▶ scenario 1/4 ok\n▶ scenario 2/4 ok\n✗ scenario 3/4 flaky\ngate failed'}</FeedLog>
+        </FeedItem>
+      </div>
+      <div style={{ marginTop: 16 }}>
+        <AttemptHistory attempts={[{ id: 'x1', attempt: 1, status: 'Не прошёл gate', tone: 'danger', at: 'сегодня, 12:03' }]} />
+      </div>
+    </div>
+  )
+}
