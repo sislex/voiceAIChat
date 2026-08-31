@@ -7033,8 +7033,15 @@ export class VoiceChatDb {
     return row ? this.getCiRunRaw(row.id) : null
   }
 
+  /** Ветка и SHA рабочей копии. `pushed` отдельным аргументом: ручной коммит из
+   *  панели кода ещё не отправлен в origin, и merge-ран не должен принять его за
+   *  источник (он берёт `findLatestPushedCiWorkspace`). */
+  updateCiWorkspaceRevision(workspaceId: string, branch: string, commitSha: string, pushed: boolean): void {
+    this.db.prepare(`UPDATE ci_workspaces SET branch=?, commit_sha=?, pushed=? WHERE id=?`).run(branch, commitSha, pushed ? 1 : 0, workspaceId)
+  }
+
   recordCiWorkspaceRevision(workspaceId: string, branch: string, commitSha: string): void {
-    this.db.prepare(`UPDATE ci_workspaces SET branch=?, commit_sha=?, pushed=1 WHERE id=?`).run(branch, commitSha, workspaceId)
+    this.updateCiWorkspaceRevision(workspaceId, branch, commitSha, true)
   }
 
   releaseCiWorkspace(workspaceId: string, releasedByStepId: string | null): void {
@@ -8202,6 +8209,11 @@ export class VoiceChatDb {
 
   listActiveTaskRepositories(taskId: string): TaskRepository[] {
     return (this.db.prepare(`SELECT r.*, a.name AS machine_name FROM task_repositories r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=? AND r.state='active' ORDER BY r.created_at`).all(taskId) as Record<string, unknown>[]).map(mapTaskRepository)
+  }
+
+  getTaskRepositoryById(id: string): TaskRepository | null {
+    const r = this.db.prepare(`SELECT r.*, a.name AS machine_name FROM task_repositories r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.id=?`).get(id) as Record<string, unknown> | undefined
+    return r ? mapTaskRepository(r) : null
   }
 
   listTaskRepositories(userId: string, projectId: string, taskId: string): TaskRepository[] {

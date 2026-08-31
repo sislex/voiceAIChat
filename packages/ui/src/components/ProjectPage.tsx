@@ -16,7 +16,7 @@ import { ToolFrame } from './ToolFrame'
 import { SidebarToggle } from './ui/IconButton'
 
 /** Раздел страницы проекта — он же вкладка в шапке. */
-export type ProjectSection = 'board' | 'releases' | 'settings'
+export type ProjectSection = 'board' | 'code' | 'releases' | 'settings'
 
 /**
  * Раздел может требовать возможности типа проекта. «Релизы» бессмысленны там, где
@@ -24,6 +24,9 @@ export type ProjectSection = 'board' | 'releases' | 'settings'
  */
 const SECTIONS: readonly { id: ProjectSection; label: string; feature?: ProjectFeature }[] = [
   { id: 'board', label: 'Канбан' },
+  // «Код» — работа с git в рабочей копии задачи или сессии: без git-репозитория в
+  // проекте раздел бессмысленен, и сервер такие запросы всё равно отклоняет (409).
+  { id: 'code', label: 'Код', feature: 'git' },
   { id: 'releases', label: 'Релизы', feature: 'releases' },
   { id: 'settings', label: 'Настройки' }
 ]

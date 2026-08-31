@@ -88,8 +88,14 @@ export interface ChatColumnProps {
   sidebarExpanded?: boolean
   /** Открыть отдельную страницу настроек текущего разговора. */
   onOpenConversationSettings?: () => void
+  /** Открыть панель кода рабочей копии этого разговора (клик по бейджу workspace). */
+  onOpenGit?: () => void
   /** Фактический режим активного разговора для бейджа в шапке. */
   permissionMode?: PermissionMode
+  /** Сколько источников контекста выключено в этом разговоре (бейдж в шапке). */
+  disabledContextCount?: number
+  /** Открыть настройки сразу на вкладке «Контекст и инструкции». */
+  onOpenContextSettings?: () => void
   /** Фактический managed workspace, вычисленный сервером. */
   workspace?: WorkspaceView | null
   /** Каталог результатов чата (привязка к хранилищу машины) — чип в шапке. */
@@ -204,7 +210,10 @@ export function ChatColumn({
   onToggleSidebar,
   sidebarExpanded = true,
   onOpenConversationSettings,
+  onOpenGit,
   permissionMode = 'plan',
+  disabledContextCount = 0,
+  onOpenContextSettings,
   workspace = null,
   storage = null,
   onRunSkill,
@@ -534,16 +543,23 @@ export function ChatColumn({
           )
         })()}
         {workspace && (
-          <span
+          // Бейдж — вход в панель кода: «что модель наменяла» смотрят ровно отсюда.
+          // Без обработчика остаётся неинтерактивной подписью, как было.
+          <button
+            type="button"
             className={`mode-badge workspace-badge workspace-badge--${workspace.state}`}
             data-testid="workspace-badge"
-            aria-label={`Workspace: ${workspace.mode}; состояние: ${workspace.state}`}
-            title={[workspace.path, workspace.branch, workspace.baseSha, workspace.diagnostic].filter(Boolean).join('\n')}
+            aria-label={onOpenGit
+              ? `Открыть код рабочей копии: ${workspace.mode}; состояние: ${workspace.state}`
+              : `Workspace: ${workspace.mode}; состояние: ${workspace.state}`}
+            title={[onOpenGit ? 'Открыть код рабочей копии' : '', workspace.path, workspace.branch, workspace.baseSha, workspace.diagnostic].filter(Boolean).join('\n')}
+            disabled={!onOpenGit}
+            onClick={() => onOpenGit?.()}
           >
             {workspace.mode === 'shared_main' ? 'Общий main' : workspace.mode === 'chat_workspace' ? 'Workspace чата' : workspace.mode === 'task_workspace' ? 'Workspace задачи' : 'Legacy cwd'}
             {workspace.baseSha ? ` · ${workspace.baseSha.slice(0, 8)}` : ''}
             {workspace.state !== 'ready' ? ` · ${workspace.state}` : ''}
-          </span>
+          </button>
         )}
         <button
           className={`mode-badge mode-badge--${permissionMode}`}
@@ -554,6 +570,20 @@ export function ChatColumn({
         >
           {modeLabel(permissionMode)}
         </button>
+        {/* Выключенные источники контекста меняют то, что получает модель, но
+            узнать об этом можно было только зайдя в настройки. Бейдж делает факт
+            видимым там же, где режим доступа, и ведёт на нужную вкладку. */}
+        {disabledContextCount > 0 && (
+          <button
+            className="mode-badge mode-badge--context"
+            data-testid="context-badge"
+            onClick={onOpenContextSettings ?? onOpenConversationSettings}
+            disabled={!(onOpenContextSettings ?? onOpenConversationSettings)}
+            title="Часть источников контекста выключена для этого разговора — открыть «Контекст и инструкции»"
+          >
+            Контекст изменён · {disabledContextCount}
+          </button>
+        )}
         {onOpenConversationSettings && (
           <button className="convsettings-open" aria-label="Настройки разговора" title="Настройки разговора" onClick={onOpenConversationSettings}>⚙</button>
         )}

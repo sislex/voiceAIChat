@@ -552,6 +552,17 @@ export const PERMISSION_MODES: PermissionModeInfo[] = [
   { id: 'plan', label: 'Только планирование' }
 ]
 
+/**
+ * Режимы контекста базы знаний с подписями. Раньше подписи были литералами в
+ * `<option>` настроек разговора; инспектор контекста показывает тот же выбор, и
+ * две копии подписей разошлись бы при первой же правке формулировки.
+ */
+export const KB_CONTEXT_MODES: Array<{ id: KbContextMode; label: string }> = [
+  { id: 'auto', label: 'Авто-контекст + инструменты модели' },
+  { id: 'manual', label: 'По запросу модели (только инструменты)' },
+  { id: 'off', label: 'Не использовать' }
+]
+
 /** Значение статуса чата по умолчанию. */
 export const DEFAULT_CONVERSATION_STATUS: ConversationStatus = 'developing'
 
@@ -991,6 +1002,19 @@ export interface ContextSnapshotItem {
   toggleable: boolean
   /** Включён ли пункт пользователем. Выключенный не попадает ассистенту в следующих ходах. */
   enabled: boolean
+  /**
+   * Почему пункт нельзя выключить: `safety` — правила платформы и приложения,
+   * `info` — чистая информация без вклада в промпт. У выключаемого — null.
+   * UI объясняет замок словами, а не догадкой по id.
+   */
+  lockReason?: 'safety' | 'info' | null
+  /** Размер вклада пункта в промпт: символы и грубая оценка токенов (chars/4). */
+  size?: { chars: number; approxTokens: number } | null
+  /**
+   * Наследование значения: откуда взято и что стояло бы без переопределения.
+   * Строка `source` отвечает «откуда», а это — «что переопределено и чем».
+   */
+  inheritance?: { effective: string; overriddenFrom?: string; inheritedFrom?: string } | null
   details?: Record<string, string | number | boolean | string[] | null>
 }
 
@@ -1014,6 +1038,125 @@ export interface ConversationContextSnapshot {
     kbMode: { value: KbContextMode; displayName: string; explanation: string }
   }
   groups: ContextSnapshotGroup[]
+  /**
+   * Роль смотрящего: админ видит закрытые тексты инструкций и правит любые
+   * настройки, остальные — всё, что не про безопасность и других людей.
+   * Решает сервер: UI не выводит права из роли самостоятельно.
+   */
+  viewerRole: UserRole
+  /** Что ушло в прошлый ход; null — ходов ещё не было. */
+  lastTurn: ContextLastTurn | null
+  /** Несогласованности конфигурации (порядок: problem раньше notice). */
+  warnings: ContextWarning[]
+  /**
+   * Полный текст блоков, которые сервер добавит к следующему ходу, в порядке
+   * сборки. Строится тем же билдером, что и сам ход (`contextBlocks.ts`),
+   * иначе предпросмотр расходится с отправленным.
+   */
+  promptPreview: {
+    /** Блоки, попадающие в промпт при текущих настройках. */
+    blocks: ContextPromptBlock[]
+    /** Склеенный текст блоков — то, что уйдёт поверх истории разговора. */
+    text: string
+    chars: number
+    approxTokens: number
+    /** Чего в предпросмотре принципиально нет (динамика хода, закрытые тексты CLI). */
+    omitted: string[]
+  }
+}
+
+/**
+ * Предпросмотр автоконтекста базы знаний по черновику сообщения. Отвечает на
+ * вопрос, который снимок сам ответить не может: снимок описывает сохранённое
+ * состояние, а подбор документов зависит от текста, который ещё не отправлен.
+ */
+export interface ContextKbPreview {
+  /** Режим БЗ разговора на момент запроса; `off` — подбора не будет. */
+  mode: KbContextMode
+  /** Текст, который сервер допишет к промпту; пусто — инъекции не будет. */
+  text: string
+  chars: number
+  approxTokens: number
+  /** Уверенность подбора (её же считает ход модели); null — подбора не было. */
+  confidence: 'high' | 'medium' | 'low' | null
+  /** Разделы, попавшие в контекст: id документа, заголовок и размер блока. */
+  sections: Array<{ documentId: string; title: string; anchor?: string; chars: number }>
+  /** Почему инъекции нет: `off`, `empty-query`, причина от подборщика. */
+  emptyReason: string | null
+}
+
+/**
+ * Цепочка AGENTS.md рабочей директории, прочитанная с машины по явному запросу.
+ * Снимок её не раскрывает: файл живёт на чужом хосте, и читать его без просьбы
+ * человека сервер не должен. От общей к конкретной — тот же порядок, в каком её
+ * применяет CLI.
+ */
+export interface AgentsChainFile {
+  /** Абсолютный путь на машине. */
+  path: string
+  /** Содержимое файла; null — файл есть в цепочке, но прочитать не удалось. */
+  text: string | null
+  chars: number
+  /** Почему не прочитан (нет файла, отказ политики, таймаут). */
+  error?: string
+}
+
+export interface AgentsChainResult {
+  /** Машина, на которой читали; null — доступной машины нет. */
+  machineName: string | null
+  workdir: string | null
+  files: AgentsChainFile[]
+  /** Общая причина, когда читать было негде (нет машины/директории). */
+  unavailable?: string
+}
+
+/**
+ * Факт последнего хода: что реально ушло модели. Снимок — прогноз на следующее
+ * сообщение, а этот блок отвечает на другой вопрос: «а что было отправлено?».
+ * Данные берутся из `meta.request` сохранённого ответа, ничего не досчитывается.
+ */
+export interface ContextLastTurn {
+  /** Когда получен ответ (метка сообщения). */
+  at: string
+  provider: LlmProvider
+  model: string
+  /** Полный текст промпта того хода — то, что действительно ушло. */
+  prompt: string
+  chars: number
+  approxTokens: number
+  /** Ход продолжал сессию движка (история не пересобиралась). */
+  resumed: boolean
+  permissionMode?: string
+  attachments: number
+  /** Разделы БЗ, добавленные тем ходом (пусто — автоконтекста не было). */
+  kbSections: string[]
+}
+
+/**
+ * Несогласованность конфигурации, которую заметил сервер. Не ошибка запроса:
+ * настройки формально верны, но вместе дают не то, чего человек ждёт («чат
+ * привязан к проекту, а проектный контекст выключен»).
+ */
+export interface ContextWarning {
+  /** Пункт снимка, к которому относится (для перехода); null — общее. */
+  itemId: string | null
+  /** `notice` — стоит знать, `problem` — почти наверняка не то, что нужно. */
+  level: 'notice' | 'problem'
+  text: string
+}
+
+/** Блок системного промпта: чем он добавлен и какой у него текст. */
+export interface ContextPromptBlock {
+  /**
+   * id пунктов инспектора, за которыми стоит этот блок (`personalization`,
+   * `instruction-…`). Их может быть несколько: стандартные «терминал» и
+   * «проводник» склеиваются в одну подсказку модели.
+   */
+  itemIds: string[]
+  title: string
+  text: string
+  chars: number
+  approxTokens: number
 }
 
 /** Модель Codex для меню (id → в `codex exec -m`). */

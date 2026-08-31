@@ -1115,4 +1115,23 @@ describe('App — выход из аккаунта', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Вход' })).toBeInTheDocument())
     expect(screen.queryByText('Пользователи')).not.toBeInTheDocument()
   })
+
+  it('«Сессии и устройства» открывается и со страницы-утилиты, а не только из чата', async () => {
+    const api = await seededApi()
+    ;(window as unknown as { session: unknown }).session = {
+      me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
+      login: vi.fn(),
+      logout: vi.fn(),
+      sessions: vi.fn().mockResolvedValue([]),
+      revokeSession: vi.fn()
+    }
+    // Окно жило внутри блока страницы чата, поэтому с #/users (как и с доски
+    // проекта или «Мой аккаунт») пункт меню молча не давал ничего.
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users`)
+    render(<App api={api} delays={SLOW} />)
+
+    await userEvent.click(await screen.findByTitle('Роль: admin'))
+    await userEvent.click(screen.getByRole('menuitem', { name: /Сессии и устройства/ }))
+    expect(await screen.findByRole('dialog', { name: 'Сессии и устройства' })).toBeInTheDocument()
+  })
 })

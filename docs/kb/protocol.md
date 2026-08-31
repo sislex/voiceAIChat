@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-31
-checked: 491eaaa7
+checked: 4b23a49f
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -72,6 +72,16 @@ URL руками. Параметризованные пути — функции
 пользователей и реестр LLM-исполнителей (`/api/admin/llm-engines`,
 `/api/admin/llm-engines/:id`, `/api/admin/llm-engines/:id/health`), помощник промптов (`POST /api/prompt/suggest` — одноразовый LLM-вызов,
 переформулировки черновика; канал `prompt:suggest`). `GET REST.usage` (`/api/usage`) выдаёт отчёт расхода только владельцу Bearer-сессии: `unit`, `from`, `to`, `conversationId`; мост — `usage:report`. Полный список — константа `REST`.
+
+Контекст разговора («что получит ИИ»): `GET /api/conversations/:id/context-snapshot`
+(снимок сохранённого состояния), `POST /api/conversations/:id/context/:itemId`
+(тумблер пункта; безопасность выключить нельзя — 400),
+`POST /api/conversations/:id/context-kb-preview` (что подберёт база знаний для
+черновика; **POST**, потому что черновик — текст пользователя и в URL ему не
+место) и `GET /api/conversations/:id/agents-chain` (чтение цепочки AGENTS.md с
+машины по явной просьбе). Мосты: `conversations:contextSnapshot`,
+`conversations:setContextItem`, `conversations:contextKbPreview`,
+`conversations:agentsChain`. Разбор — [ui.md](ui.md#инспектор-контекста-разговора).
 
 Владелец данных — логин пользователя (`uid(req)` = `req.user.name`); запросы к
 разговорам и машинам фильтруются по нему.
@@ -320,6 +330,54 @@ Health-check — обычный REST-запрос, а не отдельный WS
 (`REST.adminUserMachines`) при открытии вкладки. Полный набор машин в списке
 людей стоил килобайты на каждого ради одной строки «0 из 2 онлайн».
 
+
+## Git в рабочей копии: `/api/projects/:id/git/*` (2026-08-31)
+
+Панель кода работает не с «папкой проекта», а с **рабочей копией задачи или сессии** —
+той, в которой только что работала модель. Клиент присылает **id копии**, а не путь:
+`ws:<ciWorkspaceId>` (запись `ci_workspaces`), `repo:<taskRepositoryId>`
+(`task_repositories`, в том числе merge-клоны), `chat:<conversationId>`,
+`project:<agentId>` (общая папка проекта на машине). Кодек и обратный разбор —
+`parseGitWorkspaceId`/`buildGitWorkspaceId` в `packages/shared/src/gitWorkspace.ts`.
+
+**Формы «произвольный путь на машине» в контракте нет намеренно.** Путь и машину
+резолвит сервер из своих таблиц, поэтому «прочитай что угодно на чужой машине»
+невозможно конструктивно, а не проверкой. На это стоит отрицательный тест парсера
+(`machine:a1:/etc` не разбирается) и тест роута. Если такая цель когда-нибудь
+понадобится, правильный путь — короткоживущий токен цели, который сервер выдаёт после
+проверки `policy.allowedDirs`, а не сырой путь в каждом запросе.
+
+Роуты (`REST.projectGit*`, обработчики — `apps/server/src/routes/projectGit.ts`):
+
+| Метод и путь | Что делает |
+|---|---|
+| `GET …/git/workspaces` | рабочие копии проекта; только БД, машины не опрашиваются |
+| `GET …/git/status?workspace=` | ветка, HEAD, upstream, ahead/behind, изменения, коммиты сверх базы |
+| `GET …/git/branches?workspace=&refresh=1` | локальные и удалённые ветки; `refresh` добавляет `git fetch` |
+| `GET …/git/tree?workspace=&dir=&ref=` | один уровень дерева файлов ревизии |
+| `GET …/git/file?workspace=&path=&ref=` | содержимое файла: из ревизии или из рабочей копии |
+| `GET …/git/diff?workspace=&path=&base=` | две версии файла для side-by-side сравнения |
+| `POST …/git/file` | запись файла (через fs-канал агента, но с гейтами панели) |
+| `POST …/git/checkout` | переключение ветки; грязное дерево — только с `confirmDirty` |
+| `POST …/git/branch` | создать ветку и перейти на неё |
+| `POST …/git/commit` | `add` выбранных путей + `commit` от имени человека |
+| `POST …/git/push` | `HEAD:refs/heads/<branch>` + сверка SHA в origin |
+
+Каналы моста — `projects:git*` (`packages/shared/src/ipc.ts`, реализация
+`packages/ui/src/remote/httpApi.ts`, фейк `packages/ui/src/test/fakeApi.ts`).
+WS-сообщений у панели нет: состояние перечитывается кнопкой «Обновить» и после каждой
+мутации (сервер возвращает свежий статус в ответе — иначе UI на секунду показывал бы
+устаревшее состояние).
+
+Гейты по слоям: право `repository:write` на любой POST и возможность проекта `git` —
+из карт `projectPermissionForRequest`/`projectFeatureForRequest` (`users/auth.ts`,
+таблицы в `auth.permissions.test.ts`); членство в проекте, доступ к машине, режим
+шаринга, политика машины и занятость каталога раном — в `resolveGitTarget`
+(`apps/server/src/git/workspaceService.ts`). Коды отказов: `workspace_not_found`,
+`machine_offline`, `path_missing`, `not_a_repository`, `workspace_released`,
+`workspace_busy`, `read_only_workspace`, `read_only_machine`, `dirty_worktree`,
+`protected_branch`, `push_rejected`, `push_not_confirmed`, `git_credentials_missing`,
+`git_locked`, `nothing_to_commit`, `command_denied`, `git_busy`, `git_timeout`.
 
 ## Make (2026-08-26)
 
