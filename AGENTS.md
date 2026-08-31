@@ -36,6 +36,7 @@ npm run typecheck            # все воркспейсы; отдельно: ty
 npm run test                 # все воркспейсы (vitest run)
 npm run gate:fast            # гейт шага: только затронутое + related-тесты
 npm run gate                 # полный гейт перед коммитом/PR
+npm run test:coverage        # покрытие shared/server/ui с порогами-трещоткой
 npm run -w @voicechat/ui test        # тесты одного пакета — так быстрее
 npm run docker               # docker compose up --build -d → http://localhost:8787
 npm run kb:check             # что в базе знаний устарело относительно кода
