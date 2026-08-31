@@ -142,7 +142,16 @@ export const MAKE_INSPECTOR_SCRIPT = `<script data-vc-make-inspector>
 })();
 </script>`
 
-function sendError(reply: FastifyReply, error: unknown): FastifyReply {
+/**
+ * Единственное место, где ошибка Make превращается в HTTP-статус: через него
+ * проходят все ~50 маршрутов файла. Экспортируется ради таблицы в
+ * `make.sendError.test.ts` — ошибка в этом отображении меняет контракт сразу
+ * всего Make API, а через маршруты каждый код проверять пришлось бы полсотни раз.
+ *
+ * Не-`MakeError` намеренно пробрасывается наверх: неизвестный сбой обязан
+ * дойти до обработчика Fastify и стать 500, а не молча превратиться в 400.
+ */
+export function sendError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof MakeError) {
     const status = error.code === 'not_found' ? 404 : error.code === 'too_large' || error.code === 'too_many_files' ? 413 : error.code === 'exists' ? 409 : error.code === 'quota' ? 413 : 400
     return reply.code(status).send({ error: error.message, code: error.code })
