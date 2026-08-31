@@ -8,6 +8,7 @@
 // Состояния «загрузка/ошибка/пусто» берутся из ui-kit: карточка задачи не имеет
 // права показывать пустоту иначе, чем остальной интерфейс.
 import { useEffect, useState } from 'react'
+import { usePolling } from '../../lib/usePolling'
 import { EmptyState, ErrorState, Skeleton } from '@voicechat/ui-kit'
 import { formatDateTime } from '../../lib/dateFormat'
 import type { TaskTimeline as Timeline, TaskTimelineAttempt, TaskTimelineStage, TaskTimelineStatus } from '@shared/timeline'
@@ -109,10 +110,9 @@ export function TaskTimeline({ projectId, taskId }: { projectId: string; taskId:
     void request.then((value) => { if (live) setTimeline(value) }).catch(() => { if (live) setFailed(true) })
     return () => { live = false }
   }, [projectId, taskId, attempt])
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [])
+  // «Текущий возраст» задачи пересчитывается раз в секунду — но только пока
+  // вкладка браузера видна: скрытой карточке тикать незачем.
+  usePolling(() => setNow(Date.now()), { enabled: true, intervalMs: 1000 })
   if (failed) return <ErrorState message="Не удалось загрузить временную шкалу" onRetry={() => setAttempt((value) => value + 1)} />
   if (!timeline) return <>
     <span className="vc-sr-only" aria-live="polite">Загрузка временной шкалы…</span>

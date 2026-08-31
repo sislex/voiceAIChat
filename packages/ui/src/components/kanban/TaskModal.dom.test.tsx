@@ -322,6 +322,22 @@ describe('TaskModal — что грузится при открытии карт
     await waitFor(() => expect(calls().improvements).toBe(1))
   })
 
+  it('QA-этапы не опрашиваются у задачи, у которой не было ни одного рана', async () => {
+    // Три запроса (по одному на этап) уходили при каждом открытии любой задачи —
+    // даже в проекте без QA. Раны этапов создаёт сам этап, поэтому «рана не
+    // было» означает и «QA-ранов нет».
+    window.ci = createFakeCi()
+    const listStageRuns = vi.fn(async () => [])
+    window.qa = { listStageRuns } as unknown as typeof window.qa
+    const { unmount } = render(<TaskModal {...props()} />)
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true'))
+    expect(listStageRuns).not.toHaveBeenCalled()
+    unmount()
+
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
+    await waitFor(() => expect(listStageRuns).toHaveBeenCalledTimes(3))
+  })
+
   it('панель Component QA молчит и не заводит опрос, пока её вкладку не открыли', async () => {
     // У панели внутри `setInterval` на 2 секунды: раньше он запускался у любой
     // открытой карточки, стоявшей на QA-этапе, даже если вкладку не смотрели.
