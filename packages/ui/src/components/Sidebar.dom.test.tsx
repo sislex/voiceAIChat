@@ -3,7 +3,7 @@ import { BUILTIN_PROJECT_TYPE_IDS, builtinProjectTypeChain } from '@shared/proje
 import { expectLabelledIconButtons, expectNoViolations } from '../test/a11y'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Sidebar, type MessageSearchView } from './Sidebar'
+import { Sidebar, formatConversationCostUsd, type MessageSearchView } from './Sidebar'
 import type { Conversation, MessageSearchHit, PermissionMode, SessionUser } from '@shared/types'
 import type { AgentInfo } from '@shared/agentProtocol'
 import type { TaskChatBadge } from '@shared/projects'
@@ -55,6 +55,26 @@ describe('Sidebar — фильтр «чаты завершённых задач�
   it('без колбэка кнопки нет — desktop живёт без фильтра', () => {
     setup()
     expect(screen.queryByRole('button', { name: 'Показывать чаты завершённых задач' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Sidebar — стоимость разговоров', () => {
+  it('показывает точную компактную сумму только для known и нейтральный partial', () => {
+    const known = { ...conv('known', 'Очень длинное название разговора, которое должно сокращаться'), costStatus: 'known' as const, costUsd: 0.000123 }
+    const partial = { ...conv('partial', 'Неполный'), costStatus: 'partial' as const, costUsd: null }
+    const unknown = { ...conv('unknown', 'Неизвестный'), costStatus: 'unknown' as const, costUsd: null }
+    setup({ conversations: [known, partial, unknown] })
+
+    expect(screen.getByText('$0.0001')).toBeInTheDocument()
+    expect(screen.getByLabelText('Неполная стоимость')).toHaveTextContent('—')
+    expect(document.querySelectorAll('.ccost')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: known.title })).toHaveClass('ctitle')
+  })
+
+  it('не округляет ненулевые малые суммы до недостоверного нуля', () => {
+    expect(formatConversationCostUsd(0.000001)).toBe('$0.000001')
+    expect(formatConversationCostUsd(0.0012)).toBe('$0.001')
+    expect(formatConversationCostUsd(0.12)).toBe('$0.12')
   })
 })
 

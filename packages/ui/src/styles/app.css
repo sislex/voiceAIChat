@@ -288,13 +288,25 @@
 .convo.on {
   background: var(--surface-selected);
 }
+/* Заголовок сжимается, а серверная стоимость остаётся видимой справа. */
+.ctitle-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 0 3px 0;
+}
 /* Название беседы — кнопка (с клавиатуры выбирается только так), поэтому
    сбрасываем всё кнопочное: вид остаётся строкой списка. */
 .ctitle {
   font-weight: 700;
-  margin: 0 0 3px 0;
+  margin: 0;
   display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   padding: 0;
   border: 0;
   background: none;
@@ -303,6 +315,16 @@
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+.ccost {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ccost--incomplete {
+  color: var(--text-dim);
 }
 .cmeta {
   font-size: 11px;

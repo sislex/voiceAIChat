@@ -80,6 +80,38 @@ describe('VoiceChatDb — разговоры', () => {
     expect(db.getConversation(U, conversation.id)?.llmProvider).toBeNull()
   })
 
+  it('агрегирует стоимость AI-ходов по фактическим provider/model и не выдаёт неполную сумму', () => {
+    const conversation = db.createConversation(U, 'Стоимость')
+    expect(conversation).toMatchObject({ costUsd: null, costStatus: 'unknown' })
+    db.upsertModelPrice({
+      provider: 'claude', model: 'claude-opus', inputPerMillion: 10,
+      cachedInputPerMillion: 1, cacheWritePerMillion: 20, outputPerMillion: 50,
+      sourceUrl: 'test', effectiveAt: 1
+    })
+    db.addMessage(U, conversation.id, 'ai', 'Ответ', '10:00', 'claude', {
+      model: 'claude-opus', inputTokens: 1_000, cacheReadTokens: 200,
+      cacheCreationTokens: 100, outputTokens: 100
+    })
+    expect(db.getConversation(U, conversation.id)).toMatchObject({ costUsd: 0.0152, costStatus: 'known' })
+
+    // Старый ответ без usage делает итог неполным; известную часть не показываем как полную.
+    db.addMessage(U, conversation.id, 'ai', 'Старый ответ', '10:01', 'claude')
+    expect(db.listConversations(U)[0]).toMatchObject({ costUsd: null, costStatus: 'partial' })
+  })
+
+  it('использует модель разговора только как fallback модели, сохраняя фактический provider хода', () => {
+    const conversation = db.createConversation(U, 'Модели')
+    db.setConversationExecTarget(U, conversation.id, null, undefined, undefined, 'claude', 'same-model')
+    for (const provider of ['claude', 'codex'] as const) db.upsertModelPrice({
+      provider, model: 'same-model', inputPerMillion: provider === 'claude' ? 1 : 2,
+      cachedInputPerMillion: 0, cacheWritePerMillion: 0, outputPerMillion: 0,
+      sourceUrl: 'test', effectiveAt: 1
+    })
+    db.addMessage(U, conversation.id, 'ai', 'Claude', '10:00', 'claude', { inputTokens: 1_000, outputTokens: 0 })
+    db.addMessage(U, conversation.id, 'ai', 'Codex', '10:01', 'codex', { model: 'same-model', inputTokens: 1_000, outputTokens: 0 })
+    expect(db.getConversation(U, conversation.id)).toMatchObject({ costUsd: 0.003, costStatus: 'known' })
+  })
+
   it('сохраняет режим прав разговора; мусор в колонке читается как null', () => {
     const conversation = db.createConversation(U, 'Проект')
     expect(conversation.permissionMode).toBeNull()

@@ -1577,7 +1577,7 @@ export class VoiceChatDb {
          VALUES (?, ?, ?, ?, NULL, ?, NULL, ?)`
       )
       .run(id, title, ts, ts, userId, assistantKind)
-    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext: [], projectId: null, assistantKind, status: DEFAULT_CONVERSATION_STATUS, lastExecTarget: null }
+    return { id, title, createdAt: ts, updatedAt: ts, messageCount: 0, claudeSessionId: null, execTarget: null, workdir: null, skillNames: [], llmEngineId: null, llmProvider: null, llmModel: null, permissionMode: null, kbContextMode: 'auto', disabledContext: [], projectId: null, assistantKind, status: DEFAULT_CONVERSATION_STATUS, costUsd: null, costStatus: 'unknown', lastExecTarget: null }
   }
 
   /**
@@ -3638,7 +3638,40 @@ export class VoiceChatDb {
     return this.db.prepare('DELETE FROM conversation_workspaces WHERE conversation_id = ?').run(conversationId).changes > 0
   }
 
+  private conversationCost(row: ConversationRow): Pick<Conversation, 'costUsd' | 'costStatus'> {
+    const result = this.db.prepare(`SELECT
+      COUNT(*) AS ai_count,
+      SUM(CASE WHEN m.meta IS NOT NULL
+        AND json_type(m.meta, '$.inputTokens') IN ('integer', 'real')
+        AND json_type(m.meta, '$.outputTokens') IN ('integer', 'real')
+        AND mp.model IS NOT NULL THEN 1 ELSE 0 END) AS known_count,
+      SUM(CASE WHEN m.meta IS NOT NULL
+        AND json_type(m.meta, '$.inputTokens') IN ('integer', 'real')
+        AND json_type(m.meta, '$.outputTokens') IN ('integer', 'real')
+        AND mp.model IS NOT NULL THEN (
+          MAX(COALESCE(json_extract(m.meta,'$.inputTokens'),0) - COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0), 0) * mp.input_per_million +
+          COALESCE(json_extract(m.meta,'$.cacheReadTokens'),0) * mp.cached_input_per_million +
+          COALESCE(json_extract(m.meta,'$.cacheCreationTokens'),0) * mp.cache_write_per_million +
+          COALESCE(json_extract(m.meta,'$.outputTokens'),0) * mp.output_per_million
+        ) / 1000000.0 END) AS cost_usd
+      FROM messages m
+      LEFT JOIN model_prices mp
+        ON mp.provider = m.engine
+       AND mp.model = COALESCE(json_extract(m.meta,'$.model'), ?)
+      WHERE m.conversation_id = ? AND m.role = 'ai'`).get(row.llm_model, row.id) as {
+        ai_count: number
+        known_count: number | null
+        cost_usd: number | null
+      }
+    const knownCount = result.known_count ?? 0
+    const costStatus = result.ai_count === 0 || knownCount === 0
+      ? 'unknown'
+      : knownCount === result.ai_count ? 'known' : 'partial'
+    return { costUsd: costStatus === 'known' ? (result.cost_usd ?? 0) : null, costStatus }
+  }
+
   private mapConversation(row: ConversationRow, messageCount: number): Conversation {
+    const cost = this.conversationCost(row)
     return {
       id: row.id,
       title: row.title,
@@ -3673,6 +3706,7 @@ export class VoiceChatDb {
       projectPreviewUrl: row.project_id ? ((this.db.prepare(`SELECT preview_url FROM projects WHERE id = ?`).get(row.project_id) as { preview_url: string | null } | undefined)?.preview_url ?? null) : null,
       taskId: row.task_id ?? null,
       status: normStatus(row.status),
+      ...cost,
       lastExecTarget: row.last_exec_target ?? null
     }
   }
