@@ -3801,7 +3801,9 @@ button.conscmd:hover {
 .context-size { color: var(--muted); font-variant-numeric: tabular-nums; }
 .context-announce:empty { display: none; }
 .context-announce { margin: 0; color: var(--muted); font-size: 12px; }
-.context-foreign { margin: 6px 0 0; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb,var(--accent) 12%,transparent); font-size: 13px; }
+.context-foreign { margin: 6px 0 0; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb,var(--accent) 12%,transparent); font-size: 13px; display: grid; gap: 6px; }
+.context-foreign p { margin: 0; }
+.context-foreign label { display: inline-flex; gap: 6px; align-items: center; }
 .context-summary { margin: 6px 0 0; font-weight: 600; font-size: 13px; }
 .context-changelog { margin: 0; padding: 12px 20px 16px 38px; display: grid; gap: 6px; font-size: 13px; }
 .context-changelog b { font-weight: 600; }
