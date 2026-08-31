@@ -12,7 +12,15 @@ export default defineConfig({
     alias: [{ find: /^@shared\//, replacement: abs('../shared/src/') }]
   },
   test: {
-    environment: 'jsdom',
+    // По умолчанию node: из 154 файлов пакета треть — чистая логика, и jsdom им
+    // не нужен. Метрики прогона показывали 88 с на создание окружения и 33 с на
+    // setup из ~364 с всей работы, то есть треть уходила в накладные расходы
+    // на файл. Конвенция имён в пакете уже разделяла эти два вида тестов
+    // (`*.dom.test.tsx` против `*.test.ts`) — конфиг просто ей не следовал.
+    // Файлам, которым jsdom нужен вопреки имени, ставится докблок
+    // `// @vitest-environment jsdom` в самом файле.
+    environment: 'node',
+    environmentMatchGlobs: [['src/**/*.dom.test.{ts,tsx}', 'jsdom']],
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     testTimeout: 20000,
