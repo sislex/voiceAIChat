@@ -5,7 +5,7 @@
 
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { MAKE_ASSISTANT_HINT, kbToolHint, parseCodexActivity, parseCodexLine, previewToolHint } from '@voicechat/shared'
+import { KANBAN_ASSISTANT_HINT, MAKE_ASSISTANT_HINT, kbToolHint, parseCodexActivity, parseCodexLine, previewToolHint } from '@voicechat/shared'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '@voicechat/shared'
 import { cliProfileEnv } from './cliProfiles.js'
 import { killCliChild } from './childKill.js'
@@ -99,6 +99,12 @@ export function codexInvocation(req: LlmRequest): { args: string[]; prompt: stri
   if (req.makeMcpUrl) {
     args.push('-c', `mcp_servers.make.url="${req.makeMcpUrl}"`)
     prompt = MAKE_ASSISTANT_HINT + '\n\n' + prompt
+  }
+
+  // Канбан: доска и проектное API разговора как MCP-инструменты.
+  if (req.kanbanMcpUrl) {
+    args.push('-c', `mcp_servers.kanban.url="${req.kanbanMcpUrl}"`)
+    prompt = KANBAN_ASSISTANT_HINT + '\n\n' + prompt
   }
 
   if (req.remote && req.permissionMode !== 'plan') {

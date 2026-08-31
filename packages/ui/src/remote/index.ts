@@ -15,6 +15,7 @@ import type {
   RendererFilesBridge,
   RendererFsBridge,
   RendererPreviewBridge,
+  RendererWidgetUiBridge,
   RendererRealtimeBridge,
   RendererPtyBridge,
   RendererSessionBridge,
@@ -147,6 +148,24 @@ export function makePreviewBridge(ws: WsClient): RendererPreviewBridge {
         requestId: m.requestId,
         ...(m.conversationId ? { conversationId: m.conversationId } : {}),
         ...(m.registrationId ? { registrationId: m.registrationId } : {}),
+        ok: m.ok,
+        ...(m.result !== undefined ? { result: m.result } : {}),
+        ...(m.error !== undefined ? { error: m.error } : {})
+      })
+  }
+}
+
+/** Мост действий ассистента в интерфейсе: приём widget.action, ответ widget.result. */
+export function makeWidgetUiBridge(ws: WsClient): RendererWidgetUiBridge {
+  return {
+    onAction: (cb) =>
+      ws.on('widget.action', (m) => cb({ conversationId: m.conversationId, projectId: m.projectId, requestId: m.requestId, action: m.action })),
+    onOrchestration: (cb) => ws.on('assistant.orchestration', (m) => cb(m.plan)),
+    result: (m) =>
+      ws.send({
+        t: 'widget.result',
+        conversationId: m.conversationId,
+        requestId: m.requestId,
         ok: m.ok,
         ...(m.result !== undefined ? { result: m.result } : {}),
         ...(m.error !== undefined ? { error: m.error } : {})
@@ -606,6 +625,7 @@ export function installRemoteBridges(serverHttp: string, localAgentId: string | 
   window.pty = makePtyBridge(ws)
   window.make = makeMakeBridge(ws)
   window.preview = makePreviewBridge(ws)
+  window.widgetUi = makeWidgetUiBridge(ws)
   window.browser = makeBrowserBridge(httpBase)
   window.featurePreview = createFeaturePreviewRest(httpBase, localAgentId)
   window.qa = createQaRest(httpBase)
