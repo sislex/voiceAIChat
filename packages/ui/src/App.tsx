@@ -2820,6 +2820,14 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         <ConversationSettings
           conversation={activeConversation}
           agents={operations.agents}
+          chatInstructions={settingsState.settings.chatInstructions}
+          onSaveInstruction={async (id, text) => {
+            // Текст инструкции — общая настройка: правим весь список, сохраняя
+            // порядок и остальные поля. Инспектор об этом предупреждает.
+            await settingsActions.updateSettings({
+              chatInstructions: settingsState.settings.chatInstructions.map((item) => item.id === id ? { ...item, text } : item)
+            })
+          }}
           machineOps={machineOps}
           role={session.currentUser?.role ?? 'admin'}
           settings={settingsState.settings}

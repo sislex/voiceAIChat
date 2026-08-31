@@ -40,6 +40,13 @@ import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
 
+/**
+ * Порог замечания о размере постоянной части промпта (в приблизительных
+ * токенах). Взят с запасом: обычный набор инструкций чата даёт ~600, поэтому
+ * 4000 — это уже «кто-то дописал слишком много», а не штатная работа.
+ */
+const CONTEXT_PREVIEW_TOKENS_NOTICE = 4000
+
 const permissionDisplay: Record<PermissionMode, { displayName: string; explanation: string }> = {
   plan: { displayName: 'Только планирование', explanation: 'Изменение данных отключено.' },
   acceptEdits: { displayName: 'Авто-правки файлов', explanation: 'Правки разрешены в пределах политики машины.' },
@@ -261,6 +268,16 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     now
   })
   const previewText = previewBlocks.map((block) => block.text).join('\n\n')
+  // Размер: у движков контекст не бесконечный, и «почему модель забыла начало
+  // разговора» чаще всего про объём. Порог мягкий — это замечание, не запрет.
+  if (approxTokens(previewText.length) > CONTEXT_PREVIEW_TOKENS_NOTICE) {
+    warnings.push({
+      itemId: null,
+      level: 'notice',
+      text: `Свои блоки промпта занимают ≈${approxTokens(previewText.length)} токенов — это много для постоянной части каждого хода. Выключите ненужные источники или сократите инструкции чата.`
+    })
+    warnings.sort((a, b) => (a.level === b.level ? 0 : a.level === 'problem' ? -1 : 1))
+  }
   // Размер вклада: у пункта, за которым стоит блок промпта, — размер его блока.
   // Склеенная подсказка одна на два пункта: размер получают оба — вопрос «что
   // именно занимает место» задают про пункт, а итог берётся из предпросмотра.
@@ -276,6 +293,7 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     groups: withSizes,
     viewerRole: role,
     lastTurn,
+    changes: db.listConversationContextEvents(userId, conversationId, 20),
     warnings,
     promptPreview: {
       blocks: previewBlocks,
