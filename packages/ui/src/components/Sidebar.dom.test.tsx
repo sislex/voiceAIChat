@@ -65,16 +65,20 @@ describe('Sidebar — стоимость разговоров', () => {
     const unknown = { ...conv('unknown', 'Неизвестный'), costStatus: 'unknown' as const, costUsd: null }
     setup({ conversations: [known, partial, unknown] })
 
-    expect(screen.getByText('$0.0001')).toBeInTheDocument()
+    expect(screen.getByText('$0.000123')).toBeInTheDocument()
     expect(screen.getByLabelText('Неполная стоимость')).toHaveTextContent('—')
     expect(document.querySelectorAll('.ccost')).toHaveLength(2)
     expect(screen.getByRole('button', { name: known.title })).toHaveClass('ctitle')
   })
 
   it('не округляет ненулевые малые суммы до недостоверного нуля', () => {
+    expect(formatConversationCostUsd(0)).toBe('$0')
+    expect(formatConversationCostUsd(0.00000001)).toBe('$0.00000001')
     expect(formatConversationCostUsd(0.000001)).toBe('$0.000001')
-    expect(formatConversationCostUsd(0.0012)).toBe('$0.001')
-    expect(formatConversationCostUsd(0.12)).toBe('$0.12')
+    expect(formatConversationCostUsd(0.0001234)).toBe('$0.0001234')
+    expect(formatConversationCostUsd(0.0012)).toBe('$0.0012')
+    expect(formatConversationCostUsd(0.01234)).toBe('$0.01234')
+    expect(formatConversationCostUsd(1.2345)).toBe('$1.235')
   })
 })
 

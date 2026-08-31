@@ -112,6 +112,44 @@ describe('VoiceChatDb — разговоры', () => {
     expect(db.getConversation(U, conversation.id)).toMatchObject({ costUsd: 0.003, costStatus: 'known' })
   })
 
+  it('восстанавливает агрегат после открытия БД и изолирует повреждённый meta', () => {
+    db.close()
+    const dir = mkdtempSync(join(tmpdir(), 'vc-conversation-cost-'))
+    const file = join(dir, 'voicechat.db')
+    try {
+      db = new VoiceChatDb(file)
+      const valid = db.createConversation(U, 'Валидный')
+      const broken = db.createConversation(U, 'Повреждённый')
+      db.upsertModelPrice({
+        provider: 'claude', model: 'priced', inputPerMillion: 1,
+        cachedInputPerMillion: 2, cacheWritePerMillion: 3, outputPerMillion: 4,
+        sourceUrl: 'test', effectiveAt: 1
+      })
+      db.addMessage(U, valid.id, 'ai', 'Сохранённый', '10:00', 'claude', {
+        model: 'priced', inputTokens: 1_000, outputTokens: 500
+      })
+      db.addMessage(U, broken.id, 'ai', 'Сломанный', '10:01', 'claude', {
+        model: 'priced', inputTokens: 1, outputTokens: 1
+      })
+      expect(db.getConversation(U, valid.id)).toMatchObject({ costUsd: 0.003, costStatus: 'known' })
+      db.close()
+
+      const raw = new Database(file)
+      raw.prepare(`UPDATE messages SET meta = '{' WHERE conversation_id = ?`).run(broken.id)
+      raw.close()
+
+      db = new VoiceChatDb(file)
+      const restored = new Map(db.listConversations(U).map((conversation) => [conversation.id, conversation]))
+      expect(restored.get(valid.id)).toMatchObject({ costUsd: 0.003, costStatus: 'known' })
+      expect(restored.get(broken.id)).toMatchObject({ costUsd: null, costStatus: 'unknown' })
+      expect(db.searchConversations(U, 'Валидный')[0]).toMatchObject({ costUsd: 0.003, costStatus: 'known' })
+    } finally {
+      db.close()
+      rmSync(dir, { recursive: true, force: true })
+      db = makeDb()
+    }
+  })
+
   it('сохраняет режим прав разговора; мусор в колонке читается как null', () => {
     const conversation = db.createConversation(U, 'Проект')
     expect(conversation.permissionMode).toBeNull()
