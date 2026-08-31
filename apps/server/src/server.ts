@@ -48,6 +48,8 @@ import { registerAuth, resolveActiveUser, resolveUser, uid } from './users/auth.
 import { ensureDefaultChatBinding, ensureDefaultStorage } from './agents/defaultStorage.js'
 import { createAgentWatchdog } from './agents/watchdog.js'
 import { createCommandGate } from './agents/commandGate.js'
+import { GitWorkspaceService } from './git/workspaceService.js'
+import { registerProjectGitRoutes } from './routes/projectGit.js'
 import { createMailer, type Mailer } from './users/mailer.js'
 import type { GeoResolver } from '@voicechat/sessions-core'
 import { SessionHub } from './users/sessionHub.js'
@@ -1617,6 +1619,22 @@ sources: {id:string,kind:knowledge|hierarchy|related_tasks|code|tests|storybook,
     qaPreparation: (args) => { void launchQaPreparation(args) }
   })
   registerCiRoutes(app, db, ciRunManager, agentRegistry, (projectId) => boardHub.emit(projectId))
+
+  // Панель кода: git в рабочей копии задачи или сессии. Своего транспорта у неё нет —
+  // всё через тот же exec/fs машины-агента, что у CI и проводника.
+  registerProjectGitRoutes(app, new GitWorkspaceService({
+    db,
+    runtime: {
+      exec: (agentId, command, timeoutMs, signal, meta) => agentRegistry.exec(agentId, command, timeoutMs, signal, meta),
+      fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
+      fsWrite: (agentId, path, dataBase64) => agentRegistry.fsWrite(agentId, path, dataBase64),
+      isOnline: (agentId) => agentRegistry.isOnline(agentId),
+      policyOf: (agentId) => agentRegistry.policyOf(agentId),
+      platformOf: (agentId) => agentRegistry.platformOf(agentId),
+      nameOf: (agentId) => agentRegistry.nameOf(agentId)
+    },
+    gate: commandGate
+  }))
   const featurePreviews = new FeaturePreviewManager({
     db,
     executor: ciExecutor,

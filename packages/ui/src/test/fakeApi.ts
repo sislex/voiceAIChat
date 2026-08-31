@@ -5,6 +5,8 @@ import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnap
 // In-memory фейк window.api (RendererApi) для тестов renderer/стора.
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
+import type { GitWorkspaceStatus } from '@shared/gitWorkspace'
+import { makeGitBranches, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from './fixtures/git'
 import type { RendererApi } from '@shared/ipc'
 import type { Conversation, Message, Settings } from '@shared/types'
 import { sanitizeSettingsPatch } from '@shared/types'
@@ -41,6 +43,16 @@ const adminSessions: Array<{ sid: string; user: string; createdAt: number; lastS
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
   /** Вид доски на «сервере»: по проекту, как в таблице board_views. */
   const boardViews = new Map<string, BoardView>()
+  /**
+   * Состояние панели кода. Фейк держит его в памяти, чтобы тесты проверяли переходы
+   * (правка → сохранение → коммит → push), а не работу настоящего git.
+   */
+  const gitState: {
+    status: GitWorkspaceStatus
+    saved: Array<{ path: string; content: string }>
+    commits: Array<{ message: string; staged: number }>
+    pushed: string[]
+  } = { status: makeGitStatus(), saved: [], commits: [], pushed: [] }
   const makeStore = new Map<string, Map<string, string>>()
   const makeSnapStore = new Map<string, Array<{ id: string; createdAt: number; label: string; files: number }>>()
   /** Содержимое файлов на момент снимка — для diff и восстановления одного файла. */
@@ -1117,6 +1129,39 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
     'projects:verifyGitAccess': async ({ repositoryUrl }) => ({ ok: true, status: { configured: true, repositoryUrl, account: 'octocat', checkedAt: Date.now(), readAccess: 'ok', writeAccess: 'ok', warnings: [] } }),
     'projects:deleteGitAccess': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] } }),
     'projects:gitAccessDiagnostics': async ({ repositoryUrl }) => ({ ok: true, status: { configured: false, repositoryUrl, readAccess: 'unknown', writeAccess: 'unknown', warnings: [] }, diagnostics: { originalUrl: repositoryUrl, effectiveUrl: repositoryUrl, matchingRules: [], warnings: [] } }),
+    // --- Панель кода. Фейк держит одно изменённое состояние в памяти: экраны
+    // проверяют переходы (правка → сохранение → коммит), а не работу git.
+    'projects:gitWorkspaces': async () => [makeGitWorkspace()],
+    'projects:gitStatus': async () => gitState.status,
+    'projects:gitBranches': async ({ refresh }) => ({ ...makeGitBranches(), fetchedAt: refresh ? 1700000000000 : null }),
+    'projects:gitTree': async ({ dir }) => ({ ...makeGitTree(), dir }),
+    'projects:gitFile': async ({ path, ref }) => ({ ...makeGitFile({ path }), ref: ref ?? null }),
+    'projects:gitDiff': async ({ path }) => makeGitDiff({ path }),
+    'projects:gitSaveFile': async ({ path, content }) => {
+      gitState.saved.push({ path, content })
+      return { file: makeGitFile({ path, content, size: content.length }), status: gitState.status }
+    },
+    'projects:gitCheckout': async ({ branch, confirmDirty }) => {
+      if (gitState.status.changes.length > 0 && !confirmDirty) throw new Error('dirty_worktree: есть незакоммиченные изменения')
+      gitState.status = { ...gitState.status, branch, changes: gitState.status.changes }
+      return { status: gitState.status, createdLocal: false }
+    },
+    'projects:gitCreateBranch': async ({ name }) => {
+      gitState.status = { ...gitState.status, branch: name }
+      return { status: gitState.status, createdLocal: true }
+    },
+    'projects:gitCommit': async ({ message, paths, all }) => {
+      const staged = all ? gitState.status.changes.length : (paths?.length ?? 0)
+      gitState.commits.push({ message, staged })
+      gitState.status = { ...gitState.status, changes: [], ahead: gitState.status.ahead + 1 }
+      return { status: gitState.status, sha: 'd'.repeat(40), staged }
+    },
+    'projects:gitPush': async ({ branch }) => {
+      const target = branch ?? gitState.status.branch ?? 'CHAT-42'
+      gitState.pushed.push(target)
+      gitState.status = { ...gitState.status, ahead: 0 }
+      return { status: gitState.status, branch: target, sha: 'd'.repeat(40) }
+    },
     'projects:setReposRoot': async ({ id, agentId, reposRoot }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) m.reposRoot = reposRoot; return detail(p) },
     'projects:setMachineSsh': async ({ id, agentId, sshHost, sshUser }) => { const p = projects.find((x) => x.id === id)!; const m = p.machines.find((x) => x.agentId === agentId); if (m) Object.assign(m, { sshHost, sshUser }); return detail(p) },
     // Разовая проверка набора: фейк отвечает пустым списком — без раннера

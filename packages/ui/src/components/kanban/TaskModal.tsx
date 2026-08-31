@@ -40,6 +40,7 @@ import { KbUsageBrief } from '../kb/KbUsageBrief'
 import { useDismissibleMenu } from '../../lib/useDismissibleMenu'
 import { CiReport } from '../ci/CiReport'
 import { MergePanel } from '../ci/MergePanel'
+import { GitTargetPane } from '../git/GitTargetPane'
 import { TaskRunFeed } from '../ci/TaskRunFeed'
 import { TaskDesigns } from './TaskDesigns'
 import { TaskPreparationTab } from './TaskPreparationTab'
@@ -96,7 +97,7 @@ const RUN_OUTCOME_LABEL: Record<TaskRunResult['outcome'], string> = {
   skipped: 'пропущен'
 }
 
-export type TaskModalTab = 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'merge' | 'feed' | 'improvements'
+export type TaskModalTab = 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'code' | 'merge' | 'feed' | 'improvements'
 
 export interface TaskModalProps {
   task: Task
@@ -598,6 +599,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     ...(features.ci ? [{ id: 'improvements' as const, label: 'Улучшения', count: newImprovements }] : []),
     ...(features.qa ? qaStageOrder.filter(qaStageVisible).map((stage) => ({ id: stage, label: stage === 'component_qa' ? 'Component QA' : stage === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA' })) : []),
     ...(features.qa ? [{ id: 'qa' as const, label: 'Ручное QA' }] : []),
+    // «Код» — рабочая копия задачи: посмотреть, что наменяла модель, поправить,
+    // закоммитить и отправить ветку. Merge остаётся отдельной вкладкой: он про main.
+    ...(features.git ? [{ id: 'code' as const, label: 'Код' }] : []),
     ...(features.git ? [{ id: 'merge' as const, label: 'Merge' }] : []),
     ...(features.ci ? [{ id: 'feed' as const, label: 'Лента рана' }] : [])
   ]
@@ -1186,6 +1190,16 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             canStart={Boolean(props.onStartMerge) && canStartMerge({ semanticType: board.columns.find((column) => column.id === task.columnId)?.semanticType ?? 'custom', sourceBranch: task.mergeSourceBranch, alreadyMerged: isCurrentMergeSourceMerged({ sourceSha: task.mergeSourceSha, mergedSourceSha: task.mergedSourceSha, mergedSha: task.mergedSha }), hasActiveRun: Boolean(task.activeMergeRunId), permitted: task.mergePermitted, machineBound: task.mergeMachineBound })}
             onStartMerge={(agentId) => props.onStartMerge?.(task.id, agentId)}
           />}
+        </section>
+        <section className="task-tab-panel task-code-tab" data-testid="task-code-tab" {...panelProps('code')}>
+          {activeTab === 'code' && (
+            <GitTargetPane
+              projectId={task.projectId}
+              taskId={task.id}
+              api={window.api}
+              onOpenRun={(_kind, runId) => { window.location.hash = `#/ci/runs/${runId}` }}
+            />
+          )}
         </section>
         <section
           className="task-tab-panel task-run-feed-tab"

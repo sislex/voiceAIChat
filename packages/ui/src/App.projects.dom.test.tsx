@@ -78,7 +78,7 @@ describe('App — страница проекта по URL', () => {
     expect(page.closest('.toolpage')).not.toBeNull()
     expect(page.closest('.ovl')).toBeNull()
     expect(within(page).getByRole('heading', { name: 'Мой проект' })).toBeInTheDocument()
-    expect(within(tabs()).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Канбан', 'Релизы', 'Настройки'])
+    expect(within(tabs()).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Канбан', 'Код', 'Релизы', 'Настройки'])
     await waitFor(() => expect(within(page).getByTestId('kanban-board')).toBeInTheDocument())
     // Уходят со страницы навигацией: крестика в шапке нет.
     expect(within(page).queryByRole('button', { name: 'Закрыть' })).not.toBeInTheDocument()
