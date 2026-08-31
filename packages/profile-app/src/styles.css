@@ -20,8 +20,11 @@
 
 .vcp-card { border: 1px solid var(--border); border-radius: var(--radius-large); background: var(--surface); padding: 16px; min-width: 0; }
 .vcp-card__title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.vcp-card h3, .vcp-section-head h3 { margin: 0; font-size: 14px; }
-.vcp-card p, .vcp-section-head p { margin: 4px 0 0; color: var(--text-dim); font-size: 11px; }
+/* Размеры заголовков задаются явно для всех блоков карточки: без этого h3
+   внутри провайдера брал браузерный дефолт 18.72px и спорил с именем человека
+   в шапке (20px) — карточка читалась как две страницы. */
+.vcp-card h3, .vcp-section-head h3, .vcp-provider__head h3 { margin: 0; font-size: 14px; }
+.vcp-card p, .vcp-section-head p, .vcp-provider__head p { margin: 4px 0 0; color: var(--text-dim); font-size: 11px; }
 
 .vcp-overview__grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 12px; }
 .vcp-feed { display: grid; gap: 14px; margin: 16px 0 0; padding: 0; list-style: none; }
@@ -94,6 +97,14 @@
 
 @media (max-width: 720px) {
   .vcp-head { padding: 16px 14px; }
+  /* Тот же порог 40px: действия карточки, массовые кнопки доступа и выгрузка
+     журнала стоят в плотных строках и по умолчанию ниже него. */
+  .vcp-head__actions .vc-btn,
+  .vcp-section-head .vc-btn,
+  .vcp-access__bulk .vc-btn,
+  .vcp-history__filters .vc-btn,
+  .vcp-card__title .vc-btn,
+  .vcp-danger .vc-btn { min-height: 40px; }
   .vcp-quick { grid-template-columns: 1fr; margin: 0 14px 8px; }
   .vcp-panel { padding: 16px 14px; }
   .vcp-usage__metrics { grid-template-columns: 1fr; }

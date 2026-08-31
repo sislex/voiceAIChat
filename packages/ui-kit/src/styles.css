@@ -223,6 +223,9 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
   .vc-tab { min-height:40px }
   .vc-search__clear { min-width:40px;min-height:40px }
   .vc-actionbar { left:12px;right:12px;bottom:12px;max-width:none;transform:translateY(140%) }
+  /* Кнопки полосы сохранения — единственный способ применить или отменить
+     правку, промахнуться по ним нельзя. */
+  .vc-actionbar .vc-btn { min-height:40px }
   .vc-actionbar--on { transform:translateY(0) }
 }
 
