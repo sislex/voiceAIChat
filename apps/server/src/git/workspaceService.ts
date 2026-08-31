@@ -14,9 +14,11 @@ import {
   isSafeRepoRelativePath, isValidGitBranchName, isValidGitRef, normalizeCommitMessage,
   parseAheadBehind, parseGitLog, parseGitLsTree, parseGitRefs, parseGitStatusPorcelain,
   parseGitWorkspaceId, splitGitSections,
-  type AgentPolicy, type FsResult, type GitBranchList, type GitCheckoutResult,
-  type GitCommitResult, type GitDiscardResult, type GitFileContent, type GitFileDiff,
-  type GitPullMode, type GitPullResult, type GitPushResult,
+  GIT_MAX_GREP, GIT_MAX_LOG, parseGitGrep, parseGitNameStatus,
+  type AgentPolicy, type FsResult, type GitBranchChanges, type GitBranchList,
+  type GitCheckoutResult, type GitCommitDetail, type GitCommitResult, type GitConflictSide,
+  type GitConflictStages, type GitDiscardResult, type GitFileContent, type GitFileDiff,
+  type GitGrepResult, type GitPullMode, type GitPullResult, type GitPushResult,
   type GitSaveFileResult, type GitTreeListing, type GitWorkspaceProblem,
   type GitWorkspaceRef, type GitWorkspaceStatus
 } from '@voicechat/shared'
@@ -25,9 +27,10 @@ import { buildShellCommand } from '../ci/executor.js'
 import type { CommandGate } from '../agents/commandGate.js'
 import { hasProjectPermission } from '../users/auth.js'
 import {
-  branchesScript, checkoutScript, commitScript, createBranchScript, discardScript,
-  fileAtRefScript, gitBaseEnv, pullScript, pushScript, statusScript, treeScript,
-  type GitScript
+  branchChangesScript, branchesScript, checkoutScript, commitDetailScript, commitScript,
+  conflictStagesScript, createBranchScript, discardScript, fileAtRefScript, gitBaseEnv,
+  grepScript, logScript, pullScript, pushScript, resolveConflictScript, stageScript,
+  statusScript, treeScript, type GitScript
 } from './scripts.js'
 
 /** Что сервису нужно от реестра машин — ровно это, чтобы тесты не поднимали агента. */
@@ -197,7 +200,8 @@ export class GitWorkspaceService {
       behind: counts.behind,
       changes: parsed.changes,
       changesTruncated: parsed.truncated,
-      commitsAhead: parseGitLog(sections.commits ?? '')
+      commitsAhead: parseGitLog(sections.commits ?? ''),
+      mergeBase: /^[0-9a-f]{40}$/.exec(lastLine(sections.mergebase ?? ''))?.[0] ?? null
     }
   }
 
@@ -231,6 +235,19 @@ export class GitWorkspaceService {
       throw new GitError(409, 'git_failed', lastLine(result.output) || 'Не удалось прочитать дерево файлов')
     }
     return { ref: revision, dir, entries: parseGitLsTree(listing, dir) }
+  }
+
+  /**
+   * Байты файла как есть — для скачивания бинарника или файла сверх лимита показа.
+   * Отдаётся base64: канал текстовый, и «просто отдать содержимое» его бы испортило.
+   */
+  async fileBytes(userId: string, projectId: string, workspaceId: string, path: string): Promise<{ path: string; dataBase64: string; size: number }> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
+    const absolute = joinMachinePath(ref.path, path, this.deps.runtime.platformOf(ref.agentId))
+    const result = await this.deps.runtime.fsRead(ref.agentId, absolute)
+    const data = result.dataBase64 ?? ''
+    return { path, dataBase64: data, size: Buffer.from(data, 'base64').byteLength }
   }
 
   /** Содержимое файла: из ревизии (`ref`) или из рабочей копии (`ref` не задан). */
@@ -435,6 +452,102 @@ export class GitWorkspaceService {
     }
   }
 
+  /**
+   * Что ветка меняет относительно базы (`merge-base` с origin/<base>), а не только
+   * незакоммиченное. Именно этот вид нужен, когда смотрят работу модели за ран:
+   * коммиты уже сделаны, и рабочее дерево чистое.
+   */
+  async branchChanges(userId: string, projectId: string, workspaceId: string, base?: string): Promise<GitBranchChanges> {
+    const status = await this.status(userId, projectId, workspaceId)
+    if (status.problem) throw new GitError(409, status.problem, status.detail ?? 'Рабочая копия недоступна')
+    const from = base ?? status.mergeBase
+    if (!from) throw new GitError(409, 'unknown_ref', `Нет общего предка с origin/${status.baseBranch}: подтяните origin`)
+    if (!isValidGitRef(from)) throw new GitError(400, 'invalid_ref', 'Недопустимая ревизия сравнения')
+    const result = await this.run(userId, projectId, status.ref!, branchChangesScript(from), READ_TIMEOUT_MS)
+    const parsed = parseGitNameStatus(decodeBase64Section(splitGitSections(result.output).names_b64), GIT_MAX_CHANGES)
+    return { base: from, changes: parsed.changes, truncated: parsed.truncated }
+  }
+
+  /** Индексация и снятие с индекса: коммит выбранного не должен зависеть от чужого индекса. */
+  async stage(userId: string, projectId: string, workspaceId: string, paths: string[], unstage: boolean): Promise<GitWorkspaceStatus> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const chosen = paths.filter((path) => path.length > 0)
+    if (chosen.length === 0) throw new GitError(400, 'bad_request', 'Не выбрано ни одного файла')
+    for (const path of chosen) {
+      if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', `Недопустимый путь: ${path}`)
+    }
+    await this.runMutation(userId, projectId, ref, stageScript(chosen, unstage), MUTATE_TIMEOUT_MS, 'Не удалось изменить индекс')
+    this.audit(userId, projectId, ref, unstage ? 'git.unstage' : 'git.stage', { files: chosen.length })
+    return await this.status(userId, projectId, workspaceId)
+  }
+
+  /** История ветки или одного файла. */
+  async log(userId: string, projectId: string, workspaceId: string, path?: string, limit: number = GIT_MAX_LOG): Promise<{ commits: ReturnType<typeof parseGitLog> }> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    if (path && !isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
+    const bounded = Math.max(1, Math.min(limit, GIT_MAX_LOG))
+    const result = await this.run(userId, projectId, ref, logScript(bounded, path ?? ''), READ_TIMEOUT_MS)
+    return { commits: parseGitLog(splitGitSections(result.output).log ?? '') }
+  }
+
+  /** Что в коммите: метаданные и список файлов. */
+  async commitDetail(userId: string, projectId: string, workspaceId: string, sha: string): Promise<GitCommitDetail> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    if (!isValidGitRef(sha)) throw new GitError(400, 'invalid_ref', 'Недопустимая ревизия')
+    const result = await this.run(userId, projectId, ref, commitDetailScript(sha), READ_TIMEOUT_MS)
+    const sections = splitGitSections(result.output)
+    const meta = parseGitLog(sections.meta ?? '')[0]
+    if (!meta) throw new GitError(409, 'unknown_ref', lastLine(result.output) || 'Коммит не найден')
+    const parsed = parseGitNameStatus(decodeBase64Section(sections.names_b64), GIT_MAX_CHANGES)
+    return { ...meta, files: parsed.changes.map(({ path, oldPath, state }) => ({ path, oldPath, state })), truncated: parsed.truncated }
+  }
+
+  /** Поиск по содержимому рабочей копии. */
+  async grep(userId: string, projectId: string, workspaceId: string, query: string, limit: number = GIT_MAX_GREP): Promise<GitGrepResult> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    const needle = query.trim()
+    if (needle.length < 2) throw new GitError(400, 'bad_request', 'Запрос короче двух символов')
+    if (needle.length > 200) throw new GitError(400, 'bad_request', 'Запрос слишком длинный')
+    const bounded = Math.max(1, Math.min(limit, GIT_MAX_GREP))
+    const result = await this.run(userId, projectId, ref, grepScript(needle, bounded), READ_TIMEOUT_MS)
+    // Пустой результат — не ошибка: git grep выходит с кодом 1, когда ничего не нашёл.
+    const parsed = parseGitGrep(decodeBase64Section(splitGitSections(result.output).grep), bounded)
+    return { query: needle, matches: parsed.matches, truncated: parsed.truncated }
+  }
+
+  /** Три стадии конфликта для трёхстороннего просмотра. */
+  async conflict(userId: string, projectId: string, workspaceId: string, path: string): Promise<GitConflictStages> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: false })
+    if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
+    const result = await this.run(userId, projectId, ref, conflictStagesScript(path), READ_TIMEOUT_MS)
+    const sections = splitGitSections(result.output)
+    const stage = (name: string, label: string): GitFileContent | null => {
+      const text = decodeBase64Section(sections[name])
+      if (!text) return null
+      const binary = looksBinary(text)
+      return { path, ref: label, content: binary ? '' : text, size: Buffer.byteLength(text), truncated: false, binary }
+    }
+    const stages = {
+      path,
+      base: stage('stage1_b64', ':1:'),
+      ours: stage('stage2_b64', ':2:'),
+      theirs: stage('stage3_b64', ':3:')
+    }
+    if (!stages.ours && !stages.theirs) {
+      throw new GitError(409, 'not_conflicted', 'У файла нет конфликтных стадий — возможно, конфликт уже разрешён')
+    }
+    return stages
+  }
+
+  /** Оставить одну сторону конфликта. */
+  async resolveConflict(userId: string, projectId: string, workspaceId: string, path: string, side: GitConflictSide): Promise<GitWorkspaceStatus> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', 'Недопустимый путь файла')
+    await this.runMutation(userId, projectId, ref, resolveConflictScript(path, side), MUTATE_TIMEOUT_MS, 'Не удалось разрешить конфликт')
+    this.audit(userId, projectId, ref, 'git.resolve', { path, side })
+    return await this.status(userId, projectId, workspaceId)
+  }
+
   // --- внутреннее ---------------------------------------------------------
 
   private async fileAtRef(userId: string, projectId: string, ref: GitWorkspaceRef, path: string, revision: string): Promise<GitFileContent> {
@@ -524,7 +637,7 @@ export class GitWorkspaceService {
       gitUrl: project?.gitUrl ?? null,
       baseBranch: project?.ciBaseBranch ?? 'main',
       branch: null, detached: false, head: null, upstream: null,
-      ahead: 0, behind: 0, changes: [], changesTruncated: false, commitsAhead: []
+      ahead: 0, behind: 0, changes: [], changesTruncated: false, commitsAhead: [], mergeBase: null
     }
   }
 

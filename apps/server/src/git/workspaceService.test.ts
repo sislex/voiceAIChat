@@ -10,7 +10,7 @@ const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64
 
 /** Вывод статуса в том виде, в котором его печатает наш скрипт. */
 function statusOutput(over: {
-  repo?: string; head?: string; porcelain?: string; upstream?: string; track?: string; commits?: string
+  repo?: string; head?: string; porcelain?: string; upstream?: string; track?: string; commits?: string; mergebase?: string
 } = {}): string {
   return [
     '==VC:repo==', over.repo ?? 'true',
@@ -19,6 +19,7 @@ function statusOutput(over: {
     '==VC:upstream==', over.upstream ?? 'origin/feature/x',
     '==VC:track==', over.track ?? '1\t0',
     '==VC:commits==', over.commits ?? `${SHA}\tbob\t1788172791\tfix: правка`,
+    '==VC:mergebase==', over.mergebase ?? 'e'.repeat(40),
     '==VC:done=='
   ].join('\n')
 }
@@ -523,5 +524,135 @@ describe('аудит', () => {
     expect(security[0]!.type).toBe('git_workspace_mutation')
     expect(security[0]!.details).toContain('git.commit')
     expect(security[0]!.details).toContain('/repo/task')
+  })
+})
+
+describe('изменения ветки против базы', () => {
+  it('берёт merge-base из статуса и разбирает --name-status', async () => {
+    const { service } = setup({
+      outputs: [
+        statusOutput(),
+        ['==VC:names_b64==', b64('M\u0000src/a.ts\u0000R100\u0000old.ts\u0000new.ts\u0000'), '==VC:done=='].join('\n')
+      ]
+    })
+    const result = await service.branchChanges('bob', 'p1', 'ws:ws-1')
+    expect(result.base).toBe('e'.repeat(40))
+    expect(result.changes.map((change) => [change.path, change.oldPath])).toEqual([['src/a.ts', null], ['new.ts', 'old.ts']])
+  })
+
+  it('без общего предка объясняет, что нужно подтянуть origin', async () => {
+    const { service } = setup({ outputs: [statusOutput({ mergebase: 'fatal: no merge base' })] })
+    const error = await expectGitError(service.branchChanges('bob', 'p1', 'ws:ws-1'), 'unknown_ref', 409)
+    expect(error.message).toContain('подтяните origin')
+  })
+})
+
+describe('индекс', () => {
+  it('добавляет и снимает выбранные пути', async () => {
+    const add = setup({ outputs: [statusOutput(), ['==VC:stage==', '==VC:done=='].join('\n'), statusOutput()] })
+    await add.service.stage('bob', 'p1', 'ws:ws-1', ['src/a.ts'], false)
+    expect(add.events.map((event) => event.type)).toContain('git.stage')
+
+    const remove = setup({ outputs: [statusOutput(), ['==VC:stage==', '==VC:done=='].join('\n'), statusOutput()] })
+    await remove.service.stage('bob', 'p1', 'ws:ws-1', ['src/a.ts'], true)
+    expect(remove.events.map((event) => event.type)).toContain('git.unstage')
+  })
+
+  it('пустой список и путь наружу отклоняются', async () => {
+    await expectGitError(setup().service.stage('bob', 'p1', 'ws:ws-1', [], false), 'bad_request', 400)
+    await expectGitError(setup().service.stage('bob', 'p1', 'ws:ws-1', ['../x'], false), 'invalid_path', 400)
+  })
+})
+
+describe('история', () => {
+  it('лог ветки и лог файла разбираются одинаково', async () => {
+    const line = `${SHA}\tbob\t1788172791\tfix: правка`
+    const { service } = setup({ outputs: [['==VC:log==', line, '==VC:done=='].join('\n')] })
+    const result = await service.log('bob', 'p1', 'ws:ws-1')
+    expect(result.commits).toEqual([{ sha: SHA, author: 'bob', at: 1788172791, subject: 'fix: правка' }])
+  })
+
+  it('состав коммита: метаданные и файлы', async () => {
+    const { service } = setup({
+      outputs: [[
+        '==VC:meta==', `${SHA}\tbob\t1788172791\tfeat: панель`,
+        '==VC:names_b64==', b64('A\u0000src/new.ts\u0000D\u0000src/old.ts\u0000'),
+        '==VC:done=='
+      ].join('\n')]
+    })
+    const detail = await service.commitDetail('bob', 'p1', 'ws:ws-1', SHA)
+    expect(detail).toMatchObject({ sha: SHA, subject: 'feat: панель' })
+    expect(detail.files.map((file) => [file.path, file.state])).toEqual([['src/new.ts', 'added'], ['src/old.ts', 'deleted']])
+  })
+
+  it('несуществующий коммит — понятный отказ', async () => {
+    const { service } = setup({ outputs: [{ output: "fatal: bad object deadbeef", exitCode: 128 }] })
+    await expectGitError(service.commitDetail('bob', 'p1', 'ws:ws-1', 'deadbeef'), 'unknown_ref', 409)
+  })
+})
+
+describe('поиск по содержимому', () => {
+  it('находит совпадения и отдаёт их с номерами строк', async () => {
+    const { service } = setup({
+      outputs: [['==VC:grep==', b64('src/a.ts\u000012\u0000const x = 1\n'), '==VC:done=='].join('\n')]
+    })
+    const result = await service.grep('bob', 'p1', 'ws:ws-1', 'const x')
+    expect(result.matches).toEqual([{ path: 'src/a.ts', line: 12, text: 'const x = 1' }])
+  })
+
+  it('пустой результат не считается ошибкой: git grep выходит с кодом 1', async () => {
+    const { service } = setup({ outputs: [{ output: ['==VC:grep==', '', '==VC:done=='].join('\n'), exitCode: 1 }] })
+    const result = await service.grep('bob', 'p1', 'ws:ws-1', 'нет-такого')
+    expect(result.matches).toEqual([])
+  })
+
+  it('слишком короткий и слишком длинный запрос отклоняются до похода на машину', async () => {
+    const short = setup()
+    await expectGitError(short.service.grep('bob', 'p1', 'ws:ws-1', 'a'), 'bad_request', 400)
+    expect(short.exec).not.toHaveBeenCalled()
+    await expectGitError(setup().service.grep('bob', 'p1', 'ws:ws-1', 'x'.repeat(201)), 'bad_request', 400)
+  })
+})
+
+describe('конфликты', () => {
+  const stages = [
+    '==VC:stage1_b64==', b64('общий предок\n'), '',
+    '==VC:stage2_b64==', b64('наша версия\n'), '',
+    '==VC:stage3_b64==', b64('их версия\n'), '==VC:done=='
+  ].join('\n')
+
+  it('отдаёт три стадии', async () => {
+    const { service } = setup({ outputs: [stages] })
+    const result = await service.conflict('bob', 'p1', 'ws:ws-1', 'src/a.ts')
+    expect(result.base?.content).toBe('общий предок\n')
+    expect(result.ours?.content).toBe('наша версия\n')
+    expect(result.theirs?.content).toBe('их версия\n')
+  })
+
+  it('файл без конфликтных стадий — отдельный код, а не «пустой diff»', async () => {
+    const { service } = setup({ outputs: [['==VC:stage1_b64==', '', '==VC:stage2_b64==', '', '==VC:stage3_b64==', '', '==VC:done=='].join('\n')] })
+    await expectGitError(service.conflict('bob', 'p1', 'ws:ws-1', 'src/a.ts'), 'not_conflicted', 409)
+  })
+
+  it('разрешение оставляет сторону и сразу индексирует файл', async () => {
+    const { service, events } = setup({
+      outputs: [['==VC:resolve==', '==VC:stage==', '==VC:done=='].join('\n'), statusOutput({ porcelain: '## feature/x\0M  src/a.ts\0' })]
+    })
+    const status = await service.resolveConflict('bob', 'p1', 'ws:ws-1', 'src/a.ts', 'ours')
+    expect(status.changes[0]).toMatchObject({ path: 'src/a.ts', staged: true })
+    expect(events.map((event) => event.type)).toContain('git.resolve')
+  })
+})
+
+describe('скачивание файла', () => {
+  it('отдаёт байты как есть, не пытаясь декодировать', async () => {
+    const { service } = setup({ fsRead: 'двоичное-ничего' })
+    const result = await service.fileBytes('bob', 'p1', 'ws:ws-1', 'assets/logo.png')
+    expect(Buffer.from(result.dataBase64, 'base64').toString('utf8')).toBe('двоичное-ничего')
+    expect(result.size).toBe(Buffer.byteLength('двоичное-ничего'))
+  })
+
+  it('путь наружу репозитория отклоняется', async () => {
+    await expectGitError(setup().service.fileBytes('bob', 'p1', 'ws:ws-1', '../../etc/passwd'), 'invalid_path', 400)
   })
 })

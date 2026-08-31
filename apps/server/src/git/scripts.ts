@@ -55,6 +55,8 @@ export function statusScript(baseBranch: string, maxCommits: number = GIT_MAX_CO
       `${READ} rev-list --left-right --count 'HEAD...@{upstream}'`,
       mark('commits'),
       `git log --format='%H%x09%an%x09%at%x09%s' -n "$VC_GIT_MAX_COMMITS" "origin/$VC_GIT_BASE..HEAD"`,
+      mark('mergebase'),
+      'git merge-base HEAD "origin/$VC_GIT_BASE"',
       mark('done')
     ].join('\n')
   }
@@ -250,6 +252,107 @@ export function discardScript(paths: string[]): GitScript {
       `printf '%s' "$VC_GIT_PATHS" | tr '\\n' '\\0' | xargs -0 git checkout -- || printf '%s\\n' 'checkout-skipped'`,
       mark('clean'),
       `printf '%s' "$VC_GIT_PATHS" | tr '\\n' '\\0' | xargs -0 git clean -fd --`,
+      mark('done')
+    ].join('\n')
+  }
+}
+
+/** Изменения ветки относительно базы: «что задача меняет вообще», а не только незакоммиченное. */
+export function branchChangesScript(base: string): GitScript {
+  return {
+    env: { VC_GIT_REF: base },
+    script: [
+      mark('names_b64'),
+      `${READ} diff --name-status -z "$VC_GIT_REF..HEAD" | base64 | tr -d '\\n'`,
+      markAfterB64('done')
+    ].join('\n')
+  }
+}
+
+/** Индексация и снятие с индекса. `restore --staged`, а не `reset`: рядом с `--hard` в мышечной памяти. */
+export function stageScript(paths: string[], unstage: boolean): GitScript {
+  const command = unstage ? 'git restore --staged --' : 'git add --'
+  return {
+    env: { VC_GIT_PATHS: paths.join('\n') },
+    script: [
+      'set -e',
+      mark('stage'),
+      `printf '%s' "$VC_GIT_PATHS" | tr '\\n' '\\0' | xargs -0 ${command}`,
+      mark('done')
+    ].join('\n')
+  }
+}
+
+/** История: ветки целиком или одного файла. */
+export function logScript(limit: number, path: string): GitScript {
+  const suffix = path ? ' -- "$VC_GIT_PATH"' : ''
+  return {
+    env: { VC_GIT_MAX: String(limit), VC_GIT_PATH: path },
+    script: [
+      mark('log'),
+      `git log --format='%H%x09%an%x09%at%x09%s' -n "$VC_GIT_MAX"${suffix}`,
+      mark('done')
+    ].join('\n')
+  }
+}
+
+/** Что в коммите: метаданные и список файлов. */
+export function commitDetailScript(sha: string): GitScript {
+  return {
+    env: { VC_GIT_REF: sha },
+    script: [
+      mark('meta'),
+      `git show --no-patch --format='%H%x09%an%x09%at%x09%s' "$VC_GIT_REF"`,
+      mark('names_b64'),
+      `${READ} show --name-status -z --format= "$VC_GIT_REF" | base64 | tr -d '\\n'`,
+      markAfterB64('done')
+    ].join('\n')
+  }
+}
+
+/**
+ * Поиск по содержимому. `-I` пропускает бинарники, `-z` разделяет поля NUL (путь с
+ * двоеточием иначе не отличить от разделителя), `--max-count` держит вывод в рамках.
+ * Запрос уходит как `-e "$VC_GIT_QUERY"` и **фиксированной** строкой (`-F`): регулярку
+ * от пользователя git разбирал бы по своим правилам, и «(» ломало бы поиск.
+ */
+export function grepScript(query: string, limit: number): GitScript {
+  return {
+    env: { VC_GIT_QUERY: query, VC_GIT_MAX: String(limit) },
+    script: [
+      mark('grep'),
+      `${READ} grep -n -I -z -F --max-count="$VC_GIT_MAX" -e "$VC_GIT_QUERY" | base64 | tr -d '\\n'`,
+      markAfterB64('done')
+    ].join('\n')
+  }
+}
+
+/**
+ * Три стадии конфликта. Тот же приём, что в merge-runner: `:1:` — общий предок,
+ * `:2:` — наша версия, `:3:` — их. Отсутствующая стадия (файл добавлен по одной
+ * стороне) даёт пустую секцию, а не ошибку всей команды.
+ */
+export function conflictStagesScript(path: string, maxBytes: number = GIT_TEXT_MAX_BYTES): GitScript {
+  const stage = (n: number): string[] => [
+    mark(`stage${n}_b64`),
+    `git cat-file blob ":${n}:$VC_GIT_PATH" | head -c "$VC_GIT_MAX" | base64 | tr -d '\\n' || printf ''`
+  ]
+  return {
+    env: { VC_GIT_PATH: path, VC_GIT_MAX: String(maxBytes) },
+    script: [...stage(1), '', ...stage(2), '', ...stage(3), markAfterB64('done')].join('\n')
+  }
+}
+
+/** Оставить одну сторону конфликта и сразу проиндексировать файл. */
+export function resolveConflictScript(path: string, side: 'ours' | 'theirs'): GitScript {
+  return {
+    env: { VC_GIT_PATH: path },
+    script: [
+      'set -e',
+      mark('resolve'),
+      `git checkout --${side} -- "$VC_GIT_PATH"`,
+      mark('stage'),
+      'git add -- "$VC_GIT_PATH"',
       mark('done')
     ].join('\n')
   }

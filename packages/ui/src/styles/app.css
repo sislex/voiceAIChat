@@ -8289,3 +8289,59 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .gitpane-tree li[aria-selected='true'] > .gitpane-tree-row { background: var(--surface-selected); }
 
 .gitpane-change-dirty { flex: none; color: var(--accent); font-size: 11px; }
+
+/* Поиск, конфликты и история в панели кода. */
+.gitpane-search { display: flex; flex-direction: column; gap: var(--space-2, 8px); padding: var(--space-2, 8px); min-height: 0; }
+.gitpane-search-form { display: flex; gap: var(--space-2, 8px); }
+.gitpane-search-form input { flex: 1; min-width: 0; }
+.gitpane-search-title { margin: 0; font-size: 12px; color: var(--text-dim); font-weight: 600; }
+.gitpane-search-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.gitpane-search-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: var(--radius-medium, 8px);
+  cursor: pointer;
+}
+.gitpane-search-row:hover { background: var(--surface-hover); }
+.gitpane-search-path { color: var(--text-dim); }
+.gitpane-search-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gitpane-side-note { margin: 0 var(--space-2, 8px); font-size: 11px; color: var(--text-dim); }
+
+.gitpane-conflict { display: flex; flex-direction: column; gap: var(--space-2, 8px); min-height: 0; flex: 1; padding: var(--space-2, 8px); }
+.gitpane-conflict-head,
+.gitpane-conflict-actions { display: flex; align-items: center; gap: var(--space-2, 8px); flex-wrap: wrap; }
+.gitpane-conflict-legend { font-size: 12px; color: var(--text-dim); }
+.gitpane-conflict-diff,
+.gitpane-conflict-base { flex: 1; min-height: 180px; display: flex; flex-direction: column; overflow: hidden; }
+
+.gitpane-commit { border-top: 1px solid var(--border-soft, var(--border)); }
+.gitpane-commit-row,
+.gitpane-commit-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+.gitpane-commit-row:hover,
+.gitpane-commit-file:hover { background: var(--surface-hover); }
+.gitpane-commit-subject { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gitpane-commit-meta { flex: none; color: var(--text-dim); font-size: 11px; }
+.gitpane-commit-files { list-style: none; margin: 0 0 0 var(--space-3, 12px); padding: 0; }
+.gitpane-commit-more { padding: 2px 6px; color: var(--text-dim); font-size: 11px; }

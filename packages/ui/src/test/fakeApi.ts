@@ -1245,6 +1245,42 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       gitState.status = { ...gitState.status, changes: [], ahead: gitState.status.ahead + 1 }
       return { status: gitState.status, sha: 'd'.repeat(40), staged }
     },
+    'projects:gitBranchChanges': async () => ({
+      base: 'b'.repeat(40),
+      changes: [
+        { path: 'apps/server/src/index.ts', oldPath: null, state: 'modified' as const, staged: true, worktree: false },
+        { path: 'packages/ui/src/components/git/GitPane.tsx', oldPath: null, state: 'added' as const, staged: true, worktree: false }
+      ],
+      truncated: false
+    }),
+    'projects:gitStage': async ({ paths, unstage }) => {
+      gitState.status = {
+        ...gitState.status,
+        changes: gitState.status.changes.map((change) => paths.includes(change.path)
+          ? { ...change, staged: unstage !== true, worktree: unstage === true }
+          : change)
+      }
+      return gitState.status
+    },
+    'projects:gitLog': async () => ({ commits: gitState.status.commitsAhead }),
+    'projects:gitCommitDetail': async ({ sha }) => ({
+      sha, subject: 'feat(git): панель кода', author: 'bob', at: Math.floor(1700000000),
+      files: [{ path: 'apps/server/src/index.ts', oldPath: null, state: 'modified' as const }],
+      truncated: false
+    }),
+    'projects:gitGrep': async ({ query }) => ({
+      query,
+      matches: [{ path: 'apps/server/src/index.ts', line: 3, text: `const app = await buildServer() // ${query}` }],
+      truncated: false
+    }),
+    'projects:gitFileBytes': async ({ path }) => ({ path, dataBase64: Buffer.from('байты файла').toString('base64'), size: 11 }),
+    'projects:gitConflict': async ({ path }) => ({
+      path,
+      base: { path, ref: ':1:', content: 'общий предок\n', size: 14, truncated: false, binary: false },
+      ours: { path, ref: ':2:', content: 'наша версия\n', size: 12, truncated: false, binary: false },
+      theirs: { path, ref: ':3:', content: 'их версия\n', size: 10, truncated: false, binary: false }
+    }),
+    'projects:gitResolveConflict': async () => gitState.status,
     'projects:gitPull': async ({ mode }) => {
       gitState.status = { ...gitState.status, behind: 0 }
       return { status: gitState.status, mode: mode ?? 'rebase', pulled: 1 }
