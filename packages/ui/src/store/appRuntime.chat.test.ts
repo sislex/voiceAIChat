@@ -2101,7 +2101,7 @@ describe('voiceStore — чаты завершённых задач', () => {
     const chat = await api['tasks:openChat']({ projectId: p.id, taskId: task.id })
     await api['tasks:move']({ projectId: p.id, taskId: task.id, columnId: done.id })
     await store.actions.init()
-    await store.actions.setSidebarProject(p.id)
+    await store.actions.setSidebarProjects([p.id])
     return { store, api, chatId: chat.id, taskId: task.id, projectId: p.id }
   }
 
@@ -2136,7 +2136,7 @@ describe('voiceStore — чаты завершённых задач', () => {
     const task = await api['tasks:create']({ projectId: p.id, columnId: dev.id, title: 'Отмена' })
     const chat = await api['tasks:openChat']({ projectId: p.id, taskId: task.id })
     await store.actions.init()
-    await store.actions.setSidebarProject(p.id)
+    await store.actions.setSidebarProjects([p.id])
     expect(await store.actions.selectConversation(chat.id)).toBe(true)
     store.actions.setDraft('не потерять')
     await store.actions.setShowDoneTaskChats(true)

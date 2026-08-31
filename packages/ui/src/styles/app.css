@@ -387,6 +387,59 @@
   outline: none;
   border-color: #b9b6a8;
 }
+.projectfilter {
+  position: relative;
+}
+.projectfilter-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  text-align: left;
+}
+.projectfilter-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% - 6px);
+  left: 14px;
+  right: 14px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+}
+.projectfilter-all {
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.projectfilter-options {
+  max-height: 240px;
+  overflow-y: auto;
+  padding-top: 4px;
+}
+.projectfilter-option {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+.projectfilter-option input {
+  margin: 0;
+}
+.projectfilter-empty {
+  margin: 0;
+  padding: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
 .sidesearch {
   padding: 0 14px 10px 14px;
 }

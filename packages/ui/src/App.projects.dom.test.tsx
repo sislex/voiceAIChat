@@ -320,7 +320,10 @@ describe('App — чаты завершённых задач в сайдбаре
 
   /** Область секций сайдбара, суженная проектом (может пока не содержать списков). */
   async function chatList(): Promise<HTMLElement> {
-    await userEvent.selectOptions(await screen.findByLabelText('Проект'), 'Мой проект')
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
+    await userEvent.click(await screen.findByRole('button', { name: /Фильтр проектов:/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Снять все' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Мой проект' }))
     await waitFor(() => expect(document.querySelector('.convo-groups')).not.toBeNull())
     return document.querySelector('.convo-groups') as HTMLElement
   }

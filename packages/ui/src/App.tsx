@@ -326,6 +326,12 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     revoke: (sid: string) => adminActions.revokeAdminSession(sid)
   }), [adminActions])
   const projectsActions = useProjectsActions()
+  useEffect(() => {
+    if (!projects.projectsLoaded) return
+    void chatActions.syncSidebarProjects(projects.projects.map((project) => project.id))
+    // Состав проектов — единственный триггер; actions стабильны.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projects.projectsLoaded, projects.projects])
   // Возможности типа открытого проекта. Пока detail грузится, берём их из
   // summary в списке проектов: там уже есть typeChain, и вкладка «Релизы» не
   // мигает «показана → скрыта» при каждом входе в проект без релизов.
@@ -783,12 +789,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     }
     setCreateChatSaving(true); setCreateChatError(null)
     try {
-      const id = await chatActions.createConversation({ title: createChatTitle.trim(), projectId: chat.sidebarProjectId })
+      const id = await chatActions.createConversation({ title: createChatTitle.trim() })
       if (createChatMachineId && createChatStorageId) {
         const relativePath = createChatPath.trim() || recommendedChatStoragePath(
-          chat.sidebarProjectId
-            ? { kind: 'project', projectId: chat.sidebarProjectId, conversationId: id }
-            : { kind: 'chat', conversationId: id }
+          { kind: 'chat', conversationId: id }
         )
         await api['conversations:setStorage']({ id, machineId: createChatMachineId, storageId: createChatStorageId, relativePath })
       }
@@ -1765,8 +1769,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             </select></label>
             {createChatStorageId ? <>
               <p className="convsettings-muted">Основное хранилище: {createChatStorages.find((item) => item.primary)?.rootPath ?? 'не назначено'}</p>
-              <label className="convsettings-field"><span>Относительный каталог</span><input aria-label="Относительный каталог файлов чата" value={createChatPath} placeholder={chat.sidebarProjectId ? `projects/${chat.sidebarProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>'} onChange={(event) => setCreateChatPath(event.target.value)} /></label>
-              <p className="convsettings-muted">Итоговый каталог: {(createChatStorages.find((item) => item.id === createChatStorageId)?.rootPath ?? '')}/{createChatPath.trim() || (chat.sidebarProjectId ? `projects/${chat.sidebarProjectId}/chats/<conversation-id>` : 'chats/<conversation-id>')}</p>
+              <label className="convsettings-field"><span>Относительный каталог</span><input aria-label="Относительный каталог файлов чата" value={createChatPath} placeholder="chats/<conversation-id>" onChange={(event) => setCreateChatPath(event.target.value)} /></label>
+              <p className="convsettings-muted">Итоговый каталог: {(createChatStorages.find((item) => item.id === createChatStorageId)?.rootPath ?? '')}/{createChatPath.trim() || 'chats/<conversation-id>'}</p>
             </> : <p className="convsettings-muted" role="alert">Временный режим хранит вложения в <b>.voicechat_uploads</b>. Он предназначен для совместимости; старые файлы автоматически не переносятся. <button type="button" className="vc-btn vc-btn--secondary" onClick={() => { setCreateChatOpen(false); navigate('/machines') }}>Настроить хранилище машины</button></p>}
             {createChatStorages.length > 0 && !createChatStorages.some((item) => item.status === 'ready') && <p className="convsettings-muted" role="status">У машины нет готового хранилища. Проверьте его в разделе машины.</p>}
           </section>
@@ -1830,8 +1834,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         showDoneTaskChats={chat.showDoneTaskChats}
         onShowDoneTaskChatsChange={(show) => void chatActions.setShowDoneTaskChats(show)}
         projects={projects.projects}
-        selectedProjectId={chat.sidebarProjectId}
-        onSelectProject={(id) => void chatActions.setSidebarProject(id)}
+        selectedProjectIds={chat.sidebarProjectIds}
+        onSelectedProjectsChange={(ids) => void chatActions.setSidebarProjects(ids)}
         onOpenObserver={menu(() => navigate('/claude-code'))}
         onOpenKnowledgeBase={menu(() => navigate('/kb'))}
         onOpenAccount={session.authRequired && session.currentUser ? menu(() => navigate('/account')) : undefined}

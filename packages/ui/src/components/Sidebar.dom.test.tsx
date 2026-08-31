@@ -164,37 +164,70 @@ describe('Sidebar — инструменты в меню по клику на п
   })
 })
 
-describe('Sidebar — фильтр проектов чатов', () => {
+describe('Sidebar — мультифильтр проектов чатов', () => {
   const projects = [
     { id: 'p1', name: 'Альфа', role: 'owner' },
-    { id: 'p2', name: 'Бета', role: 'member' }
+    { id: 'p2', name: 'Бета', role: 'member' },
+    { id: 'p3', name: 'Гамма', role: 'member' }
   ] as never[]
 
-  it('по умолчанию показывает «Все», проекты и «Без проекта»', () => {
-    setup({ projects, onSelectProject: vi.fn() })
+  function openProjectFilter(overrides: Record<string, unknown> = {}) {
+    const rendered = setup({
+      projects,
+      selectedProjectIds: ['p1', 'p2', 'p3'],
+      onSelectedProjectsChange: vi.fn(),
+      ...overrides
+    })
     fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
-    const select = screen.getByRole('combobox', { name: 'Проект' })
-    expect(select).toHaveValue('__all__')
-    expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Все', 'Альфа', 'Бета', 'Без проекта'
-    ])
+    fireEvent.click(screen.getByRole('button', { name: /Фильтр проектов:/ }))
+    return rendered
+  }
+
+  it('показывает независимые доступные чекбоксы и не закрывается после изменения', async () => {
+    const onSelectedProjectsChange = vi.fn()
+    openProjectFilter({ onSelectedProjectsChange })
+    expect(screen.getByRole('button', { name: 'Снять все' })).toBeInTheDocument()
+    const beta = screen.getByRole('checkbox', { name: 'Бета' })
+    expect(beta).toBeChecked()
+
+    await userEvent.click(beta)
+
+    expect(onSelectedProjectsChange).toHaveBeenCalledWith(['p1', 'p3'])
+    expect(screen.getByRole('group', { name: 'Выбор проектов' })).toBeInTheDocument()
   })
 
-  it('доступен без проектов и сообщает каждый из трёх режимов', async () => {
-    const onSelectProject = vi.fn()
-    const first = setup({ projects: [], onSelectProject })
-    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
-    const select = screen.getByRole('combobox', { name: 'Проект' })
-    expect(within(select).getAllByRole('option')).toHaveLength(2)
-
-    await userEvent.selectOptions(select, '__none__')
-    await userEvent.selectOptions(select, '__all__')
+  it('массовая кнопка выбирает и снимает актуальный набор', async () => {
+    const onSelectedProjectsChange = vi.fn()
+    const first = openProjectFilter({ onSelectedProjectsChange })
+    await userEvent.click(screen.getByRole('button', { name: 'Снять все' }))
+    expect(onSelectedProjectsChange).toHaveBeenCalledWith([])
     first.unmount()
-    setup({ projects, selectedProjectId: 'p1', onSelectProject })
-    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Проект' }), 'p2')
 
-    expect(onSelectProject.mock.calls.map(([value]) => value)).toEqual([null, undefined, 'p2'])
+    openProjectFilter({ selectedProjectIds: ['p1'], onSelectedProjectsChange })
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать все' }))
+    expect(onSelectedProjectsChange).toHaveBeenLastCalledWith(['p1', 'p2', 'p3'])
+  })
+
+  it.each([
+    [['p1', 'p2', 'p3'], 'Все чаты'],
+    [['p1', 'p2'], 'Выбрано проектов: 2'],
+    [['p1'], 'Альфа'],
+    [[], 'Ничего не выбрано']
+  ])('закрытый контрол различает выбор %j', (selectedProjectIds, label) => {
+    setup({ projects, selectedProjectIds, onSelectedProjectsChange: vi.fn() })
+    fireEvent.wheel(document.querySelector('.convolist')!, { deltaY: -40 })
+    expect(screen.getByRole('button', { name: `Фильтр проектов: ${label}` })).toBeInTheDocument()
+  })
+
+  it('Escape закрывает меню, а отсутствие проектов объяснено', () => {
+    openProjectFilter()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('group', { name: 'Выбор проектов' })).not.toBeInTheDocument()
+
+    setup({ projects: [], selectedProjectIds: [], onSelectedProjectsChange: vi.fn() })
+    fireEvent.wheel(document.querySelectorAll('.convolist')[1]!, { deltaY: -40 })
+    fireEvent.click(screen.getAllByRole('button', { name: /Фильтр проектов:/ })[1]!)
+    expect(screen.getByText('Проектов пока нет')).toBeInTheDocument()
   })
 })
 
