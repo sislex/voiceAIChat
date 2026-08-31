@@ -277,6 +277,10 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   const routeMakeChatId = inMake ? (segments[1] ?? null) : null
   // Любой полноэкранный split-режим «чат | панель справа».
   const inSplit = inReader || inPlaywrightReader || inConsoleReader || inMake
+  // Console и Make сохраняют полноэкранную рабочую область, но используют общий
+  // Sidebar. Reader-режимы по-прежнему изолированы от оболочки навигации.
+  const splitSidebarMode = inConsoleReader ? 'console-reader' : inMake ? 'make' : null
+  const sidebarAvailable = !inSplit || splitSidebarMode !== null
   const inTaskChat = routeTaskChatId !== null
   const inChat = (!inProjects && !onUtilityPage && !inSplit) || inTaskChat
   const compactChat = useMediaQuery(CHAT_COMPOSER_QUERY)
@@ -703,6 +707,24 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // забытая открытой панель закрывала собой открытую страницу или карточку
   // (напр. переход «Открыть задачу» из шапки связанного чата).
   useEffect(() => { setSidebarOpen(false) }, [path, setSidebarOpen])
+  // При каждом входе в Console/Make рабочая область начинается с полной ширины,
+  // независимо от сохранённого desktop-предпочтения обычного чата. Переход между
+  // разговорами того же режима не должен повторно закрывать desktop Sidebar.
+  const previousSplitSidebarMode = useRef<string | null>(null)
+  const sidebarCollapsedBeforeSplit = useRef<boolean | null>(null)
+  useEffect(() => {
+    const previous = previousSplitSidebarMode.current
+    if (splitSidebarMode && previous !== splitSidebarMode) {
+      if (previous === null) sidebarCollapsedBeforeSplit.current = collapsed
+      setSidebarOpen(false)
+      shellActions.setSidebarCollapsed(true)
+    } else if (!splitSidebarMode && previous !== null) {
+      const restore = sidebarCollapsedBeforeSplit.current
+      sidebarCollapsedBeforeSplit.current = null
+      if (restore !== null) shellActions.setSidebarCollapsed(restore)
+    }
+    previousSplitSidebarMode.current = splitSidebarMode
+  }, [collapsed, setSidebarOpen, shellActions, splitSidebarMode])
   const sidebarExpanded = compactChat ? sidebarOpen : !collapsed
   const focusSidebarToggle = (): void => {
     document.querySelector<HTMLButtonElement>('.sidebar-toggle')?.focus()
@@ -1715,7 +1737,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           </footer>
         )
       })()}
-      {!inSplit && <>
+      {sidebarAvailable && <>
       {createChatOpen && <PopupFrame title="Создание разговора" onClose={() => setCreateChatOpen(false)} testId="create-conversation-overlay" panelClassName="convsettings">
         <header className="convsettings-head"><div><h1>Новый разговор</h1><p>Настройте разговор и его файловое хранилище</p></div></header>
         <main className="convsettings-body">
@@ -1926,7 +1948,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
       {inMake && <header className="web-recorder-selector make-selector"><strong>Make</strong><label><span className="vc-sr-only">Проект Make</span><select aria-label="Проект Make" value={makeActiveListed ? chat.activeId ?? '' : ''} onChange={(event) => { if (event.target.value) navigate(`/make/${event.target.value}`) }}>{!makeActiveListed && <option value="" disabled>Проект не выбран</option>}{chat.makeConversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select></label><button className="vc-btn vc-btn--secondary" type="button" onClick={() => createMakeChat()}>+ Новый</button></header>}
       {readerSurfaceReady ? <ChatColumn
         conversationId={chat.activeId}
-        onToggleSidebar={inSplit ? undefined : toggleSidebar}
+        onToggleSidebar={sidebarAvailable ? toggleSidebar : undefined}
         sidebarExpanded={sidebarExpanded}
         title={activeTitle}
         onRenameTitle={(t) => {
