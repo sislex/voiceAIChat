@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { formatDateTime } from '../../lib/dateFormat'
 import type { AnyQaStageRun, QaRunStage } from '@shared/qa'
-import { Button } from '@voicechat/ui-kit'
+import { Button, EmptyState, ErrorState, FeedItem, FeedLog, MetricGrid, PanelHeading, QaScore, ResultTable, StatusPill } from '@voicechat/ui-kit'
+import { qaRunTone, qaStepTone } from './qaTone'
 import { parseAutomatedQaVerdict, scenarioLabel, QA_RUN_STATUS_LABELS, QA_STAGE_RUN_STATUS_LABELS, QA_STEP_STATUS_LABELS } from '@shared/qa'
 import { Skeleton } from '@voicechat/ui-kit'
 
@@ -69,22 +70,66 @@ function IntegrationTestPanel(props:{projectId:string;taskId:string}):JSX.Elemen
   const load=useCallback(async()=>{if(!window.qa?.getIntegration)return;try{const next=await window.qa.getIntegration(props.projectId,props.taskId);setState((current)=>{if(!current||!next)return next;const a=current.latestRun?.finishedAt??current.latestRun?.startedAt??current.latestRun?.createdAt??0,b=next.latestRun?.finishedAt??next.latestRun?.startedAt??next.latestRun?.createdAt??0;return b>=a?next:current});setError('')}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}},[props.projectId,props.taskId])
   useEffect(()=>{void load()},[load])
   useEffect(()=>{if(!state?.activeRun)return;const timer=window.setInterval(()=>void load(),2000);return()=>window.clearInterval(timer)},[state?.activeRun?.id,load])
-  if(!window.qa?.getIntegration)return <section>Стадия недоступна</section>
+  if(!window.qa?.getIntegration)return <section>
+    <EmptyState compact icon="🧪" title="Стадия недоступна" description="Мост QA не подключён в этой сборке." testId="integration-unavailable" />
+  </section>
   if(!state)return <section>
     <span className="vc-sr-only" aria-live="polite">Загрузка интеграционных автотестов…</span>
     <Skeleton variant="list" count={3} item="block" height={64} gap={10} />
   </section>
   const run=state.latestRun
   const act=async(fn:()=>Promise<unknown>)=>{setBusy(true);try{await fn();await load()}catch(cause){setError(cause instanceof Error?cause.message:String(cause))}finally{setBusy(false)}}
-  return <section aria-label="Интеграционные автотесты"><header><h3>Интеграционные автотесты</h3>{run&&<span className="vc-feed-status">{QA_RUN_STATUS_LABELS[run.status]}</span>}</header>
-    {error&&<p role="alert">{error}</p>}
-    {state.launchReasons.length>0&&<div><strong>Запуск недоступен</strong><ul>{state.launchReasons.map((reason)=><li key={reason}>{reason}</li>)}</ul></div>}
-    {run&&<><dl><dt>Ветка</dt><dd>{run.branch}</dd><dt>SHA</dt><dd><code>{run.commitSha}</code></dd><dt>Попытка</dt><dd>{run.attempt}</dd></dl>
-      {run.blockerReasons.length>0&&<ul>{run.blockerReasons.map((reason)=><li key={reason}>{reason}</li>)}</ul>}
-      <h4>Тест-кейсы</h4><ul>{run.testCases.map((item)=><li key={item.id}>{item.title} — {item.automatable?'автоматизируемый':'исключён'} {item.automationLinks.filter((link)=>link.commitSha===run.commitSha).map((link)=><a key={link.testId+link.path} href={link.path}>{link.path}</a>)}</li>)}</ul>
-      <h4>Команды</h4>{run.commands.map((command)=><details key={command.commandId}><summary>{command.name} — {QA_STEP_STATUS_LABELS[command.status]}, exit {command.exitCode??'—'}, {command.durationMs} ms</summary><code>{command.command}</code><pre>{command.stdout}{command.stderr}</pre></details>)}
-      {run.log&&<details open={run.status==='running'}><summary>Потоковый лог</summary><pre>{run.log}</pre></details>}{run.summary&&<p><strong>Итог:</strong> {run.summary}</p>}</>}
-    <div><Button size="sm" disabled={busy||!state.canStart} onClick={()=>void act(()=>window.qa!.startIntegration!(props.projectId,props.taskId))}>Запустить</Button>
+  return <section className="qa-stage-panel" aria-label="Интеграционные автотесты">
+    <PanelHeading
+      kicker={run?`Попытка ${run.attempt}`:'Интеграционные тесты'}
+      title="Интеграционные автотесты"
+      description="Генерация и прогон сценариев между UI и API."
+      actions={run&&<StatusPill tone={qaRunTone(run.status)}>{QA_RUN_STATUS_LABELS[run.status]}</StatusPill>}
+    />
+    {error&&<ErrorState compact message="Не удалось обновить интеграционные автотесты" detail={error} onRetry={()=>void load()} />}
+    {state.launchReasons.length>0&&<ErrorState compact message="Запуск недоступен" detail={state.launchReasons.join('; ')} testId="integration-blocked" />}
+    {run&&<>
+      <MetricGrid
+        testId="integration-summary"
+        items={[
+          { label: 'Ветка', value: run.branch, title: run.branch },
+          { label: 'SHA', value: run.commitSha.slice(0, 8), title: run.commitSha },
+          { label: 'Команд', value: String(run.commands.length) }
+        ]}
+      />
+      {run.commands.length>0&&<QaScore
+        passed={run.commands.filter((command)=>command.status==='passed').length}
+        total={run.commands.length}
+        unit="команд"
+        testId="integration-score"
+      />}
+      {run.blockerReasons.length>0&&<ErrorState compact message="Прогон заблокирован" detail={run.blockerReasons.join('; ')} />}
+      <ResultTable
+        caption="Тест-кейсы"
+        resultLabel="Автоматизация"
+        rows={run.testCases.map((item)=>({
+          id: item.id,
+          name: item.title,
+          tone: item.automatable?'success':'neutral' as const,
+          result: item.automatable?'автоматизируемый':'исключён',
+          detail: item.automationLinks.filter((link)=>link.commitSha===run.commitSha).map((link)=><a key={link.testId+link.path} href={link.path}>{link.path}</a>)
+        }))}
+      />
+      <div className="vc-feed">
+        {run.commands.map((command)=><FeedItem
+          key={command.commandId}
+          tone={qaStepTone(command.status)}
+          title={command.name}
+          meta={`${QA_STEP_STATUS_LABELS[command.status]} · exit ${command.exitCode??'—'} · ${command.durationMs} мс`}
+        >
+          <FeedLog label={`Лог команды ${command.name}`}>{`$ ${command.command}\n${command.stdout}${command.stderr}`}</FeedLog>
+        </FeedItem>)}
+        {run.log&&<FeedItem tone={run.status==='running'?'running':'neutral'} title="Потоковый лог" defaultOpen={run.status==='running'}>
+          <FeedLog label="Потоковый лог интеграционных автотестов">{run.log}</FeedLog>
+        </FeedItem>}
+      </div>
+      {run.summary&&<p className="ci-task-hint"><strong>Итог:</strong> {run.summary}</p>}</>}
+    <div className="qa-stage-actions"><Button size="sm" disabled={busy||!state.canStart} onClick={()=>void act(()=>window.qa!.startIntegration!(props.projectId,props.taskId))}>Запустить</Button>
       {state.activeRun&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.cancelIntegration!(props.projectId,props.taskId,state.activeRun!.id))}>Отменить</Button>}
       {run?.canRetry&&<Button size="sm" disabled={busy||!!state.activeRun} onClick={()=>void act(()=>window.qa!.startIntegration!(props.projectId,props.taskId))}>Повторить</Button>}
       {run&&['failed','blocked'].includes(run.status)&&<Button size="sm" disabled={busy} onClick={()=>void act(()=>window.qa!.fixIntegration!(props.projectId,props.taskId,run.id))}>Отправить на доработку</Button>}

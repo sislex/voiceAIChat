@@ -367,7 +367,8 @@ describe('App — интеграция UI со стором и IPC', () => {
   it('открытие и закрытие модалки настроек по кнопке ✕', async () => {
     await renderApp()
     await userEvent.click(screen.getByText('Настройки'))
-    expect(screen.getByRole('dialog', { name: 'Настройки' })).toBeInTheDocument()
+    // Окно настроек — ленивый чанк, поэтому появляется не в том же такте.
+    expect(await screen.findByRole('dialog', { name: 'Настройки' })).toBeInTheDocument()
     await userEvent.click(screen.getByLabelText('Закрыть'))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -375,7 +376,7 @@ describe('App — интеграция UI со стором и IPC', () => {
   it('клик по оверлею закрывает модалку, клик по карточке — нет', async () => {
     await renderApp()
     await userEvent.click(screen.getByText('Настройки'))
-    await userEvent.click(screen.getByRole('dialog', { name: 'Настройки' }))
+    await userEvent.click(await screen.findByRole('dialog', { name: 'Настройки' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     await userEvent.click(screen.getByTestId('overlay'))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
