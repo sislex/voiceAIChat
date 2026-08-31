@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { canTransitionWorkflow, chatStorageDirectories, compareTasksInColumn, DEFAULT_DONE_RETENTION_DAYS, isCompletedHidden, issueKey, normalizeAcceptanceCriteria, normalizeTaskRunOutcome, projectKey, QA_WORKFLOW, recommendedChatStoragePath, recommendedEnvironmentPath, recommendedPreviewEnvironmentPath, recommendedTaskTestEnvironmentPath, managedChatAttachmentsPath, managedChatArtifactsPath, managedChatTemporaryPath, MANAGED_ENVIRONMENT_DIRECTORIES, validateStorageRelativePath, normalizeMachineStoragePath, isMachineStoragePathAllowed, recommendedMachineStoragePath, managedCiWorkspacePaths, managedPreviewEnvironmentPaths, managedEnvironmentPaths, managedMergeClonePaths, managedChatWorkspacePaths, recommendedProjectMachineDirectories, validateProjectMachineDirectories,
-  sanitizeProjectTestUsers
+  sanitizeProjectTestUsers,
+  designPromptLines, type TaskDesignLink
 } from './projects'
 import { queryWidgetItems } from './widgetAssistant'
 
@@ -328,5 +329,24 @@ describe('chatStorageDirectories', () => {
     expect(chatStorageDirectories('C:\\Users\\bob\\ChatAI', 'projects/p1/chats/c1').attachments).toBe('C:\\Users\\bob\\ChatAI\\projects\\p1\\chats\\c1\\attachments')
     expect(() => chatStorageDirectories('/x', '../etc')).toThrow()
     expect(() => chatStorageDirectories('', 'chats/c1')).toThrow()
+  })
+})
+
+describe('designPromptLines', () => {
+  const link = (over: Partial<TaskDesignLink> = {}): TaskDesignLink => ({
+    id: 'l1', taskId: 't1', conversationId: 'c1', conversationTitle: 'Проект 1', conversationOwner: 'alice',
+    path: 'index.html', label: '', createdAt: T0, createdBy: 'alice', ...over
+  })
+  const preview = (id: string, path: string): string => `/api/preview/make/${id}/${path}`
+
+  it('называет страницу и адрес превью, а без пути говорит про проект целиком', () => {
+    expect(designPromptLines([link()], preview)).toEqual([
+      'Дизайн: «Проект 1» — Make-проект c1, страница index.html; превью /api/preview/make/c1/index.html'
+    ])
+    expect(designPromptLines([link({ path: '' })], preview)[0]).toContain('проект целиком')
+  })
+
+  it('подпись связи важнее имени Make-проекта: экран называют по задаче', () => {
+    expect(designPromptLines([link({ label: 'Экран оплаты' })], preview)[0]).toContain('«Экран оплаты»')
   })
 })

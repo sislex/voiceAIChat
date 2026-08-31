@@ -5,7 +5,7 @@ export type {
 export { DEFAULT_SESSION_POLICY, SESSION_TTL_MS, SESSION_SHORT_TTL_MS } from './types'
 export { parseUserAgent, deviceIcon, LEGACY_USER_AGENT } from './device'
 export { normalizeIp, localGeo, deviceKey, hash32, type NormalizedIp } from './deviceKey'
-export { ttlFor, isActive, isOnline, isTrusted, isStale, isExpiringSoon, overLimit, isNewDevice, findTrustedDevice } from './policy'
+export { ttlFor, isActive, isOnline, isTrusted, isStale, isExpiringSoon, trustLeftMs, overLimit, isNewDevice, findTrustedDevice } from './policy'
 export {
   sessionTitle, toView, sortSessions, filterSessions, otherSessions, durationOf,
   deviceSiblings, groupByDevice, platformsOf, countryFlag, sessionsSummary,

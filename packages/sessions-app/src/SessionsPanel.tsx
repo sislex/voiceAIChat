@@ -41,6 +41,13 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
     return () => clearInterval(timer)
   }, [now])
   const currentNow = now ?? tick
+  // Список освежается сам: живые кадры доходят не всегда, а человек может
+  // держать окно открытым и ждать, пока «чужая» сессия исчезнет.
+  useEffect(() => {
+    if (now !== undefined) return
+    const timer = setInterval(() => void store.actions.reload(), 60_000)
+    return () => clearInterval(timer)
+  }, [store, now])
   useEffect(() => {
     void store.actions.load()
   }, [store])
@@ -53,6 +60,7 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
   const views = allViews.slice(0, maxVisible)
   const hidden = allViews.length - views.length
   const platforms = store.platforms()
+  const endedView = store.visibleEnded()
   const ask = async (request: { title: string; text?: string }): Promise<boolean> => (confirm ? confirm({ ...request, variant: 'danger' }) : true)
 
   if (state.status === 'loading' || state.status === 'idle') return <p className="vcs-note">{texts.loading}</p>
@@ -157,7 +165,16 @@ export function SessionsPanel({ store, texts: overrides, locale = 'ru-RU', readO
       )}
       {hidden > 0 && <p className="vcs-note">{texts.moreHidden(hidden)}</p>}
       {!readOnly && store.capabilities.ended && (
-        <EndedSessions sessions={state.ended} texts={texts} locale={locale} onOpen={() => void store.actions.loadEnded()} />
+        <EndedSessions
+          sessions={state.ended === null ? null : endedView.items}
+          hidden={endedView.hidden}
+          query={state.endedQuery}
+          texts={texts}
+          locale={locale}
+          onOpen={() => void store.actions.loadEnded()}
+          onQuery={(value) => store.actions.setEndedQuery(value)}
+          onMore={() => store.actions.showMoreEnded()}
+        />
       )}
     </div>
   )
@@ -168,9 +185,10 @@ export function SessionsBulkActions({ store, texts: overrides, confirm }: { stor
   const state = useSyncExternalStore(store.subscribe, store.getState, store.getState)
   const texts = useMemo(() => ({ ...DEFAULT_TEXTS, ...overrides }), [overrides])
   const others = store.otherCount()
+  const trustedCount = store.visible().filter((view) => view.trusted).length
   const showOthers = store.capabilities.revokeOthers && others > 0
   const showAll = store.capabilities.revokeAll && state.sessions.length > 0
-  if (!showOthers && !showAll && !store.capabilities.panic && !store.capabilities.copy) return null
+  if (!showOthers && !showAll && !store.capabilities.panic && !store.capabilities.copy && !(store.capabilities.untrustAll && trustedCount > 0)) return null
   const ask = async (request: { title: string; text?: string }): Promise<boolean> => (confirm ? confirm({ ...request, variant: 'danger' }) : true)
   return (
     <div className="vcs-bulk">
@@ -190,6 +208,21 @@ export function SessionsBulkActions({ store, texts: overrides, confirm }: { stor
           }}
         >
           {texts.revokeAll}
+        </Button>
+      )}
+      {/* Кнопка появляется только когда доверять есть чему: иначе она предлагает
+          действие, которое ничего не изменит. */}
+      {store.capabilities.untrustAll && trustedCount > 0 && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={state.busyAll}
+          onClick={() => {
+            void ask({ title: texts.untrustAllConfirmTitle, text: texts.untrustAllConfirmText })
+              .then((ok) => (ok ? store.actions.untrustAll() : false))
+          }}
+        >
+          {texts.untrustAll}
         </Button>
       )}
       {store.capabilities.copy && (

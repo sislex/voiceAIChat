@@ -750,3 +750,72 @@ describe('вид доски (личная настройка участника)
     expect((await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board/view` })).json().onlyMine).toBe(true)
   })
 })
+
+describe('дизайны карточки: REST', () => {
+  /** Проект с задачей и Make-чатом, привязанным к тому же проекту. */
+  async function designScene(): Promise<{ project: ProjectDetail; taskId: string; makeId: string }> {
+    const project = await createProject('Design')
+    const board = (await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/board` })).json() as Board
+    const task = (await inj(adminTok, {
+      method: 'POST', url: `/api/projects/${project.id}/tasks`, payload: { columnId: board.columns[0].id, title: 'Экран оплаты' }
+    })).json() as Task
+    const make = db.createConversation('admin', 'Проект 1', 'make')
+    db.setConversationProject('admin', make.id, project.id)
+    return { project, taskId: task.id, makeId: make.id }
+  }
+
+  it('связывает карточку со страницей, отдаёт её в списке источников и снимает связь', async () => {
+    const { project, taskId, makeId } = await designScene()
+
+    const sources = await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/design-sources` })
+    expect(sources.json()).toMatchObject([{ conversationId: makeId, title: 'Проект 1', own: true }])
+
+    const linked = await inj(adminTok, {
+      method: 'POST', url: `/api/projects/${project.id}/tasks/${taskId}/designs`,
+      payload: { conversationId: makeId, path: 'pay.html', label: 'Оплата' }
+    })
+    expect(linked.statusCode).toBe(200)
+    const links = linked.json() as Array<{ id: string; path: string }>
+    expect(links).toHaveLength(1)
+    expect(links[0].path).toBe('pay.html')
+
+    const listed = await inj(adminTok, { method: 'GET', url: `/api/projects/${project.id}/tasks/${taskId}/designs` })
+    expect(listed.json()).toHaveLength(1)
+
+    const removed = await inj(adminTok, { method: 'DELETE', url: `/api/projects/${project.id}/tasks/${taskId}/designs/${links[0].id}` })
+    expect(removed.json()).toEqual([])
+  })
+
+  it('чужой Make-проект и не-Make чат отклоняются с объяснением, посторонний получает 404', async () => {
+    const { project, taskId } = await designScene()
+    const foreign = db.createConversation('admin', 'Чужой макет', 'make')
+    const rejected = await inj(adminTok, {
+      method: 'POST', url: `/api/projects/${project.id}/tasks/${taskId}/designs`, payload: { conversationId: foreign.id }
+    })
+    expect(rejected.statusCode).toBe(400)
+    expect(String((rejected.json() as { error: string }).error)).toContain('не привязан')
+
+    const alien = await inj(bobTok, { method: 'GET', url: `/api/projects/${project.id}/tasks/${taskId}/designs` })
+    expect(alien.statusCode).toBe(404)
+  })
+
+  it('панель Make видит связанные карточки и связывает новую со своей страницей', async () => {
+    const { project, taskId, makeId } = await designScene()
+    const created = await inj(adminTok, {
+      method: 'POST', url: `/api/make/${makeId}/task-links`, payload: { taskId, path: 'pay.html' }
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject([{ taskId, path: 'pay.html', taskKey: 'DESI-1' }])
+
+    const filtered = await inj(adminTok, { method: 'GET', url: `/api/make/${makeId}/task-links?path=index.html` })
+    expect(filtered.json()).toEqual([])
+
+    const tasks = await inj(adminTok, { method: 'GET', url: `/api/make/${makeId}/task-links/tasks` })
+    expect(tasks.json()).toMatchObject([{ taskId, title: 'Экран оплаты' }])
+
+    // Посторонний не должен даже узнать о существовании Make-проекта.
+    const alien = await inj(bobTok, { method: 'GET', url: `/api/make/${makeId}/task-links` })
+    expect(alien.statusCode).toBe(404)
+    void project
+  })
+})

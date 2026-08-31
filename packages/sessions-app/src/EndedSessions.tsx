@@ -6,13 +6,19 @@ import { formatMoment } from './format'
 import type { SessionsTexts } from './texts'
 
 export interface EndedSessionsProps {
+  /** Что показывать: уже отфильтровано и подрезано стором. */
   sessions: DeviceSession[] | null
+  /** Сколько записей скрыто за кнопкой «показать ещё». */
+  hidden?: number
+  query?: string
   texts: SessionsTexts
   locale: string
   onOpen(): void
+  onQuery?(value: string): void
+  onMore?(): void
 }
 
-export function EndedSessions({ sessions, texts, locale, onOpen }: EndedSessionsProps): JSX.Element {
+export function EndedSessions({ sessions, hidden = 0, query = '', texts, locale, onOpen, onQuery, onMore }: EndedSessionsProps): JSX.Element {
   return (
     <details
       className="vcs-ended"
@@ -25,6 +31,13 @@ export function EndedSessions({ sessions, texts, locale, onOpen }: EndedSessions
       ) : sessions.length === 0 ? (
         <p className="vcs-note">{texts.endedEmpty}</p>
       ) : (
+        <>
+        {onQuery && (
+          <label className="vcs-search">
+            <span className="vcs-search-label">{texts.endedSearchLabel}</span>
+            <input className="vcs-input" type="search" value={query} placeholder={texts.searchPlaceholder} onChange={(e) => onQuery(e.target.value)} />
+          </label>
+        )}
         <ul className="vcs-list" role="list">
           {sessions.map((session) => (
             <li key={session.sid} className="vcs-item vcs-item--ended" data-testid={`ended-${session.sid}`}>
@@ -42,6 +55,10 @@ export function EndedSessions({ sessions, texts, locale, onOpen }: EndedSessions
             </li>
           ))}
         </ul>
+        {hidden > 0 && onMore && (
+          <button type="button" className="vcs-more" onClick={onMore}>{texts.showMore(hidden)}</button>
+        )}
+        </>
       )}
     </details>
   )

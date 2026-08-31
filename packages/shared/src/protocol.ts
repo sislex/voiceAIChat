@@ -153,6 +153,8 @@ export const REST = {
   sessionLogoutAll: '/api/session/logout-all',
   /** «Это не я»: гасит все сессии и требует смену пароля при следующем входе. */
   sessionPanic: '/api/session/panic',
+  /** Снять доверие со всех своих устройств. */
+  sessionUntrustAll: '/api/session/untrust-all',
   sessionRevoke: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
   /** Имя устройства и отметка «доверенное» для своей сессии. */
   sessionUpdate: (sid: string) => `/api/session/${encodeURIComponent(sid)}`,
@@ -205,6 +207,9 @@ export const REST = {
   /** Превью и ZIP-экспорт живут под /api/preview/…: там действует preview-cookie для iframe и ссылок. */
   makePreview: (id: string) => `/api/preview/make/${encodeURIComponent(id)}/`,
   makeShare: (id: string) => `/api/make/${encodeURIComponent(id)}/share`,
+  /** Обратная связь Make → доска: задачи, ссылающиеся на проект (или его страницу). */
+  makeTaskLinks: (id: string) => `/api/make/${encodeURIComponent(id)}/task-links`,
+  makeTaskLink: (id: string, linkId: string) => `/api/make/${encodeURIComponent(id)}/task-links/${encodeURIComponent(linkId)}`,
   makeShareGrants: (id: string) => `/api/make/${encodeURIComponent(id)}/share/grants`,
   makeShared: (token: string) => `/api/make/shared/${encodeURIComponent(token)}`,
   makeSharedFile: (token: string, path: string) => `/api/make/shared/${encodeURIComponent(token)}/file?path=${encodeURIComponent(path)}`,
@@ -391,6 +396,13 @@ export const REST = {
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/move`,
   projectTaskChat: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/chat`,
+  /** Связи карточки с дизайнами Make: список, добавление, снятие. */
+  taskDesigns: (id: string, taskId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/designs`,
+  taskDesign: (id: string, taskId: string, linkId: string) =>
+    `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/designs/${encodeURIComponent(linkId)}`,
+  /** Make-проекты, привязанные к проекту: источники дизайна для карточек. */
+  projectDesignSources: (id: string) => `/api/projects/${encodeURIComponent(id)}/design-sources`,
   taskMergeStart: (id: string, taskId: string) =>
     `/api/projects/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/merge`,
   taskMergeMachines: (id: string, taskId: string) =>
@@ -775,3 +787,12 @@ export const SERVER_MESSAGE_TYPES: ServerMessageType[] = [
   'make.changed',
   'make.presence'
 ]
+
+/**
+ * Адрес превью конкретной страницы дизайна: база превью Make + путь файла.
+ * Отдельная функция, потому что её зовут и UI (ссылка «Открыть макет»), и
+ * сервер (строка дизайна в промпте) — склейка руками уже разъезжалась бы.
+ */
+export function makeDesignPreviewUrl(conversationId: string, path: string): string {
+  return `${REST.makePreview(conversationId)}${path.replace(/^\/+/, '')}`
+}
