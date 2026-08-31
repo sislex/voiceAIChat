@@ -5,7 +5,7 @@
 import { randomUUID } from 'node:crypto'
 import type { LlmClient, LlmHandle, LlmRequest, LlmStreamHandlers } from '../claude/types.js'
 import {
-  appendQuestionsHint, ciToolCallsAny, ciToolCharsTotal, ciToolOutputLimits, clarifyBudget,
+  appendQuestionsHint, ciToolCallsAny, designPromptLines, makeDesignPreviewUrl, ciToolCharsTotal, ciToolOutputLimits, clarifyBudget,
   classifyCiToolCall, CI_TOOL_RESPONSES_KEEP, CI_USAGE_KIND_LABELS, EMPTY_CI_TOOL_CALLS, EMPTY_CI_TOOL_CHARS,
   isCiToolDenial, KB_GAPS_HINT, parseKbGaps, parseQuestions,
   resolveCiStageModel, trimmedToolOutputOriginalChars, trimToolOutput, UNKNOWN_MODEL
@@ -304,6 +304,8 @@ function taskPrompt(ctx: CiModelContext, mode: CiRunMode, readiness: import('@vo
     `Задача: ${ctx.task.title}`,
     ctx.task.description ? `Описание: ${ctx.task.description}` : '',
     ctx.task.acceptanceCriteria ? `Критерии приёмки: ${ctx.task.acceptanceCriteria}` : '',
+    // Дизайн задачи (Make): адрес превью и путь страницы — тот же блок, что и в чате.
+    ...(ctx.task.designs?.length ? designPromptLines(ctx.task.designs, makeDesignPreviewUrl) : []),
     readiness ? `Подтверждённый DevelopmentReadiness (авторитетный scope; не расширять): ${JSON.stringify(readiness)}` : '',
     `Рабочая директория: ${ctx.workspacePath}`,
     `Ветка: ${ctx.env.BRANCH ?? ''}`,

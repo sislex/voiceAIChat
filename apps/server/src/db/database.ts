@@ -149,6 +149,12 @@ import {
   type TaskChatBadge,
   type TaskChatContext,
   type TaskChatCrumb,
+  type TaskDesignLink,
+  type ProjectDesignSource,
+  type MakeTaskLink,
+  type MakeLinkableTask,
+  MAKE_KIND,
+  normalizeMakePath,
   issueKey,
   isCompletedHidden,
   compareTasksInColumn,
@@ -5047,7 +5053,190 @@ export class VoiceChatDb {
       )
       .get(userId, userId, userId, taskId, projectId) as TaskRow | undefined
     if (!row) return null
-    return { ...mapTask(row), latestRunResult: this.latestTaskRunResult(row.id) }
+    return { ...mapTask(row), latestRunResult: this.latestTaskRunResult(row.id), designs: this.taskDesigns(row.id) }
+  }
+
+  // ---- Дизайны карточки (связь задачи с Make-проектом) -------------------
+
+  /**
+   * Может ли пользователь читать Make-проект как участник проекта. Привязка
+   * Make-чата к проекту (настройки чата) и есть акт, открывающий дизайн команде:
+   * иначе связанный с карточкой макет открывался бы только у своего автора.
+   */
+  /** Проект, к которому привязан Make-чат (роуты Make знают только conversationId). */
+  makeConversationProject(conversationId: string): string | null {
+    const conv = this.db
+      .prepare(`SELECT project_id FROM conversations WHERE id = ? AND assistant_kind = ?`)
+      .get(conversationId, MAKE_KIND) as { project_id: string | null } | undefined
+    return conv?.project_id ?? null
+  }
+
+  isMakeProjectViewer(userId: string, conversationId: string): boolean {
+    const conv = this.db
+      .prepare(`SELECT project_id FROM conversations WHERE id = ? AND assistant_kind = ?`)
+      .get(conversationId, MAKE_KIND) as { project_id: string | null } | undefined
+    return Boolean(conv?.project_id && this.isProjectMember(userId, conv.project_id))
+  }
+
+
+  /**
+   * Связи задачи с дизайнами. Имя и владелец Make-проекта приезжают вместе со
+   * связью: карточка показывает список, не загружая список чатов.
+   */
+  taskDesigns(taskId: string): TaskDesignLink[] {
+    const rows = this.db
+      .prepare(
+        `SELECT d.id, d.task_id, d.conversation_id, d.path, d.label, d.created_at, d.created_by,
+                c.title AS conversation_title, c.user_id AS conversation_owner
+           FROM task_designs d JOIN conversations c ON c.id = d.conversation_id
+          WHERE d.task_id = ?
+          ORDER BY d.created_at ASC`
+      )
+      .all(taskId) as Array<{
+        id: string; task_id: string; conversation_id: string; path: string; label: string
+        created_at: number; created_by: string | null; conversation_title: string; conversation_owner: string | null
+      }>
+    return rows.map((r) => ({
+      id: r.id,
+      taskId: r.task_id,
+      conversationId: r.conversation_id,
+      conversationTitle: r.conversation_title,
+      conversationOwner: r.conversation_owner,
+      path: r.path,
+      label: r.label,
+      createdAt: r.created_at,
+      createdBy: r.created_by
+    }))
+  }
+
+  listTaskDesigns(userId: string, projectId: string, taskId: string): TaskDesignLink[] | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.getTask(projectId, taskId)) return null
+    return this.taskDesigns(taskId)
+  }
+
+  /**
+   * Связывает карточку со страницей Make-проекта. Источник обязан быть привязан
+   * к тому же проекту: иначе участники увидели бы в карточке дизайн, к которому
+   * у них нет доступа, — привязка Make-проекта к проекту и есть акт, открывающий
+   * его команде на чтение (см. `access` в routes/make.ts).
+   */
+  linkTaskDesign(
+    userId: string,
+    projectId: string,
+    taskId: string,
+    args: { conversationId: string; path?: string; label?: string }
+  ): TaskDesignLink[] {
+    if (!this.isProjectMember(userId, projectId)) throw new Error('Пользователь не состоит в проекте')
+    const task = this.getTask(projectId, taskId)
+    if (!task) throw new Error('Задача не найдена в проекте')
+    const conv = this.db
+      .prepare(`SELECT id, assistant_kind, project_id FROM conversations WHERE id = ?`)
+      .get(args.conversationId) as { id: string; assistant_kind: string | null; project_id: string | null } | undefined
+    if (!conv || conv.assistant_kind !== MAKE_KIND) throw new Error('Дизайн берётся только из проекта Make')
+    if (conv.project_id !== projectId) throw new Error('Make-проект не привязан к этому проекту')
+    // Пустой путь — «проект целиком»; иначе путь нормализуется тем же правилом,
+    // что и файлы Make, чтобы ссылка не увела за пределы проекта.
+    const raw = (args.path ?? '').trim()
+    const path = raw ? normalizeMakePath(raw) : ''
+    if (path === null) throw new Error('Недопустимый путь страницы дизайна')
+    const label = (args.label ?? '').trim().slice(0, 120)
+    const existing = this.db
+      .prepare(`SELECT id FROM task_designs WHERE task_id = ? AND conversation_id = ? AND path = ?`)
+      .get(taskId, args.conversationId, path) as { id: string } | undefined
+    if (existing) {
+      if (label) this.db.prepare(`UPDATE task_designs SET label = ? WHERE id = ?`).run(label, existing.id)
+    } else {
+      this.db
+        .prepare(`INSERT INTO task_designs (id, task_id, conversation_id, path, label, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(this.newId(), taskId, args.conversationId, path, label, userId, this.now())
+    }
+    this.touchProject(projectId, this.now())
+    return this.taskDesigns(taskId)
+  }
+
+  unlinkTaskDesign(userId: string, projectId: string, taskId: string, linkId: string): TaskDesignLink[] | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    if (!this.getTask(projectId, taskId)) return null
+    this.db.prepare(`DELETE FROM task_designs WHERE id = ? AND task_id = ?`).run(linkId, taskId)
+    this.touchProject(projectId, this.now())
+    return this.taskDesigns(taskId)
+  }
+
+  /** Make-проекты, привязанные к проекту: то, из чего карточка выбирает дизайн. */
+  projectDesignSources(userId: string, projectId: string): ProjectDesignSource[] | null {
+    if (!this.isProjectMember(userId, projectId)) return null
+    const rows = this.db
+      .prepare(
+        `SELECT id, title, user_id, updated_at FROM conversations
+          WHERE project_id = ? AND assistant_kind = ? ORDER BY updated_at DESC`
+      )
+      .all(projectId, MAKE_KIND) as Array<{ id: string; title: string; user_id: string | null; updated_at: number }>
+    return rows.map((r) => ({
+      conversationId: r.id,
+      title: r.title,
+      owner: r.user_id,
+      own: r.user_id === userId,
+      updatedAt: r.updated_at
+    }))
+  }
+
+  /**
+   * Обратное направление: какие карточки ссылаются на Make-проект (или на его
+   * страницу). Доступ проверяет вызывающий роут — там же, где право на сам
+   * Make-проект.
+   */
+  makeTaskLinks(conversationId: string, path?: string): MakeTaskLink[] {
+    const rows = this.db
+      .prepare(
+        `SELECT d.id, d.path, d.label, d.created_at, t.id AS task_id, t.title, t.seq, t.project_id,
+                p.name AS project_name, kc.name AS column_name
+           FROM task_designs d
+           JOIN tasks t ON t.id = d.task_id
+           JOIN projects p ON p.id = t.project_id
+           LEFT JOIN kanban_columns kc ON kc.id = t.column_id
+          WHERE d.conversation_id = ?${path === undefined ? '' : ' AND d.path = ?'}
+          ORDER BY d.created_at ASC`
+      )
+      .all(...(path === undefined ? [conversationId] : [conversationId, path])) as Array<{
+        id: string; path: string; label: string; created_at: number; task_id: string; title: string
+        seq: number; project_id: string; project_name: string; column_name: string | null
+      }>
+    return rows.map((r) => ({
+      id: r.id,
+      taskId: r.task_id,
+      projectId: r.project_id,
+      taskKey: issueKey(r.project_name, { seq: r.seq }),
+      taskTitle: r.title,
+      columnName: r.column_name,
+      path: r.path,
+      label: r.label,
+      createdAt: r.created_at
+    }))
+  }
+
+  /** Карточки проекта Make-чата — выбор в диалоге «Связать с задачей». */
+  makeLinkableTasks(userId: string, conversationId: string): MakeLinkableTask[] {
+    const conv = this.db
+      .prepare(`SELECT project_id FROM conversations WHERE id = ? AND assistant_kind = ?`)
+      .get(conversationId, MAKE_KIND) as { project_id: string | null } | undefined
+    const projectId = conv?.project_id
+    if (!projectId || !this.isProjectMember(userId, projectId)) return []
+    const rows = this.db
+      .prepare(
+        `SELECT t.id, t.title, t.seq, t.project_id, p.name AS project_name, kc.name AS column_name
+           FROM tasks t JOIN projects p ON p.id = t.project_id
+           LEFT JOIN kanban_columns kc ON kc.id = t.column_id
+          WHERE t.project_id = ? ORDER BY t.seq DESC`
+      )
+      .all(projectId) as Array<{ id: string; title: string; seq: number; project_id: string; project_name: string; column_name: string | null }>
+    return rows.map((r) => ({
+      taskId: r.id,
+      projectId: r.project_id,
+      taskKey: issueKey(r.project_name, { seq: r.seq }),
+      title: r.title,
+      columnName: r.column_name
+    }))
   }
 
   /**
@@ -5805,7 +5994,9 @@ export class VoiceChatDb {
   /** Публичный доступ к задаче для CI-раннера (по членству проекта). */
   getCiTask(userId: string, projectId: string, taskId: string): Task | null {
     if (!this.isProjectMember(userId, projectId)) return null
-    return this.getTask(projectId, taskId)
+    const task = this.getTask(projectId, taskId)
+    // Дизайны едут вместе с задачей: их видит и промпт CI-рана, и контекст чата.
+    return task ? { ...task, designs: this.taskDesigns(task.id) } : null
   }
 
   /**

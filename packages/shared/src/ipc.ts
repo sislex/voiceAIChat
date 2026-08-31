@@ -600,6 +600,20 @@ export interface IpcInvokeMap {
   'tasks:delete': { arg: { projectId: string; taskId: string }; result: void }
   /** Открыть (или создать) связанный с задачей чат текущего пользователя. */
   'tasks:openChat': { arg: { projectId: string; taskId: string }; result: Conversation }
+  /** Дизайны карточки: связи с Make-проектами проекта. */
+  'tasks:designs': { arg: { projectId: string; taskId: string }; result: import('./projects').TaskDesignLink[] }
+  'tasks:linkDesign': {
+    arg: { projectId: string; taskId: string; conversationId: string; path?: string; label?: string }
+    result: import('./projects').TaskDesignLink[]
+  }
+  'tasks:unlinkDesign': { arg: { projectId: string; taskId: string; linkId: string }; result: import('./projects').TaskDesignLink[] }
+  /** Make-проекты, привязанные к проекту: выбор источника дизайна в карточке. */
+  'projects:designSources': { arg: { id: string }; result: import('./projects').ProjectDesignSource[] }
+  /** Обратная связь в панели Make: какие задачи ссылаются на проект/страницу. */
+  'make:taskLinks': { arg: { conversationId: string; path?: string }; result: import('./projects').MakeTaskLink[] }
+  'make:linkTask': { arg: { conversationId: string; taskId: string; path?: string; label?: string }; result: import('./projects').MakeTaskLink[] }
+  /** Задачи проекта Make-чата — выбор в диалоге «Связать с задачей». */
+  'make:linkableTasks': { arg: { conversationId: string }; result: import('./projects').MakeLinkableTask[] }
 }
 
 export type IpcChannel = keyof IpcInvokeMap
@@ -1302,7 +1316,14 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'tasks:dismissPreparationNotification',
   'tasks:exportPreparationRun',
   'tasks:delete',
-  'tasks:openChat'
+  'tasks:openChat',
+  'tasks:designs',
+  'tasks:linkDesign',
+  'tasks:unlinkDesign',
+  'projects:designSources',
+  'make:taskLinks',
+  'make:linkTask',
+  'make:linkableTasks'
 ]
 
 /**

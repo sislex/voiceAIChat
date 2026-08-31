@@ -100,6 +100,11 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     'conversations:create': ({ title, assistantKind }) =>
       req(REST.conversations, { method: 'POST', body: JSON.stringify({ title, assistantKind }) }),
     'make:state': ({ conversationId }) => req(REST.makeState(conversationId)),
+    'make:taskLinks': ({ conversationId, path }) =>
+      req(path === undefined ? REST.makeTaskLinks(conversationId) : `${REST.makeTaskLinks(conversationId)}?path=${encodeURIComponent(path)}`),
+    'make:linkTask': ({ conversationId, ...body }) =>
+      req(REST.makeTaskLinks(conversationId), { method: 'POST', body: JSON.stringify(body) }),
+    'make:linkableTasks': ({ conversationId }) => req(`${REST.makeTaskLinks(conversationId)}/tasks`),
     'make:read': ({ conversationId, path }) => req(`${REST.makeFile(conversationId)}?path=${encodeURIComponent(path)}`),
     'make:write': ({ conversationId, path, content }) => req(REST.makeFile(conversationId), { method: 'PUT', body: JSON.stringify({ path, content }) }),
     'make:delete': ({ conversationId, path }) => req(`${REST.makeFile(conversationId)}?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
@@ -509,6 +514,12 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
     },
     'tasks:openChat': ({ projectId, taskId }) =>
       req(REST.projectTaskChat(projectId, taskId), { method: 'POST' }),
+    'tasks:designs': ({ projectId, taskId }) => req(REST.taskDesigns(projectId, taskId)),
+    'tasks:linkDesign': ({ projectId, taskId, ...body }) =>
+      req(REST.taskDesigns(projectId, taskId), { method: 'POST', body: JSON.stringify(body) }),
+    'tasks:unlinkDesign': ({ projectId, taskId, linkId }) =>
+      req(REST.taskDesign(projectId, taskId, linkId), { method: 'DELETE' }),
+    'projects:designSources': ({ id }) => req(REST.projectDesignSources(id)),
     'tasks:delete': async ({ projectId, taskId }) => {
       await req(REST.projectTask(projectId, taskId), { method: 'DELETE' })
     }

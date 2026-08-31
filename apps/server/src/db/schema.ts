@@ -611,6 +611,28 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE INDEX IF NOT EXISTS idx_tasks_column
   ON tasks(project_id, column_id, position);
 
+-- Связь карточки с дизайном из Make: отдельная таблица, а не JSON в tasks, —
+-- панель Make спрашивает обратное направление («какие задачи ссылаются на эту
+-- страницу»), и по колонке JSON такой запрос не построить.
+CREATE TABLE IF NOT EXISTS task_designs (
+  id              TEXT PRIMARY KEY,
+  task_id         TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  -- Путь файла внутри Make-проекта; пустая строка — проект целиком.
+  path            TEXT NOT NULL DEFAULT '',
+  label           TEXT NOT NULL DEFAULT '',
+  created_by      TEXT,
+  created_at      INTEGER NOT NULL,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_task_designs_unique
+  ON task_designs(task_id, conversation_id, path);
+
+CREATE INDEX IF NOT EXISTS idx_task_designs_source
+  ON task_designs(conversation_id, path);
+
 CREATE TABLE IF NOT EXISTS task_creation_requests (
   actor TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,
