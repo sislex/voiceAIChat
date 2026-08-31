@@ -433,10 +433,20 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
 
   // Чат к задаче создаётся сам при первом открытии карточки: дальше в него
   // дублируются вопросы модели из CI-рана.
-  const ensureChat = props.onEnsureChat
+  //
+  // Колбэк — в ref, и просим ровно один раз на задачу: `App` передаёт его
+  // inline-стрелкой, а `task.chatId` приезжает только со следующим снапшотом
+  // доски, поэтому в зависимостях эффекта это давало по запросу на каждый
+  // ререндер родителя.
+  const ensureChatRef = useRef(props.onEnsureChat)
+  ensureChatRef.current = props.onEnsureChat
+  const ensuredChatForRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!props.draft && task.type === 'task' && !task.chatId && ensureChat) ensureChat(task.id)
-  }, [task.id, task.type, task.chatId, ensureChat, props.draft])
+    if (props.draft || task.type !== 'task' || task.chatId) return
+    if (ensuredChatForRef.current === task.id) return
+    ensuredChatForRef.current = task.id
+    ensureChatRef.current?.(task.id)
+  }, [task.id, task.type, task.chatId, props.draft])
 
   // Использование БЗ — агрегат по ВСЕМ ранам задачи. Перечитываем, когда
   // меняется статус последнего рана: только что закончившийся ран добавил свои

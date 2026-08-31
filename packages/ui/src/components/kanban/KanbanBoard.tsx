@@ -1378,15 +1378,20 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   // Доска отдаёт лёгкую карточку без тяжёлых текстов; при открытии догружаем
   // полную задачу и накладываем её тяжёлые поля поверх живой карточки доски.
   const [fullTask, setFullTask] = useState<Task | null>(null)
+  // Загрузчик — в ref: `App` передаёт его inline-стрелкой, новой на каждый свой
+  // рендер. В зависимостях эффекта это давало перезапрос карточки на каждый
+  // ререндер сверху (и мигание описания от `setFullTask(null)`).
+  const loadFullTaskRef = useRef(props.loadFullTask)
+  loadFullTaskRef.current = props.loadFullTask
   useEffect(() => {
     setFullTask(null)
     const id = openTaskId
-    const load = props.loadFullTask
+    const load = loadFullTaskRef.current
     if (!id || !load) return
     let alive = true
     void load(id).then((t) => { if (alive && t && t.id === id) setFullTask(t) }).catch(() => { /* оставим лёгкую карточку */ })
     return () => { alive = false }
-  }, [openTaskId, props.loadFullTask])
+  }, [openTaskId])
   const openTask = boardOpenTask && fullTask && fullTask.id === boardOpenTask.id
     ? { ...boardOpenTask, description: fullTask.description, acceptanceCriteria: fullTask.acceptanceCriteria }
     : boardOpenTask
