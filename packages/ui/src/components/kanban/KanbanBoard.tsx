@@ -1756,6 +1756,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onAiAssistPromptsChange={props.onAiAssistPromptsChange}
           generateAiAssist={props.generateAiAssist}
           onOpenTask={setOpenTaskId}
+          onCreateSubtask={(columnId, input) => props.onCreateTask(columnId, input)}
           onSelectedFieldChange={props.onSelectedFieldChange}
           onClose={() => { props.onSelectedFieldChange?.(null); setOpenTaskId(null) }}
         />

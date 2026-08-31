@@ -14,7 +14,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { formatDateTime, formatDate } from '../../lib/dateFormat'
 import { ALL_PROJECT_FEATURES, type ProjectFeatureSet } from '@shared/projectTypes'
-import type { Board, ProjectMember, Task, TaskPriority, WorkItemType } from '@shared/projects'
+import type { Board, ProjectMember, Task, TaskPriority, TaskRunResult, WorkItemType } from '@shared/projects'
 import { normalizeAcceptanceCriteria, TASK_PRIORITIES } from '@shared/projects'
 import type { ModifierPrompt } from '@shared/types'
 import { Button } from '@voicechat/ui-kit'
@@ -22,9 +22,11 @@ import { Dialog } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
+import { ProgressTrack } from '@voicechat/ui-kit'
+import { LiveIndicator, PanelHeading, StatusPill, type StatusTone } from '@voicechat/ui-kit'
 import { Markdown } from '../Markdown'
 import { useConfirm } from '@voicechat/ui-kit'
-import { ChatIcon, FlagIcon, PencilIcon, TrashIcon, WandIcon } from '../icons'
+import { ChatIcon, FlagIcon, TrashIcon, WandIcon } from '../icons'
 import { PromptBuilder, type GenerateParams, type Suggestion } from '../prompt-builder/PromptBuilder'
 import { applyNativeInputValue, useAiAssist } from '../prompt-builder/useAiAssist'
 import { Avatar, PRIORITY_LABEL, TYPE_LABEL, TypeIcon, issueKey } from './kanbanMeta'
@@ -67,6 +69,30 @@ export interface TaskUpdateFields {
   flagged?: boolean
 }
 
+
+/** Перевод тона CI в тон лозенги ui-kit: имена у них исторически разные. */
+function pillTone(tone: ReturnType<typeof ciTone>): StatusTone {
+  return tone === 'success' ? 'success' : tone === 'removed' ? 'danger' : tone === 'progress' ? 'running' : 'neutral'
+}
+
+/** Подписи видов ранов и их исходов — только для компактной ленты «Активность». */
+const RUN_KIND_LABEL: Record<TaskRunResult['kind'], string> = {
+  preparation: 'Подготовка',
+  development: 'Разработка',
+  component_qa: 'Component QA',
+  integration_tests: 'Интеграционные тесты',
+  automated_qa: 'Automated QA',
+  qa_preparation: 'Подготовка QA',
+  manual_qa: 'Ручное QA',
+  merge: 'Merge'
+}
+const RUN_OUTCOME_LABEL: Record<TaskRunResult['outcome'], string> = {
+  active: 'выполняется',
+  success: 'успешно',
+  failure: 'ошибка',
+  cancelled: 'отменён',
+  skipped: 'пропущен'
+}
 
 export type TaskModalTab = 'preparation' | 'component_qa' | 'integration_tests' | 'automated_qa' | 'qa' | 'merge' | 'feed' | 'improvements'
 
@@ -111,6 +137,13 @@ export interface TaskModalProps {
   generateAiAssist?: (params: GenerateParams) => Promise<Suggestion[]>
   /** Открыть другую задачу в этой же модалке (подзадача/родитель). */
   onOpenTask: (taskId: string) => void
+  /**
+   * Создание подзадачи прямо из карточки. Колонку и тип потомка карточка
+   * выбирает сама, поэтому хосту остаётся тот же вызов, что и у композера
+   * доски. Нет пропа — нет и кнопки: во вложенной карточке и черновике
+   * создавать некуда.
+   */
+  onCreateSubtask?: (columnId: string, input: { title: string; type: WorkItemType; parentId: string }) => void
   onClose: () => void
   /** Focused editable field, for synchronized assistant context. */
   onSelectedFieldChange?: (field: keyof TaskUpdateFields | null) => void
@@ -266,6 +299,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const criteriaDirtyRef = useRef(false)
   const [labelDraft, setLabelDraft] = useState('')
   const [skillDraft, setSkillDraft] = useState('')
+  const [subtaskOpen, setSubtaskOpen] = useState(false)
+  const [subtaskTitle, setSubtaskTitle] = useState('')
   useEffect(() => {
     if (!props.draft || task.assignee) return
     const current = props.members.find((member) => member.role === 'owner' && member.active !== false)?.username
@@ -461,6 +496,23 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const canStartCi = column?.semanticType !== 'done' && column?.semanticType !== 'backlog' && column?.semanticType !== 'preparation' && canStartCiRun(props.ciSummary)
   const parent = task.parentId ? board.tasks.find((t) => t.id === task.parentId) : null
   const children = board.tasks.filter((t) => t.parentId === task.id)
+  // Готовность подзадач считается по семантике колонки, а не по её названию:
+  // «Готово» переименовывают, а semanticType остаётся.
+  const doneColumnIds = new Set(board.columns.filter((c) => c.semanticType === 'done').map((c) => c.id))
+  const doneChildren = children.filter((t) => doneColumnIds.has(t.columnId)).length
+  // Подзадача заводится в первой видимой колонке — там же, где композер доски
+  // создаёт обычную задачу. Тип потомка задан моделью: у эпика это стори, у
+  // стори — задача, у задачи потомков не бывает.
+  const subtaskColumn = board.columns.find((c) => !c.hidden && c.semanticType === 'backlog') ?? board.columns.find((c) => !c.hidden)
+  const subtaskType: WorkItemType | null = task.type === 'epic' ? 'story' : task.type === 'story' ? 'task' : null
+  const canAddSubtask = !props.draft && subtaskType != null && subtaskColumn != null && props.onCreateSubtask != null
+  const submitSubtask = (): void => {
+    const title = subtaskTitle.trim()
+    if (!title || !subtaskColumn || !subtaskType) return
+    props.onCreateSubtask?.(subtaskColumn.id, { title, type: subtaskType, parentId: task.id })
+    setSubtaskTitle('')
+    setSubtaskOpen(false)
+  }
   const key = issueKey(props.projectName, task)
   const activeCi = props.ciSummary && isActiveCiStatus(props.ciSummary.status) ? props.ciSummary : null
   const terminalCi = props.ciSummary && !isActiveCiStatus(props.ciSummary.status) ? props.ciSummary : null
@@ -469,6 +521,33 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     ? terminalCi.slotProgress.phase || ciStatusLabel(terminalCi.status)
     : null
   const currentState = [column?.name ?? 'Без статуса', activeOperation ?? terminalResult].filter(Boolean).join(' · ')
+  // Активность на «Общем» собирается из полей, которые уже пришли со снапшотом
+  // доски и с детальной задачей: ещё один запрос при открытии карточки не нужен,
+  // а подробности этапов живут во вкладке «Временная шкала».
+  // Времени у сводки рана нет (`CiRunSummary` его не несёт), поэтому активный
+  // ран стоит в ленте без отметки времени, а датированные события берутся из
+  // полей задачи.
+  const activity: Array<{ id: string; text: string; time?: string; dot: 'progress' | 'success' | 'danger' | 'muted' }> = []
+  if (props.ciSummary && isActiveCiStatus(props.ciSummary.status)) {
+    activity.push({ id: 'ci', text: `Ран: ${ciStatusLabel(props.ciSummary.status)}`, dot: 'progress' })
+  }
+  if (task.doneAt) activity.push({ id: 'done', text: 'Задача завершена', time: formatDateTime(task.doneAt), dot: 'success' })
+  if (task.latestRunResult) {
+    activity.push({
+      id: 'run',
+      text: `${RUN_KIND_LABEL[task.latestRunResult.kind]}: ${RUN_OUTCOME_LABEL[task.latestRunResult.outcome]}`,
+      time: formatDateTime(task.latestRunResult.finishedAt ?? task.latestRunResult.createdAt),
+      dot: task.latestRunResult.outcome === 'failure' ? 'danger' : task.latestRunResult.outcome === 'success' ? 'success' : 'progress'
+    })
+  }
+  if (!props.draft) activity.push({ id: 'created', text: 'Задача создана', time: formatDateTime(task.createdAt), dot: 'muted' })
+
+  // Точка состояния берёт тон у активного рана, а без рана — у самой колонки:
+  // «Готово» зелёная, остальное нейтральное. Цвет здесь дублирует текст этапа,
+  // а не заменяет его — цветом одним состояние сообщать нельзя.
+  const headingTone = props.ciSummary
+    ? ciTone(props.ciSummary.status)
+    : column?.semanticType === 'done' ? 'success' : 'neutral'
   const parentOptions = board.tasks.filter((p) =>
     p.id !== task.id && (task.type === 'story' ? p.type === 'epic' : task.type === 'task' ? p.type === 'epic' || p.type === 'story' : false)
   )
@@ -480,17 +559,20 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const tabDomId = (tab: TaskTab): string => `${domId}-tab-${tab}`
   const panelDomId = (tab: TaskTab): string => `${domId}-panel-${tab}`
   const newImprovements = improvements.filter((item) => item.status === 'new').length
-  const tabItems: Array<readonly [TaskTab, string]> = [
-    ['general', 'Общее'], ['timeline', 'Временная шкала'],
-    ...(preparationVisible && features.ci ? [['preparation', 'Подготовка к разработке'] as const] : []),
-    ['settings', 'Настройки'], ['progress', 'Ход выполнения'],
-    ...(features.ci ? [['improvements', `Улучшения${newImprovements ? ` (${newImprovements})` : ''}`] as const] : []),
-    ...(features.qa ? qaStageOrder.filter(qaStageVisible).map((stage) => [stage, stage === 'component_qa' ? 'Component QA' : stage === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA'] as const) : []),
-    ...(features.qa ? [['qa', 'Ручное QA'] as const] : []),
-    ...(features.git ? [['merge', 'Merge'] as const] : []),
-    ...(features.ci ? [['feed', 'Лента рана'] as const] : [])
+  // Счётчик у вкладки — отдельное поле, а не скобки в подписи: в скобках он
+  // попадал в доступное имя вкладки («Улучшения (3)») и зачитывался при каждом
+  // переходе стрелками, а рядом с ним нельзя было поставить пилюлю.
+  const tabItems: Array<{ id: TaskTab; label: string; count?: number }> = [
+    { id: 'general', label: 'Общее' }, { id: 'timeline', label: 'Временная шкала' },
+    ...(preparationVisible && features.ci ? [{ id: 'preparation' as const, label: 'Подготовка к разработке' }] : []),
+    { id: 'settings', label: 'Настройки' }, { id: 'progress', label: 'Ход выполнения' },
+    ...(features.ci ? [{ id: 'improvements' as const, label: 'Улучшения', count: newImprovements }] : []),
+    ...(features.qa ? qaStageOrder.filter(qaStageVisible).map((stage) => ({ id: stage, label: stage === 'component_qa' ? 'Component QA' : stage === 'integration_tests' ? 'Интеграционные тесты' : 'Automated QA' })) : []),
+    ...(features.qa ? [{ id: 'qa' as const, label: 'Ручное QA' }] : []),
+    ...(features.git ? [{ id: 'merge' as const, label: 'Merge' }] : []),
+    ...(features.ci ? [{ id: 'feed' as const, label: 'Лента рана' }] : [])
   ]
-  const tabIds = tabItems.map(([id]) => id)
+  const tabIds = tabItems.map((item) => item.id)
   /** Общие атрибуты панели вкладки: роль, связь с кнопкой и скрытие. */
   const panelProps = (tab: TaskTab): { role: 'tabpanel'; id: string; 'aria-labelledby': string; hidden: boolean; tabIndex: number } => ({
     role: 'tabpanel', id: panelDomId(tab), 'aria-labelledby': tabDomId(tab), hidden: activeTab !== tab, tabIndex: 0
@@ -555,7 +637,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // на десктопе — первыми полями правой панели. Разметка одна, место разное.
   const statusField = (
     <label className="jmodal-field jmodal-field--status">
-      Статус
+      <span className="jmodal-field-label">Статус</span>
       <select
         className="sel jmodal-status"
         aria-label="Статус"
@@ -572,7 +654,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
 
   const assigneeField = (
     <label className="jmodal-field">
-      Исполнитель
+      <span className="jmodal-field-label">Исполнитель</span>
       <span className="jmodal-assignee">
         {task.assignee && <Avatar username={task.assignee} size={20} />}
         <select
@@ -594,7 +676,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     </label>
   )
 
-  const headActions = props.draft ? null : mobile ? (
+  // Действия карточки живут в ⋯-меню на любой ширине: в шапке по макету стоят
+  // только «ещё» и крестик. Раньше десктоп показывал три подписанные кнопки, и
+  // шапка с длинным названием переносилась в три строки.
+  const headActions = props.draft ? null : (
     <span className="jmodal-menuwrap" ref={menuRef}>
       <IconButton
         aria-label="Действия с задачей"
@@ -620,39 +705,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </div>
       )}
     </span>
-  ) : (
-    <>
-      {props.onOpenChat && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="jmodal-chat-action"
-          iconLeft={<ChatIcon />}
-          title="Открыть связанный чат"
-          onClick={() => props.onOpenChat?.(task.id)}
-        >
-          {task.chatId ? 'Открыть чат' : 'Создать чат'}
-        </Button>
-      )}
-      <Button
-        variant="ghost"
-        size="sm"
-        iconLeft={<FlagIcon filled={task.flagged} />}
-        title={task.flagged ? 'Снять флаг' : 'Добавить флаг'}
-        onClick={toggleFlag}
-      >
-        {task.flagged ? 'Снять флаг' : 'Флаг'}
-      </Button>
-
-      <IconButton
-        size="sm"
-        aria-label="Удалить задачу"
-        title="Удалить задачу"
-        onClick={() => void confirmDelete()}
-      >
-        <TrashIcon />
-      </IconButton>
-    </>
   )
 
   return (
@@ -663,7 +715,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     <Dialog
       title={props.draft ? 'Создание задачи' : (
         <span className="task-modal-heading" data-testid="task-modal-heading" aria-live="polite" title={`${key} · ${task.title} (${currentState})`}>
-          <span className="task-modal-heading__key">{key} ·</span>
+          {/* Надстрочная строка: ключ, точка состояния и сам этап. Раньше всё
+              это стояло в одну строку с названием, и на узкой карточке этап
+              уезжал под заголовок оторванным куском текста в скобках. */}
+          <span className="task-modal-heading__eyebrow">
+            <span className="task-modal-heading__key">{key}</span>
+            <span aria-hidden="true">·</span>
+            <span className={`task-modal-heading__dot task-modal-heading__dot--${headingTone}`} aria-hidden="true" />
+            <span className="task-modal-heading__state">{currentState}</span>
+          </span>
           <textarea
             className="task-modal-heading__title"
             aria-label="Заголовок задачи"
@@ -679,7 +739,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               }
             }}
           />
-          <span className="task-modal-heading__state">({currentState})</span>
         </span>
       )}
       ariaLabel={props.draft ? 'Создание задачи' : `${key} · ${task.title} (${currentState})`}
@@ -711,7 +770,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           requestAnimationFrame(() => tabsRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus())
         }}
       >
-        {tabItems.map(([id, label]) => (
+        {tabItems.map(({ id, label, count }) => (
           <button
             key={id}
             id={tabDomId(id)}
@@ -721,7 +780,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             tabIndex={activeTab === id ? 0 : -1}
             className={activeTab === id ? 'task-tab task-tab--active' : 'task-tab'}
             onClick={() => setActiveTab(id)}
-          >{label}</button>
+          >
+            {label}
+            {/* Ноль не рисуем: пустая пилюля читается как «есть ноль новых». */}
+            {count ? <span className="task-tab-count" aria-label={`новых: ${count}`}>{count}</span> : null}
+          </button>
         ))}
       </nav>}
       <div className={`jmodal jmodal--tab-${activeTab}`} onFocusCapture={(event) => {
@@ -729,10 +792,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         const field: keyof TaskUpdateFields | null = label.includes('Заголовок') ? 'title' : label.includes('Описание') ? 'description' : label.includes('Критерии') ? 'acceptanceCriteria' : label.includes('Приоритет') ? 'priority' : label.includes('Исполнитель') ? 'assignee' : label.includes('Стори') ? 'storyPoints' : label.includes('Срок') ? 'dueDate' : null
         props.onSelectedFieldChange?.(field)
       }}>
-        {/* «Общее» — такая же панель вкладки, как остальные: две колонки внутри
-            одного `role="tabpanel"`. Раньше они лежали прямо в `.jmodal` и
-            прятались правилом `.jmodal:not(.jmodal--tab-general) > …`, поэтому
-            вкладка «Общее» была единственной без панели. */}
+        {/* Панели вкладок — в своей обёртке, колонка свойств — её сосед: статус,
+            исполнитель и срок нужны на любой вкладке, а раньше они лежали внутри
+            панели «Общего» и исчезали, стоило открыть ход выполнения или QA. */}
+        <div className="jmodal-panels">
         <div className="jmodal-general" {...panelProps('general')}>
         <div className="jmodal-main">
           {task.activeMergeRunId && <p className="task-merge-hint">Идёт merge-ран — прогресс во вкладке «Merge».</p>}
@@ -772,16 +835,15 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           <div className="jmodal-desc-head">
             <h3 className="jmodal-h">Описание</h3>
             {!descEditing && (
-              <IconButton
-                size="sm"
-                className="jmodal-desc-edit"
-                aria-label="Изменить описание"
-                title="Изменить описание"
+              <button
+                type="button"
+                className="task-section-action"
+                aria-label="Редактировать описание"
                 data-testid="task-desc-edit"
                 onClick={startDescEdit}
               >
-                <PencilIcon />
-              </IconButton>
+                Редактировать
+              </button>
             )}
           </div>
           {descEditing ? (
@@ -829,7 +891,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           )}
           <div className="jmodal-desc-head">
             <h3 className="jmodal-h">Критерии приёмки</h3>
-            {!criteriaEditing && <IconButton size="sm" aria-label="Изменить критерии приёмки" title="Изменить критерии приёмки" onClick={() => setCriteriaEditing(true)}><PencilIcon /></IconButton>}
+            {!criteriaEditing && <button type="button" className="task-section-action" aria-label="Редактировать критерии приёмки" data-testid="task-criteria-edit" onClick={() => setCriteriaEditing(true)}>Редактировать</button>}
           </div>
           {criteriaEditing ? <textarea
             ref={criteriaRef}
@@ -892,9 +954,21 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           /> : criteria.trim() ? <div className="jmodal-desc-view task-criteria-view" data-testid="task-criteria-view"><Markdown>{normalizeAcceptanceCriteria(criteria)}</Markdown></div> : <button className="jmodal-desc-empty" onClick={() => setCriteriaEditing(true)}>Добавьте критерии приёмки…</button>}
           <span id="task-criteria-help" className="vc-sr-only">Enter создаёт новый критерий, Shift+Enter — перенос внутри критерия.</span>
           </section>
-          {children.length > 0 && (
-            <>
-              <h3 className="jmodal-h">Подзадачи</h3>
+          {(children.length > 0 || canAddSubtask) && (
+            <section className="task-section" aria-label="Подзадачи">
+              <div className="task-section-head">
+                <h3 className="jmodal-h">Подзадачи</h3>
+                {children.length > 0 && <span className="task-section-meta">{doneChildren} из {children.length}</span>}
+              </div>
+              {children.length > 0 && (
+                <ProgressTrack
+                  className="task-children-progress"
+                  value={doneChildren}
+                  max={children.length}
+                  label="Готовность подзадач"
+                  tone={doneChildren === children.length ? 'success' : 'running'}
+                />
+              )}
               <ul className="jmodal-children">
                 {children.map((ch) => {
                   const chCol = board.columns.find((c) => c.id === ch.columnId)
@@ -910,11 +984,214 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                   )
                 })}
               </ul>
-            </>
+              {/* Подзадачу заводим только у эпика и стори: у обычной задачи
+                  потомков в модели нет — `parentId` на неё указать нельзя. */}
+              {canAddSubtask && (subtaskOpen ? (
+                <form
+                  className="task-subtask-form"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    submitSubtask()
+                  }}
+                >
+                  <input
+                    className="login-input"
+                    aria-label="Название подзадачи"
+                    placeholder="Что нужно сделать"
+                    autoFocus
+                    value={subtaskTitle}
+                    onChange={(e) => setSubtaskTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.stopPropagation()
+                        setSubtaskOpen(false)
+                        setSubtaskTitle('')
+                      }
+                    }}
+                  />
+                  <Button size="sm" variant="primary" type="submit" disabled={!subtaskTitle.trim()}>Добавить</Button>
+                  <Button size="sm" type="button" onClick={() => { setSubtaskOpen(false); setSubtaskTitle('') }}>Отмена</Button>
+                </form>
+              ) : (
+                <button type="button" className="task-section-action task-subtask-add" onClick={() => setSubtaskOpen(true)}>
+                  ＋ Добавить подзадачу
+                </button>
+              ))}
+            </section>
+          )}
+          {!props.draft && activity.length > 0 && (
+            <section className="task-section" aria-label="Активность">
+              <div className="task-section-head">
+                <h3 className="jmodal-h">Активность</h3>
+                <button type="button" className="task-section-action" onClick={() => setActiveTab('timeline')}>
+                  Вся временная шкала
+                </button>
+              </div>
+              {/* Лента собрана из уже загруженных полей задачи — без ещё одного
+                  запроса при открытии карточки. Подробности этапов лежат во
+                  вкладке «Временная шкала», она и грузит их по требованию. */}
+              <ul className="task-activity" data-testid="task-activity">
+                {activity.map((event) => (
+                  <li key={event.id} className="task-activity__item">
+                    <span className={`vc-feed-dot vc-feed-dot--${event.dot}`} aria-hidden="true" />
+                    <span className="task-activity__text">{event.text}</span>
+                    {event.time && <time className="task-activity__time">{event.time}</time>}
+                  </li>
+                ))}
+              </ul>
+              {props.onOpenChat && (
+                <button type="button" className="task-section-action" onClick={() => props.onOpenChat?.(task.id)}>
+                  {task.chatId ? 'Открыть чат задачи' : 'Создать чат задачи'}
+                </button>
+              )}
+            </section>
           )}
         </div>
+        </div>
 
-        <aside className="jmodal-side">
+        {!props.draft && <section className="task-tab-panel" data-testid="task-settings-panel" {...panelProps('settings')}>
+          <PanelHeading kicker="Конфигурация" title="Настройки выполнения" description="Изменения применятся к следующему запуску." />
+          <div className="task-settings-stack">
+            <CiTaskSettings section="machine" projectId={task.projectId} taskId={task.id} mergeMachineBound={task.mergeMachineBound} />
+            <CiTaskSettings section="model" projectId={task.projectId} taskId={task.id} />
+            <CiTaskSettings section="commands" projectId={task.projectId} taskId={task.id} />
+          </div>
+        </section>}
+        {!props.draft && <>
+        <section className="task-tab-panel" data-testid="task-timeline-panel" {...panelProps('timeline')}>
+          <PanelHeading title="Временная шкала" description="Этапы задачи, попытки внутри них и время, потраченное на каждую." />
+          {activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}
+        </section>
+        <section className="task-tab-panel" data-testid="task-improvements-panel" {...panelProps('improvements')}>
+          <PanelHeading
+            title="Улучшения"
+            description="Что авто-ран предложил изменить в процессе, чтобы следующий прошёл надёжнее."
+            actions={newImprovements ? <StatusPill tone="running">{newImprovements} новых</StatusPill> : undefined}
+          />
+          {improvementsError && <ErrorState compact message="Не удалось загрузить улучшения" detail={improvementsError} onRetry={loadImprovements} testId="task-improvements-error" />}
+          {!improvements.length ? <EmptyState compact icon="💡" title="Улучшений пока нет" description="После авто-рана здесь появятся найденные возможности сделать процесс надёжнее." testId="task-improvements-empty" /> : <div className="task-improvements vc-feed">
+            {improvements.map((item) => {
+              const pending = improvementPending === item.id
+              const blocked = improvementPending !== null
+              return <details key={item.id} className="task-improvement vc-feed-item" data-status={item.status}><summary>
+                <span className="vc-feed-caret" aria-hidden="true" />
+                <strong className="task-improvement__title">{item.title}</strong>
+                <span className="vc-feed-status">
+                  <span className={`vc-feed-dot vc-feed-dot--${IMPROVEMENT_TONE[item.status]}`} aria-hidden="true" />
+                  {IMPROVEMENT_STATUS[item.status]}
+                </span>
+                {/* `isNew` на сервере — это ровно `status === 'new'`, поэтому
+                    отдельной метки «Новое» рядом со статусом больше нет. */}
+                <span className="task-improvement__origin">{IMPROVEMENT_SOURCE[item.source]} · {item.stepId ? `автошаг ${item.stepId}` : item.runId ? `ран ${item.runId}` : 'без рана'}</span>
+              </summary><Markdown>{item.description}</Markdown><div className="task-improvement-actions">
+                {item.status === 'new' && <><Button size="sm" variant="primary" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Принять</Button><Button size="sm" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'rejected')}>Отклонить</Button></>}
+                {item.suggestedAction === 'create_chatai_task' && (item.status === 'new' || item.status === 'accepted') && !item.createdTaskId && <Button size="sm" loading={pending} disabled={blocked} onClick={() => openImprovementDraft(item)}>Создать задачу ChatAI</Button>}
+                {item.suggestedAction === 'reconfigure_commands' && item.status === 'new' && <Button size="sm" disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Предложить перенастройку команд</Button>}
+                {item.suggestedAction === 'support_ticket' && item.status === 'new' && <Button size="sm" disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Подготовить тикет техподдержки</Button>}
+                {item.status === 'accepted' && <Button size="sm" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'implemented')}>Реализовано</Button>}
+              </div></details>
+            })}
+          </div>}
+        </section>
+        <section className="task-tab-panel" data-testid="task-preparation-panel" {...panelProps('preparation')}>{preparationVisible && activeTab === 'preparation' && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} loadRun={props.loadPreparationRun} onStart={props.onStartPreparation} onRetry={props.onRetryPreparation} llmAccess={props.llmAccess} llmEngines={props.llmEngines} onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation} />}</section>
+        {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" {...panelProps(stage)}>{stage === 'component_qa'
+          ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
+          : <QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} />}</section>)}
+        <section className="task-tab-panel" data-testid="task-manual-qa-panel" {...panelProps('qa')}>
+          <PanelHeading kicker="Ручное QA" title="Проверка задачи" description="Сценарии проверяются руками на собранном превью." />
+          <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />
+          <ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
+        </section>
+        <section className="task-tab-panel" {...panelProps('progress')}>
+          <PanelHeading
+            kicker={props.ciSummary ? `Ран ${props.ciSummary.id.slice(0, 8)}` : 'Ран не запускался'}
+            title="Ход выполнения"
+            description={props.ciSummary
+              ? props.ciSummary.progress?.currentStep ?? props.ciSummary.progress?.stage ?? 'Подробности работы модели и отчёт по рану.'
+              : 'Здесь появятся ход работы модели и отчёт, когда задача попадёт в работу.'}
+            actions={props.ciSummary && <>
+              {isActiveCiStatus(props.ciSummary.status) && <LiveIndicator />}
+              <StatusPill tone={pillTone(ciTone(props.ciSummary.status))}>{ciStatusLabel(props.ciSummary.status)}</StatusPill>
+            </>}
+          />
+          {props.ciSummary && (() => {
+            const progress = props.ciSummary.progress
+            const fallbackStatus: ModelWorkStatus = props.ciSummary.status === 'awaiting_input'
+              ? 'waiting'
+              : props.ciSummary.status === 'timeout'
+                ? 'timeout'
+                : props.ciSummary.status === 'interrupted'
+                  ? 'failed'
+                : props.ciSummary.status === 'skipped'
+                  ? undefined
+                  : props.ciSummary.status
+            const fallbackPercent = fallbackStatus === 'success' ? 100 : fallbackStatus === 'queued' ? 0 : null
+            const reportRun = ciReport.report?.runs.find((run) => run.runId === props.ciSummary!.id) ?? ciReport.report?.runs[0]
+            const hasDetails = Boolean(progress || reportRun || kbUsage.report || ciReport.loading || ciReport.error)
+            return (
+              <ModelWorkDisclosure
+                key={`${props.ciSummary.id}:model-work`}
+                runId={props.ciSummary.id}
+                progress={progress}
+                fallbackStatus={fallbackStatus}
+                fallbackPercent={fallbackPercent}
+                fallbackDurationMs={props.ciSummary.durationMs}
+              >
+                {hasDetails ? <>
+                  {progress && <AutomationProgressView progress={progress} />}
+                  <CiReport report={ciReport.report} loading={ciReport.loading} error={ciReport.error} onOpenRun={props.onOpenCiRun} testId="task-modal-report" />
+                  {kbUsage.report && <KbUsageBrief title="База знаний" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}
+                  {reportRun && <dl className="task-progress-facts">
+                    <dt>Provider</dt><dd>{reportRun.provider || '—'}</dd>
+                    <dt>Модель</dt><dd>{reportRun.model || '—'}</dd>
+                    <dt>Результат</dt><dd>{ciStatusLabel(reportRun.status)}</dd>
+                    <dt>Начало</dt><dd>{reportRun.startedAt ? formatDateTime(reportRun.startedAt) : '—'}</dd>
+                    <dt>Завершение</dt><dd>{reportRun.finishedAt ? formatDateTime(reportRun.finishedAt) : '—'}</dd>
+                    <dt>Итоговая продолжительность</dt><dd>{reportRun.durationMs != null ? fmtDuration(reportRun.durationMs) : '—'}</dd>
+                  </dl>}
+                </> : <p className="task-tab-empty">Подробности работы модели пока не поступили.</p>}
+              </ModelWorkDisclosure>
+            )
+          })()}
+          {!props.ciSummary && kbUsage.report && <KbUsageBrief title="База знаний" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}
+        </section>
+        <section className="task-tab-panel" data-testid="task-merge-tab" {...panelProps('merge')}>
+          <PanelHeading
+            kicker={task.mergeSourceBranch ? `${task.mergeSourceBranch} → main` : 'Слияние'}
+            title="Слияние изменений"
+            description="Ветка задачи уезжает в main отдельным раном со своими проверками."
+            actions={task.activeMergeRunId ? <StatusPill tone="running">Выполняется</StatusPill> : undefined}
+          />
+          {activeTab === 'merge' && <MergePanel
+            projectId={task.projectId}
+            taskId={task.id}
+            runId={(task.activeMergeRunId ?? task.latestMergeRunId) ?? null}
+            canStart={Boolean(props.onStartMerge) && canStartMerge({ semanticType: board.columns.find((column) => column.id === task.columnId)?.semanticType ?? 'custom', sourceBranch: task.mergeSourceBranch, alreadyMerged: isCurrentMergeSourceMerged({ sourceSha: task.mergeSourceSha, mergedSourceSha: task.mergedSourceSha, mergedSha: task.mergedSha }), hasActiveRun: Boolean(task.activeMergeRunId), permitted: task.mergePermitted, machineBound: task.mergeMachineBound })}
+            onStartMerge={(agentId) => props.onStartMerge?.(task.id, agentId)}
+          />}
+        </section>
+        <section
+          className="task-tab-panel task-run-feed-tab"
+          data-testid="task-run-feed-tab"
+          {...panelProps('feed')}
+          style={{ flex: '1 1 100%', width: '100%', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}
+        >
+          <PanelHeading
+            kicker={props.ciSummary ? `Ран ${props.ciSummary.id.slice(0, 8)}` : undefined}
+            title="Лента рана"
+            description="Технические события текущего запуска."
+            actions={props.ciSummary && isActiveCiStatus(props.ciSummary.status) ? <LiveIndicator /> : undefined}
+          />
+          {activeTab === 'feed' && <TaskRunFeed
+            projectId={task.projectId}
+            taskId={task.id}
+            activeDevelopmentRunId={props.ciSummary && isActiveCiStatus(props.ciSummary.status) ? props.ciSummary.id : null}
+            activeMergeRunId={task.activeMergeRunId}
+          />}
+        </section></>}
+        </div>
+        <aside className="jmodal-side" aria-label="Свойства задачи">
+          {!mobile && <h3 className="jmodal-side-title">Свойства</h3>}
           {mobile && (
             <button
               className="jmodal-side-toggle"
@@ -929,10 +1206,42 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           {(!mobile || detailsOpen) && (
             <div className="jmodal-side-fields" data-testid="task-modal-details">
               {!mobile && statusField}
+              <label className="jmodal-field">
+                <span className="jmodal-field-label">Приоритет</span>
+                <select
+                  className="sel"
+                  aria-label="Приоритет"
+                  value={task.priority}
+                  onChange={(e) => props.onUpdate(task.id, { priority: e.target.value as TaskPriority })}
+                >
+                  {TASK_PRIORITIES.map((p) => (
+                    <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>
+                  ))}
+                </select>
+              </label>
               {!mobile && assigneeField}
+              <label className="jmodal-field">
+                <span className="jmodal-field-label">Срок</span>
+                <input
+                  className="login-input"
+                  aria-label="Срок"
+                  type="date"
+                  value={toDateInput(task.dueDate)}
+                  onChange={(e) => props.onUpdate(task.id, { dueDate: fromDateInput(e.target.value) })}
+                />
+              </label>
+              {/* Проект — только для чтения: карточку между проектами не переносят,
+                  а знать, к какому она относится, из вложенной карточки нужно. */}
+              <div className="jmodal-field">
+                <span className="jmodal-field-label">Проект</span>
+                <span className="jmodal-project">
+                  <span className="jmodal-project-mark" aria-hidden="true">{props.projectName.trim().slice(0, 1).toUpperCase() || '·'}</span>
+                  {props.projectName}
+                </span>
+              </div>
               {!props.draft && (
                 <div className="jmodal-field">
-                  Автор
+                  <span className="jmodal-field-label">Автор</span>
                   {/* Пустое значение — приглушённое «—», как в остальных полях
                       карточки: жирное «Нет данных» читалось как настоящее имя. */}
                   {task.createdByName ?? task.createdBy
@@ -943,8 +1252,40 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                     : <span className="jmodal-field-empty">—</span>}
                 </div>
               )}
-              <div className="jmodal-field">
-                Метки
+              {task.type !== 'epic' && (
+                <label className="jmodal-field">
+                  <span className="jmodal-field-label">Родитель</span>
+                  <select
+                    className="sel"
+                    aria-label="Родитель"
+                    value={task.parentId ?? ''}
+                    onChange={(e) => props.onUpdate(task.id, { parentId: e.target.value || null })}
+                  >
+                    <option value="">Без родителя</option>
+                    {parentOptions.map((p) => (
+                      <option key={p.id} value={p.id}>{TYPE_LABEL[p.type]} · {p.title}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="jmodal-field">
+                <span className="jmodal-field-label">Стори-поинты</span>
+                <input
+                  className="login-input"
+                  aria-label="Стори-поинты"
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  defaultValue={task.storyPoints ?? ''}
+                  key={`pts-${task.id}-${task.storyPoints}`}
+                  onBlur={(e) => {
+                    const v = e.target.value === '' ? null : Number(e.target.value)
+                    if (v !== task.storyPoints) props.onUpdate(task.id, { storyPoints: v })
+                  }}
+                />
+              </label>
+              <div className="jmodal-field jmodal-field--wide">
+                <span className="jmodal-field-label">Метки</span>
                 <span className="jmodal-labels">
                   {task.labels.map((l) => (
                     <span key={l} className="jcard-label">
@@ -972,8 +1313,8 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                   />
                 </span>
               </div>
-              <div className="jmodal-field">
-                Навыки
+              <div className="jmodal-field jmodal-field--wide">
+                <span className="jmodal-field-label">Навыки</span>
                 <span className="jmodal-labels jmodal-skills">
                   {task.skills.map((s) => (
                     <span key={s} className="jcard-skill">
@@ -1002,61 +1343,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                 </span>
               </div>
 
-              {task.type !== 'epic' && (
-                <label className="jmodal-field">
-                  Родитель
-                  <select
-                    className="sel"
-                    aria-label="Родитель"
-                    value={task.parentId ?? ''}
-                    onChange={(e) => props.onUpdate(task.id, { parentId: e.target.value || null })}
-                  >
-                    <option value="">Без родителя</option>
-                    {parentOptions.map((p) => (
-                      <option key={p.id} value={p.id}>{TYPE_LABEL[p.type]} · {p.title}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              <label className="jmodal-field">
-                Приоритет
-                <select
-                  className="sel"
-                  aria-label="Приоритет"
-                  value={task.priority}
-                  onChange={(e) => props.onUpdate(task.id, { priority: e.target.value as TaskPriority })}
-                >
-                  {TASK_PRIORITIES.map((p) => (
-                    <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="jmodal-field">
-                Стори-поинты
-                <input
-                  className="login-input"
-                  aria-label="Стори-поинты"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  defaultValue={task.storyPoints ?? ''}
-                  key={`pts-${task.id}-${task.storyPoints}`}
-                  onBlur={(e) => {
-                    const v = e.target.value === '' ? null : Number(e.target.value)
-                    if (v !== task.storyPoints) props.onUpdate(task.id, { storyPoints: v })
-                  }}
-                />
-              </label>
-              <label className="jmodal-field">
-                Срок
-                <input
-                  className="login-input"
-                  aria-label="Срок"
-                  type="date"
-                  value={toDateInput(task.dueDate)}
-                  onChange={(e) => props.onUpdate(task.id, { dueDate: fromDateInput(e.target.value) })}
-                />
-              </label>
               {props.detailsExtra}
               {/* Статус здесь не повторяем: он уже стоит селектом выше и в шапке
                   карточки — три одинаковых значения подряд только шумят. */}
@@ -1124,114 +1410,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             </div>
           )}
         </aside>
-        </div>
-        {!props.draft && <section className="task-tab-panel" data-testid="task-settings-panel" {...panelProps('settings')}>
-          <div className="task-settings-stack">
-            <CiTaskSettings section="machine" projectId={task.projectId} taskId={task.id} mergeMachineBound={task.mergeMachineBound} />
-            <CiTaskSettings section="model" projectId={task.projectId} taskId={task.id} />
-            <CiTaskSettings section="commands" projectId={task.projectId} taskId={task.id} />
-          </div>
-        </section>}
-        {!props.draft && <>
-        <section className="task-tab-panel" data-testid="task-timeline-panel" {...panelProps('timeline')}>{activeTab === 'timeline' && <TaskTimeline projectId={task.projectId} taskId={task.id} />}</section>
-        <section className="task-tab-panel" data-testid="task-improvements-panel" {...panelProps('improvements')}>
-          {improvementsError && <ErrorState compact message="Не удалось загрузить улучшения" detail={improvementsError} onRetry={loadImprovements} testId="task-improvements-error" />}
-          {!improvements.length ? <EmptyState compact icon="💡" title="Улучшений пока нет" description="После авто-рана здесь появятся найденные возможности сделать процесс надёжнее." testId="task-improvements-empty" /> : <div className="task-improvements vc-feed">
-            {improvements.map((item) => {
-              const pending = improvementPending === item.id
-              const blocked = improvementPending !== null
-              return <details key={item.id} className="task-improvement vc-feed-item" data-status={item.status}><summary>
-                <span className="vc-feed-caret" aria-hidden="true" />
-                <strong className="task-improvement__title">{item.title}</strong>
-                <span className="vc-feed-status">
-                  <span className={`vc-feed-dot vc-feed-dot--${IMPROVEMENT_TONE[item.status]}`} aria-hidden="true" />
-                  {IMPROVEMENT_STATUS[item.status]}
-                </span>
-                {/* `isNew` на сервере — это ровно `status === 'new'`, поэтому
-                    отдельной метки «Новое» рядом со статусом больше нет. */}
-                <span className="task-improvement__origin">{IMPROVEMENT_SOURCE[item.source]} · {item.stepId ? `автошаг ${item.stepId}` : item.runId ? `ран ${item.runId}` : 'без рана'}</span>
-              </summary><Markdown>{item.description}</Markdown><div className="task-improvement-actions">
-                {item.status === 'new' && <><Button size="sm" variant="primary" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Принять</Button><Button size="sm" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'rejected')}>Отклонить</Button></>}
-                {item.suggestedAction === 'create_chatai_task' && (item.status === 'new' || item.status === 'accepted') && !item.createdTaskId && <Button size="sm" loading={pending} disabled={blocked} onClick={() => openImprovementDraft(item)}>Создать задачу ChatAI</Button>}
-                {item.suggestedAction === 'reconfigure_commands' && item.status === 'new' && <Button size="sm" disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Предложить перенастройку команд</Button>}
-                {item.suggestedAction === 'support_ticket' && item.status === 'new' && <Button size="sm" disabled={blocked} onClick={() => setImprovementStatus(item.id, 'accepted')}>Подготовить тикет техподдержки</Button>}
-                {item.status === 'accepted' && <Button size="sm" loading={pending} disabled={blocked} onClick={() => setImprovementStatus(item.id, 'implemented')}>Реализовано</Button>}
-              </div></details>
-            })}
-          </div>}
-        </section>
-        <section className="task-tab-panel" data-testid="task-preparation-panel" {...panelProps('preparation')}>{preparationVisible && activeTab === 'preparation' && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} loadRun={props.loadPreparationRun} onStart={props.onStartPreparation} onRetry={props.onRetryPreparation} llmAccess={props.llmAccess} llmEngines={props.llmEngines} onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation} />}</section>
-        {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" {...panelProps(stage)}>{stage === 'component_qa'
-          ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
-          : <QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} />}</section>)}
-        <section className="task-tab-panel" data-testid="task-manual-qa-panel" {...panelProps('qa')}>
-          <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />
-          <ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
-        </section>
-        <section className="task-tab-panel" {...panelProps('progress')}>
-          {props.ciSummary && (() => {
-            const progress = props.ciSummary.progress
-            const fallbackStatus: ModelWorkStatus = props.ciSummary.status === 'awaiting_input'
-              ? 'waiting'
-              : props.ciSummary.status === 'timeout'
-                ? 'timeout'
-                : props.ciSummary.status === 'interrupted'
-                  ? 'failed'
-                : props.ciSummary.status === 'skipped'
-                  ? undefined
-                  : props.ciSummary.status
-            const fallbackPercent = fallbackStatus === 'success' ? 100 : fallbackStatus === 'queued' ? 0 : null
-            const reportRun = ciReport.report?.runs.find((run) => run.runId === props.ciSummary!.id) ?? ciReport.report?.runs[0]
-            const hasDetails = Boolean(progress || reportRun || kbUsage.report || ciReport.loading || ciReport.error)
-            return (
-              <ModelWorkDisclosure
-                key={`${props.ciSummary.id}:model-work`}
-                runId={props.ciSummary.id}
-                progress={progress}
-                fallbackStatus={fallbackStatus}
-                fallbackPercent={fallbackPercent}
-                fallbackDurationMs={props.ciSummary.durationMs}
-              >
-                {hasDetails ? <>
-                  {progress && <AutomationProgressView progress={progress} />}
-                  <CiReport report={ciReport.report} loading={ciReport.loading} error={ciReport.error} onOpenRun={props.onOpenCiRun} testId="task-modal-report" />
-                  {kbUsage.report && <KbUsageBrief title="База знаний" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}
-                  {reportRun && <dl className="task-progress-facts">
-                    <dt>Provider</dt><dd>{reportRun.provider || '—'}</dd>
-                    <dt>Модель</dt><dd>{reportRun.model || '—'}</dd>
-                    <dt>Результат</dt><dd>{ciStatusLabel(reportRun.status)}</dd>
-                    <dt>Начало</dt><dd>{reportRun.startedAt ? formatDateTime(reportRun.startedAt) : '—'}</dd>
-                    <dt>Завершение</dt><dd>{reportRun.finishedAt ? formatDateTime(reportRun.finishedAt) : '—'}</dd>
-                    <dt>Итоговая продолжительность</dt><dd>{reportRun.durationMs != null ? fmtDuration(reportRun.durationMs) : '—'}</dd>
-                  </dl>}
-                </> : <p className="task-tab-empty">Подробности работы модели пока не поступили.</p>}
-              </ModelWorkDisclosure>
-            )
-          })()}
-          {!props.ciSummary && kbUsage.report && <KbUsageBrief title="База знаний" note={kbUsage.report.runs ? `по ${kbUsage.report.runs} ранам задачи` : 'по ранам задачи'} totals={kbUsage.report.totals} sections={kbUsage.report.sections} loading={kbUsage.loading} error={kbUsage.error} testId="task-modal-kb-usage" />}
-        </section>
-        <section className="task-tab-panel" data-testid="task-merge-tab" {...panelProps('merge')}>
-          {activeTab === 'merge' && <MergePanel
-            projectId={task.projectId}
-            taskId={task.id}
-            runId={(task.activeMergeRunId ?? task.latestMergeRunId) ?? null}
-            canStart={Boolean(props.onStartMerge) && canStartMerge({ semanticType: board.columns.find((column) => column.id === task.columnId)?.semanticType ?? 'custom', sourceBranch: task.mergeSourceBranch, alreadyMerged: isCurrentMergeSourceMerged({ sourceSha: task.mergeSourceSha, mergedSourceSha: task.mergedSourceSha, mergedSha: task.mergedSha }), hasActiveRun: Boolean(task.activeMergeRunId), permitted: task.mergePermitted, machineBound: task.mergeMachineBound })}
-            onStartMerge={(agentId) => props.onStartMerge?.(task.id, agentId)}
-          />}
-        </section>
-        <section
-          className="task-tab-panel task-run-feed-tab"
-          data-testid="task-run-feed-tab"
-          {...panelProps('feed')}
-          style={{ flex: '1 1 100%', width: '100%', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}
-        >
-          {activeTab === 'feed' && <TaskRunFeed
-            projectId={task.projectId}
-            taskId={task.id}
-            activeDevelopmentRunId={props.ciSummary && isActiveCiStatus(props.ciSummary.status) ? props.ciSummary.id : null}
-            activeMergeRunId={task.activeMergeRunId}
-          />}
-        </section></>}
       </div>
     </Dialog>
     {improvementDraft && <TaskModal
