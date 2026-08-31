@@ -284,7 +284,7 @@ export default function App(props: AppProps = {}): JSX.Element {
 /** Чат из адреса на момент монтирования: его bootstrap откроет первым. */
 function initialChatIdFromPath(path: string, segments: string[]): string | null {
   const chatRoute = parseChatRoute(path)
-  if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item') return chatRoute.conversationId
+  if (chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') return chatRoute.conversationId
   if (segments[0] === 'web-reader' || segments[0] === 'web-recorder' || segments[0] === 'playwright-reader' || segments[0] === 'console-reader' || segments[0] === 'make') {
     return segments[1] ?? null
   }
@@ -362,7 +362,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
   // Адрес открытого чата: #/chat/:id. Экран чата — всё, что не проекты и не
   // утилита («#/» тоже: с него сразу уводим на #/chat/:id активного чата).
   const chatRoute = parseChatRoute(path)
-  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' ? chatRoute.conversationId : routeTaskChatId
+  const routeChatId = chatRoute?.kind === 'chat' || chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab' ? chatRoute.conversationId : routeTaskChatId
   const legacyReaderRoute = segments[0] === 'web-recorder'
   const inReader = segments[0] === 'web-reader' || legacyReaderRoute
   const routeReaderChatId = inReader ? (segments[1] ?? null) : null
@@ -870,9 +870,9 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [compactChat, sidebarOpen])
-  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(chatRoute?.kind === 'context-item')
+  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab')
   useEffect(() => {
-    if (chatRoute?.kind === 'context-item') setConversationSettingsOpen(true)
+    if (chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') setConversationSettingsOpen(true)
   }, [chatRoute?.kind])
   const [createChatOpen, setCreateChatOpen] = useState(false)
   const [createChatTitle, setCreateChatTitle] = useState('Новый разговор')
@@ -2202,7 +2202,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
         // выбирает маршрут `#/chat/:id/context/`, поэтому достаточно адреса.
         disabledContextCount={activeConversation?.disabledContext?.length ?? 0}
         onOpenContextSettings={() => {
-          if (chat.activeId) window.location.hash = `/chat/${encodeURIComponent(chat.activeId)}/context/`
+          if (chat.activeId) window.location.hash = `/chat/${encodeURIComponent(chat.activeId)}/context`
           setConversationSettingsOpen(true)
           void projectsActions.refreshProjects()
         }}
@@ -2892,7 +2892,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           }}
           onClose={() => {
             setConversationSettingsOpen(false)
-            if (chatRoute?.kind === 'context-item') navigate(`/chat/${activeConversation.id}`)
+            if (chatRoute?.kind === 'context-item' || chatRoute?.kind === 'context-tab') navigate(`/chat/${activeConversation.id}`)
           }}
         />
       )}
