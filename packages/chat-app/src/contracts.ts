@@ -4,10 +4,16 @@ import type { KbUsageReport, KbProjectUsageReport } from '@shared/kb'
 import type { Settings } from '@shared/types'
 
 export const SIDEBAR_PROJECT_KEY = 'vc.sidebar.project'
-/** Сохранённое значение фильтра «Без проекта»; отсутствие ключа означает «Все». */
+/** Legacy-значение прежнего фильтра «Без проекта». */
 export const SIDEBAR_NO_PROJECT_VALUE = '__none__'
-/** Область списка чатов: undefined — все, null — без проекта, строка — проект. */
+/** Legacy-модель одиночного проектного фильтра. */
 export type SidebarProjectFilter = string | null | undefined
+/** Сохраняем и известные id: так новые проекты автоматически становятся активными. */
+export interface SidebarProjectSelection {
+  version: 1
+  selectedIds: string[]
+  knownIds: string[]
+}
 export const DONE_TASK_CHATS_KEY = 'vc.sidebar.doneTaskChats'
 export const MESSAGE_META_UPDATE_KEY = 'vc:message-meta-update'
 
