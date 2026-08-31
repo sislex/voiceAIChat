@@ -58,6 +58,7 @@ import { PopupFrame } from './components/PopupFrame'
 import { UiProviders } from '@voicechat/ui-kit'
 import { Button, IconButton } from '@voicechat/ui-kit'
 import { Skeleton } from '@voicechat/ui-kit'
+import { PropertyRow } from '@voicechat/ui-kit'
 import { useToast } from '@voicechat/ui-kit'
 import { useConfirm } from '@voicechat/ui-kit'
 import { KnowledgeBase } from './components/KnowledgeBase'
@@ -2505,7 +2506,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onOpenTask={() => undefined}
           onClose={() => { if (!taskLaunchPending) setTaskProposal(null) }}
           detailsExtra={<>
-            <label className="jmodal-field">Движок
+            <PropertyRow as="label" label="Движок">
               <select className="sel" aria-label="Движок" value={taskProposal.provider} onChange={(event) => {
                 const provider = event.target.value as LlmProvider
                 const models = provider === 'codex' ? allowedCodexModels : allowedClaudeModels
@@ -2514,13 +2515,13 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
                 {allowedProviders.includes('claude') && <option value="claude">Claude</option>}
                 {allowedProviders.includes('codex') && <option value="codex">Codex</option>}
               </select>
-            </label>
-            <label className="jmodal-field">Модель
+            </PropertyRow>
+            <PropertyRow as="label" label="Модель">
               <select className="sel" aria-label="Модель" value={taskProposal.model} onChange={(event) => setTaskProposal({ ...taskProposal, model: event.target.value })}>
                 {!proposalModels.some((model) => model.id === taskProposal.model) && <option value={taskProposal.model}>{taskProposal.model || 'По умолчанию'}</option>}
                 {proposalModels.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
               </select>
-            </label>
+            </PropertyRow>
           </>}
           footer={<>
             {taskLaunchPending && <span role="status">Создаём и запускаем подготовку…</span>}

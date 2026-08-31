@@ -1,4 +1,11 @@
 :root {
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  --ansi-bg: #0b0e14;
+  --ansi-fg: #d8dee9;
+  --ci-neutral-bg: #ecebe6;
+  --ci-progress: #985a00;
+  --ci-progress-bg: #fbeecb;
   --bg: #fafaf7;
   --panel: #f2f1ec;
   --surface: #fff;
@@ -38,6 +45,9 @@
   --skeleton-shine: #f5f4ef;
 }
 [data-theme='green'] {
+  --ci-neutral-bg: #e5ebe4;
+  --ci-progress: #8a4b00;
+  --ci-progress-bg: #f8e8c7;
   --bg: #f3f8f2;
   --panel: #e7f0e5;
   --surface: #ffffff;
@@ -63,6 +73,10 @@
   color-scheme: light;
 }
 [data-theme='dark'] {
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --ci-neutral-bg: #2c2c25;
+  --ci-progress: #e2a13a;
+  --ci-progress-bg: #3a2f18;
   --bg: #191916;
   --panel: #201f1a;
   --surface: #262620;
@@ -268,3 +282,117 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-progress--danger i{background:var(--danger)}
 
 @media(prefers-reduced-motion:reduce){.vc-btn__spinner,.vc-skel,.vc-refresh__spinner,.vc-dialog,.vc-dialog-overlay,.vc-toast{animation:none}.vc-actionbar,.vc-switch,.vc-switch__knob{transition:none}}
+@media(prefers-reduced-motion:reduce){.vc-btn__spinner,.vc-skel,.vc-refresh__spinner,.vc-dialog,.vc-dialog-overlay,.vc-toast{animation:none}}
+
+/* ---- Язык панелей рана: лозенга, шапка, сводка, шаги, лента, подразделы ----
+   Десять вкладок карточки задачи рисовали одно и то же (состояние этапа, шаги,
+   сводку) каждая по-своему. Классы живут здесь, а не в app.css, потому что
+   компоненты лежат в ui-kit: пакет должен выглядеть одинаково и там, где app.css
+   не подключён. */
+.vc-sr-only { position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0 }
+
+.vc-pill { flex:none;display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap }
+.vc-pill--neutral { background:var(--ci-neutral-bg);color:var(--ci-neutral) }
+.vc-pill--running { background:var(--accent-soft);color:var(--accent) }
+.vc-pill--success { background:var(--ci-success-bg);color:var(--ci-success) }
+.vc-pill--warning { background:var(--ci-progress-bg);color:var(--ci-progress) }
+.vc-pill--danger { background:var(--ci-removed-bg);color:var(--ci-removed) }
+
+.vc-track { height:6px;overflow:hidden;border-radius:999px;background:var(--border) }
+.vc-track--compact { height:4px }
+.vc-track__fill { display:block;height:100%;width:var(--vc-progress,0%);border-radius:inherit;background:var(--accent);transition:width .2s ease }
+.vc-track--success .vc-track__fill { background:var(--ci-success) }
+.vc-track--warning .vc-track__fill { background:var(--ci-progress) }
+.vc-track--danger .vc-track__fill { background:var(--ci-removed) }
+.vc-track--neutral .vc-track__fill { background:var(--ci-neutral) }
+/* Кольцо: заливка — conic-gradient по той же переменной, что и полоса, а дырка
+   внутри — псевдоэлемент цвета подложки. Так процент рисуется без svg. */
+.vc-ring { position:relative;flex:none;width:64px;height:64px;display:grid;place-items:center;border-radius:50%;background:conic-gradient(var(--vc-ring-color,var(--accent)) var(--vc-progress,0%),var(--border) 0) }
+.vc-ring::before { content:"";position:absolute;inset:6px;border-radius:50%;background:var(--surface) }
+.vc-ring__caption { position:relative;font-size:13px;font-weight:800;color:var(--vc-ring-color,var(--accent)) }
+.vc-ring--success { --vc-ring-color:var(--ci-success) }
+.vc-ring--warning { --vc-ring-color:var(--ci-progress) }
+.vc-ring--danger { --vc-ring-color:var(--ci-removed) }
+.vc-ring--neutral { --vc-ring-color:var(--ci-neutral) }
+
+.vc-panel-head { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px }
+.vc-panel-head__text { min-width:0 }
+.vc-panel-head__kicker { display:block;color:var(--accent);font-size:11px;font-weight:750;letter-spacing:.07em;text-transform:uppercase }
+.vc-panel-head__title { margin:3px 0 5px;font-size:18px;letter-spacing:-.02em;overflow-wrap:anywhere }
+.vc-panel-head__desc { margin:0;color:var(--text-dim);font-size:13px;line-height:1.5;overflow-wrap:anywhere }
+.vc-panel-head__actions { flex:none;display:flex;align-items:center;gap:var(--space-100);flex-wrap:wrap }
+
+.vc-metrics { display:grid;grid-template-columns:repeat(var(--vc-metrics-columns,3),minmax(0,1fr));gap:var(--space-150);margin:0 0 var(--space-2,16px) }
+.vc-metric { min-width:0;padding:var(--space-150);border:1px solid var(--border-soft);border-radius:10px;background:var(--panel) }
+.vc-metric__label { color:var(--text-dim);font-size:11px }
+.vc-metric__value { margin:6px 0 0;font-size:13px;font-weight:600;overflow-wrap:anywhere }
+
+.vc-steps { display:grid;gap:2px;margin:0;padding:0;list-style:none }
+.vc-step { display:flex;align-items:center;gap:var(--space-150);padding:9px 0;min-width:0 }
+.vc-step__mark { flex:none;width:25px;height:25px;display:grid;place-items:center;border:1px solid var(--border);border-radius:50%;color:var(--text-dim);font-size:11px;font-weight:700 }
+.vc-step--done .vc-step__mark { border-color:var(--ci-success);background:var(--ci-success-bg);color:var(--ci-success) }
+.vc-step--running .vc-step__mark { border-color:var(--accent);background:var(--accent-soft);color:var(--accent) }
+.vc-step--failed .vc-step__mark { border-color:var(--ci-removed);background:var(--ci-removed-bg);color:var(--ci-removed) }
+.vc-step__body { min-width:0 }
+.vc-step__title { display:block;font-size:13px;font-weight:600;overflow-wrap:anywhere }
+.vc-step__detail { display:block;margin-top:3px;color:var(--text-dim);font-size:11px;overflow-wrap:anywhere }
+
+/* Ленты: раскрываемая строка, шеврон и точка состояния. Переехали из app.css
+   вместе с компонентом FeedItem — разметку этих классов три ленты повторяли
+   руками и успели разойтись. */
+.vc-feed { display:grid;gap:10px;min-width:0 }
+.vc-feed-item { border:1px solid var(--border-soft);border-radius:8px;background:var(--surface);min-width:0 }
+.vc-feed-item>summary { display:flex;align-items:center;gap:var(--space-100);min-width:0;padding:10px;cursor:pointer;font-weight:600;list-style:none }
+.vc-feed-item>summary::-webkit-details-marker { display:none }
+.vc-feed-item>summary:focus-visible { outline:2px solid var(--accent);outline-offset:-2px;border-radius:8px }
+.vc-feed-item__title { flex:1 1 auto;min-width:0;font-size:12px;overflow-wrap:anywhere }
+.vc-feed-caret { flex:none;width:9px;height:9px;border-right:2px solid var(--text-dim);border-bottom:2px solid var(--text-dim);transform:rotate(-45deg);transition:transform .15s ease }
+.vc-feed-item[open]>summary .vc-feed-caret { transform:rotate(45deg) }
+.vc-feed-status { display:inline-flex;flex:none;align-items:center;gap:6px;color:var(--text-dim);font-size:12px;font-weight:500;white-space:nowrap }
+.vc-feed-dot { flex:none;width:9px;height:9px;border-radius:50%;background:var(--text-dim) }
+.vc-feed-dot--progress { background:var(--ci-progress) }
+.vc-feed-dot--success { background:var(--ci-success) }
+.vc-feed-dot--danger { background:var(--danger) }
+.vc-feed-dot--muted { background:var(--text-dim);opacity:.55 }
+.vc-feed-log { margin:0;padding:var(--space-150) 14px;max-height:320px;overflow:auto;border-top:1px solid var(--border-soft);background:var(--ansi-bg);color:var(--ansi-fg);font:11px/1.7 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere }
+.vc-feed-log:focus-visible { outline:2px solid var(--accent);outline-offset:-2px }
+
+.vc-subtabs { display:flex;gap:3px;padding:4px;overflow-x:auto;border-radius:10px;background:var(--panel) }
+.vc-subtab { padding:7px 10px;border:0;border-radius:7px;background:transparent;color:var(--text-dim);font:inherit;font-size:11px;font-weight:650;white-space:nowrap;cursor:pointer }
+.vc-subtab:hover { color:var(--text) }
+.vc-subtab--active { background:var(--surface);color:var(--text);box-shadow:var(--shadow-sm) }
+.vc-subtab:focus-visible { outline:2px solid var(--accent);outline-offset:2px }
+.vc-subtab__count { margin-left:var(--space-050);padding:1px 5px;border-radius:10px;background:var(--surface-hover);font-size:10px }
+
+.vc-live { display:inline-flex;align-items:center;gap:6px;color:var(--ci-success);font-size:11px;font-weight:750 }
+.vc-live--idle { color:var(--text-dim) }
+.vc-live__dot { width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 0 4px color-mix(in srgb,currentColor 16%,transparent) }
+
+/* Строка свойства, заголовок секции и чипы: раскладка общая, цвет чипа задаёт
+   вызывающая сторона (у меток и навыков он разный). */
+.vc-prop { display:grid;grid-template-columns:104px minmax(0,1fr);align-items:center;gap:var(--space-100);min-height:38px;font-size:12px;font-weight:600 }
+.vc-prop--wide { grid-template-columns:1fr;align-items:start;padding:var(--space-100) 0 }
+.vc-prop__label { color:var(--text-dim);font-weight:500 }
+.vc-section-head { display:flex;align-items:center;gap:var(--space-150);min-width:0 }
+.vc-section-head__title { flex:0 1 auto;min-width:0;margin:0;font-size:13px;font-weight:600;overflow-wrap:anywhere }
+.vc-section-head__meta { color:var(--text-dim);font-size:12px }
+.vc-section-head__action { margin-left:auto;flex:none }
+.vc-chips { display:flex;flex-wrap:wrap;gap:var(--space-050);align-items:center;font-weight:400 }
+.vc-chip { display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:var(--radius-medium);background:var(--surface-hover);color:var(--text);font-size:12px }
+.vc-chip__remove { border:0;background:none;color:inherit;cursor:pointer;padding:0 2px;font-size:12px;line-height:1 }
+.vc-chip__remove:hover { color:var(--danger) }
+.vc-chip__remove:focus-visible { outline:2px solid var(--accent);outline-offset:1px;border-radius:3px }
+.vc-chips__input { flex:1 1 120px;min-width:90px;padding:2px 6px;border:1px solid var(--border);border-radius:var(--radius-medium);background:var(--surface);color:var(--text);font:inherit;font-size:12px }
+.vc-chips__input:focus-visible { outline:2px solid var(--accent);outline-offset:1px }
+
+/* Телефон: колонка вместо ряда и палец вместо курсора. */
+@media (max-width: 640px) {
+  .vc-metrics { grid-template-columns:1fr }
+  .vc-panel-head { flex-wrap:wrap }
+  .vc-subtab { min-height:40px }
+  .vc-prop { grid-template-columns:96px minmax(0,1fr);min-height:44px }
+  .vc-prop--wide { grid-template-columns:1fr }
+  .vc-chips__input { width:100%;min-height:40px;font-size:16px }
+  .vc-chip__remove { min-width:30px;min-height:30px }
+}
+@media (prefers-reduced-motion: reduce) { .vc-feed-caret, .vc-track__fill { transition:none } }

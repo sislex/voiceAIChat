@@ -1378,15 +1378,28 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
   // Доска отдаёт лёгкую карточку без тяжёлых текстов; при открытии догружаем
   // полную задачу и накладываем её тяжёлые поля поверх живой карточки доски.
   const [fullTask, setFullTask] = useState<Task | null>(null)
+  // Загрузчик берётся через ref, а сам эффект зависит только от id открытой
+  // карточки. Хост передаёт `loadFullTask` инлайновой стрелкой, поэтому её
+  // идентичность менялась на каждом рендере приложения — а рендерит его каждый
+  // WS-кадр активного рана. Эффект перезапускался, обнулял `fullTask` (описание
+  // и критерии на секунду возвращались к пустым значениям лёгкой доски) и снова
+  // дёргал `GET tasks/:id`.
+  const loadFullTaskRef = useRef(props.loadFullTask)
+  loadFullTaskRef.current = props.loadFullTask
   useEffect(() => {
-    setFullTask(null)
     const id = openTaskId
-    const load = props.loadFullTask
-    if (!id || !load) return
+    const load = loadFullTaskRef.current
+    if (!id || !load) {
+      setFullTask(null)
+      return
+    }
+    // Уже загруженную ту же задачу не сбрасываем: иначе перерисовка карточки
+    // мигает пустым описанием, пока идёт повторный запрос.
+    setFullTask((current) => current && current.id === id ? current : null)
     let alive = true
     void load(id).then((t) => { if (alive && t && t.id === id) setFullTask(t) }).catch(() => { /* оставим лёгкую карточку */ })
     return () => { alive = false }
-  }, [openTaskId, props.loadFullTask])
+  }, [openTaskId])
   const openTask = boardOpenTask && fullTask && fullTask.id === boardOpenTask.id
     ? { ...boardOpenTask, description: fullTask.description, acceptanceCriteria: fullTask.acceptanceCriteria }
     : boardOpenTask
@@ -1759,6 +1772,7 @@ export function KanbanBoard(props: KanbanBoardProps): JSX.Element {
           onAiAssistPromptsChange={props.onAiAssistPromptsChange}
           generateAiAssist={props.generateAiAssist}
           onOpenTask={setOpenTaskId}
+          onCreateSubtask={(columnId, input) => props.onCreateTask(columnId, input)}
           onSelectedFieldChange={props.onSelectedFieldChange}
           onClose={() => { props.onSelectedFieldChange?.(null); setOpenTaskId(null) }}
         />
