@@ -25,6 +25,8 @@ export interface ContextInspectorProps {
   onQuickEdit?: (value: { kbContextMode?: KbContextMode; permissionMode?: PermissionMode | null; llmProvider?: LlmProvider | null; llmModel?: string | null }) => void
   /** Выбрать или снять навык разговора прямо из инспектора. */
   onToggleSkill?: (name: string, selected: boolean) => void
+  /** Другие разговоры пользователя — источник для копирования контекста. */
+  otherConversations?: Array<{ id: string; title: string }>
   /** Инструкции чата из общих настроек — правятся здесь же, но действуют везде. */
   chatInstructions?: ChatInstruction[]
   /** Сохранить правку текста инструкции (общие настройки пользователя). */
@@ -34,7 +36,7 @@ export interface ContextInspectorProps {
 const dynamicIds = new Set(['current-message', 'knowledge-mode'])
 const primaryIds = new Set(['platform-instructions', 'application-instructions', 'personalization', 'project-binding', 'knowledge-mode', 'conversation-history', 'current-message'])
 /** Фильтр списка: показывать всё, только уходящее в ход или только исключённое. */
-type ItemFilter = 'all' | 'included' | 'excluded'
+type ItemFilter = 'all' | 'included' | 'excluded' | 'touched'
 
 function userStatus(item: ContextSnapshotItem): UserStatus {
   if (item.toggleable && !item.enabled) return 'Выключено вами'
@@ -102,11 +104,29 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     window.addEventListener('hashchange', sync)
     return () => window.removeEventListener('hashchange', sync)
   }, [props.conversationId])
+  // «/» ставит фокус в поиск по источникам — их два десятка, и мышью до поля
+  // каждый раз далеко. В поле ввода клавиша не перехватывается: иначе в
+  // черновике сообщения нельзя набрать слэш.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target as HTMLElement | null
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+      const field = document.querySelector<HTMLInputElement>('.context-filters input[type="search"]')
+      if (!field) return
+      event.preventDefault()
+      field.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const [snapshot, setSnapshot] = useState<ConversationContextSnapshot | null>(null)
   const [snapshotError, setSnapshotError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ItemFilter>('all')
+  /** Порядок списка: по размеру вклада вместо порядка сборки промпта. */
+  const [heavyFirst, setHeavyFirst] = useState(false)
   /** Идут ли изменения тумблера/быстрой правки — на это время контролы блокируются. */
   const [busy, setBusy] = useState(false)
   /** Черновик сообщения и подбор базы знаний по нему (по кнопке, не на каждый ввод). */
@@ -256,7 +276,48 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     }
     lines.push('## Чего в предпросмотре нет', '')
     for (const line of value.promptPreview.omitted) lines.push(`- ${line}`)
+    if (value.promptPreview.costUsd !== null) {
+      lines.push('', `Оценка стоимости постоянной части: ≈$${value.promptPreview.costUsd.toFixed(4)} за ход (только входные токены).`)
+    }
+    if (value.turnSizes.length) {
+      lines.push('', '## Размер промпта по ходам', '')
+      for (const entry of value.turnSizes) lines.push(`- ${entry.at} · ${entry.model || 'модель из конфигурации CLI'} · ≈${entry.approxTokens} токенов${entry.resumed ? ' (продолжение сессии)' : ''}`)
+    }
+    if (value.changes.length) {
+      lines.push('', '## Журнал изменений контекста', '')
+      for (const event of value.changes) {
+        lines.push(`- ${new Date(event.at).toLocaleString('ru-RU')} · ${event.actor} · ${event.enabled ? 'вернул' : 'выключил'}: ${event.itemId}`)
+      }
+    }
     return lines.join('\n')
+  }
+
+  /** Полный сброс: все источники включены и переопределения сняты. */
+  const resetAll = async (): Promise<void> => {
+    if (disabledToggleable.length) await toggleMany(disabledToggleable, true)
+    if (overridden.length) await quickSave({ llmProvider: null, llmModel: null, ...(snapshot?.viewerRole === 'admin' ? { permissionMode: null } : {}) })
+    setAnnounce('Контекст сброшен: все источники включены, переопределения сняты.')
+  }
+
+  /**
+   * Перенести набор выключений из другого разговора. Сервер приводит текущий
+   * набор к образцу (а не объединяет), поэтому «скопировать» значит именно
+   * «сделать так же».
+   */
+  const copyFrom = async (fromConversationId: string): Promise<void> => {
+    setBusy(true)
+    try {
+      const next = await window.api['conversations:copyContext']({ id: props.conversationId, fromConversationId })
+      if (next) {
+        setSnapshot(next)
+        setAnnounce(`Контекст скопирован. Блоков промпта: ${next.promptPreview.blocks.length}, ≈${next.promptPreview.approxTokens} токенов.`)
+        toast.success('Контекст скопирован из выбранного разговора')
+      } else setSnapshotError('Разговор или источник больше недоступен.')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
   }
 
   /** Скачать снимок файлом: в поддержку удобнее приложить файл, а не буфер. */
@@ -319,6 +380,15 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       {detail.toggleable
         ? <label className="context-detail-toggle"><input type="checkbox" checked={detail.enabled} disabled={busy} onChange={(event) => void toggleItem(detail, event.target.checked)} /><span>Учитывать в этом разговоре</span></label>
         : <p className="context-note" data-testid="context-lock-note">🔒 {CONTEXT_LOCK_TEXT[detail.lockReason ?? 'info']}</p>}
+      {/* История именно этого источника: общий журнал внизу отвечает «что тут
+          было», а человек в карточке спрашивает «что было с ним». */}
+      {(() => {
+        const own = snapshot.changes.filter((event) => event.itemId === detail.id)
+        return own.length > 0 && <details className="context-omitted" data-testid="context-detail-history">
+          <summary>История этого источника ({own.length})</summary>
+          <ul>{own.map((event) => <li key={`${event.at}-${String(event.enabled)}`}>{new Date(event.at).toLocaleString('ru-RU')} · {event.actor} · {event.enabled ? 'вернул' : 'выключил'}</li>)}</ul>
+        </details>
+      })()}
       <dl className="context-metadata">
         <div><dt>Приоритет</dt><dd>{detail.priority}</dd></div><div><dt>Источник</dt><dd>{detail.source}</dd></div><div><dt>Область действия</dt><dd>{detail.scope}</dd></div>
         <div><dt>Настроено</dt><dd>{state(detail.configured)}</dd></div><div><dt>Доступно</dt><dd>{state(detail.available)}</dd></div><div><dt>Будет добавлено в следующий ход</dt><dd>{state(detail.includedInNextTurn)}</dd></div>
@@ -369,8 +439,16 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const machine = byId('machine')
   const workdir = byId('working-directory')
   const permission = byId('permission-mode')
+  // «Изменённые» — те, которых человек касался: по журналу, а не по догадке.
+  const touched = new Set(snapshot.changes.map((event) => event.itemId))
   const visible = (item: ContextSnapshotItem): boolean => matchesQuery(item, query)
-    && (filter === 'all' || (filter === 'included' ? item.includedInNextTurn : !item.includedInNextTurn))
+    && (filter === 'all'
+      || (filter === 'touched'
+        ? touched.has(item.id)
+        : filter === 'included' ? item.includedInNextTurn : !item.includedInNextTurn))
+  /** Порядок: по размеру вклада (тяжёлые сверху) либо как собрал сервер. */
+  const ordered = (items: ContextSnapshotItem[]): ContextSnapshotItem[] =>
+    heavyFirst ? [...items].sort((a, b) => (b.size?.chars ?? 0) - (a.size?.chars ?? 0)) : items
   const knowledgeItems = allItems.filter((item) => primaryIds.has(item.id) && visible(item))
   const additionalItems = allItems.filter((item) => (item.id === 'agents-chain' || item.id.startsWith('skill-') || item.id.startsWith('mcp-')) && visible(item))
   const instructionItems = allItems.filter((item) => item.id.startsWith('instruction-') && visible(item))
@@ -451,11 +529,16 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       {/* Сброс переопределений: строка «Источник: Переопределение чата» говорит,
           что значение своё, но вернуть наследование было можно только через
           другую вкладку. Режим доступа — безопасность, его сбрасывает админ. */}
-      {overridden.length > 0 && <div className="context-reset">
-        <p>Этот разговор переопределяет: {overridden.join(', ')}.</p>
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void quickSave({
-          llmProvider: null, llmModel: null, ...(isAdmin ? { permissionMode: null } : {})
-        })}>Вернуть наследование</Button>
+      {(overridden.length > 0 || disabledToggleable.length > 0) && <div className="context-reset">
+        <p>{overridden.length > 0 ? `Этот разговор переопределяет: ${overridden.join(', ')}.` : `Выключено источников: ${disabledToggleable.length}.`}</p>
+        <div className="context-actions">
+          {overridden.length > 0 && <Button size="sm" variant="ghost" disabled={busy} onClick={() => void quickSave({
+            llmProvider: null, llmModel: null, ...(isAdmin ? { permissionMode: null } : {})
+          })}>Вернуть наследование</Button>}
+          {/* Полный сброс: одно действие вместо «включить всё» + «вернуть
+              наследование» по очереди — так чат возвращается к состоянию нового. */}
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void resetAll()}>Сбросить контекст к обычному</Button>
+        </div>
       </div>}
       <div className="context-quickedit">
         <label>
@@ -479,7 +562,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     <section className="context-card" aria-labelledby="context-prompt-title">
       <h3 id="context-prompt-title">Итоговый текст для модели</h3>
       <div className="context-prompt-head">
-        <p data-testid="context-prompt-size">Сервер добавит {preview.blocks.length} блок(ов): ≈{preview.approxTokens} токенов, {preview.chars} символов. Снимок от {new Date(snapshot.generatedAt).toLocaleTimeString('ru-RU')}.</p>
+        <p data-testid="context-prompt-size">Сервер добавит {preview.blocks.length} блок(ов): ≈{preview.approxTokens} токенов, {preview.chars} символов{preview.costUsd === null ? '' : `, ≈$${preview.costUsd.toFixed(4)} за ход`}. Снимок от {new Date(snapshot.generatedAt).toLocaleTimeString('ru-RU')}.</p>
         <div className="context-actions">
           <Button size="sm" disabled={!preview.text} onClick={() => void copy(preview.text, 'Текст')}>Скопировать текст</Button>
           <Button size="sm" variant="ghost" onClick={() => void copy(JSON.stringify(snapshot, null, 2), 'Снимок')}>Скопировать JSON снимка</Button>
@@ -550,7 +633,7 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       <p className="context-note" data-testid="context-lastturn-meta">
         {snapshot.lastTurn.at} · {snapshot.lastTurn.provider} · {snapshot.lastTurn.model || 'модель из конфигурации CLI'} · ≈{snapshot.lastTurn.approxTokens} токенов, {snapshot.lastTurn.chars} символов
         {snapshot.lastTurn.resumed ? ' · продолжение сессии движка (история не пересобиралась)' : ' · история пересобиралась целиком'}
-        {snapshot.lastTurn.attachments > 0 ? ` · вложений: ${snapshot.lastTurn.attachments}` : ''}
+        {snapshot.lastTurn.attachments > 0 ? ` · вложения: ${snapshot.lastTurn.attachmentNames.join(', ') || snapshot.lastTurn.attachments}` : ''}
         {snapshot.lastTurn.kbSections.length ? ` · база знаний: ${snapshot.lastTurn.kbSections.join(', ')}` : ' · без автоконтекста базы знаний'}
       </p>
       {/* Что изменилось с того хода: сравниваем блоки прогноза с текстом,
@@ -565,13 +648,24 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       })()}
       <details className="context-omitted"><summary>Показать отправленный текст</summary><pre className="context-prompt" data-testid="context-lastturn-prompt">{snapshot.lastTurn.prompt}</pre></details>
       <div className="context-actions"><Button size="sm" onClick={() => void copy(snapshot.lastTurn!.prompt, 'Текст')}>Скопировать отправленное</Button></div>
+      {/* Рост контекста: «почему стало дороже» видно только в динамике, поэтому
+          показываем размеры последних ходов, а не один текущий. */}
+      {snapshot.turnSizes.length > 1 && <details className="context-omitted" data-testid="context-turnsizes">
+        <summary>Как менялся размер промпта ({snapshot.turnSizes.length} ход(ов))</summary>
+        <ul>{snapshot.turnSizes.map((entry, index) => <li key={`${entry.at}-${index}`}>
+          {entry.at} · {entry.model || 'модель из конфигурации CLI'} · ≈{entry.approxTokens} токенов{entry.resumed ? ' · продолжение сессии' : ' · история пересобрана'}
+        </li>)}</ul>
+      </details>}
     </section>}
     <p className="context-announce" role="status" aria-live="polite" data-testid="context-announce">{announce}</p>
     <div className="context-filters" role="search">
       <input type="search" value={query} placeholder="Поиск по источникам контекста" aria-label="Поиск по источникам контекста" onChange={(event) => setQuery(event.target.value)} />
       <div className="context-filter-tabs" role="group" aria-label="Фильтр источников">
-        {([['all', 'Все'], ['included', 'Попадёт в ход'], ['excluded', 'Не попадёт']] as const).map(([id, label]) =>
+        {([['all', 'Все'], ['included', 'Попадёт в ход'], ['excluded', 'Не попадёт'], ['touched', 'Изменённые']] as const).map(([id, label]) =>
           <Button key={id} size="sm" variant={filter === id ? 'primary' : 'ghost'} aria-pressed={filter === id} onClick={() => setFilter(id)}>{label}</Button>)}
+        {/* Сортировка по размеру: когда промпт распух, первый вопрос — «кто
+            занял место», и глазами по двум десяткам пунктов это не ищут. */}
+        <Button size="sm" variant={heavyFirst ? 'primary' : 'ghost'} aria-pressed={heavyFirst} onClick={() => setHeavyFirst((value) => !value)}>Сначала тяжёлые</Button>
       </div>
     </div>
     <section className="context-card" aria-labelledby="context-knowledge-title">
@@ -582,13 +676,22 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         <div className="context-actions">
           <Button size="sm" variant="ghost" disabled={busy || disabledToggleable.length === 0} onClick={() => void toggleMany(disabledToggleable, true)}>Включить всё ({disabledToggleable.length})</Button>
           <Button size="sm" variant="ghost" disabled={busy || enabledToggleable.length === 0} onClick={() => void toggleMany(enabledToggleable, false)}>Выключить необязательное ({enabledToggleable.length})</Button>
+          {/* Настроить контекст один раз и переносить в другие чаты — обычная
+              работа: раньше это означало щёлкать тумблеры заново по памяти. */}
+          {(props.otherConversations?.length ?? 0) > 0 && <label className="context-copyfrom">
+            <span>Скопировать из</span>
+            <select aria-label="Скопировать контекст из разговора" disabled={busy} value="" onChange={(event) => { if (event.target.value) void copyFrom(event.target.value) }}>
+              <option value="">— выберите разговор —</option>
+              {props.otherConversations!.map((entry) => <option key={entry.id} value={entry.id}>{entry.title}</option>)}
+            </select>
+          </label>}
         </div>
       </div>
-      {itemList(knowledgeItems, 'Под фильтр и поиск ничего не подошло.')}
+      {itemList(ordered(knowledgeItems), 'Под фильтр и поиск ничего не подошло.')}
     </section>
-    {instructionItems.length > 0 && <details className="context-section" open><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(instructionItems, 'Под фильтр и поиск ничего не подошло.')}</details>}
+    {instructionItems.length > 0 && <details className="context-section" open><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(ordered(instructionItems), 'Под фильтр и поиск ничего не подошло.')}</details>}
     <details className="context-section" data-testid="context-excluded"><summary><span><b>Не попадёт в следующий ход</b><small>Выключенное вами, ненастроенное и недоступное — с причиной</small></span><span className="context-count">{excludedItems.length}</span></summary>{itemList(excludedItems, 'Всё найденное попадёт в следующий ход.', false)}</details>
-    <details className="context-section"><summary><span><b>Дополнительные возможности</b><small>Навыки, MCP, приложения, плагины, машины и AGENTS.md</small></span><span className="context-count">{additionalItems.length}</span></summary>{itemList(additionalItems, 'Дополнительные возможности не обнаружены.')}</details>
+    <details className="context-section"><summary><span><b>Дополнительные возможности</b><small>Навыки, MCP, приложения, плагины, машины и AGENTS.md</small></span><span className="context-count">{additionalItems.length}</span></summary>{itemList(ordered(additionalItems), 'Дополнительные возможности не обнаружены.')}</details>
     {snapshot.changes.length > 0 && <details className="context-section" data-testid="context-changes"><summary><span><b>Журнал изменений контекста</b><small>Кто и когда выключал или возвращал источники этого разговора</small></span><span className="context-count">{snapshot.changes.length}</span></summary>
       <ul className="context-changelog">{snapshot.changes.map((event) => <li key={`${event.at}-${event.itemId}-${String(event.enabled)}`}>
         <b>{new Date(event.at).toLocaleString('ru-RU')}</b> · {event.actor} · {event.enabled ? 'вернул' : 'выключил'}: {byId(event.itemId)?.title ?? event.itemId}
