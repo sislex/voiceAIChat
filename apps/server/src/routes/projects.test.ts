@@ -562,6 +562,23 @@ describe('projects REST: машины проекта (папка, дефолт) 
     expect((await inj(bobTok, { method: 'DELETE', url: `/api/projects/${p.id}/machines/${agent.id}` })).statusCode).toBe(403)
   })
 
+  it('создание разговора атомарно сохраняет доступный projectId и отвергает чужой', async () => {
+    const p = await createProject('Conversation project')
+    const created = await inj(adminTok, { method: 'POST', url: '/api/conversations', payload: { title: 'Проектный', projectId: p.id } })
+    expect(created.statusCode).toBe(200)
+    expect(created.json()).toMatchObject({ title: 'Проектный', projectId: p.id })
+    expect(db.getConversation('admin', created.json().id)?.projectId).toBe(p.id)
+
+    const before = db.listConversations('bob').length
+    const denied = await inj(bobTok, { method: 'POST', url: '/api/conversations', payload: { title: 'Чужой', projectId: p.id } })
+    expect(denied.statusCode).toBe(404)
+    expect(db.listConversations('bob')).toHaveLength(before)
+
+    const plain = await inj(bobTok, { method: 'POST', url: '/api/conversations', payload: { title: 'Без проекта' } })
+    expect(plain.statusCode).toBe(200)
+    expect(plain.json().projectId).toBeNull()
+  })
+
   it('привязка чата к проекту сохраняет наследование машины и навыки; не-участник → 404', async () => {
     const create = await inj(adminTok, { method: 'POST', url: '/api/projects', payload: { name: 'P', skills: ['ts'] } })
     const p = create.json() as ProjectDetail
