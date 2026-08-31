@@ -2421,6 +2421,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onRetry={() => void runtime.openAdmin()}
           selected={routeUserName ?? admin.adminSelected}
           usage={admin.adminUsage}
+          usageLoading={admin.adminUsageLoading}
+          tabError={admin.adminTabError}
           conversations={admin.adminConversations}
           messages={admin.adminMessages}
           conversationId={admin.adminConversationId}
@@ -2435,7 +2437,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           onLoadUsage={(unit, from, to, conversationId) => void adminActions.loadAdminUsage(unit, from, to, conversationId)}
           sessionsClient={adminSessionsClient}
           security={admin.adminSecurity}
-          onLoadSecurity={() => void adminActions.loadAdminSecurity()}
+          onLoadSecurity={(limit) => void adminActions.loadAdminSecurity(limit)}
           invites={admin.adminInvites}
           onLoadInvites={() => void adminActions.loadAdminInvites()}
           onCreateInvite={(input) => void adminActions.createAdminInvite(input)}

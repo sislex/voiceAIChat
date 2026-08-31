@@ -229,4 +229,20 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
   .vc-actionbar--on { transform:translateY(0) }
 }
 
+
+/* Строка «сводка + действия». */
+.vc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-medium);background:var(--panel);font-size:11px}
+.vc-toolbar--bare{padding:2px 0;border:0;background:none;color:var(--text-dim)}
+.vc-toolbar__summary{min-width:0}
+.vc-toolbar__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* Пары «подпись → значение». */
+.vc-deflist{margin:0;display:grid;gap:6px}
+.vc-deflist__row{display:grid;grid-template-columns:minmax(0,140px) minmax(0,1fr);gap:8px}
+.vc-deflist dt{color:var(--text-dim);font-size:11px}
+.vc-deflist dd{margin:0;font-size:12px;overflow-wrap:anywhere}
+.vc-deflist--inline{display:flex;flex-wrap:wrap;gap:4px 14px}
+.vc-deflist--inline .vc-deflist__row{display:flex;gap:5px;align-items:baseline}
+@media (max-width: 640px) { .vc-deflist__row { grid-template-columns:1fr } }
+
 @media(prefers-reduced-motion:reduce){.vc-btn__spinner,.vc-skel,.vc-refresh__spinner,.vc-dialog,.vc-dialog-overlay,.vc-toast{animation:none}.vc-actionbar,.vc-switch,.vc-switch__knob{transition:none}}

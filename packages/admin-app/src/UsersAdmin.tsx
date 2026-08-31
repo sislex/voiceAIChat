@@ -74,6 +74,10 @@ export interface UsersAdminProps {
   onRetry?: () => void
   selected: string | null
   usage: UsageReport | null
+  /** Отчёт в полёте: пустой расход и незагруженный расход выглядят по-разному. */
+  usageLoading?: boolean
+  /** Ошибка загрузки данных вкладки: тост исчезает, а карточка остаётся пустой. */
+  tabError?: string | null
   conversations: Conversation[]
   messages: Message[]
   conversationId: string | null
@@ -96,7 +100,7 @@ export interface UsersAdminProps {
   sessionsClient?: SessionsClient
   /** Журнал безопасности выбранного пользователя (auth-roadmap п.7). */
   security?: SecurityEvent[] | null
-  onLoadSecurity?: () => void
+  onLoadSecurity?: (limit?: number) => void
   /** Инвайты на саморегистрацию (auth-roadmap п.8). */
   invites?: InviteInfo[] | null
   onLoadInvites?: () => void
@@ -150,6 +154,8 @@ export function UsersAdmin({
   onRetry,
   selected,
   usage,
+  usageLoading = false,
+  tabError = null,
   conversations,
   messages,
   conversationId,
@@ -222,7 +228,10 @@ export function UsersAdmin({
   useEffect(() => {
     if (!selectedName) return
     if (tab === 'usage' || tab === 'overview') loadUsageFor(period)
-    if (tab === 'history' || tab === 'overview') onLoadSecurity?.()
+    // Обзору хватает двадцати последних событий: лента показывает пять. Полный
+    // журнал (двести) грузится только на своей вкладке.
+    if (tab === 'history') onLoadSecurity?.(200)
+    else if (tab === 'overview') onLoadSecurity?.(20)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedName, tab, period])
 
@@ -244,6 +253,9 @@ export function UsersAdmin({
             selected={selectedName}
             tab={tab}
             usage={usage}
+            usageLoading={usageLoading}
+            tabError={tabError}
+            onRetryTab={() => { if (tab === 'history') onLoadSecurity?.(200); else loadUsageFor(period) }}
             security={security}
             llmAccess={llmAccess}
             currentUserName={currentUserName}

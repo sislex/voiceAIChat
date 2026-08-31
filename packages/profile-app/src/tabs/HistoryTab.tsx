@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button, EmptyState } from '@voicechat/ui-kit'
 import type { ProfileSecurityEvent } from '../contracts'
 import { formatDateTime } from '../format'
-import { securityEventsToCsv } from '../model'
+import { securityEventsToCsv, shortUserAgent } from '../model'
 import { isAlarming, securityGroup, type SecurityGroup } from '../securityLabels'
 
 export interface HistoryTabProps {
@@ -50,7 +50,7 @@ export function HistoryTab({ events, userName, onExportCsv }: HistoryTabProps): 
                 <time dateTime={new Date(event.at).toISOString()}>{formatDateTime(event.at)}</time>
                 <div>
                   <h3>{event.label}</h3>
-                  <p>{[event.details, event.ip, event.userAgent].filter(Boolean).join(' · ')}</p>
+                  <p>{[event.details, event.ip, shortUserAgent(event.userAgent)].filter(Boolean).join(' · ')}</p>
                 </div>
               </li>
             ))}

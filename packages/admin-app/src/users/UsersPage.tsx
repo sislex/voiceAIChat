@@ -5,7 +5,7 @@
 // разошлись бы в мелочах, а расхождение в том, «что видно про человека»,
 // заметить труднее всего.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, EmptyState } from '@voicechat/ui-kit'
 import {
   FULL_ACCESS,
@@ -104,12 +104,17 @@ export interface UsersPageProps {
   period?: ProfilePeriod
   onSelectPeriod?: (period: ProfilePeriod) => void
   usage: UsageReport | null
+  /** Расход выбранного человека ещё грузится — карточка покажет скелетон. */
+  usageLoading?: boolean
   security?: SecurityEvent[] | null
   llmAccess: readonly UserLlmAccess[]
   currentUserName: string
   isAdmin: boolean
   status?: LoadStatus
   error?: string | null
+  /** Ошибка загрузки данных выбранной вкладки — видна внутри карточки. */
+  tabError?: string | null
+  onRetryTab?: () => void
   latestAgentVersion?: string
   now?: number
   /** Слот хоста: список сессий выбранного человека. */
@@ -138,12 +143,15 @@ export function UsersPage({
   period = 'month',
   onSelectPeriod,
   usage,
+  usageLoading = false,
   security,
   llmAccess,
   currentUserName,
   isAdmin,
   status = 'ready',
   error = null,
+  tabError = null,
+  onRetryTab,
   latestAgentVersion,
   now = Date.now(),
   sessionsSlot,
@@ -163,6 +171,15 @@ export function UsersPage({
 }: UsersPageProps): JSX.Element {
   const [filter, setFilter] = useState<UsersFilter>(DEFAULT_FILTER)
   const [creating, setCreating] = useState(false)
+  // Выбор человека с клавиатуры оставлял фокус в списке: следующий Tab уходил к
+  // соседней строке, а не в карточку, которую человек только что открыл.
+  const detailRef = useRef<HTMLDivElement>(null)
+  const keyboardPick = useRef(false)
+  useEffect(() => {
+    if (!keyboardPick.current || !selected) return
+    keyboardPick.current = false
+    detailRef.current?.focus()
+  }, [selected])
   const metrics = useMemo(() => usersMetrics(users, usageSummary, now, monthStart(now)), [users, usageSummary, now])
   const current = users.find((user) => user.name === selected) ?? null
   // Себя и встроенного admin блокировать и удалять нельзя: первое лишает доступа
@@ -196,14 +213,14 @@ export function UsersPage({
           selected={selected}
           filter={filter}
           onFilter={setFilter}
-          onSelect={onSelect}
+          onSelect={(name, viaKeyboard) => { keyboardPick.current = Boolean(viaKeyboard); onSelect(name) }}
           status={status}
           error={error}
           {...(onRetry ? { onRetry } : {})}
           now={now}
         />
 
-        <div className="ua-detail" data-testid="user-detail">
+        <div className="ua-detail" data-testid="user-detail" ref={detailRef} tabIndex={-1}>
           {current === null
             ? <EmptyState icon="👤" title="Выберите человека" description="Слева список: карточка покажет доступ к моделям, машины, расход и журнал." />
             : (
@@ -214,6 +231,9 @@ export function UsersPage({
                 providers={PROVIDERS}
                 denied={llmAccess.map((entry) => ({ provider: entry.provider, modelId: entry.modelId }))}
                 usage={usage ? toProfileUsage(usage) : null}
+                usageLoading={usageLoading}
+                error={tabError}
+                {...(onRetryTab ? { onRetry: onRetryTab } : {})}
                 period={period}
                 {...(onSelectPeriod ? { onSelectPeriod } : {})}
                 events={toProfileEvents(security)}

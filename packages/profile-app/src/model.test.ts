@@ -11,6 +11,7 @@ import {
   machineVersionState,
   modelShares,
   securityEventsToCsv,
+  shortUserAgent,
   setAllAccess,
   spendPoints,
   toggleAccess
@@ -170,5 +171,19 @@ describe('активность', () => {
     const now = 1_000_000
     const users = [{ lastSeenAt: now - 1000 }, { lastSeenAt: now - 600_000 }, { lastSeenAt: null }, {}]
     expect(activeNowCount(users, now, 300_000)).toBe(1)
+  })
+})
+
+describe('короткая подпись устройства', () => {
+  it('оставляет браузер и систему вместо строки на 120 символов', () => {
+    expect(shortUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36')).toBe('Chrome 141 · macOS')
+    expect(shortUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0')).toBe('Firefox 130 · Windows')
+    expect(shortUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1')).toBe('Safari 18 · iOS')
+    expect(shortUserAgent('agent/2.8.1')).toBe('Агент 2.8.1')
+  })
+
+  it('нераспознанное показывает как есть, а не прячет', () => {
+    expect(shortUserAgent('curl/8.4.0')).toBe('curl/8.4.0')
+    expect(shortUserAgent('')).toBe('')
   })
 })

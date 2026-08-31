@@ -1,6 +1,6 @@
 // Машины человека: состояние агента, ОС и версия.
 
-import { Badge, Button, EmptyState } from '@voicechat/ui-kit'
+import { Badge, Button, DefinitionList, EmptyState } from '@voicechat/ui-kit'
 import type { ProfileCapabilities, ProfileMachine } from '../contracts'
 import { machineOs, machineVersionState } from '../model'
 import { formatAgo } from '../format'
@@ -31,11 +31,23 @@ export function MachinesTab({ machines, capabilities, latestVersion, now, onUpda
               <span className="vcp-machine__ico" aria-hidden="true">{machine.online ? '▣' : '▱'}</span>
               <div className="vcp-machine__main">
                 <h3>{machine.name}</h3>
-                <p>
-                  <i className={machine.online ? 'vcp-dot vcp-dot--on' : 'vcp-dot'} aria-hidden="true" />
-                  {machine.online ? 'Онлайн' : formatAgo(machine.lastSeen, now)}
-                  {os ? ` · ${os}` : machine.online ? '' : ' · ОС неизвестна (офлайн)'}
-                </p>
+                {/* Пары «подпись → значение», а не строка через точки: скринридер
+                    читает их как свойства машины, а не как сплошной текст. */}
+                <DefinitionList
+                  inline
+                  items={[
+                    {
+                      label: 'Состояние',
+                      value: (
+                        <>
+                          <i className={machine.online ? 'vcp-dot vcp-dot--on' : 'vcp-dot'} aria-hidden="true" />
+                          {machine.online ? 'онлайн' : formatAgo(machine.lastSeen, now)}
+                        </>
+                      )
+                    },
+                    { label: 'ОС', value: os ?? (machine.online ? 'неизвестна' : 'неизвестна (офлайн)') }
+                  ]}
+                />
               </div>
               {machine.version
                 ? <Badge tone={state === 'outdated' ? 'warning' : 'success'} title={state === 'outdated' ? `Актуальная версия — ${latestVersion}` : undefined}>

@@ -78,13 +78,40 @@ describe('UsersAdmin — список и метрики', () => {
   it('поиск и фильтр статуса сужают список, счётчик показывает выборку', async () => {
     renderAdmin()
     await userEvent.type(screen.getByTestId('users-search'), 'bob')
-    expect(screen.getAllByTestId('user-item')).toHaveLength(1)
+    // Ввод дебаунсится: список не пересобирается на каждую букву.
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(1))
     expect(screen.getByTestId('users-count')).toHaveTextContent('1 пользователь из 2')
 
     await userEvent.clear(screen.getByTestId('users-search'))
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(2))
     await userEvent.selectOptions(screen.getByLabelText('Статус'), 'online')
     expect(screen.getAllByTestId('user-item')).toHaveLength(1)
     expect(screen.getAllByTestId('user-item')[0]).toHaveTextContent('admin')
+  })
+
+  it('счётчик списка объявляется скринридеру: иначе результат фильтра не слышен', async () => {
+    renderAdmin()
+    await userEvent.type(screen.getByTestId('users-search'), 'bob')
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1 пользователь из 2'))
+  })
+
+  it('Esc в поиске возвращает полный список', async () => {
+    renderAdmin()
+    await userEvent.type(screen.getByTestId('users-search'), 'bob')
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(1))
+    screen.getByTestId('users-search').focus()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(2))
+  })
+
+  it('выбор с клавиатуры уводит фокус в карточку, а не оставляет в списке', async () => {
+    renderAdmin({ selected: null })
+    const row = screen.getAllByTestId('user-item')[1]!
+    row.focus()
+    await userEvent.keyboard('{Enter}')
+    // Карточку рисует уже выбранный пропс: проверяем, что список отдал признак
+    // «выбор с клавиатуры» и цель фокуса существует.
+    expect(screen.getByTestId('user-detail')).toHaveAttribute('tabindex', '-1')
   })
 
   it('без выбранного человека карточка объясняет, что делать', () => {
@@ -263,7 +290,7 @@ describe('UsersAdmin — служебные страницы', () => {
     renderAdmin({ route: { page: 'system' }, makeStats: { projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, userLimitBytes: 4 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3.5 * 1048576, published: 1, views: 7 }], top: [] } })
     const sec = screen.getByTestId('make-stats')
     expect(sec).toHaveTextContent('Проектов: 3')
-    expect(sec).toHaveTextContent('5.0 МБ')
+    expect(sec).toHaveTextContent('5 МБ')
     expect(within(sec).getByText('alice')).toBeInTheDocument()
     expect(within(sec).getByTestId('make-user-quota-warn')).toHaveTextContent('88% квоты')
   })

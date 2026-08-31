@@ -21,8 +21,8 @@ const profile: UserProfileInfo = {
   llmLimitUsd: 100,
   conversationCount: 7,
   agents: [
-    { id: 'm1', name: 'MacBook', online: true, createdAt: 0, lastSeen: NOW, policy: { allow: [], deny: [] } as never, version: '2.7.4', telemetry: { os: { platform: 'darwin', release: '15.6' } } as never },
-    { id: 'm2', name: 'Mac mini', online: false, createdAt: 0, lastSeen: NOW - 86_400_000, policy: { allow: [], deny: [] } as never }
+    { id: 'm1', name: 'MacBook', online: true, createdAt: 0, lastSeen: NOW, version: '2.7.4', telemetry: { os: { platform: 'darwin', release: '15.6' } } as never },
+    { id: 'm2', name: 'Mac mini', online: false, createdAt: 0, lastSeen: NOW - 86_400_000 }
   ]
 }
 

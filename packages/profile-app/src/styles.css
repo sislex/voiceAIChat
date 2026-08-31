@@ -46,7 +46,7 @@
 .vcp-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
 .vcp-section-head select, .vcp-history__filters select { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
 
-.vcp-access__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--panel); font-size: 11px; flex-wrap: wrap; }
+.vcp-provider__empty { margin: 0; padding: 12px 15px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; }
 .vcp-access__bulk { display: flex; gap: 8px; }
 .vcp-provider { border: 1px solid var(--border); border-radius: var(--radius-large); margin-top: 10px; overflow: hidden; }
 .vcp-provider__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; }

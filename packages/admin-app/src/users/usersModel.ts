@@ -99,3 +99,15 @@ export function pluralUsers(count: number): string {
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} пользователя`
   return `${count} пользователей`
 }
+
+/**
+ * Предел строк списка. Виртуализацию не тянем — библиотека стоит места в чанке,
+ * который и так на пределе, — но и рисовать тысячу строк разом нельзя: браузер
+ * тратит на это больше, чем человек успевает прочитать. Показываем первые
+ * `LIST_PAGE` и предлагаем догрузить.
+ */
+export const LIST_PAGE = 200
+
+export function pageUsers<T>(users: readonly T[], shown: number): { visible: T[]; rest: number } {
+  return { visible: users.slice(0, shown), rest: Math.max(0, users.length - shown) }
+}

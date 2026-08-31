@@ -9,6 +9,8 @@ import { SearchField } from './SearchField'
 import { Switch } from './Switch'
 import { StickyActionBar } from './StickyActionBar'
 import { Sparkline, sparklinePaths } from './Sparkline'
+import { Toolbar } from './Toolbar'
+import { DefinitionList } from './DefinitionList'
 
 describe('Avatar', () => {
   it('инициалы — до двух букв, разделители логина учитываются', () => {
@@ -169,5 +171,33 @@ describe('Sparkline', () => {
     expect(image).toHaveAccessibleName(/Расход по дням, USD/)
     expect(image).toHaveAccessibleName(/с 1 авг по 3 авг/)
     expect(image).toHaveAccessibleName(/максимум \$9\.00 — 2 авг/)
+  })
+})
+
+describe('Toolbar', () => {
+  it('сводка объявляется скринридеру только когда её просят живой', () => {
+    const { rerender } = render(<Toolbar summary="6 пользователей" testId="tb" />)
+    expect(screen.getByTestId('tb').querySelector('[role="status"]')).toBeNull()
+    rerender(<Toolbar summary="1 пользователь" live testId="tb" />)
+    expect(screen.getByRole('status')).toHaveTextContent('1 пользователь')
+  })
+
+  it('без действий правая часть не рисуется', () => {
+    const { container } = render(<Toolbar summary="12 разрешено" />)
+    expect(container.querySelector('.vc-toolbar__actions')).toBeNull()
+  })
+})
+
+describe('DefinitionList', () => {
+  it('пары связаны как dt/dd, а не слиты в строку текста', () => {
+    render(<DefinitionList testId="dl" items={[{ label: 'ОС', value: 'macOS 15.6' }, { label: 'Версия', value: '2.8.1' }]} />)
+    const list = screen.getByTestId('dl')
+    expect(list.querySelectorAll('dt')).toHaveLength(2)
+    expect(list.querySelectorAll('dd')[0]).toHaveTextContent('macOS 15.6')
+  })
+
+  it('пустое значение скрывается по требованию, а не показывается пустотой', () => {
+    render(<DefinitionList testId="dl" items={[{ label: 'ОС', value: '', hideWhenEmpty: true }, { label: 'Версия', value: '2.8.1' }]} />)
+    expect(screen.getByTestId('dl').querySelectorAll('dt')).toHaveLength(1)
   })
 })

@@ -93,6 +93,15 @@ export const Blocked: Story = {
   )
 }
 
+/** Тёмная тема: бейджи, полосы расхода и danger-zone обязаны читаться и в ней. */
+export const Dark: Story = {
+  render: () => (
+    <div data-theme="dark" style={{ background: 'var(--bg)', color: 'var(--text)', minHeight: '100vh' }}>
+      <Harness admin />
+    </div>
+  )
+}
+
 /** Телефон 390×844: рельса метрик в столбец, машины без горизонтального выезда. */
 export const Mobile: Story = {
   render: () => <Harness admin />,
