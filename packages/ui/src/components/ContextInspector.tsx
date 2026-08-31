@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AgentInfo } from '@shared/agentProtocol'
-import { CONTEXT_LOCK_TEXT } from '@shared/contextGating'
+import { CONTEXT_LOCK_TEXT, skillNameForContextId } from '@shared/contextGating'
+import { instructionIdForContextId, instructionText } from '@shared/chatInstructions'
 import { KB_CONTEXT_MODES, PERMISSION_MODES } from '@shared/types'
-import type { AgentsChainResult, ContextKbPreview, ContextSnapshotItem, ConversationContextSnapshot, KbContextMode, LlmProvider, PermissionMode, UserRole } from '@shared/types'
+import type { AgentsChainResult, ChatInstruction, ContextKbPreview, ContextSnapshotItem, ConversationContextSnapshot, KbContextMode, LlmProvider, PermissionMode, UserRole } from '@shared/types'
 import type { ProjectSummary } from '@shared/projects'
 import { Button, useToast } from '@voicechat/ui-kit'
 
@@ -22,6 +23,12 @@ export interface ContextInspectorProps {
   execTarget?: string | null
   /** Быстрая правка применена: у окна настроек свой черновик, его надо обновить. */
   onQuickEdit?: (value: { kbContextMode?: KbContextMode; permissionMode?: PermissionMode | null; llmProvider?: LlmProvider | null; llmModel?: string | null }) => void
+  /** Выбрать или снять навык разговора прямо из инспектора. */
+  onToggleSkill?: (name: string, selected: boolean) => void
+  /** Инструкции чата из общих настроек — правятся здесь же, но действуют везде. */
+  chatInstructions?: ChatInstruction[]
+  /** Сохранить правку текста инструкции (общие настройки пользователя). */
+  onSaveInstruction?: (id: string, text: string) => Promise<void>
 }
 
 const dynamicIds = new Set(['current-message', 'knowledge-mode'])
@@ -106,6 +113,14 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const [draft, setDraft] = useState('')
   const [kbPreview, setKbPreview] = useState<ContextKbPreview | null>(null)
   const [kbBusy, setKbBusy] = useState(false)
+  /**
+   * Короткое объявление результата действия для скринридера. Тост виден глазами,
+   * но выключение источника меняет содержимое списка, а не открывает окно —
+   * без aria-live человек с читалкой не узнаёт, что именно произошло.
+   */
+  const [announce, setAnnounce] = useState('')
+  /** Черновик текста инструкции чата в detail: правится и сохраняется по кнопке. */
+  const [instructionDraft, setInstructionDraft] = useState<string | null>(null)
   /** Цепочка AGENTS.md: читается только по явной просьбе — файл на чужой машине. */
   const [chain, setChain] = useState<AgentsChainResult | null>(null)
   const [chainBusy, setChainBusy] = useState(false)
@@ -134,8 +149,10 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     setBusy(true)
     try {
       const next = await window.api['conversations:setContextItem']({ id: props.conversationId, itemId: item.id, enabled })
-      if (next) setSnapshot(next)
-      else setSnapshotError('Разговор или источник больше недоступен.')
+      if (next) {
+        setSnapshot(next)
+        setAnnounce(`${item.title}: ${enabled ? 'учитывается' : 'выключено'}. Блоков промпта: ${next.promptPreview.blocks.length}, ≈${next.promptPreview.approxTokens} токенов.`)
+      } else setSnapshotError('Разговор или источник больше недоступен.')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -164,7 +181,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   const previewKb = async (): Promise<void> => {
     setKbBusy(true)
     try {
-      setKbPreview(await window.api['conversations:contextKbPreview']({ id: props.conversationId, draft }))
+      const result = await window.api['conversations:contextKbPreview']({ id: props.conversationId, draft })
+      setKbPreview(result)
+      setAnnounce(result?.text
+        ? `База знаний добавит ${result.sections.length} раздел(ов), ≈${result.approxTokens} токенов.`
+        : 'База знаний для этого черновика ничего не добавит.')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -181,7 +202,10 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       for (const item of items) {
         last = await window.api['conversations:setContextItem']({ id: props.conversationId, itemId: item.id, enabled })
       }
-      if (last) setSnapshot(last)
+      if (last) {
+        setSnapshot(last)
+        setAnnounce(`${enabled ? 'Включено' : 'Выключено'} источников: ${items.length}. Блоков промпта: ${last.promptPreview.blocks.length}, ≈${last.promptPreview.approxTokens} токенов.`)
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -259,9 +283,39 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   if (detailId && !detail) return <section className="context-detail"><Button size="sm" onClick={closeDetail}>← Ко всем источникам</Button><h2>Источник не найден</h2><p>Он мог стать недоступен после обновления конфигурации.</p></section>
   if (detail) {
     const block = snapshot.promptPreview.blocks.find((entry) => entry.itemIds.includes(detail.id))
+    const skillName = skillNameForContextId(detail.id)
+    const instructionId = instructionIdForContextId(detail.id)
+    const instruction = instructionId ? props.chatInstructions?.find((entry) => entry.id === instructionId) : undefined
+    // Базовый текст — эффективный: у встроенной без правки это стандартная
+    // подсказка, и показать надо именно её, а не пустое поле.
+    const baseText = instruction ? instructionText(instruction) : ''
+    const draftText = instructionDraft ?? baseText
+    const saveInstruction = async (): Promise<void> => {
+      if (!instruction || !props.onSaveInstruction) return
+      setBusy(true)
+      try {
+        await props.onSaveInstruction(instruction.id, draftText)
+        setInstructionDraft(null)
+        setReload((value) => value + 1)
+        toast.success('Текст инструкции сохранён')
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : String(error))
+      } finally {
+        setBusy(false)
+      }
+    }
     return <section className="context-detail" aria-labelledby="context-detail-title">
       <Button size="sm" onClick={closeDetail}>← Ко всем источникам</Button>
-      <header><span className="context-type">{detail.type}</span><h2 id="context-detail-title">{detail.title}</h2><p>{detail.description}</p></header>
+      <header className="context-detail-head">
+        <div>
+          <span className="context-type">{detail.type}</span>
+          <h2 id="context-detail-title">{detail.title}</h2>
+          <p>{detail.description}</p>
+        </div>
+        {/* Ссылка на конкретный источник: обсуждая «почему модель это знает»,
+            удобно дать адрес карточки, а не объяснять путь по вкладкам. */}
+        <Button size="sm" variant="ghost" onClick={() => void copy(`${window.location.origin}${window.location.pathname}#/chat/${encodeURIComponent(props.conversationId)}/context/${encodeURIComponent(detail.id)}`, 'Ссылка')}>Скопировать ссылку</Button>
+      </header>
       {detail.toggleable
         ? <label className="context-detail-toggle"><input type="checkbox" checked={detail.enabled} disabled={busy} onChange={(event) => void toggleItem(detail, event.target.checked)} /><span>Учитывать в этом разговоре</span></label>
         : <p className="context-note" data-testid="context-lock-note">🔒 {CONTEXT_LOCK_TEXT[detail.lockReason ?? 'info']}</p>}
@@ -277,6 +331,31 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           .filter(([, value]) => !(block && typeof value === 'string' && value.trim() === block.text.trim()))
           .map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(', ') : String(value ?? '—')}</dd></div>)}
       </dl>
+      {/* Навык выбирается здесь же: раньше инспектор показывал «выбран/не выбран»
+          и отправлял человека на другую вкладку менять то, что он уже видит. */}
+      {skillName && props.onToggleSkill && <div className="context-detail-toggle">
+        <label>
+          <input type="checkbox" checked={props.selectedSkillNames.includes(skillName)} disabled={busy} onChange={(event) => props.onToggleSkill!(skillName, event.target.checked)} />
+          <span>Выбрать навык для этого разговора</span>
+        </label>
+        <small>Выбор не равен активации: навык применяется, когда сообщение к нему подходит.</small>
+      </div>}
+      {/* Текст инструкции чата живёт в общих настройках пользователя, поэтому
+          правка отсюда действует во всех его разговорах — об этом сказано прямо. */}
+      {instruction && props.onSaveInstruction && <section className="context-card" aria-labelledby="context-instruction-edit">
+        <h3 id="context-instruction-edit">Текст инструкции</h3>
+        <p className="context-note">Это общая настройка: правка подействует во всех ваших разговорах. Чтобы отключить инструкцию только здесь, снимите галочку выше.</p>
+        <div className="context-kbdraft">
+          <label>
+            <span>Текст, который получает модель</span>
+            <textarea rows={6} value={draftText} aria-label="Текст инструкции" onChange={(event) => setInstructionDraft(event.target.value)} />
+          </label>
+          <div className="context-actions">
+            <Button size="sm" disabled={busy || draftText === baseText} onClick={() => void saveInstruction()}>Сохранить текст</Button>
+            <Button size="sm" variant="ghost" disabled={draftText === baseText} onClick={() => setInstructionDraft(null)}>Вернуть как было</Button>
+          </div>
+        </div>
+      </section>}
       {block && <section className="context-card" aria-labelledby="context-detail-block">
         <h3 id="context-detail-block">Текст в промпте следующего хода</h3>
         {block.itemIds.length > 1 && <p className="context-note">Одна подсказка на несколько источников ({block.title}) — модели уходит общий текст.</p>}
@@ -343,6 +422,10 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       <span className="context-eyebrow">Контекст и инструкции</span>
       <h2 id="context-inspector-title">Что получит ИИ в следующем сообщении</h2>
       <p>Здесь собраны эффективные настройки запуска и сведения, которые помогут ИИ ответить. Итог динамических источников определится после отправки текста.</p>
+      <p className="context-summary" data-testid="context-summary">
+        Сервер добавит ≈{preview.approxTokens} токенов в {preview.blocks.length} блок(ах){snapshot.lastTurn ? `; в прошлый ход ушло ≈${snapshot.lastTurn.approxTokens}` : ''}.
+        {' '}Выключено источников: {disabledToggleable.length} из {toggleable.length}.
+      </p>
       <p className="context-role" data-testid="context-role-hint">{roleHint(snapshot.viewerRole)}</p>
     </header>
     {/* Предупреждения считает сервер: настройки формально верны, но вместе дают
@@ -396,16 +479,28 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     <section className="context-card" aria-labelledby="context-prompt-title">
       <h3 id="context-prompt-title">Итоговый текст для модели</h3>
       <div className="context-prompt-head">
-        <p data-testid="context-prompt-size">Сервер добавит {preview.blocks.length} блок(ов): ≈{preview.approxTokens} токенов, {preview.chars} символов.</p>
+        <p data-testid="context-prompt-size">Сервер добавит {preview.blocks.length} блок(ов): ≈{preview.approxTokens} токенов, {preview.chars} символов. Снимок от {new Date(snapshot.generatedAt).toLocaleTimeString('ru-RU')}.</p>
         <div className="context-actions">
           <Button size="sm" disabled={!preview.text} onClick={() => void copy(preview.text, 'Текст')}>Скопировать текст</Button>
           <Button size="sm" variant="ghost" onClick={() => void copy(JSON.stringify(snapshot, null, 2), 'Снимок')}>Скопировать JSON снимка</Button>
           <Button size="sm" variant="ghost" onClick={() => download(`context-${props.conversationId}.json`, JSON.stringify(snapshot, null, 2), 'application/json')}>Скачать снимок</Button>
           <Button size="sm" variant="ghost" onClick={() => download(`context-${props.conversationId}.md`, markdownReport(snapshot), 'text/markdown')}>Скачать отчёт (Markdown)</Button>
+          {/* Настройки могли измениться в другом окне или другим админом:
+              снимок отражает момент открытия, и обновить его надо уметь. */}
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setReload((value) => value + 1)}>Обновить снимок</Button>
         </div>
       </div>
       {preview.text
-        ? <pre className="context-prompt" data-testid="context-prompt-preview">{preview.text}</pre>
+        ? (query.trim()
+            ? (() => {
+                // При активном поиске показываем только те блоки, где он встречается:
+                // искать глазами в двух тысячах символов — не работа для человека.
+                const found = preview.blocks.filter((block) => block.text.toLowerCase().includes(query.trim().toLowerCase()))
+                return found.length
+                  ? <pre className="context-prompt" data-testid="context-prompt-preview">{found.map((block) => `— ${block.title} —\n${block.text}`).join('\n\n')}</pre>
+                  : <p className="context-empty" data-testid="context-prompt-preview">В блоках промпта «{query.trim()}» не встречается.</p>
+              })()
+            : <pre className="context-prompt" data-testid="context-prompt-preview">{preview.text}</pre>)
         : <p className="context-empty">Своих блоков сервер не добавляет: в ход уйдут только история разговора и ваше сообщение.</p>}
       <details className="context-omitted"><summary>Чего в этом тексте нет</summary><ul>{preview.omitted.map((line) => <li key={line}>{line}</li>)}</ul></details>
     </section>
@@ -458,9 +553,20 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         {snapshot.lastTurn.attachments > 0 ? ` · вложений: ${snapshot.lastTurn.attachments}` : ''}
         {snapshot.lastTurn.kbSections.length ? ` · база знаний: ${snapshot.lastTurn.kbSections.join(', ')}` : ' · без автоконтекста базы знаний'}
       </p>
+      {/* Что изменилось с того хода: сравниваем блоки прогноза с текстом,
+          который реально ушёл. Дифф построчный не нужен — важно, какие блоки
+          добавились или пропали, а не как переставились символы. */}
+      {(() => {
+        const sent = snapshot.lastTurn!.prompt
+        const added = preview.blocks.filter((block) => !sent.includes(block.text.trim())).map((block) => block.title)
+        return added.length > 0
+          ? <p className="context-note" data-testid="context-lastturn-diff">С того хода добавились блоки: {added.join(', ')} — модель их ещё не видела.</p>
+          : <p className="context-note" data-testid="context-lastturn-diff">Новых блоков с того хода нет: постоянная часть промпта та же.</p>
+      })()}
       <details className="context-omitted"><summary>Показать отправленный текст</summary><pre className="context-prompt" data-testid="context-lastturn-prompt">{snapshot.lastTurn.prompt}</pre></details>
       <div className="context-actions"><Button size="sm" onClick={() => void copy(snapshot.lastTurn!.prompt, 'Текст')}>Скопировать отправленное</Button></div>
     </section>}
+    <p className="context-announce" role="status" aria-live="polite" data-testid="context-announce">{announce}</p>
     <div className="context-filters" role="search">
       <input type="search" value={query} placeholder="Поиск по источникам контекста" aria-label="Поиск по источникам контекста" onChange={(event) => setQuery(event.target.value)} />
       <div className="context-filter-tabs" role="group" aria-label="Фильтр источников">
@@ -483,6 +589,11 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     {instructionItems.length > 0 && <details className="context-section" open><summary><span><b>Инструкции чата</b><small>Подсказки из общих настроек; здесь их можно выключить только для этого разговора</small></span><span className="context-count">{instructionItems.length}</span></summary>{itemList(instructionItems, 'Под фильтр и поиск ничего не подошло.')}</details>}
     <details className="context-section" data-testid="context-excluded"><summary><span><b>Не попадёт в следующий ход</b><small>Выключенное вами, ненастроенное и недоступное — с причиной</small></span><span className="context-count">{excludedItems.length}</span></summary>{itemList(excludedItems, 'Всё найденное попадёт в следующий ход.', false)}</details>
     <details className="context-section"><summary><span><b>Дополнительные возможности</b><small>Навыки, MCP, приложения, плагины, машины и AGENTS.md</small></span><span className="context-count">{additionalItems.length}</span></summary>{itemList(additionalItems, 'Дополнительные возможности не обнаружены.')}</details>
+    {snapshot.changes.length > 0 && <details className="context-section" data-testid="context-changes"><summary><span><b>Журнал изменений контекста</b><small>Кто и когда выключал или возвращал источники этого разговора</small></span><span className="context-count">{snapshot.changes.length}</span></summary>
+      <ul className="context-changelog">{snapshot.changes.map((event) => <li key={`${event.at}-${event.itemId}-${String(event.enabled)}`}>
+        <b>{new Date(event.at).toLocaleString('ru-RU')}</b> · {event.actor} · {event.enabled ? 'вернул' : 'выключил'}: {byId(event.itemId)?.title ?? event.itemId}
+      </li>)}</ul>
+    </details>}
     <details className="context-section"><summary><span><b>Технические сведения</b><small>Диагностика снимка и исходные признаки</small></span><span className="context-count">{allItems.length}</span></summary><div className="context-technical"><dl><div><dt>Время снимка</dt><dd>{new Date(snapshot.generatedAt).toLocaleString('ru-RU')}</dd></div><div><dt>Версия схемы</dt><dd>{snapshot.schemaVersion}</dd></div><div><dt>Роль смотрящего</dt><dd>{snapshot.viewerRole}</dd></div><div><dt>Актуальность</dt><dd>{snapshot.freshnessWarning}</dd></div></dl>{snapshotGroups.map((group) => <section key={group.id}><h4>{group.title}</h4><div className="context-tech-items">{group.items.map((item) => <button type="button" key={item.id} onClick={() => openDetail(item.id)}><b>{item.title}</b><small>ID: {item.id} · configured: {state(item.configured)} · available: {state(item.available)} · includedInNextTurn: {state(item.includedInNextTurn)} · enabled: {state(item.enabled)}</small></button>)}</div></section>)}</div></details>
   </section>
 }

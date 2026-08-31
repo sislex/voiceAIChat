@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { KB_CONTEXT_MODES, normalizeClaudeModel, PERMISSION_MODES } from '@shared/types'
-import type { Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
+import type { ChatInstruction, Conversation, KbContextMode, LlmProvider, PermissionMode, Settings, UserRole } from '@shared/types'
 import type { AgentInfo, AgentSkill, FsEntry } from '@shared/agentProtocol'
 import type { LlmEngineOption } from '@shared/admin'
 import type { ChatStorageView, MachineStorage, ProjectDetail, ProjectMachine, ProjectSummary } from '@shared/projects'
@@ -58,6 +58,10 @@ export interface ConversationSettingsProps {
     projectId: string | null
   }) => Promise<void>
   onAddSkill: (agentId: string, skill: AgentSkill) => Promise<void>
+  /** Инструкции чата из общих настроек — инспектор контекста правит их текст. */
+  chatInstructions?: ChatInstruction[]
+  /** Сохранить текст инструкции (общая настройка пользователя). */
+  onSaveInstruction?: (id: string, text: string) => Promise<void>
   /** Открыть существующую панель статистики БЗ текущего разговора. */
   onOpenKbUsage?: () => void
   onClose: () => void
@@ -76,7 +80,7 @@ function modeLabel(id: PermissionMode): string {
   return PERMISSION_MODES.find((m) => m.id === id)?.label ?? id
 }
 
-export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
+export function ConversationSettings({ conversation, agents, machineOps, role, llmAccess = [], settings, engines = [], projects, webReaderDiagnostics, playwrightReaderDiagnostics, consoleReaderDiagnostics, makeDiagnostics, chatDiagnostics, onOpenExplorer, fetchProjectDetail, fetchMachines, onSave, onAddSkill, chatInstructions, onSaveInstruction, onOpenKbUsage, onClose }: ConversationSettingsProps): JSX.Element {
   const confirm = useConfirm()
   const toast = useToast()
   const [title, setTitle] = useState(conversation.title)
@@ -333,6 +337,9 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
           selectedSkillNames={skillNames}
           onOpenSettings={() => selectTab('general')}
           execTarget={execTarget}
+          onToggleSkill={(name, selected) => setSkillNames((prev) => selected ? [...new Set([...prev, name])] : prev.filter((entry) => entry !== name))}
+          {...(chatInstructions ? { chatInstructions } : {})}
+          {...(onSaveInstruction ? { onSaveInstruction } : {})}
           onQuickEdit={(patch) => {
             // Быстрая правка уже сохранена на сервере; черновик окна обязан
             // догнать её, иначе кнопка «Сохранить» вернёт старое значение.
