@@ -28,6 +28,19 @@
   --space-100: 8px;
   --space-150: 12px;
   --radius-medium: 6px;
+  /* Крупные скругления карточек и панелей: макет админки просит 14/19px там, где
+     6px «маленькой» ступени читается как поле ввода, а не как карточка. */
+  --radius-large: 14px;
+  --radius-xl: 19px;
+  --ci-progress: #985a00;
+  --ci-progress-bg: #fbeecb;
+  /* Семантические псевдонимы: компоненты кита говорят «успех/предупреждение»,
+     а не «ci-цвет». Тот же приём уже применён в app.css. */
+  --success: var(--ci-success);
+  --success-soft: var(--ci-success-bg);
+  --warning: var(--ci-progress);
+  --warning-soft: var(--ci-progress-bg);
+  --danger-soft: var(--ci-removed-bg);
   --skeleton-base: #e6e4dc;
   --skeleton-shine: #f5f4ef;
 }
@@ -53,6 +66,8 @@
   --ci-success-bg: #d3eee9;
   --ci-removed: #a62b24;
   --ci-removed-bg: #f6deda;
+  --ci-progress: #8a4b00;
+  --ci-progress-bg: #f8e8c7;
   --skeleton-base: #d9e6d7;
   --skeleton-shine: #eef5ed;
   color-scheme: light;
@@ -80,6 +95,8 @@
   --ci-success-bg: #163326;
   --ci-removed: #e8897c;
   --ci-removed-bg: #3a1f1a;
+  --ci-progress: #e2a13a;
+  --ci-progress-bg: #3a2f18;
   --skeleton-base: #2e2e26;
   --skeleton-shine: #3b3a31;
   color-scheme: dark;
@@ -148,7 +165,75 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-state__ico{font-size:22px;line-height:1;opacity:.75}.vc-state--compact .vc-state__ico{font-size:16px}.vc-state__title{margin:0;font-weight:600;color:var(--text)}.vc-state__text{margin:0;max-width:44ch;line-height:1.45}
 .vc-state__detail{max-width:100%;font-size:12px}.vc-state__detail summary{cursor:pointer;color:var(--accent)}.vc-state__detail pre{margin:6px 0 0;padding:8px 10px;max-height:160px;overflow:auto;border-radius:var(--radius-medium);background:var(--surface);color:var(--text);text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}
 .vc-state--error .vc-state__ico{color:var(--danger);opacity:1}.vc-state--error.vc-state--compact{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;text-align:left;padding:10px 14px;border-radius:var(--radius-medium);background:var(--ci-removed-bg);color:var(--ci-removed)}.vc-state--error.vc-state--compact .vc-state__title{color:inherit}
-@media(prefers-reduced-motion:reduce){.vc-btn__spinner,.vc-skel,.vc-refresh__spinner,.vc-dialog,.vc-dialog-overlay,.vc-toast{animation:none}}
+
+/* Аватар: круг с инициалами. Фон — сгенерированный насыщенный цвет, подпись на
+   нём всегда белая (контраст подобран в Avatar.tsx), поэтому цвет текста один
+   для всех тем. */
+.vc-avatar{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;border-radius:50%;color:#fff;font-weight:600;line-height:1;overflow:hidden}
+.vc-avatar__photo{width:100%;height:100%;object-fit:cover}
+
+/* Лозенга состояния живёт в блоке `.vc-pill` ниже: она одна на всё приложение. */
+
+/* Вкладки. */
+.vc-tabs{display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--border)}
+.vc-tab{display:inline-flex;align-items:center;gap:5px;padding:11px 14px;border:0;border-bottom:2px solid transparent;background:none;color:var(--text-dim);font:inherit;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
+.vc-tab:hover{color:var(--text)}
+.vc-tab--on{color:var(--accent);border-bottom-color:var(--accent)}
+.vc-tab__count{padding:1px 6px;border-radius:8px;background:var(--surface-hover);color:var(--text-dim);font-size:11px}
+.vc-tab--on .vc-tab__count{background:var(--accent-soft);color:var(--accent)}
+
+/* Поиск. */
+.vc-search{display:flex;align-items:center;gap:6px;min-width:0;height:38px;padding:0 10px;border:1px solid var(--border);border-radius:var(--radius-medium);background:var(--surface)}
+.vc-search:focus-within{border-color:var(--accent)}
+.vc-search--compact{height:34px}
+.vc-search__ico{color:var(--text-dim);font-size:16px}
+.vc-search__input{flex:1;min-width:0;border:0;outline:0;background:none;color:var(--text);font:inherit;font-size:13px}
+.vc-search__input::-webkit-search-cancel-button{display:none}
+.vc-search__clear{border:0;background:none;color:var(--text-dim);font:inherit;cursor:pointer;padding:0 2px}
+
+/* Тумблер. */
+.vc-switch{position:relative;width:38px;height:22px;flex:0 0 auto;padding:2px;border:0;border-radius:999px;background:var(--border);cursor:pointer;transition:background .15s}
+.vc-switch--on{background:var(--accent)}
+.vc-switch:disabled{opacity:.5;cursor:not-allowed}
+.vc-switch__knob{display:block;width:18px;height:18px;border-radius:50%;background:var(--surface);transition:transform .15s}
+.vc-switch--on .vc-switch__knob{transform:translateX(16px)}
+
+/* Полоса несохранённых изменений. */
+.vc-actionbar{position:fixed;left:50%;bottom:20px;z-index:40;display:flex;align-items:center;gap:12px;max-width:min(560px,calc(100vw - 32px));padding:10px 12px 10px 16px;border:1px solid var(--border);border-radius:var(--radius-large);background:var(--surface);box-shadow:var(--shadow-lg,0 12px 30px rgba(0,0,0,.18));transform:translate(-50%,140%);transition:transform .2s;pointer-events:none}
+.vc-actionbar--on{transform:translate(-50%,0);pointer-events:auto}
+.vc-actionbar__text{display:grid;gap:2px;min-width:0}
+.vc-actionbar__text b{font-size:13px}
+.vc-actionbar__text small{color:var(--text-dim);font-size:11px}
+.vc-actionbar__actions{display:flex;gap:8px;flex:0 0 auto}
+
+/* График-строка. */
+.vc-spark{display:block;min-width:0}
+.vc-spark svg{display:block;width:100%;height:auto}
+.vc-spark__line{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}
+.vc-spark__area{fill:var(--accent-soft)}
+.vc-spark__labels{display:flex;justify-content:space-between;margin-top:4px;color:var(--text-dim);font-size:10px}
+
+@media (max-width: 640px) {
+  /* Палец не попадает в 22px-тумблер и в 34px-вкладку: порог тот же, что
+     сторожит scripts/mobile-shots.mts. */
+  .vc-switch { min-width:44px;min-height:40px;padding:9px 3px }
+  .vc-switch__knob { width:18px;height:18px }
+  .vc-switch--on .vc-switch__knob { transform:translateX(20px) }
+  .vc-tab { min-height:40px }
+  .vc-search__clear { min-width:40px;min-height:40px }
+  .vc-actionbar { left:12px;right:12px;bottom:12px;max-width:none;transform:translateY(140%) }
+  /* Кнопки полосы сохранения — единственный способ применить или отменить
+     правку, промахнуться по ним нельзя. */
+  .vc-actionbar .vc-btn { min-height:40px }
+  .vc-actionbar--on { transform:translateY(0) }
+}
+
+
+/* Строка «сводка + действия». */
+.vc-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-medium);background:var(--panel);font-size:11px}
+.vc-toolbar--bare{padding:2px 0;border:0;background:none;color:var(--text-dim)}
+.vc-toolbar__summary{min-width:0}
+.vc-toolbar__actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
 /* ---- Язык панелей рана: лозенга, шапка, сводка, шаги, лента, подразделы ----
    Десять вкладок карточки задачи рисовали одно и то же (состояние этапа, шаги,
@@ -160,6 +245,7 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-pill { flex:none;display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap }
 .vc-pill--neutral { background:var(--ci-neutral-bg);color:var(--ci-neutral) }
 .vc-pill--running { background:var(--accent-soft);color:var(--accent) }
+.vc-pill--accent { background:var(--accent-soft);color:var(--accent) }
 .vc-pill--success { background:var(--ci-success-bg);color:var(--ci-success) }
 .vc-pill--warning { background:var(--ci-progress-bg);color:var(--ci-progress) }
 .vc-pill--danger { background:var(--ci-removed-bg);color:var(--ci-removed) }
@@ -182,6 +268,10 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-ring--neutral { --vc-ring-color:var(--ci-neutral) }
 
 .vc-panel-head { display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px }
+/* Шапка целой страницы: тот же компонент, но заголовок крупнее и выравнивание по низу. */
+.vc-panel-head--page { align-items:flex-end }
+.vc-panel-head--page .vc-panel-head__title { font-size:26px;letter-spacing:-.03em }
+@media (max-width: 480px) { .vc-panel-head--page .vc-panel-head__title { font-size:22px } }
 .vc-panel-head__text { min-width:0 }
 .vc-panel-head__kicker { display:block;color:var(--accent);font-size:11px;font-weight:750;letter-spacing:.07em;text-transform:uppercase }
 .vc-panel-head__title { margin:3px 0 5px;font-size:18px;letter-spacing:-.02em;overflow-wrap:anywhere }
@@ -190,6 +280,13 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 
 .vc-metrics { display:grid;grid-template-columns:repeat(var(--vc-metrics-columns,3),minmax(0,1fr));gap:var(--space-150);margin:0 0 var(--space-2,16px) }
 .vc-metric { min-width:0;padding:var(--space-150);border:1px solid var(--border-soft);border-radius:10px;background:var(--panel) }
+/* Подсказка под значением: динамика, доля лимита, уточнение. */
+.vc-metric__hint { margin:5px 0 0;color:var(--text-dim);font-size:11px }
+.vc-metric__hint--positive { color:var(--success) }
+.vc-metric__hint--warning { color:var(--warning) }
+.vc-metric__hint--danger { color:var(--danger) }
+.vc-metrics--compact .vc-metric { padding:10px 12px;border-radius:var(--radius-medium) }
+.vc-metrics--compact .vc-metric__value { font-size:14px }
 .vc-metric__label { color:var(--text-dim);font-size:11px }
 .vc-metric__value { margin:6px 0 0;font-size:13px;font-weight:600;overflow-wrap:anywhere }
 

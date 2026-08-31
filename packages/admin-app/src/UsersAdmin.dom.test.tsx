@@ -4,11 +4,13 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { UsersAdmin, type UsersAdminProps } from './UsersAdmin'
 import type { AdminLlmEngine, AdminUserInfo } from '@shared/admin'
-import { makeConversation } from './test/fixtures/conversations'
+
+const NOW = Date.now()
 
 const users: AdminUserInfo[] = [
-  { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 2, agents: [] },
-  { name: 'bob', role: 'developer', blocked: false, createdAt: 2, conversationCount: 0, agents: [] }
+  { name: 'admin', role: 'admin', blocked: false, createdAt: 1, conversationCount: 2, agents: [], lastSeenAt: NOW - 30_000, liveSessions: 1 },
+  // Разговоры у bob есть: без них отчёт расхода намеренно не запрашивается.
+  { name: 'bob', role: 'developer', blocked: false, createdAt: 2, conversationCount: 4, agents: [], lastSeenAt: NOW - 2 * 86_400_000, liveSessions: 0 }
 ]
 
 const engines: AdminLlmEngine[] = [
@@ -56,55 +58,155 @@ function renderAdmin(props: Partial<UsersAdminProps> = {}): UsersAdminProps {
   return full
 }
 
-describe('UsersAdmin', () => {
-  it('рендерит дашборд со сводкой и открывает карточку кликом', async () => {
-    const p = renderAdmin({ usageSummary: [{ name: 'bob', totals: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, costUsd: 0.02, messages: 1 }, byModel: [{ model: 'gpt', inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, costUsd: 0.02, messages: 1 }] }] })
+/** Карточка выбранного человека: пропс `selected` + маршрут с вкладкой. */
+function renderUser(name: string, tab: 'overview' | 'access' | 'machines' | 'usage' | 'history' = 'overview', props: Partial<UsersAdminProps> = {}): UsersAdminProps {
+  return renderAdmin({ selected: name, route: { page: 'users', userName: name, tab }, ...props })
+}
+
+describe('UsersAdmin — список и метрики', () => {
+  it('метрики считают людей, активность и расход, список открывает карточку кликом', async () => {
+    const p = renderAdmin({
+      usageSummary: [{ name: 'bob', totals: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, costUsd: 0.02, messages: 1 }, byModel: [{ model: 'gpt', inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, costUsd: 0.02, messages: 1 }] }]
+    })
+    const metrics = screen.getByTestId('users-metrics')
+    expect(metrics).toHaveTextContent('Всего пользователей')
+    expect(metrics).toHaveTextContent('$0.02')
     expect(screen.getAllByTestId('user-item')).toHaveLength(2)
-    expect(screen.getByTestId('users-dashboard')).toHaveTextContent('gpt')
-    await userEvent.click(screen.getAllByTestId('user-dashboard-row')[1]!)
+    await userEvent.click(screen.getAllByTestId('user-item')[1]!)
     expect(p.onSelect).toHaveBeenCalledWith('bob')
   })
 
-  it('даты дашборда — в русском формате, а не в локали браузера', () => {
-    // 1 января 2026 в UTC. Без явной локали здесь выходило «1/1/2026»: в русском
-    // интерфейсе день и месяц в таком виде не различить.
-    renderAdmin({ users: [{ name: 'bob', role: 'developer', blocked: false, createdAt: Date.UTC(2026, 0, 1, 12), conversationCount: 0, agents: [] }] })
-    expect(screen.getByTestId('users-dashboard')).toHaveTextContent('01.01.2026')
+  it('поиск и фильтр статуса сужают список, счётчик показывает выборку', async () => {
+    renderAdmin()
+    await userEvent.type(screen.getByTestId('users-search'), 'bob')
+    // Ввод дебаунсится: список не пересобирается на каждую букву.
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(1))
+    expect(screen.getByTestId('users-count')).toHaveTextContent('1 пользователь из 2')
+
+    await userEvent.clear(screen.getByTestId('users-search'))
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(2))
+    await userEvent.selectOptions(screen.getByLabelText('Статус'), 'online')
+    expect(screen.getAllByTestId('user-item')).toHaveLength(1)
+    expect(screen.getAllByTestId('user-item')[0]).toHaveTextContent('admin')
   })
 
-  it('у обычного пользователя нет вкладки машин', () => {
-    renderAdmin({ selected: 'bob', isAdmin: false })
-    // Вкладки — role=tab внутри role=tablist: иначе axe даёт critical
-    // aria-required-children, и запрос по button их больше не находит.
-    expect(screen.queryByRole('tab', { name: 'Машины пользователя' })).toBeNull()
-    expect(screen.getByRole('tab', { name: 'Доступ к моделям' })).toBeInTheDocument()
+  it('счётчик списка объявляется скринридеру: иначе результат фильтра не слышен', async () => {
+    renderAdmin()
+    await userEvent.type(screen.getByTestId('users-search'), 'bob')
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1 пользователь из 2'))
   })
 
-  it('создание пользователя зовёт onCreate', async () => {
-    const p = renderAdmin()
-    await userEvent.type(screen.getByLabelText('Логин нового пользователя'), 'carol')
-    await userEvent.selectOptions(screen.getByLabelText('Роль нового пользователя'), 'developer')
-    await userEvent.click(screen.getByRole('button', { name: 'Создать' }))
-    expect(p.onCreate).toHaveBeenCalledWith('carol', '', 'developer', true)
+  it('Esc в поиске возвращает полный список', async () => {
+    renderAdmin()
+    await userEvent.type(screen.getByTestId('users-search'), 'bob')
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(1))
+    screen.getByTestId('users-search').focus()
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.getAllByTestId('user-item')).toHaveLength(2))
   })
 
-  it('у обычного пользователя есть блок/удаление', () => {
-    renderAdmin({ selected: 'bob' })
+  it('выбор с клавиатуры уводит фокус в карточку, а не оставляет в списке', async () => {
+    renderAdmin({ selected: null })
+    const row = screen.getAllByTestId('user-item')[1]!
+    row.focus()
+    await userEvent.keyboard('{Enter}')
+    // Карточку рисует уже выбранный пропс: проверяем, что список отдал признак
+    // «выбор с клавиатуры» и цель фокуса существует.
+    expect(screen.getByTestId('user-detail')).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('стрелки ходят по списку, не открывая чужие карточки', async () => {
+    const p = renderAdmin({ selected: null })
+    const rows = screen.getAllByTestId('user-item')
+    rows[0]!.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(document.activeElement).toBe(rows[1])
+    // Движение по списку — не выбор: карточка чужого человека не грузится.
+    expect(p.onSelect).not.toHaveBeenCalled()
+    await userEvent.keyboard('{End}')
+    expect(document.activeElement).toBe(rows[rows.length - 1])
+    await userEvent.keyboard('{Enter}')
+    expect(p.onSelect).toHaveBeenCalledTimes(1)
+  })
+
+  it('без выбранного человека карточка объясняет, что делать', () => {
+    renderAdmin()
+    expect(screen.getByTestId('user-detail')).toHaveTextContent('Выберите человека')
+  })
+})
+
+describe('UsersAdmin — масштаб', () => {
+  it('тысяча учёток рисуется страницей: на экране не больше предела списка', () => {
+    const many: AdminUserInfo[] = Array.from({ length: 1000 }, (_, index) => ({
+      name: `user-${String(index).padStart(4, '0')}`,
+      role: 'developer' as const,
+      blocked: false,
+      createdAt: 1,
+      conversationCount: 0,
+      machinesTotal: 0,
+      machinesOnline: 0,
+      lastSeenAt: NOW - index * 1000,
+      liveSessions: 0
+    }))
+    const started = Date.now()
+    renderAdmin({ users: many })
+    // Предел списка держит DOM в разумных границах, а не рисует тысячу строк.
+    expect(screen.getAllByTestId('user-item')).toHaveLength(200)
+    expect(screen.getByTestId('users-count')).toHaveTextContent('1000')
+    // Порог намеренно щедрый: он ловит возврат к отрисовке всего списка, а не
+    // соревнуется с производительностью машины.
+    expect(Date.now() - started).toBeLessThan(4000)
+  })
+
+  it('«показать ещё» догружает следующую страницу и сообщает остаток', async () => {
+    const many: AdminUserInfo[] = Array.from({ length: 260 }, (_, index) => ({
+      name: `user-${index}`, role: 'developer' as const, blocked: false, createdAt: 1,
+      conversationCount: 0, machinesTotal: 0, machinesOnline: 0, lastSeenAt: NOW - index, liveSessions: 0
+    }))
+    renderAdmin({ users: many })
+    expect(screen.getByRole('button', { name: /Показать ещё 60 из 60/ })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Показать ещё/ }))
+    expect(screen.getAllByTestId('user-item')).toHaveLength(260)
+    expect(screen.queryByRole('button', { name: /Показать ещё/ })).toBeNull()
+  })
+})
+
+describe('UsersAdmin — карточка человека', () => {
+  it('у обычной учётки есть блокировка и удаление', () => {
+    renderUser('bob')
     const detail = screen.getByTestId('user-detail')
-    expect(within(detail).getByRole('button', { name: 'Заблокировать' })).toBeInTheDocument()
+    expect(within(detail).getAllByRole('button', { name: 'Заблокировать' }).length).toBeGreaterThan(0)
     expect(within(detail).getByRole('button', { name: 'Удалить учётку' })).toBeInTheDocument()
   })
 
-  it('admin нельзя блокировать/удалять (кнопок нет)', () => {
-    renderAdmin({ selected: 'admin' })
+  it('встроенного admin и себя блокировать и удалять нельзя', () => {
+    renderUser('admin')
     const detail = screen.getByTestId('user-detail')
     expect(within(detail).queryByRole('button', { name: 'Заблокировать' })).toBeNull()
     expect(within(detail).queryByRole('button', { name: 'Удалить учётку' })).toBeNull()
+    expect(within(detail).queryByLabelText('Роль пользователя')).toBeNull()
   })
 
-  it('показывает отчёт по токенам', () => {
-    renderAdmin({
-      selected: 'bob',
+  it('блокировка подтверждается диалогом и передаёт причину', async () => {
+    const p = renderUser('bob')
+    await userEvent.click(within(screen.getByTestId('danger-zone')).getByRole('button', { name: 'Заблокировать' }))
+    await userEvent.type(within(screen.getByTestId('block-dialog')).getByLabelText('Причина'), 'запрос СБ')
+    await userEvent.click(within(screen.getByTestId('block-dialog')).getByRole('button', { name: 'Заблокировать' }))
+    expect(p.onSetBlocked).toHaveBeenCalledWith('bob', true, 'запрос СБ')
+  })
+
+  it('не-админ видит карточку без административных действий', () => {
+    renderUser('bob', 'overview', { isAdmin: false })
+    const detail = screen.getByTestId('user-detail')
+    expect(within(detail).queryByRole('button', { name: 'Удалить учётку' })).toBeNull()
+    expect(within(detail).queryByLabelText('Роль пользователя')).toBeNull()
+    expect(screen.getByRole('tab', { name: /Доступ/ })).toBeInTheDocument()
+  })
+})
+
+describe('UsersAdmin — расход', () => {
+  it('показывает токены и ответы модели', () => {
+    renderUser('bob', 'usage', {
       usage: {
         unit: 'day',
         conversationId: null,
@@ -114,12 +216,13 @@ describe('UsersAdmin', () => {
         byConversation: []
       }
     })
-    expect(screen.getByTestId('usage-total')).toHaveTextContent('Ответы3')
+    const tab = screen.getByTestId('usage-tab')
+    expect(tab).toHaveTextContent('1.8k')
+    expect(tab).toHaveTextContent('3')
   })
 
   it('не показывает нулевую цену при неизвестном тарифе Codex', () => {
-    renderAdmin({
-      selected: 'bob',
+    renderUser('bob', 'usage', {
       usage: {
         unit: 'day', conversationId: null,
         totals: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, costUsd: 0, costIncomplete: true, messages: 1 },
@@ -128,43 +231,69 @@ describe('UsersAdmin', () => {
         byConversation: []
       }
     })
-    expect(screen.getByTestId('usage-total')).toHaveTextContent('По данным CLI—')
-    expect(screen.getByTestId('usage-total')).toHaveTextContent('По прайсу—')
-    expect(screen.getByTitle('Есть ответы без цены CLI и строки прайса')).toBeInTheDocument()
+    expect(screen.getByTestId('usage-tab')).toHaveTextContent('—')
+    expect(screen.getByTestId('usage-tab')).toHaveTextContent('часть ответов без известного тарифа')
   })
 
-  it('перезагружает расход при смене периода и разговора', async () => {
-    const conversation = makeConversation({ id: 'chat-usage', title: 'Точный разговор' })
-    const p = renderAdmin({ selected: 'bob', conversations: [conversation] })
-    await userEvent.selectOptions(screen.getByLabelText('Период расхода'), '7')
-    expect(p.onLoadUsage).toHaveBeenLastCalledWith('day', expect.any(Number), expect.any(Number), undefined)
-    await userEvent.selectOptions(screen.getByLabelText('Разговор расхода'), conversation.id)
-    expect(p.onLoadUsage).toHaveBeenLastCalledWith('day', expect.any(Number), expect.any(Number), conversation.id)
-  })
-
-  it('рендерит реестр LLM-исполнителей и health', () => {
-    renderAdmin()
-    const sec = screen.getByTestId('llm-engines-section')
-    expect(within(sec).getByText('runner-work claude')).toBeInTheDocument()
-    expect(within(sec).getByText(/health: жив/)).toBeInTheDocument()
-  })
-
-  it('создание исполнителя зовёт onCreateEngine', async () => {
-    const p = renderAdmin()
-    await userEvent.type(screen.getByLabelText('Название исполнителя'), 'runner codex')
-    await userEvent.selectOptions(screen.getByLabelText('Kind исполнителя'), 'codex')
-    await userEvent.type(screen.getByLabelText('URL исполнителя'), 'http://runner-codex:8080')
-    await userEvent.type(screen.getByLabelText('Токен исполнителя'), 'tok')
-    await userEvent.click(within(screen.getByTestId('llm-engines-section')).getByRole('button', { name: 'Добавить' }))
-    expect(p.onCreateEngine).toHaveBeenCalledWith({
-      name: 'runner codex',
-      kind: 'codex',
-      baseUrl: 'http://runner-codex:8080',
-      token: 'tok',
-      enabled: true,
-      allowedRoles: ['admin', 'developer', 'tester', 'observer'],
-      isDefault: false
+  it('расход грузится при открытии вкладки и перезапрашивается на смену периода', async () => {
+    const p = renderUser('bob', 'usage')
+    await waitFor(() => expect(p.onLoadUsage).toHaveBeenCalled())
+    await userEvent.selectOptions(screen.getByLabelText('Период расхода'), '7d')
+    await waitFor(() => {
+      const last = (p.onLoadUsage as ReturnType<typeof vi.fn>).mock.calls.at(-1)!
+      expect(last[1]).toBeCloseTo(Date.now() - 7 * 86_400_000, -5)
     })
+  })
+})
+
+describe('UsersAdmin — расход и метрики согласованы', () => {
+  it('одна и та же сумма в метрике над списком и в строке человека', () => {
+    renderAdmin({
+      usageSummary: [{ name: 'bob', totals: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUsd: 0, costFromPrices: 58.2, messages: 5 }, byModel: [] }]
+    })
+    // Формула одна (`spendUsd`: большая из двух оценок), поэтому «$58.20»
+    // обязано совпасть в обоих местах — иначе цифры на экране спорят друг с другом.
+    expect(screen.getByTestId('users-metrics')).toHaveTextContent('$58.20')
+    const row = screen.getAllByTestId('user-item').find((item) => item.textContent?.includes('bob'))!
+    expect(row).toHaveTextContent('$58.20')
+  })
+
+  it('человеку без разговоров отчёт не запрашивается', async () => {
+    const p = renderAdmin({
+      users: [{ name: 'newbie', role: 'developer', blocked: false, createdAt: 1, conversationCount: 0, agents: [], lastSeenAt: null, liveSessions: 0 }],
+      selected: 'newbie',
+      route: { page: 'users', userName: 'newbie', tab: 'usage' }
+    })
+    await waitFor(() => expect(screen.getByTestId('usage-tab')).toBeInTheDocument())
+    expect(p.onLoadUsage).not.toHaveBeenCalled()
+  })
+})
+
+describe('UsersAdmin — журнал безопасности', () => {
+  it('вкладка «История» запрашивает события и показывает подписи', async () => {
+    const onLoadSecurity = vi.fn()
+    renderUser('bob', 'history', {
+      onLoadSecurity,
+      security: [
+        { id: 2, at: 2, user: 'bob', type: 'login_failed', ip: '10.0.0.2', userAgent: 'Firefox/1', details: 'неверный пароль' },
+        { id: 1, at: 1, user: 'bob', type: 'login', ip: '10.0.0.1', userAgent: 'Chrome/1', details: '' }
+      ]
+    })
+    await waitFor(() => expect(onLoadSecurity).toHaveBeenCalled())
+    const tab = screen.getByTestId('history-tab')
+    expect(within(tab).getByText('Неверный пароль')).toBeInTheDocument()
+    expect(within(tab).getByText('Вход')).toBeInTheDocument()
+    expect(tab).toHaveTextContent('10.0.0.2')
+  })
+
+  it('переписка человека остаётся доступной администратору под журналом', async () => {
+    const p = renderUser('bob', 'history', {
+      security: [],
+      conversations: [{ id: 'c1', title: 'Рефакторинг', messageCount: 3, updatedAt: 1, createdAt: 1 } as never]
+    })
+    const section = screen.getByTestId('user-history-section')
+    await userEvent.click(within(section).getByText('Рефакторинг'))
+    expect(p.onOpenConversation).toHaveBeenCalledWith('c1')
   })
 })
 
@@ -184,25 +313,58 @@ describe('UsersAdmin — состояния загрузки и ошибки', (
   })
 })
 
-describe('UsersAdmin — доступность', () => {
-  it('без нарушений axe: список, форма создания, карточка пользователя и реестр исполнителей', async () => {
-    renderAdmin({ selected: 'bob' })
-    await expectNoViolations()
-    expectLabelledIconButtons()
+describe('UsersAdmin — служебные страницы', () => {
+  it('реестр исполнителей живёт на своей странице и не мешает списку людей', () => {
+    renderAdmin({ route: { page: 'engines' } })
+    const section = screen.getByTestId('llm-engines-section')
+    expect(within(section).getByText('runner-work claude')).toBeInTheDocument()
+    expect(within(section).getByText(/health: жив/)).toBeInTheDocument()
+    expect(screen.queryByTestId('users-page')).toBeNull()
   })
 
-  it('строка диска с данными: тревога при свободном месте меньше 10 ГБ (roadmap-4 п.40)', () => {
-    renderAdmin({ isAdmin: true, makeStats: { disk: { totalBytes: 100 * 1024 ** 3, freeBytes: 4 * 1024 ** 3, alert: true }, projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, userLimitBytes: 4 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3.5 * 1048576, published: 1, views: 7 }], top: [] } })
+  it('создание исполнителя зовёт onCreateEngine', async () => {
+    const p = renderAdmin({ route: { page: 'engines' } })
+    await userEvent.type(screen.getByLabelText('Название исполнителя'), 'runner codex')
+    await userEvent.selectOptions(screen.getByLabelText('Kind исполнителя'), 'codex')
+    await userEvent.type(screen.getByLabelText('URL исполнителя'), 'http://runner-codex:8080')
+    await userEvent.type(screen.getByLabelText('Токен исполнителя'), 'tok')
+    await userEvent.click(within(screen.getByTestId('llm-engines-section')).getByRole('button', { name: 'Добавить' }))
+    expect(p.onCreateEngine).toHaveBeenCalledWith({
+      name: 'runner codex',
+      kind: 'codex',
+      baseUrl: 'http://runner-codex:8080',
+      token: 'tok',
+      enabled: true,
+      allowedRoles: ['admin', 'developer', 'tester', 'observer'],
+      isDefault: false
+    })
+  })
+
+  it('кнопки шапки ведут на страницы цен, движков и системы', async () => {
+    const onNavigate = vi.fn()
+    // Маршрут задан снаружи: клик по кнопке шапки не должен уводить сам себя
+    // со страницы, иначе следующей кнопки на экране уже нет.
+    renderAdmin({ onNavigate, route: { page: 'users' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Цены моделей' }))
+    expect(onNavigate).toHaveBeenCalledWith({ page: 'prices' })
+    await userEvent.click(screen.getByRole('button', { name: 'Движки' }))
+    expect(onNavigate).toHaveBeenCalledWith({ page: 'engines' })
+    await userEvent.click(screen.getByRole('button', { name: 'Система' }))
+    expect(onNavigate).toHaveBeenCalledWith({ page: 'system' })
+  })
+
+  it('строка диска: тревога при свободном месте меньше 10 ГБ (roadmap-4 п.40)', () => {
+    renderAdmin({ route: { page: 'system' }, makeStats: { disk: { totalBytes: 100 * 1024 ** 3, freeBytes: 4 * 1024 ** 3, alert: true }, projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, userLimitBytes: 4 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3.5 * 1048576, published: 1, views: 7 }], top: [] } })
     const disk = screen.getByTestId('admin-disk')
     expect(disk).toHaveAttribute('role', 'alert')
     expect(disk).toHaveTextContent('меньше 10 ГБ')
   })
 
   it('секция «Make-проекты» показывает сводку и таблицу по пользователям (п.38)', () => {
-    renderAdmin({ isAdmin: true, makeStats: { projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, userLimitBytes: 4 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3.5 * 1048576, published: 1, views: 7 }], top: [] } })
+    renderAdmin({ route: { page: 'system' }, makeStats: { projects: 3, bytes: 5 * 1048576, filesBytes: 1048576, snapshotsBytes: 4 * 1048576, shotsBytes: 0, published: 1, shared: 1, views: 7, limitBytes: 64 * 1048576, userLimitBytes: 4 * 1048576, byUser: [{ user: 'alice', projects: 2, bytes: 3.5 * 1048576, published: 1, views: 7 }], top: [] } })
     const sec = screen.getByTestId('make-stats')
     expect(sec).toHaveTextContent('Проектов: 3')
-    expect(sec).toHaveTextContent('5.0 МБ')
+    expect(sec).toHaveTextContent('5 МБ')
     expect(within(sec).getByText('alice')).toBeInTheDocument()
     expect(within(sec).getByTestId('make-user-quota-warn')).toHaveTextContent('88% квоты')
   })
@@ -210,11 +372,12 @@ describe('UsersAdmin — доступность', () => {
 
 describe('UsersAdmin — сессии пользователя (auth-roadmap п.4)', () => {
   const chrome = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/128.0.0.0 Safari/537.36'
+  const session = { sid: 's1', user: 'bob', createdAt: 1, lastSeen: 2, expiresAt: Date.now() + 86_400_000, ip: '10.0.0.1', userAgent: chrome }
 
   it('список запрашивается только при раскрытии и рисуется общим модулем сессий', async () => {
-    const list = vi.fn(async () => [{ sid: 's1', user: 'bob', createdAt: 1, lastSeen: 2, expiresAt: Date.now() + 86_400_000, ip: '10.0.0.1', userAgent: chrome }])
+    const list = vi.fn(async () => [session])
     const revoke = vi.fn(async () => undefined)
-    renderAdmin({ isAdmin: true, selected: 'bob', sessionsClient: { list, revoke } })
+    renderUser('bob', 'machines', { sessionsClient: { list, revoke } })
     const details = screen.getByTestId('admin-sessions')
     // Закрытый <details> не должен дёргать сервер: у админа сотни пользователей.
     expect(list).not.toHaveBeenCalled()
@@ -226,8 +389,8 @@ describe('UsersAdmin — сессии пользователя (auth-roadmap п.
   })
 
   it('чужой список — только чтение: без переименования и доверия', async () => {
-    const list = vi.fn(async () => [{ sid: 's1', user: 'bob', createdAt: 1, lastSeen: 2, expiresAt: Date.now() + 86_400_000, ip: '10.0.0.1', userAgent: chrome }])
-    renderAdmin({ isAdmin: true, selected: 'bob', sessionsClient: { list, revoke: async () => undefined, rename: async () => undefined, setTrusted: async () => undefined } })
+    const list = vi.fn(async () => [session])
+    renderUser('bob', 'machines', { sessionsClient: { list, revoke: async () => undefined, rename: async () => undefined, setTrusted: async () => undefined } })
     await userEvent.click(within(screen.getByTestId('admin-sessions')).getByText('Сессии'))
     expect(await screen.findByTestId('session-s1')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Переименовать' })).toBeNull()
@@ -235,26 +398,10 @@ describe('UsersAdmin — сессии пользователя (auth-roadmap п.
   })
 })
 
-describe('UsersAdmin — журнал безопасности (auth-roadmap п.7)', () => {
-  it('вкладка «Безопасность» запрашивает события и показывает таблицу с подписями', async () => {
-    const onLoadSecurity = vi.fn()
-    renderAdmin({ isAdmin: true, selected: 'bob', onLoadSecurity, security: [
-      { id: 2, at: 2, user: 'bob', type: 'login_failed', ip: '10.0.0.2', userAgent: 'Firefox/1', details: 'неверный пароль' },
-      { id: 1, at: 1, user: 'bob', type: 'login', ip: '10.0.0.1', userAgent: 'Chrome/1', details: '' }
-    ] })
-    await userEvent.click(screen.getByRole('tab', { name: 'Безопасность' }))
-    expect(onLoadSecurity).toHaveBeenCalled()
-    const sec = screen.getByTestId('admin-security')
-    expect(within(sec).getByText('Неверный пароль')).toBeInTheDocument()
-    expect(within(sec).getByText('Вход')).toBeInTheDocument()
-    expect(within(sec).getByText('10.0.0.2')).toBeInTheDocument()
-  })
-})
-
-describe('UsersAdmin — инвайт-ссылки (auth-roadmap п.8)', () => {
-  it('раскрытие загружает список, форма создаёт инвайт с ролью/сроком/лимитом, «Отозвать» удаляет', async () => {
+describe('UsersAdmin — приглашения и регистрация', () => {
+  it('раскрытие загружает список, форма создаёт инвайт, «Отозвать» удаляет', async () => {
     const onLoadInvites = vi.fn(); const onCreateInvite = vi.fn(); const onDeleteInvite = vi.fn()
-    renderAdmin({ isAdmin: true, onLoadInvites, onCreateInvite, onDeleteInvite, invites: [{ token: 'abc', role: 'tester', createdBy: 'admin', createdAt: 1, expiresAt: 9_999_999_999_999, maxUses: 2, uses: 0, note: 'QA', email: 'guest@example.com', emailedAt: 2 }] })
+    renderAdmin({ onLoadInvites, onCreateInvite, onDeleteInvite, invites: [{ token: 'abc', role: 'tester', createdBy: 'admin', createdAt: 1, expiresAt: 9_999_999_999_999, maxUses: 2, uses: 0, note: 'QA', email: 'guest@example.com', emailedAt: 2 }] })
     const box = screen.getByTestId('admin-invites')
     await userEvent.click(within(box).getByText(/Инвайт-ссылки/))
     await waitFor(() => expect(onLoadInvites).toHaveBeenCalled())
@@ -268,26 +415,45 @@ describe('UsersAdmin — инвайт-ссылки (auth-roadmap п.8)', () => {
     await userEvent.click(within(box).getByRole('button', { name: 'Отозвать' }))
     expect(onDeleteInvite).toHaveBeenCalledWith('abc')
   })
-})
 
-describe('UsersAdmin — временный пароль и код сброса (auth-roadmap пп.10–11)', () => {
-  it('создание передаёт флаг временного пароля; «Код сброса» показывает выданный код', async () => {
-    const onCreate = vi.fn()
-    const onResetCode = vi.fn(async () => ({ code: 'ABCD1234', expiresAt: 9_999_999_999_999 }))
-    renderAdmin({ isAdmin: true, onCreate, onResetCode, selected: 'bob' })
-    await userEvent.type(screen.getByLabelText('Логин нового пользователя'), 'newbie')
-    await userEvent.type(screen.getByLabelText('Пароль нового пользователя'), 'newbie-long-password')
-    await userEvent.click(screen.getByRole('button', { name: 'Создать' }))
-    expect(onCreate).toHaveBeenCalledWith('newbie', 'newbie-long-password', 'developer', true)
-    await userEvent.click(screen.getByRole('button', { name: 'Код сброса' }))
-    expect(await screen.findByTestId('admin-reset-code')).toHaveTextContent('ABCD1234')
+  it('открытая регистрация: раскрытие грузит настройку, изменения уходят наружу', async () => {
+    const onLoadSignup = vi.fn(); const onSetSignup = vi.fn()
+    renderAdmin({ onLoadSignup, onSetSignup, signup: { enabled: false, role: 'developer', mailConfigured: false, ownedProjectLimit: 5, sessionLimit: 0 } })
+    const box = screen.getByTestId('admin-signup')
+    await userEvent.click(within(box).getByText(/Открытая регистрация/))
+    await waitFor(() => expect(onLoadSignup).toHaveBeenCalled())
+    await userEvent.click(within(box).getByLabelText('Разрешить регистрацию по email'))
+    expect(onSetSignup).toHaveBeenCalledWith({ enabled: true })
+    await userEvent.selectOptions(within(box).getByLabelText('Роль новых пользователей'), 'tester')
+    expect(onSetSignup).toHaveBeenCalledWith({ role: 'tester' })
+    fireEvent.change(within(box).getByLabelText('Квота проектов на пользователя'), { target: { value: '7' } })
+    expect(onSetSignup).toHaveBeenCalledWith({ ownedProjectLimit: 7 })
+    expect(box).toHaveTextContent('SMTP не настроен')
   })
 })
 
-describe('UsersAdmin — лимит LLM (auth-roadmap п.17)', () => {
+describe('UsersAdmin — временный пароль, код сброса и лимит LLM', () => {
+  it('создание идёт диалогом и передаёт флаг временного пароля', async () => {
+    const onCreate = vi.fn()
+    renderAdmin({ onCreate })
+    await userEvent.click(screen.getByRole('button', { name: '＋ Добавить' }))
+    const dialog = screen.getByTestId('create-user-dialog')
+    await userEvent.type(within(dialog).getByLabelText('Логин нового пользователя'), 'newbie')
+    await userEvent.type(within(dialog).getByLabelText('Пароль нового пользователя'), 'newbie-long-password')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Создать' }))
+    expect(onCreate).toHaveBeenCalledWith('newbie', 'newbie-long-password', 'developer', true)
+  })
+
+  it('«Код сброса» показывает выданный код', async () => {
+    const onResetCode = vi.fn(async () => ({ code: 'ABCD1234', expiresAt: 9_999_999_999_999 }))
+    renderUser('bob', 'overview', { onResetCode })
+    await userEvent.click(screen.getByRole('button', { name: 'Код сброса' }))
+    expect(await screen.findByTestId('admin-reset-code')).toHaveTextContent('ABCD1234')
+  })
+
   it('поле лимита сохраняет число, пустое — снимает лимит', async () => {
     const onSetLlmLimit = vi.fn()
-    renderAdmin({ isAdmin: true, selected: 'bob', onSetLlmLimit })
+    renderUser('bob', 'overview', { onSetLlmLimit })
     const box = screen.getByTestId('admin-llm-limit')
     await userEvent.type(within(box).getByLabelText('Лимит LLM в месяц, USD'), '12')
     await userEvent.click(within(box).getByRole('button', { name: 'Сохранить' }))
@@ -297,20 +463,15 @@ describe('UsersAdmin — лимит LLM (auth-roadmap п.17)', () => {
   })
 })
 
-describe('UsersAdmin — открытая регистрация', () => {
-  it('раскрытие запрашивает настройку; галка и роль зовут onSetSignup; без SMTP — предупреждение', async () => {
-    const onLoadSignup = vi.fn(); const onSetSignup = vi.fn()
-    renderAdmin({ isAdmin: true, onLoadSignup, onSetSignup, signup: { enabled: false, role: 'developer', mailConfigured: false, ownedProjectLimit: 5, sessionLimit: 0 } })
-    const box = screen.getByTestId('admin-signup')
-    await userEvent.click(within(box).getByText(/Открытая регистрация/))
-    await waitFor(() => expect(onLoadSignup).toHaveBeenCalled())
-    await userEvent.click(within(box).getByLabelText('Разрешить регистрацию по email'))
-    expect(onSetSignup).toHaveBeenCalledWith({ enabled: true })
-    await userEvent.selectOptions(within(box).getByLabelText('Роль новых пользователей'), 'tester')
-    expect(onSetSignup).toHaveBeenCalledWith({ role: 'tester' })
-    const limit = within(box).getByLabelText('Квота проектов на пользователя')
-    fireEvent.change(limit, { target: { value: '7' } })
-    expect(onSetSignup).toHaveBeenCalledWith({ ownedProjectLimit: 7 })
-    expect(box).toHaveTextContent('SMTP не настроен')
+describe('UsersAdmin — доступность', () => {
+  it('без нарушений axe: список, метрики и карточка человека', async () => {
+    renderUser('bob')
+    await expectNoViolations()
+    expectLabelledIconButtons()
+  })
+
+  it('без нарушений axe на служебных страницах', async () => {
+    renderAdmin({ route: { page: 'engines' } })
+    await expectNoViolations()
   })
 })

@@ -27,6 +27,9 @@ export interface GateListProps {
 
 const MARK: Record<StatusTone, string> = {
   neutral: '·',
+  // `accent` появился при объединении лозенг: выделение помечается так же, как
+  // «идёт работа» — отдельного знака для него у списка ворот нет.
+  accent: '↗',
   running: '↗',
   success: '✓',
   warning: '!',

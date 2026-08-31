@@ -14,6 +14,7 @@
     "test": "vitest run --silent"
   },
   "dependencies": {
+    "@voicechat/profile-app": "*",
     "@voicechat/sessions-app": "*",
     "@voicechat/shared": "*",
     "@voicechat/ui-kit": "*",

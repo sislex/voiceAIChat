@@ -325,6 +325,12 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- Индекс по device_key создаётся в migrate(), а не здесь: на старой базе схема
 -- выполняется до ALTER TABLE, и индекс по ещё не добавленной колонке падает.
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_name);
+-- Активность всех пользователей разом (метрика «активны сейчас» и колонка списка):
+-- без этого индекса агрегат читает всю таблицу сессий на каждое открытие раздела.
+CREATE INDEX IF NOT EXISTS idx_sessions_live ON sessions(revoked_at, expires_at, user_name);
+-- Отчёты расхода читают только ai-сообщения за период: без этого индекса каждый
+-- отчёт сканирует таблицу сообщений целиком.
+CREATE INDEX IF NOT EXISTS idx_messages_role_created ON messages(role, created_at);
 
 CREATE TABLE IF NOT EXISTS session_revocations (
   token_hash TEXT PRIMARY KEY,

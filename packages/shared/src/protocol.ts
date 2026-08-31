@@ -248,6 +248,14 @@ export const REST = {
   llmAccess: '/api/llm-access',
   /** Личные данные текущей сессии; uid никогда не передаётся клиентом. */
   meLlmAccess: '/api/me/llm-access',
+  /**
+   * Свой профиль и свой журнал безопасности. Живут вне `/api/admin/`: тот
+   * префикс целиком закрыт привилегией `users:manage`, а человек вправе знать
+   * о себе то же, что о нём знает администратор. Имени пользователя в пути нет
+   * физически — оно берётся из сессии, поэтому чужое подставить некуда.
+   */
+  meProfile: '/api/me/profile',
+  meSecurity: '/api/me/security',
   /** Личный отчёт по расходу моделей текущего пользователя. */
   usage: '/api/usage',
   meUsage: '/api/me/usage',
@@ -304,6 +312,8 @@ export const REST = {
   // --- Админ-страница пользователей (только admin) ---
   adminUsers: '/api/admin/users',
   adminUsersUsageSummary: '/api/admin/users/usage-summary',
+  /** Машины одного человека: список людей их не отдаёт, карточка грузит по требованию. */
+  adminUserMachines: (name: string) => `/api/admin/users/${encodeURIComponent(name)}/machines`,
   /** Журнал безопасности (auth-roadmap п.7): `?user=&limit=`. */
   adminSecurity: '/api/admin/security',
   /** Инвайты на саморегистрацию (auth-roadmap п.8). */

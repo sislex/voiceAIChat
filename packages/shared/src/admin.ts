@@ -4,8 +4,15 @@ import type { AgentInfo } from './agentProtocol'
 import type { UserRole } from './types'
 import type { LlmRunKind, LlmRunnerHealth } from './llm'
 
-/** Пользователь в списке администрирования (+ его машины и счётчик разговоров). */
-export interface AdminUserInfo {
+/** Машина в карточке человека: всё, кроме политики команд. */
+export type AdminAgentInfo = Omit<AgentInfo, 'policy'>
+
+/**
+ * Профиль одного человека: то, что он вправе знать о себе сам. Админский
+ * `AdminUserInfo` — это он же плюс поля надзора, поэтому одна и та же карточка
+ * рисует и чужой профиль в админке, и свой на странице «Мой аккаунт».
+ */
+export interface UserProfileInfo {
   name: string
   role: UserRole
   blocked: boolean
@@ -17,13 +24,44 @@ export interface AdminUserInfo {
   /** Последний вход (п.18) и месячный лимит расхода LLM (п.17). */
   lastLogin?: number | null
   llmLimitUsd?: number | null
+  conversationCount: number
+  /**
+   * Машины-агенты пользователя с онлайн-статусом. В списке людей их нет: там
+   * хватает счётчиков ниже, а полный список — это килобайты на каждого ради
+   * одной строки «0 из 2 онлайн». Карточка запрашивает машины отдельно.
+   */
+  agents?: AdminAgentInfo[]
+  /** Сколько у человека машин и сколько из них в сети — для списка и метрик. */
+  machinesTotal?: number
+  machinesOnline?: number
+  /**
+   * Последняя активность живой сессии и их число. «Последний вход» для этого не
+   * годится: человек, вошедший неделю назад и работающий прямо сейчас, по нему
+   * выглядит неактивным.
+   */
+  lastSeenAt?: number | null
+  liveSessions?: number
+}
+
+/** Пользователь в списке администрирования: профиль + состояние замков. */
+export interface AdminUserInfo extends UserProfileInfo {
   /** Авто-блокировка после неудачных входов (auth-roadmap п.3). */
   failedLogins?: number
   lockedUntil?: number | null
   lockReason?: string | null
-  conversationCount: number
-  /** Машины-агенты пользователя с онлайн-статусом. */
-  agents: AgentInfo[]
+}
+
+/**
+ * Окно, внутри которого сессия считается активной «сейчас». Пять минут, а не
+ * минута: `touchSession` обновляет `last_seen` не чаще раза в минуту, поэтому
+ * узкое окно показывало бы работающего человека офлайн. Константа общая для
+ * сервера и UI, чтобы список и метрика не расходились в трактовке.
+ */
+export const ACTIVE_WINDOW_MS = 5 * 60_000
+
+/** Активен ли человек прямо сейчас по последней активности его сессий. */
+export function isActiveNow(lastSeenAt: number | null | undefined, now: number): boolean {
+  return lastSeenAt !== null && lastSeenAt !== undefined && now - lastSeenAt <= ACTIVE_WINDOW_MS
 }
 
 /** Единица бакета в отчёте по токенам. */
@@ -46,6 +84,13 @@ export interface UsageTotals {
   costIncomplete?: boolean
   /** Число ответов модели (ai-сообщений) в выборке. */
   messages: number
+  /**
+   * Сколько из них человек прервал (`TurnMeta.interrupted`). Доли «успешных»
+   * ходов в системе нет и быть не может: неудавшийся ход сообщения не создаёт
+   * вовсе, поэтому знаменателя не существует. Прерывание — единственный
+   * зафиксированный признак незавершённого ответа.
+   */
+  interrupted?: number
 }
 
 /** Метрики за временной бакет (напр. день/час/неделя, ключ — строка бакета). */
@@ -104,6 +149,33 @@ export interface UserUsageSummary {
   name: string
   totals: UsageTotals
   byModel: UsageByModel[]
+}
+
+/**
+ * Потрачено по выборке. Codex часто не сообщает стоимость сам, а прайс покрывает
+ * не все модели, поэтому берётся большая из двух оценок — та же формула, по
+ * которой сервер проверяет месячный лимит (`turns.ts`). Держим её здесь, чтобы
+ * UI и проверка лимита не разъехались в трактовке «сколько человек потратил».
+ */
+export function spendUsd(totals: Pick<UsageTotals, 'costUsd' | 'costFromPrices'>): number {
+  return Math.max(totals.costUsd, totals.costFromPrices ?? 0)
+}
+
+/** Начало текущего календарного месяца в местном времени — граница «расхода за месяц». */
+export function monthStart(now: number = Date.now()): number {
+  const date = new Date(now)
+  date.setDate(1)
+  date.setHours(0, 0, 0, 0)
+  return date.getTime()
+}
+
+/**
+ * Доля израсходованного лимита (0..1+) или `null`, когда лимита нет. Проценту
+ * бюджета неоткуда взяться без лимита: общего бюджета в системе не существует,
+ * и рисовать «78%» от несуществующей величины нельзя.
+ */
+export function budgetShare(spent: number, limitUsd: number | null | undefined): number | null {
+  return limitUsd === null || limitUsd === undefined || limitUsd <= 0 ? null : spent / limitUsd
 }
 
 
@@ -186,6 +258,35 @@ export interface SignupConfig { enabled: boolean; role: UserRole; mailConfigured
 
 /** Инвайт на саморегистрацию (auth-roadmap п.8): роль, срок, лимит использований. */
 export interface InviteInfo { token: string; role: UserRole; createdBy: string; createdAt: number; expiresAt: number; maxUses: number; uses: number; note: string; email: string | null; emailedAt: number | null }
+
+/**
+ * Группы событий журнала: вход и сессии, изменения учётки, машины. Живут в
+ * контракте, а не в UI, потому что по ним фильтрует и сервер — иначе клиент
+ * получал бы двести событий, чтобы показать три.
+ */
+export type SecurityGroup = 'all' | 'auth' | 'account' | 'machines'
+
+const SECURITY_AUTH = new Set(['login', 'login_failed', 'login_locked', 'login_2fa_failed', 'login_new_device', 'logout', 'logout_all', 'session_revoked', 'session_evicted', 'session_panic', 'session_trusted', 'session_untrusted', 'session_renamed'])
+const SECURITY_MACHINES = new Set(['agent_connected', 'agent_rejected', 'agent_token_rotated', 'agent_token_revoked'])
+
+/** К какой группе относится событие; всё, что не вход и не машины, — учётка. */
+export function securityGroup(type: string): Exclude<SecurityGroup, 'all'> {
+  if (SECURITY_AUTH.has(type)) return 'auth'
+  if (SECURITY_MACHINES.has(type)) return 'machines'
+  return 'account'
+}
+
+/** Тревожное событие: неудачные входы, замки, блокировки, отказы агентам. */
+export function isAlarmingSecurityEvent(type: string): boolean {
+  return /failed|locked|blocked|rejected|panic/.test(type)
+}
+
+/** Отбор событий по группе; неизвестная или пустая группа — без фильтра. */
+export function filterSecurityGroup<T extends { type: string }>(events: T[], group: string | undefined): T[] {
+  return group === 'auth' || group === 'account' || group === 'machines'
+    ? events.filter((event) => securityGroup(event.type) === group)
+    : events
+}
 
 /** Журнал безопасности (auth-roadmap п.7): входы, выходы, неудачи, блокировки, смена пароля, 2FA. */
 export type SecurityEventType = 'agent_connected' | 'agent_rejected' | 'agent_token_rotated' | 'agent_token_revoked' | 'signup_requested' | 'signup_verified' | 'login_new_device' | 'inactive_blocked' | 'reset_code_issued' | 'password_reset' | 'password_changed' | 'invite_created' | 'project_invited' | 'project_invite_accepted' | 'registered' | 'login' | 'login_failed' | 'login_locked' | 'login_2fa_failed' | 'logout' | 'logout_all' | 'session_revoked' | 'session_renamed' | 'session_trusted' | 'session_untrusted' | 'session_evicted' | 'session_panic' | 'password_set' | 'twofactor_enabled' | 'twofactor_disabled' | 'user_blocked' | 'user_unblocked'

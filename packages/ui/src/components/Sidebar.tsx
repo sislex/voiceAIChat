@@ -250,6 +250,8 @@ export interface SidebarProps {
   onOpenKnowledgeBase?: () => void
   /** Открыть отдельную страницу персонализации текущего пользователя. */
   onOpenPersonalization?: () => void
+  /** «Мой аккаунт» — свой профиль, расход и журнал; доступен любой роли. */
+  onOpenAccount?: () => void
   onOpenSettings: () => void
   /** Открыть файловый проводник по машине-агенту (web). */
   onOpenFiles?: () => void
@@ -343,6 +345,7 @@ export function Sidebar({
   onOpenObserver,
   onOpenKnowledgeBase,
   onOpenPersonalization,
+  onOpenAccount,
   onOpenSettings,
   onOpenFiles,
   onOpenConsole,
@@ -876,6 +879,12 @@ export function Sidebar({
                   <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenUsers)}>
                     <span className="footico">👥</span>
                     Пользователи
+                  </Button>
+                )}
+                {onOpenAccount && (
+                  <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenAccount)}>
+                    <span className="footico">👤</span>
+                    Мой аккаунт
                   </Button>
                 )}
                 {onOpenPersonalization && <Button variant="ghost" fullWidth className="sidefoot-row" role="menuitem" onClick={acct(onOpenPersonalization)}><span className="footico">✨</span>Персонализация</Button>}

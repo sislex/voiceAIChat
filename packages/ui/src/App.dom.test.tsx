@@ -965,13 +965,42 @@ describe('App — выход из аккаунта', () => {
     // пользователя: человек получал тост «Объект не найден» на ровном месте.
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users/engines`)
     render(<App api={api} delays={SLOW} />)
-    await screen.findByText('Пользователи')
+    // У служебных страниц свой заголовок: реестр исполнителей — не список людей.
+    await screen.findByRole('heading', { name: 'LLM-исполнители' })
     await waitFor(() => expect(llmAccess).not.toHaveBeenCalled())
 
     // Настоящий логин по-прежнему открывает карточку пользователя.
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users/admin`)
     window.dispatchEvent(new HashChangeEvent('hashchange'))
     await waitFor(() => expect(llmAccess).toHaveBeenCalledWith({ name: 'admin' }))
+  })
+
+  it('адрес вкладки чужого профиля открывает админку, а не роняет в чат', async () => {
+    const api = await seededApi()
+    ;(window as unknown as { session: unknown }).session = {
+      me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
+      login: vi.fn(),
+      logout: vi.fn()
+    }
+    // Три сегмента: `#/users/<логин>/<вкладка>`. Раньше здесь стояла жёсткая
+    // проверка «ровно два», и такая ссылка не открывала раздел вовсе.
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users/admin/usage`)
+    render(<App api={api} delays={SLOW} />)
+    expect(await screen.findByTestId('users-overlay')).toBeInTheDocument()
+  })
+
+  it('«Мой аккаунт» открывается не-админом: это данные о себе', async () => {
+    const api = await seededApi()
+    ;(window as unknown as { session: unknown }).session = {
+      me: vi.fn().mockResolvedValue({ name: 'marina', role: 'developer' }),
+      login: vi.fn(),
+      logout: vi.fn()
+    }
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/account`)
+    render(<App api={api} delays={SLOW} />)
+    expect(await screen.findByTestId('account-page')).toBeInTheDocument()
+    // Раздел «Пользователи» ему по-прежнему закрыт.
+    expect(screen.queryByTestId('users-overlay')).toBeNull()
   })
 
   it('просит подтверждение, завершает сессию и закрывает защищённый маршрут экраном входа', async () => {

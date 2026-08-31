@@ -94,6 +94,7 @@ export function createAdminClient(api: RendererApi): AdminClient {
       machineStats: () => api['admin:machineStats'](),
       createUser: (input) => api['admin:createUser'](input),
       updateUserRole: (input) => api['admin:updateUserRole'](input),
+      userMachines: ({ name }) => api['admin:userMachines']({ name }),
       setUserBlocked: (input) => api['admin:setBlocked'](input),
       deleteUser: (input) => api['admin:deleteUser'](input),
       getUserLlmAccess: (input) => api['admin:llmAccess'](input),
