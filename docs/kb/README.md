@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 159 коммит(ов) в areas после сверки: b75bced3 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 174 коммит(ов) в areas после сверки: b75bced3 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 43 коммит(ов) в areas после сверки: b75bced3 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 940 коммит(ов) в areas после сверки: 805d28b9 docs(kb): update after merge f1a8dd0e-8862-4a2d-97a4-09273e124963 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 941 коммит(ов) в areas после сверки: 0c7a20ad docs(kb): почему имена cookie разведены по схеме и как диагностировать … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 68 коммит(ов) в areas после сверки: b75bced3 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 100 коммит(ов) в areas после сверки: b75bced3 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 45 коммит(ов) в areas после сверки: fe8bb29e fix(auth): разные имена cookie для https и http — вход по одному адресу больше не ломает другой … |
@@ -34,7 +34,7 @@
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 137 коммит(ов) в areas после сверки: b75bced3 Merge remote-tracking branch 'origin/main' into work1 … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-31 | ⚠ 10 коммит(ов) в areas после сверки: b75bced3 Merge remote-tracking branch 'origin/main' into work1 … |
 | [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ⚠ 2 коммит(ов) в areas после сверки: fe8bb29e fix(auth): разные имена cookie для https и http — вход по одному адресу больше не ломает другой … |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-30 | ⚠ 37 коммит(ов) в areas после сверки: fe8bb29e fix(auth): разные имена cookie для https и http — вход по одному адресу больше не ломает другой … |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: fe8bb29e fix(auth): разные имена cookie для https и http — вход по одному адресу больше не ломает другой |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 41 коммит(ов) в areas после сверки: fe8bb29e fix(auth): разные имена cookie для https и http — вход по одному адресу больше не ломает другой … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 106 коммит(ов) в areas после сверки: fe8bb29e fix(auth): разные имена cookie для https и http — вход по одному адресу больше не ломает другой … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: b1ce0a93 fix(dev): порты dev-сеанса из окружения — второй чекаут поднимается рядом с первым … |
@@ -60,10 +60,11 @@
 
 ## Журнал сессий
 
-Всего записей: 458. Последние:
+Всего записей: 459. Последние:
 
 - [2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md](log/2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md) — pending-submit-realtime-confirmation
 - [2026-08-31-macbook-air-user-copy-question.md](log/2026-08-31-macbook-air-user-copy-question.md) — copy-question
+- [2026-08-31-macbook-air-user-conversation-sidebar-cost.md](log/2026-08-31-macbook-air-user-conversation-sidebar-cost.md) — conversation-sidebar-cost
 - [2026-08-31-alexeys-macbook-air-2-users-page-redesign.md](log/2026-08-31-alexeys-macbook-air-2-users-page-redesign.md) — users-page-redesign
 - [2026-08-31-alexeys-macbook-air-2-users-cycle-3.md](log/2026-08-31-alexeys-macbook-air-2-users-cycle-3.md) — users-cycle-3
 - [2026-08-31-alexeys-macbook-air-2-users-cycle-2.md](log/2026-08-31-alexeys-macbook-air-2-users-cycle-2.md) — users-cycle-2
@@ -71,7 +72,6 @@
 - [2026-08-31-alexeys-macbook-air-2-task-card-round5.md](log/2026-08-31-alexeys-macbook-air-2-task-card-round5.md) — task-card-round5
 - [2026-08-31-alexeys-macbook-air-2-task-card-round4.md](log/2026-08-31-alexeys-macbook-air-2-task-card-round4.md) — task-card-round4
 - [2026-08-31-alexeys-macbook-air-2-task-card-round3.md](log/2026-08-31-alexeys-macbook-air-2-task-card-round3.md) — task-card-round3
-- [2026-08-31-alexeys-macbook-air-2-task-card-round2.md](log/2026-08-31-alexeys-macbook-air-2-task-card-round2.md) — task-card-round2
 
 ## Исторические планы
 

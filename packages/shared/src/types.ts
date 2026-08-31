@@ -368,6 +368,10 @@ export interface Conversation {
 
   /** Статус жизненного цикла чата; дефолт 'developing'. */
   status?: ConversationStatus
+  /** Суммарная стоимость всех сохранённых AI-ходов; null, пока итог недостоверен. */
+  costUsd?: number | null
+  /** Полнота серверного агрегата стоимости. Поле отсутствует у legacy-клиентов. */
+  costStatus?: 'known' | 'partial' | 'unknown'
   /** Неизменяемая цель последнего сообщения; используется подписью в списке чатов. */
   lastExecTarget: string | null
 }
