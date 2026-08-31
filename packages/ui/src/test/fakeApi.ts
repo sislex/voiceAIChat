@@ -6,7 +6,8 @@ import { MAKE_SCAFFOLD, type MakeCheckIssue, type MakePublication, type MakeSnap
 // Повторяет контракт IPC без Electron/SQLite: детерминированные id и время.
 
 import type { RendererApi } from '@shared/ipc'
-import type { Conversation, Message, Settings } from '@shared/types'
+import type { ContextSnapshotItem, Conversation, ConversationContextSnapshot, Message, Settings } from '@shared/types'
+import { contextLockReason, isContextToggleable } from '@shared/contextGating'
 import { sanitizeSettingsPatch } from '@shared/types'
 import type { UserLlmAccess } from '@shared/llmAccess'
 import type { AdminLlmEngine, AdminLlmEngineHealth, AdminUserInfo, ModelPrice } from '@shared/admin'
@@ -41,6 +42,44 @@ const adminSessions: Array<{ sid: string; user: string; createdAt: number; lastS
 export function createFakeApi(seedConversations: string[] = []): FakeApi {
   /** Вид доски на «сервере»: по проекту, как в таблице board_views. */
   const boardViews = new Map<string, BoardView>()
+  /** Выключенные пункты контекста — «сервер» помнит их между снимками. */
+  const disabledContext = new Set<string>()
+  const contextSnapshotFake = (id: string): ConversationContextSnapshot => {
+    const item = (
+      itemId: string,
+      title: string,
+      extra: Partial<ContextSnapshotItem> = {}
+    ): ContextSnapshotItem => {
+      const toggleable = isContextToggleable(itemId)
+      const enabled = toggleable ? !disabledContext.has(itemId) : true
+      return {
+        id: itemId, type: 'Тест', source: 'Тест', scope: 'Следующий ход', priority: '1', title,
+        description: `${title} — описание`, explanation: 'Тестовое пояснение.',
+        configured: true, available: true, includedInNextTurn: enabled,
+        toggleable, enabled, lockReason: toggleable ? null : contextLockReason(itemId), ...extra
+      }
+    }
+    const preview = 'Обращение к пользователю: Тест.'
+    return {
+      schemaVersion: 1, conversationId: id, generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовый снимок.',
+      summary: { provider: 'claude', model: 'default', permissionMode: { value: 'plan', displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto', displayName: 'Автоматически', explanation: 'Тест' } },
+      groups: [
+        { id: 'instructions', order: 1, title: 'Системные и прикладные инструкции', description: 'Тест', items: [
+          item('platform-instructions', 'Правила платформы'),
+          item('personalization', 'Предпочтения ответа', { size: { chars: preview.length, approxTokens: Math.ceil(preview.length / 4) } })
+        ] },
+        { id: 'knowledge', order: 2, title: 'База знаний', description: 'Тест', items: [item('knowledge-mode', 'Автоматически')] }
+      ],
+      viewerRole: 'developer',
+      promptPreview: {
+        blocks: disabledContext.has('personalization') ? [] : [{ itemIds: ['personalization'], title: 'Персонализация пользователя', text: preview, chars: preview.length, approxTokens: Math.ceil(preview.length / 4) }],
+        text: disabledContext.has('personalization') ? '' : preview,
+        chars: disabledContext.has('personalization') ? 0 : preview.length,
+        approxTokens: disabledContext.has('personalization') ? 0 : Math.ceil(preview.length / 4),
+        omitted: ['Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.']
+      }
+    }
+  }
   const makeStore = new Map<string, Map<string, string>>()
   const makeSnapStore = new Map<string, Array<{ id: string; createdAt: number; label: string; files: number }>>()
   /** Содержимое файлов на момент снимка — для diff и восстановления одного файла. */
@@ -471,8 +510,14 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       draftRequests.set(idempotencyKey, conv.id)
       return { conversation: withCounts(conv), messages: [persisted] }
     },
-    'conversations:contextSnapshot': async ({ id }) => ({ schemaVersion: 1, conversationId: id, generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовый снимок.', summary: { provider: 'claude', model: 'default', permissionMode: { value: 'plan', displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto', displayName: 'Автоматически', explanation: 'Тест' } }, groups: [] }),
-    'conversations:setContextItem': async ({ id }) => ({ schemaVersion: 1, conversationId: id, generatedAt: new Date(0).toISOString(), freshnessWarning: 'Тестовый снимок.', summary: { provider: 'claude', model: 'default', permissionMode: { value: 'plan', displayName: 'Только планирование', explanation: 'Тест' }, kbMode: { value: 'auto', displayName: 'Автоматически', explanation: 'Тест' } }, groups: [] }),
+    'conversations:contextSnapshot': async ({ id }) => contextSnapshotFake(id),
+    'conversations:setContextItem': async ({ id, itemId, enabled }) => {
+      // Фейк ведёт себя как сервер: выключенный пункт остаётся выключенным в
+      // следующем снимке, безопасность выключить нельзя.
+      if (enabled) disabledContext.delete(itemId)
+      else if (itemId !== 'platform-instructions' && itemId !== 'application-instructions') disabledContext.add(itemId)
+      return contextSnapshotFake(id)
+    },
     'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
     'conversations:get': async ({ id }) => {
       const conv = conversations.find((c) => c.id === id)

@@ -22,7 +22,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 162 коммит(ов) в areas после сверки: 14747e24 Merge task 51777218-343c-4313-94f4-9379625af31d … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 177 коммит(ов) в areas после сверки: 14747e24 Merge task 51777218-343c-4313-94f4-9379625af31d … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 49 коммит(ов) в areas после сверки: 14747e24 Merge task 51777218-343c-4313-94f4-9379625af31d … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 946 коммит(ов) в areas после сверки: 9fa133a0 docs(kb): update after merge 0988722d-baac-4186-8fd2-6efa44e95780 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 947 коммит(ов) в areas после сверки: aea8b7fa docs(kb): update after merge 51777218-343c-4313-94f4-9379625af31d … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 74 коммит(ов) в areas после сверки: 14747e24 Merge task 51777218-343c-4313-94f4-9379625af31d … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 106 коммит(ов) в areas после сверки: 14747e24 Merge task 51777218-343c-4313-94f4-9379625af31d … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 49 коммит(ов) в areas после сверки: 14747e24 Merge task 51777218-343c-4313-94f4-9379625af31d … |
@@ -38,7 +38,7 @@
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 44 коммит(ов) в areas после сверки: 14747e24 Merge task 51777218-343c-4313-94f4-9379625af31d … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 105 коммит(ов) в areas после сверки: 2f049498 Merge remote-tracking branch 'origin/main' into work1 … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: b1ce0a93 fix(dev): порты dev-сеанса из окружения — второй чекаут поднимается рядом с первым … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: 1bd631b4 fix(gate): бюджет входного чанка считался вместе с ленивыми; минус лишние запросы карточки |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-31 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 58 коммит(ов) в areas после сверки: 2f049498 Merge remote-tracking branch 'origin/main' into work1 … |
 | [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-31, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
@@ -60,7 +60,7 @@
 
 ## Журнал сессий
 
-Всего записей: 461. Последние:
+Всего записей: 462. Последние:
 
 - [2026-08-31-macbook-air-user-sidebar-console-make.md](log/2026-08-31-macbook-air-user-sidebar-console-make.md) — sidebar-console-make
 - [2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md](log/2026-08-31-macbook-air-user-pending-submit-realtime-confirmation.md) — pending-submit-realtime-confirmation

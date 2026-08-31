@@ -11,6 +11,23 @@ export const INFO_CONTEXT_IDS = [
   'conversation-history', 'current-message'
 ] as const
 
+/**
+ * Почему пункт нельзя выключить. UI показывает замок с пояснением, поэтому
+ * причина считается здесь же, где правило, а не выводится по id в компоненте.
+ * Выключаемый пункт причины не имеет (null).
+ */
+export function contextLockReason(id: string): 'safety' | 'info' | null {
+  if ((SAFETY_CONTEXT_IDS as readonly string[]).includes(id)) return 'safety'
+  if ((INFO_CONTEXT_IDS as readonly string[]).includes(id)) return 'info'
+  return null
+}
+
+/** Человеческое объяснение замка — один текст на весь интерфейс. */
+export const CONTEXT_LOCK_TEXT: Record<'safety' | 'info', string> = {
+  safety: 'Правила безопасности платформы и приложения действуют в каждом ходе — выключить их нельзя.',
+  info: 'Это справочная информация о конфигурации: отдельным блоком в промпт она не добавляется, выключать нечего.'
+}
+
 /** Можно ли выключить пункт контекста по его id. */
 export function isContextToggleable(id: string): boolean {
   if ((SAFETY_CONTEXT_IDS as readonly string[]).includes(id)) return false

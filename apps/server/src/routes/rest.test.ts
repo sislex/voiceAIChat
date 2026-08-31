@@ -43,7 +43,11 @@ beforeEach(async () => {
   let id = 0
   let clock = 1000
   db = new VoiceChatDb(':memory:', { newId: () => `id-${++id}`, now: () => (clock += 10) })
-  dataDir = join(tmpdir(), `vc-rest-test-${Date.now()}-${id}`)
+  // Свой каталог на каждый тест. Раньше имя строилось из `Date.now()` и `id`,
+  // который в этот момент всегда 0, поэтому два теста, попавшие в одну
+  // миллисекунду, работали в одном каталоге — Make-тест видел индекс публикаций
+  // соседа и падал на «Публикация не найдена или снята» раз в несколько прогонов.
+  dataDir = mkdtempSync(join(tmpdir(), 'vc-rest-test-'))
   // Явно изолируем каталоги моделей/голосов во временную папку — тесты удаления
   // не должны касаться реальных файлов репозитория.
   triggerDeploy.mockReset()
@@ -71,6 +75,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await app.close()
   db.close()
+  // Каталог теста больше не нужен: без уборки они копятся в tmpdir прогонами.
+  rmSync(dataDir, { recursive: true, force: true })
 })
 
 // Лимитеры входа живут в процессе: между тестами сбрасываем, чтобы порядок тестов не давал 429.
@@ -1369,10 +1375,52 @@ describe('REST: conversations/messages/settings', () => {
     expect(byId('personalization').toggleable).toBe(true)
     expect(byId('knowledge-mode')).toMatchObject({ toggleable: true, enabled: true })
     // Drill-in: у пунктов есть полная детализация.
-    const detailed = (id: string): { details?: Record<string, unknown> } => items.find((entry: { id: string }) => entry.id === id)
+    const detailed = (id: string): { details?: Record<string, unknown>; inheritance?: { effective: string; overriddenFrom?: string; inheritedFrom?: string } } => items.find((entry: { id: string }) => entry.id === id)
     expect(Object.keys(detailed('personalization').details ?? {})).toEqual(expect.arrayContaining(['Обращение', 'Язык ответа', 'Стиль', 'Тон', 'Текст в промпте']))
     expect(detailed('mcp-remote-bash').details).toMatchObject({ 'Инструмент': 'mcp__remote__bash', 'Изменяет данные': true })
     expect(detailed('mcp-kb-search').details).toMatchObject({ 'Инструмент': 'mcp__kb__search' })
+    // Замок объясняется словом с сервера, а не догадкой UI по id пункта.
+    expect(byId('platform-instructions')).toMatchObject({ lockReason: 'safety' })
+    expect(byId('conversation-history')).toMatchObject({ lockReason: 'info' })
+    expect(byId('personalization')).toMatchObject({ lockReason: null })
+    // Роль смотрящего решает сервер: UI не выводит права из своего состояния.
+    expect(snapshot.viewerRole).toBe('admin')
+    // Наследование: что переопределено и что было бы без переопределения.
+    expect(detailed('llm').inheritance).toMatchObject({ inheritedFrom: 'общие настройки пользователя' })
+  })
+
+  it('предпросмотр промпта повторяет текст хода и слушается тумблеров', async () => {
+    const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Промпт' } })).json()
+    const settings = (await inj({ method: 'GET', url: '/api/settings' })).json()
+    await inj({ method: 'PUT', url: '/api/settings', payload: { ...settings, personalization: { ...settings.personalization, preferredName: 'Алексей', responseLanguage: 'ru', responseStyle: 'brief' } } })
+    const snap = async (): Promise<{
+      promptPreview: { blocks: Array<{ itemIds: string[]; text: string; chars: number; approxTokens: number }>; text: string; chars: number; approxTokens: number; omitted: string[] }
+      groups: Array<{ items: Array<{ id: string; size?: { chars: number; approxTokens: number } | null }> }>
+    }> => (await inj({ method: 'GET', url: `/api/conversations/${created.id}/context-snapshot` })).json()
+
+    const before = await snap()
+    // Карточка описывает предпочтения словами, а не печатает сырое поле («normal»).
+    const card = before.groups.flatMap((group) => group.items).find((entry) => entry.id === 'personalization') as unknown as { description: string }
+    expect(card.description).toContain('обращение «Алексей»')
+    expect(card.description).toContain('стиль кратко')
+    const personalization = before.promptPreview.blocks.find((block) => block.itemIds.includes('personalization'))
+    expect(personalization?.text).toContain('Обращение к пользователю: Алексей.')
+    expect(personalization?.text).toContain('Стиль ответа: кратко.')
+    expect(before.promptPreview.text).toContain('## Персонализация пользователя')
+    expect(before.promptPreview.chars).toBe(before.promptPreview.text.length)
+    expect(before.promptPreview.approxTokens).toBe(Math.ceil(before.promptPreview.text.length / 4))
+    expect(before.promptPreview.omitted.join(' ')).toContain('Правила платформы')
+    // Размер вклада виден и на самом пункте — иначе непонятно, кто занял место.
+    const item = before.groups.flatMap((group) => group.items).find((entry) => entry.id === 'personalization')
+    expect(item?.size).toEqual({ chars: personalization?.chars, approxTokens: personalization?.approxTokens })
+
+    // Выключенный пункт исчезает и из предпросмотра: панель обещает ровно то,
+    // что уйдёт модели, а не «что настроено».
+    const off = await inj({ method: 'POST', url: `/api/conversations/${created.id}/context/personalization`, payload: { enabled: false } })
+    expect(off.statusCode).toBe(200)
+    const after = await snap()
+    expect(after.promptPreview.blocks.some((block) => block.itemIds.includes('personalization'))).toBe(false)
+    expect(after.promptPreview.text).not.toContain('Алексей')
   })
 
   it('Make: REST проекта, превью через cookie-путь, публикация /p/<token>/ без авторизации, чужой проект — 404', async () => {
