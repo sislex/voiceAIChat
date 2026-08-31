@@ -96,6 +96,10 @@ export interface TurnManagerDeps {
   consoleMcpBaseUrl?: string
   /** База URL MCP-эндпоинта Make (с секретом k); ход адресуется query `conv` и `turn`. */
   makeMcpBaseUrl?: string
+  /** База URL MCP-эндпоинта канбана (с секретом k); ход адресуется query `conv` и `turn`. */
+  kanbanMcpBaseUrl?: string
+  /** Снимок «что открыто» для инструментов канбана: пишется на старте хода. */
+  widgetContexts?: { remember(conversationId: string, turnId: string, context: WidgetAssistantContext): void }
   /** Реестр снимков «До правок» по id хода — для meta.makeSnapshotId. */
   makeHub?: { turnSnapshot(turn: string): string | undefined }
   /** Контекст проекта Make для промпта: дизайн-токены и открытые комментарии (roadmap-2 п.9). */
@@ -586,8 +590,17 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         basePrompt = `${basePrompt}\n\n## Контекст задачи\n${lines.join('\n')}`
       }
     }
-    if (conv?.assistantKind === 'kanban' && req.assistantContext) {
-      basePrompt = `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Для поиска карточек используй toolResults.query: шлюз предпочитает семантический UI-снимок, а без него делает API-fallback. Любые изменения только propose; они проходят общий action-шлюз после подтверждения — не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
+    // Панель ассистента работает и в приватном kanban-чате, и в обычном чате
+    // проекта, выбранном в её селекторе. Признак второго — `assistantContext`:
+    // его шлёт только эта панель, обычный чат сайдбара такого поля не имеет.
+    const kanbanTurn = Boolean(req.assistantContext) && (conv?.assistantKind === 'kanban' || (!conv?.assistantKind && Boolean(conv?.projectId)))
+    if (kanbanTurn && req.assistantContext) {
+      // С инструментами канбана envelope не нужен: модель читает и меняет доску
+      // сама. Без них (старый деплой, инструменты не подняты) остаётся прежний
+      // режим предложений — иначе ассистент вообще ничего не сможет сделать.
+      basePrompt = deps.kanbanMcpBaseUrl
+        ? `${basePrompt}\n\n## Режим канбан-ассистента\nТы работаешь инструментами mcp__kanban__*: kanban_context (что открыто у пользователя прямо сейчас), kanban_board, kanban_task_get, kanban_search_tasks, project_info, project_api_get. Снимок ниже — стартовое состояние экрана на момент реплики; если сомневаешься, что он актуален, перечитай инструментом.\n${JSON.stringify(req.assistantContext)}`
+        : `${basePrompt}\n\n## Режим канбан-ассистента\nОтветь JSON-объектом {"text":"...","commands":[]}. Доступные команды: navigate.project-settings, navigate.task, propose.task-update, propose.rephrase, propose.acceptance-criteria, propose.settings-update. Для поиска карточек используй toolResults.query: шлюз предпочитает семантический UI-снимок, а без него делает API-fallback. Любые изменения только propose; они проходят общий action-шлюз после подтверждения — не утверждай, что они применены. Используй только безопасный снимок ниже.\n${JSON.stringify(req.assistantContext)}`
     }
     // Блок персонализации строит `prompt/contextBlocks.ts` — тот же код, что и
     // предпросмотр в инспекторе контекста: иначе панель обещает не то, что уйдёт.
@@ -715,6 +728,13 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
       makeMcpUrl = `${deps.makeMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}${note ? `&note=${encodeURIComponent(note)}` : ''}`
 
     }
+    // Канбан: инструменты mcp__kanban__* читают и меняют проект разговора.
+    // Снимок «что открыто» приходит вместе с репликой и живёт только на время хода.
+    let kanbanMcpUrl: string | undefined
+    if (kanbanTurn && deps.kanbanMcpBaseUrl) {
+      if (req.assistantContext) deps.widgetContexts?.remember(conversationId, turnId, req.assistantContext)
+      kanbanMcpUrl = `${deps.kanbanMcpBaseUrl}&conv=${encodeURIComponent(conversationId)}&turn=${encodeURIComponent(turnId)}`
+    }
     let remote: { mcpUrl: string; agentName: string; policySummary?: string } | undefined
     let remoteFileToken: string | null = null
     if (target && deps.agents && deps.mcpBaseUrl) {
@@ -825,7 +845,9 @@ export function createTurnManager(deps: TurnManagerDeps): TurnManager {
         ...(previewMcpUrl ? { previewMcpUrl } : {}),
         // В режиме «План» консоль read-only: ввод в терминал блокируется (&ro=1).
         ...(consoleMcpUrl ? { consoleMcpUrl: permissionMode === 'plan' ? `${consoleMcpUrl}&ro=1` : consoleMcpUrl } : {}),
-        ...(makeMcpUrl ? { makeMcpUrl: permissionMode === 'plan' ? `${makeMcpUrl}&ro=1` : makeMcpUrl } : {})
+        ...(makeMcpUrl ? { makeMcpUrl: permissionMode === 'plan' ? `${makeMcpUrl}&ro=1` : makeMcpUrl } : {}),
+        // В режиме «План» канбан read-only: карточки и настройки не меняются (&ro=1).
+        ...(kanbanMcpUrl ? { kanbanMcpUrl: permissionMode === 'plan' ? `${kanbanMcpUrl}&ro=1` : kanbanMcpUrl } : {})
       },
       {
         onSession: (sid) => deps.db.setClaudeSession(userId, conversationId, `${provider}:${sid}`),

@@ -3,6 +3,7 @@ import { EmbeddedChat } from '@voicechat/chat-app'
 import type { KanbanAssistantSelection, SupportedTaskPatch, WidgetAssistantCommand, WidgetAssistantContext, WidgetAssistantProposal, WidgetToolScope } from '@shared/widgetAssistant'
 import { isWidgetAssistantProposal, parseWidgetAssistantReply, taskWidgetItem } from '@shared/widgetAssistant'
 import type { Conversation, Message } from '@shared/types'
+import type { Orchestration } from '@shared/orchestration'
 import type { LlmEngineOption } from '@shared/admin'
 import type { RendererApi } from '@shared/ipc'
 import { browserId } from '@shared/browserId'
@@ -31,6 +32,11 @@ export interface ProjectAssistantChat {
   id: string
   title: string
   source: string
+}
+
+/** Значок шага плана: статус читается взглядом, без легенды. */
+const PLAN_ITEM_MARKS: Record<string, string> = {
+  pending: '·', running: '▸', done: '✓', failed: '✕', cancelled: '—'
 }
 
 export function projectAssistantChatSource(conversation: Conversation): string {
@@ -96,6 +102,7 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
   const [proposal, setProposal] = useState<{ command: WidgetAssistantProposal; turnId: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [partial, setPartial] = useState('')
+  const [plans, setPlans] = useState<Orchestration[]>([])
   const liveContext = useRef(context)
   useEffect(() => { liveContext.current = context }, [context])
   const reload = async (): Promise<void> => {
@@ -115,6 +122,18 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
     if (!transport || !conversation) return
     return transport.onToken((event) => { if (event.conversationId === conversation.id) setPartial((value) => value + event.delta) })
   }, [transport, conversation?.id])
+  // Планы работ ассистента: снимок при открытии и живые изменения кадром.
+  // Панель нужна и после F5, и когда план поставил другой чат этого проекта.
+  useEffect(() => {
+    let current = true
+    void api['orchestrations:list']({ projectId }).then((items) => { if (current) setPlans(items) })
+    const bridge = window.widgetUi
+    const off = bridge?.onOrchestration((plan) => {
+      if (plan.projectId !== projectId) return
+      setPlans((items) => [plan, ...items.filter((item) => item.id !== plan.id)])
+    })
+    return () => { current = false; off?.() }
+  }, [api, projectId])
   useEffect(() => {
     if (!transport || !conversation) return
     const done = transport.onDone((event) => {
@@ -201,6 +220,35 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
       {context.selection?.selectedField && <span>{context.selection.selectedField}</span>}
     </div>
     {proposal && <WidgetProposalCard proposal={proposal.command} context={context} onConfirm={() => { const next = proposal; setProposal(null); void confirmProposal(next.command, next.turnId) }} onCancel={() => setProposal(null)} />}
+    {plans.filter((plan) => plan.status === 'running').map((plan) => <section key={plan.id} className="kanban-assistant-plan" aria-label={`План работ: ${plan.title}`}>
+      <header>
+        <strong>{plan.title}</strong>
+        <span>{plan.items.filter((item) => item.status === 'done').length}/{plan.items.length}</span>
+        <button type="button" onClick={() => void api['orchestrations:cancel']({ planId: plan.id }).then((cancelled) => { if (cancelled) setPlans((items) => items.map((item) => item.id === cancelled.id ? cancelled : item)) })}>Остановить</button>
+      </header>
+      <ol>{plan.items.map((item) => <li key={item.id} data-status={item.status}>
+        <span className="kanban-assistant-plan-status">{PLAN_ITEM_MARKS[item.status]}</span>
+        <span>{item.title}</span>
+        {item.error && <em>{item.error}</em>}
+      </li>)}</ol>
+    </section>)}
+    {conversation && <label className="kanban-assistant-autonomy">
+      <input
+        type="checkbox"
+        checked={(conversation.assistantAutonomy ?? 'auto') === 'auto'}
+        onChange={(event) => {
+          const autonomy = event.target.checked ? 'auto' : 'confirm'
+          setConversation({ ...conversation, assistantAutonomy: autonomy })
+          void api['kanbanAssistant:setAutonomy']({ conversationId: conversation.id, autonomy }).then((updated) => setConversation(updated))
+        }}
+      />
+      <span>Автопилот</span>
+      <span className="kanban-assistant-autonomy-hint">
+        {(conversation.assistantAutonomy ?? 'auto') === 'auto'
+          ? 'ассистент применяет изменения сам'
+          : 'каждое изменение — с подтверждением'}
+      </span>
+    </label>}
     {conversation && effective && <details className="kanban-assistant-settings"><summary>LLM: {effective.provider} · {effective.model}{effective.inherited ? ' (из проекта)' : ''}</summary><div><label>Исполнитель<select value={conversation.llmEngineId ?? ''} onChange={(event) => void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmEngineId: event.target.value || null }).then(reload)}><option value="">Из проекта</option>{llmEngines.map((engine) => <option key={engine.id} value={engine.id}>{engine.name}</option>)}</select></label><label>Provider<select value={conversation.llmProvider ?? ''} onChange={(event) => { const provider = event.target.value as 'claude' | 'codex' | ''; void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmProvider: provider || null, llmModel: provider ? effective.model : null }).then(reload) }}><option value="">Из проекта</option><option value="claude">Claude</option><option value="codex">Codex</option></select></label><label>Модель<input value={conversation.llmModel ?? ''} disabled={!conversation.llmProvider} onChange={(event) => setConversation({ ...conversation, llmModel: event.target.value })} onBlur={() => void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmModel: conversation.llmModel }).then(reload)} /></label><button type="button" onClick={() => void api['conversations:setExecTarget']({ id: conversation.id, execTarget: 'none', llmEngineId: null, llmProvider: null, llmModel: null }).then(reload)}>Сбросить к проекту</button></div></details>}
   </div>
   return <EmbeddedChat>

@@ -14,6 +14,7 @@ import type {
   RendererFilesBridge,
   RendererFsBridge,
   RendererPreviewBridge,
+  RendererWidgetUiBridge,
   RendererRealtimeBridge,
   RendererPtyBridge,
   RendererMakeBridge,
@@ -47,6 +48,7 @@ declare global {
     kb?: RendererKbBridge
     /** Действия модели в панели веб-превью (web). */
     preview?: RendererPreviewBridge
+    widgetUi?: RendererWidgetUiBridge
     /** Изолированный Chromium Playwright Reader (web). */
     browser?: RendererBrowserBridge
     featurePreview?: RendererFeaturePreviewBridge

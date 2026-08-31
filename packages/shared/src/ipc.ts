@@ -203,6 +203,14 @@ export interface IpcInvokeMap {
     arg: { projectId: string; conversationId?: string }
     result: ConversationWithMessages & { effectiveLlm: { llmEngineId: string | null; provider: LlmProvider; model: string; inherited: boolean } }
   }
+  /** Тумблер «Автопилот»: применять изменения сразу или спрашивать подтверждение. */
+  'kanbanAssistant:setAutonomy': {
+    arg: { conversationId: string; autonomy: import('./widgetAssistant').WidgetAssistantAutonomy }
+    result: Conversation
+  }
+  /** Планы работ, которые ведёт канбан-ассистент (для панели прогресса). */
+  'orchestrations:list': { arg: { projectId: string }; result: import('./orchestration').Orchestration[] }
+  'orchestrations:cancel': { arg: { planId: string }; result: import('./orchestration').Orchestration | null }
   'widget:describe': { arg: import('./widgetAssistant').WidgetToolScope; result: import('./widgetAssistant').WidgetToolDescription }
   'widget:query': { arg: import('./widgetAssistant').WidgetToolQueryRequest; result: import('./widgetAssistant').WidgetToolQueryResult }
   'widget:get': { arg: import('./widgetAssistant').WidgetToolGetRequest; result: import('./widgetAssistant').WidgetToolGetResult }
@@ -871,6 +879,18 @@ export interface RendererPreviewBridge {
   onChanged?(cb: (m: { conversationId: string; address: string | null; title: string | null; navigated: boolean; action: PreviewAction }) => void): () => void
   /** Ответ на действие (preview.result). */
   result(m: { conversationId?: string; registrationId?: string; requestId: string; ok: boolean; result?: PreviewActionResult; error?: string }): void
+}
+
+/**
+ * Мост действий канбан-ассистента в интерфейсе (web, поверх WS): сервер шлёт
+ * widget.action, клиент выполняет его на своей странице проекта и отвечает
+ * widget.result. В desktop отсутствует — ассистент остаётся без управления UI.
+ */
+export interface RendererWidgetUiBridge {
+  onAction(cb: (m: { conversationId: string; projectId: string; requestId: string; action: import('./widgetAssistant').WidgetUiAction }) => void): () => void
+  /** Прогресс плана работ ассистента (кадр assistant.orchestration). */
+  onOrchestration(cb: (plan: import('./orchestration').Orchestration) => void): () => void
+  result(m: { conversationId: string; requestId: string; ok: boolean; result?: import('./widgetAssistant').WidgetUiActionResult; error?: string }): void
 }
 
 /**
