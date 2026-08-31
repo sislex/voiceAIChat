@@ -2,7 +2,7 @@
 // правка требует подтверждения (его кликают, а не мокают), а запись выключается там,
 // где сервер её всё равно запретит: занятый раном каталог, read-only копия, main.
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { render } from '../../test/uiRender'
 import { expectNoViolations } from '../../test/a11y'
 import { makeGitBranches, makeGitDiff, makeGitFile, makeGitStatus, makeGitTree, makeGitWorkspace } from '../../test/fixtures/git'
@@ -27,6 +27,8 @@ function api(over: Partial<GitPaneApi> = {}, status: GitWorkspaceStatus = makeGi
     'projects:gitCreateBranch': vi.fn(async () => ({ status, createdLocal: true })),
     'projects:gitCommit': vi.fn(async () => ({ status: { ...status, changes: [] }, sha: 'd'.repeat(40), staged: 1 })),
     'projects:gitPush': vi.fn(async () => ({ status, branch: 'CHAT-42', sha: 'd'.repeat(40) })),
+    'projects:gitPull': vi.fn(async () => ({ status, mode: 'rebase' as const, pulled: 2 })),
+    'projects:gitDiscard': vi.fn(async () => ({ status: { ...status, changes: [] }, reverted: 1, removed: 0 })),
     ...over
   } as GitPaneApi
 }
@@ -123,9 +125,12 @@ describe('GitPane', () => {
   })
 
   it('merge-клон объясняет, почему только чтение', async () => {
-    const status = makeGitStatus({ ref: makeGitWorkspace({ kind: 'merge-clone', writable: false }) })
+    // Причину теперь формулирует сервер и присылает в статусе: UI её не додумывает.
+    const status = makeGitStatus({
+      ref: makeGitWorkspace({ kind: 'merge-clone', writable: false, readOnlyReason: 'Merge-клоном управляет merge-ран: он только для чтения' })
+    })
     paint(api({}, status))
-    expect(await screen.findByText(/это merge-клон, им управляет merge-ран/)).toBeInTheDocument()
+    expect(await screen.findByText(/Merge-клоном управляет merge-ран/)).toBeInTheDocument()
   })
 
   it('проблема рабочей копии показывается объяснением и следующим шагом', async () => {
@@ -192,5 +197,82 @@ describe('GitPane', () => {
     const { container } = paint()
     await screen.findByTestId('git-change-list')
     await expectNoViolations(container)
+  })
+})
+
+describe('GitPane: правки, роль и origin', () => {
+  it('несохранённая правка не теряется при переходе к другому файлу и помечается точкой', async () => {
+    const bridge = api()
+    paint(bridge)
+    fireEvent.click(await screen.findByText('apps/server/src/index.ts'))
+    await waitFor(() => expect(screen.getByTestId('git-diff')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('tab', { name: 'Правка' }))
+    fireEvent.change(await screen.findByLabelText('Содержимое apps/server/src/index.ts'), { target: { value: 'мой черновик' } })
+    // Уходим на другой файл и возвращаемся.
+    fireEvent.click(screen.getByText('docs/kb/ui.md'))
+    await waitFor(() => expect(screen.getByTestId('git-diff')).toBeInTheDocument())
+    // Точка в списке говорит, что правка жива.
+    expect(screen.getByTitle('Есть несохранённая правка')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('apps/server/src/index.ts'))
+    const editor = await screen.findByLabelText('Содержимое apps/server/src/index.ts')
+    expect((editor as HTMLTextAreaElement).value).toBe('мой черновик')
+  })
+
+  it('роль без права записи: кнопки выключены и объясняют причину, а не молчат', async () => {
+    const status = makeGitStatus({
+      ref: makeGitWorkspace({ writable: false, readOnlyReason: 'Ваша роль не позволяет менять рабочую копию' })
+    })
+    paint(api({}, status))
+    expect(await screen.findByText(/Ваша роль не позволяет менять рабочую копию/)).toBeInTheDocument()
+    const commit = screen.getByRole('button', { name: 'Закоммитить' })
+    expect(commit).toBeDisabled()
+    const discard = screen.getByRole('button', { name: 'Отбросить' })
+    expect(discard).toBeDisabled()
+    expect(discard).toHaveAttribute('title', 'Ваша роль не позволяет менять рабочую копию')
+  })
+
+  it('«Подтянуть» появляется при отставании и не работает на грязном дереве', async () => {
+    const dirty = makeGitStatus({ behind: 3 })
+    paint(api({}, dirty))
+    const pull = await screen.findByRole('button', { name: 'Подтянуть (3)' })
+    expect(pull).toBeDisabled()
+    expect(pull).toHaveAttribute('title', 'Сначала закоммитьте или отбросьте изменения')
+  })
+
+  it('на чистом дереве «Подтянуть» вызывает rebase после подтверждения', async () => {
+    const clean = makeGitStatus({ behind: 2, changes: [] })
+    const bridge = api({}, clean)
+    paint(bridge)
+    fireEvent.click(await screen.findByRole('button', { name: 'Подтянуть (2)' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Подтянуть' }))
+    await waitFor(() => expect(bridge['projects:gitPull']).toHaveBeenCalledWith({ id: 'p1', workspace: 'ws:ws-1', mode: 'rebase' }))
+  })
+
+  it('«Обновить из origin» освежает ветки и состояние, не открывая диалог', async () => {
+    const bridge = api()
+    paint(bridge)
+    fireEvent.click(await screen.findByRole('button', { name: 'Обновить из origin' }))
+    await waitFor(() => expect(bridge['projects:gitBranches']).toHaveBeenCalledWith({ id: 'p1', workspace: 'ws:ws-1', refresh: true }))
+    expect(screen.queryByTestId('git-branch-dialog')).not.toBeInTheDocument()
+  })
+
+  it('отбрасывание требует ввести имя ветки и только потом уходит на сервер', async () => {
+    const bridge = api()
+    paint(bridge)
+    await screen.findByTestId('git-change-list')
+    fireEvent.click(screen.getByRole('button', { name: 'Выбрать все' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Отбросить' }))
+    // Кнопка подтверждения заперта, пока не введено имя ветки; в подвале кнопка с тем
+    // же текстом, поэтому ищем именно внутри окна подтверждения.
+    const dialog = await screen.findByRole('dialog')
+    const confirmButton = within(dialog).getByRole('button', { name: 'Отбросить' })
+    expect(confirmButton).toBeDisabled()
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: 'CHAT-42' } })
+    expect(confirmButton).toBeEnabled()
+    fireEvent.click(confirmButton)
+    await waitFor(() => expect(bridge['projects:gitDiscard']).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'p1', workspace: 'ws:ws-1', confirmText: 'CHAT-42'
+    })))
   })
 })

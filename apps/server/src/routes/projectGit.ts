@@ -120,6 +120,27 @@ export function registerProjectGitRoutes(app: FastifyInstance, git: GitWorkspace
     }
   )
 
+  app.post<{ Params: { id: string }; Body: { workspace?: string; mode?: 'rebase' | 'merge' } }>(
+    '/api/projects/:id/git/pull',
+    async (req, reply) => {
+      const body = req.body ?? {}
+      if (!body.workspace) return required(reply, 'workspace')
+      const mode = body.mode === 'merge' ? 'merge' : 'rebase'
+      return handle(reply, () => git.pull(uid(req), req.params.id, body.workspace!, mode))
+    }
+  )
+
+  app.post<{ Params: { id: string }; Body: { workspace?: string; paths?: string[]; confirmText?: string } }>(
+    '/api/projects/:id/git/discard',
+    async (req, reply) => {
+      const body = req.body ?? {}
+      if (!body.workspace) return required(reply, 'workspace')
+      if (!Array.isArray(body.paths) || body.paths.length === 0) return required(reply, 'paths')
+      if (typeof body.confirmText !== 'string') return required(reply, 'confirmText')
+      return handle(reply, () => git.discard(uid(req), req.params.id, body.workspace!, body.paths!, body.confirmText!))
+    }
+  )
+
   app.post<{ Params: { id: string }; Body: { workspace?: string; branch?: string } }>(
     '/api/projects/:id/git/push',
     async (req, reply) => {

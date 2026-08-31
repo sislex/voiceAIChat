@@ -8287,3 +8287,5 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .gitpane-tree-mark { flex: none; width: 12px; color: var(--text-dim); }
 .gitpane-tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gitpane-tree li[aria-selected='true'] > .gitpane-tree-row { background: var(--surface-selected); }
+
+.gitpane-change-dirty { flex: none; color: var(--accent); font-size: 11px; }

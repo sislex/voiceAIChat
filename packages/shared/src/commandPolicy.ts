@@ -24,7 +24,10 @@ export type RoleCommandPolicies = Partial<Record<UserRole, CommandPolicyLayer>>
 export const DANGEROUS_COMMAND_PATTERNS: Array<{ pattern: string; label: string }> = [
   { pattern: '\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\\b', label: 'rm -rf' },
   { pattern: '\\bgit\\s+push\\b[^|;&]*(--force|-f\\b|\\+[a-zA-Z])', label: 'git push --force' },
-  { pattern: '\\bgit\\s+(reset\\s+--hard|clean\\s+-[a-zA-Z]*f|branch\\s+-D)\\b', label: 'git reset --hard / clean -f / branch -D' },
+  // Флаги `clean` пишут слитно и в любом порядке (`-fd`, `-fdx`, `-xdf`), поэтому
+  // после `f` обязателен хвост из букв: с одним `\\b` формы `-fd` и `-fdx` — самые
+  // частые — мимо паттерна проходили, и подтверждения у них не спрашивали.
+  { pattern: '\\bgit\\s+(reset\\s+--hard|clean\\s+-[a-zA-Z]*f[a-zA-Z]*|branch\\s+-D)\\b', label: 'git reset --hard / clean -f / branch -D' },
   { pattern: '\\b(drop|truncate)\\s+(table|database|schema)\\b', label: 'DROP/TRUNCATE' },
   { pattern: '\\b(mkfs|fdisk|parted)\\b|\\bdd\\s+if=', label: 'разметка диска / dd' },
   { pattern: '\\b(shutdown|reboot|halt|poweroff)\\b', label: 'выключение/перезагрузка' },

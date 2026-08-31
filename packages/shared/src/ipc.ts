@@ -32,8 +32,9 @@ import type {
 import type { HealthResponse, QueuedTurn, ServerFileInfo, SystemCapabilities, TurnTarget, ActiveTurn } from './protocol'
 import type { GitAccessDiagnostics, GitAccessResult } from './gitAccess'
 import type {
-  GitBranchList, GitCheckoutResult, GitCommitResult, GitFileContent, GitFileDiff,
-  GitPushResult, GitSaveFileResult, GitTreeListing, GitWorkspaceRef, GitWorkspaceStatus
+  GitBranchList, GitCheckoutResult, GitCommitResult, GitDiscardResult, GitFileContent,
+  GitFileDiff, GitPullMode, GitPullResult, GitPushResult, GitSaveFileResult,
+  GitTreeListing, GitWorkspaceRef, GitWorkspaceStatus
 } from './gitWorkspace'
 import type { PreviewAction, PreviewActionResult } from './previewActions'
 import type {
@@ -545,6 +546,8 @@ export interface IpcInvokeMap {
   'projects:gitCreateBranch': { arg: { id: string; workspace: string; name: string; from?: string }; result: GitCheckoutResult }
   'projects:gitCommit': { arg: { id: string; workspace: string; message: string; paths?: string[]; all?: boolean }; result: GitCommitResult }
   'projects:gitPush': { arg: { id: string; workspace: string; branch?: string }; result: GitPushResult }
+  'projects:gitPull': { arg: { id: string; workspace: string; mode?: GitPullMode }; result: GitPullResult }
+  'projects:gitDiscard': { arg: { id: string; workspace: string; paths: string[]; confirmText: string }; result: GitDiscardResult }
   /** Назначить legacy/production-машину проекта по умолчанию (только владелец). */
   'projects:setDefaultMachine': { arg: { id: string; agentId: string }; result: ProjectDetail }
   /**
@@ -1362,6 +1365,8 @@ export const IPC_CHANNELS: IpcChannel[] = [
   'projects:gitCreateBranch',
   'projects:gitCommit',
   'projects:gitPush',
+  'projects:gitPull',
+  'projects:gitDiscard',
   'projects:setReposRoot',
   'projects:setMachineSsh',
   'projects:setDefaultMachine',

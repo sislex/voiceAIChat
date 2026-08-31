@@ -15,16 +15,19 @@ import {
   parseAheadBehind, parseGitLog, parseGitLsTree, parseGitRefs, parseGitStatusPorcelain,
   parseGitWorkspaceId, splitGitSections,
   type AgentPolicy, type FsResult, type GitBranchList, type GitCheckoutResult,
-  type GitCommitResult, type GitFileContent, type GitFileDiff, type GitPushResult,
+  type GitCommitResult, type GitDiscardResult, type GitFileContent, type GitFileDiff,
+  type GitPullMode, type GitPullResult, type GitPushResult,
   type GitSaveFileResult, type GitTreeListing, type GitWorkspaceProblem,
   type GitWorkspaceRef, type GitWorkspaceStatus
 } from '@voicechat/shared'
 import type { VoiceChatDb } from '../db/database.js'
 import { buildShellCommand } from '../ci/executor.js'
 import type { CommandGate } from '../agents/commandGate.js'
+import { hasProjectPermission } from '../users/auth.js'
 import {
-  branchesScript, checkoutScript, commitScript, createBranchScript,
-  fileAtRefScript, gitBaseEnv, pushScript, statusScript, treeScript, type GitScript
+  branchesScript, checkoutScript, commitScript, createBranchScript, discardScript,
+  fileAtRefScript, gitBaseEnv, pullScript, pushScript, statusScript, treeScript,
+  type GitScript
 } from './scripts.js'
 
 /** Что сервису нужно от реестра машин — ровно это, чтобы тесты не поднимали агента. */
@@ -150,7 +153,7 @@ export class GitWorkspaceService {
         : 'Каталог занят активным merge-раном задачи')
     }
     if (ref.kind === 'merge-clone') throw new GitError(403, 'read_only_workspace', 'Merge-клон доступен только для чтения')
-    if (!ref.writable) throw new GitError(403, 'read_only_machine', 'Запись на этой машине запрещена: только чтение по политике или по режиму доступа проекта')
+    if (!ref.writable) throw new GitError(403, 'read_only_machine', ref.readOnlyReason ?? 'Изменение рабочей копии запрещено')
     return ref
   }
 
@@ -373,6 +376,65 @@ export class GitWorkspaceService {
     return { status: await this.status(userId, projectId, workspaceId), branch, sha: head }
   }
 
+  /**
+   * Подтянуть origin в текущую ветку. Нужен, потому что без него отказ push с
+   * `non-fast-forward` был тупиком: единственным выходом оставался терминал.
+   *
+   * Требует чистого дерева: rebase поверх незакоммиченных правок либо откажется, либо
+   * потребует stash — и то и другое человек должен решить сам, видя список файлов.
+   */
+  async pull(userId: string, projectId: string, workspaceId: string, mode: GitPullMode = 'rebase'): Promise<GitPullResult> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const before = await this.status(userId, projectId, workspaceId)
+    if (!before.branch) throw new GitError(409, 'detached_head', 'HEAD не на ветке: сначала переключитесь на ветку')
+    if (before.changes.length > 0) {
+      throw new GitError(409, 'dirty_worktree', `Сначала закоммитьте или отбросьте изменения (${before.changes.length})`)
+    }
+    const result = await this.runMutation(
+      userId, projectId, ref, pullScript(before.branch, mode), NETWORK_TIMEOUT_MS, 'Не удалось подтянуть изменения'
+    )
+    const sections = splitGitSections(result.output)
+    if (/no-upstream/.test(sections.combine ?? '')) {
+      throw new GitError(409, 'unknown_ref', `Ветки ${before.branch} нет в origin — сначала отправьте её`)
+    }
+    const status = await this.status(userId, projectId, workspaceId)
+    this.audit(userId, projectId, ref, 'git.pull', { branch: before.branch, mode })
+    return { status, mode, pulled: Math.max(0, before.behind) }
+  }
+
+  /**
+   * Отбросить правки в выбранных файлах — единственная необратимая операция панели.
+   * Поэтому подтверждение приходит от клиента текстом (`confirmText` = имя ветки),
+   * и сервер сверяет его сам: иначе «отбросить всё» отделяло бы от случайного клика
+   * только модальное окно в браузере.
+   */
+  async discard(
+    userId: string, projectId: string, workspaceId: string, paths: string[], confirmText: string
+  ): Promise<GitDiscardResult> {
+    const ref = this.resolve(userId, projectId, workspaceId, { write: true })
+    const before = await this.status(userId, projectId, workspaceId)
+    const expected = before.branch ?? before.head?.slice(0, 8) ?? ''
+    if (!expected || confirmText.trim() !== expected) {
+      throw new GitError(409, 'confirmation_mismatch', `Для подтверждения введите «${expected}»`)
+    }
+    const chosen = paths.filter((path) => path.length > 0)
+    if (chosen.length === 0) throw new GitError(400, 'nothing_to_discard', 'Не выбрано ни одного файла')
+    for (const path of chosen) {
+      if (!isSafeRepoRelativePath(path)) throw new GitError(400, 'invalid_path', `Недопустимый путь: ${path}`)
+      if (!before.changes.some((change) => change.path === path)) {
+        throw new GitError(409, 'nothing_to_discard', `Файл ${path} не изменён — отбрасывать нечего`)
+      }
+    }
+    const untracked = chosen.filter((path) => before.changes.find((change) => change.path === path)?.state === 'untracked')
+    await this.runMutation(userId, projectId, ref, discardScript(chosen), MUTATE_TIMEOUT_MS, 'Не удалось отбросить правки')
+    this.audit(userId, projectId, ref, 'git.discard', { files: chosen.length, untracked: untracked.length })
+    return {
+      status: await this.status(userId, projectId, workspaceId),
+      reverted: chosen.length - untracked.length,
+      removed: untracked.length
+    }
+  }
+
   // --- внутреннее ---------------------------------------------------------
 
   private async fileAtRef(userId: string, projectId: string, ref: GitWorkspaceRef, path: string, revision: string): Promise<GitFileContent> {
@@ -483,17 +545,37 @@ export class GitWorkspaceService {
       projectId, type, actorType: 'user', actorId: userId,
       payload: { ...payload, workspace: ref.id, path: ref.path, agentId: ref.agentId }
     })
+    // Второй адресат — журнал безопасности: операция меняет рабочую копию на чужом
+    // хосте, и владелец машины должен видеть её там же, где входы и подключения
+    // агентов, а не только в событиях проекта.
+    const details = [type, ref.path, ...Object.entries(payload).map(([key, value]) => `${key}=${String(value)}`)].join(' · ')
+    this.deps.db.logSecurityEvent({ user: userId, type: 'git_workspace_mutation', details })
   }
 
   private machineAccess(userId: string, project: { id: string; machines: { agentId: string; ownership?: string; sharedWithProject?: boolean }[] }, agentId: string):
-    { online: boolean; writable: boolean; machineName: string | null } | null {
+    { online: boolean; writable: boolean; readOnlyReason: string | null; machineName: string | null } | null {
     const linked = project.machines.some((machine) => machine.agentId === agentId)
     if (!linked && !this.deps.db.canUseAgent(userId, agentId, project.id)) return null
     if (!this.deps.db.canUseAgent(userId, agentId, project.id)) return null
     const policy = this.deps.runtime.policyOf(agentId)
+    // Три независимых условия, и ни одно не перекрывает другое: полномочие роли,
+    // режим доступа машины проекту и её собственная политика записи. UI получает
+    // готовый флаг с причиной — иначе он показывал бы активную кнопку, а отказ
+    // приходил бы тостом уже после клика.
+    const role = this.deps.db.getUser(userId)?.role
+    const permitted = role ? hasProjectPermission(role, 'repository:write') : false
+    const shared = this.deps.db.canWriteAgent(userId, agentId, project.id)
+    const policyAllows = policy?.allowWrite !== false
     return {
       online: this.deps.runtime.isOnline(agentId),
-      writable: this.deps.db.canWriteAgent(userId, agentId, project.id) && policy?.allowWrite !== false,
+      writable: permitted && shared && policyAllows,
+      readOnlyReason: !permitted
+        ? 'Ваша роль не позволяет менять рабочую копию'
+        : !shared
+          ? 'Машина предоставлена проекту только для чтения'
+          : !policyAllows
+            ? 'Политика машины запрещает изменение файлов'
+            : null,
       machineName: this.deps.runtime.nameOf(agentId) ?? null
     }
   }
@@ -529,6 +611,7 @@ export class GitWorkspaceService {
       pushed: workspace.pushed,
       online: access.online,
       writable: access.writable,
+      readOnlyReason: access.readOnlyReason,
       busy: this.busyFor(userId, project.id, workspace.taskId),
       released: workspace.state === 'released'
     }
@@ -557,6 +640,9 @@ export class GitWorkspaceService {
       pushed: workspace?.path === repository.path ? workspace.pushed : null,
       online: access.online,
       writable: repository.kind === 'merge-clone' ? false : access.writable,
+      readOnlyReason: repository.kind === 'merge-clone'
+        ? 'Merge-клоном управляет merge-ран: он только для чтения'
+        : access.readOnlyReason,
       busy: this.busyFor(userId, project.id, repository.taskId),
       released: repository.state === 'deleted'
     }
@@ -591,6 +677,9 @@ export class GitWorkspaceService {
       pushed: null,
       online: access.online,
       writable: access.writable && conversation.workspace?.readOnly !== true,
+      readOnlyReason: conversation.workspace?.readOnly === true
+        ? 'Рабочий каталог разговора помечен как read-only'
+        : access.readOnlyReason,
       busy: null,
       released: false
     }
@@ -620,6 +709,7 @@ export class GitWorkspaceService {
       pushed: null,
       online: access.online,
       writable: access.writable,
+      readOnlyReason: access.readOnlyReason,
       busy: null,
       released: false
     }

@@ -52,8 +52,14 @@ export interface GitWorkspaceRef {
   /** Ветка уже отправлена в origin (`ci_workspaces.pushed`). */
   pushed: boolean | null
   online: boolean
-  /** Роль в проекте, режим шаринга машины и её политика позволяют запись. */
+  /**
+   * Запись разрешена: полномочие `repository:write`, режим шаринга машины и её
+   * политика — всё сразу. UI выключает кнопки по этому флагу, а не угадывает роль:
+   * иначе тестировщик видел бы активную кнопку и узнавал об отказе из тоста.
+   */
   writable: boolean
+  /** Почему запись запрещена — текст для подписи выключенной кнопки. */
+  readOnlyReason: string | null
   busy: GitWorkspaceBusy | null
   released: boolean
 }
@@ -179,6 +185,24 @@ export interface GitPushResult {
   status: GitWorkspaceStatus
   branch: string
   sha: string
+}
+
+/** Подтягивание изменений origin в рабочую копию. */
+export interface GitPullResult {
+  status: GitWorkspaceStatus
+  /** Режим, которым свели истории. */
+  mode: GitPullMode
+  /** Сколько коммитов приехало из origin. */
+  pulled: number
+}
+
+export type GitPullMode = 'rebase' | 'merge'
+
+/** Отброшенные правки: сколько путей вернули к HEAD и сколько удалили как неотслеживаемые. */
+export interface GitDiscardResult {
+  status: GitWorkspaceStatus
+  reverted: number
+  removed: number
 }
 
 /**

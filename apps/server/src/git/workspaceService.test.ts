@@ -25,6 +25,7 @@ function statusOutput(over: {
 
 interface Fake {
   service: GitWorkspaceService
+  security: Array<{ type: string; details: string }>
   exec: ReturnType<typeof vi.fn>
   fsWrite: ReturnType<typeof vi.fn>
   revisions: Array<{ id: string; branch: string; sha: string; pushed: boolean }>
@@ -41,6 +42,7 @@ function setup(options: {
   canWrite?: boolean
   allowWrite?: boolean
   repositoryKind?: 'dev-workspace' | 'merge-clone'
+  role?: 'admin' | 'developer' | 'tester' | 'observer'
   gate?: GitWorkspaceService extends never ? never : ((input: { command: string }) => { allowed: boolean; reason?: string })
   fsRead?: string
 } = {}): Fake {
@@ -48,6 +50,7 @@ function setup(options: {
   const revisions: Fake['revisions'] = []
   const repositories: Fake['repositories'] = []
   const events: Fake['events'] = []
+  const security: Array<{ type: string; details: string }> = []
   const db = {
     getProject: () => ({ id: 'p1', gitUrl: 'https://github.com/x/y.git', ciBaseBranch: 'main', defaultAgentId: 'a1', machines: [{ agentId: 'a1' }], role: 'owner' }),
     getBoard: () => ({ columns: [], tasks: [{ id: 't1' }] }),
@@ -64,12 +67,13 @@ function setup(options: {
     activeCiRunForTask: () => options.activeCiRun ?? null,
     getConversation: () => ({ id: 'conv-1', title: 'Чат', projectId: 'p1', execTarget: 'a1', workdir: '/repo/chat', workspace: null }),
     getProjectMachine: () => ({ agentId: 'a1', path: '/repo/project', reposRoot: null, storageId: null, storageRoot: null, storageFormatVersion: null, directories: null }),
-    getUser: () => ({ name: 'bob', email: 'bob@example.com' }),
+    getUser: () => ({ name: 'bob', email: 'bob@example.com', role: options.role ?? 'developer' }),
     canUseAgent: () => true,
     canWriteAgent: () => options.canWrite !== false,
     updateCiWorkspaceRevision: (id: string, branch: string, sha: string, pushed: boolean) => revisions.push({ id, branch, sha, pushed }),
     upsertTaskRepository: (_p: string, _t: string, agentId: string, path: string, kind: string) => repositories.push({ agentId, path, kind }),
-    addCiEvent: (args: { type: string; payload?: Record<string, unknown> }) => events.push({ type: args.type, payload: args.payload })
+    addCiEvent: (args: { type: string; payload?: Record<string, unknown> }) => events.push({ type: args.type, payload: args.payload }),
+    logSecurityEvent: (event: { type: string; details?: string }) => security.push({ type: event.type, details: event.details ?? '' })
   }
   const exec = vi.fn(async () => {
     const item = outputs.shift() ?? ''
@@ -92,7 +96,7 @@ function setup(options: {
     ...(options.gate ? { gate: options.gate as never } : {}),
     now: () => 1000
   })
-  return { service, exec, fsWrite, revisions, repositories, events }
+  return { service, exec, fsWrite, revisions, repositories, events, security }
 }
 
 const expectGitError = async (promise: Promise<unknown>, code: string, status?: number): Promise<GitError> => {
@@ -381,5 +385,143 @@ describe('гейт команд', () => {
     })
     expect(error?.message).toContain('политикой проекта')
     expect(exec).not.toHaveBeenCalled()
+  })
+})
+
+describe('право роли и причина «только чтение»', () => {
+  it('роль без repository:write не пускает к записи и объясняет причину', async () => {
+    for (const role of ['tester', 'observer'] as const) {
+      const { service } = setup({ role })
+      const error = await expectGitError(
+        Promise.resolve().then(() => service.resolve('bob', 'p1', 'ws:ws-1', { write: true })),
+        'read_only_machine', 403
+      )
+      expect(error.message, role).toContain('роль')
+    }
+  })
+
+  it('developer и admin пишут; причина в статусе пустая', async () => {
+    for (const role of ['developer', 'admin'] as const) {
+      const { service } = setup({ role, outputs: [statusOutput()] })
+      const status = await service.status('bob', 'p1', 'ws:ws-1')
+      expect(status.ref?.writable, role).toBe(true)
+      expect(status.ref?.readOnlyReason, role).toBeNull()
+    }
+  })
+
+  it('read-only шаринг машины и запрет политики различаются в тексте', async () => {
+    const shared = setup({ canWrite: false, outputs: [statusOutput()] })
+    expect((await shared.service.status('bob', 'p1', 'ws:ws-1')).ref?.readOnlyReason).toContain('только для чтения')
+    const policy = setup({ allowWrite: false, outputs: [statusOutput()] })
+    expect((await policy.service.status('bob', 'p1', 'ws:ws-1')).ref?.readOnlyReason).toContain('Политика машины')
+  })
+
+  it('merge-клон объясняет, что им управляет merge-ран', async () => {
+    const { service } = setup()
+    const refs = service.listWorkspaces('bob', 'p1')
+    expect(refs.find((ref) => ref.kind === 'merge-clone')?.readOnlyReason).toContain('merge-ран')
+  })
+})
+
+describe('подтягивание origin', () => {
+  it('перебазирует ветку и считает, сколько коммитов приехало', async () => {
+    const { service, security } = setup({
+      outputs: [
+        statusOutput({ porcelain: '## feature/x...origin/feature/x [behind 2]\0', track: '0\t2' }),
+        ['==VC:before==', SHA, '==VC:fetch==', '==VC:combine==', 'Successfully rebased', '==VC:after==', 'b'.repeat(40), '==VC:done=='].join('\n'),
+        statusOutput({ porcelain: '## feature/x...origin/feature/x [ahead 2]\0', track: '2\t0' })
+      ]
+    })
+    const result = await service.pull('bob', 'p1', 'ws:ws-1')
+    expect(result).toMatchObject({ mode: 'rebase', pulled: 2 })
+    expect(security.map((event) => event.type)).toContain('git_workspace_mutation')
+  })
+
+  it('на грязном дереве не запускается вовсе', async () => {
+    const { service, exec } = setup({ outputs: [statusOutput()] })
+    const error = await expectGitError(service.pull('bob', 'p1', 'ws:ws-1'), 'dirty_worktree', 409)
+    expect(error.message).toContain('закоммитьте')
+    expect(exec).toHaveBeenCalledTimes(1)
+  })
+
+  it('ветки нет в origin — говорим отправить её, а не «ошибка git»', async () => {
+    const { service } = setup({
+      outputs: [
+        statusOutput({ porcelain: '## feature/x\0' }),
+        ['==VC:before==', SHA, '==VC:fetch==', '==VC:combine==', 'no-upstream', '==VC:after==', SHA, '==VC:done=='].join('\n')
+      ]
+    })
+    await expectGitError(service.pull('bob', 'p1', 'ws:ws-1'), 'unknown_ref', 409)
+  })
+
+  it('конфликт при rebase возвращается как отказ, рабочая копия не остаётся в середине', async () => {
+    const { service } = setup({
+      outputs: [
+        statusOutput({ porcelain: '## feature/x...origin/feature/x [behind 1]\0' }),
+        { output: 'CONFLICT (content): Merge conflict in src/a.ts', exitCode: 65 }
+      ]
+    })
+    await expectGitError(service.pull('bob', 'p1', 'ws:ws-1'), 'git_failed', 409)
+  })
+
+  it('в detached HEAD подтягивать нечего', async () => {
+    const { service } = setup({ outputs: [statusOutput({ porcelain: '## HEAD (no branch)\0' })] })
+    await expectGitError(service.pull('bob', 'p1', 'ws:ws-1'), 'detached_head', 409)
+  })
+})
+
+describe('отбрасывание правок', () => {
+  it('возвращает отслеживаемые файлы и удаляет новые, считая их отдельно', async () => {
+    const { service, security } = setup({
+      outputs: [
+        statusOutput({ porcelain: '## feature/x\0 M src/a.ts\0?? src/new.ts\0' }),
+        ['==VC:revert==', '==VC:clean==', 'Removing src/new.ts', '==VC:done=='].join('\n'),
+        statusOutput({ porcelain: '## feature/x\0' })
+      ]
+    })
+    const result = await service.discard('bob', 'p1', 'ws:ws-1', ['src/a.ts', 'src/new.ts'], 'feature/x')
+    expect(result).toMatchObject({ reverted: 1, removed: 1 })
+    expect(security.some((event) => event.details.includes('git.discard'))).toBe(true)
+  })
+
+  it('без совпадения подтверждения ничего не выполняется', async () => {
+    const { service, exec } = setup({ outputs: [statusOutput()] })
+    const error = await expectGitError(
+      service.discard('bob', 'p1', 'ws:ws-1', ['src/a.ts'], 'не-та-ветка'), 'confirmation_mismatch', 409
+    )
+    expect(error.message).toContain('feature/x')
+    expect(exec).toHaveBeenCalledTimes(1)
+  })
+
+  it('файл без изменений отбросить нельзя: это была бы тихая потеря чужой работы', async () => {
+    const { service } = setup({ outputs: [statusOutput()] })
+    await expectGitError(
+      service.discard('bob', 'p1', 'ws:ws-1', ['src/чужой.ts'], 'feature/x'), 'nothing_to_discard', 409
+    )
+  })
+
+  it('путь наружу репозитория отклоняется', async () => {
+    const { service } = setup({ outputs: [statusOutput()] })
+    await expectGitError(
+      service.discard('bob', 'p1', 'ws:ws-1', ['../../etc/passwd'], 'feature/x'), 'invalid_path', 400
+    )
+  })
+})
+
+describe('аудит', () => {
+  it('каждая мутация пишется и в события проекта, и в журнал безопасности', async () => {
+    const { service, events, security } = setup({
+      outputs: [
+        statusOutput(),
+        ['==VC:add==', '==VC:commit==', 'ok', '==VC:sha==', SHA, '==VC:done=='].join('\n'),
+        statusOutput()
+      ]
+    })
+    await service.commit('bob', 'p1', 'ws:ws-1', { message: 'fix', paths: ['src/a.ts'] })
+    expect(events.map((event) => event.type)).toContain('git.commit')
+    expect(security).toHaveLength(1)
+    expect(security[0]!.type).toBe('git_workspace_mutation')
+    expect(security[0]!.details).toContain('git.commit')
+    expect(security[0]!.details).toContain('/repo/task')
   })
 })

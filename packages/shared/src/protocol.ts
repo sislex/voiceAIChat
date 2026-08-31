@@ -486,6 +486,8 @@ export const REST = {
   projectGitBranch: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/branch`,
   projectGitCommit: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/commit`,
   projectGitPush: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/push`,
+  projectGitPull: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/pull`,
+  projectGitDiscard: (id: string) => `/api/projects/${encodeURIComponent(id)}/git/discard`,
 
   // --- CI-раннер (Авто-подготовка окружения для таска) ---
   ciCommands: '/api/ci/commands',
