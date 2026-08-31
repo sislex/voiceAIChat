@@ -36,7 +36,7 @@ import { readUserFile } from '../serverFiles.js'
 import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
-import type { AgentsChainFile, AgentsChainResult, ContextDiff, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
+import type { AgentsChainFile, AgentsChainResult, ContextDiff, KbStatus, ContextKbPreview, ContextLastTurn, ContextTurnSize, ContextWarning, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
 import { buildKbAutoContext } from '../kb/autoContext.js'
 import { kbViewOf } from '../kb/access.js'
 import type { KnowledgeBaseService } from '../kb/types.js'
@@ -58,7 +58,7 @@ const kbDisplay: Record<KbContextMode, { displayName: string; explanation: strin
   manual: { displayName: 'По запросу', explanation: 'Автоматической вставки нет, инструменты поиска доступны.' },
   off: { displayName: 'Отключено', explanation: 'Автоматический контекст и инструменты БЗ не подключаются.' }
 }
-function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, isOnline?: (id: string) => boolean): ConversationContextSnapshot | null {
+function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, isOnline?: (id: string) => boolean, kbStatus?: KbStatus | null): ConversationContextSnapshot | null {
   const conversation = db.getConversation(userId, conversationId)
   if (!conversation) return null
   // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
@@ -194,13 +194,28 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
           : conversation.permissionMode ? {} : { inheritedFrom: `общие настройки: ${permissionDisplay[settings.permissionMode].displayName}` })
       }, details: { value: permissionMode } })
     ] },
-    { id: 'skills', order: 5, title: 'Навыки', description: 'Выбор отделён от доступности и активации.', items: (agent?.policy.skills ?? []).map((skill) => contextItem({ id: `skill-${encodeURIComponent(skill.name)}`, type: 'Навык', source: 'Политика машины', scope: agent?.name ?? 'Машина', priority: '8 · навык', title: skill.name, description: skill.description || 'Инструкция навыка', explanation: selectedSkills.has(skill.name) ? 'Выбран; активация определяется текстом сообщения при отправке.' : 'Доступен, но не выбран.', configured: selectedSkills.has(skill.name), available: machineAvailable, includedInNextTurn: false, details: { activationReason: 'Текущее сообщение ещё не отправлено.' } })) },
+    { id: 'skills', order: 5, title: 'Навыки', description: 'Выбор отделён от доступности и активации.', items: (agent?.policy.skills ?? []).map((skill) => contextItem({ id: `skill-${encodeURIComponent(skill.name)}`, type: 'Навык', source: 'Политика машины', scope: agent?.name ?? 'Машина', priority: '8 · навык', title: skill.name, description: skill.description || 'Инструкция навыка', explanation: selectedSkills.has(skill.name) ? 'Выбран; активация определяется текстом сообщения при отправке.' : 'Доступен, но не выбран.', configured: selectedSkills.has(skill.name), available: machineAvailable, includedInNextTurn: false, details: { activationReason: 'Текущее сообщение ещё не отправлено.', ...(skill.command ? { 'Команда навыка': skill.command } : {}) } })) },
     { id: 'capabilities', order: 6, title: 'MCP, приложения и плагины', description: 'Активный каталог вычислен сервером для текущего окружения.', items: [
       ...(['machines', 'read', 'edit', 'bash'] as const).map((name) => contextItem({ id: `mcp-remote-${name}`, type: 'MCP-инструмент', source: 'MCP remote', scope: agent?.name ?? 'Удалённая машина', priority: 'Возможность', title: `remote:${name}`, description: String(mcpToolDetails[`mcp-remote-${name}`]?.['Назначение'] ?? 'Инструмент удалённой машины.'), explanation: machineAvailable ? 'Подключается для эффективной машины.' : 'Машина недоступна.', configured: Boolean(resolution?.agentId), available: machineAvailable, includedInNextTurn: machineAvailable, details: mcpToolDetails[`mcp-remote-${name}`] })),
       ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: mcpToolDetails[`mcp-kb-${name}`] }))
     ] },
     { id: 'knowledge', order: 7, title: 'База знаний', description: 'Режим и фактически подготовленный автоматический контекст.', items: [
-      contextItem({ id: 'knowledge-mode', type: 'База знаний', source: 'Настройки разговора', scope: 'Следующий ход', priority: '9 · дополнительный контекст', title: kbDisplay[kbMode].displayName, description: kbDisplay[kbMode].explanation, explanation: kbMode === 'auto' ? 'Документы ещё не выбраны: текущее сообщение не отправлено.' : kbDisplay[kbMode].explanation, configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { value: kbMode, autoContextDocuments: [] } })
+      // Доступность индекса — отдельный вопрос от режима: «авто» при сломанном
+      // индексе не добавит ничего, и человек должен видеть это до отправки.
+      contextItem({ id: 'knowledge-mode', type: 'База знаний', source: 'Настройки разговора', scope: 'Следующий ход', priority: '9 · дополнительный контекст', title: kbDisplay[kbMode].displayName, description: kbDisplay[kbMode].explanation, explanation: kbStatus && !kbStatus.available ? `Индекс базы знаний недоступен${kbStatus.error ? `: ${kbStatus.error}` : ''}.` : kbMode === 'auto' ? 'Документы ещё не выбраны: текущее сообщение не отправлено.' : kbDisplay[kbMode].explanation, configured: kbMode !== 'off', available: kbMode !== 'off' && kbStatus?.available !== false, includedInNextTurn: kbMode !== 'off' && kbStatus?.available !== false, details: {
+        value: kbMode,
+        autoContextDocuments: [],
+        ...(kbStatus
+          ? {
+              'Индекс': kbStatus.available ? 'доступен' : 'недоступен',
+              'Документов': kbStatus.documents,
+              'Разделов (chunks)': kbStatus.chunks,
+              'Режим поиска': kbStatus.searchMode,
+              ...(kbStatus.staleDocuments ? { 'Устаревших документов': kbStatus.staleDocuments } : {}),
+              ...(kbStatus.error ? { 'Ошибка индекса': kbStatus.error } : {})
+            }
+          : {})
+      } })
     ] },
     { id: 'history', order: 8, title: 'История и текущее сообщение', description: 'Серверные метаданные пользовательского контекста.', items: [
       // Правда про resume: при живой сессии CLI история заново НЕ пересобирается —
@@ -269,6 +284,12 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     if (titles.length > 1) {
       warnings.push({ itemId: null, level: 'notice', text: `Одинаковый текст в инструкциях: ${titles.join(', ')}. Модель получит его дважды.` })
     }
+  }
+  // Много постоянных подсказок — это не ошибка, но каждая уходит в каждом ходе,
+  // и десяток заметно съедает и место, и внимание модели.
+  const activeInstructions = settings.chatInstructions.filter((entry) => entry.enabled && !disabled.has(instructionContextId(entry.id)))
+  if (activeInstructions.length > 10) {
+    warnings.push({ itemId: null, level: 'notice', text: `Инструкций чата включено ${activeInstructions.length}: все они уходят в каждом ходе. Проверьте, нужны ли редкие из них постоянно.` })
   }
   const disabledInstructions = settings.chatInstructions.filter((entry) => entry.enabled && disabled.has(instructionContextId(entry.id)))
   if (disabledInstructions.length) {
@@ -415,6 +436,17 @@ export async function registerRest(
   const ccDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CC_DIR ?? profile(req).ccProjects
   const cxDir = (req: Parameters<typeof uid>[0]) => process.env.VC_CODEX_DIR ?? profile(req).codexSessions
   const runnerFs = opts.runnerFs
+  /**
+   * Статус индекса БЗ для снимка контекста. Сломанный индекс не должен ронять
+   * снимок: он про конфигурацию разговора, а не про здоровье поиска.
+   */
+  const kbStatusSafe = (): KbStatus | null => {
+    try {
+      return opts.kb?.()?.status() ?? null
+    } catch {
+      return null
+    }
+  }
   const proxyError = (reply: FastifyReply, err: unknown) =>
     reply.code(502).send({ error: 'runner_unavailable', message: err instanceof Error ? err.message : String(err) })
   // Файл с диска сервера (картинки, созданные самим CLI). Своя область — профиль
@@ -537,7 +569,7 @@ export async function registerRest(
   })
 
   app.get<{ Params: { id: string } }>('/api/conversations/:id/context-snapshot', async (req, reply) => {
-    const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline)
+    const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline, kbStatusSafe())
     if (!snapshot) return reply.code(404).send({ error: 'not found' })
     return snapshot
   })
@@ -547,7 +579,7 @@ export async function registerRest(
     if (!isContextToggleable(req.params.itemId)) return reply.code(400).send({ error: 'Этот пункт нельзя выключить' })
     const updated = db.setConversationContextEnabled(uid(req), req.params.id, req.params.itemId, req.body?.enabled !== false)
     if (!updated) return reply.code(404).send({ error: 'not found' })
-    const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline)
+    const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline, kbStatusSafe())
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 
@@ -559,8 +591,8 @@ export async function registerRest(
    */
   app.get<{ Params: { id: string; otherId: string } }>('/api/conversations/:id/context-diff/:otherId', async (req, reply) => {
     const userId = uid(req)
-    const here = contextSnapshot(db, userId, req.params.id, opts.isAgentOnline)
-    const there = contextSnapshot(db, userId, req.params.otherId, opts.isAgentOnline)
+    const here = contextSnapshot(db, userId, req.params.id, opts.isAgentOnline, kbStatusSafe())
+    const there = contextSnapshot(db, userId, req.params.otherId, opts.isAgentOnline, kbStatusSafe())
     const otherConversation = db.getConversation(userId, req.params.otherId)
     if (!here || !there || !otherConversation) return reply.code(404).send({ error: 'not found' })
     const itemsOf = (snapshot: ConversationContextSnapshot): Map<string, ContextSnapshotItem> =>
@@ -608,7 +640,7 @@ export async function registerRest(
       if (enabledNow === shouldBeEnabled) continue // уже как надо
       db.setConversationContextEnabled(userId, target.id, itemId, shouldBeEnabled, userId)
     }
-    const snapshot = contextSnapshot(db, userId, target.id, opts.isAgentOnline)
+    const snapshot = contextSnapshot(db, userId, target.id, opts.isAgentOnline, kbStatusSafe())
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 

@@ -38,6 +38,10 @@ export interface ContextInspectorProps {
   onSaveInstruction?: (id: string, text: string) => Promise<void>
   /** Добавить свою инструкцию чата в общие настройки пользователя. */
   onAddInstruction?: (title: string, text: string) => Promise<void>
+  /** Открыть раздел «Инструкции» общих настроек (там их порядок и удаление). */
+  onOpenInstructionSettings?: () => void
+  /** Скопировать контекст текущего разговора в другой («применить к выбранным»). */
+  onCopyContextTo?: (targetId: string, fromId: string) => Promise<void>
 }
 
 const dynamicIds = new Set(['current-message', 'knowledge-mode'])
@@ -177,6 +181,8 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
   /** Какой пресет переименовывают и новое имя. */
   const [renamingPreset, setRenamingPreset] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  /** Разговоры, к которым применяем пресет «к выбранным». */
+  const [bulkTargets, setBulkTargets] = useState<string[]>([])
   /** Идут ли изменения тумблера/быстрой правки — на это время контролы блокируются. */
   const [busy, setBusy] = useState(false)
   /** Черновик сообщения и подбор базы знаний по нему (по кнопке, не на каждый ввод). */
@@ -460,6 +466,33 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
       setNewInstructionText('')
       setReload((value) => value + 1)
       toast.success('Инструкция добавлена')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * Применить пресет к отмеченным разговорам. Сначала приводим к пресету текущий
+   * чат, затем копируем его набор в остальные тем же серверным путём: так все
+   * получают одинаковое состояние, а не считают его каждый по-своему.
+   */
+  const applyPresetToTargets = async (presetId: string): Promise<void> => {
+    const preset = props.contextPresets?.find((entry) => entry.id === presetId)
+    if (!preset || !props.onCopyContextTo || bulkTargets.length === 0) return
+    const titles = bulkTargets.map((id) => props.otherConversations?.find((entry) => entry.id === id)?.title ?? id).join(', ')
+    if (!(await confirm({
+      title: 'Применить пресет к выбранным?',
+      message: `Пресет «${preset.name}» будет применён к этому разговору и к: ${titles}. Их текущие выключения будут заменены.`,
+      confirmLabel: 'Применить'
+    }))) return
+    setBusy(true)
+    try {
+      await applyPreset(presetId)
+      for (const targetId of bulkTargets) await props.onCopyContextTo(targetId, props.conversationId)
+      setAnnounce(`Пресет «${preset.name}» применён к ${bulkTargets.length + 1} разговорам.`)
+      toast.success(`Пресет применён к ${bulkTargets.length + 1} разговорам`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -919,6 +952,13 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
         {/* Сортировка по размеру: когда промпт распух, первый вопрос — «кто
             занял место», и глазами по двум десяткам пунктов это не ищут. */}
         <Button size="sm" variant={heavyFirst ? 'primary' : 'ghost'} aria-pressed={heavyFirst} onClick={() => setHeavyFirst((value) => !value)}>Сначала тяжёлые</Button>
+        {/* Свёрток на экране стало много: раскрывать по одной, чтобы найти
+            нужное, — работа. Одна кнопка открывает и закрывает все. */}
+        <Button size="sm" variant="ghost" onClick={() => {
+          const sections = document.querySelectorAll<HTMLDetailsElement>('.context-inspector details.context-section')
+          const shouldOpen = [...sections].some((section) => !section.open)
+          sections.forEach((section) => { section.open = shouldOpen })
+        }}>Развернуть / свернуть всё</Button>
       </div>
     </div>
     <section className="context-card" aria-labelledby="context-knowledge-title">
@@ -977,7 +1017,13 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
     </section>
     {props.onAddInstruction && <section className="context-card" aria-labelledby="context-newinstruction">
       <h3 id="context-newinstruction">Своя инструкция чата</h3>
-      <p className="context-note">Текст уйдёт модели в каждом ходе всех ваших разговоров. Выключить в отдельном чате можно тумблером в списке ниже.</p>
+      <p className="context-note">
+        Текст уйдёт модели в каждом ходе всех ваших разговоров. Выключить в отдельном чате можно тумблером в списке ниже.
+        {props.onOpenInstructionSettings && <>
+          {' '}
+          <Button size="sm" variant="ghost" onClick={props.onOpenInstructionSettings}>Открыть общие настройки инструкций</Button>
+        </>}
+      </p>
       <div className="context-kbdraft">
         <label>
           <span>Название</span>
@@ -1028,10 +1074,25 @@ export function ContextInspector(props: ContextInspectorProps): JSX.Element {
           : <>
               <b>{preset.name}</b> · выключено источников: {preset.disabled.length}
               <Button size="sm" variant="ghost" disabled={busy} onClick={() => void applyPreset(preset.id)}>Применить</Button>
+              {/* Один пресет обычно нужен нескольким чатам сразу: «к выбранным»
+                  избавляет от обхода разговоров по одному. */}
+              {props.onCopyContextTo && <Button size="sm" variant="ghost" disabled={busy || bulkTargets.length === 0} onClick={() => void applyPresetToTargets(preset.id)}>Применить к выбранным ({bulkTargets.length})</Button>}
               <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setRenamingPreset(preset.id); setRenameValue(preset.name) }}>Переименовать</Button>
               <Button size="sm" variant="ghost" disabled={busy} onClick={() => void deletePreset(preset.id)}>Удалить</Button>
             </>}
       </li>)}</ul>
+      {(props.otherConversations?.length ?? 0) > 0 && props.onCopyContextTo && <div className="context-bulk" data-testid="context-bulk-targets">
+        <b>Куда применять «к выбранным»</b>
+        <div className="context-bulk-list">{props.otherConversations!.map((entry) => <label key={entry.id}>
+          <input
+            type="checkbox"
+            checked={bulkTargets.includes(entry.id)}
+            aria-label={`Применять к разговору «${entry.title}»`}
+            onChange={(event) => setBulkTargets((prev) => event.target.checked ? [...prev, entry.id] : prev.filter((id) => id !== entry.id))}
+          />
+          <span>{entry.title}</span>
+        </label>)}</div>
+      </div>}
     </details>}
     {snapshot.changes.length > 0 && <details className="context-section" data-testid="context-changes"><summary><span><b>Журнал изменений контекста</b><small>Кто и когда выключал или возвращал источники этого разговора</small></span><span className="context-count">{snapshot.changes.length}</span></summary>
       <ul className="context-changelog">{snapshot.changes.map((event) => <li key={`${event.at}-${event.itemId}-${String(event.enabled)}`}>

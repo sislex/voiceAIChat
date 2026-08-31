@@ -204,6 +204,8 @@ const GitTargetPane = lazy(async () => {
 
 // Настройки открывают из меню аккаунта, и это семь разделов со своими экранами:
 // в главном чанке они лежат мёртвым весом до первого открытия.
+import type { SettingsSection } from './components/SettingsModal'
+
 const SettingsModal = lazy(async () => {
   const module = await import('./components/SettingsModal')
   return { default: module.SettingsModal }
@@ -413,6 +415,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
     routeProjectSummary?.typeChain?.features ??
     ALL_PROJECT_FEATURES
   /** Диалог «Сессии и устройства» (auth-roadmap п.4). */
+  /** С какого раздела открыть общие настройки (переход из инспектора контекста). */
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null)
   const [sessionsOpen, setSessionsOpen] = useState(() => window.location.hash === '#/security/sessions')
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [changePasswordOpen, setChangePasswordOpen] = useState(() => window.location.hash === '#/security/password')
@@ -2829,6 +2833,18 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
           // которое ещё не отправлено, и в серверный снимок попасть не могут.
           draftAttachments={chat.attachments.map((entry) => ({ name: entry.upload?.name ?? entry.file.name, status: entry.status }))}
           chatInstructions={settingsState.settings.chatInstructions}
+          onCopyContextTo={async (targetId, fromId) => {
+            // Тот же серверный путь, что у «скопировать из»: состояние приводится
+            // к образцу, а не пересчитывается на клиенте для каждого чата.
+            await window.api['conversations:copyContext']({ id: targetId, fromConversationId: fromId })
+          }}
+          onOpenInstructionSettings={() => {
+            // Открываем общие настройки сразу на «Инструкциях»: иначе человек,
+            // пришедший из карточки инструкции, ищет раздел глазами.
+            setConversationSettingsOpen(false)
+            setSettingsSection('instructions')
+            shellActions.openSettings()
+          }}
           onAddInstruction={async (title, text) => {
             // Своя инструкция без `kind`: стандартного ответного блока у неё нет,
             // это просто текст, который уходит модели каждым ходом.
@@ -2974,6 +2990,7 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
 
       {shell.settingsOpen && (
         <Suspense fallback={<div role="status">Загрузка настроек…</div>}><SettingsModal
+          {...(settingsSection ? { initialSection: settingsSection } : {})}
           projectTypes={projects.projectTypes}
           projectTypesStatus={projects.projectTypesStatus}
           projectTypesError={projects.projectTypesError}
