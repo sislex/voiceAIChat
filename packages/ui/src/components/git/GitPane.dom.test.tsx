@@ -391,3 +391,18 @@ describe('GitPane: ветка, поиск, индекс и конфликты', 
     expect(createUrl).toHaveBeenCalled()
   })
 })
+
+describe('GitPane: живое обновление', () => {
+  it('пока панель открыта и файл не правят, состояние подтягивается само', async () => {
+    vi.useFakeTimers()
+    try {
+      const bridge = api()
+      paint(bridge)
+      await vi.waitFor(() => expect(bridge['projects:gitStatus']).toHaveBeenCalledTimes(1))
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(bridge['projects:gitStatus']).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

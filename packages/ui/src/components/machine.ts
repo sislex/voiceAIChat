@@ -73,8 +73,8 @@ export interface PtySessionStore {
 /** Вариант отображения виджета: карточка в сообщении или модалка из меню. */
 export type UtilityVariant = 'embedded' | 'modal'
 
-/** Что открыто в утилите машины: консоль/терминал или файловый проводник. */
-export type UtilityKind = 'console' | 'explorer'
+/** Что открыто в утилите машины: консоль/терминал, файловый проводник или панель кода. */
+export type UtilityKind = 'console' | 'explorer' | 'git'
 
 /**
  * Переключить утилиту на другую (переключатель общей шапки — `MachineUtilityHeader`):

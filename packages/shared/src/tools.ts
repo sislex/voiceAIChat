@@ -9,7 +9,7 @@ import type { AgentInfo } from './agentProtocol'
 
 /** Какую утилиту открыть в сообщении и на какой машине. */
 export interface ToolSpec {
-  kind: 'console' | 'explorer'
+  kind: 'console' | 'explorer' | 'git'
   /** id машины-агента; если не задан — UI выберет доступную. */
   agentId?: string
   /** Файл для выделения в проводнике или начальный cwd терминала. */
@@ -20,6 +20,12 @@ export interface ToolSpec {
   projectId?: string
   /** Команда, которую консоль выполнит сразу при открытии (кнопка навыка из чата). */
   command?: string
+  /**
+   * Для `kind: 'git'` — чья рабочая копия. Из блока модели это поле НЕ читается
+   * (см. `parseToolBlock`): иначе модель могла бы подставить чужой проект. Цель
+   * подставляет приложение по активному чату или открытой задаче.
+   */
+  gitTarget?: { projectId: string; conversationId?: string; taskId?: string }
 }
 
 /** Результат разбора текста ответа с tool-блоком. */
@@ -56,8 +62,8 @@ export function toolHint(kinds: readonly ToolSpec['kind'][]): string {
 }
 
 /** Порядок видов в подсказке; названия — как их произносит пользователь. */
-export const TOOL_KINDS: readonly ToolSpec['kind'][] = ['console', 'explorer']
-const TOOL_KIND_TITLES: Record<ToolSpec['kind'], string> = { console: 'терминал', explorer: 'файловый проводник' }
+export const TOOL_KINDS: readonly ToolSpec['kind'][] = ['console', 'explorer', 'git']
+const TOOL_KIND_TITLES: Record<ToolSpec['kind'], string> = { console: 'терминал', explorer: 'файловый проводник', git: 'панель кода с изменениями git' }
 
 /** Инструкция модели о формате открытия утилиты (оба вида; добавляется к промпту). */
 export const TOOL_HINT = toolHint(TOOL_KINDS)
@@ -80,12 +86,15 @@ export function parseToolBlock(text: string): ParsedTool | null {
   }
   if (!raw || typeof raw !== 'object') return null
   const o = raw as { kind?: unknown; agentId?: unknown; path?: unknown }
-  if (o.kind !== 'console' && o.kind !== 'explorer') return null
+  // Вид проверяем по списку, а не двумя сравнениями: иначе новый вид тихо не
+  // распознавался бы, и блок модели оставался бы текстом в сообщении.
+  if (typeof o.kind !== 'string' || !TOOL_KINDS.includes(o.kind as ToolSpec['kind'])) return null
+  const kind = o.kind as ToolSpec['kind']
   const body = (text.slice(0, m.index) + text.slice(m.index + m[0].length)).trim()
   return {
     body,
     tool: {
-      kind: o.kind,
+      kind,
       ...(typeof o.agentId === 'string' ? { agentId: o.agentId } : {}),
       ...(typeof o.path === 'string' ? { path: o.path } : {})
     }
@@ -103,13 +112,15 @@ export function toolBlock(tool: ToolSpec): string {
  */
 export function detectOpenUtility(text: string, agents: AgentInfo[] = []): ToolSpec | null {
   const t = text.trim().toLowerCase()
-  const m = /^(?:открой|открыть|запусти|open)\s+(консоль|терминал|console|terminal|проводник|файлы|explorer|files)(?:\s+(.*))?$/.exec(
+  const m = /^(?:открой|открыть|запусти|покажи|open|show)\s+(консоль|терминал|console|terminal|проводник|файлы|explorer|files|код|изменения|git|diff)(?:\s+(.*))?$/.exec(
     t
   )
   if (!m) return null
   const kind: ToolSpec['kind'] = /(консоль|терминал|console|terminal)/.test(m[1])
     ? 'console'
-    : 'explorer'
+    : /(код|изменения|git|diff)/.test(m[1])
+      ? 'git'
+      : 'explorer'
   // Машина по имени после команды (сопоставляем по вхождению имени).
   const rest = m[2] ?? ''
   const named = agents.find((a) => rest.includes(a.name.toLowerCase()))

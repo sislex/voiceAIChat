@@ -21,6 +21,8 @@ export function MergePanel(props: {
   runId: string | null
   canStart: boolean
   onStartMerge?: (agentId: string | null) => void
+  /** Открыть панель кода этой задачи: смотреть diff и коммитить — не работа merge-панели. */
+  onOpenCode?: () => void
 }): JSX.Element {
   const [machines, setMachines] = useState<CiTaskMachine[]>([])
   const [agentId, setAgentId] = useState('')
@@ -212,6 +214,9 @@ export function MergePanel(props: {
         <section className="merge-repos" data-testid="task-repositories">
           <div className="merge-repos-head">
             <h3 className="ci-task-title">Репозитории задачи</h3>
+            {/* Merge отвечает за попадание в main; смотреть diff, править и коммитить —
+                работа панели кода, и переход туда должен быть под рукой. */}
+            {props.onOpenCode && <Button size="sm" variant="ghost" onClick={props.onOpenCode}>Открыть код задачи</Button>}
             {repos.some((repo) => repo.state === 'deleted') && (
               <label><input type="checkbox" checked={showDeleted} onChange={(event) => setShowDeleted(event.target.checked)} /> показывать удалённые</label>
             )}

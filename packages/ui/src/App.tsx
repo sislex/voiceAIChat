@@ -2943,7 +2943,8 @@ function AppBody({ api = window.api, now }: AppProps = {}): JSX.Element {
             ...(operations.utility.agentId ? { agentId: operations.utility.agentId } : {}),
             ...(operations.utility.path ? { path: operations.utility.path } : {}),
             ...(operations.utility.dir ? { dir: true } : {}),
-            ...(operations.utility.command ? { command: operations.utility.command } : {})
+            ...(operations.utility.command ? { command: operations.utility.command } : {}),
+            ...(operations.utility.gitTarget ? { gitTarget: operations.utility.gitTarget } : {})
           }}
           agents={operations.agents}
           ops={machineOps}

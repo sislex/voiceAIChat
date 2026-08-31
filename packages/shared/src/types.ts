@@ -891,7 +891,7 @@ export const DEFAULT_PERSONALIZATION: UserPersonalization = {
  * Встроенные виды инструкций чата: у каждого — стандартный текст подсказки и парсер
  * ответного fenced-блока (сборка и вырезание — `chatInstructions.ts`).
  */
-export const CHAT_INSTRUCTION_KINDS = ['console', 'explorer', 'questions', 'image', 'taskLaunch'] as const
+export const CHAT_INSTRUCTION_KINDS = ['console', 'explorer', 'git', 'questions', 'image', 'taskLaunch'] as const
 export type ChatInstructionKind = (typeof CHAT_INSTRUCTION_KINDS)[number]
 
 /**
@@ -912,6 +912,7 @@ export interface ChatInstruction {
 export const DEFAULT_CHAT_INSTRUCTIONS: ChatInstruction[] = [
   { id: 'console', kind: 'console', enabled: true, title: 'Открывать терминал в чате', description: 'По просьбе «открой консоль» модель вставляет в ответ живой терминал машины.' },
   { id: 'explorer', kind: 'explorer', enabled: true, title: 'Открывать проводник в чате', description: 'По просьбе «открой проводник» модель вставляет файловый проводник машины.' },
+  { id: 'git', kind: 'git', enabled: true, title: 'Открывать панель кода в чате', description: 'По просьбе «покажи изменения» модель вставляет панель кода рабочей копии: diff, правка, коммит.' },
   { id: 'questions', kind: 'questions', enabled: true, title: 'Уточняющие вопросы с вариантами', description: 'Модель может закончить ответ вопросами с кнопками-вариантами ответа.' },
   { id: 'image', kind: 'image', enabled: true, title: 'Показывать созданные изображения', description: 'Файл-картинку, созданный на машине, модель показывает прямо в сообщении.' },
   { id: 'taskLaunch', kind: 'taskLaunch', enabled: true, title: 'Спрашивать разрешение перед изменением проекта', description: 'Перед правкой файлов модель предлагает завести задачу в канбан или работать в чате.' }

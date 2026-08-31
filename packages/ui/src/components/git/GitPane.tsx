@@ -18,6 +18,7 @@ import type {
 } from '@shared/gitWorkspace'
 import { isProtectedGitBranch } from '@shared/gitWorkspace'
 import { loadView, type LoadStatus } from '../../lib/loadState'
+import { usePolling } from '../../lib/usePolling'
 import { CodeDiff } from '../CodeDiff'
 import { CodeEditor } from '../CodeEditor'
 import { GitChangeList } from './GitChangeList'
@@ -119,6 +120,14 @@ export function GitPane({ projectId, workspaceId, api, onOpenGitAccess, onOpenRu
     setPicked(new Set())
     void refresh()
   }, [refresh])
+
+  /**
+   * Пока панель открыта, состояние подтягивается само: модель правит файлы прямо
+   * сейчас, и «нажми обновить, чтобы увидеть» — плохой ответ. Опрос встаёт вместе со
+   * вкладкой (`usePolling`), а во время правки и мутаций не мешает: обновляется только
+   * статус, черновики и выбранный файл он не трогает.
+   */
+  usePolling(() => { void refresh() }, { enabled: !editing && !saving && !committing && !pushing, intervalMs: 15_000 })
 
   const loadBranches = useCallback(async (refreshRemote: boolean): Promise<void> => {
     setBranchBusy(true)

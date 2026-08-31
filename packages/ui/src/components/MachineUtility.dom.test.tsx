@@ -86,3 +86,22 @@ describe('MachineUtility — общая шапка у всех трёх видж
     expect(screen.getByTestId('fs-readonly')).toBeInTheDocument()
   })
 })
+
+describe('MachineUtility: панель кода', () => {
+  it('с целью рабочей копии открывает панель кода, без цели — объясняет, откуда её открыть', async () => {
+    const { render } = await import('../test/uiRender')
+    const { screen } = await import('@testing-library/react')
+    const withTarget = render(
+      <MachineUtility
+        tool={{ kind: 'git', agentId: 'm1', gitTarget: { projectId: 'p1', conversationId: 'c1' } }}
+        agents={[]}
+        ops={{} as never}
+      />
+    )
+    expect(await screen.findByTestId('git-target-pane')).toBeInTheDocument()
+    withTarget.unmount()
+
+    render(<MachineUtility tool={{ kind: 'git', agentId: 'm1' }} agents={[]} ops={{} as never} />)
+    expect(await screen.findByText('Не выбрана рабочая копия')).toBeInTheDocument()
+  })
+})
