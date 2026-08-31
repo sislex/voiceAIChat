@@ -51,8 +51,10 @@ describe('стили открытой карточки задачи', () => {
     'jmodal', 'jmodal-panels', 'jmodal-general', 'jmodal-main', 'jmodal-side', 'jmodal-side-fields',
     'jmodal-child', 'jmodal-desc-view', 'jmodal-desc-empty', 'task-content-block',
     // Колонка свойств: заголовок, строка «подпись | значение», проект, даты.
-    'jmodal-side-title', 'jmodal-field', 'jmodal-field-label', 'jmodal-field--wide',
-    'jmodal-project', 'jmodal-project-mark', 'jmodal-dates',
+    'jmodal-side-title', 'jmodal-project', 'jmodal-project-mark', 'jmodal-dates',
+    // Строка свойства, заголовок секции и чипы переехали в ui-kit.
+    'vc-prop', 'vc-prop--wide', 'vc-prop__label', 'vc-section-head', 'vc-section-head__title',
+    'vc-section-head__meta', 'vc-section-head__action', 'vc-chips', 'vc-chip', 'vc-chip__remove',
     // Содержимое вкладок.
     // Секции вкладки «Общее»: описание, подзадачи, активность.
     'task-section', 'task-section-head', 'task-section-meta', 'task-section-action',

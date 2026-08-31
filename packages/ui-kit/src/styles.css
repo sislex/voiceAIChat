@@ -234,10 +234,31 @@ body { color: var(--text); -webkit-font-smoothing: antialiased; }
 .vc-live--idle { color:var(--text-dim) }
 .vc-live__dot { width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 0 4px color-mix(in srgb,currentColor 16%,transparent) }
 
+/* Строка свойства, заголовок секции и чипы: раскладка общая, цвет чипа задаёт
+   вызывающая сторона (у меток и навыков он разный). */
+.vc-prop { display:grid;grid-template-columns:104px minmax(0,1fr);align-items:center;gap:var(--space-100);min-height:38px;font-size:12px;font-weight:600 }
+.vc-prop--wide { grid-template-columns:1fr;align-items:start;padding:var(--space-100) 0 }
+.vc-prop__label { color:var(--text-dim);font-weight:500 }
+.vc-section-head { display:flex;align-items:center;gap:var(--space-150);min-width:0 }
+.vc-section-head__title { flex:0 1 auto;min-width:0;margin:0;font-size:13px;font-weight:600;overflow-wrap:anywhere }
+.vc-section-head__meta { color:var(--text-dim);font-size:12px }
+.vc-section-head__action { margin-left:auto;flex:none }
+.vc-chips { display:flex;flex-wrap:wrap;gap:var(--space-050);align-items:center;font-weight:400 }
+.vc-chip { display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:var(--radius-medium);background:var(--surface-hover);color:var(--text);font-size:12px }
+.vc-chip__remove { border:0;background:none;color:inherit;cursor:pointer;padding:0 2px;font-size:12px;line-height:1 }
+.vc-chip__remove:hover { color:var(--danger) }
+.vc-chip__remove:focus-visible { outline:2px solid var(--accent);outline-offset:1px;border-radius:3px }
+.vc-chips__input { flex:1 1 120px;min-width:90px;padding:2px 6px;border:1px solid var(--border);border-radius:var(--radius-medium);background:var(--surface);color:var(--text);font:inherit;font-size:12px }
+.vc-chips__input:focus-visible { outline:2px solid var(--accent);outline-offset:1px }
+
 /* Телефон: колонка вместо ряда и палец вместо курсора. */
 @media (max-width: 640px) {
   .vc-metrics { grid-template-columns:1fr }
   .vc-panel-head { flex-wrap:wrap }
   .vc-subtab { min-height:40px }
+  .vc-prop { grid-template-columns:96px minmax(0,1fr);min-height:44px }
+  .vc-prop--wide { grid-template-columns:1fr }
+  .vc-chips__input { width:100%;min-height:40px;font-size:16px }
+  .vc-chip__remove { min-width:30px;min-height:30px }
 }
 @media (prefers-reduced-motion: reduce) { .vc-feed-caret, .vc-track__fill { transition:none } }

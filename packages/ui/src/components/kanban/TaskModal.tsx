@@ -22,7 +22,7 @@ import { Dialog } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
-import { ProgressTrack } from '@voicechat/ui-kit'
+import { ChipList, ProgressTrack, PropertyRow, SectionHeader } from '@voicechat/ui-kit'
 import { LiveIndicator, PanelHeading, StatusPill, type StatusTone } from '@voicechat/ui-kit'
 import { Markdown } from '../Markdown'
 import { useConfirm } from '@voicechat/ui-kit'
@@ -300,8 +300,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   const currentTaskIdRef = useRef(task.id)
   const descriptionDirtyRef = useRef(false)
   const criteriaDirtyRef = useRef(false)
-  const [labelDraft, setLabelDraft] = useState('')
-  const [skillDraft, setSkillDraft] = useState('')
   const [subtaskOpen, setSubtaskOpen] = useState(false)
   const [subtaskTitle, setSubtaskTitle] = useState('')
   useEffect(() => {
@@ -330,17 +328,33 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     const need = allowedByFeature[wanted]
     return need && !features[need] ? 'general' : wanted
   })
+  // Какие вкладки пользователь уже открывал. Нужен для панелей, которые раньше
+  // грузили себя при самом открытии карточки (QA-этапы, ручное QA, превью,
+  // отчёты «Хода выполнения»): теперь они молчат до первого показа, а после
+  // остаются смонтированными — как и были. Панели merge, подготовки и ленты
+  // рана намеренно живут по `activeTab`: у merge это свежий снимок машин при
+  // возврате, у двух других — живые подписки, незачем держать их скрытыми.
+  const [seenTabs, setSeenTabs] = useState<ReadonlySet<TaskTab>>(() => new Set([activeTab]))
+  useEffect(() => {
+    setSeenTabs((current) => current.has(activeTab) ? current : new Set([...current, activeTab]))
+  }, [activeTab])
+  const seen = (tab: TaskTab): boolean => seenTabs.has(tab)
+  const progressSeen = seenTabs.has('progress')
   const [improvements, setImprovements] = useState<TaskImprovement[]>([])
   const [improvementsError, setImprovementsError] = useState<string | null>(null)
   const [improvementPending, setImprovementPending] = useState<string | null>(null)
   const [improvementDraft, setImprovementDraft] = useState<{ improvement: TaskImprovement; task: Task } | null>(null)
   const errorMessage = (error: unknown): string => error instanceof Error ? error.message : 'Не удалось выполнить действие'
+  // Улучшения появляются только после рана, поэтому у задачи без единого рана
+  // запрос заведомо вернёт пустой список — и это был один лишний round-trip на
+  // каждое открытие карточки в бэклоге.
+  const hadRun = Boolean(props.ciSummary || task.latestRunResult)
   const loadImprovements = (): void => {
-    if (props.draft || !window.ci?.listTaskImprovements) return
+    if (props.draft || !hadRun || !window.ci?.listTaskImprovements) return
     setImprovementsError(null)
     void window.ci.listTaskImprovements(task.projectId, task.id).then(setImprovements).catch((error) => setImprovementsError(errorMessage(error)))
   }
-  useEffect(loadImprovements, [task.id, props.ciSummary?.status])
+  useEffect(loadImprovements, [task.id, props.ciSummary?.status, hadRun])
   const setImprovementStatus = (id: string, status: ImprovementStatus): void => {
     if (improvementPending) return
     setImprovementPending(id); setImprovementsError(null)
@@ -456,8 +470,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
       setCriteria(normalizeAcceptanceCriteria(task.acceptanceCriteria))
       setDescEditing(false)
       setCriteriaEditing(false)
-      setLabelDraft('')
-      setSkillDraft('')
       setActiveTab(defaultTab())
       return
     }
@@ -476,17 +488,20 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // Использование БЗ — агрегат по ВСЕМ ранам задачи. Перечитываем, когда
   // меняется статус последнего рана: только что закончившийся ран добавил свои
   // обращения, и цифры в карточке обязаны это показать.
+  // Оба отчёта показывает только вкладка «Ход выполнения», поэтому и грузятся
+  // они с её первого открытия: до этого карточка тратила на них по запросу,
+  // даже если пользователь смотрел «Общее» и закрывал.
   const kbUsage = useRemoteReport(
-    () => (!props.draft && task.type === 'task' ? window.ci?.getTaskKbUsage(task.projectId, task.id) : undefined),
-    [task.id, task.projectId, task.type, props.ciSummary?.status]
+    () => (!props.draft && progressSeen && task.type === 'task' ? window.ci?.getTaskKbUsage(task.projectId, task.id) : undefined),
+    [task.id, task.projectId, task.type, props.ciSummary?.status, progressSeen]
   )
   // Отчёт по расходу — только когда ран задачи завершён: пока он идёт, цифры
   // меняются на глазах, и смотреть надо ленту, а не итог. Перечитываем по тому
   // же ключу, что и БЗ: закончившийся ран добавил свои ходы.
   const ciFinished = props.ciSummary != null && !isActiveCiStatus(props.ciSummary.status)
   const ciReport = useRemoteReport<CiTaskReport>(
-    () => (!props.draft && task.type === 'task' && ciFinished ? window.ci?.getTaskReport(task.projectId, task.id) : undefined),
-    [task.id, task.projectId, task.type, ciFinished, props.ciSummary?.status]
+    () => (!props.draft && progressSeen && task.type === 'task' && ciFinished ? window.ci?.getTaskReport(task.projectId, task.id) : undefined),
+    [task.id, task.projectId, task.type, ciFinished, props.ciSummary?.status, progressSeen]
   )
 
   const column = board.columns.find((c) => c.id === task.columnId)
@@ -614,20 +629,6 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
     props.onClose()
   }
 
-  const addLabel = (): void => {
-    const l = labelDraft.trim()
-    if (!l) return
-    if (!task.labels.includes(l)) props.onUpdate(task.id, { labels: [...task.labels, l] })
-    setLabelDraft('')
-  }
-
-  const addSkill = (): void => {
-    const s = skillDraft.trim()
-    if (!s) return
-    if (!task.skills.includes(s)) props.onUpdate(task.id, { skills: [...task.skills, s] })
-    setSkillDraft('')
-  }
-
   const toggleFlag = (): void => props.onUpdate(task.id, { flagged: !task.flagged })
 
   const confirmDelete = async (): Promise<void> => {
@@ -639,11 +640,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
   // Статус и исполнитель: на телефоне — строкой под заголовком (как в Jira),
   // на десктопе — первыми полями правой панели. Разметка одна, место разное.
   const statusField = (
-    <label className="jmodal-field jmodal-field--status">
-      <span className="jmodal-field-label">Статус</span>
+    <PropertyRow as="label" label="Статус" className="jmodal-field--status">
       <select
         className="sel jmodal-status"
         aria-label="Статус"
+        title={column?.name ?? undefined}
         value={task.columnId}
         onChange={(e) => props.onMoveToColumn(task.id, e.target.value)}
       >
@@ -652,12 +653,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           <option key={c.id} value={c.id}>{c.name}</option>
         ))}
       </select>
-    </label>
+    </PropertyRow>
   )
 
   const assigneeField = (
-    <label className="jmodal-field">
-      <span className="jmodal-field-label">Исполнитель</span>
+    <PropertyRow as="label" label="Исполнитель">
       <span className="jmodal-assignee">
         {task.assignee && <Avatar username={task.assignee} size={20} />}
         <select
@@ -676,7 +676,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
         </select>
       </span>
       {props.draft && <small>Если не выбрать другого исполнителя, задача будет назначена на вас.</small>}
-    </label>
+    </PropertyRow>
   )
 
   // Действия карточки живут в ⋯-меню на любой ширине: в шапке по макету стоят
@@ -835,9 +835,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             </div>
           )}
           <section className="task-content-block" aria-label="Описание и критерии приёмки">
-          <div className="jmodal-desc-head">
-            <h3 className="jmodal-h">Описание</h3>
-            {!descEditing && (
+          <SectionHeader
+            className="jmodal-desc-head"
+            title="Описание"
+            action={!descEditing && (
               <button
                 type="button"
                 className="task-section-action"
@@ -848,7 +849,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                 Редактировать
               </button>
             )}
-          </div>
+          />
           {descEditing ? (
             // Ровно 10 строк, без useAutoGrow: описание длинное, и поле, растущее
             // под текст, увозило бы критерии приёмки и подзадачи за экран.
@@ -892,10 +893,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
               Добавьте описание…
             </button>
           )}
-          <div className="jmodal-desc-head">
-            <h3 className="jmodal-h">Критерии приёмки</h3>
-            {!criteriaEditing && <button type="button" className="task-section-action" aria-label="Редактировать критерии приёмки" data-testid="task-criteria-edit" onClick={() => setCriteriaEditing(true)}>Редактировать</button>}
-          </div>
+          <SectionHeader
+            className="jmodal-desc-head"
+            title="Критерии приёмки"
+            action={!criteriaEditing && <button type="button" className="task-section-action" aria-label="Редактировать критерии приёмки" data-testid="task-criteria-edit" onClick={() => setCriteriaEditing(true)}>Редактировать</button>}
+          />
           {criteriaEditing ? <textarea
             ref={criteriaRef}
             className="login-input jmodal-desc"
@@ -957,13 +959,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           /> : criteria.trim() ? <div className="jmodal-desc-view task-criteria-view" data-testid="task-criteria-view"><Markdown>{normalizeAcceptanceCriteria(criteria)}</Markdown></div> : <button className="jmodal-desc-empty" onClick={() => setCriteriaEditing(true)}>Добавьте критерии приёмки…</button>}
           <span id="task-criteria-help" className="vc-sr-only">Enter создаёт новый критерий, Shift+Enter — перенос внутри критерия.</span>
           </section>
-          {!props.draft && <TaskDesigns projectId={task.projectId} taskId={task.id} onOpenMake={props.onOpenMake} />}
+          {!props.draft && activeTab === 'general' && <TaskDesigns projectId={task.projectId} taskId={task.id} onOpenMake={props.onOpenMake} />}
           {(children.length > 0 || canAddSubtask) && (
             <section className="task-section" aria-label="Подзадачи">
-              <div className="task-section-head">
-                <h3 className="jmodal-h">Подзадачи</h3>
-                {children.length > 0 && <span className="task-section-meta">{doneChildren} из {children.length}</span>}
-              </div>
+              <SectionHeader title="Подзадачи" meta={children.length > 0 ? `${doneChildren} из ${children.length}` : undefined} />
               {children.length > 0 && (
                 <ProgressTrack
                   className="task-children-progress"
@@ -1025,12 +1024,10 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           )}
           {!props.draft && activity.length > 0 && (
             <section className="task-section" aria-label="Активность">
-              <div className="task-section-head">
-                <h3 className="jmodal-h">Активность</h3>
-                <button type="button" className="task-section-action" onClick={() => setActiveTab('timeline')}>
-                  Вся временная шкала
-                </button>
-              </div>
+              <SectionHeader
+                title="Активность"
+                action={<button type="button" className="task-section-action" onClick={() => setActiveTab('timeline')}>Вся временная шкала</button>}
+              />
               {/* Лента собрана из уже загруженных полей задачи — без ещё одного
                   запроса при открытии карточки. Подробности этапов лежат во
                   вкладке «Временная шкала», она и грузит их по требованию. */}
@@ -1098,13 +1095,13 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           </div>}
         </section>
         <section className="task-tab-panel" data-testid="task-preparation-panel" {...panelProps('preparation')}>{preparationVisible && activeTab === 'preparation' && <TaskPreparationTab projectId={task.projectId} taskId={task.id} liveRunId={task.taskPreparationRunId} liveStatus={task.taskPreparationStatus} loadRuns={props.loadPreparationRuns} loadRun={props.loadPreparationRun} onStart={props.onStartPreparation} onRetry={props.onRetryPreparation} llmAccess={props.llmAccess} llmEngines={props.llmEngines} onCancel={props.onCancelPreparation} onAnswer={props.onAnswerPreparation} onExport={props.onExportPreparation} />}</section>
-        {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" {...panelProps(stage)}>{stage === 'component_qa'
+        {qaStageOrder.map((stage) => qaStageVisible(stage) && <section key={stage} className="task-tab-panel" {...panelProps(stage)}>{seen(stage) && (stage === 'component_qa'
           ? <ComponentQaPanel projectId={task.projectId} taskId={task.id} active={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
-          : <QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} />}</section>)}
+          : <QaStageRunPanel projectId={task.projectId} taskId={task.id} stage={stage} />)}</section>)}
         <section className="task-tab-panel" data-testid="task-manual-qa-panel" {...panelProps('qa')}>
           <PanelHeading kicker="Ручное QA" title="Проверка задачи" description="Сценарии проверяются руками на собранном превью." />
-          <FeaturePreviewSection projectId={task.projectId} taskId={task.id} />
-          <ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} />
+          {seen('qa') && <><FeaturePreviewSection projectId={task.projectId} taskId={task.id} />
+          <ManualQaPanel projectId={task.projectId} taskId={task.id} activeRun={Boolean(props.ciSummary && isActiveCiStatus(props.ciSummary.status)) || Boolean(task.activeMergeRunId)} onFixStarted={(runId) => { setActiveTab('feed'); props.onOpenCiRun?.(runId) }} /></>}
         </section>
         <section className="task-tab-panel" {...panelProps('progress')}>
           <PanelHeading
@@ -1210,8 +1207,7 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
           {(!mobile || detailsOpen) && (
             <div className="jmodal-side-fields" data-testid="task-modal-details">
               {!mobile && statusField}
-              <label className="jmodal-field">
-                <span className="jmodal-field-label">Приоритет</span>
+              <PropertyRow as="label" label="Приоритет">
                 <select
                   className="sel"
                   aria-label="Приоритет"
@@ -1222,10 +1218,9 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                     <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>
                   ))}
                 </select>
-              </label>
+              </PropertyRow>
               {!mobile && assigneeField}
-              <label className="jmodal-field">
-                <span className="jmodal-field-label">Срок</span>
+              <PropertyRow as="label" label="Срок">
                 <input
                   className="login-input"
                   aria-label="Срок"
@@ -1233,19 +1228,17 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                   value={toDateInput(task.dueDate)}
                   onChange={(e) => props.onUpdate(task.id, { dueDate: fromDateInput(e.target.value) })}
                 />
-              </label>
+              </PropertyRow>
               {/* Проект — только для чтения: карточку между проектами не переносят,
                   а знать, к какому она относится, из вложенной карточки нужно. */}
-              <div className="jmodal-field">
-                <span className="jmodal-field-label">Проект</span>
-                <span className="jmodal-project">
+              <PropertyRow label="Проект">
+                <span className="jmodal-project" title={props.projectName}>
                   <span className="jmodal-project-mark" aria-hidden="true">{props.projectName.trim().slice(0, 1).toUpperCase() || '·'}</span>
                   {props.projectName}
                 </span>
-              </div>
+              </PropertyRow>
               {!props.draft && (
-                <div className="jmodal-field">
-                  <span className="jmodal-field-label">Автор</span>
+                <PropertyRow label="Автор">
                   {/* Пустое значение — приглушённое «—», как в остальных полях
                       карточки: жирное «Нет данных» читалось как настоящее имя. */}
                   {task.createdByName ?? task.createdBy
@@ -1254,14 +1247,14 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                       <strong>{task.createdByName ?? task.createdBy}</strong>
                     </span>
                     : <span className="jmodal-field-empty">—</span>}
-                </div>
+                </PropertyRow>
               )}
               {task.type !== 'epic' && (
-                <label className="jmodal-field">
-                  <span className="jmodal-field-label">Родитель</span>
+                <PropertyRow as="label" label="Родитель">
                   <select
                     className="sel"
                     aria-label="Родитель"
+                    title={parent ? `${TYPE_LABEL[parent.type]} · ${parent.title}` : undefined}
                     value={task.parentId ?? ''}
                     onChange={(e) => props.onUpdate(task.id, { parentId: e.target.value || null })}
                   >
@@ -1270,16 +1263,16 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                       <option key={p.id} value={p.id}>{TYPE_LABEL[p.type]} · {p.title}</option>
                     ))}
                   </select>
-                </label>
+                </PropertyRow>
               )}
-              <label className="jmodal-field">
-                <span className="jmodal-field-label">Стори-поинты</span>
+              <PropertyRow as="label" label="Стори-поинты">
                 <input
                   className="login-input"
                   aria-label="Стори-поинты"
                   type="number"
                   min="0"
                   step="0.5"
+                  placeholder="—"
                   defaultValue={task.storyPoints ?? ''}
                   key={`pts-${task.id}-${task.storyPoints}`}
                   onBlur={(e) => {
@@ -1287,65 +1280,29 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
                     if (v !== task.storyPoints) props.onUpdate(task.id, { storyPoints: v })
                   }}
                 />
-              </label>
-              <div className="jmodal-field jmodal-field--wide">
-                <span className="jmodal-field-label">Метки</span>
-                <span className="jmodal-labels">
-                  {task.labels.map((l) => (
-                    <span key={l} className="jcard-label">
-                      {l}
-                      <button
-                        className="jlabel-x"
-                        aria-label={`Убрать метку ${l}`}
-                        title="Убрать метку"
-                        onClick={() => props.onUpdate(task.id, { labels: task.labels.filter((x) => x !== l) })}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                  <input
-                    className="login-input jlabel-input"
-                    aria-label="Новая метка"
-                    placeholder="+ метка"
-                    value={labelDraft}
-                    onChange={(e) => setLabelDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') addLabel()
-                    }}
-                    onBlur={addLabel}
-                  />
-                </span>
-              </div>
-              <div className="jmodal-field jmodal-field--wide">
-                <span className="jmodal-field-label">Навыки</span>
-                <span className="jmodal-labels jmodal-skills">
-                  {task.skills.map((s) => (
-                    <span key={s} className="jcard-skill">
-                      {s}
-                      <button
-                        className="jlabel-x"
-                        aria-label={`Убрать навык ${s}`}
-                        title="Убрать навык"
-                        onClick={() => props.onUpdate(task.id, { skills: task.skills.filter((x) => x !== s) })}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                  <input
-                    className="login-input jlabel-input"
-                    aria-label="Новый навык"
-                    placeholder="+ навык"
-                    value={skillDraft}
-                    onChange={(e) => setSkillDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') addSkill()
-                    }}
-                    onBlur={addSkill}
-                  />
-                </span>
-              </div>
+              </PropertyRow>
+              <PropertyRow label="Метки" wide>
+                <ChipList
+                  key={`labels-${task.id}`}
+                  items={task.labels}
+                  itemLabel="метку"
+                  placeholder="+ метка"
+                  chipClassName="jcard-label"
+                  onAdd={(value) => props.onUpdate(task.id, { labels: [...task.labels, value] })}
+                  onRemove={(value) => props.onUpdate(task.id, { labels: task.labels.filter((x) => x !== value) })}
+                />
+              </PropertyRow>
+              <PropertyRow label="Навыки" wide className="jmodal-skills">
+                <ChipList
+                  key={`skills-${task.id}`}
+                  items={task.skills}
+                  itemLabel="навык"
+                  placeholder="+ навык"
+                  chipClassName="jcard-skill"
+                  onAdd={(value) => props.onUpdate(task.id, { skills: [...task.skills, value] })}
+                  onRemove={(value) => props.onUpdate(task.id, { skills: task.skills.filter((x) => x !== value) })}
+                />
+              </PropertyRow>
 
               {props.detailsExtra}
               {/* Статус здесь не повторяем: он уже стоит селектом выше и в шапке

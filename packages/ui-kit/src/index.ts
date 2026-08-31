@@ -33,3 +33,6 @@ export { ProgressTrack, ProgressRing, type ProgressTrackProps, type ProgressRing
 export { FeedItem, FeedLog, type FeedItemProps, type FeedLogProps } from './FeedItem'
 export { SubTabs, type SubTabsProps, type SubTabItem } from './SubTabs'
 export { LiveIndicator, type LiveIndicatorProps } from './LiveIndicator'
+export { PropertyRow, type PropertyRowProps } from './PropertyRow'
+export { SectionHeader, type SectionHeaderProps } from './SectionHeader'
+export { ChipList, type ChipListProps } from './ChipList'
