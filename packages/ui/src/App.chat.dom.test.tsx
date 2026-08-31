@@ -71,12 +71,46 @@ describe('App — адрес открытого чата (#/chat/:id)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
     expect(await screen.findByRole('heading', { name: 'Файлы чата' })).toBeInTheDocument()
+    expect(await screen.findByText('Нет доступных проектов. Разговор можно создать без проекта.')).toBeInTheDocument()
     expect(screen.getByText(/\.voicechat_uploads/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Создать разговор' }))
 
     await waitFor(() => expect(window.location.hash).toMatch(/^#\/chat\/.+/))
     expect(api._state.conversations).toHaveLength(3)
     expect(api._state.conversations.filter((conversation) => conversation.title === 'Новый разговор')).toHaveLength(1)
+  })
+
+  it('выбранный проект передаётся при создании и остаётся у открытого разговора', async () => {
+    const { api } = await seededApi()
+    const project = await api['projects:create']({ name: 'Голосовой помощник' })
+    const create = vi.spyOn(api, 'conversations:create')
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Погода в июле?')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+    await userEvent.selectOptions(await screen.findByLabelText('Проект'), project.id)
+    await userEvent.click(screen.getByRole('button', { name: 'Создать разговор' }))
+
+    await waitFor(() => expect(window.location.hash).toMatch(/^#\/chat\/.+/))
+    expect(create).toHaveBeenCalledWith({ title: 'Новый разговор', projectId: project.id })
+    const created = api._state.conversations.at(-1)
+    expect(created?.projectId).toBe(project.id)
+    expect(window.location.hash).toBe(`#/chat/${created?.id}`)
+  })
+
+  it('ошибка списка проектов видна и не мешает создать разговор без проекта', async () => {
+    const { api } = await seededApi()
+    render(<App api={api} delays={SLOW} />)
+    await screen.findByText('Погода в июле?')
+    api['projects:list'] = vi.fn().mockRejectedValue(new Error('projects unavailable'))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Новый чат' }))
+    expect(await screen.findByText(/Не удалось загрузить проекты: projects unavailable/)).toHaveAttribute('role', 'alert')
+    expect(screen.getByRole('option', { name: 'Без проекта' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Создать разговор' }))
+
+    await waitFor(() => expect(window.location.hash).toMatch(/^#\/chat\/.+/))
+    expect(api._state.conversations.at(-1)?.projectId).toBeNull()
   })
 
   it('удаление открытого чата уводит на адрес следующего', async () => {

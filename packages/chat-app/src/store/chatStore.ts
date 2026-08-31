@@ -895,10 +895,10 @@ export function createChatStore(deps: ChatDeps): ChatStore {
 
   async function createConversation(input: { title: string; projectId?: string | null }): Promise<string> {
     await newConversation()
-    let conversation = await client['conversations:create']({ title: input.title.trim() || 'Новый разговор' })
-    if (input.projectId) {
-      conversation = await client['conversations:setProject']({ id: conversation.id, projectId: input.projectId })
-    }
+    const conversation = await client['conversations:create']({
+      title: input.title.trim() || 'Новый разговор',
+      projectId: input.projectId ?? null
+    })
     setState({
       activeId: conversation.id,
       conversations: withConversation(getState().conversations, conversation),
