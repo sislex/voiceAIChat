@@ -304,6 +304,10 @@ export async function buildServer(opts: BuildOptions): Promise<FastifyInstance> 
     runnerFs: runnerFs ?? undefined,
     authStatus,
     isAgentOnline: (agentId) => agentRegistry.isOnline(agentId),
+    // Геттером, а не объектом: `kb` создаётся ниже, а нужен только в запросе
+    // (предпросмотр автоконтекста БЗ для черновика сообщения).
+    kb: () => kb,
+    fsRead: (agentId, path) => agentRegistry.fsRead(agentId, path),
     // Свои машины на странице «Мой аккаунт» показываются с тем же живым статусом,
     // что и в разделе «Машины»: реестр знает версию и телеметрию только пока агент подключён.
     liveAgents: (agents) => agents.map((agent) => ({

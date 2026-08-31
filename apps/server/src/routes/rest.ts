@@ -1,7 +1,7 @@
 // REST-роуты поверх VoiceChatDb (Ф3): разговоры, сообщения, настройки.
 
 import { join } from 'node:path'
-import { ageFromBirth, buildContextBlocks, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock } from '../prompt/contextBlocks.js'
+import { ageFromBirth, agentsChainDirs, approxTokens, buildContextBlocks, personalizationLabels, personalizationPromptBlock, projectContextBlock, promptBlock } from '../prompt/contextBlocks.js'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import {
   REST,
@@ -20,9 +20,11 @@ import {
   type UserProfileInfo,
   type SecurityEvent,
   type AgentInfo,
+  buildConversationPrompt,
   effectiveChatInstructions,
   instructionContextId,
   instructionText,
+  resumeSessionIdFor,
   contextLockReason,
   isContextToggleable,
   sanitizeSettingsPatch
@@ -33,7 +35,10 @@ import { readUserFile } from '../serverFiles.js'
 import { ensureCliProfile, listMcpServers } from '@voicechat/llm-runner/cli'
 import { getLoginStatus } from '../auth/loginStatus.js'
 import type { RunnerFsClient } from '../llm/runnerFsClient.js'
-import type { ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
+import type { AgentsChainFile, AgentsChainResult, ContextKbPreview, ConversationContextSnapshot, ContextSnapshotGroup, ContextSnapshotItem, KbContextMode, PermissionMode } from '@voicechat/shared'
+import { buildKbAutoContext } from '../kb/autoContext.js'
+import { kbViewOf } from '../kb/access.js'
+import type { KnowledgeBaseService } from '../kb/types.js'
 
 const permissionDisplay: Record<PermissionMode, { displayName: string; explanation: string }> = {
   plan: { displayName: 'Только планирование', explanation: 'Изменение данных отключено.' },
@@ -84,6 +89,10 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   const projectMachine = project?.machines.find((entry) => entry.agentId === resolution?.agentId)
   const workdir = conversation.workdir ?? projectMachine?.path ?? settings.workdir
   const messages = db.listMessages(userId, conversationId)
+  // Тот же разбор resume-id, что и у хода модели (`turns.ts`), и тот же билдер
+  // истории: иначе размер в панели не совпадёт с отправленным.
+  const resumeId = resumeSessionIdFor(conversation.claudeSessionId ?? null, provider)
+  const historyText = buildConversationPrompt(messages)
   const selectedSkills = new Set(conversation.skillNames)
 
   // Полная детализация для drill-in: те же данные и тот же текст, что реально
@@ -178,7 +187,22 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       contextItem({ id: 'knowledge-mode', type: 'База знаний', source: 'Настройки разговора', scope: 'Следующий ход', priority: '9 · дополнительный контекст', title: kbDisplay[kbMode].displayName, description: kbDisplay[kbMode].explanation, explanation: kbMode === 'auto' ? 'Документы ещё не выбраны: текущее сообщение не отправлено.' : kbDisplay[kbMode].explanation, configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { value: kbMode, autoContextDocuments: [] } })
     ] },
     { id: 'history', order: 8, title: 'История и текущее сообщение', description: 'Серверные метаданные пользовательского контекста.', items: [
-      contextItem({ id: 'conversation-history', type: 'История', source: 'Текущий разговор', scope: 'Следующий ход', priority: '10 · история', title: 'История разговора', description: `${messages.length} сообщений`, explanation: 'Сохранённая история передаётся при подготовке хода.', configured: messages.length > 0, available: true, includedInNextTurn: messages.length > 0, details: { messageCount: messages.length } }),
+      // Правда про resume: при живой сессии CLI история заново НЕ пересобирается —
+      // модель помнит её сама, а серверу уходит только новое сообщение. Пока
+      // инспектор писал «сохранённая история передаётся», он обещал не то.
+      contextItem({ id: 'conversation-history', type: 'История', source: 'Текущий разговор', scope: 'Следующий ход', priority: '10 · история',
+        title: 'История разговора',
+        description: resumeId
+          ? `${messages.length} сообщений уже в сессии движка`
+          : `${messages.length} сообщений, ≈${approxTokens(historyText.length)} токенов`,
+        explanation: resumeId
+          ? 'Ход продолжает сессию движка (resume): история в промпт не пересобирается, уходит только новое сообщение. Сессия сбрасывается при смене движка и правке или удалении сообщений.'
+          : messages.length > 0
+            ? 'Сессии движка нет — история пересобирается в промпт целиком.'
+            : 'Истории пока нет: в ход уйдёт только ваше сообщение.',
+        configured: messages.length > 0, available: true, includedInNextTurn: messages.length > 0,
+        size: resumeId ? null : { chars: historyText.length, approxTokens: approxTokens(historyText.length) },
+        details: { messageCount: messages.length, 'Сессия движка': resumeId ? 'есть (resume)' : 'нет', 'Символов при пересборке': historyText.length } }),
       contextItem({ id: 'current-message', type: 'Текущее сообщение', source: 'Поле ввода', scope: 'Следующий ход', priority: '11 · текущая задача', title: 'Текущее сообщение', description: 'Сообщение ещё не отправлено серверу.', explanation: 'Preview не считает будущий текст включённым.', configured: false, available: false, includedInNextTurn: false })
     ] }
   ]
@@ -197,7 +221,8 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
   // Склеенная подсказка одна на два пункта: размер получают оба — вопрос «что
   // именно занимает место» задают про пункт, а итог берётся из предпросмотра.
   const sizeByItem = new Map(previewBlocks.flatMap((block) => block.itemIds.map((id) => [id, { chars: block.chars, approxTokens: block.approxTokens }] as const)))
-  const withSizes = groups.map((group) => ({ ...group, items: group.items.map((item) => ({ ...item, size: sizeByItem.get(item.id) ?? null })) }))
+  // Размер из предпросмотра, а если пункт посчитал свой сам (история) — его.
+  const withSizes = groups.map((group) => ({ ...group, items: group.items.map((item) => ({ ...item, size: sizeByItem.get(item.id) ?? item.size ?? null })) }))
   return {
     schemaVersion: 1,
     conversationId,
@@ -213,7 +238,10 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
       approxTokens: promptBlock([], '', previewText).approxTokens,
       omitted: [
         'Правила платформы и приложения: их добавляет CLI движка, сервер их текст не хранит.',
-        'История разговора и текущее сообщение: собираются в момент отправки.',
+        resumeId
+          ? 'История разговора: ход продолжает сессию движка, история заново не отправляется.'
+          : `История разговора: пересобирается в момент отправки, ≈${approxTokens(historyText.length)} токенов.`,
+        'Текущее сообщение: его текст ещё не отправлен серверу.',
         kbMode === 'off' ? 'Автоконтекст базы знаний: режим выключен.' : 'Автоконтекст базы знаний: документы подбираются по тексту отправляемого сообщения.',
         'AGENTS.md: файл читает исполнитель в рабочей директории машины.'
       ]
@@ -242,6 +270,13 @@ export async function registerRest(
     runnerFs?: RunnerFsClient
     authStatus?: AuthStatusState
     isAgentOnline?: (agentId: string) => boolean
+    /**
+     * База знаний — функцией: сервис создаётся в `server.ts` позже регистрации
+     * REST, поэтому передаётся геттер, а не готовый объект.
+     */
+    kb?: () => KnowledgeBaseService | null
+    /** Чтение файла на машине (реестр агентов живёт в server.ts). */
+    fsRead?: (agentId: string, path: string) => Promise<{ dataBase64?: string }>
     /** Живой статус машин (online, версия, телеметрия): реестр агентов живёт в server.ts. */
     liveAgents?: (agents: ReturnType<VoiceChatDb['listAgents']>) => AgentInfo[]
   } = {}
@@ -376,6 +411,89 @@ export async function registerRest(
     if (!updated) return reply.code(404).send({ error: 'not found' })
     const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline)
     return snapshot ?? reply.code(404).send({ error: 'not found' })
+  })
+
+  /**
+   * Что подберёт база знаний для этого черновика. Снимок описывает сохранённое
+   * состояние и на вопрос «а что придёт из БЗ» ответить не может: подбор зависит
+   * от текста, который ещё не отправлен. Считает тот же `buildKbAutoContext`,
+   * что и ход модели, и с тем же правом просмотра (`kbViewOf`), поэтому чужие
+   * разделы в предпросмотр не попадают.
+   */
+  app.post<{ Params: { id: string }; Body: { draft?: string } }>('/api/conversations/:id/context-kb-preview', async (req, reply) => {
+    const userId = uid(req)
+    const conversation = db.getConversation(userId, req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    const disabled = new Set(conversation.disabledContext ?? [])
+    const mode = disabled.has('knowledge-mode') ? 'off' : (conversation.kbContextMode ?? 'auto')
+    const draft = (req.body?.draft ?? '').trim()
+    const empty = (emptyReason: string): ContextKbPreview =>
+      ({ mode, text: '', chars: 0, approxTokens: 0, confidence: null, sections: [], emptyReason })
+    if (mode !== 'auto') return empty('mode')
+    if (!draft) return empty('empty-query')
+    const kb = opts.kb?.()
+    if (!kb) return empty('kb-unavailable')
+    const auto = await buildKbAutoContext(kb, draft, {
+      ...kbViewOf(db, userId),
+      ...(conversation.projectId ? { projectId: conversation.projectId } : {})
+    })
+    return {
+      mode,
+      text: auto.text,
+      chars: auto.text.length,
+      approxTokens: approxTokens(auto.text.length),
+      confidence: auto.bundle.confidence,
+      // `sections` (а не `contextSections`) — там точная длина блока каждого
+      // раздела: человек видит, сколько места займёт именно этот документ.
+      sections: auto.sections.map((section) => ({
+        documentId: section.documentId,
+        title: section.title ?? section.documentId,
+        ...(section.anchor ? { anchor: section.anchor } : {}),
+        chars: section.chars
+      })),
+      emptyReason: auto.text ? null : (auto.emptyReason ?? 'no-match')
+    } satisfies ContextKbPreview
+  })
+
+  /**
+   * Цепочка AGENTS.md рабочей директории — по явной просьбе человека, а не в
+   * снимке: файл лежит на чужой машине, и молча читать его сервер не должен.
+   * Порядок — от общей к конкретной, как её применяет CLI; каталоги выше
+   * рабочей директории проверяются вверх до корня.
+   */
+  app.get<{ Params: { id: string } }>('/api/conversations/:id/agents-chain', async (req, reply) => {
+    const userId = uid(req)
+    const conversation = db.getConversation(userId, req.params.id)
+    if (!conversation) return reply.code(404).send({ error: 'not found' })
+    const resolution = db.resolveConversationMachine(userId, req.params.id, { ...(opts.isAgentOnline ? { isOnline: opts.isAgentOnline } : {}) })
+    const project = conversation.projectId ? db.getProject(userId, conversation.projectId) : null
+    const projectMachine = project?.machines.find((entry) => entry.agentId === resolution?.agentId)
+    const workdir = conversation.workdir ?? projectMachine?.path ?? db.getSettings(userId).workdir ?? null
+    const agent = resolution?.agentId ? db.listUsableAgents(userId, conversation.projectId).find((a) => a.id === resolution.agentId) : undefined
+    const machineName = agent?.name ?? null
+    if (!workdir) return { machineName, workdir: null, files: [], unavailable: 'Рабочая директория не задана: цепочку читать негде.' } satisfies AgentsChainResult
+    if (!resolution?.agentId || resolution.error || !opts.fsRead) {
+      return { machineName, workdir, files: [], unavailable: 'Машина недоступна: прочитать файлы её директории нельзя.' } satisfies AgentsChainResult
+    }
+    const files: AgentsChainFile[] = []
+    for (const dir of agentsChainDirs(workdir)) {
+      const path = `${dir.replace(/\/+$/, '')}/AGENTS.md`
+      try {
+        const result = await opts.fsRead(resolution.agentId, path)
+        const dataBase64 = (result as { dataBase64?: string }).dataBase64
+        if (!dataBase64) continue // файла нет — обычный случай, в цепочку не попадает
+        const text = Buffer.from(dataBase64, 'base64').toString('utf8')
+        files.push({ path, text, chars: text.length })
+      } catch (error) {
+        // «Файла нет» — обычное дело для предков рабочей директории, и строкой
+        // об ошибке это показывать нельзя: цепочка утонет в шуме. Всё остальное
+        // (отказ политики, таймаут) человек увидеть должен.
+        const message = error instanceof Error ? error.message : String(error)
+        if (/ENOENT|not found|No such file/i.test(message)) continue
+        files.push({ path, text: null, chars: 0, error: message })
+      }
+    }
+    return { machineName, workdir, files } satisfies AgentsChainResult
   })
 
   app.patch<{

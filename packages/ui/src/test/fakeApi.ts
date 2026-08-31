@@ -518,6 +518,24 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       else if (itemId !== 'platform-instructions' && itemId !== 'application-instructions') disabledContext.add(itemId)
       return contextSnapshotFake(id)
     },
+    'conversations:contextKbPreview': async ({ draft }) => {
+      // Фейк ведёт себя как сервер: пустой черновик — подбора нет.
+      const text = draft.trim() ? `\n\n## База знаний\n### Протокол\n${draft.trim()}` : ''
+      return {
+        mode: 'auto' as const,
+        text,
+        chars: text.length,
+        approxTokens: Math.ceil(text.length / 4),
+        confidence: text ? ('high' as const) : null,
+        sections: text ? [{ documentId: 'protocol', title: 'Протокол', chars: text.length }] : [],
+        emptyReason: text ? null : 'empty-query'
+      }
+    },
+    'conversations:agentsChain': async () => ({
+      machineName: 'MacBook',
+      workdir: '/Users/test/project',
+      files: [{ path: '/Users/test/project/AGENTS.md', text: '# Правила проекта\nТесты в том же шаге.', chars: 44 }]
+    }),
     'conversations:listMachines': async () => agents.map((a) => ({ ...a })),
     'conversations:get': async ({ id }) => {
       const conv = conversations.find((c) => c.id === id)

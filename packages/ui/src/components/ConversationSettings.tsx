@@ -338,6 +338,14 @@ export function ConversationSettings({ conversation, agents, machineOps, role, l
             // догнать её, иначе кнопка «Сохранить» вернёт старое значение.
             if (patch.kbContextMode) setKbContextMode(patch.kbContextMode)
             if (patch.permissionMode !== undefined) setPermissionMode(patch.permissionMode ?? '')
+            // Сброс переопределения движка: черновик возвращается к наследуемым
+            // значениям, иначе «Сохранить» снова запишет прежний override.
+            if (patch.llmProvider === null) {
+              setLlmOverridden(false)
+              setLlmEngineId(inheritedLlm.engineId)
+              setLlmProvider(inheritedLlm.provider)
+              setLlmModel(inheritedLlm.model)
+            }
           }}
         />}
         {webReaderDiagnostics && <section className="convsettings-card" aria-label="Самодиагностика Web Reader">

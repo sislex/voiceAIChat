@@ -103,3 +103,20 @@ export function buildContextBlocks(input: ContextBlocksInput): ContextPromptBloc
   }
   return blocks
 }
+
+/**
+ * Каталоги, в которых CLI ищет AGENTS.md, — от корня к рабочей директории
+ * («от общей к конкретной»). Только предки: файл ниже рабочей директории в
+ * цепочку хода не входит.
+ */
+export function agentsChainDirs(workdir: string): string[] {
+  const parts = workdir.replace(/\/+$/, '').split('/').filter(Boolean)
+  const absolute = workdir.startsWith('/')
+  const dirs: string[] = absolute ? ['/'] : []
+  let current = absolute ? '' : '.'
+  for (const part of parts) {
+    current = `${current}/${part}`
+    dirs.push(current)
+  }
+  return dirs
+}

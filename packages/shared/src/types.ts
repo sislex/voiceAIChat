@@ -1056,6 +1056,51 @@ export interface ConversationContextSnapshot {
   }
 }
 
+/**
+ * Предпросмотр автоконтекста базы знаний по черновику сообщения. Отвечает на
+ * вопрос, который снимок сам ответить не может: снимок описывает сохранённое
+ * состояние, а подбор документов зависит от текста, который ещё не отправлен.
+ */
+export interface ContextKbPreview {
+  /** Режим БЗ разговора на момент запроса; `off` — подбора не будет. */
+  mode: KbContextMode
+  /** Текст, который сервер допишет к промпту; пусто — инъекции не будет. */
+  text: string
+  chars: number
+  approxTokens: number
+  /** Уверенность подбора (её же считает ход модели); null — подбора не было. */
+  confidence: 'high' | 'medium' | 'low' | null
+  /** Разделы, попавшие в контекст: id документа, заголовок и размер блока. */
+  sections: Array<{ documentId: string; title: string; anchor?: string; chars: number }>
+  /** Почему инъекции нет: `off`, `empty-query`, причина от подборщика. */
+  emptyReason: string | null
+}
+
+/**
+ * Цепочка AGENTS.md рабочей директории, прочитанная с машины по явному запросу.
+ * Снимок её не раскрывает: файл живёт на чужом хосте, и читать его без просьбы
+ * человека сервер не должен. От общей к конкретной — тот же порядок, в каком её
+ * применяет CLI.
+ */
+export interface AgentsChainFile {
+  /** Абсолютный путь на машине. */
+  path: string
+  /** Содержимое файла; null — файл есть в цепочке, но прочитать не удалось. */
+  text: string | null
+  chars: number
+  /** Почему не прочитан (нет файла, отказ политики, таймаут). */
+  error?: string
+}
+
+export interface AgentsChainResult {
+  /** Машина, на которой читали; null — доступной машины нет. */
+  machineName: string | null
+  workdir: string | null
+  files: AgentsChainFile[]
+  /** Общая причина, когда читать было негде (нет машины/директории). */
+  unavailable?: string
+}
+
 /** Блок системного промпта: чем он добавлен и какой у него текст. */
 export interface ContextPromptBlock {
   /**
