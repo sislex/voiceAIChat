@@ -87,6 +87,7 @@ export function createFakeApi(seedConversations: string[] = []): FakeApi {
       turnSizes: [],
       changes: [...disabledContext].map((itemId, index) => ({ at: index * 1000, actor: 'test', itemId, enabled: false })),
       disallowedTools: [],
+      cliMcpServers: [],
       warnings: [],
       promptPreview: {
         blocks: disabledContext.has('personalization') ? [] : [{ itemIds: ['personalization'], title: 'Персонализация пользователя', text: preview, chars: preview.length, approxTokens: Math.ceil(preview.length / 4) }],
