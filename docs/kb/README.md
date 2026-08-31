@@ -23,7 +23,7 @@
 | [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 170 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 185 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 60 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 958 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 959 коммит(ов) в areas после сверки: 1d660032 fix(kb): маркеры конфликта из слияния убраны, README перегенерирован … |
 | [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 82 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 116 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 56 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
@@ -34,7 +34,7 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-31 | ⚠ 12 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 150 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-31 | ⚠ 11 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ⚠ 8 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 11 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 53 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 112 коммит(ов) в areas после сверки: 65522e30 Merge remote-tracking branch 'origin/main' into work1 … |
