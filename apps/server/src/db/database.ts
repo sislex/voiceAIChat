@@ -1033,6 +1033,12 @@ export class VoiceChatDb {
     if (!convCols.some((c) => c.name === 'project_id')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN project_id TEXT`)
     }
+    const orchestrationItemCols = this.db
+      .prepare(`PRAGMA table_info(assistant_orchestration_items)`)
+      .all() as Array<{ name: string }>
+    if (orchestrationItemCols.length && !orchestrationItemCols.some((c) => c.name === 'attempts')) {
+      this.db.exec(`ALTER TABLE assistant_orchestration_items ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`)
+    }
     if (!convCols.some((c) => c.name === 'assistant_autonomy')) {
       this.db.exec(`ALTER TABLE conversations ADD COLUMN assistant_autonomy TEXT`)
     }
@@ -4984,6 +4990,14 @@ export class VoiceChatDb {
   // --- Оркестрация канбан-ассистента ---------------------------------
   // План живёт в БД, потому что ожидание merge переживает и вкладку, и рестарт.
 
+  /** Сколько планов проекта сейчас идёт: серия задач не должна размножаться. */
+  countActiveOrchestrations(owner: string, projectId: string): number {
+    const row = this.db.prepare(
+      `SELECT COUNT(*) AS n FROM assistant_orchestrations WHERE owner = ? AND project_id = ? AND status = 'running'`
+    ).get(owner, projectId) as { n: number }
+    return row.n
+  }
+
   createOrchestration(
     owner: string,
     projectId: string,
@@ -5041,7 +5055,7 @@ export class VoiceChatDb {
 
   updateOrchestrationItem(
     itemId: string,
-    patch: { status?: OrchestrationItemStatus; taskId?: string | null; runId?: string | null; error?: string | null }
+    patch: { status?: OrchestrationItemStatus; taskId?: string | null; runId?: string | null; error?: string | null; attempts?: number }
   ): void {
     const set: string[] = []
     const values: unknown[] = []
@@ -5054,6 +5068,7 @@ export class VoiceChatDb {
     if (patch.taskId !== undefined) { set.push('task_id = ?'); values.push(patch.taskId) }
     if (patch.runId !== undefined) { set.push('run_id = ?'); values.push(patch.runId) }
     if (patch.error !== undefined) { set.push('error = ?'); values.push(patch.error) }
+    if (patch.attempts !== undefined) { set.push('attempts = ?'); values.push(patch.attempts) }
     if (!set.length) return
     values.push(itemId)
     this.db.prepare(`UPDATE assistant_orchestration_items SET ${set.join(', ')} WHERE id = ?`).run(...values)
@@ -5086,6 +5101,7 @@ export class VoiceChatDb {
       payload: parseJsonValue<Record<string, unknown>>(typeof item.payload_json === 'string' ? item.payload_json : '{}', {}),
       status: String(item.status) as OrchestrationItem['status'],
       runId: item.run_id ? String(item.run_id) : null,
+      attempts: item.attempts === null || item.attempts === undefined ? 0 : Number(item.attempts),
       error: item.error ? String(item.error) : null,
       startedAt: item.started_at === null ? null : Number(item.started_at),
       finishedAt: item.finished_at === null ? null : Number(item.finished_at)

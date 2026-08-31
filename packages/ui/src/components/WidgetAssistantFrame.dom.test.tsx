@@ -95,22 +95,31 @@ describe('WidgetAssistantFrame', () => {
       id: 'plan-1', projectId: 'p1', conversationId: conversation.id, owner: 'ann', title: 'Серия задач',
       status: 'running', error: null, createdAt: 1, updatedAt: 1,
       items: [
-        { id: 'i0', position: 0, kind: 'create_task', title: 'Завести карточку', taskId: 't1', dependsOn: [], payload: {}, status: 'done', runId: null, error: null, startedAt: null, finishedAt: null },
-        { id: 'i1', position: 1, kind: 'run_ci', title: 'Разработка', taskId: 't1', dependsOn: [0], payload: {}, status: 'running', runId: 'r1', error: null, startedAt: null, finishedAt: null }
+        { id: 'i0', position: 0, kind: 'create_task', title: 'Завести карточку', taskId: 't1', dependsOn: [], payload: {}, status: 'done', runId: null, attempts: 0, error: null, startedAt: null, finishedAt: null },
+        { id: 'i1', position: 1, kind: 'run_ci', title: 'Разработка', taskId: 't1', dependsOn: [0], payload: {}, status: 'running', runId: 'r1', attempts: 0, error: null, startedAt: null, finishedAt: null }
       ]
     }
     api['orchestrations:list'] = vi.fn(async () => [plan]) as any
     const cancel = vi.fn(async () => ({ ...plan, status: 'cancelled' }))
     api['orchestrations:cancel'] = cancel as any
     const transport = { send: vi.fn(), onToken: vi.fn(() => () => {}), onDone: vi.fn(() => () => {}), onError: vi.fn(() => () => {}) } as any
-    render(<KanbanAssistant projectId="p1" context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={vi.fn()} />)
+    const openTask = vi.fn()
+    render(<KanbanAssistant projectId="p1" context={context as any} api={api} llmEngines={[]} transport={transport} onCommand={vi.fn()} onOpenTask={openTask} />)
 
     const panel = await screen.findByRole('region', { name: 'План работ: Серия задач' })
-    expect(panel).toHaveTextContent('1/2')
+    expect(panel).toHaveTextContent('идёт · 1/2')
     expect(panel).toHaveTextContent('Разработка')
+
+    // Шаг с задачей — кнопка: из панели видно, о какой карточке идёт речь.
+    await userEvent.click(within(panel).getByRole('button', { name: 'Разработка' }))
+    expect(openTask).toHaveBeenCalledWith('t1')
+
     await userEvent.click(within(panel).getByRole('button', { name: 'Остановить' }))
     expect(cancel).toHaveBeenCalledWith({ planId: 'plan-1' })
-    // Остановленный план из панели исчезает: она показывает только идущие.
+    // Остановленный план остаётся на виду с итогом, пока его не скроют руками.
+    const stopped = await screen.findByRole('region', { name: 'План работ: Серия задач' })
+    expect(stopped).toHaveTextContent('отменён')
+    await userEvent.click(within(stopped).getByRole('button', { name: 'Скрыть план Серия задач' }))
     await vi.waitFor(() => expect(screen.queryByRole('region', { name: /План работ/ })).not.toBeInTheDocument())
   })
 

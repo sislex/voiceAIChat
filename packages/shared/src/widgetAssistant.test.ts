@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isAllowedWidgetRoute } from './widgetAssistant'
+import { ASSISTANT_FORBIDDEN_COMMANDS, isAllowedWidgetRoute, isAssistantRunnableCommand } from './widgetAssistant'
 
 describe('isAllowedWidgetRoute', () => {
   it('разрешает страницу своего проекта и её подпути', () => {
@@ -26,5 +26,17 @@ describe('isAllowedWidgetRoute', () => {
     expect(isAllowedWidgetRoute('projects/p1', 'p1')).toBe(false)
     expect(isAllowedWidgetRoute('/projects/p1/../admin', 'p1')).toBe(false)
     expect(isAllowedWidgetRoute('', 'p1')).toBe(false)
+  })
+})
+
+describe('isAssistantRunnableCommand', () => {
+  it('не пускает ассистента в команды, которые обходят подтверждения', () => {
+    expect(isAssistantRunnableCommand('app.logout')).toBe(false)
+    expect(ASSISTANT_FORBIDDEN_COMMANDS).toContain('app.logout')
+  })
+
+  it('обычные команды экрана разрешены', () => {
+    expect(isAssistantRunnableCommand('kanban.create-task')).toBe(true)
+    expect(isAssistantRunnableCommand('ci.retry-run')).toBe(true)
   })
 })

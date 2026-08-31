@@ -25,6 +25,8 @@ export interface KanbanAssistantProps {
   transport?: Pick<NonNullable<typeof window.claude>, 'send' | 'onToken' | 'onDone' | 'onError'>
   onCommand: (command: WidgetAssistantCommand) => void | Promise<void>
   conversationId?: string | null
+  /** Открыть карточку шага плана; без него названия шагов остаются текстом. */
+  onOpenTask?: (taskId: string) => void
 }
 
 /** A selector option keeps its source independent from the UI, so new widget kinds need no selector changes. */
@@ -37,6 +39,10 @@ export interface ProjectAssistantChat {
 /** Значок шага плана: статус читается взглядом, без легенды. */
 const PLAN_ITEM_MARKS: Record<string, string> = {
   pending: '·', running: '▸', done: '✓', failed: '✕', cancelled: '—'
+}
+
+const PLAN_STATUS_TITLES: Record<string, string> = {
+  running: 'идёт', done: 'выполнен', failed: 'остановлен', cancelled: 'отменён'
 }
 
 export function projectAssistantChatSource(conversation: Conversation): string {
@@ -94,7 +100,7 @@ export function ProjectAssistantChatSelector({ projectId, api, selectedId, onSel
 }
 
 /** Kanban adapter chat. Context is read again for every request, so card/field/action changes cannot go stale. */
-export function KanbanAssistant({ projectId, context, api, llmEngines, transport = window.claude, onCommand, conversationId }: KanbanAssistantProps): JSX.Element {
+export function KanbanAssistant({ projectId, context, api, llmEngines, transport = window.claude, onCommand, conversationId, onOpenTask }: KanbanAssistantProps): JSX.Element {
   const [draft, setDraft] = useState('')
   const [messages, setMessages] = useState<Message[]>([])
   const [conversation, setConversation] = useState<Conversation | null>(null)
@@ -103,6 +109,9 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
   const [busy, setBusy] = useState(false)
   const [partial, setPartial] = useState('')
   const [plans, setPlans] = useState<Orchestration[]>([])
+  // Завершённый план остаётся на виду до явного «Скрыть»: иначе результат
+  // серии задач исчезает ровно в тот момент, когда он и стал интересен.
+  const [hiddenPlans, setHiddenPlans] = useState<string[]>([])
   const liveContext = useRef(context)
   useEffect(() => { liveContext.current = context }, [context])
   const reload = async (): Promise<void> => {
@@ -131,6 +140,9 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
     const off = bridge?.onOrchestration((plan) => {
       if (plan.projectId !== projectId) return
       setPlans((items) => [plan, ...items.filter((item) => item.id !== plan.id)])
+      // Итог плана сервер кладёт в ленту обычным сообщением — перечитываем её,
+      // иначе отчёт появится только после перезагрузки страницы.
+      if (plan.status !== 'running') void reload()
     })
     return () => { current = false; off?.() }
   }, [api, projectId])
@@ -209,6 +221,9 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
       setBusy(false)
     }
   }
+  const visiblePlans = plans
+    .filter((plan) => !hiddenPlans.includes(plan.id))
+    .filter((plan, index, all) => plan.status === 'running' || all.findIndex((item) => item.status !== 'running') === index)
   const visibleMessages = messages.map((message) => message.role === 'ai'
     ? { ...message, text: parseWidgetAssistantReply(message.text).text }
     : message)
@@ -220,15 +235,20 @@ export function KanbanAssistant({ projectId, context, api, llmEngines, transport
       {context.selection?.selectedField && <span>{context.selection.selectedField}</span>}
     </div>
     {proposal && <WidgetProposalCard proposal={proposal.command} context={context} onConfirm={() => { const next = proposal; setProposal(null); void confirmProposal(next.command, next.turnId) }} onCancel={() => setProposal(null)} />}
-    {plans.filter((plan) => plan.status === 'running').map((plan) => <section key={plan.id} className="kanban-assistant-plan" aria-label={`План работ: ${plan.title}`}>
+    {visiblePlans.map((plan) => <section key={plan.id} className="kanban-assistant-plan" data-status={plan.status} aria-label={`План работ: ${plan.title}`}>
       <header>
         <strong>{plan.title}</strong>
-        <span>{plan.items.filter((item) => item.status === 'done').length}/{plan.items.length}</span>
-        <button type="button" onClick={() => void api['orchestrations:cancel']({ planId: plan.id }).then((cancelled) => { if (cancelled) setPlans((items) => items.map((item) => item.id === cancelled.id ? cancelled : item)) })}>Остановить</button>
+        <span>{PLAN_STATUS_TITLES[plan.status] ?? plan.status} · {plan.items.filter((item) => item.status === 'done').length}/{plan.items.length}</span>
+        {plan.status === 'running'
+          ? <button type="button" onClick={() => void api['orchestrations:cancel']({ planId: plan.id }).then((cancelled) => { if (cancelled) setPlans((items) => items.map((item) => item.id === cancelled.id ? cancelled : item)) })}>Остановить</button>
+          : <button type="button" onClick={() => setHiddenPlans((items) => [...items, plan.id])} aria-label={`Скрыть план ${plan.title}`}>Скрыть</button>}
       </header>
       <ol>{plan.items.map((item) => <li key={item.id} data-status={item.status}>
         <span className="kanban-assistant-plan-status">{PLAN_ITEM_MARKS[item.status]}</span>
-        <span>{item.title}</span>
+        {item.taskId
+          ? <button type="button" className="kanban-assistant-plan-open" onClick={() => onOpenTask?.(item.taskId!)}>{item.title}</button>
+          : <span>{item.title}</span>}
+        {item.attempts > 0 && <span className="kanban-assistant-plan-attempts">попытка {item.attempts + 1}</span>}
         {item.error && <em>{item.error}</em>}
       </li>)}</ol>
     </section>)}
