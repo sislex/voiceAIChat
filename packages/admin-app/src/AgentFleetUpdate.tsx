@@ -19,7 +19,7 @@ export interface AgentFleetUpdateProps {
 interface FleetMachine { id: string; name: string; owner: string; online: boolean; version?: string; outdated: boolean }
 
 export function fleetMachines(users: AdminUserInfo[], latestVersion: string): FleetMachine[] {
-  return users.flatMap((u) => u.agents.map((a) => ({
+  return users.flatMap((u) => (u.agents ?? []).map((a) => ({
     id: a.id, name: a.name, owner: u.name, online: a.online, version: a.version,
     outdated: a.online && Boolean(a.version) && compareVersions(a.version!, latestVersion) < 0
   })))

@@ -397,6 +397,37 @@ describe('KanbanBoard (изолированный)', () => {
   })
 })
 
+describe('KanbanBoard — догрузка полной задачи', () => {
+  beforeEach(() => { window.ci = undefined })
+
+  it('перерендер хоста не перезапрашивает открытую карточку и не мигает описанием', async () => {
+    // `loadFullTask` хост передаёт инлайновой стрелкой, и её идентичность
+    // менялась на каждом рендере приложения — а рендерит его каждый WS-кадр
+    // активного рана. Эффект перезапускался, обнулял загруженную задачу и снова
+    // дёргал `GET tasks/:id`.
+    const full = task({ id: 't1', title: 'A', description: 'Полное описание с сервера' })
+    const calls: string[] = []
+    const props: KanbanBoardProps = {
+      projectName: 'P1', board, loading: false, members: [],
+      onCreateColumn: vi.fn(), onUpdateColumn: vi.fn(), onSetColumnHidden: vi.fn(),
+      onReorderColumns: vi.fn(), onDeleteColumn: vi.fn(), onCreateTask: vi.fn(),
+      onUpdateTask: vi.fn(), onMoveTask: vi.fn(), onDeleteTask: vi.fn(),
+      openTaskId: 't1',
+      loadFullTask: async (id) => { calls.push(id); return full }
+    }
+    const { rerender } = render(<KanbanBoard {...props} />)
+    expect(await screen.findByTestId('task-desc-view')).toHaveTextContent('Полное описание с сервера')
+    expect(calls).toEqual(['t1'])
+
+    // Новая стрелка на каждом рендере — ровно то, что делает хост.
+    rerender(<KanbanBoard {...props} loadFullTask={async (id) => { calls.push(id); return full }} />)
+    rerender(<KanbanBoard {...props} loadFullTask={async (id) => { calls.push(id); return full }} />)
+
+    expect(calls).toEqual(['t1'])
+    expect(screen.getByTestId('task-desc-view')).toHaveTextContent('Полное описание с сервера')
+  })
+})
+
 describe('KanbanBoard — состояния загрузки, пустоты и ошибки', () => {
   it('первая загрузка — скелетон колонок и карточек, самой доски ещё нет', () => {
     renderBoard({ board: null, loading: true })

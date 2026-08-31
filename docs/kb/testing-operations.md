@@ -1,7 +1,7 @@
 ---
 title: Разработка, тестирование, диагностика и эксплуатация
-updated: 2026-08-30
-checked: da6632d4
+updated: 2026-08-31
+checked: 1bca2e06
 areas:
   - package.json
   - scripts
@@ -253,7 +253,9 @@ Machine tokens восстановить из hash нельзя. Потеря Б�
 
 `scripts/frontend-quality.mjs` проверяет workspace dependency graph и циклы, запрет deep imports и product/host/platform/transport leaks, существование root/styles package exports, обязательную Storybook-матрицу пяти модулей, CSS imports/keyframes/unscoped selectors и dynamic imports всех product modules с role-gated Admin. Негативные fixtures и redaction отчёта покрыты `scripts/frontend-quality.test.mjs`. Безопасный машинный отчёт сохраняется в `artifacts/frontend-quality/report.json`; token, Bearer credentials и credential-bearing URLs редактируются.
 
-Bundle gate сравнивает minified JS chunks Web build с измеренным baseline `frontend-quality/bundle-baseline.json`; запас равен 12%, превышение сообщает chunk, limit, actual и delta, React обязан находиться в одном chunk. Baseline меняется только явной правкой файла. `affected-check` запускает дорогие frontend build gates только при frontend-влиянии; server/runner/agent-only diff их не включает.
+Bundle gate сравнивает minified JS chunks Web build с измеренным baseline `frontend-quality/bundle-baseline.json`; превышение сообщает chunk, limit, actual, delta и **список файлов группы**, React обязан находиться в одном chunk. Baseline меняется только явной правкой файла.
+
+Группы бюджета сопоставляются по **префиксу** имени файла, и у входного чанка это однажды сработало наоборот замыслу: пакет с точкой входа `index.ts`, вынесенный в **ленивый** чанк, получил имя `index-XXX.js`, попал в группу `index-` — и разгрузка главного чанка (−185 КБ) прочиталась как его рост на 32 КБ. Поэтому группа `index-` теперь меряется по **одному** файлу, на который ссылается `apps/web/dist/index.html`; остальные группы остаются суммой по префиксу (`markdown-` бывает не одним чанком). Оба правила закреплены тестами в `scripts/frontend-quality.test.mjs`. `affected-check` запускает дорогие frontend build gates только при frontend-влиянии; server/runner/agent-only diff их не включает.
 
 ## E2E Make в реальном Chromium (2026-08-27)
 

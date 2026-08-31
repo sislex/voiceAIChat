@@ -1,0 +1,125 @@
+@import '@voicechat/ui-kit/styles.css';
+
+/* Карточка человека. Цвета — только токены: модуль показывают в светлой и
+   тёмной теме, а прежняя админка жила на зашитом #c0392b и в тёмной теме
+   выглядела ошибкой вёрстки. */
+.vcp { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.vcp-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.vcp-head { display: flex; align-items: center; gap: 13px; padding: 20px 24px 14px; flex-wrap: wrap; }
+.vcp-head__main { flex: 1; min-width: 0; }
+.vcp-head__name { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.vcp-head__name h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; overflow-wrap: anywhere; max-width: 100%; }
+/* Длинная почта не растягивает шапку: она информативна, но не должна выдавливать
+   кнопки действий за край карточки. */
+.vcp-head__sub { max-width: 46ch; }
+.vcp-head__sub { margin: 5px 0 0; color: var(--text-dim); font-size: 12px; overflow-wrap: anywhere; }
+.vcp-head__role select { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); font: inherit; }
+.vcp-head__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Сетку «быстрых фактов» задаёт MetricGrid; здесь только отступы карточки. */
+.vcp-quick { margin: 0 24px 12px; }
+
+.vcp-panel { padding: 18px 24px 24px; min-width: 0; }
+
+.vcp-card { border: 1px solid var(--border); border-radius: var(--radius-large); background: var(--surface); padding: 16px; min-width: 0; }
+.vcp-card__title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+/* Размеры заголовков задаются явно для всех блоков карточки: без этого h3
+   внутри провайдера брал браузерный дефолт 18.72px и спорил с именем человека
+   в шапке (20px) — карточка читалась как две страницы. */
+.vcp-card h3, .vcp-section-head h3, .vcp-provider__head h3 { margin: 0; font-size: 14px; }
+.vcp-card p, .vcp-section-head p, .vcp-provider__head p { margin: 4px 0 0; color: var(--text-dim); font-size: 11px; }
+
+.vcp-overview__grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 12px; }
+.vcp-feed { display: grid; gap: 14px; margin: 16px 0 0; padding: 0; list-style: none; }
+.vcp-feed li { display: flex; align-items: center; gap: 10px; }
+.vcp-feed p { margin: 0; min-width: 0; }
+.vcp-feed b { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.vcp-feed small { display: block; margin-top: 3px; color: var(--text-dim); font-size: 10px; overflow-wrap: anywhere; }
+.vcp-feed__ico { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border-radius: var(--radius-medium); background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+.vcp-feed__ico--conversation { background: var(--surface-hover); color: var(--text-dim); }
+
+.vcp-bars { display: grid; gap: 14px; margin: 18px 0 0; padding: 0; list-style: none; }
+.vcp-bars__label { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+.vcp-bars__track { display: block; height: 7px; margin-top: 6px; border-radius: 9px; background: var(--surface-hover); overflow: hidden; }
+.vcp-bars__track i { display: block; height: 100%; border-radius: 9px; background: var(--accent); }
+
+.vcp-danger { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; border-color: var(--danger); background: var(--danger-soft); flex-wrap: wrap; }
+.vcp-danger h3 { color: var(--danger); }
+
+.vcp-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.vcp-section-head select, .vcp-history__filters select { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+
+.vcp-provider__empty { margin: 0; padding: 12px 15px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 11px; }
+.vcp-access__bulk { display: flex; gap: 8px; }
+.vcp-provider { border: 1px solid var(--border); border-radius: var(--radius-large); margin-top: 10px; overflow: hidden; }
+.vcp-provider__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; }
+.vcp-provider__models { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--border); }
+.vcp-provider__models label { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-right: 1px solid var(--border); cursor: pointer; min-width: 0; }
+.vcp-provider__models label:last-child { border-right: 0; }
+.vcp-provider__models input { accent-color: var(--accent); flex: 0 0 auto; }
+.vcp-provider__models b, .vcp-provider__models small { display: block; font-size: 11px; overflow-wrap: anywhere; }
+.vcp-provider__models small { margin-top: 3px; color: var(--text-dim); }
+
+.vcp-machines ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.vcp-machine { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-large); }
+.vcp-machine__ico { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--radius-medium); background: var(--panel); font-size: 18px; }
+.vcp-machine__main { min-width: 0; }
+.vcp-machine h3 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+.vcp-machine p { margin: 4px 0 0; color: var(--text-dim); font-size: 11px; }
+.vcp-dot { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--text-dim); }
+.vcp-dot--on { background: var(--success); }
+
+.vcp-usage__metrics { margin-bottom: 12px; }
+.vcp-usage .vcp-card { margin-bottom: 12px; }
+.vcp-table { width: 100%; border-collapse: collapse; }
+.vcp-table th, .vcp-table td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; font-size: 12px; }
+.vcp-table th { color: var(--text-dim); font-weight: 600; }
+
+.vcp-history__filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.vcp-audit { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: var(--radius-large); overflow: hidden; }
+.vcp-audit__item { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.vcp-audit__item:last-child { border-bottom: 0; }
+.vcp-audit__item--bad { background: var(--danger-soft); }
+.vcp-audit time { color: var(--text-dim); font-size: 11px; }
+.vcp-audit h3 { margin: 0; font-size: 13px; }
+.vcp-audit p { margin: 3px 0 0; color: var(--text-dim); font-size: 11px; overflow-wrap: anywhere; }
+.vcp-loading { color: var(--text-dim); font-size: 12px; }
+
+.vcp-dialog__text { margin: 0; color: var(--text-dim); font-size: 13px; line-height: 1.5; }
+.vcp-dialog__field { display: block; margin-top: 16px; font-size: 12px; font-weight: 600; }
+.vcp-dialog__field span { color: var(--text-dim); font-weight: 400; }
+.vcp-dialog__field textarea { display: block; width: 100%; min-height: 74px; margin-top: 6px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius-medium); background: var(--surface); color: var(--text); font: inherit; resize: vertical; }
+.vcp-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+@media (max-width: 1050px) {
+  .vcp-overview__grid { grid-template-columns: 1fr; }
+  .vcp-provider__models { grid-template-columns: 1fr; }
+  .vcp-provider__models label { border-right: 0; border-bottom: 1px solid var(--border); }
+}
+
+@media (max-width: 720px) {
+  .vcp-head { padding: 16px 14px; }
+  /* Тот же порог 40px: действия карточки, массовые кнопки доступа и выгрузка
+     журнала стоят в плотных строках и по умолчанию ниже него. */
+  /* Действия человека на телефоне встают в строку под именем, а не пытаются
+     поместиться рядом с ним: втроём они сжимались до нечитаемых 60px. */
+  .vcp-head { align-items: flex-start; }
+  .vcp-head__actions { width: 100%; }
+  .vcp-head__actions .vc-btn { flex: 1 1 auto; }
+  .vcp-head__actions .vc-btn,
+  .vcp-section-head .vc-btn,
+  .vcp-access__bulk .vc-btn,
+  .vcp-history__filters .vc-btn,
+  .vcp-card__title .vc-btn,
+  .vcp-danger .vc-btn { min-height: 40px; }
+  .vcp-quick { margin: 0 14px 8px; }
+  .vcp-panel { padding: 16px 14px; }
+  .vcp-machine { grid-template-columns: 40px minmax(0, 1fr) auto; }
+  /* Кнопка обновления уезжает на свою строку, иначе на 390px она сжимается
+     до нечитаемой ширины и не попадает под палец. */
+  .vcp-machine .vc-btn { grid-column: 1 / -1; min-height: 40px; }
+  .vcp-audit__item { grid-template-columns: 1fr; }
+  /* Полоса несохранённых изменений закрывает нижний край списка. */
+  .vcp-panel { padding-bottom: 96px; }
+}

@@ -367,7 +367,8 @@ describe('App — интеграция UI со стором и IPC', () => {
   it('открытие и закрытие модалки настроек по кнопке ✕', async () => {
     await renderApp()
     await userEvent.click(screen.getByText('Настройки'))
-    expect(screen.getByRole('dialog', { name: 'Настройки' })).toBeInTheDocument()
+    // Окно настроек — ленивый чанк, поэтому появляется не в том же такте.
+    expect(await screen.findByRole('dialog', { name: 'Настройки' })).toBeInTheDocument()
     await userEvent.click(screen.getByLabelText('Закрыть'))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -375,7 +376,7 @@ describe('App — интеграция UI со стором и IPC', () => {
   it('клик по оверлею закрывает модалку, клик по карточке — нет', async () => {
     await renderApp()
     await userEvent.click(screen.getByText('Настройки'))
-    await userEvent.click(screen.getByRole('dialog', { name: 'Настройки' }))
+    await userEvent.click(await screen.findByRole('dialog', { name: 'Настройки' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     await userEvent.click(screen.getByTestId('overlay'))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -964,13 +965,42 @@ describe('App — выход из аккаунта', () => {
     // пользователя: человек получал тост «Объект не найден» на ровном месте.
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users/engines`)
     render(<App api={api} delays={SLOW} />)
-    await screen.findByText('Пользователи')
+    // У служебных страниц свой заголовок: реестр исполнителей — не список людей.
+    await screen.findByRole('heading', { name: 'LLM-исполнители' })
     await waitFor(() => expect(llmAccess).not.toHaveBeenCalled())
 
     // Настоящий логин по-прежнему открывает карточку пользователя.
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users/admin`)
     window.dispatchEvent(new HashChangeEvent('hashchange'))
     await waitFor(() => expect(llmAccess).toHaveBeenCalledWith({ name: 'admin' }))
+  })
+
+  it('адрес вкладки чужого профиля открывает админку, а не роняет в чат', async () => {
+    const api = await seededApi()
+    ;(window as unknown as { session: unknown }).session = {
+      me: vi.fn().mockResolvedValue({ name: 'admin', role: 'admin' }),
+      login: vi.fn(),
+      logout: vi.fn()
+    }
+    // Три сегмента: `#/users/<логин>/<вкладка>`. Раньше здесь стояла жёсткая
+    // проверка «ровно два», и такая ссылка не открывала раздел вовсе.
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/users/admin/usage`)
+    render(<App api={api} delays={SLOW} />)
+    expect(await screen.findByTestId('users-overlay')).toBeInTheDocument()
+  })
+
+  it('«Мой аккаунт» открывается не-админом: это данные о себе', async () => {
+    const api = await seededApi()
+    ;(window as unknown as { session: unknown }).session = {
+      me: vi.fn().mockResolvedValue({ name: 'marina', role: 'developer' }),
+      login: vi.fn(),
+      logout: vi.fn()
+    }
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/account`)
+    render(<App api={api} delays={SLOW} />)
+    expect(await screen.findByTestId('account-page')).toBeInTheDocument()
+    // Раздел «Пользователи» ему по-прежнему закрыт.
+    expect(screen.queryByTestId('users-overlay')).toBeNull()
   })
 
   it('просит подтверждение, завершает сессию и закрывает защищённый маршрут экраном входа', async () => {

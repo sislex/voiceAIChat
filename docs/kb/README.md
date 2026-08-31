@@ -9,38 +9,38 @@
 
 | Файл | Тема | Сверено | Статус |
 |---|---|---|---|
-| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 165 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 173 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
+| [admin-app.md](admin-app.md) | Frontend-модуль Administration: граница, store и подключение | 2026-08-19 | ⚠ 167 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
+| [architecture.md](architecture.md) | Архитектура: кто с кем разговаривает | 2026-08-20 | ⚠ 175 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
 | [clients.md](clients.md) | Клиенты и упаковка: web, desktop и agent-tray | 2026-08-27 | ⚠ 2 коммит(ов) в areas после сверки: a083faae feat(projects): свой проект создаёт любой пользователь + почта для dev … |
 | [conventions.md](conventions.md) | Конвенции: код, тесты, гейты, коммиты | 2026-08-30 | ⚠ 7 коммит(ов) в areas после сверки: a6c7b369 Merge remote-tracking branch 'origin/main' into work2 … |
-| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make |
-| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 15 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 83 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 52 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 90 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
+| [data-auth.md](data-auth.md) | Данные и доступ: SQLite, пользователи, роли | 2026-08-31 | ⚠ 3 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
+| [deploy.md](deploy.md) | Деплой: Docker, HTTPS, прод-сервер, env | 2026-08-30 | ⚠ 17 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
+| [features/ci-runner.md](features/ci-runner.md) | CI-раннер канбана (Авто-подготовка окружения для таска) | 2026-08-29 | ⚠ 86 коммит(ов) в areas после сверки: 54cf0961 fix(kanban): карточка задачи не перезапрашивает данные на каждый ререндер … |
+| [features/feature-preview.md](features/feature-preview.md) | Feature-preview окружения задач | 2026-08-28 | ⚠ 54 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
+| [features/kb-usage.md](features/kb-usage.md) | Использование базы знаний (телеметрия и панель) | 2026-08-28 | ⚠ 92 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
 | [features/llm-runners.md](features/llm-runners.md) | Исполнители LLM: контейнеры с claude/codex CLI | 2026-08-18 | ⚠ 100 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 145 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 155 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 25 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 915 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 48 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 77 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 38 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 94 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 152 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
+| [features/manual-qa.md](features/manual-qa.md) | Структурированное ручное QA | 2026-08-24 | ⚠ 147 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
+| [features/merge-runner.md](features/merge-runner.md) | Merge-ран задачи: безопасное слияние в main | 2026-08-24 | ⚠ 158 коммит(ов) в areas после сверки: 54cf0961 fix(kanban): карточка задачи не перезапрашивает данные на каждый ререндер … |
+| [features/playwright-reader.md](features/playwright-reader.md) | Playwright Reader и browser-runner | 2026-08-30 | ⚠ 27 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
+| [features/project-knowledge-base.md](features/project-knowledge-base.md) | База знаний проекта | 2026-08-02 | ⚠ 918 коммит(ов) в areas после сверки: 54cf0961 fix(kanban): карточка задачи не перезапрашивает данные на каждый ререндер … |
+| [features/qa-stage-runs.md](features/qa-stage-runs.md) | Раны QA-этапов: отдельные сущности и вкладки карточки | 2026-08-30 | ⚠ 51 коммит(ов) в areas после сверки: 54cf0961 fix(kanban): карточка задачи не перезапрашивает данные на каждый ререндер … |
+| [features/releases.md](features/releases.md) | Версионные release-ветки и публикация в production | 2026-08-29 | ⚠ 79 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
+| [features/task-autopilot.md](features/task-autopilot.md) | Автопроход задачи по QA-конвейеру | 2026-08-29 | ⚠ 40 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
+| [features/task-preparation.md](features/task-preparation.md) | Интерактивная подготовка задачи и Development Brief | 2026-08-28 | ⚠ 97 коммит(ов) в areas после сверки: 54cf0961 fix(kanban): карточка задачи не перезапрашивает данные на каждый ререндер … |
+| [image-retouch.md](image-retouch.md) | Локальная AI-ретушь изображений | 2026-08-22 | ⚠ 154 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
 | [kb-workflow.md](kb-workflow.md) | Как устроена и ведётся база знаний | 2026-08-16 | ⚠ 11 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 53 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 85 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
+| [llm.md](llm.md) | LLM: claude/codex CLI, ходы, stream-json, gateway | 2026-08-27 | ⚠ 55 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
+| [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-28 | ⚠ 87 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 122 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make |
-| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-30 | ⚠ 29 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 33 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
+| [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: 54cf0961 fix(kanban): карточка задачи не перезапрашивает данные на каждый ререндер |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ✓ |
+| [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-30 | ⚠ 31 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
+| [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 35 коммит(ов) в areas после сверки: e32c45c1 Merge remote-tracking branch 'origin/main' into work3 … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 103 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 2 коммит(ов) в areas после сверки: b1ce0a93 fix(dev): порты dev-сеанса из окружения — второй чекаут поднимается рядом с первым … |
-| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-30 | ⚠ 9 коммит(ов) в areas после сверки: a6c7b369 Merge remote-tracking branch 'origin/main' into work2 … |
+| [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-31 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 56 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: 3da8b45d feat(projects,make): связь карточки с дизайном из Make |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ⚠ 1 коммит(ов) в areas после сверки: 54cf0961 fix(kanban): карточка задачи не перезапрашивает данные на каждый ререндер |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-31, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
@@ -60,18 +60,18 @@
 
 ## Журнал сессий
 
-Всего записей: 445. Последние:
+Всего записей: 454. Последние:
 
+- [2026-08-31-alexeys-macbook-air-2-users-page-redesign.md](log/2026-08-31-alexeys-macbook-air-2-users-page-redesign.md) — users-page-redesign
+- [2026-08-31-alexeys-macbook-air-2-users-cycle-3.md](log/2026-08-31-alexeys-macbook-air-2-users-cycle-3.md) — users-cycle-3
+- [2026-08-31-alexeys-macbook-air-2-users-cycle-2.md](log/2026-08-31-alexeys-macbook-air-2-users-cycle-2.md) — users-cycle-2
+- [2026-08-31-alexeys-macbook-air-2-users-cycle-1.md](log/2026-08-31-alexeys-macbook-air-2-users-cycle-1.md) — users-cycle-1
+- [2026-08-31-alexeys-macbook-air-2-task-card-round4.md](log/2026-08-31-alexeys-macbook-air-2-task-card-round4.md) — task-card-round4
+- [2026-08-31-alexeys-macbook-air-2-task-card-round3.md](log/2026-08-31-alexeys-macbook-air-2-task-card-round3.md) — task-card-round3
+- [2026-08-31-alexeys-macbook-air-2-task-card-round2.md](log/2026-08-31-alexeys-macbook-air-2-task-card-round2.md) — task-card-round2
+- [2026-08-31-alexeys-macbook-air-2-task-card-round1.md](log/2026-08-31-alexeys-macbook-air-2-task-card-round1.md) — task-card-round1
+- [2026-08-31-alexeys-macbook-air-2-task-card-design-round1.md](log/2026-08-31-alexeys-macbook-air-2-task-card-design-round1.md) — task-card-design-round1
 - [2026-08-31-alexeys-macbook-air-2-sessions-cycle5.md](log/2026-08-31-alexeys-macbook-air-2-sessions-cycle5.md) — sessions-cycle5
-- [2026-08-31-alexeys-macbook-air-2-sessions-cycle4.md](log/2026-08-31-alexeys-macbook-air-2-sessions-cycle4.md) — sessions-cycle4
-- [2026-08-31-alexeys-macbook-air-2-design-links-make.md](log/2026-08-31-alexeys-macbook-air-2-design-links-make.md) — design-links-make
-- [2026-08-31-alexeys-macbook-air-2-board-view-on-server.md](log/2026-08-31-alexeys-macbook-air-2-board-view-on-server.md) — Вид доски на сервере, версия релиза и тема по человеку
-- [2026-08-30-alexeys-macbook-air-2-ten-improvements.md](log/2026-08-30-alexeys-macbook-air-2-ten-improvements.md) — ten-improvements
-- [2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md](log/2026-08-30-alexeys-macbook-air-2-task-card-tabs-round2.md) — task-card-tabs-round2
-- [2026-08-30-alexeys-macbook-air-2-task-card-feeds-round1.md](log/2026-08-30-alexeys-macbook-air-2-task-card-feeds-round1.md) — task-card-feeds-round1
-- [2026-08-30-alexeys-macbook-air-2-tablet-and-carets-round9.md](log/2026-08-30-alexeys-macbook-air-2-tablet-and-carets-round9.md) — tablet-and-carets-round9
-- [2026-08-30-alexeys-macbook-air-2-settings-survive-deploy.md](log/2026-08-30-alexeys-macbook-air-2-settings-survive-deploy.md) — Настройки пользователя после релиза и деплоя
-- [2026-08-30-alexeys-macbook-air-2-sessions-module.md](log/2026-08-30-alexeys-macbook-air-2-sessions-module.md) — sessions-module
 
 ## Исторические планы
 

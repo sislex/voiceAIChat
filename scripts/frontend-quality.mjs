@@ -8,6 +8,10 @@ const FRONTEND = [
   // Модуль сессий переносим целиком: он лежит слоем «shared», потому что его
   // берут и хост-приложение, и админка, а собственного маршрута у него нет.
   { name: '@voicechat/sessions-app', dir: 'packages/sessions-app', layer: 'shared' },
+  // Карточка человека: её показывают и админка (чужой профиль), и страница
+  // «Мой аккаунт» (свой). Слой shared — потому что product→product импорт
+  // запрещён, а общий код нужен обоим.
+  { name: '@voicechat/profile-app', dir: 'packages/profile-app', layer: 'shared' },
   { name: '@voicechat/app-shell', dir: 'packages/app-shell', layer: 'shell' },
   { name: '@voicechat/chat-app', dir: 'packages/chat-app', layer: 'product' },
   { name: '@voicechat/web-reader-app', dir: 'packages/web-reader-app', layer: 'product' },
@@ -76,7 +80,8 @@ const STORY_MATRIX = {
   'packages/projects-app/src/ProjectsApp.stories.tsx': ['Default', 'Loading', 'KanbanLongCards'],
   'packages/operations-app/src/Operations.stories.tsx': ['MachinesOnline', 'MachinesOffline', 'UtilityRestricted'],
   'packages/admin-app/src/AdminApp.stories.tsx': ['Overview', 'EmptyUsage', 'AccessMatrix'],
-  'packages/sessions-app/src/SessionsApp.stories.tsx': ['Default', 'SingleDevice', 'ReadOnly', 'LoadFailed', 'Empty']
+  'packages/sessions-app/src/SessionsApp.stories.tsx': ['Default', 'SingleDevice', 'ReadOnly', 'LoadFailed', 'Empty'],
+  'packages/profile-app/src/ProfileApp.stories.tsx': ['AdminView', 'SelfView', 'Empty', 'Mobile']
 }
 export function checkStories({ root = ROOT, matrix = STORY_MATRIX } = {}) {
   for (const [path, stories] of Object.entries(matrix)) {
@@ -120,21 +125,46 @@ export function writeReport(results, { root = ROOT } = {}) {
 export function runStatic(options = {}) {
   return { architecture: checkArchitecture(options), exports: checkExports(options), stories: checkStories(options), css: checkCss(options), lazyLoading: checkLazyRegistry(options) }
 }
+/**
+ * Входной чанк приложения — тот, на который ссылается `index.html`.
+ *
+ * Группы бюджета сопоставляются по префиксу имени файла, и у `index-` это
+ * однажды сработало наоборот замыслу: пакет с точкой входа `index.ts`, вынесенный
+ * в **ленивый** чанк, получил имя `index-XXX.js`, попал в ту же группу — и
+ * разгрузка главного чанка выглядела как его рост на 32 КБ. Для входного чанка
+ * префикса недостаточно, нужна точная ссылка из разметки.
+ */
+function entryChunk(root) {
+  const html = join(root, 'apps/web/dist/index.html')
+  if (!existsSync(html)) return null
+  return readFileSync(html, 'utf8').match(/src="[^"]*\/(index-[^"/]+\.js)"/)?.[1] ?? null
+}
 export function checkBundle({ root = ROOT } = {}) {
   const baseline = JSON.parse(readFileSync(join(root, 'frontend-quality/bundle-baseline.json'), 'utf8'))
-  const assets = files(join(root, 'apps/web/dist/assets')).filter((path) => extname(path) === '.js')
+  const dir = join(root, 'apps/web/dist/assets')
+  const assets = files(dir).filter((path) => extname(path) === '.js')
+  const entry = entryChunk(root)
   const measured = {}
+  const chunks = {}
   for (const [group, limit] of Object.entries(baseline.maxBytes)) {
-    const matches = assets.filter((path) => relative(join(root, 'apps/web/dist/assets'), path).startsWith(group))
+    const byPrefix = assets.filter((path) => relative(dir, path).startsWith(group))
+    // Группа входного чанка — ровно один файл из index.html; остальные группы
+    // остаются суммой по префиксу (там это и нужно: `markdown-` бывает не одним).
+    const matches = entry && group === 'index-'
+      ? byPrefix.filter((path) => relative(dir, path) === entry)
+      : byPrefix
     const actual = matches.reduce((sum, path) => sum + statSync(path).size, 0)
     measured[group] = actual
+    // В отчёте видно, какие файлы вошли в группу: иначе «чанк вырос» не говорит,
+    // какой именно из нескольких.
+    chunks[group] = matches.map((path) => relative(dir, path))
     if (!matches.length) fail('required bundle chunk missing', group)
-    if (actual > limit) fail('bundle budget exceeded', `${group}: limit=${limit} actual=${actual} delta=+${actual - limit}`)
+    if (actual > limit) fail('bundle budget exceeded', `${group}: limit=${limit} actual=${actual} delta=+${actual - limit} (${chunks[group].join(', ')})`)
   }
   const total = assets.reduce((sum, path) => sum + statSync(path).size, 0)
   if (total > baseline.totalJsMaxBytes) fail('total JS budget exceeded', `limit=${baseline.totalJsMaxBytes} actual=${total} delta=+${total - baseline.totalJsMaxBytes}`)
   if (assets.filter((path) => /(?:^|-)react-/.test(path.split('/').pop())).length !== 1) fail('React runtime duplicated', 'expected exactly one react chunk')
-  return { measured, total, baseline: baseline.measuredAt }
+  return { measured, chunks, total, baseline: baseline.measuredAt }
 }
 function main() {
   const results = {}

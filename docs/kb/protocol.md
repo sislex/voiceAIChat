@@ -1,7 +1,7 @@
 ---
 title: Контракт клиент↔сервер (REST, WS, мосты)
 updated: 2026-08-31
-checked: 03c4c588
+checked: ba8ba24e
 areas:
   - packages/shared/src/protocol.ts
   - packages/shared/src/ipc.ts
@@ -274,9 +274,51 @@ Health-check — обычный REST-запрос, а не отдельный WS
 
 Выделение `@voicechat/operations-app` не меняет REST/WS/SSE, agent или runner protocol. Пакет определяет transport-agnostic client-интерфейсы, но host adapters в этом срезе ещё не реализованы. Публичные hash routes остаются `#/machines`, `#/claude-code`, `#/codex`, `#/kb`, `#/kb/:documentId`, `#/ci`; parser/builder находятся в Operations package, а `packages/ui/src/App.tsx` уже использует parser вместо собственного whitelist для этих URL.
 
+## Личные данные: `/api/me/*`
+
+Человек вправе знать о себе то же, что о нём знает администратор, но весь
+префикс `/api/admin/` закрыт привилегией `users:manage`
+(`projectPermissionForRequest`, `apps/server/src/users/auth.ts`). Поэтому личные
+данные живут отдельной группой:
+
+| Роут | Отдаёт | Где реализован |
+|---|---|---|
+| `GET /api/me/profile` | `UserProfileInfo`: роль, email, даты, лимит, живые сессии, свои машины с online/версией/телеметрией | `apps/server/src/routes/rest.ts` |
+| `GET /api/me/security?limit=` | свой журнал безопасности (`SecurityEvent[]`, максимум 500) | там же |
+| `GET /api/me/usage`, `GET /api/usage` | свой отчёт по расходу | там же (`usageForMe`) |
+| `GET /api/me/llm-access` | свои запреты моделей | там же |
+
+Имени пользователя в путях нет физически: оно берётся из сессии (`uid(req)`),
+поэтому подставить чужое невозможно by design. Мутаций в группе нет — смена
+роли, блокировка, удаление и лимит остаются под `requireAdmin`. Права на группу
+проверяет `auth.permissions.test.ts` (`/api/me/*` → `null`, то есть любая
+аутентифицированная роль), изоляцию данных — `rest.test.ts`.
+
+Что изменилось в админских ответах вместе с этим: `AdminUserInfo` расширяет
+`UserProfileInfo` и содержит `lastSeenAt`/`liveSessions` (агрегат
+`db.sessionActivity()`), у машин заполняется `telemetry` (для строки ОС), а
+`POST /api/admin/users/:name/block` принимает необязательный `reason` — он
+пишется в `details` события безопасности, а не в колонку `users.lock_reason`:
+та занята машинным поводом авто-замка (`auto`/`inactive`), и человеческий текст
+сломал бы подпись «заблокирован автоматически».
+
+`UsageTotals` пополнился полем `interrupted` (число прерванных ходов). Доли
+«успешных» в контракте нет и быть не может: неудавшийся ход сообщения не
+создаёт, знаменателя не существует.
+
 ## Administration frontend contract
 
-`@voicechat/admin-app` не меняет REST, WebSocket или runner protocol. Публичный `AdminClient` покрывает существующие admin users/role/block/access, read-only machines/history/messages, user/global usage, LLM engines/health и model prices. Host adapter использует прежние `RendererApi` bridges; единственное добавленное имя bridge — `admin:updateUserRole`, которое вызывает уже существующий `PATCH /api/admin/users/:name`. Маршруты Administration строятся и разбираются пакетом для `#/users`, пользователя и вкладок access/machines/usage/history, а также engines/prices.
+`@voicechat/admin-app` не меняет REST, WebSocket или runner protocol. Публичный `AdminClient` покрывает существующие admin users/role/block/access, read-only machines/history/messages, user/global usage, LLM engines/health и model prices. Host adapter использует прежние `RendererApi` bridges; единственное добавленное имя bridge — `admin:updateUserRole`, которое вызывает уже существующий `PATCH /api/admin/users/:name`. Маршруты Administration строятся и разбираются пакетом для `#/users`, пользователя и вкладок overview/access/machines/usage/history, а также engines/prices/project-types/system. Выборка списка (поиск, роль, статус, порядок) живёт в строке запроса адреса: `#/users?q=&role=&state=&sort=&asc=1`.
+
+`GET /api/admin/security` принимает `group=auth|account|machines` — разбиение
+живёт в контракте (`securityGroup`, `filterSecurityGroup` в `packages/shared/src/admin.ts`),
+поэтому клиенту не нужно тянуть двести событий ради трёх. `GET /api/admin/users/usage-summary`
+принимает `users=a,b,c` — сводку можно сузить до тех, кто виден на экране.
+
+`GET /api/admin/users` не содержит машин: там только счётчики `machinesTotal` и
+`machinesOnline`, а сам список отдаёт `GET /api/admin/users/:name/machines`
+(`REST.adminUserMachines`) при открытии вкладки. Полный набор машин в списке
+людей стоил килобайты на каждого ради одной строки «0 из 2 онлайн».
 
 
 ## Make (2026-08-26)

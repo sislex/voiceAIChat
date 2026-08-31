@@ -34,6 +34,10 @@ function props(over: Partial<TaskModalProps> = {}): TaskModalProps {
 }
 
 
+/** Открыть «Ход выполнения»: отчёты по рану и БЗ грузятся с первого её показа. */
+const openProgress = async (): Promise<void> => {
+  await userEvent.click(screen.getByRole('tab', { name: 'Ход выполнения' }))
+}
 describe('TaskModal — синхронизация полных данных задачи', () => {
   it('подставляет поздно загруженные описание и критерии для того же task.id', () => {
     const { rerender } = render(<TaskModal {...props()} />)
@@ -48,7 +52,7 @@ describe('TaskModal — синхронизация полных данных з�
 
   it('не перезаписывает черновик изменённого поля и независимо синхронизирует второе', async () => {
     const { rerender } = render(<TaskModal {...props()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить описание' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать описание' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Описание задачи' }), { target: { value: 'Локальный черновик' } })
 
     rerender(<TaskModal {...props({
@@ -61,7 +65,7 @@ describe('TaskModal — синхронизация полных данных з�
 
   it('сохраняет черновик критериев и независимо синхронизирует описание', async () => {
     const { rerender } = render(<TaskModal {...props()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Критерии приёмки' }), { target: { value: 'Локальный критерий' } })
 
     rerender(<TaskModal {...props({
@@ -76,11 +80,11 @@ describe('TaskModal — синхронизация полных данных з�
     const onUpdate = vi.fn()
     const view = render(<TaskModal {...props({ onUpdate })} />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить описание' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать описание' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Описание задачи' }), { target: { value: 'Сохранённое описание' } })
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить' }))
 
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     const criteriaField = screen.getByRole('textbox', { name: 'Критерии приёмки' })
     fireEvent.change(criteriaField, { target: { value: 'Сохранённый критерий' } })
     fireEvent.blur(criteriaField)
@@ -99,9 +103,9 @@ describe('TaskModal — синхронизация полных данных з�
 
   it('полностью переинициализирует поля и режимы редактирования при смене task.id', async () => {
     const { rerender } = render(<TaskModal {...props()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить описание' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать описание' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Описание задачи' }), { target: { value: 'Черновик старой задачи' } })
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Критерии приёмки' }), { target: { value: 'Черновик критерия' } })
 
     rerender(<TaskModal {...props({
@@ -136,7 +140,9 @@ describe('TaskModal — создание задачи из улучшения', 
       improvement: { ...improvement, status: 'implemented' as const, createdTaskId: 'created', isNew: false }
     }))
     window.ci = ci
-    render(<TaskModal {...props()} />)
+    // Улучшения появляются только после рана — карточка без единого рана их и
+    // не запрашивает, поэтому сводка рана здесь обязательна.
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
     await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     await userEvent.click(await screen.findByRole('button', { name: 'Создать задачу ChatAI' }))
     const draft = screen.getByRole('dialog', { name: 'Создание задачи' })
@@ -158,7 +164,7 @@ describe('TaskModal — создание задачи из улучшения', 
       { ...improvement, id: 'i4', status: 'implemented' as const, isNew: false, createdTaskId: 't2' }
     ])
     window.ci = ci
-    render(<TaskModal {...props()} />)
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
     await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     expect(await screen.findAllByRole('button', { name: 'Принять' })).toHaveLength(1)
     expect(screen.getAllByRole('button', { name: 'Отклонить' })).toHaveLength(1)
@@ -172,7 +178,7 @@ describe('TaskModal — создание задачи из улучшения', 
     const ci = createFakeCi()
     ci.listTaskImprovements = vi.fn(async () => [improvement])
     window.ci = ci
-    render(<TaskModal {...props()} />)
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
     await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     const row = (await screen.findByText('Улучшить ретраи')).closest('details')!
     expect(within(row).getByText('Новое')).toHaveClass('vc-feed-status')
@@ -185,7 +191,7 @@ describe('TaskModal — создание задачи из улучшения', 
     const ci = createFakeCi()
     ci.listTaskImprovements = vi.fn(async () => [])
     window.ci = ci
-    render(<TaskModal {...props()} />)
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
     await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
     const empty = await screen.findByTestId('task-improvements-empty')
     expect(empty).toHaveClass('vc-state--empty')
@@ -265,6 +271,156 @@ describe('TaskModal — вложенное окно AI-помощника', () =
   })
 })
 
+describe('TaskModal — что грузится при открытии карточки', () => {
+  // Открытая карточка тратила 3–4 запроса до того, как пользователь что-либо
+  // открыл: улучшения, использование БЗ, отчёт по рану и панели QA. Всё это
+  // живёт на вкладках, которые могут не открываться вовсе.
+  const spies = (): { ci: NonNullable<typeof window.ci>; calls: () => Record<string, number> } => {
+    const ci = createFakeCi()
+    ci.listTaskImprovements = vi.fn(async () => [])
+    // Содержимое отчётов здесь неважно — считаем только число обращений.
+    ci.getTaskKbUsage = vi.fn(async () => null as unknown as KbTaskUsageReport)
+    ci.getTaskReport = vi.fn(async () => null as unknown as CiTaskReport)
+    window.ci = ci as typeof window.ci
+    return {
+      ci: ci as NonNullable<typeof window.ci>,
+      calls: () => ({
+        improvements: (ci.listTaskImprovements as ReturnType<typeof vi.fn>).mock.calls.length,
+        kb: (ci.getTaskKbUsage as ReturnType<typeof vi.fn>).mock.calls.length,
+        report: (ci.getTaskReport as ReturnType<typeof vi.fn>).mock.calls.length
+      })
+    }
+  }
+
+  it('на «Общем» не запрашивает ни улучшения, ни отчёты', async () => {
+    const { calls } = spies()
+    render(<TaskModal {...props()} />)
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true'))
+    expect(calls()).toEqual({ improvements: 0, kb: 0, report: 0 })
+  })
+
+  it('отчёты грузятся с первого открытия «Хода выполнения» и не перезапрашиваются при возврате', async () => {
+    const { calls } = spies()
+    render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
+    await userEvent.click(screen.getByRole('tab', { name: 'Ход выполнения' }))
+    await waitFor(() => expect(calls().kb).toBe(1))
+    expect(calls().report).toBe(1)
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Общее' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'Ход выполнения' }))
+    expect(calls()).toMatchObject({ kb: 1, report: 1 })
+  })
+
+  it('улучшения запрашиваются только у задачи, у которой был ран', async () => {
+    const { calls } = spies()
+    const { unmount } = render(<TaskModal {...props()} />)
+    await userEvent.click(screen.getByRole('tab', { name: /Улучшения/ }))
+    expect(calls().improvements).toBe(0)
+    unmount()
+
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
+    await waitFor(() => expect(calls().improvements).toBe(1))
+  })
+
+  it('QA-этапы не опрашиваются у задачи, у которой не было ни одного рана', async () => {
+    // Три запроса (по одному на этап) уходили при каждом открытии любой задачи —
+    // даже в проекте без QA. Раны этапов создаёт сам этап, поэтому «рана не
+    // было» означает и «QA-ранов нет».
+    window.ci = createFakeCi()
+    const listStageRuns = vi.fn(async () => [])
+    window.qa = { listStageRuns } as unknown as typeof window.qa
+    const { unmount } = render(<TaskModal {...props()} />)
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true'))
+    expect(listStageRuns).not.toHaveBeenCalled()
+    unmount()
+
+    render(<TaskModal {...props({ ciSummary: mkSummary() })} />)
+    await waitFor(() => expect(listStageRuns).toHaveBeenCalledTimes(3))
+  })
+
+  it('панель Component QA молчит и не заводит опрос, пока её вкладку не открыли', async () => {
+    // У панели внутри `setInterval` на 2 секунды: раньше он запускался у любой
+    // открытой карточки, стоявшей на QA-этапе, даже если вкладку не смотрели.
+    window.ci = createFakeCi()
+    const getComponent = vi.fn(async () => null)
+    window.qa = { getComponent } as unknown as typeof window.qa
+    // Колонка «Ручное QA»: пройденные этапы остаются вкладками, но карточка
+    // открывается на «Общем» — именно этот случай и тратил запрос впустую.
+    const qaBoard: Board = { ...board, columns: [{ ...board.columns[0]!, name: 'Ручное QA', semanticType: 'manual_qa' }] }
+    render(<TaskModal {...props({ board: qaBoard })} />)
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Общее' })).toHaveAttribute('aria-selected', 'true'))
+    expect(getComponent).not.toHaveBeenCalled()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Component QA' }))
+    await waitFor(() => expect(getComponent).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('TaskModal — подзадачи и активность на «Общем»', () => {
+  const parentBoard: Board = {
+    columns: [
+      { id: 'c0', projectId: 'p1', name: 'Бэклог', semanticType: 'backlog', position: 512, hidden: false, wipLimit: null, createdAt: 1 },
+      board.columns[0]!,
+      { id: 'c9', projectId: 'p1', name: 'Готово', semanticType: 'done', position: 4096, hidden: false, wipLimit: null, createdAt: 1 }
+    ],
+    tasks: [
+      mkTask({ id: 'k1', parentId: 'e1', title: 'Первая', columnId: 'c9', seq: 2 }),
+      mkTask({ id: 'k2', parentId: 'e1', title: 'Вторая', columnId: 'c1', seq: 3 })
+    ]
+  }
+  const epic = mkTask({ id: 'e1', type: 'epic', title: 'Эпик' })
+
+  it('показывает готовность подзадач полосой прогресса', () => {
+    render(<TaskModal {...props({ task: epic, board: parentBoard })} />)
+
+    expect(screen.getByText('1 из 2')).toBeInTheDocument()
+    const bar = screen.getByRole('progressbar', { name: 'Готовность подзадач' })
+    expect(bar).toHaveAttribute('aria-valuenow', '1')
+    expect(bar).toHaveAttribute('aria-valuemax', '2')
+  })
+
+  it('добавляет подзадачу в первую видимую колонку с типом потомка', async () => {
+    // У эпика потомок — стори, у стори — задача: тип задан моделью, а не выбором.
+    const onCreateSubtask = vi.fn()
+    render(<TaskModal {...props({ task: epic, board: parentBoard, onCreateSubtask })} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /Добавить подзадачу/ }))
+    await userEvent.type(screen.getByLabelText('Название подзадачи'), 'Новая часть')
+    await userEvent.click(screen.getByRole('button', { name: 'Добавить' }))
+
+    expect(onCreateSubtask).toHaveBeenCalledWith('c0', { title: 'Новая часть', type: 'story', parentId: 'e1' })
+    // Форма закрылась — повторный ввод начинается с чистого листа.
+    expect(screen.queryByLabelText('Название подзадачи')).not.toBeInTheDocument()
+  })
+
+  it('у обычной задачи подзадачу завести нельзя — потомков в модели нет', () => {
+    render(<TaskModal {...props({ board: parentBoard, onCreateSubtask: vi.fn() })} />)
+    expect(screen.queryByRole('button', { name: /Добавить подзадачу/ })).not.toBeInTheDocument()
+  })
+
+  it('без onCreateSubtask кнопки нет: во вложенной карточке создавать некуда', () => {
+    render(<TaskModal {...props({ task: epic, board: parentBoard })} />)
+    expect(screen.queryByRole('button', { name: /Добавить подзадачу/ })).not.toBeInTheDocument()
+  })
+
+  it('активность собирается из уже загруженных полей, без нового запроса', () => {
+    // window.ci здесь не задан: если бы лента ходила в сеть, тест бы упал.
+    render(<TaskModal {...props({
+      task: mkTask({ createdAt: Date.parse('2026-08-28T10:00:00Z'), latestRunResult: { id: 'r1', kind: 'merge', status: 'finished', outcome: 'failure', createdAt: Date.parse('2026-08-29T10:00:00Z'), finishedAt: Date.parse('2026-08-29T10:05:00Z') } })
+    })} />)
+
+    const feed = screen.getByTestId('task-activity')
+    expect(feed).toHaveTextContent('Merge: ошибка')
+    expect(feed).toHaveTextContent('Задача создана')
+    expect(feed.querySelector('.vc-feed-dot--danger')).not.toBeNull()
+  })
+
+  it('в черновике активности нет: событий у несозданной задачи не бывает', () => {
+    render(<TaskModal {...props({ draft: true })} />)
+    expect(screen.queryByTestId('task-activity')).not.toBeInTheDocument()
+  })
+})
+
 describe('TaskModal — название и текущее состояние в шапке', () => {
   beforeEach(() => { window.ci = createFakeCi() })
 
@@ -272,20 +428,21 @@ describe('TaskModal — название и текущее состояние в
     render(<TaskModal {...props()} />)
 
     const heading = screen.getByTestId('task-modal-heading')
-    expect(heading).toHaveTextContent('PROJ-1 ·')
+    // Ключ и этап — надстрочной строкой, название — крупным полем под ней.
+    expect(heading).toHaveTextContent('PROJ-1')
     expect(within(heading).getByLabelText('Заголовок задачи')).toHaveValue('Задача A')
-    expect(heading).toHaveTextContent('(Разработка)')
-    expect(screen.getAllByText('PROJ-1 ·', { exact: true })).toHaveLength(1)
+    expect(heading).toHaveTextContent('Разработка')
+    expect(screen.getAllByText('PROJ-1', { exact: true })).toHaveLength(1)
     expect(screen.getAllByLabelText('Заголовок задачи')).toHaveLength(1)
     expect(screen.queryByText(/Последний запуск:/)).not.toBeInTheDocument()
   })
 
   it('добавляет фазу активного development-рана и обновляется по новым props', () => {
     const { rerender } = render(<TaskModal {...props()} />)
-    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Разработка)')
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('Разработка')
 
     rerender(<TaskModal {...props({ ciSummary: mkSummary() })} />)
-    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Разработка · Модель работает)')
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('Разработка · Модель работает')
   })
 
   it('после успешного рана показывает только новый этап', () => {
@@ -295,7 +452,7 @@ describe('TaskModal — название и текущее состояние в
       ciSummary: mkSummary({ status: 'success', modelActive: false, slotProgress: { done: 4, total: 4, phase: 'Готово' } })
     })} />)
 
-    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Ручное QA)')
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('Ручное QA')
     expect(screen.getByTestId('task-modal-heading')).not.toHaveTextContent('Готово')
   })
 
@@ -306,12 +463,24 @@ describe('TaskModal — название и текущее состояние в
       ciSummary: mkSummary({ status: 'failed', modelActive: false, slotProgress: { done: 2, total: 4, phase: 'Проверки не пройдены' } })
     })} />)
 
-    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Ошибка · Проверки не пройдены)')
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('Ошибка · Проверки не пройдены')
   })
 
-  it('активный merge отображается в тех же скобках', () => {
+  it('активный merge отображается той же надстрочной строкой', () => {
     render(<TaskModal {...props({ task: mkTask({ activeMergeRunId: 'merge-1' }) })} />)
-    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('(Разработка · Мерж выполняется)')
+    expect(screen.getByTestId('task-modal-heading')).toHaveTextContent('Разработка · Мерж выполняется')
+  })
+
+  it('точка состояния берёт тон у рана и не заменяет собой текст этапа', () => {
+    // Цветом одним состояние не сообщают: точка стоит рядом с подписью этапа и
+    // скрыта от скринридера, который читает саму подпись.
+    const { rerender } = render(<TaskModal {...props()} />)
+    const dot = (): Element | null => screen.getByTestId('task-modal-heading').querySelector('.task-modal-heading__dot')
+    expect(dot()).toHaveClass('task-modal-heading__dot--neutral')
+    expect(dot()).toHaveAttribute('aria-hidden', 'true')
+
+    rerender(<TaskModal {...props({ ciSummary: mkSummary({ status: 'failed' }) })} />)
+    expect(dot()).toHaveClass('task-modal-heading__dot--removed')
   })
 })
 
@@ -437,12 +606,14 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
     setMobile(true)
     render(<TaskModal {...props({ onUpdate, onOpenChat })} />)
 
-    // В шапке из подписанных кнопок — только ⋯ и закрытие.
-    expect(screen.queryByLabelText('Удалить задачу')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Открыть чат|Создать чат/ })).not.toBeInTheDocument()
+    // В шапке из подписанных кнопок — только ⋯ и закрытие. Проверяем именно
+    // шапку: чат теперь есть и в секции «Активность» на вкладке «Общее».
+    const head = document.querySelector('.mdhead') as HTMLElement
+    expect(within(head).queryByLabelText('Удалить задачу')).not.toBeInTheDocument()
+    expect(within(head).queryByRole('button', { name: /Открыть чат|Создать чат/ })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByLabelText('Действия с задачей'))
-    fireEvent.click(screen.getByRole('button', { name: /Создать чат/ }))
+    fireEvent.click(within(document.querySelector('.jmodal-menu') as HTMLElement).getByRole('button', { name: /Создать чат/ }))
     expect(onOpenChat).toHaveBeenCalledWith('t1')
 
     fireEvent.click(screen.getByLabelText('Действия с задачей'))
@@ -493,16 +664,21 @@ describe('TaskModal — мобильная раскладка (как в Jira)',
     expect(screen.getByRole('button', { name: 'Лента рана' })).toBeInTheDocument()
   })
 
-  it('на десктопе — правая панель раскрыта, кнопки в шапке, без ⋯', () => {
+  it('на десктопе — правая панель раскрыта, действия в том же ⋯-меню', () => {
+    // По макету в шапке стоят только «ещё» и крестик: три подписанные кнопки
+    // ломали её на три строки при длинном названии.
     render(<TaskModal {...props({ onOpenChat: vi.fn() })} />)
 
     expect(screen.getByTestId('task-modal-details')).toBeInTheDocument()
     expect(screen.getByLabelText('Приоритет')).toBeInTheDocument()
     expect(screen.getByLabelText('Статус')).toBeInTheDocument()
     expect(screen.queryByTestId('task-modal-quick')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Удалить задачу')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Действия с задачей')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Удалить задачу')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Действия с задачей')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Подробности/ })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('Действия с задачей'))
+    expect(screen.getByRole('button', { name: /Удалить задачу/ })).toBeInTheDocument()
   })
 })
 
@@ -674,7 +850,7 @@ describe('TaskModal — вкладки и merge', () => {
     const onClose = vi.fn()
     render(<TaskModal {...props({ onClose })} />)
     expect(screen.getAllByRole('tab')).toHaveLength(8)
-    fireEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     fireEvent.change(screen.getByLabelText('Критерии приёмки'), { target: { value: 'черновик' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Ручное QA' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Общее' }))
@@ -725,7 +901,7 @@ describe('TaskModal — критерии приёмки', () => {
   it('Enter создаёт пункт, Shift+Enter — внутренний перенос, а blur сохраняет нормализованный Markdown', async () => {
     const onUpdate = vi.fn()
     render(<TaskModal {...props({ task: mkTask({ acceptanceCriteria: 'Первый' }), onUpdate })} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Изменить критерии приёмки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Редактировать критерии приёмки' }))
     const field = screen.getByRole('textbox', { name: 'Критерии приёмки' }) as HTMLTextAreaElement
     expect(field.value).toBe('1. Первый')
 
@@ -780,6 +956,7 @@ describe('TaskModal — использование базы знаний по р
 
   it('показывает агрегат по всем ранам задачи и ссылку на раздел', async () => {
     render(<TaskModal {...props()} />)
+    await openProgress()
     const block = await screen.findByTestId('task-modal-kb-usage')
     expect(within(block).getByText('по 2 ранам задачи')).toBeInTheDocument()
     expect(within(block).getByTestId('task-modal-kb-usage-nums').textContent).toContain('5 обращений')
@@ -944,6 +1121,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   it('у завершённой задачи показывает плитки итогов и таблицу шагов', async () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false, durationMs: 720_000 }) })} />)
 
+    await openProgress()
     const block = await screen.findByTestId('task-modal-report')
     expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('$1.84')
     expect(text(within(block).getByTestId('task-modal-report-tokens'))).toContain('219 400')
@@ -961,6 +1139,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   it('показывает вызовы инструментов рана с разбивкой', async () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tools = await screen.findByTestId('task-modal-report-tools')
     // 12 bash + 31 read + 9 grep + 14 edit + 3 kb + 1 прочий = 70 вызовов.
     // Два отказа в «всего» не входят: сами вызовы уже посчитаны своими видами.
@@ -974,6 +1153,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   it('показывает средний и максимальный контекст на запрос', async () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tile = await screen.findByTestId('task-modal-report-context')
     // (12 000 входа + 180 000 чтения кэша + 24 000 записи) / 24 запроса = 9 000.
     expect(text(tile)).toContain('9 000')
@@ -985,6 +1165,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ totals: makeUsageTotals({ apiRequests: 0, maxContextPerRequest: 0 }) })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tile = await screen.findByTestId('task-modal-report-context')
     expect(text(tile)).toContain('—')
     expect(text(tile)).toContain('CLI не сообщил число запросов')
@@ -993,10 +1174,12 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   it('показывает объём ответов инструментов и три самых тяжёлых ответа', async () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tools = await screen.findByTestId('task-modal-report-tools')
     expect(text(tools)).toContain('ответами 290k симв.')
     expect(text(tools)).toContain('bash 148k')
 
+    await openProgress()
     const heaviest = await screen.findByTestId('task-modal-report-heaviest')
     expect(text(heaviest)).toContain('npm ci')
     expect(text(heaviest)).toContain('20k симв.')
@@ -1008,6 +1191,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ toolResponses: [] })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     await screen.findByTestId('task-modal-report')
     expect(screen.queryByTestId('task-modal-report-heaviest')).not.toBeInTheDocument()
   })
@@ -1018,6 +1202,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tools = await screen.findByTestId('task-modal-report-tools')
     expect(text(tools)).not.toContain('отказов')
   })
@@ -1026,6 +1211,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ totals: makeUsageTotals({ modelActiveMs: 0 }) })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const tile = await screen.findByTestId('task-modal-report-model-time')
     expect(text(tile)).toContain('—')
   })
@@ -1034,6 +1220,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ toolCalls: null })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     await screen.findByTestId('task-modal-report')
     expect(screen.queryByTestId('task-modal-report-tools')).not.toBeInTheDocument()
   })
@@ -1044,6 +1231,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const cost = await screen.findByTestId('task-modal-report-cost')
     expect(text(cost)).toContain('≈ $0.90')
     expect(text(cost)).toContain('итог занижен')
@@ -1055,6 +1243,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const hit = await screen.findByTestId('task-modal-report-kb-hit')
     expect(text(hit)).toContain('БЗ: выдано 5 разделов, пригодились 3 (60%')
   })
@@ -1063,6 +1252,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ totals: makeUsageTotals({ costUsd: 2.07, costEstimated: true }) })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const cost = await screen.findByTestId('task-modal-report-cost')
     expect(text(cost)).toContain('≈ $2.07')
     expect(text(cost)).toContain('оценка по прайсу')
@@ -1075,6 +1265,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     ]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const block = await screen.findByTestId('task-modal-report')
     // По умолчанию — свежий ран со своими шагами.
     expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('$0.50')
@@ -1087,6 +1278,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
     withReport(makeTaskReport([makeRunReport({ totals: { ...EMPTY_CI_USAGE_TOTALS }, stages: [], steps: [makeReportStep()] })]))
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const block = await screen.findByTestId('task-modal-report')
     expect(text(within(block).getByTestId('task-modal-report-cost'))).toContain('—')
     expect(within(block).getByRole('rowheader', { name: /npm ci/, hidden: true })).toBeInTheDocument()
@@ -1097,6 +1289,7 @@ describe('TaskModal — отчёт по завершённой задаче', ()
   it('стадии рана показывают модель, которой каждая посчитана', async () => {
     render(<TaskModal {...props({ ciSummary: mkSummary({ status: 'success', modelActive: false }) })} />)
 
+    await openProgress()
     const stages = await screen.findByTestId('task-modal-report-stages')
     const row = within(stages).getByRole('rowheader', { name: 'Актуализация базы знаний', hidden: true }).closest('tr')!
     expect(text(row)).toContain('sonnet')
@@ -1141,7 +1334,8 @@ describe('TaskModal — подготовка к разработке', () => {
       loadPreparationRuns: async () => [run('running', { provider: 'codex', model: 'gpt-5.6-sol' })]
     })} />)
     expect(screen.getByRole('tab', { name: 'Подготовка к разработке' })).toHaveAttribute('aria-selected', 'true')
-    expect(await screen.findByText('LLM: codex · gpt-5.6-sol')).toBeInTheDocument()
+    // Модель попытки теперь стоит подписанной строкой сводки, а не лозенгой.
+    expect(await within(await screen.findByTestId('task-preparation-summary')).findByText('codex · gpt-5.6-sol')).toBeInTheDocument()
     expect(await screen.findByTestId('task-preparation-feed')).toHaveTextContent('Уточняю критерии')
   })
 
@@ -1179,7 +1373,7 @@ describe('TaskModal — подготовка к разработке', () => {
       onStartCi: vi.fn(),
       onStartCiParallel: vi.fn()
     })} />)
-    expect(await screen.findByText(`Статус: ${label}`)).toBeInTheDocument()
+    expect(await screen.findByTestId('status-pill')).toHaveTextContent(label)
     if (status === 'running') {
       expect(screen.getByRole('button', { name: 'Отменить' })).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Повторить подготовку' })).not.toBeInTheDocument()
@@ -1235,10 +1429,10 @@ describe('TaskModal — подготовка к разработке', () => {
       task: mkTask({ id: 't2', taskPreparationRunId: 'prep-new', taskPreparationStatus: 'success' }),
       loadPreparationRuns: load
     })} />)
-    expect(await screen.findByText('Статус: успешно')).toBeInTheDocument()
+    expect(await screen.findByTestId('status-pill')).toHaveTextContent('успешно')
     await act(async () => { resolveOld([run('failed', { id: 'prep-old' })]); await oldRequest })
-    expect(screen.getByText('Статус: успешно')).toBeInTheDocument()
-    expect(screen.queryByText('Статус: ошибка')).not.toBeInTheDocument()
+    expect(screen.getByTestId('status-pill')).toHaveTextContent('успешно')
+    expect(screen.getByTestId('status-pill')).not.toHaveTextContent('ошибка')
   })
 
   it('обновляет историю адресно с debounce, синхронизируется один раз после reconnect и очищает обработчики', async () => {
@@ -1263,7 +1457,7 @@ describe('TaskModal — подготовка к разработке', () => {
       loadPreparationRuns: load,
       loadPreparationRun: loadOne
     })} />)
-    await screen.findByText('Статус: ожидает ответа')
+    await waitFor(() => expect(screen.getByTestId('status-pill')).toHaveTextContent('ожидает ответа'))
     expect(load).toHaveBeenCalledTimes(1) // список — один раз при открытии
     expect(loadOne).not.toHaveBeenCalled()
 
