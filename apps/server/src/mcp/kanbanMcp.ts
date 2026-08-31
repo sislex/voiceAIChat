@@ -15,14 +15,17 @@ import { z } from 'zod'
 import type { FastifyInstance } from 'fastify'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { createHash } from 'node:crypto'
 import {
   STRONG_SIMILARITY,
   canTransitionWorkflow,
   isAllowedWidgetRoute,
+  isAssistantRunnableCommand,
   issueKey,
   pickCiRunAgent,
   queryWidgetItems,
   rankSimilarTasks,
+  MAX_ACTIVE_ORCHESTRATIONS,
   orchestrationPlanError,
   taskWidgetItem,
   type KanbanColumnSemanticType,
@@ -45,6 +48,11 @@ export const KANBAN_MCP_PATH = '/mcp/kanban'
 export interface KanbanRunLaunchers {
   /** Тестовое окружение фичи (feature-preview): те же операции, что у кнопок панели. */
   previewOperate?(userId: string, projectId: string, taskId: string, operation: 'start' | 'rebuild' | 'stop' | 'seed' | 'reset' | 'health_check', options: { scenario?: string; agentId?: string }): Promise<unknown>
+  /** Подготовка задачи (уточняющие вопросы и критерии) — тот же запуск, что у кнопки вкладки. */
+  startPreparation?(userId: string, projectId: string, taskId: string): { id: string; status: string }
+  /** Релизная ветка и выкладка в production; и то, и другое — только с подтверждением. */
+  createReleaseBranch?(userId: string, projectId: string, branch: string, baseBranch?: string): Promise<{ id?: string; branch?: string; status?: string }>
+  deployRelease?(userId: string, projectId: string, branch: string): Promise<{ id?: string; status?: string }>
   startCi(userId: string, projectId: string, taskId: string, options: { launch: 'queue' | 'parallel'; agentId?: string }): { run: { id: string; status: string; agentId: string | null } } | { error: string }
   cancelCi(userId: string, runId: string): boolean
   startMerge(userId: string, projectId: string, taskId: string, agentId: string | null): Promise<{ id: string; status: string }>
@@ -165,7 +173,21 @@ export const PROJECT_READ_KEYS = [
 ] as const
 export type ProjectReadKey = (typeof PROJECT_READ_KEYS)[number]
 
+/**
+ * Идемпотентность вызовов инструментов. Модель не передаёт ключ сама, поэтому
+ * он выводится из хода и аргументов: повтор после таймаута или обрыва потока
+ * не должен заводить вторую такую же карточку или второй ран. Кэш процессный —
+ * как у прежнего шлюза виджетов; переживать рестарт ему незачем, потому что
+ * ход после рестарта всё равно начинается заново.
+ */
+export function toolCallKey(conversationId: string, turnId: string, tool: string, args: unknown): string {
+  return createHash('sha1').update([conversationId, turnId, tool, JSON.stringify(args ?? null)].join('\u0000')).digest('hex')
+}
+
+const IDEMPOTENCY_CAP = 2_000
+
 export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, secret: string): void {
+  const idempotency = new Map<string, ToolResult>()
   app.register(async (scope) => {
     scope.removeAllContentTypeParsers()
     scope.addContentTypeParser('*', (_req, _payload, done) => done(null, undefined))
@@ -216,6 +238,41 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
         const applied = (projectIdToEmit: string, payload: unknown): ToolResult => {
           boardChanged?.(projectIdToEmit)
           return toolJson(payload)
+        }
+
+        /**
+         * Обёртка изменяющего инструмента: идемпотентность по ходу и аргументам
+         * плюс запись в runtime-log. Аудит здесь, а не в каждом инструменте:
+         * при автономном режиме «кто это сделал» спрашивают про любое действие,
+         * а не про заранее выбранные.
+         */
+        const mutating = async (tool: string, args: unknown, run: () => Promise<ToolResult>): Promise<ToolResult> => {
+          const key = toolCallKey(conv, req.query.turn ?? '', tool, args)
+          const replay = idempotency.get(key)
+          if (replay) {
+            req.log.info({ event: 'kanban.tool', tool, userId, projectId, conversationId: conv, replayed: true }, 'kanban tool replayed')
+            return { ...replay, content: [...replay.content, { type: 'text', text: 'Повтор того же вызова в этом ходе: действие уже выполнено, результат прежний.' }] }
+          }
+          const result = await run()
+          req.log.info({
+            event: 'kanban.tool',
+            tool,
+            userId,
+            projectId,
+            conversationId: conv,
+            turnId: req.query.turn ?? null,
+            autonomy,
+            readOnly,
+            ok: !result.isError,
+            args
+          }, 'kanban tool call')
+          // Отказ не кэшируем: он мог быть отказом пользователя, и следующая
+          // попытка с тем же аргументом — это новый вопрос, а не повтор.
+          if (!result.isError) {
+            idempotency.set(key, result)
+            if (idempotency.size > IDEMPOTENCY_CAP) idempotency.delete(idempotency.keys().next().value as string)
+          }
+          return result
         }
 
         const uiAction = async (action: Parameters<WidgetUiRelay['request']>[3]): Promise<ToolResult> => {
@@ -494,7 +551,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             acknowledgeSimilar: z.boolean().optional().describe('Похожие задачи проверены и задача всё равно нужна'),
             ...TASK_FIELDS
           }
-        }, async (args) => {
+        }, async (args) => mutating('kanban_task_create', args, async () => {
           const snapshot = board()
           if (!snapshot) return toolText('Доска недоступна.', true)
           const column = args.columnId ?? snapshot.columns[0]?.id
@@ -518,12 +575,12 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             if (!created) return toolText('Создать карточку не удалось: нет доступа к проекту.', true)
             return applied(projectId, { created: taskBrief(created, projectName(), columnName(created.columnId)) })
           } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
-        })
+        }))
 
         server.registerTool('kanban_task_update', {
           description: 'Изменить поля карточки. Передавай только те поля, которые меняешь.',
           inputSchema: { taskId: z.string(), title: z.string().optional(), ...TASK_FIELDS }
-        }, async (args) => {
+        }, async (args) => mutating('kanban_task_update', args, async () => {
           const { taskId, ...patch } = args
           const current = db.getTaskDetail(userId, projectId, taskId)
           if (!current) return toolText('Карточка не найдена в этом проекте.', true)
@@ -538,7 +595,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             if (!updated) return toolText('Изменить карточку не удалось.', true)
             return applied(projectId, { updated: taskBrief(updated, projectName(), columnName(updated.columnId)) })
           } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
-        })
+        }))
 
         server.registerTool('kanban_task_move', {
           description: 'Переместить карточку в другую колонку (или внутри колонки). Переходы по QA-конвейеру ограничены: из development можно в component_qa или decision_required, но не сразу в done.',
@@ -548,7 +605,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             afterId: z.string().nullable().optional().describe('Поставить после этой карточки'),
             beforeId: z.string().nullable().optional().describe('Поставить перед этой карточкой')
           }
-        }, async (args) => {
+        }, async (args) => mutating('kanban_task_move', args, async () => {
           const snapshot = board()
           const current = snapshot?.tasks.find((task) => task.id === args.taskId)
           if (!snapshot || !current) return toolText('Карточка не найдена в этом проекте.', true)
@@ -565,18 +622,18 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
           const moved = db.moveTask(userId, projectId, args.taskId, { columnId: args.columnId, afterId: args.afterId ?? null, beforeId: args.beforeId ?? null })
           if (!moved) return toolText('Перенести карточку не удалось.', true)
           return applied(projectId, { moved: taskBrief(moved, projectName(), columnName(moved.columnId)) })
-        })
+        }))
 
         server.registerTool('kanban_column_create', {
           description: 'Создать колонку доски.',
           inputSchema: { name: z.string().min(1) }
-        }, async (args) => {
+        }, async (args) => mutating('kanban_column_create', args, async () => {
           const gate = await allowMutation('Создать колонку', [{ field: 'name', after: args.name }])
           if (!gate.ok) return gate.result
           const created = db.createColumn(userId, projectId, args.name)
           if (!created) return toolText('Создать колонку не удалось.', true)
           return applied(projectId, { created })
-        })
+        }))
 
         server.registerTool('kanban_column_update', {
           description: 'Переименовать колонку, задать WIP-лимит или скрыть её с доски.',
@@ -586,7 +643,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             wipLimit: z.number().int().nullable().optional(),
             hidden: z.boolean().optional()
           }
-        }, async (args) => {
+        }, async (args) => mutating('kanban_column_update', args, async () => {
           const column = board()?.columns.find((item) => item.id === args.columnId)
           if (!column) return toolText('Колонка не найдена.', true)
           const rows = [
@@ -605,7 +662,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
           }
           if (args.hidden !== undefined) db.setColumnHidden(userId, projectId, args.columnId, args.hidden)
           return applied(projectId, { column: board()?.columns.find((item) => item.id === args.columnId) ?? null })
-        })
+        }))
 
         server.registerTool('project_settings_update', {
           description: 'Изменить настройки проекта: имя, описание, технологии, навыки, базовую ветку, команду Automated QA и параметры автопрохода. Остальные настройки меняет владелец руками.',
@@ -619,7 +676,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             autoPilotRequiresManualQa: z.boolean().optional(),
             autoPilotFixLimit: z.number().int().min(0).optional()
           }
-        }, async (args) => {
+        }, async (args) => mutating('project_settings_update', args, async () => {
           const detail = project()
           if (!detail) return toolText('Проект недоступен.', true)
           const rows = Object.entries(args)
@@ -632,7 +689,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
           const updated = db.updateProject(userId, projectId, dropUndefined(args))
           if (!updated) return toolText('Изменить настройки не удалось: нужны права владельца.', true)
           return applied(projectId, { updated: { name: updated.name, description: updated.description, ciBaseBranch: updated.ciBaseBranch ?? null } })
-        })
+        }))
 
         // --- Запуск работ ----------------------------------------------
 
@@ -645,7 +702,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             launch: z.enum(['queue', 'parallel']).optional().describe('По умолчанию queue'),
             agentId: z.string().optional().describe('Машина проекта; по умолчанию — машина карточки или проекта')
           }
-        }, async (args) => {
+        }, async (args) => mutating('run_ci_start', args, async () => {
           const runner = launchers()
           if (!runner) return toolText('Запуск ранов сейчас недоступен.', true)
           const task = db.getTaskDetail(userId, projectId, args.taskId)
@@ -658,12 +715,12 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
           const started = runner.startCi(userId, projectId, args.taskId, { launch: args.launch ?? 'queue', ...(args.agentId ? { agentId: args.agentId } : {}) })
           if ('error' in started) return toolText(started.error, true)
           return applied(projectId, { run: started.run, link: `/projects/${projectId}/task/${args.taskId}` })
-        })
+        }))
 
         server.registerTool('run_ci_cancel', {
           description: 'Отменить CI-ран по его id.',
           inputSchema: { runId: z.string() }
-        }, async (args) => {
+        }, async (args) => mutating('run_ci_cancel', args, async () => {
           const runner = launchers()
           if (!runner) return toolText('Управление ранами сейчас недоступно.', true)
           const gate = await allowMutation('Отменить CI-ран', [{ field: 'runId', after: args.runId }])
@@ -671,12 +728,12 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
           return runner.cancelCi(userId, args.runId)
             ? applied(projectId, { cancelled: args.runId })
             : toolText('Отменить ран не удалось: он уже завершён или недоступен.', true)
-        })
+        }))
 
         server.registerTool('run_merge_start', {
           description: 'Запустить merge-ран: слияние ветки задачи в основную с проверками. Делай это только для задачи, дошедшей до awaiting_merge.',
           inputSchema: { taskId: z.string(), agentId: z.string().optional() }
-        }, async (args) => {
+        }, async (args) => mutating('run_merge_start', args, async () => {
           const runner = launchers()
           if (!runner) return toolText('Merge-раны сейчас недоступны.', true)
           const task = db.getTaskDetail(userId, projectId, args.taskId)
@@ -688,7 +745,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             const run = await runner.startMerge(userId, projectId, args.taskId, args.agentId ?? null)
             return applied(projectId, { run })
           } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
-        })
+        }))
 
         server.registerTool('run_qa_start', {
           description: 'Запустить этап проверки задачи: component_qa, integration_tests или automated_qa. Так поднимается тестовое окружение и прогоняются тесты соответствующего этапа.',
@@ -696,7 +753,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             taskId: z.string(),
             stage: z.enum(['component_qa', 'integration_tests', 'automated_qa'])
           }
-        }, async (args) => {
+        }, async (args) => mutating('run_qa_start', args, async () => {
           const runner = launchers()
           if (!runner) return toolText('QA-раны сейчас недоступны.', true)
           const task = db.getTaskDetail(userId, projectId, args.taskId)
@@ -707,7 +764,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             const run = await runner.startQa(userId, projectId, args.taskId, args.stage)
             return applied(projectId, { run })
           } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
-        })
+        }))
 
         server.registerTool('preview_start', {
           description: 'Тестовое окружение задачи (feature-preview): поднять (start), пересобрать (rebuild), остановить (stop), засеять данными (seed), сбросить (reset) или проверить здоровье (health_check). Так пользователь видит фичу вживую до merge.',
@@ -717,7 +774,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             scenario: z.string().optional().describe('Сценарий тестовых данных для seed'),
             agentId: z.string().optional()
           }
-        }, async (args) => {
+        }, async (args) => mutating('preview_start', args, async () => {
           const runner = launchers()
           if (!runner?.previewOperate) return toolText('Тестовые окружения сейчас недоступны.', true)
           const task = db.getTaskDetail(userId, projectId, args.taskId)
@@ -729,16 +786,86 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
             const environment = await runner.previewOperate(userId, projectId, args.taskId, operation, dropUndefined({ scenario: args.scenario, agentId: args.agentId }))
             return applied(projectId, { environment })
           } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
-        })
+        }))
+
+        server.registerTool('run_preparation_start', {
+          description: 'Запустить подготовку задачи: модель уточняет постановку и предлагает критерии приёмки. Делай это до разработки, если у карточки пустое описание или расплывчатые критерии.',
+          inputSchema: { taskId: z.string() }
+        }, async (args) => mutating('run_preparation_start', args, async () => {
+          const runner = launchers()
+          if (!runner?.startPreparation) return toolText('Подготовка задач сейчас недоступна.', true)
+          const task = db.getTaskDetail(userId, projectId, args.taskId)
+          if (!task) return toolText('Карточка не найдена в этом проекте.', true)
+          const gate = await allowMutation(`Запустить подготовку ${issueKey(projectName(), task)}`, [{ field: 'task', after: task.title }])
+          if (!gate.ok) return gate.result
+          try {
+            return applied(projectId, { run: runner.startPreparation(userId, projectId, args.taskId) })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
+
+        server.registerTool('project_machine_update', {
+          description: 'Машины проекта: link — привязать машину, unlink — отвязать, default — сделать машиной проекта по умолчанию. Меняет настройку, видимую всей команде, поэтому спрашивается подтверждение.',
+          inputSchema: {
+            action: z.enum(['link', 'unlink', 'default']),
+            agentId: z.string(),
+            storageId: z.string().optional().describe('Хранилище машины при привязке')
+          }
+        }, async (args) => mutating('project_machine_update', args, async () => {
+          const gate = await allowMutation('Изменить машины проекта', [
+            { field: 'action', after: args.action },
+            { field: 'agentId', after: args.agentId }
+          ], { irreversible: true })
+          if (!gate.ok) return gate.result
+          const detail = args.action === 'link'
+            ? db.linkMachine(userId, projectId, args.agentId, args.storageId)
+            : args.action === 'unlink'
+              ? db.unlinkMachine(userId, projectId, args.agentId)
+              : db.setProjectDefaultMachine(userId, projectId, args.agentId)
+          if (!detail) return toolText('Изменить машины не удалось: нет прав или машина недоступна.', true)
+          return applied(projectId, { machines: detail.machines.map((machine) => ({ agentId: machine.agentId, name: machine.name, isDefault: machine.agentId === detail.defaultAgentId })) })
+        }))
+
+        server.registerTool('release_create_branch', {
+          description: 'Создать релизную ветку от базовой. Первый шаг выпуска; сама по себе выкладку не делает.',
+          inputSchema: { branch: z.string().min(1).describe('Имя релизной ветки, например release/1.4.0'), baseBranch: z.string().optional() }
+        }, async (args) => mutating('release_create_branch', args, async () => {
+          // Права проверяются раньше доступности механизма: отказ по правам не
+          // должен зависеть от того, настроены ли релизы в этом окружении.
+          if (!db.isProjectOwner(userId, projectId)) return toolText('Релизами управляет владелец проекта.', true)
+          const runner = launchers()
+          if (!runner?.createReleaseBranch) return toolText('Релизы сейчас недоступны.', true)
+          const gate = await allowMutation('Создать релизную ветку', [{ field: 'branch', after: args.branch }], { irreversible: true })
+          if (!gate.ok) return gate.result
+          try {
+            return toolJson({ release: await runner.createReleaseBranch(userId, projectId, args.branch, args.baseBranch) })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
+
+        server.registerTool('release_deploy', {
+          description: 'Выложить релизную ветку в production. Необратимое действие наружу: подтверждение спрашивается всегда, даже в режиме автопилота.',
+          inputSchema: { branch: z.string().min(1) }
+        }, async (args) => mutating('release_deploy', args, async () => {
+          if (!db.isProjectOwner(userId, projectId)) return toolText('Выкладкой в production управляет владелец проекта.', true)
+          const runner = launchers()
+          if (!runner?.deployRelease) return toolText('Выкладка сейчас недоступна.', true)
+          const gate = await allowMutation('Выложить релиз в production', [{ field: 'branch', after: args.branch }], {
+            irreversible: true,
+            note: 'Это выкладка в production — она видна пользователям сразу.'
+          })
+          if (!gate.ok) return gate.result
+          try {
+            return toolJson({ deploy: await runner.deployRelease(userId, projectId, args.branch) })
+          } catch (error) { return toolText(error instanceof Error ? error.message : String(error), true) }
+        }))
 
         // --- Оркестрация: план работ, который ассистент ведёт сам -------
 
         const PLAN_ITEMS = z.array(z.object({
-          kind: z.enum(['create_task', 'run_ci', 'run_qa', 'run_merge', 'wait_merge']),
+          kind: z.enum(['create_task', 'run_ci', 'run_qa', 'run_merge', 'wait_merge', 'run_preview']),
           title: z.string().min(1).describe('Что делает шаг — это увидит пользователь'),
           taskId: z.string().optional().describe('Задача шага; не нужен, если шаг зависит от create_task'),
           dependsOn: z.array(z.number().int().min(0)).optional().describe('Индексы шагов этого плана (с нуля), которые должны завершиться раньше'),
-          payload: z.record(z.string(), z.unknown()).optional().describe('create_task: title/description/acceptanceCriteria/columnId/autoPilot; run_ci: launch/agentId; run_qa: stage')
+          payload: z.record(z.string(), z.unknown()).optional().describe('create_task: title/description/acceptanceCriteria/columnId/autoPilot; run_ci: launch/agentId; run_qa: stage; run_preview: operation/scenario; любой шаг: retries (0–3) — сколько раз перезапустить после падения')
         })).min(1).max(40)
 
         const planSummary = (plan: Orchestration): unknown => ({
@@ -760,13 +887,18 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
         })
 
         server.registerTool('orchestration_start', {
-          description: 'Запустить план работ: сервер сам создаст задачи, запустит разработку и проверки, дождётся merge и продолжит — план переживает закрытие вкладки и рестарт. Шаг wait_merge держит зависящие шаги, пока ветка задачи не влита: так пересекающиеся задачи не идут одновременно.',
+          description: 'Запустить план работ: сервер сам создаст задачи, запустит разработку и проверки, дождётся merge и продолжит — план переживает закрытие вкладки и рестарт. Шаг wait_merge держит зависящие шаги, пока ветка задачи не влита: так пересекающиеся задачи не идут одновременно. Итог плана придёт сообщением в этот чат.',
           inputSchema: { title: z.string().min(1), items: PLAN_ITEMS }
-        }, async (args) => {
+        }, async (args) => mutating('orchestration_start', args, async () => {
           const manager = deps.orchestration?.()
           if (!manager) return toolText('Оркестратор сейчас недоступен.', true)
           const invalid = orchestrationPlanError(args.items as OrchestrationItemInput[])
           if (invalid) return toolText(`План некорректен: ${invalid}`, true)
+          // Планы идут параллельно и каждый занимает машины: три одновременных
+          // — предел, дальше пользователь перестаёт понимать, что происходит.
+          if (db.countActiveOrchestrations(userId, projectId) >= MAX_ACTIVE_ORCHESTRATIONS) {
+            return toolText(`В проекте уже идёт ${MAX_ACTIVE_ORCHESTRATIONS} плана: дождись их завершения или останови лишний (orchestration_cancel).`, true)
+          }
           const gate = await allowMutation(`Запустить план «${args.title}»`, args.items.map((item, index) => ({ field: `${index + 1}. ${item.kind}`, after: item.title })), { irreversible: true })
           if (!gate.ok) return gate.result
           const plan = db.createOrchestration(userId, projectId, conv, args.title, args.items as OrchestrationItemInput[])
@@ -775,7 +907,7 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
           // уже начатым планом, а не «поставил в очередь, посмотрим потом».
           await manager.track(plan.id)
           return toolJson({ started: planSummary(db.getOrchestrationById(plan.id) ?? plan) })
-        })
+        }))
 
         server.registerTool('orchestration_status', {
           description: 'Состояние планов проекта: без planId — последние планы, с planId — один план по шагам.',
@@ -791,12 +923,12 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
         server.registerTool('orchestration_cancel', {
           description: 'Остановить план: незавершённые шаги отменяются, уже запущенные раны продолжают идти сами.',
           inputSchema: { planId: z.string() }
-        }, async (args) => {
+        }, async (args) => mutating('orchestration_cancel', args, async () => {
           const manager = deps.orchestration?.()
           if (!manager) return toolText('Оркестратор сейчас недоступен.', true)
           const cancelled = manager.cancel(userId, args.planId)
           return cancelled ? toolJson({ cancelled: planSummary(cancelled) }) : toolText('План не найден.', true)
-        })
+        }))
 
         // --- Интерфейс пользователя ------------------------------------
 
@@ -816,7 +948,12 @@ export function registerKanbanMcp(app: FastifyInstance, deps: KanbanMcpDeps, sec
         server.registerTool('ui_run_command', {
           description: 'Нажать кнопку приложения по её id из ui_state (командная палитра ⌘K). Работают только команды, доступные на текущем экране.',
           inputSchema: { commandId: z.string() }
-        }, async (args) => uiAction({ kind: 'run-command', commandId: args.commandId }))
+        }, async (args) => {
+          // Часть команд палитры обходит политику подтверждений (выход из
+          // аккаунта), поэтому ассистенту они закрыты — на сервере и в браузере.
+          if (!isAssistantRunnableCommand(args.commandId)) return toolText('Эту кнопку ассистенту нажимать нельзя — попроси пользователя сделать это самому.', true)
+          return uiAction({ kind: 'run-command', commandId: args.commandId })
+        })
 
         server.registerTool('ui_open_task', {
           description: 'Открыть карточку задачи у пользователя, при необходимости на конкретной вкладке (preparation, chat).',

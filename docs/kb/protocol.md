@@ -442,6 +442,10 @@ ok, result?, error? }`, где `result.surface` — снимок экрана п
 `result.confirmed` — ответ на запрос подтверждения. Мост — `window.widgetUi`
 (`RendererWidgetUiBridge`, только web).
 
+Клиент → сервер `widget.surface { conversationId, projectId, surface }` — экран
+сменился во время хода: без него модель весь ход считает открытым тот раздел,
+что был на момент реплики. Сервер принимает кадр только от владельца разговора.
+
 Сервер → клиент `assistant.orchestration { plan }` — прогресс плана работ
 ассистента. REST: `GET /api/projects/:id/orchestrations` (список планов),
 `POST /api/orchestrations/:planId/cancel` (остановить),
