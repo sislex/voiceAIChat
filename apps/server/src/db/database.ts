@@ -8253,6 +8253,37 @@ export class VoiceChatDb {
     return (this.db.prepare(`SELECT r.*, a.name AS machine_name FROM task_repositories r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.task_id=? AND r.state='active' ORDER BY r.created_at`).all(taskId) as Record<string, unknown>[]).map(mapTaskRepository)
   }
 
+  /**
+   * Взять блокировку рабочей копии на время мутации. Возвращает null, если каталог
+   * уже занят живой блокировкой — тогда вызывающий отказывает человеку, а не ждёт:
+   * ожидание в HTTP-запросе выглядит как зависший интерфейс.
+   *
+   * Просроченные записи вычищаются здесь же: держать отдельный сборщик ради строки
+   * с TTL незачем, а упавший процесс иначе оставил бы каталог заблокированным.
+   */
+  acquireGitWorkspaceLock(agentId: string, path: string, holder: string, operation: string, ttlMs: number): { expiresAt: number } | null {
+    const at = this.now()
+    this.db.prepare(`DELETE FROM git_workspace_locks WHERE expires_at <= ?`).run(at)
+    const existing = this.db.prepare(`SELECT holder, operation, expires_at FROM git_workspace_locks WHERE agent_id=? AND path=?`)
+      .get(agentId, path) as { holder: string; operation: string; expires_at: number } | undefined
+    if (existing) return null
+    const expiresAt = at + ttlMs
+    this.db.prepare(`INSERT INTO git_workspace_locks (agent_id,path,holder,operation,acquired_at,expires_at) VALUES (?,?,?,?,?,?)`)
+      .run(agentId, path, holder, operation, at, expiresAt)
+    return { expiresAt }
+  }
+
+  releaseGitWorkspaceLock(agentId: string, path: string, holder: string): void {
+    this.db.prepare(`DELETE FROM git_workspace_locks WHERE agent_id=? AND path=? AND holder=?`).run(agentId, path, holder)
+  }
+
+  /** Кто держит каталог сейчас (для сообщения человеку), либо null. */
+  gitWorkspaceLockHolder(agentId: string, path: string): { holder: string; operation: string; expiresAt: number } | null {
+    const row = this.db.prepare(`SELECT holder, operation, expires_at FROM git_workspace_locks WHERE agent_id=? AND path=? AND expires_at > ?`)
+      .get(agentId, path, this.now()) as { holder: string; operation: string; expires_at: number } | undefined
+    return row ? { holder: row.holder, operation: row.operation, expiresAt: row.expires_at } : null
+  }
+
   getTaskRepositoryById(id: string): TaskRepository | null {
     const r = this.db.prepare(`SELECT r.*, a.name AS machine_name FROM task_repositories r LEFT JOIN agents a ON a.id=r.agent_id WHERE r.id=?`).get(id) as Record<string, unknown> | undefined
     return r ? mapTaskRepository(r) : null

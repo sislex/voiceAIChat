@@ -44,6 +44,8 @@ function setup(options: {
   allowWrite?: boolean
   repositoryKind?: 'dev-workspace' | 'merge-clone'
   role?: 'admin' | 'developer' | 'tester' | 'observer'
+  /** Общий на два сервиса замок — чтобы проверить блокировку между процессами. */
+  locks?: Map<string, { holder: string; operation: string }>
   gate?: GitWorkspaceService extends never ? never : ((input: { command: string }) => { allowed: boolean; reason?: string })
   fsRead?: string
 } = {}): Fake {
@@ -52,6 +54,7 @@ function setup(options: {
   const repositories: Fake['repositories'] = []
   const events: Fake['events'] = []
   const security: Array<{ type: string; details: string }> = []
+  const locks: Map<string, { holder: string; operation: string }> = options.locks ?? new Map()
   const db = {
     getProject: () => ({ id: 'p1', gitUrl: 'https://github.com/x/y.git', ciBaseBranch: 'main', defaultAgentId: 'a1', machines: [{ agentId: 'a1' }], role: 'owner' }),
     getBoard: () => ({ columns: [], tasks: [{ id: 't1' }] }),
@@ -74,7 +77,21 @@ function setup(options: {
     updateCiWorkspaceRevision: (id: string, branch: string, sha: string, pushed: boolean) => revisions.push({ id, branch, sha, pushed }),
     upsertTaskRepository: (_p: string, _t: string, agentId: string, path: string, kind: string) => repositories.push({ agentId, path, kind }),
     addCiEvent: (args: { type: string; payload?: Record<string, unknown> }) => events.push({ type: args.type, payload: args.payload }),
-    logSecurityEvent: (event: { type: string; details?: string }) => security.push({ type: event.type, details: event.details ?? '' })
+    logSecurityEvent: (event: { type: string; details?: string }) => security.push({ type: event.type, details: event.details ?? '' }),
+    acquireGitWorkspaceLock: (agentId: string, path: string, holder: string, operation: string, ttlMs: number) => {
+      const key = `${agentId}::${path}`
+      if (locks.has(key)) return null
+      locks.set(key, { holder, operation })
+      return { expiresAt: 1000 + ttlMs }
+    },
+    releaseGitWorkspaceLock: (agentId: string, path: string, holder: string) => {
+      const key = `${agentId}::${path}`
+      if (locks.get(key)?.holder === holder) locks.delete(key)
+    },
+    gitWorkspaceLockHolder: (agentId: string, path: string) => {
+      const held = locks.get(`${agentId}::${path}`)
+      return held ? { ...held, expiresAt: 9_999 } : null
+    }
   }
   const exec = vi.fn(async () => {
     const item = outputs.shift() ?? ''
@@ -654,5 +671,51 @@ describe('скачивание файла', () => {
 
   it('путь наружу репозитория отклоняется', async () => {
     await expectGitError(setup().service.fileBytes('bob', 'p1', 'ws:ws-1', '../../etc/passwd'), 'invalid_path', 400)
+  })
+})
+
+describe('блокировка рабочей копии', () => {
+  it('вторая операция в том же каталоге отклоняется, даже если её начал другой процесс', async () => {
+    // Общая на два сервиса карта = общая таблица в БД: две вкладки или два сервера.
+    const shared = new Map<string, { holder: string; operation: string }>()
+    const first = setup({ locks: shared, outputs: [statusOutput()] })
+    // Занимаем каталог «чужой» операцией.
+    shared.set('a1::/repo/task', { holder: 'alice:1:1', operation: 'git push' })
+    const second = setup({ locks: shared, outputs: [statusOutput()] })
+    const error = await expectGitError(second.service.status('bob', 'p1', 'ws:ws-1'), 'git_busy', 409)
+    expect(error.message).toContain('alice')
+    expect(first.exec).not.toHaveBeenCalled()
+  })
+
+  it('после операции блокировка снимается', async () => {
+    const shared = new Map<string, { holder: string; operation: string }>()
+    const { service } = setup({ locks: shared, outputs: [statusOutput(), statusOutput()] })
+    await service.status('bob', 'p1', 'ws:ws-1')
+    expect(shared.size).toBe(0)
+    // Значит следующая операция проходит.
+    expect((await service.status('bob', 'p1', 'ws:ws-1')).problem).toBeNull()
+  })
+
+  it('падение операции тоже освобождает каталог', async () => {
+    const shared = new Map<string, { holder: string; operation: string }>()
+    const { service } = setup({ locks: shared, outputs: [{ output: 'boom', exitCode: 1 }] })
+    const status = await service.status('bob', 'p1', 'ws:ws-1')
+    expect(status.problem).toBe('not_a_repository')
+    expect(shared.size).toBe(0)
+  })
+})
+
+describe('лимит списка изменений', () => {
+  it('лимит приходит параметром, и его можно поднять', async () => {
+    const many = '## feature/x\0' + Array.from({ length: 12 }, (_, i) => ` M f${i}.ts\0`).join('')
+    const small = setup({ outputs: [statusOutput({ porcelain: many })] })
+    const cut = await small.service.status('bob', 'p1', 'ws:ws-1', 5)
+    expect(cut.changes).toHaveLength(5)
+    expect(cut.changesTruncated).toBe(true)
+
+    const big = setup({ outputs: [statusOutput({ porcelain: many })] })
+    const full = await big.service.status('bob', 'p1', 'ws:ws-1', 100)
+    expect(full.changes).toHaveLength(12)
+    expect(full.changesTruncated).toBe(false)
   })
 })

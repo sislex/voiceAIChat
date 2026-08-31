@@ -537,7 +537,7 @@ export interface IpcInvokeMap {
   // `workspace` — id рабочей копии (`GitWorkspaceRef.id`), а не путь: путь и машину
   // знает только сервер.
   'projects:gitWorkspaces': { arg: { id: string }; result: GitWorkspaceRef[] }
-  'projects:gitStatus': { arg: { id: string; workspace: string }; result: GitWorkspaceStatus }
+  'projects:gitStatus': { arg: { id: string; workspace: string; changesLimit?: number }; result: GitWorkspaceStatus }
   'projects:gitBranches': { arg: { id: string; workspace: string; refresh?: boolean }; result: GitBranchList }
   'projects:gitTree': { arg: { id: string; workspace: string; dir: string; ref?: string }; result: GitTreeListing }
   'projects:gitFile': { arg: { id: string; workspace: string; path: string; ref?: string }; result: GitFileContent }

@@ -33,11 +33,15 @@ export function registerProjectGitRoutes(app: FastifyInstance, git: GitWorkspace
   app.get<{ Params: { id: string } }>('/api/projects/:id/git/workspaces', async (req, reply) =>
     handle(reply, () => git.listWorkspaces(uid(req), req.params.id)))
 
-  app.get<{ Params: { id: string }; Querystring: { workspace?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { workspace?: string; changesLimit?: string } }>(
     '/api/projects/:id/git/status',
     async (req, reply) => {
       if (!req.query.workspace) return required(reply, 'workspace')
-      return handle(reply, () => git.status(uid(req), req.params.id, req.query.workspace!))
+      const limit = Number(req.query.changesLimit)
+      return handle(reply, () => git.status(
+        uid(req), req.params.id, req.query.workspace!,
+        Number.isFinite(limit) && limit > 0 ? limit : undefined
+      ))
     }
   )
 

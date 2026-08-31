@@ -485,7 +485,7 @@ export function createHttpApi(httpBase: string, agentWsUrl: string): RendererApi
       req(`/api/projects/${encodeURIComponent(id)}/machines/${encodeURIComponent(agentId)}/git-access/diagnostics?repositoryUrl=${encodeURIComponent(repositoryUrl)}`),
     // --- Панель кода: git в рабочей копии задачи/сессии ---
     'projects:gitWorkspaces': ({ id }) => req(REST.projectGitWorkspaces(id)),
-    'projects:gitStatus': ({ id, workspace }) => req(REST.projectGitStatus(id, workspace)),
+    'projects:gitStatus': ({ id, workspace, changesLimit }) => req(REST.projectGitStatus(id, workspace, changesLimit)),
     'projects:gitBranches': ({ id, workspace, refresh }) => req(REST.projectGitBranches(id, workspace, refresh)),
     'projects:gitTree': ({ id, workspace, dir, ref }) => req(REST.projectGitTree(id, workspace, dir, ref)),
     'projects:gitFile': ({ id, workspace, path, ref }) => req(REST.projectGitFile(id, workspace, path, ref)),
