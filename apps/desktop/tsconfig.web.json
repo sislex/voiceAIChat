@@ -1,5 +1,8 @@
 {
   "compilerOptions": {
+    // Инкрементальный typecheck: tsc держит tsconfig.tsbuildinfo рядом с конфигом
+    // (он в .gitignore) и на тёплом кеше отвечает за секунду вместо десяти.
+    "incremental": true,
     "composite": true,
     "target": "ES2022",
     "module": "ESNext",

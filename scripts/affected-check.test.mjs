@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { createCommandDiagnostics, fastCheckForPackage, packageArgs, relatedArgs, runFastChecks, runPackageGates, selectAffected } from './affected-check.mjs'
+import { buildGates, consumersOf, createCommandDiagnostics, dependenciesOf, fastCheckForPackage, fastPlanForPackage, packageArgs, parseOptions, PACKAGES, relatedArgs, runFastChecks, runPackageGates, selectAffected, workersPerJob } from './affected-check.mjs'
 import { gitHistoryPaths } from './kb.mjs'
 
 const ids = (decision) => decision.packages.map((pkg) => pkg.id)
@@ -49,26 +49,26 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('shared проверяет себя и всех известных потребителей', () => {
     const decision = selectAffected(['packages/shared/src/ci.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['shared', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder'])
+    assert.deepEqual(ids(decision), ['shared', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder'])
   })
 
   await t.test('ядро сессий тянет сервер и UI как потребителей', () => {
     const decision = selectAffected(['packages/sessions-core/src/policy.ts'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['sessions-core', 'sessions-app', 'server', 'ui', 'web', 'web-recorder'])
+    assert.deepEqual(ids(decision), ['shared', 'sessions-core', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder'])
   })
 
   await t.test('правка UI проверяет standalone Web Recorder как потребителя', () => {
     const decision = selectAffected(['packages/ui/src/App.tsx'])
     assert.equal(decision.full, false)
-    assert.deepEqual(ids(decision), ['ui', 'web-recorder'])
+    assert.deepEqual(ids(decision), ['ui', 'web', 'web-recorder'])
   })
 
   for (const file of ['package-lock.json', 'package.json', 'scripts/kb.mjs', '.github/workflows/ci.yml', 'unknown/critical.ts']) {
     await t.test(`${file} включает полный гейт`, () => {
       const decision = selectAffected([file])
       assert.equal(decision.full, true)
-      assert.deepEqual(ids(decision), ['shared', 'sessions-core', 'sessions-app', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder'])
+      assert.deepEqual(ids(decision), ['shared', 'sessions-core', 'ui-kit', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder'])
       assert.match(decision.reason, /общий конфиг|нераспознанный/)
     })
   }
@@ -82,8 +82,88 @@ test('selectAffected выбирает пакеты и безопасный fallb
   await t.test('некорректный diff включает полный гейт', () => {
     const decision = selectAffected(['apps/server/src/x.ts', ''])
     assert.equal(decision.full, true)
-    assert.deepEqual(ids(decision), ['shared', 'sessions-core', 'sessions-app', 'server', 'runner', 'tts-runner', 'agent', 'ui', 'web-reader', 'playwright-reader', 'web', 'web-recorder'])
+    assert.deepEqual(ids(decision), ['shared', 'sessions-core', 'ui-kit', 'app-shell', 'sessions-app', 'profile-app', 'chat-app', 'projects-app', 'operations-app', 'admin-app', 'web-reader', 'playwright-reader', 'ui', 'server', 'runner', 'tts-runner', 'stt-runner', 'automation-runner', 'browser-runner', 'agent', 'web', 'web-recorder'])
   })
+})
+
+// Сторожевые тесты карты пакетов. Забытый в PACKAGES воркспейс не ломал гейт
+// заметно — он молча превращал узкий гейт в полный («нераспознанный критичный
+// путь»), и так десять воркспейсов ездили мимо. Поэтому список сверяется с
+// файловой системой, а dependsOn — с манифестами.
+test('PACKAGES перечисляет каждый воркспейс репозитория', () => {
+  const repository = dirname(dirname(fileURLToPath(import.meta.url)))
+  const found = []
+  for (const root of ['packages', 'apps']) {
+    for (const entry of readdirSync(join(repository, root))) {
+      if (existsSync(join(repository, root, entry, 'package.json'))) found.push(`${root}/${entry}`)
+    }
+  }
+  const known = new Set(PACKAGES.map((pkg) => pkg.path))
+  assert.deepEqual(found.filter((path) => !known.has(path)), [], 'путь есть в репозитории, но не в PACKAGES')
+  assert.deepEqual(PACKAGES.map((pkg) => pkg.path).filter((path) => !found.includes(path)), [], 'путь есть в PACKAGES, но не в репозитории')
+})
+
+test('dependsOn включает каждую workspace-зависимость из package.json', () => {
+  const repository = dirname(dirname(fileURLToPath(import.meta.url)))
+  const idByWorkspace = new Map(PACKAGES.filter((pkg) => pkg.workspace).map((pkg) => [pkg.workspace, pkg.id]))
+  const missing = []
+  for (const pkg of PACKAGES) {
+    const manifest = JSON.parse(readFileSync(join(repository, pkg.path, 'package.json'), 'utf8'))
+    const declared = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies })
+    for (const dependency of declared) {
+      const id = idByWorkspace.get(dependency)
+      if (!id || pkg.dependsOn.includes(id)) continue
+      missing.push(`${pkg.id} -> ${id}`)
+    }
+  }
+  assert.deepEqual(missing, [])
+})
+
+test('consumersOf даёт транзитивное замыкание и не тянет пакеты вне workspaces', () => {
+  // ui-kit не знает о своих потребителях, но правка токенов ломает и *-app, и ui.
+  const uiKit = consumersOf('ui-kit')
+  for (const id of ['sessions-app', 'profile-app', 'admin-app', 'ui', 'web']) {
+    assert.ok(uiKit.has(id), `${id} должен зависеть от ui-kit`)
+  }
+  // desktop и agent-tray вне npm-workspaces: корневой install их не ставит,
+  // поэтому чужая правка UI не должна звать их гейт.
+  assert.equal(uiKit.has('desktop'), false)
+  assert.equal(consumersOf('shared').has('agent-tray'), false)
+})
+
+test('e2e, frontend-quality и настройки агентов не включают полный гейт', () => {
+  for (const file of ['e2e/projects.e2e.test.ts', 'frontend-quality/bundle-baseline.json', '.claude/settings.json']) {
+    const decision = selectAffected([file])
+    assert.equal(decision.full, false, `${file} не должен звать полный гейт`)
+    assert.deepEqual(ids(decision), [], file)
+  }
+})
+
+test('parseOptions разбирает базу диффа, режим и jobs', () => {
+  assert.deepEqual(parseOptions([]), { jobs: 2, base: 'origin/main', fast: false })
+  assert.deepEqual(parseOptions(['--fast', '--worktree']), { jobs: 2, base: 'HEAD', fast: true })
+  assert.deepEqual(parseOptions(['--base', 'origin/release/1.2.0', '--jobs', '4']), { jobs: 4, base: 'origin/release/1.2.0', fast: false })
+  assert.throws(() => parseOptions(['--base']), /--base требует git-ref/)
+  assert.throws(() => parseOptions(['--base', '--fast']), /--base требует git-ref/)
+  assert.throws(() => parseOptions(['--base', 'main', '--worktree']), /взаимно исключают/)
+  assert.throws(() => parseOptions(['--jobs', '0']), /положительным целым/)
+})
+
+test('workersPerJob делит пул и не опускается ниже одного воркера', () => {
+  assert.equal(workersPerJob(1), undefined)
+  assert.equal(workersPerJob(2, 8), 4)
+  assert.equal(workersPerJob(4, 8), 2)
+  assert.equal(workersPerJob(16, 8), 1)
+})
+
+test('buildGates в fast-режиме адресны, в полном — прежние', () => {
+  assert.deepEqual(buildGates(['packages/ui/src/App.tsx'], { fast: false }), ['frontend:build-gates'])
+  assert.deepEqual(buildGates(['apps/server/src/server.ts'], { fast: false }), [])
+  // Правка компонента не требует ни web-сборки, ни витрины: импорты ловит
+  // typecheck, сториз — stories.a11y.dom.test.tsx через related.
+  assert.deepEqual(buildGates(['packages/ui/src/App.tsx'], { fast: true }), [])
+  assert.deepEqual(buildGates(['apps/web/src/main.tsx'], { fast: true }), ['build:web'])
+  assert.deepEqual(buildGates(['packages/ui/src/components/Badge.stories.tsx'], { fast: true }), ['build:storybook'])
 })
 
 test('gitHistoryPaths исключает генерируемый индекс БЗ из широких areas', () => {
@@ -157,7 +237,10 @@ test('runPackageGates ограничивает два независимых г�
   assert.ok(parallelMs < sequentialMs, `parallel ${parallelMs}ms must be faster than sequential ${sequentialMs}ms`)
   const parallelTests = parallelEvents.filter((event) => event.type === 'start' && event.script === 'test')
   const sequentialTests = sequentialEvents.filter((event) => event.type === 'start' && event.script === 'test')
-  assert.ok(parallelTests.every((event) => event.maxWorkers === 1))
+  // Раньше здесь стояла жёсткая единица, и `packages/ui` в параллельном режиме
+  // шёл 108 с вместо 42 с. Теперь пул делится между заданиями.
+  assert.ok(parallelTests.every((event) => event.maxWorkers === workersPerJob(2)))
+  assert.ok(workersPerJob(2) > 1)
   assert.ok(sequentialTests.every((event) => event.maxWorkers === undefined))
 })
 
@@ -182,6 +265,39 @@ test('fastCheckForPackage пропускает shared, конфиги и миг�
   assert.equal(fastCheckForPackage(server, ['apps/server/vitest.config.ts']).reason, 'конфиг, схема или миграция')
   assert.equal(fastCheckForPackage(server, ['apps/server/src/db/migrations/001.sql']).reason, 'конфиг, схема или миграция')
   assert.deepEqual(fastCheckForPackage(server, ['apps/server/src/ci/runManager.ts']).files, ['src/ci/runManager.ts'])
+})
+
+test('dependenciesOf даёт транзитивные зависимости пакета', () => {
+  assert.equal(dependenciesOf('ui-kit').size, 0)
+  const ui = dependenciesOf('ui')
+  for (const id of ['ui-kit', 'shared', 'sessions-core', 'chat-app', 'admin-app', 'profile-app']) {
+    assert.ok(ui.has(id), `ui должен зависеть от ${id}`)
+  }
+  assert.equal(ui.has('web'), false)
+})
+
+test('fastPlanForPackage гоняет related и по правкам зависимостей, а не только своим', () => {
+  const byId = new Map(PACKAGES.map((pkg) => [pkg.id, pkg]))
+  const plan = (id, files) => fastPlanForPackage(byId.get(id), files)
+
+  // Правка компонента ui: потребители проверяются related по исходнику ui,
+  // а не полным набором — раньше это стоило целого прогона пакета.
+  assert.deepEqual(plan('ui', ['packages/ui/src/components/ChatColumn.tsx']).files, ['src/components/ChatColumn.tsx'])
+  assert.deepEqual(plan('web', ['packages/ui/src/components/ChatColumn.tsx']).files, ['../../packages/ui/src/components/ChatColumn.tsx'])
+  assert.deepEqual(plan('ui', ['packages/ui-kit/src/Button.tsx']).files, ['../ui-kit/src/Button.tsx'])
+
+  // Пакет, до которого правка не доходит, не проверяется вовсе.
+  assert.deepEqual(plan('server', ['packages/ui/src/App.tsx']), {
+    pkg: byId.get('server'),
+    files: [],
+    reason: 'изменений в этом пакете и его зависимостях нет'
+  })
+
+  // Контракт shared и конфиги/схемы/миграции любого источника — полный набор.
+  assert.equal(plan('ui', ['packages/shared/src/protocol.ts']).reason, 'shared-контракт')
+  assert.equal(plan('server', ['packages/shared/src/protocol.ts']).reason, 'shared-контракт')
+  assert.match(plan('web', ['packages/ui/vitest.config.ts']).reason, /^конфиг, схема или миграция/)
+  assert.match(plan('server', ['apps/server/src/db/migrations/001.sql']).reason, /^конфиг, схема или миграция/)
 })
 
 test('related проходит до обязательного полного гейта и ноль тестов не даёт успех', async () => {

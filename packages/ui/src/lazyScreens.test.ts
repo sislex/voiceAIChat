@@ -27,7 +27,10 @@ const LAZY: Array<readonly [string, string]> = [
   ['SettingsModal', './components/SettingsModal'],
   ['AccountPage', './components/AccountPage'],
   ['UsersAdmin', '@voicechat/admin-app'],
-  ['SessionsDialogHost', './components/SessionsDialogHost']
+  ['SessionsDialogHost', './components/SessionsDialogHost'],
+  ['TaskModal', './components/kanban/TaskModal'],
+  ['ProjectSettings', './components/ProjectSettings'],
+  ['BrowserSessionPane', './components/BrowserSessionPane']
 ]
 
 describe('тяжёлые экраны не возвращаются в главный чанк', () => {
@@ -56,5 +59,23 @@ describe('тяжёлые экраны не возвращаются в глав�
     // `fallback={null}` допустим только у окна сессий: оно открывается из меню и
     // само по себе невидимо до готовности.
     expect(empty.length).toBeLessThanOrEqual(1)
+  })
+})
+
+/**
+ * Пакеты, которые хост подключает **только** через `import()`. Любой статический
+ * импорт значения из такого пакета возвращает его целиком в главный чанк:
+ * модуль, статически достижимый из входа, ложится в главный, а `import()`
+ * отдаёт уже загруженное. Замер по sourcemap показал так 70 КБ админки и 60 КБ
+ * профиля — из-за одного `parseAdminRoute`, взятого из индекса пакета.
+ * `import type` безопасен: типы в рантайм не попадают.
+ */
+const LAZY_PACKAGES = ['@voicechat/admin-app', '@voicechat/web-reader-app']
+
+describe('пакеты ленивых экранов не тянутся статически', () => {
+  it.each(LAZY_PACKAGES)('%s подключается только через import()', (pkg) => {
+    const specifier = pkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const statics = [...app.matchAll(new RegExp(`^import (?!type )[^']*from '${specifier}'`, 'gm'))]
+    expect(statics.map((match) => match[0]), `${pkg} тянется статически`).toEqual([])
   })
 })

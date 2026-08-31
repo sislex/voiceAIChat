@@ -196,7 +196,7 @@ export interface IpcInvokeMap {
   'make:import': { arg: { conversationId: string; dataBase64: string; mode: MakeImportMode }; result: MakeProjectState }
   /** Импорт страницы по URL: HTML + same-origin css/js/картинки. */
   'make:importUrl': { arg: { conversationId: string; url: string; mode: MakeImportMode }; result: MakeProjectState }
-  'conversations:create': { arg: { title?: string; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' }; result: Conversation }
+  'conversations:create': { arg: { title?: string; projectId?: string | null; assistantKind?: 'web-recorder' | 'playwright-reader' | 'console-reader' | 'make' }; result: Conversation }
   /** Атомарно сохраняет новый обычный разговор и его первую пользовательскую реплику. */
   'conversations:createDraft': {
     arg: { idempotencyKey: string; title: string; projectId?: string | null; message: Omit<AddMessageArgs, 'conversationId'> }
