@@ -1046,6 +1046,8 @@ export interface ConversationContextSnapshot {
   viewerRole: UserRole
   /** Что ушло в прошлый ход; null — ходов ещё не было. */
   lastTurn: ContextLastTurn | null
+  /** Журнал изменений контекста этого разговора, новые сверху. */
+  changes: ContextChangeEvent[]
   /** Несогласованности конфигурации (порядок: problem раньше notice). */
   warnings: ContextWarning[]
   /**
@@ -1143,6 +1145,15 @@ export interface ContextWarning {
   /** `notice` — стоит знать, `problem` — почти наверняка не то, что нужно. */
   level: 'notice' | 'problem'
   text: string
+}
+
+/** Запись журнала контекста: кто, когда и какой источник включил или выключил. */
+export interface ContextChangeEvent {
+  at: number
+  /** Логин того, кто изменил (админ может править чужой разговор). */
+  actor: string
+  itemId: string
+  enabled: boolean
 }
 
 /** Блок системного промпта: чем он добавлен и какой у него текст. */

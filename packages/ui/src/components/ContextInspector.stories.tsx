@@ -83,6 +83,10 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
       attachments: 1,
       kbSections: ['Соглашения / Гейт']
     },
+    changes: [
+      { at: new Date('2026-08-31T12:35:00Z').getTime(), actor: 'alexey', itemId: 'personalization', enabled: false },
+      { at: new Date('2026-08-31T12:36:00Z').getTime(), actor: 'alexey', itemId: 'personalization', enabled: true }
+    ],
     warnings: [
       { itemId: 'machine', level: 'problem', text: 'Выбранная машина недоступна: команды и файловые инструменты в ход не попадут.' },
       { itemId: null, level: 'notice', text: 'Инструкций чата выключено для этого разговора: 1.' }
