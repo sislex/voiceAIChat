@@ -58,7 +58,13 @@ const kbDisplay: Record<KbContextMode, { displayName: string; explanation: strin
   manual: { displayName: 'По запросу', explanation: 'Автоматической вставки нет, инструменты поиска доступны.' },
   off: { displayName: 'Отключено', explanation: 'Автоматический контекст и инструменты БЗ не подключаются.' }
 }
-function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, isOnline?: (id: string) => boolean, kbStatus?: KbStatus | null, cliMcpServers: Array<{ name: string; detail: string; status: string }> = []): ConversationContextSnapshot | null {
+/**
+ * Снимок контекста разговора. `userId` — владелец, чьим scope читаются данные;
+ * `viewer` — кто смотрит. Они различаются, когда админ открывает чужой чат:
+ * данные берутся у владельца (иначе снимок был бы пустым), но роль и пометка
+ * «чужой разговор» считаются по смотрящему.
+ */
+function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string, isOnline?: (id: string) => boolean, kbStatus?: KbStatus | null, cliMcpServers: Array<{ name: string; detail: string; status: string }> = [], viewer: string = userId): ConversationContextSnapshot | null {
   const conversation = db.getConversation(userId, conversationId)
   if (!conversation) return null
   // Тумблеры: пункт можно выключить (кроме безопасности/информации); выключенный
@@ -73,7 +79,8 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     return { ...value, toggleable, enabled, lockReason, includedInNextTurn: value.includedInNextTurn && enabled }
   }
   const settings = db.getSettings(userId)
-  const role = db.getUser(userId)?.role ?? 'developer'
+  // Роль — у смотрящего: админ, открывший чужой чат, видит его как админ.
+  const role = db.getUser(viewer)?.role ?? 'developer'
   const resolution = db.resolveConversationMachine(userId, conversationId, { isOnline })
   const agent = resolution?.agentId ? db.listUsableAgents(userId, conversation.projectId).find((a) => a.id === resolution.agentId) : undefined
   const machineAvailable = Boolean(resolution?.agentId && !resolution.error)
@@ -207,8 +214,8 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     ] },
     { id: 'skills', order: 5, title: 'Навыки', description: 'Выбор отделён от доступности и активации.', items: (agent?.policy.skills ?? []).map((skill) => contextItem({ id: `skill-${encodeURIComponent(skill.name)}`, type: 'Навык', source: 'Политика машины', scope: agent?.name ?? 'Машина', priority: '8 · навык', title: skill.name, description: skill.description || 'Инструкция навыка', explanation: selectedSkills.has(skill.name) ? 'Выбран; активация определяется текстом сообщения при отправке.' : 'Доступен, но не выбран.', configured: selectedSkills.has(skill.name), available: machineAvailable, includedInNextTurn: false, details: { activationReason: 'Текущее сообщение ещё не отправлено.', ...(skill.command ? { 'Команда навыка': skill.command } : {}) } })) },
     { id: 'capabilities', order: 6, title: 'MCP, приложения и плагины', description: 'Активный каталог вычислен сервером для текущего окружения.', items: [
-      ...(['machines', 'read', 'edit', 'bash'] as const).map((name) => contextItem({ id: `mcp-remote-${name}`, type: 'MCP-инструмент', source: 'MCP remote', scope: agent?.name ?? 'Удалённая машина', priority: 'Возможность', title: `remote:${name}`, description: String(mcpToolDetails[`mcp-remote-${name}`]?.['Назначение'] ?? 'Инструмент удалённой машины.'), explanation: machineAvailable ? 'Подключается для эффективной машины.' : 'Машина недоступна.', configured: Boolean(resolution?.agentId), available: machineAvailable, includedInNextTurn: machineAvailable, details: mcpToolDetails[`mcp-remote-${name}`] })),
-      ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: mcpToolDetails[`mcp-kb-${name}`] }))
+      ...(['machines', 'read', 'edit', 'bash'] as const).map((name) => contextItem({ id: `mcp-remote-${name}`, type: 'MCP-инструмент', source: 'MCP remote', scope: agent?.name ?? 'Удалённая машина', priority: 'Возможность', title: `remote:${name}`, description: String(mcpToolDetails[`mcp-remote-${name}`]?.['Назначение'] ?? 'Инструмент удалённой машины.'), explanation: machineAvailable ? 'Подключается для эффективной машины.' : 'Машина недоступна.', configured: Boolean(resolution?.agentId), available: machineAvailable, includedInNextTurn: machineAvailable, details: { ...mcpToolDetails[`mcp-remote-${name}`], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('remote')) ? 'да' : 'нет данных' } })),
+      ...(['search', 'document', 'topics'] as const).map((name) => contextItem({ id: `mcp-kb-${name}`, type: 'MCP-инструмент', source: 'MCP kb', scope: 'База знаний', priority: 'Возможность', title: `kb:${name}`, description: String(mcpToolDetails[`mcp-kb-${name}`]?.['Назначение'] ?? 'Инструмент базы знаний.'), explanation: kbMode === 'off' ? 'БЗ отключена.' : 'Подключается для выбранного режима.', configured: kbMode !== 'off', available: kbMode !== 'off', includedInNextTurn: kbMode !== 'off', details: { ...mcpToolDetails[`mcp-kb-${name}`], 'Виден движку CLI': cliMcpServers.some((server) => server.name.includes('kb')) ? 'да' : 'нет данных' } }))
     ] },
     { id: 'knowledge', order: 7, title: 'База знаний', description: 'Режим и фактически подготовленный автоматический контекст.', items: [
       // Доступность индекса — отдельный вопрос от режима: «авто» при сломанном
@@ -295,6 +302,19 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     if (titles.length > 1) {
       warnings.push({ itemId: null, level: 'notice', text: `Одинаковый текст в инструкциях: ${titles.join(', ')}. Модель получит его дважды.` })
     }
+  }
+  // Навык выбран, но машины нет: он не активируется ни при каком сообщении.
+  const selectedWithoutMachine = [...selectedSkills].length > 0 && !machineAvailable
+  if (selectedWithoutMachine) {
+    warnings.push({ itemId: 'machine', level: 'notice', text: `Навыки выбраны (${[...selectedSkills].join(', ')}), но машина недоступна: они не активируются.` })
+  }
+  // Инструкция обещает терминал или проводник, а инструменты машины выключены:
+  // модель предложит открыть их, а выполнить не сможет.
+  const toolInstructionActive = settings.chatInstructions.some((entry) =>
+    entry.enabled && !disabled.has(instructionContextId(entry.id)) && (entry.kind === 'console' || entry.kind === 'explorer'))
+  const remoteOff = ['mcp-remote-bash', 'mcp-remote-read', 'mcp-remote-edit'].every((id) => disabled.has(id))
+  if (toolInstructionActive && remoteOff) {
+    warnings.push({ itemId: null, level: 'notice', text: 'Инструкции про терминал и проводник включены, а инструменты машины выключены: модель предложит их открыть, но выполнить не сможет.' })
   }
   // Все источники знаний выключены: модель отвечает только по истории и тексту
   // сообщения. Иногда это и нужно, но чаще так выходит случайно.
@@ -396,6 +416,8 @@ function contextSnapshot(db: VoiceChatDb, userId: string, conversationId: string
     summary: { provider, model, permissionMode: { value: permissionMode, ...permissionDisplay[permissionMode] }, kbMode: { value: kbMode, ...kbDisplay[kbMode] } },
     groups: withSizes,
     viewerRole: role,
+    owner: userId,
+    foreign: viewer !== userId,
     turnSizes,
     lastTurn,
     changes: db.listConversationContextEvents(userId, conversationId, 20),
@@ -590,12 +612,26 @@ export async function registerRest(
     return { conversation, messages: db.listMessages(uid(req), req.params.id) }
   })
 
+  /**
+   * Владелец разговора для чтения снимка. Свой чат — сам пользователь. Чужой
+   * открывается **только администратору**: «почему этот чат отвечает иначе» —
+   * его рабочий вопрос, а данные читаются scope владельца, иначе снимок пуст.
+   * Остальным чужой разговор по-прежнему неотличим от несуществующего.
+   */
+  const contextOwnerFor = (req: Parameters<typeof uid>[0], conversationId: string): string | null => {
+    const viewer = uid(req)
+    if (db.getConversation(viewer, conversationId)) return viewer
+    if ((db.getUser(viewer)?.role ?? 'developer') !== 'admin') return null
+    return db.conversationOwner(conversationId)
+  }
+
   app.get<{ Params: { id: string } }>('/api/conversations/:id/context-snapshot', async (req, reply) => {
     // Список MCP-серверов спрашиваем у самого движка: он показывает, что видит
     // CLI, а не что подключает приложение. Ошибка или отсутствие движка не
     // должны ломать снимок — тогда список просто пуст.
     const cliMcp = await listMcpServers().catch(() => [])
-    const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline, kbStatusSafe(), cliMcp)
+    const owner = contextOwnerFor(req, req.params.id)
+    const snapshot = owner ? contextSnapshot(db, owner, req.params.id, opts.isAgentOnline, kbStatusSafe(), cliMcp, uid(req)) : null
     if (!snapshot) return reply.code(404).send({ error: 'not found' })
     return snapshot
   })
@@ -603,9 +639,13 @@ export async function registerRest(
   // следующих ходах (turns.ts). Правила безопасности сервер выключить не даёт.
   app.post<{ Params: { id: string; itemId: string }; Body: { enabled?: boolean } }>('/api/conversations/:id/context/:itemId', async (req, reply) => {
     if (!isContextToggleable(req.params.itemId)) return reply.code(400).send({ error: 'Этот пункт нельзя выключить' })
-    const updated = db.setConversationContextEnabled(uid(req), req.params.id, req.params.itemId, req.body?.enabled !== false)
+    // Владелец — чей scope правим; actor — кто правит. Для админа это разные
+    // люди, и журнал должен показать именно того, кто нажал.
+    const owner = contextOwnerFor(req, req.params.id)
+    if (!owner) return reply.code(404).send({ error: 'not found' })
+    const updated = db.setConversationContextEnabled(owner, req.params.id, req.params.itemId, req.body?.enabled !== false, uid(req))
     if (!updated) return reply.code(404).send({ error: 'not found' })
-    const snapshot = contextSnapshot(db, uid(req), req.params.id, opts.isAgentOnline, kbStatusSafe())
+    const snapshot = contextSnapshot(db, owner, req.params.id, opts.isAgentOnline, kbStatusSafe(), [], uid(req))
     return snapshot ?? reply.code(404).send({ error: 'not found' })
   })
 

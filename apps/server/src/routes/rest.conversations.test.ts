@@ -892,6 +892,33 @@ describe('REST: conversations/messages/settings', () => {
     expect(levels).toEqual([...levels].sort((a, b) => (a === b ? 0 : a === 'problem' ? -1 : 1)))
   })
 
+  it('админ видит и правит контекст чужого чата, обычный пользователь — нет', async () => {
+    // Чужой разговор: владелец — другой пользователь.
+    db.createUser('marina', 'pass', 'developer')
+    const foreign = db.createConversation('marina', 'Чат Марины')
+
+    // Админ (текущий токен) видит снимок с пометкой «чужой» и владельцем.
+    const asAdmin = await inj({ method: 'GET', url: `/api/conversations/${foreign.id}/context-snapshot` })
+    expect(asAdmin.statusCode).toBe(200)
+    expect(asAdmin.json()).toMatchObject({ owner: 'marina', foreign: true, viewerRole: 'admin' })
+
+    // И может выключить источник — в журнале остаётся, кто именно это сделал.
+    const toggled = await inj({ method: 'POST', url: `/api/conversations/${foreign.id}/context/personalization`, payload: { enabled: false } })
+    expect(toggled.statusCode).toBe(200)
+    expect(toggled.json().changes[0]).toMatchObject({ actor: U, itemId: 'personalization', enabled: false })
+    // Правка легла в чужой разговор, а не в свой.
+    expect(db.getConversation('marina', foreign.id)?.disabledContext).toEqual(['personalization'])
+
+    // Обычному пользователю чужой разговор неотличим от несуществующего.
+    const marinaToken = signToken({ name: 'marina', role: 'developer' }, SECRET)
+    const asDeveloper = await app.inject({
+      method: 'GET',
+      url: `/api/conversations/${(await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Мой' } })).json().id}/context-snapshot`,
+      headers: { authorization: `Bearer ${marinaToken}` }
+    })
+    expect(asDeveloper.statusCode).toBe(404)
+  })
+
   it('политика машины и «вслепую» видны в снимке', async () => {
     const created = (await inj({ method: 'POST', url: '/api/conversations', payload: { title: 'Политика' } })).json()
     const machine = db.createAgent(U, 'Мак с политикой')

@@ -71,6 +71,8 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
       ] }
     ],
     viewerRole: options.viewerRole ?? 'admin',
+    owner: 'alexey',
+    foreign: false,
     lastTurn: {
       at: '12:41',
       provider: 'claude',
