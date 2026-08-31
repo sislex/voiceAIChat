@@ -34,14 +34,14 @@
 | [machines.md](machines.md) | Машины: компаньон-агент, политика, PTY, проводник | 2026-08-31 | ⚠ 23 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
 | [operations-app.md](operations-app.md) | Frontend-модуль Operations: граница, store и подключение | 2026-08-19 | ⚠ 159 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
 | [projects.md](projects.md) | Проекты и канбан-доска | 2026-08-31 | ⚠ 22 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
-| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ⚠ 12 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
+| [protocol.md](protocol.md) | Контракт клиент↔сервер (REST, WS, мосты) | 2026-08-31 | ✓ |
 | [server-internals.md](server-internals.md) | Backend изнутри: сборка, маршруты, сессии и сервисы | 2026-08-31 | ⚠ 23 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
 | [shared.md](shared.md) | Общий пакет: типы, контракты и чистая логика | 2026-08-30 | ⚠ 62 коммит(ов) в areas после сверки: 913a9e62 Merge branch 'feat/context-inspector-round-4': журнал контекста, правка на месте и доступность … |
 | [stt-runner.md](stt-runner.md) | STT Runner: внутренний протокол, ресурсы и lifecycle | 2026-08-20 | ⚠ 118 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [stt-tts.md](stt-tts.md) | Речь: Whisper (STT) и Piper/say (TTS) | 2026-08-26 | ⚠ 4 коммит(ов) в areas после сверки: 871a1f09 test(stt-runner): покрыть чистую логику — 7,18% → 30,05% … |
 | [testing-operations.md](testing-operations.md) | Разработка, тестирование, диагностика и эксплуатация | 2026-08-31 | ✓ |
 | [tts-runner.md](tts-runner.md) | TTS Runner: ресурсный API, движки и жизненный цикл WAV | 2026-08-26 | ⚠ 70 коммит(ов) в areas после сверки: ae842bcc Merge remote-tracking branch 'origin/main' into work3 … |
-| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ⚠ 11 коммит(ов) в areas после сверки: 3833225d Merge remote-tracking branch 'origin/main' into work2 … |
+| [ui.md](ui.md) | Интерфейс: React, store, remote-мосты и голосовой UX | 2026-08-31 | ✓ |
 | [usage/chatai-basics.md](usage/chatai-basics.md) | Как пользоваться ChatAI | 2026-08-01 | ⚠ код изменён 2026-08-31, сверка 2026-08-01 (по датам: правки того же дня не видны — поставь checked) |
 | [usage/user-account.md](usage/user-account.md) | Информация о пользователе | 2026-08-13 | ✓ |
 
