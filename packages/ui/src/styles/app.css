@@ -6666,6 +6666,17 @@ body.vc-dragging { cursor: grabbing; user-select: none; -webkit-user-select: non
 .personalization-page input,.personalization-page select{box-sizing:border-box;width:100%;max-width:100%;padding:10px;border:1px solid var(--border);border-radius:var(--radius-medium);background:var(--surface);color:var(--text);font:inherit}
 .personal-check{display:flex!important;align-items:center;gap:8px}.personal-check input{width:auto}.personal-date{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.field-error{margin:0;color:var(--danger)}.personal-actions{display:flex;flex-wrap:wrap;gap:10px;padding-top:20px}
 @media(max-width:720px){.personalization-page{padding:20px 16px}.personal-date{grid-template-columns:1fr}.personal-actions{align-items:stretch;flex-direction:column}.personal-actions .vc-btn{width:100%}}
+/* Панели QA говорят языком ui-kit (PanelHeading, MetricGrid, ResultTable,
+   FeedItem); здесь остались только зазоры между блоками и мобильные пороги. */
+.component-qa-panel, .qa-stage-panel { display: grid; gap: 16px; min-width: 0; }
+.component-qa-panel > *, .qa-stage-panel > * { min-width: 0; }
+.component-qa-commands { margin: 0; }
+.component-qa-artifacts { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 12px; }
+.component-qa-actions, .qa-stage-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 720px) {
+  .component-qa-actions .vc-btn, .qa-stage-actions .vc-btn { flex: 1 1 100%; min-height: 44px; }
+}
+
 /* ---- Общий язык лент карточки задачи ----
    Временная шкала, улучшения и merge-шаги показывают одно и то же: событие со
    статусом и временем. Сами классы `.vc-feed-*` переехали в

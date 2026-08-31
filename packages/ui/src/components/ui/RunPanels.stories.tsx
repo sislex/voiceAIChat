@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react'
 import {
+  BranchFlow,
   FeedItem,
   FeedLog,
   LiveIndicator,
@@ -14,6 +15,9 @@ import {
   PanelHeading,
   ProgressRing,
   ProgressTrack,
+  GateList,
+  QaScore,
+  ResultTable,
   StatusPill,
   StepList,
   SubTabs,
@@ -28,6 +32,14 @@ const TONE_LABEL: Record<StatusTone, string> = {
   success: 'Успешно',
   warning: 'Требует внимания',
   danger: 'Не пройдено'
+}
+
+/** Телефон: у addon-viewport свой набор, поэтому объявляем нужный размер здесь. */
+const PHONE = {
+  viewport: {
+    viewports: { phone: { name: 'Телефон 390×844', styles: { width: '390px', height: '844px' }, type: 'mobile' } },
+    defaultViewport: 'phone'
+  }
 }
 
 const meta: Meta = {
@@ -220,5 +232,78 @@ export const Together: Story = {
         </FeedItem>
       </div>
     </div>
+  )
+}
+
+export const Score: Story = {
+  name: 'Счёт проверок',
+  render: () => (
+    <div style={{ display: 'grid', gap: 28, maxWidth: 520 }}>
+      <QaScore passed={12} total={12} />
+      <QaScore passed={7} total={9} />
+      <QaScore passed={0} total={4} />
+      <QaScore passed={0} total={0} unit="проверок" />
+    </div>
+  )
+}
+
+export const Results: Story = {
+  name: 'Таблица результатов',
+  render: () => (
+    <div style={{ maxWidth: 620 }}>
+      <ResultTable
+        caption="Сценарии Component QA"
+        rows={[
+          { id: '1', name: 'Поиск по заголовку диалога', result: 'Пройден', tone: 'success' },
+          { id: '2', name: 'Поиск по содержимому сообщения', result: 'Пройден', tone: 'success' },
+          { id: '3', name: 'Навигация с клавиатуры', result: 'Выполняется', tone: 'running', detail: 'шаг 3 из 4' },
+          { id: '4', name: 'Пустое состояние без результатов', result: 'Ошибка', tone: 'danger', detail: 'подсказка не показана' },
+          { id: '5', name: 'Печать страницы', result: 'Не применим', tone: 'neutral' }
+        ]}
+      />
+    </div>
+  )
+}
+
+export const Gates: Story = {
+  name: 'Проверки гейта',
+  render: () => (
+    <div style={{ maxWidth: 620 }}>
+      <GateList
+        ariaLabel="Проверки Automated QA"
+        checks={[
+          { id: 'ts', name: 'TypeScript', detail: 'Ошибок нет', verdict: 'Пройдено', tone: 'success' },
+          { id: 'lint', name: 'Lint', detail: '0 предупреждений', verdict: 'Пройдено', tone: 'success' },
+          { id: 'cov', name: 'Coverage', detail: '76% при пороге 80%', verdict: 'Не пройдено', tone: 'danger' },
+          { id: 'perf', name: 'Бюджет чанков', detail: 'считается', verdict: 'Выполняется', tone: 'running' },
+          { id: 'e2e', name: 'E2E', verdict: 'Ожидает' }
+        ]}
+      />
+    </div>
+  )
+}
+
+export const Branches: Story = {
+  name: 'Поток ветки',
+  render: () => (
+    <div style={{ display: 'grid', gap: 16, maxWidth: 620 }}>
+      <BranchFlow from="task/CHAT-248" note="6 файлов изменено · +284 −31" />
+      <BranchFlow from="fix/very-long-branch-name-that-does-not-fit-in-one-line" to="release/1.2" />
+    </div>
+  )
+}
+
+export const ResultsPhone: Story = {
+  name: 'Таблица результатов на телефоне',
+  parameters: PHONE,
+  render: () => (
+    <ResultTable
+      caption="Сценарии Component QA"
+      rows={[
+        { id: '1', name: 'Поиск по содержимому сообщения в длинном диалоге', result: 'Пройден', tone: 'success' },
+        { id: '2', name: 'Навигация с клавиатуры', result: 'Выполняется', tone: 'running', detail: 'шаг 3 из 4' },
+        { id: '3', name: 'Пустое состояние без результатов', result: 'Ошибка', tone: 'danger', detail: 'подсказка не показана' }
+      ]}
+    />
   )
 }

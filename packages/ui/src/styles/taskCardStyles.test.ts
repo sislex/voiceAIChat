@@ -64,8 +64,12 @@ describe('стили открытой карточки задачи', () => {
     'task-preparation-field', 'ci-task-stages', 'ci-task-hint',
     // Лог с ANSI-раскраской.
     'ansi-bold', 'ansi-fg-green', 'ansi-fg-red', 'ansi-fg-yellow',
-    // Бейджи статусов вкладок QA и Merge.
-    'qa-status', 'qa-status--passed', 'qa-status--failed', 'merge-chip', 'merge-badge',
+    // Панели QA и merge: раскладка блоков и общий язык результатов.
+    'component-qa-panel', 'qa-stage-panel', 'component-qa-actions', 'qa-stage-actions',
+    'vc-score', 'vc-score__value', 'vc-score__bar', 'vc-results', 'vc-results__caption',
+    'vc-results__result', 'vc-results__detail', 'vc-gates', 'vc-gate', 'vc-gate__mark',
+    'vc-gate__verdict', 'vc-branch-flow', 'vc-branch-flow__branch', 'vc-branch-flow__note',
+    'merge-chip', 'merge-badge',
     // Карточка на доске и шапка колонки.
     'jcard-epic', 'jcard-epic-dot', 'jcard-flag', 'jcard-due', 'jcard-pts',
     'jcard-stage-actions', 'jcol-head', 'jcol-name-text', 'jcol-hidden-mark', 'jcompose-open'

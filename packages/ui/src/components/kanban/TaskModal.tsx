@@ -22,7 +22,7 @@ import { Dialog } from '@voicechat/ui-kit'
 import { EmptyState } from '@voicechat/ui-kit'
 import { ErrorState } from '@voicechat/ui-kit'
 import { IconButton } from '@voicechat/ui-kit'
-import { ChipList, ProgressTrack, PropertyRow, SectionHeader } from '@voicechat/ui-kit'
+import { BranchFlow, ChipList, ProgressTrack, PropertyRow, SectionHeader } from '@voicechat/ui-kit'
 import { LiveIndicator, PanelHeading, StatusPill, type StatusTone } from '@voicechat/ui-kit'
 import { Markdown } from '../Markdown'
 import { useConfirm } from '@voicechat/ui-kit'
@@ -1163,6 +1163,11 @@ export function TaskModal(props: TaskModalProps): JSX.Element {
             description="Ветка задачи уезжает в main отдельным раном со своими проверками."
             actions={task.activeMergeRunId ? <StatusPill tone="running">Выполняется</StatusPill> : undefined}
           />
+          {task.mergeSourceBranch && <BranchFlow
+            className="task-merge-flow"
+            from={task.mergeSourceBranch}
+            note={task.mergeSourceSha ? `Ветка задачи на ${task.mergeSourceSha.slice(0, 8)}` : undefined}
+          />}
           {activeTab === 'merge' && <MergePanel
             projectId={task.projectId}
             taskId={task.id}
