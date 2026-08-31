@@ -37,7 +37,7 @@ function item(id: string, title: string, extra: Partial<ContextSnapshotItem> = {
 }
 
 /** Снимок, похожий на настоящий: инструкции, проект, конфигурация и история. */
-function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boolean } = {}): ConversationContextSnapshot {
+function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boolean; foreign?: boolean; owner?: string; warnings?: ConversationContextSnapshot['warnings'] } = {}): ConversationContextSnapshot {
   const on = options.personalizationEnabled ?? true
   const size = (text: string) => ({ chars: text.length, approxTokens: Math.ceil(text.length / 4) })
   const previewText = [on ? PERSONALIZATION : '', INSTRUCTION].filter(Boolean).join('\n\n')
@@ -71,8 +71,8 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
       ] }
     ],
     viewerRole: options.viewerRole ?? 'admin',
-    owner: 'alexey',
-    foreign: false,
+    owner: options.owner ?? 'alexey',
+    foreign: options.foreign ?? false,
     lastTurn: {
       at: '12:41',
       provider: 'claude',
@@ -96,7 +96,7 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
       { at: new Date('2026-08-31T12:35:00Z').getTime(), actor: 'alexey', itemId: 'personalization', enabled: false },
       { at: new Date('2026-08-31T12:36:00Z').getTime(), actor: 'alexey', itemId: 'personalization', enabled: true }
     ],
-    warnings: [
+    warnings: options.warnings ?? [
       { itemId: 'machine', level: 'problem', text: 'Выбранная машина недоступна: команды и файловые инструменты в ход не попадут.' },
       { itemId: null, level: 'notice', text: 'Инструкций чата выключено для этого разговора: 1.' }
     ],
@@ -112,7 +112,9 @@ function snapshot(options: { viewerRole?: UserRole; personalizationEnabled?: boo
         'История разговора: ход продолжает сессию движка, история заново не отправляется.',
         'AGENTS.md: файл читает исполнитель в рабочей директории машины.'
       ],
-      costUsd: 0.00032
+      costUsd: 0.00032,
+      turnTotal: { chars: 4200, approxTokens: 1050, historyChars: 3000, historyApproxTokens: 750, resumed: false },
+      costByModel: [{ model: 'haiku', costUsd: 0.0009 }]
     }
   }
 }
@@ -194,4 +196,35 @@ export const KbPreviewByDraft: Story = {
     await userEvent.click(canvas.getByRole('button', { name: 'Показать подбор' }))
     await expect(await canvas.findByTestId('context-kb-result')).toHaveTextContent('Соглашения')
   }
+}
+
+/**
+ * Админ открыл чужой разговор: снимок виден целиком, но тумблеры заблокированы
+ * до явного разрешения — чужой контекст не должен меняться случайным кликом.
+ */
+export const ForeignLocked: Story = {
+  decorators: [withBridges((bridges) => {
+    bridges.api['conversations:contextSnapshot'] = async () => snapshot({ foreign: true, owner: 'marina' })
+  })]
+}
+
+/**
+ * Длинный разговор: история весит больше всех настроек вместе, и выключение
+ * источников здесь почти ничего не изменит — предупреждение говорит об этом прямо.
+ */
+export const HistoryDominates: Story = {
+  decorators: [withBridges((bridges) => {
+    bridges.api['conversations:contextSnapshot'] = async () => {
+      const base = snapshot()
+      return {
+        ...base,
+        warnings: [{ itemId: 'conversation-history', level: 'notice' as const, text: 'История разговора занимает ≈2520 токенов — больше, чем все настройки вместе (≈589). Выключение источников тут почти ничего не изменит: помогает новый разговор или продолжение сессии движка.' }],
+        promptPreview: {
+          ...base.promptPreview,
+          turnTotal: { chars: 12_400, approxTokens: 3109, historyChars: 10_080, historyApproxTokens: 2520, resumed: false },
+          costByModel: [{ model: 'sonnet', costUsd: 0.0093 }, { model: 'haiku', costUsd: 0.0031 }]
+        }
+      }
+    }
+  })]
 }
